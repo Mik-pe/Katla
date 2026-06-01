@@ -49,3 +49,5 @@ pub use widget::{
     ChildWidgets, DrawInteraction, InputContext, InputResult, InteractionState, MeasureFn, Widget,
     WidgetBox,
 };
+
+pub use widgets::code_editor::EditorAction;

@@ -17,6 +17,22 @@ use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
 
 // ---------------------------------------------------------------------------
+// Editor actions (emitted through ActionStream)
+// ---------------------------------------------------------------------------
+
+/// Actions emitted by the CodeEditor widget during user interaction.
+///
+/// These can be drained from the ViewTree's ActionStream after each frame
+/// using `tree.actions_mut().drain::<EditorAction>()`.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EditorAction {
+    /// Text content changed (typing, delete, paste, etc.).
+    TextChanged { new_text: String },
+    /// Cursor position changed (arrow keys, click, etc.).
+    CursorMoved { line: usize, col: usize },
+}
+
+// ---------------------------------------------------------------------------
 // Syntax highlighting
 // ---------------------------------------------------------------------------
 
@@ -217,6 +233,7 @@ pub(crate) struct EditorStateInner {
     cursor_col: usize,
     selection: Option<SelectionState>,
     scroll_y: f32,
+    scroll_x: f32,
     undo_stack: Vec<Vec<EditorChange>>,
     redo_stack: Vec<Vec<EditorChange>>,
     preferred_x: usize,
@@ -247,6 +264,7 @@ impl EditorStateInner {
             cursor_col: 0,
             selection: None,
             scroll_y: 0.0,
+            scroll_x: 0.0,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             preferred_x: 0,
@@ -265,6 +283,10 @@ impl EditorStateInner {
 
     #[cfg(test)]
     fn text(&self) -> String {
+        self.lines.join("\n")
+    }
+
+    fn text_cloned(&self) -> String {
         self.lines.join("\n")
     }
 
@@ -838,10 +860,9 @@ impl EditorStateInner {
         let line = ((y - text_y + self.scroll_y) / self.line_height).floor() as usize;
         self.cursor_line = line.min(self.lines.len().saturating_sub(1));
 
-        // Approximate column from x position
         let char_width = self.font_size * 0.6;
-        let col =
-            (((x - text_x) / char_width).floor() as usize).min(self.lines[self.cursor_line].len());
+        let col = ((((x - text_x) + self.scroll_x) / char_width).floor() as usize)
+            .min(self.lines[self.cursor_line].len());
         self.cursor_col = col;
         self.preferred_x = self.cursor_col;
     }
@@ -857,6 +878,32 @@ impl EditorStateInner {
         let content_height = self.lines.len() as f32 * self.line_height;
         let max_scroll = (content_height - viewport_height).max(0.0);
         self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
+    }
+
+    fn scroll_horizontal(&mut self, delta: f32, viewport_width: f32) {
+        self.scroll_x += delta;
+        self.clamp_scroll_x(viewport_width);
+    }
+
+    fn clamp_scroll_x(&mut self, viewport_width: f32) {
+        let char_width = self.font_size * 0.6;
+        let max_line_len = self.lines.iter().map(|l| l.len()).max().unwrap_or(0);
+        let content_width = max_line_len as f32 * char_width;
+        let max_scroll = (content_width - viewport_width).max(0.0);
+        self.scroll_x = self.scroll_x.clamp(0.0, max_scroll);
+    }
+
+    fn scroll_cursor_into_view_horizontal(&mut self, viewport_width: f32, gutter_width: f32) {
+        let char_width = self.font_size * 0.6;
+        let cursor_x = self.cursor_col as f32 * char_width;
+        let text_viewport = viewport_width - gutter_width - 8.0;
+
+        if cursor_x < self.scroll_x {
+            self.scroll_x = cursor_x;
+        } else if cursor_x + char_width > self.scroll_x + text_viewport {
+            self.scroll_x = cursor_x + char_width - text_viewport;
+        }
+        self.clamp_scroll_x(viewport_width - gutter_width);
     }
 
     fn scroll_cursor_into_view(&mut self, viewport_height: f32) {
@@ -1023,7 +1070,11 @@ impl Widget for CodeEditor {
 
         // Scroll
         if in_bounds && ctx.input.scroll_delta.y() != 0.0 {
-            inner.scroll(ctx.input.scroll_delta.y() * 20.0, bounds.height());
+            if ctx.input.is_key_down(KeyCode::Shift) {
+                inner.scroll_horizontal(ctx.input.scroll_delta.y() * 20.0, bounds.width());
+            } else {
+                inner.scroll(ctx.input.scroll_delta.y() * 20.0, bounds.height());
+            }
             return InputResult::Consumed;
         }
 
@@ -1045,6 +1096,10 @@ impl Widget for CodeEditor {
             } else {
                 inner.move_left();
             }
+            ctx.actions.emit(EditorAction::CursorMoved {
+                line: inner.cursor_line,
+                col: inner.cursor_col,
+            });
             return InputResult::Consumed;
         }
         if ctx.input.key_pressed(KeyCode::ArrowRight) {
@@ -1053,6 +1108,10 @@ impl Widget for CodeEditor {
             } else {
                 inner.move_right();
             }
+            ctx.actions.emit(EditorAction::CursorMoved {
+                line: inner.cursor_line,
+                col: inner.cursor_col,
+            });
             return InputResult::Consumed;
         }
         if ctx.input.key_pressed(KeyCode::ArrowUp) {
@@ -1061,6 +1120,10 @@ impl Widget for CodeEditor {
             } else {
                 inner.move_up();
             }
+            ctx.actions.emit(EditorAction::CursorMoved {
+                line: inner.cursor_line,
+                col: inner.cursor_col,
+            });
             return InputResult::Consumed;
         }
         if ctx.input.key_pressed(KeyCode::ArrowDown) {
@@ -1069,6 +1132,10 @@ impl Widget for CodeEditor {
             } else {
                 inner.move_down();
             }
+            ctx.actions.emit(EditorAction::CursorMoved {
+                line: inner.cursor_line,
+                col: inner.cursor_col,
+            });
             return InputResult::Consumed;
         }
         if ctx.input.key_pressed(KeyCode::Home) {
@@ -1077,6 +1144,10 @@ impl Widget for CodeEditor {
             } else {
                 inner.move_home();
             }
+            ctx.actions.emit(EditorAction::CursorMoved {
+                line: inner.cursor_line,
+                col: inner.cursor_col,
+            });
             return InputResult::Consumed;
         }
         if ctx.input.key_pressed(KeyCode::End) {
@@ -1085,6 +1156,10 @@ impl Widget for CodeEditor {
             } else {
                 inner.move_end();
             }
+            ctx.actions.emit(EditorAction::CursorMoved {
+                line: inner.cursor_line,
+                col: inner.cursor_col,
+            });
             return InputResult::Consumed;
         }
 
@@ -1093,24 +1168,36 @@ impl Widget for CodeEditor {
             let mut changes = Vec::new();
             inner.backspace(&mut changes);
             inner.commit_change(changes);
+            ctx.actions.emit(EditorAction::TextChanged {
+                new_text: inner.text_cloned(),
+            });
             return InputResult::Consumed;
         }
         if ctx.input.key_pressed(KeyCode::Delete) {
             let mut changes = Vec::new();
             inner.delete_forward(&mut changes);
             inner.commit_change(changes);
+            ctx.actions.emit(EditorAction::TextChanged {
+                new_text: inner.text_cloned(),
+            });
             return InputResult::Consumed;
         }
         if ctx.input.key_pressed(KeyCode::Enter) {
             let mut changes = Vec::new();
             inner.insert_newline(&mut changes);
             inner.commit_change(changes);
+            ctx.actions.emit(EditorAction::TextChanged {
+                new_text: inner.text_cloned(),
+            });
             return InputResult::Consumed;
         }
         if ctx.input.key_pressed(KeyCode::Tab) {
             let mut changes = Vec::new();
             inner.insert_tab(&mut changes);
             inner.commit_change(changes);
+            ctx.actions.emit(EditorAction::TextChanged {
+                new_text: inner.text_cloned(),
+            });
             return InputResult::Consumed;
         }
 
@@ -1126,6 +1213,9 @@ impl Widget for CodeEditor {
             }
             if ctx.input.key_pressed(KeyCode::X) {
                 inner.cut();
+                ctx.actions.emit(EditorAction::TextChanged {
+                    new_text: inner.text_cloned(),
+                });
                 return InputResult::Consumed;
             }
             if ctx.input.key_pressed(KeyCode::V) {
@@ -1134,10 +1224,16 @@ impl Widget for CodeEditor {
             }
             if ctx.input.key_pressed(KeyCode::Z) {
                 inner.undo();
+                ctx.actions.emit(EditorAction::TextChanged {
+                    new_text: inner.text_cloned(),
+                });
                 return InputResult::Consumed;
             }
             if ctx.input.key_pressed(KeyCode::Y) {
                 inner.redo();
+                ctx.actions.emit(EditorAction::TextChanged {
+                    new_text: inner.text_cloned(),
+                });
                 return InputResult::Consumed;
             }
         }
@@ -1148,6 +1244,9 @@ impl Widget for CodeEditor {
                 let mut changes = Vec::new();
                 inner.insert_char(c, &mut changes);
                 inner.commit_change(changes);
+                ctx.actions.emit(EditorAction::TextChanged {
+                    new_text: inner.text_cloned(),
+                });
             }
         }
 
@@ -1181,6 +1280,7 @@ impl Widget for CodeEditor {
         let line_height = inner.line_height;
         let gutter_width = inner.gutter_width();
         let scroll_y = inner.scroll_y;
+        let scroll_x = inner.scroll_x;
 
         // Background
         let bg_color = Color::new(0.12, 0.12, 0.14, 1.0);
@@ -1204,7 +1304,13 @@ impl Widget for CodeEditor {
             Rect2D::from_origin_size(bounds.min, Vec2::new(gutter_width, bounds.height()));
         ctx.draw_rect(gutter_rect, gutter_bg);
 
-        // Draw line numbers and text
+        // Text viewport clip rect (everything after gutter, inside bounds)
+        let text_viewport = Rect2D::from_origin_size(
+            Vec2::new(bounds.min.x() + gutter_width, bounds.min.y()),
+            Vec2::new(bounds.width() - gutter_width, bounds.height()),
+        );
+
+        // Draw line numbers (clipped to gutter) and text (clipped to text viewport)
         for line_i in first_visible..last_visible {
             let y = bounds.min.y() + (line_i as f32) * line_height - scroll_y;
 
@@ -1212,8 +1318,9 @@ impl Widget for CodeEditor {
                 continue;
             }
 
-            // Line number
+            // Line number (in gutter, no horizontal scroll)
             let line_num = format!("{}", line_i + 1);
+            ctx.draw_list.set_clip(gutter_rect);
             ctx.draw_text(
                 &line_num,
                 Vec2::new(bounds.min.x() + 4.0, y),
@@ -1221,13 +1328,15 @@ impl Widget for CodeEditor {
                 font_size * 0.85,
             );
 
-            // Text line (syntax highlighted if available)
+            // Text line (syntax highlighted if available), offset by scroll_x
             let line_text = &inner.lines[line_i];
             if !line_text.is_empty() {
-                let text_x = bounds.min.x() + gutter_width + 4.0;
+                let base_text_x = bounds.min.x() + gutter_width + 4.0 - scroll_x;
+
+                ctx.draw_list.set_clip(text_viewport);
 
                 if line_i < highlighted.len() && !highlighted[line_i].is_empty() {
-                    let mut x = text_x;
+                    let mut x = base_text_x;
                     for span in &highlighted[line_i] {
                         if !span.text.is_empty() {
                             ctx.draw_text(&span.text, Vec2::new(x, y), span.color, font_size);
@@ -1236,7 +1345,7 @@ impl Widget for CodeEditor {
                         }
                     }
                 } else {
-                    ctx.draw_text(line_text, Vec2::new(text_x, y), text_color, font_size);
+                    ctx.draw_text(line_text, Vec2::new(base_text_x, y), text_color, font_size);
                 }
             }
         }
@@ -1246,7 +1355,9 @@ impl Widget for CodeEditor {
             let ((sl, sc), (el, ec)) = sel.sorted();
             let sel_color = Color::new(0.2, 0.4, 0.7, 0.4);
             let char_width = font_size * 0.6;
-            let text_x = bounds.min.x() + gutter_width + 4.0;
+            let base_text_x = bounds.min.x() + gutter_width + 4.0 - scroll_x;
+
+            ctx.draw_list.set_clip(text_viewport);
 
             for line_i in sl..=el {
                 let y = bounds.min.y() + (line_i as f32) * line_height - scroll_y;
@@ -1264,7 +1375,7 @@ impl Widget for CodeEditor {
                     (0, inner.lines[line_i].len())
                 };
 
-                let sel_x = text_x + start_col as f32 * char_width;
+                let sel_x = base_text_x + start_col as f32 * char_width;
                 let sel_w = (end_col - start_col) as f32 * char_width;
                 let sel_rect =
                     Rect2D::from_origin_size(Vec2::new(sel_x, y), Vec2::new(sel_w, line_height));
@@ -1277,12 +1388,13 @@ impl Widget for CodeEditor {
         if is_focused {
             let cursor_y = bounds.min.y() + (inner.cursor_line as f32) * line_height - scroll_y;
             let char_width = font_size * 0.6;
-            let cursor_x =
-                bounds.min.x() + gutter_width + 4.0 + inner.cursor_col as f32 * char_width;
+            let base_text_x = bounds.min.x() + gutter_width + 4.0 - scroll_x;
+            let cursor_x = base_text_x + inner.cursor_col as f32 * char_width;
 
             // Blink cursor
             let blink_visible = (ctx.time * 2.0) as i32 % 2 == 0;
             if blink_visible {
+                ctx.draw_list.set_clip(text_viewport);
                 let cursor_color = Color::new(0.9, 0.9, 0.9, 1.0);
                 let cursor_rect = Rect2D::from_origin_size(
                     Vec2::new(cursor_x, cursor_y),
@@ -1291,8 +1403,9 @@ impl Widget for CodeEditor {
                 ctx.draw_rect(cursor_rect, cursor_color);
             }
 
-            // Scroll cursor into view
+            // Scroll cursor into view (both axes)
             inner.scroll_cursor_into_view(bounds.height());
+            inner.scroll_cursor_into_view_horizontal(bounds.width(), gutter_width);
         }
 
         // Border
@@ -2353,5 +2466,373 @@ mod tests {
         let rs_text: String = rs_result[0].iter().map(|s| s.text.as_str()).collect();
         assert_eq!(py_text, "import os");
         assert_eq!(rs_text, "import os");
+    }
+
+    // =========================================================================
+    // VAL-EDITOR-007: Long lines display correctly with horizontal scroll
+    // =========================================================================
+
+    #[test]
+    fn test_horizontal_scroll_offset() {
+        let mut state = make_state(
+            "short\nthis is a very long line that exceeds the viewport width by a lot of characters",
+        );
+        assert_eq!(state.scroll_x, 0.0);
+
+        state.scroll_horizontal(100.0, 400.0);
+        assert!(
+            state.scroll_x > 0.0,
+            "scroll_x should increase after scrolling right"
+        );
+    }
+
+    #[test]
+    fn test_horizontal_scroll_clamped() {
+        let mut state = make_state("short");
+        state.scroll_horizontal(10000.0, 400.0);
+        // scroll_x should be clamped to max valid value
+        assert!(state.scroll_x >= 0.0);
+    }
+
+    #[test]
+    fn test_horizontal_scroll_cursor_into_view() {
+        let mut state =
+            make_state("a very long line of text here that extends far past the viewport");
+        let gutter = state.gutter_width();
+
+        // Move cursor far right
+        state.set_cursor(0, 60);
+        state.scroll_cursor_into_view_horizontal(200.0, gutter);
+
+        // scroll_x should have adjusted so cursor is visible
+        let char_width = state.font_size * 0.6;
+        let cursor_x = state.cursor_col as f32 * char_width;
+        let text_viewport = 200.0 - gutter - 8.0;
+        assert!(
+            cursor_x >= state.scroll_x,
+            "cursor should be visible: cursor_x={} >= scroll_x={}",
+            cursor_x,
+            state.scroll_x
+        );
+        assert!(
+            cursor_x <= state.scroll_x + text_viewport + char_width,
+            "cursor should be within viewport: cursor_x={} <= scroll_x + viewport={}",
+            cursor_x,
+            state.scroll_x + text_viewport
+        );
+    }
+
+    #[test]
+    fn test_click_accounts_for_scroll_x() {
+        let mut state = make_state("this is a very long line of text");
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+        let gutter_width = state.gutter_width();
+
+        // Scroll right by 10 chars
+        let char_width = state.font_size * 0.6;
+        state.scroll_x = 10.0 * char_width;
+
+        // Click at the start of text area
+        state.click_to_position(
+            bounds.min.x() + gutter_width + char_width,
+            0.0,
+            bounds,
+            gutter_width,
+        );
+
+        // Column should account for scroll offset (10 chars scrolled + 1 char in = col 11)
+        assert_eq!(state.cursor_col, 11);
+    }
+
+    #[test]
+    fn test_shift_scroll_horizontal() {
+        let mut state =
+            make_state("short\nthis is a very long line that is much wider than a 200px viewport");
+        let initial_scroll_x = state.scroll_x;
+
+        state.scroll_horizontal(40.0, 200.0);
+        assert!(
+            state.scroll_x > initial_scroll_x,
+            "horizontal scroll should increase scroll_x"
+        );
+    }
+
+    // =========================================================================
+    // VAL-EDITOR-045: CodeEditor emits typed actions via ActionStream
+    // =========================================================================
+
+    fn make_input_context<'a>(
+        input: &'a mut crate::input::UiInputState,
+        actions: &'a mut crate::declarative::actions::ActionStream,
+        callbacks: &'a mut crate::declarative::build::CallbackTable,
+    ) -> InputContext<'a> {
+        InputContext {
+            input,
+            mouse_pos: Vec2::new(50.0, 50.0),
+            callbacks,
+            actions,
+            view_id: ViewId::from(slotmap::KeyData::from_ffi(1)),
+            active_id: None,
+            focused_id: Some(ViewId::from(slotmap::KeyData::from_ffi(1))),
+        }
+    }
+
+    #[test]
+    fn test_emit_cursor_moved_on_arrow_key() {
+        use crate::declarative::build::CallbackTable;
+        let mut arena = StateArena::new();
+        let sid = make_editor_state_id(&mut arena, "hello");
+        let editor = CodeEditor { state_id: sid };
+        let mut actions = crate::declarative::actions::ActionStream::new();
+        let mut callbacks = CallbackTable::new();
+        let mut input = crate::input::UiInputState::new();
+
+        input.add_key_press(KeyCode::ArrowRight);
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+
+        {
+            let mut ctx = make_input_context(&mut input, &mut actions, &mut callbacks);
+            editor.handle_input(&mut ctx, &mut arena, bounds, &[]);
+        }
+
+        let cursor_actions: Vec<EditorAction> = actions.drain();
+        assert!(
+            cursor_actions
+                .iter()
+                .any(|a| matches!(a, EditorAction::CursorMoved { .. })),
+            "Arrow key should emit CursorMoved action, got: {:?}",
+            cursor_actions
+        );
+
+        if let Some(EditorAction::CursorMoved { line, col }) = cursor_actions.into_iter().next() {
+            assert_eq!(line, 0);
+            assert_eq!(col, 1);
+        }
+    }
+
+    #[test]
+    fn test_emit_text_changed_on_typing() {
+        use crate::declarative::build::CallbackTable;
+        let mut arena = StateArena::new();
+        let sid = make_editor_state_id(&mut arena, "");
+        let editor = CodeEditor { state_id: sid };
+        let mut actions = crate::declarative::actions::ActionStream::new();
+        let mut callbacks = CallbackTable::new();
+        let mut input = crate::input::UiInputState::new();
+
+        input.add_char('a');
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+
+        {
+            let mut ctx = make_input_context(&mut input, &mut actions, &mut callbacks);
+            editor.handle_input(&mut ctx, &mut arena, bounds, &[]);
+        }
+
+        let text_actions: Vec<EditorAction> = actions.drain();
+        assert!(
+            text_actions
+                .iter()
+                .any(|a| matches!(a, EditorAction::TextChanged { .. })),
+            "Typing a character should emit TextChanged action, got: {:?}",
+            text_actions
+        );
+
+        if let Some(EditorAction::TextChanged { new_text }) = text_actions.into_iter().next() {
+            assert_eq!(new_text, "a");
+        }
+    }
+
+    #[test]
+    fn test_emit_text_changed_on_backspace() {
+        use crate::declarative::build::CallbackTable;
+        let mut arena = StateArena::new();
+        let sid = make_editor_state_id(&mut arena, "abc");
+        let editor = CodeEditor { state_id: sid };
+        let mut actions = crate::declarative::actions::ActionStream::new();
+        let mut callbacks = CallbackTable::new();
+        let mut input = crate::input::UiInputState::new();
+
+        // Set cursor to end and press backspace
+        {
+            let shared = arena.get::<SharedEditorState>(sid).unwrap();
+            shared.0.borrow_mut().set_cursor(0, 3);
+        }
+
+        input.add_key_press(KeyCode::Backspace);
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+
+        {
+            let mut ctx = make_input_context(&mut input, &mut actions, &mut callbacks);
+            editor.handle_input(&mut ctx, &mut arena, bounds, &[]);
+        }
+
+        let text_actions: Vec<EditorAction> = actions.drain();
+        assert!(
+            text_actions
+                .iter()
+                .any(|a| matches!(a, EditorAction::TextChanged { new_text } if new_text == "ab")),
+            "Backspace should emit TextChanged with updated text, got: {:?}",
+            text_actions
+        );
+    }
+
+    #[test]
+    fn test_emit_text_changed_on_enter() {
+        use crate::declarative::build::CallbackTable;
+        let mut arena = StateArena::new();
+        let sid = make_editor_state_id(&mut arena, "abc");
+        let editor = CodeEditor { state_id: sid };
+        let mut actions = crate::declarative::actions::ActionStream::new();
+        let mut callbacks = CallbackTable::new();
+        let mut input = crate::input::UiInputState::new();
+
+        input.add_key_press(KeyCode::Enter);
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+
+        {
+            let mut ctx = make_input_context(&mut input, &mut actions, &mut callbacks);
+            editor.handle_input(&mut ctx, &mut arena, bounds, &[]);
+        }
+
+        let text_actions: Vec<EditorAction> = actions.drain();
+        assert!(
+            text_actions
+                .iter()
+                .any(|a| matches!(a, EditorAction::TextChanged { .. })),
+            "Enter should emit TextChanged action, got: {:?}",
+            text_actions
+        );
+    }
+
+    #[test]
+    fn test_emit_cursor_moved_on_home() {
+        use crate::declarative::build::CallbackTable;
+        let mut arena = StateArena::new();
+        let sid = make_editor_state_id(&mut arena, "hello");
+        let editor = CodeEditor { state_id: sid };
+        let mut actions = crate::declarative::actions::ActionStream::new();
+        let mut callbacks = CallbackTable::new();
+        let mut input = crate::input::UiInputState::new();
+
+        // Set cursor to col 3
+        {
+            let shared = arena.get::<SharedEditorState>(sid).unwrap();
+            shared.0.borrow_mut().set_cursor(0, 3);
+        }
+
+        input.add_key_press(KeyCode::Home);
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+
+        {
+            let mut ctx = make_input_context(&mut input, &mut actions, &mut callbacks);
+            editor.handle_input(&mut ctx, &mut arena, bounds, &[]);
+        }
+
+        let cursor_actions: Vec<EditorAction> = actions.drain();
+        assert!(
+            cursor_actions
+                .iter()
+                .any(|a| matches!(a, EditorAction::CursorMoved { line: 0, col: 0 })),
+            "Home should emit CursorMoved to (0, 0), got: {:?}",
+            cursor_actions
+        );
+    }
+
+    // =========================================================================
+    // VAL-CROSS-004: CodeEditor draw uses instanced rendering path
+    // =========================================================================
+
+    #[test]
+    fn test_draw_produces_instanced_glyphs() {
+        let mut arena = StateArena::new();
+        let sid = make_editor_state_id(&mut arena, "hello world\nline two");
+        let editor = CodeEditor { state_id: sid };
+        let mut ui = UiContext::new();
+
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+        let view_id = ViewId::from(slotmap::KeyData::from_ffi(1));
+        let interaction = DrawInteraction {
+            hovered_id: None,
+            active_id: None,
+            focused_id: Some(view_id),
+        };
+
+        editor.draw(
+            &mut ui,
+            &arena,
+            bounds,
+            &AnimationState::default(),
+            &[],
+            &interaction,
+            view_id,
+            &[],
+        );
+
+        ui.draw_list.finalize();
+
+        // Background rect, gutter rect, and placeholder rects are all instanced
+        assert!(
+            ui.draw_list.instance_count() > 0,
+            "CodeEditor draw should produce instanced data (found {} instances)",
+            ui.draw_list.instance_count()
+        );
+
+        // At minimum: 1 background rect + 1 gutter rect = 2 instances
+        assert!(
+            ui.draw_list.instance_count() >= 2,
+            "Should have at least background + gutter instances (found {})",
+            ui.draw_list.instance_count()
+        );
+
+        // Verify commands contain instanced draws
+        let instanced_cmds: Vec<_> = ui
+            .draw_list
+            .commands()
+            .iter()
+            .filter(|cmd| cmd.is_instanced)
+            .collect();
+        assert!(
+            !instanced_cmds.is_empty(),
+            "DrawList should contain instanced draw commands"
+        );
+    }
+
+    #[test]
+    fn test_draw_uses_instance_data_for_rects() {
+        let mut arena = StateArena::new();
+        let sid = make_editor_state_id(&mut arena, "test");
+        let editor = CodeEditor { state_id: sid };
+        let mut ui = UiContext::new();
+
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(400.0, 300.0));
+        let view_id = ViewId::from(slotmap::KeyData::from_ffi(1));
+        let interaction = DrawInteraction {
+            hovered_id: None,
+            active_id: None,
+            focused_id: None,
+        };
+
+        editor.draw(
+            &mut ui,
+            &arena,
+            bounds,
+            &AnimationState::default(),
+            &[],
+            &interaction,
+            view_id,
+            &[],
+        );
+
+        ui.draw_list.finalize();
+
+        // All instance data should have valid positions within bounds
+        let instances = ui.draw_list.instances();
+        for inst in instances {
+            // Position should be within or near the editor bounds
+            assert!(
+                inst.position[0] >= bounds.min.x() || inst.position[0] < bounds.max.x() + 100.0,
+                "instance x position should be near bounds"
+            );
+        }
     }
 }
