@@ -34,6 +34,8 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4f,
     @location(0) uv: vec2f,
     @location(1) color: vec4f,
+    @location(2) @interpolate(flat) texture_index: u32,
+    @location(3) clip_rect: vec4f,
 }
 
 struct UiUniforms {
@@ -96,6 +98,10 @@ fn vs_instanced(
         raw_color.a,
     );
 
+    // Pass per-instance data to fragment shader via varyings
+    out.texture_index = inst.texture_index;
+    out.clip_rect = inst.clip_rect;
+
     return out;
 }
 
@@ -115,6 +121,8 @@ fn vs_main(in: UiVertex) -> VertexOutput {
         srgb_to_linear(in.color.b),
         in.color.a,
     );
+    out.texture_index = 0u;
+    out.clip_rect = vec4f(0.0);
 
     return out;
 }
@@ -127,16 +135,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     return in.color * tex_color;
 }
 
-// Fragment shader for instanced draws (uses per-instance texture_index)
+// Fragment shader for instanced draws (uses per-instance varyings)
 @fragment
-fn fs_instanced(in: VertexOutput, @builtin(instance_index) instance_idx: u32) -> @location(0) vec4f {
-    let inst = instance_data[instance_idx];
-    let tex_idx = inst.texture_index;
-    let texture = bindless_textures[tex_idx];
+fn fs_instanced(in: VertexOutput) -> @location(0) vec4f {
+    let texture = bindless_textures[in.texture_index];
     let tex_color = textureSample(texture, font_sampler, in.uv);
 
     // Shader-based clipping: discard fragments outside clip rect
-    let clip = inst.clip_rect;
+    let clip = in.clip_rect;
     let pos = in.clip_position;
     // Reconstruct screen position from clip position
     let screen_x = (pos.x + 1.0) * 0.5 * uniforms.screen_size.x;

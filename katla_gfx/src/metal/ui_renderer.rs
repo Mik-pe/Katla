@@ -9,6 +9,9 @@ use crate::error::RendererError;
 use crate::renderer::types::UIDrawList;
 use crate::vertex::{UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES};
 
+use objc2::runtime::ProtocolObject;
+use objc2_metal::{MTLRenderCommandEncoder, MTLRenderPipelineState};
+
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
 
@@ -39,6 +42,7 @@ pub(crate) struct MetalUIRenderer {
     index_buffer_capacity: u64,
     instance_buffer_capacity: u64,
     ui_material: Option<crate::handle::MaterialHandle>,
+    instanced_pipeline: Option<objc2::rc::Retained<ProtocolObject<dyn MTLRenderPipelineState>>>,
 }
 
 impl MetalUIRenderer {
@@ -53,6 +57,7 @@ impl MetalUIRenderer {
             index_buffer_capacity: 0,
             instance_buffer_capacity: 0,
             ui_material: None,
+            instanced_pipeline: None,
         }
     }
 
@@ -64,16 +69,19 @@ impl MetalUIRenderer {
         self.ui_material = Some(handle);
     }
 
+    pub(crate) fn set_instanced_pipeline(
+        &mut self,
+        pipeline: objc2::rc::Retained<ProtocolObject<dyn MTLRenderPipelineState>>,
+    ) {
+        self.instanced_pipeline = Some(pipeline);
+    }
+
     pub(crate) fn vertex_buffer(&self) -> Option<&MetalBuffer> {
         self.vertex_buffer.as_ref()
     }
 
     pub(crate) fn index_buffer(&self) -> Option<&MetalBuffer> {
         self.index_buffer.as_ref()
-    }
-
-    pub(crate) fn instance_buffer(&self) -> Option<&MetalBuffer> {
-        self.instance_buffer.as_ref()
     }
 
     fn ensure_vertex_buffer(
@@ -224,15 +232,20 @@ impl MetalUIRenderer {
     }
 
     /// Issue draw calls for all UI commands on the given encoder.
+    ///
+    /// `non_instanced_pipeline` is the standard UI pipeline (vs_main/fs_main)
+    /// used for complex geometry draws. The instanced pipeline is stored internally.
     pub(crate) fn render_ui_commands(
         &self,
         encoder: &mut super::render_encoder::MetalRenderEncoder,
         draw_list: &UIDrawList,
+        non_instanced_pipeline: &super::pipeline::MetalGraphicsPipeline,
         render_pass_w: u32,
         render_pass_h: u32,
     ) {
         let full_scissor = (0u32, 0u32, render_pass_w, render_pass_h);
         let mut prev_scissor = full_scissor;
+        let mut using_instanced_pipeline = false;
 
         for cmd in &draw_list.commands {
             let scissor = if let Some([x, y, w, h]) = cmd.clip_rect {
@@ -257,18 +270,33 @@ impl MetalUIRenderer {
             }
 
             if cmd.is_instanced {
+                // Switch to instanced pipeline if not already bound
+                if !using_instanced_pipeline {
+                    if let Some(inst_pipe) = self.instanced_pipeline.as_ref() {
+                        encoder.inner.setRenderPipelineState(inst_pipe);
+                    }
+                    using_instanced_pipeline = true;
+                }
+
                 // Instanced draw: bind instance buffer + unit quad, draw instanced
                 let uniform_data = UiUniforms {
                     screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],
                     ndc_y_flip: -1.0,
-                    texture_index: 0, // per-instance texture
+                    texture_index: 0,
                 };
                 encoder.set_push_constants(
                     bytemuck::cast_slice(&[uniform_data]),
                     3,
                     crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
                 );
-                // Bind unit quad index buffer for instanced draws
+                // Bind instance data as storage buffer at buffer 11 (vertex stage)
+                if let Some(ref inst_buf) = self.instance_buffer {
+                    unsafe {
+                        encoder
+                            .inner
+                            .setVertexBuffer_offset_atIndex(Some(&inst_buf.inner), 0, 11);
+                    }
+                }
                 if let Some(ref quad_ib) = self.unit_quad_index_buffer {
                     encoder.bind_index_buffer(
                         quad_ib,
@@ -279,11 +307,14 @@ impl MetalUIRenderer {
                 if let Some(ref quad_vb) = self.unit_quad_vertex_buffer {
                     encoder.bind_vertex_buffer(quad_vb, 0, 10);
                 }
-                if let Some(ref inst_buf) = self.instance_buffer {
-                    encoder.bind_vertex_buffer(inst_buf, 0, 11);
-                }
                 encoder.draw_indexed(6, cmd.count, 0, 0, cmd.offset);
             } else {
+                // Switch back to non-instanced pipeline if needed
+                if using_instanced_pipeline {
+                    encoder.bind_graphics_pipeline(non_instanced_pipeline);
+                    using_instanced_pipeline = false;
+                }
+
                 // Vertex-based draw: complex geometry
                 let uniform_data = UiUniforms {
                     screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],

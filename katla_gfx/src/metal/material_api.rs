@@ -40,7 +40,7 @@ impl MetalRenderer {
             &self.context.device,
             &wgsl_source,
             &entry_points,
-            profile,
+            profile.clone(),
         )?;
 
         let vertex_fn = compiled
@@ -53,6 +53,54 @@ impl MetalRenderer {
             })?;
 
         let fragment_fn = compiled.module.entry_points.get("fs_main");
+
+        // For UI, also compile instanced entry points for a second pipeline
+        let instanced_pipeline = if is_ui {
+            let instanced_entry_points = vec!["vs_instanced", "fs_instanced"];
+            let instanced_compiled = shader::compile_wgsl_to_metal(
+                &self.context.device,
+                &wgsl_source,
+                &instanced_entry_points,
+                profile.clone(),
+            )?;
+            let instanced_vs = instanced_compiled
+                .module
+                .entry_points
+                .get("vs_instanced")
+                .ok_or_else(|| {
+                    RendererError::InvalidOperation("Instanced vertex entry point not found".into())
+                })?;
+            let instanced_fs = instanced_compiled
+                .module
+                .entry_points
+                .get("fs_instanced")
+                .ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Instanced fragment entry point not found".into(),
+                    )
+                })?;
+
+            let vd = super::context::ui_instanced_vertex_descriptor();
+            Some(
+                self.context
+                    .create_graphics_pipeline_with_vertex_descriptor(
+                        instanced_vs.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>,
+                        Some(
+                            instanced_fs.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>,
+                        ),
+                        &[MTLPixelFormat::BGRA8Unorm_sRGB],
+                        None,
+                        false,
+                        crate::pipeline::CompareOp::Always,
+                        objc2_metal::MTLCullMode::None,
+                        objc2_metal::MTLWinding::Clockwise,
+                        Some(&vd),
+                        true,
+                    )?,
+            )
+        } else {
+            None
+        };
 
         let color_formats = if is_ui {
             &[MTLPixelFormat::BGRA8Unorm_sRGB]
@@ -140,7 +188,13 @@ impl MetalRenderer {
             vertex_type: Some(vertex_type.to_string()),
         };
         let id = self.materials.insert(material);
-        Ok(MaterialHandle::new(id))
+        let handle = MaterialHandle::new(id);
+
+        if let Some(inst) = instanced_pipeline {
+            self.ui_renderer.set_instanced_pipeline(inst.pipeline_state);
+        }
+
+        Ok(handle)
     }
 
     pub(crate) fn set_material_texture_indices_impl(
