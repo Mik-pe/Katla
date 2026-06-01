@@ -1,53 +1,33 @@
-use vello_cpu::{Pixmap, RenderContext};
+use swash::scale::ScaleContext;
 
-/// Pool for reusing `vello_cpu::RenderContext` and `Pixmap` across glyph
-/// rasterization calls.  Grows to the largest glyph dimensions encountered
-/// so that repeated allocations are avoided.
+/// Pool for reusing `swash::scale::ScaleContext` across glyph
+/// rasterization calls. The context manages internal LRU caches and
+/// scratch buffers for efficient glyph rendering.
 pub(crate) struct GlyphRenderPool {
-    ctx: Option<(RenderContext, Pixmap)>,
+    context: Option<ScaleContext>,
 }
 
 impl GlyphRenderPool {
     pub fn new() -> Self {
-        Self { ctx: None }
+        Self { context: None }
     }
 
-    /// Execute `f` with a borrowed `(RenderContext, Pixmap)` pair that is at
-    /// least `width` × `height` pixels.
+    /// Execute `f` with a borrowed `ScaleContext`.
     ///
-    /// If the cached pair is large enough it is reused (the context is reset
-    /// and the pixmap is cleared via memset).  Otherwise a new pair is
-    /// allocated that exactly matches the requested dimensions.
-    ///
-    /// The closure-based approach ensures the pool retains ownership of the
-    /// pair — the caller cannot forget to return it.
-    pub fn acquire<F, R>(&mut self, width: u16, height: u16, f: F) -> R
+    /// Creates a context on first use and reuses it across calls.
+    /// The closure-based approach ensures the pool retains ownership.
+    pub fn acquire<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut RenderContext, &mut Pixmap) -> R,
+        F: FnOnce(&mut ScaleContext) -> R,
     {
-        let needs_realloc = match &self.ctx {
-            None => true,
-            Some((ctx, _pix)) => ctx.width() < width || ctx.height() < height,
-        };
-
-        if needs_realloc {
-            let ctx = RenderContext::new(width, height);
-            let pix = Pixmap::new(width, height);
-            self.ctx = Some((ctx, pix));
+        if self.context.is_none() {
+            self.context = Some(ScaleContext::new());
         }
-
-        let (ctx, pix) = self
-            .ctx
+        let ctx = self
+            .context
             .as_mut()
             .expect("glyph pool must be initialized before use");
 
-        // Clear all accumulated rendering state so the context is fresh.
-        ctx.reset();
-
-        // Clear via memset so no leftover data from a previous (larger)
-        // glyph pollutes the result.
-        pix.data_as_u8_slice_mut().fill(0);
-
-        f(ctx, pix)
+        f(ctx)
     }
 }

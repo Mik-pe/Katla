@@ -14,7 +14,9 @@ taffy = "0.7"
 
 # Font handling
 skrifa = { workspace = true }
-vello_cpu = { workspace = true }
+cosmic-text = { version = "0.19", features = ["vi"] }
+etagere = "0.3"
+swash = "0.2"
 
 serde = { workspace = true }
 serde_json = { workspace = true }
