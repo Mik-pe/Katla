@@ -16,6 +16,7 @@
 //! (dark fonts on light backgrounds).
 
 mod atlas;
+pub(crate) mod cosmic;
 mod font_loading;
 mod glyph_pool;
 mod measurement;
