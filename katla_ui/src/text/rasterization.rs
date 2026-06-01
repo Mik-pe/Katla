@@ -208,6 +208,137 @@ impl super::FontSystem {
 
         Some(cached)
     }
+
+    /// Rasterize a shaped glyph by cosmic-text CacheKey and add to the atlas.
+    ///
+    /// This is used for rendering glyphs from cosmic-text layout runs, where
+    /// the glyph is identified by its shaped glyph ID and font rather than by
+    /// character. Font fallback is handled automatically via the CacheKey's
+    /// embedded fontdb::ID.
+    ///
+    /// Returns the cached glyph info if successful.
+    pub fn get_or_rasterize_shaped(
+        &mut self,
+        cache_key: cosmic_text::CacheKey,
+        scale_factor: f32,
+    ) -> Option<CachedGlyph> {
+        if let Some(cached) = self.shaped_cache.get(&cache_key) {
+            return Some(*cached);
+        }
+
+        let physical_size = f32::from_bits(cache_key.font_size_bits);
+
+        let cosmic_id = cache_key.font_id;
+        let glyph_id = cache_key.glyph_id;
+
+        let font = self
+            .cosmic
+            .font_system_mut()
+            .get_font(cosmic_id, cache_key.font_weight)?;
+
+        let swash_font = font.as_swash();
+
+        let subpixel_x = cache_key.x_bin.as_float();
+        let subpixel_y = cache_key.y_bin.as_float();
+
+        let pixels = self.glyph_pool.acquire(|cx| {
+            let mut scaler = cx.builder(swash_font).size(physical_size).build();
+
+            let offset = swash::zeno::Vector::new(subpixel_x, subpixel_y);
+            let image = Render::new(&[Source::Outline])
+                .format(Format::Alpha)
+                .offset(offset)
+                .render(&mut scaler, glyph_id)?;
+
+            let width = image.placement.width as usize;
+            let height = image.placement.height as usize;
+
+            if width == 0 || height == 0 {
+                return Some(RasterizedPixels {
+                    data: Vec::new(),
+                    width: 0,
+                    height: 0,
+                    left: image.placement.left,
+                    top: image.placement.top,
+                });
+            }
+
+            let padded_width = width + 2;
+            let padded_height = height + 2;
+            let mut alpha = vec![0u8; padded_width * padded_height];
+
+            for y in 0..height {
+                for x in 0..width {
+                    let src_idx = y * width + x;
+                    let dst_idx = (y + 1) * padded_width + (x + 1);
+                    let coverage_f = image.data[src_idx] as f32 / 255.0;
+                    alpha[dst_idx] = (coverage_to_alpha(coverage_f) * 255.0) as u8;
+                }
+            }
+
+            Some(RasterizedPixels {
+                data: alpha,
+                width: padded_width,
+                height: padded_height,
+                left: image.placement.left - 1,
+                top: image.placement.top + 1,
+            })
+        });
+
+        let pixels = match pixels {
+            Some(p) => p,
+            None => {
+                let cached = CachedGlyph {
+                    uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
+                    size: Vec2::new(0.0, 0.0),
+                    offset_x: 0.0,
+                    top_offset: 0.0,
+                    ascender: 0.0,
+                    advance: 0.0,
+                };
+                self.shaped_cache.insert(cache_key, cached);
+                return Some(cached);
+            }
+        };
+
+        if pixels.width == 0 || pixels.height == 0 {
+            let cached = CachedGlyph {
+                uv_rect: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)),
+                size: Vec2::new(0.0, 0.0),
+                offset_x: pixels.left as f32 / scale_factor,
+                top_offset: pixels.top as f32 / scale_factor,
+                ascender: 0.0,
+                advance: 0.0,
+            };
+            self.shaped_cache.insert(cache_key, cached);
+            return Some(cached);
+        }
+
+        let rasterized = RasterizedGlyph {
+            c: '\0',
+            pixels: pixels.data,
+            width: pixels.width,
+            height: pixels.height,
+            offset_x: pixels.left as f32 / scale_factor,
+            top_offset: pixels.top as f32 / scale_factor,
+            ascender: 0.0,
+            advance: 0.0,
+        };
+
+        let cached = self.place_in_atlas(&rasterized, scale_factor)?;
+
+        self.shaped_cache.insert(cache_key, cached);
+
+        Some(cached)
+    }
+}
+
+struct RasterizedPixels {
+    data: Vec<u8>,
+    width: usize,
+    height: usize,
+    left: i32,
+    top: i32,
 }
 
 #[cfg(test)]

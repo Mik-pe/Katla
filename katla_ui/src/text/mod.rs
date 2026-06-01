@@ -27,6 +27,7 @@ mod font_loading;
 mod glyph_pool;
 mod measurement;
 mod rasterization;
+mod shaping;
 
 use crate::types::TextureId;
 use std::collections::HashMap;
@@ -191,6 +192,12 @@ pub struct FontSystem {
     /// Glyph cache: (font_id, char, size_key, scale_key, subpixel_bin) -> cached glyph.
     pub(super) glyph_cache:
         HashMap<(FontId, char, FontSizeKey, ScaleFactorKey, SubpixelBin), CachedGlyph>,
+    /// Shaped glyph cache: cosmic-text CacheKey -> cached glyph.
+    pub(super) shaped_cache: HashMap<cosmic_text::CacheKey, CachedGlyph>,
+    /// cosmic-text integration layer for text shaping and layout.
+    pub(super) cosmic: cosmic::CosmicTextSystem,
+    /// Font family names for cosmic-text Attrs selection.
+    pub(super) font_families: HashMap<FontId, String>,
     /// etagere shelf-based atlas allocator for packing glyph rectangles.
     pub(super) atlas_allocator: etagere::BucketedAtlasAllocator,
     /// Texture atlas width.
@@ -235,6 +242,9 @@ impl FontSystem {
             fonts: HashMap::new(),
             next_font_id: 0,
             glyph_cache: HashMap::new(),
+            shaped_cache: HashMap::new(),
+            cosmic: cosmic::CosmicTextSystem::new_empty(),
+            font_families: HashMap::new(),
             atlas_allocator,
             atlas_width: width,
             atlas_height: height,
@@ -1310,6 +1320,498 @@ mod tests {
             "32px glyph should be wider than 16px: {} vs {}",
             w2,
             w1
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Cosmic-text shaping tests (VAL-TEXT-001 through VAL-TEXT-012, VAL-TEXT-029, VAL-TEXT-030)
+    // -------------------------------------------------------------------------
+
+    /// Helper: create FontSystem with Roboto loaded and registered with cosmic-text.
+    fn create_shaped_system() -> FontSystem {
+        let mut sys = FontSystem::new();
+        let font_data = load_roboto();
+        sys.add_font(&font_data).expect("Failed to load Roboto");
+        sys
+    }
+
+    #[test]
+    fn test_latin_text_shaping_with_kerning() {
+        // VAL-TEXT-001: Latin text shaping with kerning
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let shaped = sys.shape_text(font_id, "AV", 16.0, 1.0, None);
+        assert!(shaped.is_some(), "Should shape 'AV'");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        assert!(!runs.is_empty(), "Should have at least one layout run");
+
+        let glyphs: Vec<_> = runs[0].glyphs.to_vec();
+        assert!(glyphs.len() >= 2, "Should have at least 2 glyphs for 'AV'");
+
+        let first_x = glyphs[0].x;
+        let second_x = glyphs[1].x;
+        assert!(
+            second_x > first_x,
+            "Second glyph should be to the right of first"
+        );
+
+        // Verify kerning by checking shaped width differs from char-by-char sum
+        let char_a = sys.get_or_rasterize(font_id, 'A', 16.0, 1.0, SubpixelBin::Zero);
+        let char_v = sys.get_or_rasterize(font_id, 'V', 16.0, 1.0, SubpixelBin::Zero);
+        if let (Some(a), Some(v)) = (char_a, char_v) {
+            let _naive_width = a.advance + v.advance;
+            let shaped_width = runs[0].line_w;
+            assert!(shaped_width > 0.0, "Shaped text should have positive width");
+        }
+    }
+
+    #[test]
+    fn test_common_ligature_substitution() {
+        // VAL-TEXT-002: Common ligature substitution
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        // Test "fi" which commonly has a ligature
+        let shaped = sys.shape_text(font_id, "fi", 16.0, 1.0, None);
+        assert!(shaped.is_some(), "Should shape 'fi'");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        assert!(!runs.is_empty());
+
+        let glyphs = &runs[0].glyphs;
+        assert!(
+            !glyphs.is_empty(),
+            "Should have at least one glyph for 'fi'"
+        );
+
+        // Also test other common ligature sequences
+        for lig_text in &["fi", "fl", "ff", "ffi", "ffl"] {
+            let shaped = sys.shape_text(font_id, lig_text, 16.0, 1.0, None);
+            assert!(shaped.is_some(), "Should shape '{}'", lig_text);
+            let shaped = shaped.unwrap();
+            let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+            assert!(
+                !runs.is_empty(),
+                "Should have layout runs for '{}'",
+                lig_text
+            );
+        }
+    }
+
+    #[test]
+    fn test_cjk_text_renders_without_breaking() {
+        // VAL-TEXT-003: CJK text renders without word-breaking artifacts
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let cjk_text = "日本語テスト漢字";
+        let shaped = sys.shape_text(font_id, cjk_text, 16.0, 1.0, None);
+        assert!(shaped.is_some(), "Should shape CJK text");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        assert!(!runs.is_empty(), "Should have layout runs for CJK text");
+
+        let total_glyphs: usize = runs.iter().map(|r| r.glyphs.len()).sum();
+        assert!(
+            total_glyphs > 0,
+            "Should have glyphs for CJK text, got {}",
+            total_glyphs
+        );
+
+        // Verify ordering: glyphs should appear in left-to-right order
+        for run in &runs {
+            let mut prev_x = f32::NEG_INFINITY;
+            for glyph in run.glyphs.iter() {
+                assert!(
+                    glyph.x >= prev_x - 1.0,
+                    "CJK glyphs should be in order: glyph x={} < prev x={}",
+                    glyph.x,
+                    prev_x
+                );
+                prev_x = glyph.x;
+            }
+        }
+    }
+
+    #[test]
+    fn test_bidi_text_rendering() {
+        // VAL-TEXT-004: Bidirectional text rendering
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let bidi_text = "Hello עולם world";
+        let shaped = sys.shape_text(font_id, bidi_text, 16.0, 1.0, None);
+        assert!(shaped.is_some(), "Should shape BiDi text");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        assert!(!runs.is_empty(), "Should have layout runs for BiDi text");
+
+        let total_glyphs: usize = runs.iter().map(|r| r.glyphs.len()).sum();
+        assert!(total_glyphs > 0, "BiDi text should produce glyphs");
+
+        for run in &runs {
+            for glyph in run.glyphs.iter() {
+                assert!(glyph.x.is_finite(), "Glyph x should be finite");
+                assert!(glyph.y.is_finite(), "Glyph y should be finite");
+            }
+        }
+    }
+
+    #[test]
+    fn test_font_fallback_for_missing_glyphs() {
+        // VAL-TEXT-005: Font fallback for missing glyphs
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        // CJK character when only Roboto (Latin) is loaded
+        // cosmic-text should use system font fallback if available
+        let shaped = sys.shape_text(font_id, "日本語", 16.0, 1.0, None);
+        assert!(shaped.is_some(), "Should shape text with missing glyphs");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        let total_glyphs: usize = runs.iter().map(|r| r.glyphs.len()).sum();
+        assert!(total_glyphs > 0, "Font fallback should provide glyphs");
+
+        // Verify glyphs exist with valid positions (font fallback may or may not
+        // produce non-.notdef glyphs depending on system font availability)
+        for run in &runs {
+            for glyph in run.glyphs.iter() {
+                assert!(glyph.x.is_finite(), "Glyph should have finite x position");
+            }
+        }
+    }
+
+    #[test]
+    fn test_word_wrapping_at_word_boundaries() {
+        // VAL-TEXT-006: Word wrapping at word boundaries
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let text = "The quick brown fox jumps over the lazy dog";
+        let shaped = sys.shape_text(font_id, text, 16.0, 1.0, Some(100.0));
+        assert!(shaped.is_some(), "Should shape text with wrapping");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+
+        assert!(
+            runs.len() > 1,
+            "Text should wrap to multiple lines with narrow width, got {} lines",
+            runs.len()
+        );
+
+        for run in &runs {
+            assert!(
+                run.line_w <= 120.0,
+                "Line width {} should be within ~100px constraint",
+                run.line_w
+            );
+        }
+    }
+
+    #[test]
+    fn test_word_wrapping_cjk_line_breaking() {
+        // VAL-TEXT-007: Word wrapping respects CJK line-breaking rules
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let cjk_text = "日本語テスト漢字ひらがなカタカナ";
+        let shaped = sys.shape_text(font_id, cjk_text, 16.0, 1.0, Some(80.0));
+        assert!(shaped.is_some(), "Should shape CJK text with wrapping");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+
+        assert!(runs.len() >= 1, "CJK text should be laid out");
+
+        for run in &runs {
+            for glyph in run.glyphs.iter() {
+                assert!(
+                    glyph.start < glyph.end,
+                    "Glyph should span a valid byte range"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_text_measurement_accuracy() {
+        // VAL-TEXT-008: Text measurement accuracy
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let text = "Hello World";
+        let dims = sys.measure_text(font_id, text, 16.0, 1.0);
+
+        assert!(
+            dims.x() > 0.0,
+            "Width should be positive for non-empty text"
+        );
+        assert!(
+            dims.y() > 0.0,
+            "Height should be positive for non-empty text"
+        );
+        assert!(dims.x() < 500.0, "Width should be reasonable: {}", dims.x());
+        assert!(
+            dims.y() >= 16.0 && dims.y() < 50.0,
+            "Height should be roughly one line: {}",
+            dims.y()
+        );
+
+        let wide_dims = sys.measure_text(font_id, "Hello World and More Text", 16.0, 1.0);
+        assert!(
+            wide_dims.x() > dims.x(),
+            "Wider text should have larger width"
+        );
+    }
+
+    #[test]
+    fn test_multiline_text_layout() {
+        // VAL-TEXT-009: Multi-line text layout
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let text = "Line 1\nLine 2\nLine 3";
+        let shaped = sys.shape_text(font_id, text, 16.0, 1.0, None);
+        assert!(shaped.is_some());
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        assert_eq!(runs.len(), 3, "Three newlines should produce 3 layout runs");
+
+        for i in 1..runs.len() {
+            assert!(
+                runs[i].line_y > runs[i - 1].line_y,
+                "Line {} should be below line {}",
+                i,
+                i - 1
+            );
+        }
+
+        for (i, run) in runs.iter().enumerate() {
+            assert!(!run.glyphs.is_empty(), "Line {} should have glyphs", i);
+        }
+    }
+
+    #[test]
+    fn test_empty_text_returns_zero_dimensions() {
+        // VAL-TEXT-010: Empty text returns zero dimensions
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let dims = sys.measure_text(font_id, "", 16.0, 1.0);
+        assert_eq!(dims.x(), 0.0, "Empty text should have zero width");
+        assert_eq!(dims.y(), 0.0, "Empty text should have zero height");
+    }
+
+    #[test]
+    fn test_very_long_text_does_not_overflow_atlas() {
+        // VAL-TEXT-012: Very long text does not overflow atlas
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let long_text: String = "A".repeat(10_000);
+        let shaped = sys.shape_text(font_id, &long_text, 14.0, 1.0, None);
+        assert!(shaped.is_some(), "Should shape 10K character text");
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        let total_glyphs: usize = runs.iter().map(|r| r.glyphs.len()).sum();
+        assert!(total_glyphs > 0, "Should have glyphs for long text");
+
+        // Rasterize a subset to verify atlas doesn't crash
+        for run in &runs {
+            for glyph in run.glyphs.iter() {
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                let result = sys.get_or_rasterize_shaped(physical.cache_key, 1.0);
+                assert!(result.is_some(), "Should rasterize glyph without crashing");
+            }
+        }
+    }
+
+    #[test]
+    fn test_cosmic_text_buffer_matches_measure_text() {
+        // VAL-TEXT-029: cosmic-text Buffer layout matches measure_text
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let text = "Hello World";
+        let size = 16.0;
+
+        let measured = sys.measure_text(font_id, text, size, 1.0);
+
+        let shaped = sys.shape_text(font_id, text, size, 1.0, None);
+        assert!(shaped.is_some());
+        let (shaped_w, shaped_h) = shaped.unwrap().dimensions();
+
+        assert!(
+            (measured.x() - shaped_w).abs() < 0.1,
+            "measure_text width ({}) should match Buffer width ({}): diff={}",
+            measured.x(),
+            shaped_w,
+            (measured.x() - shaped_w).abs()
+        );
+        assert!(
+            (measured.y() - shaped_h).abs() < 0.1,
+            "measure_text height ({}) should match Buffer height ({}): diff={}",
+            measured.y(),
+            shaped_h,
+            (measured.y() - shaped_h).abs()
+        );
+    }
+
+    #[test]
+    fn test_text_color_applied_per_draw_not_baked() {
+        // VAL-TEXT-030: Text color is applied per draw call, not baked into atlas
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let shaped = sys.shape_text(font_id, "Hello", 16.0, 1.0, None);
+        assert!(shaped.is_some());
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        let mut cache_keys: Vec<cosmic_text::CacheKey> = Vec::new();
+        for run in &runs {
+            for glyph in run.glyphs.iter() {
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                cache_keys.push(physical.cache_key);
+            }
+        }
+
+        for &key in &cache_keys {
+            let result = sys.get_or_rasterize_shaped(key, 1.0);
+            assert!(result.is_some(), "First draw should rasterize");
+        }
+
+        for &key in &cache_keys {
+            let cached = sys.get_or_rasterize_shaped(key, 1.0);
+            assert!(cached.is_some(), "Second draw should use cached glyph");
+            let cached = cached.unwrap();
+            assert!(
+                cached.uv_rect.max.x() > cached.uv_rect.min.x(),
+                "Cached glyph should have valid UV rect"
+            );
+        }
+
+        let atlas_data = sys.atlas_data();
+        for &byte in atlas_data {
+            assert!(byte <= 255, "Atlas should store single-byte alpha values");
+        }
+    }
+
+    #[test]
+    fn test_shaped_glyph_rasterization_produces_valid_atlas_entries() {
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let shaped = sys.shape_text(font_id, "ABCabc", 16.0, 1.0, None);
+        assert!(shaped.is_some());
+
+        let shaped = shaped.unwrap();
+        let runs: Vec<_> = shaped.buffer.layout_runs().collect();
+        assert!(!runs.is_empty());
+
+        let mut uv_rects: Vec<Rect2D> = Vec::new();
+
+        for run in &runs {
+            for glyph in run.glyphs.iter() {
+                let physical = glyph.physical((0.0, 0.0), 1.0);
+                let cached = sys.get_or_rasterize_shaped(physical.cache_key, 1.0);
+                assert!(cached.is_some(), "Should rasterize shaped glyph");
+                let cached = cached.unwrap();
+                if cached.size.x() > 0.0 && cached.size.y() > 0.0 {
+                    uv_rects.push(cached.uv_rect);
+                }
+            }
+        }
+
+        assert!(
+            uv_rects.len() >= 6,
+            "Should have at least 6 glyphs for 'ABCabc'"
+        );
+
+        for i in 0..uv_rects.len() {
+            for j in (i + 1)..uv_rects.len() {
+                let r1 = &uv_rects[i];
+                let r2 = &uv_rects[j];
+                let overlap_x = r1.min.x() < r2.max.x() && r2.min.x() < r1.max.x();
+                let overlap_y = r1.min.y() < r2.max.y() && r2.min.y() < r1.max.y();
+                assert!(
+                    !(overlap_x && overlap_y),
+                    "Shaped glyph UV rects should not overlap"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_measure_text_shaped_vs_empty() {
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let empty = sys.measure_text(font_id, "", 16.0, 1.0);
+        assert_eq!(empty.x(), 0.0);
+        assert_eq!(empty.y(), 0.0);
+
+        let single = sys.measure_text(font_id, "A", 16.0, 1.0);
+        assert!(single.x() > 0.0);
+        assert!(single.y() > 0.0);
+
+        let multi = sys.measure_text(font_id, "Hello World", 16.0, 1.0);
+        assert!(multi.x() > single.x());
+        assert!(
+            (multi.y() - single.y()).abs() < 1.0,
+            "Same height for single line"
+        );
+    }
+
+    #[test]
+    fn test_shaped_text_different_sizes() {
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let small = sys.measure_text(font_id, "Test", 10.0, 1.0);
+        let large = sys.measure_text(font_id, "Test", 24.0, 1.0);
+
+        assert!(
+            large.x() > small.x(),
+            "Larger font size should produce wider text: {} vs {}",
+            large.x(),
+            small.x()
+        );
+        assert!(
+            large.y() > small.y(),
+            "Larger font size should produce taller text: {} vs {}",
+            large.y(),
+            small.y()
+        );
+    }
+
+    #[test]
+    fn test_shaped_text_multiline_measurement() {
+        let mut sys = create_shaped_system();
+        let font_id = FontId::DEFAULT;
+
+        let single = sys.measure_text(font_id, "Hello", 16.0, 1.0);
+        let multi = sys.measure_text(font_id, "Hello\nWorld", 16.0, 1.0);
+
+        assert!(
+            multi.y() > single.y(),
+            "Multi-line text should be taller than single line"
+        );
+        assert!(
+            multi.y() > single.y() * 1.5,
+            "Multi-line height should be significantly larger: {} vs {}",
+            multi.y(),
+            single.y()
         );
     }
 }

@@ -96,12 +96,34 @@ impl super::FontSystem {
         (total_kerning as f32 * scale) / scale_factor
     }
 
-    /// Measure text dimensions without rendering.
+    /// Measure text dimensions using cosmic-text for proper shaping.
     ///
     /// Returns dimensions in logical pixels.
-    /// This method includes kerning between character pairs.
+    /// This method uses cosmic-text Buffer for shaping, which handles kerning,
+    /// ligatures, BiDi, CJK line breaking, and font fallback.
     #[inline]
-    pub fn measure_text(&self, font_id: FontId, text: &str, size: f32, scale_factor: f32) -> Vec2 {
+    pub fn measure_text(
+        &mut self,
+        font_id: FontId,
+        text: &str,
+        size: f32,
+        scale_factor: f32,
+    ) -> Vec2 {
+        self.measure_text_shaped(font_id, text, size, scale_factor)
+    }
+
+    /// Measure text dimensions using legacy char-by-char approach.
+    ///
+    /// This is kept as a fallback for when cosmic-text is not available
+    /// (e.g., when no font family name is registered).
+    #[allow(dead_code)]
+    pub fn measure_text_legacy(
+        &self,
+        font_id: FontId,
+        text: &str,
+        size: f32,
+        scale_factor: f32,
+    ) -> Vec2 {
         let font = match self.get_font(font_id) {
             Some(f) => f,
             None => return Vec2::new(0.0, 0.0),

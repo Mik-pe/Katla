@@ -218,7 +218,9 @@ impl ViewTree {
                 let size = font_size
                     .unwrap_or(crate::style::FontSize::Medium)
                     .to_pixels();
-                fonts.borrow().measure_text(font_id, content, size, scale)
+                fonts
+                    .borrow_mut()
+                    .measure_text(font_id, content, size, scale)
             };
             taffy.sync(self, &measure);
         }
@@ -679,6 +681,14 @@ impl ViewTree {
                 self.draw_child_recursive(grandchild_id, ui, draw_bounds, child_scroll);
             }
         }
+
+        child_node.widget.draw_after_children(
+            ui,
+            &self.state,
+            draw_bounds,
+            &grandchildren,
+            &grandchildren_bounds,
+        );
 
         if child_needs_clip {
             ui.pop_clip();
