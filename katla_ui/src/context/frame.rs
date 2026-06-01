@@ -46,10 +46,8 @@ impl UiContext {
             .push(katla_math::Rect2D::from_size(screen_size));
         self.pending_tooltips.clear();
         self.panel_regions.clear();
-        self.input.prev_active_id = self.active_id;
         self.focusable_widgets.clear();
         self.declarative_input_consumed = false;
-        self.pending_focus_label = None;
     }
 
     /// End the frame and get the draw list.

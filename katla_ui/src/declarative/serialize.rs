@@ -1,9 +1,3 @@
-use katla_math::Color;
-
-use crate::style::FontSize;
-
-use super::descriptor::Padding;
-
 /// Serializable subset of a widget tree with no callbacks or fn pointers.
 ///
 /// This is a plain data type suitable for serialization. Users can derive
@@ -51,30 +45,6 @@ pub trait BindingResolver {
     fn resolve_u32(&self, key: &str) -> Option<u32>;
     fn resolve_string(&self, key: &str) -> Option<String>;
     fn resolve_bool(&self, key: &str) -> Option<bool>;
-}
-
-fn _color_from_array(arr: [f32; 4]) -> Color {
-    Color::new(arr[0], arr[1], arr[2], arr[3])
-}
-
-fn _parse_font_size(s: &str) -> FontSize {
-    match s {
-        "XSmall" => FontSize::XSmall,
-        "Small" => FontSize::Small,
-        "Medium" => FontSize::Medium,
-        "Large" => FontSize::Large,
-        "XLarge" => FontSize::XLarge,
-        _ => FontSize::Medium,
-    }
-}
-
-fn _padding_from_array(arr: [f32; 4]) -> Padding {
-    Padding {
-        top: arr[0],
-        right: arr[1],
-        bottom: arr[2],
-        left: arr[3],
-    }
 }
 
 #[cfg(test)]

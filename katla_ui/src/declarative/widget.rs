@@ -511,7 +511,6 @@ mod tests {
         let w: Box<dyn Widget> = Box::new(Button {
             label: "Click".into(),
             fill_color: None,
-            hover_color: None,
             border_color: None,
             on_click: None,
         });
