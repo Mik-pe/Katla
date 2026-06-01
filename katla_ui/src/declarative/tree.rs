@@ -108,11 +108,11 @@ impl ViewTree {
                         }
                         if let Some(node) = self.nodes.get_mut(root_id) {
                             node.children.clear();
-                            node.state_version += 1;
                         }
                     }
                     if let Some(node) = self.nodes.get_mut(root_id) {
                         node.widget = widget;
+                        node.state_version += 1;
                     }
                     self.sync_tree_from_node(root_id);
                 }
@@ -222,7 +222,7 @@ impl ViewTree {
                     .borrow_mut()
                     .measure_text(font_id, content, size, scale)
             };
-            taffy.sync(self, &measure);
+            taffy.sync(self, &measure); // &mut ViewTree for taffy_id writeback
         }
         let bounds = taffy.compute(root_id, screen_size, self);
         self.taffy = taffy;
@@ -745,6 +745,7 @@ impl ViewTree {
             DiffAction::RecurseChildren => {
                 if let Some(node) = self.nodes.get_mut(root_id) {
                     node.widget = widget;
+                    node.state_version += 1;
                 }
                 self.sync_tree_from_node(root_id);
             }
@@ -1875,7 +1876,7 @@ mod tests {
         let mut taffy = TaffyNodeMap::new();
         // Use a simple measure that always returns zero
         let measure = |_: &str, _: Option<crate::style::FontSize>| Vec2::new(0.0, 0.0);
-        taffy.sync(&tree, &measure);
+        taffy.sync(&mut tree, &measure);
         let _bounds = taffy.compute(root_id, Vec2::new(0.0, 0.0), &tree);
         // If we get here without panic, the test passes
     }
