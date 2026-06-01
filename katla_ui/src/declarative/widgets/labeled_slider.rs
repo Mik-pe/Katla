@@ -60,7 +60,7 @@ impl Widget for LabeledSlider {
             return InputResult::Ignore;
         }
 
-        if !ctx.input.mouse_pressed[mouse_button::LEFT] {
+        if !ctx.input.mouse_down[mouse_button::LEFT] {
             return InputResult::Ignore;
         }
 
@@ -91,7 +91,8 @@ impl Widget for LabeledSlider {
     ) {
         let value: f32 = state.get(self.value_id).unwrap_or_default();
         let t = if *self.range.end() > *self.range.start() {
-            (value - *self.range.start()) / (*self.range.end() - *self.range.start())
+            ((value - *self.range.start()) / (*self.range.end() - *self.range.start()))
+                .clamp(0.0, 1.0)
         } else {
             0.0
         };
@@ -260,7 +261,7 @@ mod tests {
 
         let mut input = UiInputState::new();
         input.mouse_pos = Vec2::new(140.0, 10.0);
-        input.mouse_pressed[mouse_button::LEFT] = true;
+        input.mouse_down[mouse_button::LEFT] = true;
 
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 20.0));
 

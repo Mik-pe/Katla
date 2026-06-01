@@ -60,7 +60,7 @@ impl Widget for Vec3Slider {
             return InputResult::Ignore;
         }
 
-        if !ctx.input.mouse_pressed[mouse_button::LEFT] {
+        if !ctx.input.mouse_down[mouse_button::LEFT] {
             return InputResult::Ignore;
         }
 
@@ -119,7 +119,8 @@ impl Widget for Vec3Slider {
 
             let value: f32 = state.get(self.value_ids[i]).unwrap_or_default();
             let t = if *self.range.end() > *self.range.start() {
-                (value - *self.range.start()) / (*self.range.end() - *self.range.start())
+                ((value - *self.range.start()) / (*self.range.end() - *self.range.start()))
+                    .clamp(0.0, 1.0)
             } else {
                 0.0
             };
@@ -228,7 +229,7 @@ mod tests {
 
         let mut input = UiInputState::new();
         input.mouse_pos = Vec2::new(60.0, 5.0);
-        input.mouse_pressed[mouse_button::LEFT] = true;
+        input.mouse_down[mouse_button::LEFT] = true;
 
         let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 60.0));
 
