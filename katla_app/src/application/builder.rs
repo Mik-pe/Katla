@@ -836,9 +836,9 @@ impl ApplicationBuilder {
         let (font_atlas_handle, atlas_width, atlas_height) = {
             let fonts = ui_context.fonts();
             let (atlas_width, atlas_height) = fonts.atlas_size();
-            let atlas_data = fonts.atlas_data();
+            let atlas_data = fonts.atlas_data_rgba();
             (
-                renderer.create_ui_font_atlas(atlas_width, atlas_height, atlas_data),
+                renderer.create_ui_font_atlas(atlas_width, atlas_height, &atlas_data),
                 atlas_width,
                 atlas_height,
             )

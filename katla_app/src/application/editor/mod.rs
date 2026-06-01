@@ -305,7 +305,7 @@ pub fn upload_font_atlas(app: &mut Application) {
         return;
     }
 
-    let data = app.ui_context.fonts().atlas_data().to_vec();
+    let data = app.ui_context.fonts().atlas_data_rgba();
 
     if was_resized {
         let atlas_handle = app.renderer.create_ui_font_atlas(width, height, &data);
