@@ -5,7 +5,7 @@
 use crate::types::TextureId;
 use katla_math::{Color, Rect2D, Vec2};
 
-use crate::text::{FontId, SubpixelBin};
+use crate::text::FontId;
 
 use super::UiContext;
 use super::z_index;
@@ -133,24 +133,19 @@ impl UiContext {
         self.draw_list.add_line(start, end, color, thickness);
     }
 
-    /// Draw text using the font system.
+    /// Draw text using the font system with cosmic-text shaping.
     ///
-    /// Text is rendered as textured quads from the font atlas.
+    /// Text is rendered as textured quads from the font atlas, using cosmic-text
+    /// for proper text shaping (kerning, ligatures, BiDi, CJK, word wrapping).
     /// If no font is loaded, draws placeholder rectangles.
     ///
     /// `position` is the TOP-LEFT of the text bounding box.
-    /// This is the most intuitive API for UI work.
-    ///
-    /// Supports multiline text with `\n` characters.
     pub(crate) fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
+        if text.is_empty() {
+            return;
+        }
+
         let font_atlas = self.fonts.borrow().atlas_id();
-
-        let (floor_x, subpixel_bin) = SubpixelBin::new(position.x());
-        let start_x = floor_x as f32;
-
-        let line_height = self.line_height(size);
-        let font_ascent = self.font_ascent(size);
-        let baseline_y_start = (position.y() + font_ascent).round();
 
         struct GlyphEntry {
             bounds: Rect2D,
@@ -159,51 +154,63 @@ impl UiContext {
         }
 
         let mut glyphs = Vec::new();
-        let mut cursor_offset = 0.0f32;
-        let mut current_baseline = baseline_y_start;
+        let scale = self.scale_factor;
 
         {
             let mut fonts = self.fonts.borrow_mut();
-            for c in text.chars() {
-                if c == '\n' {
-                    cursor_offset = 0.0;
-                    current_baseline += line_height;
-                    continue;
-                }
 
-                let glyph = fonts.get_or_rasterize(
-                    self.current_font,
-                    c,
-                    size,
-                    self.scale_factor,
-                    subpixel_bin,
-                );
-                if let Some(glyph) = glyph {
-                    if glyph.size.x() == 0.0 || glyph.size.y() == 0.0 {
-                        cursor_offset += glyph.advance;
-                        continue;
+            let shaped = fonts.shape_text(self.current_font, text, size, scale, None);
+
+            match shaped {
+                Some(shaped) => {
+                    for run in shaped.buffer.layout_runs() {
+                        for glyph in run.glyphs.iter() {
+                            let physical = glyph.physical((0.0, 0.0), 1.0);
+
+                            let cached = fonts.get_or_rasterize_shaped(physical.cache_key, scale);
+
+                            if let Some(cached) = cached {
+                                if cached.size.x() == 0.0 || cached.size.y() == 0.0 {
+                                    continue;
+                                }
+
+                                let pos_x =
+                                    position.x() + physical.x as f32 + cached.offset_x * scale;
+                                let pos_y = position.y() + (run.line_y - glyph.y_offset) * scale
+                                    - cached.top_offset * scale;
+
+                                glyphs.push(GlyphEntry {
+                                    bounds: Rect2D::from_origin_size(
+                                        Vec2::new(pos_x, pos_y),
+                                        cached.size,
+                                    ),
+                                    uv_rect: cached.uv_rect,
+                                    is_placeholder: false,
+                                });
+                            } else {
+                                let placeholder_size = Vec2::new(size * 0.6, size);
+                                glyphs.push(GlyphEntry {
+                                    bounds: Rect2D::from_origin_size(
+                                        Vec2::new(
+                                            position.x() + physical.x as f32,
+                                            position.y() + run.line_y,
+                                        ),
+                                        placeholder_size,
+                                    ),
+                                    uv_rect: Rect2D::default(),
+                                    is_placeholder: true,
+                                });
+                            }
+                        }
                     }
-
-                    let pos_x = start_x + cursor_offset + glyph.offset_x;
-                    let pos_y = current_baseline - glyph.top_offset;
-
-                    glyphs.push(GlyphEntry {
-                        bounds: Rect2D::from_origin_size(Vec2::new(pos_x, pos_y), glyph.size),
-                        uv_rect: glyph.uv_rect,
-                        is_placeholder: false,
-                    });
-                    cursor_offset += glyph.advance;
-                } else {
+                }
+                None => {
                     let placeholder_size = Vec2::new(size * 0.6, size);
                     glyphs.push(GlyphEntry {
-                        bounds: Rect2D::from_origin_size(
-                            Vec2::new(start_x + cursor_offset, current_baseline - font_ascent),
-                            placeholder_size,
-                        ),
+                        bounds: Rect2D::from_origin_size(position, placeholder_size),
                         uv_rect: Rect2D::default(),
                         is_placeholder: true,
                     });
-                    cursor_offset += placeholder_size.x();
                 }
             }
         }
@@ -223,7 +230,7 @@ impl UiContext {
     #[inline]
     pub(crate) fn measure_text(&self, text: &str, size: f32) -> Vec2 {
         self.fonts
-            .borrow()
+            .borrow_mut()
             .measure_text(self.current_font, text, size, self.scale_factor)
     }
 
@@ -233,32 +240,8 @@ impl UiContext {
         let mut buf = [0u8; 4];
         let icon_str = icon.encode_utf8(&mut buf);
         self.fonts
-            .borrow()
+            .borrow_mut()
             .measure_text(crate::FontId::ICON, icon_str, size, self.scale_factor)
-    }
-
-    /// Get the font ascent (baseline to font top) in logical pixels.
-    ///
-    /// This is needed for proper text positioning.
-    #[inline]
-    pub(crate) fn font_ascent(&self, size: f32) -> f32 {
-        self.fonts
-            .borrow()
-            .get_font_metrics(self.current_font, size, self.scale_factor)
-            .map(|(ascent, _, _)| ascent)
-            .unwrap_or(size * 0.75) // Fallback heuristic
-    }
-
-    /// Get the line height for a font size (ascent - descent + small gap).
-    ///
-    /// This is used for multiline text spacing.
-    #[inline]
-    pub(crate) fn line_height(&self, size: f32) -> f32 {
-        self.fonts
-            .borrow()
-            .get_font_metrics(self.current_font, size, self.scale_factor)
-            .map(|(ascent, descent, line_gap)| ascent - descent + line_gap)
-            .unwrap_or(size * 1.2) // Fallback heuristic
     }
 
     /// Draw an icon from an icon font (like ForkAwesome).

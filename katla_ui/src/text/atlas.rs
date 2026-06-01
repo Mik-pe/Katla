@@ -143,6 +143,7 @@ impl super::FontSystem {
         ));
 
         self.glyph_cache.clear();
+        self.shaped_cache.clear();
 
         true
     }
@@ -150,6 +151,7 @@ impl super::FontSystem {
     /// Clear the glyph cache and atlas.
     pub fn clear_cache(&mut self) {
         self.glyph_cache.clear();
+        self.shaped_cache.clear();
         self.atlas_data.fill(0);
         self.atlas_allocator.clear();
     }
