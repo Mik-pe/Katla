@@ -1,13 +1,19 @@
 //! Text rendering and font handling.
 //!
 //! This module provides font loading, glyph caching, and text rendering
-//! using the `skrifa` library for font parsing and `vello_cpu` for rasterization.
+//! using `swash` for rasterization and `etagere` for atlas packing.
 //!
 //! # Subpixel Positioning
 //!
-//! For crisp text at any position, we use 4 subpixel bins (0.0, 0.25, 0.5, 0.75)
+//! For crisp text at any position, we use 3 subpixel bins (0.0, 1/3, 2/3)
 //! for horizontal positioning. Each bin caches a separate version of the glyph,
-//! shifted by the subpixel offset. This approach is inspired by egui and cosmic-text.
+//! shifted by the subpixel offset. This approach is inspired by cosmic-text.
+//!
+//! # Atlas Packing
+//!
+//! Glyphs are packed into a shelf-based atlas using `etagere::BucketedAtlasAllocator`,
+//! the same algorithm used by Firefox WebRender. The atlas stores R8 alpha-only data,
+//! which is tinted at render time by the text color.
 //!
 //! # Gamma Correction
 //!
@@ -60,52 +66,48 @@ impl FontId {
 
 /// Subpixel bin for horizontal glyph positioning.
 ///
-/// We use 4 bins representing 0.0, 0.25, 0.5, and 0.75 subpixel offsets.
+/// We use 3 bins representing 0.0, 1/3, and 2/3 subpixel offsets.
 /// This allows crisp text rendering at any fractional X position by caching
-/// 4 versions of each glyph, each shifted by the corresponding subpixel offset.
+/// 3 versions of each glyph, each shifted by the corresponding subpixel offset.
 ///
-/// This approach is used by egui and cosmic-text for high-quality text rendering.
+/// This approach is inspired by cosmic-text and WebRender for high-quality text rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SubpixelBin {
     /// 0.0 subpixel offset
     Zero,
-    /// 0.25 subpixel offset
+    /// 1/3 subpixel offset (~0.333)
     One,
-    /// 0.5 subpixel offset
+    /// 2/3 subpixel offset (~0.666)
     Two,
-    /// 0.75 subpixel offset
-    Three,
 }
 
 impl SubpixelBin {
     /// Create a subpixel bin from a fractional position.
     ///
     /// Returns the integer floor position and the subpixel bin.
-    /// For example, `new(10.3)` returns `(10, SubpixelBin::One)`.
+    /// For example, `new(10.4)` returns `(10, SubpixelBin::One)`.
     #[inline]
     pub fn new(pos: f32) -> (i32, Self) {
         let floor = pos.floor() as i32;
         let frac = pos - floor as f32;
 
-        let bin = match (frac * 4.0) as u32 {
+        let bin = match (frac * 3.0) as u32 {
             0 => SubpixelBin::Zero,
             1 => SubpixelBin::One,
-            2 => SubpixelBin::Two,
-            _ => SubpixelBin::Three,
+            _ => SubpixelBin::Two,
         };
         (floor, bin)
     }
 
     /// Get the subpixel offset for this bin.
     ///
-    /// Returns 0.0, 0.25, 0.5, or 0.75 depending on the bin.
+    /// Returns 0.0, 1/3, or 2/3 depending on the bin.
     #[inline]
     pub fn as_offset(&self) -> f32 {
         match self {
             SubpixelBin::Zero => 0.0,
-            SubpixelBin::One => 0.25,
-            SubpixelBin::Two => 0.5,
-            SubpixelBin::Three => 0.75,
+            SubpixelBin::One => 1.0 / 3.0,
+            SubpixelBin::Two => 2.0 / 3.0,
         }
     }
 }
@@ -182,24 +184,20 @@ pub struct CachedGlyph {
 
 /// Font system managing fonts, glyph cache, and texture atlas.
 pub struct FontSystem {
-    /// Loaded fonts stored with owned data (no Box::leak).
+    /// Loaded fonts stored with owned data.
     pub(super) fonts: HashMap<FontId, Arc<Vec<u8>>>,
     /// Next font ID.
     pub(super) next_font_id: u32,
     /// Glyph cache: (font_id, char, size_key, scale_key, subpixel_bin) -> cached glyph.
     pub(super) glyph_cache:
         HashMap<(FontId, char, FontSizeKey, ScaleFactorKey, SubpixelBin), CachedGlyph>,
+    /// etagere shelf-based atlas allocator for packing glyph rectangles.
+    pub(super) atlas_allocator: etagere::BucketedAtlasAllocator,
     /// Texture atlas width.
     pub(super) atlas_width: u32,
     /// Texture atlas height.
     pub(super) atlas_height: u32,
-    /// Current atlas cursor X.
-    pub(super) atlas_cursor_x: u32,
-    /// Current atlas cursor Y.
-    pub(super) atlas_cursor_y: u32,
-    /// Height of current row in atlas.
-    pub(super) atlas_row_height: u32,
-    /// Atlas pixel data (RGBA).
+    /// Atlas pixel data (R8 alpha-only).
     pub(super) atlas_data: Vec<u8>,
     /// Whether atlas needs rebuild.
     pub(super) atlas_dirty: bool,
@@ -229,20 +227,17 @@ impl FontSystem {
     /// Create a font system with a custom atlas size.
     pub fn with_atlas_size(width: u32, height: u32) -> Self {
         let pixel_count = (width * height) as usize;
-        let mut atlas_data = vec![255u8; pixel_count * 4];
-        for i in 0..pixel_count {
-            atlas_data[i * 4 + 3] = 0;
-        }
+        let atlas_data = vec![0u8; pixel_count];
+        let atlas_allocator =
+            etagere::BucketedAtlasAllocator::new(etagere::size2(width as i32, height as i32));
 
         Self {
             fonts: HashMap::new(),
             next_font_id: 0,
             glyph_cache: HashMap::new(),
+            atlas_allocator,
             atlas_width: width,
             atlas_height: height,
-            atlas_cursor_x: 0,
-            atlas_cursor_y: 0,
-            atlas_row_height: 0,
             atlas_data,
             atlas_dirty: true,
             atlas_resized: false,
@@ -289,28 +284,36 @@ mod tests {
 
     #[test]
     fn test_subpixel_bin_boundary() {
-        let (floor, bin) = SubpixelBin::new(10.249);
+        let (floor, bin) = SubpixelBin::new(10.332);
         assert_eq!(floor, 10);
         assert_eq!(bin, SubpixelBin::Zero);
 
-        let (floor, bin) = SubpixelBin::new(10.25);
+        let (floor, bin) = SubpixelBin::new(10.334);
         assert_eq!(floor, 10);
         assert_eq!(bin, SubpixelBin::One);
 
+        let (floor, bin) = SubpixelBin::new(10.667);
+        assert_eq!(floor, 10);
+        assert_eq!(bin, SubpixelBin::Two);
+
         let (floor, bin) = SubpixelBin::new(10.99);
         assert_eq!(floor, 10);
-        assert_eq!(bin, SubpixelBin::Three);
+        assert_eq!(bin, SubpixelBin::Two);
     }
 
     #[test]
     fn test_subpixel_bin_negative() {
-        let (floor, bin) = SubpixelBin::new(-0.3);
+        let (floor, bin) = SubpixelBin::new(-0.2);
         assert_eq!(floor, -1);
         assert_eq!(bin, SubpixelBin::Two);
 
         let (floor, bin) = SubpixelBin::new(-0.8);
         assert_eq!(floor, -1);
         assert_eq!(bin, SubpixelBin::Zero);
+
+        let (floor, bin) = SubpixelBin::new(-0.4);
+        assert_eq!(floor, -1);
+        assert_eq!(bin, SubpixelBin::One);
     }
 
     #[test]
@@ -498,94 +501,60 @@ mod tests {
     }
 
     #[test]
-    fn test_clear_cache_cursor_position() {
+    fn test_clear_cache_resets_atlas() {
         let mut sys = FontSystem::new();
 
-        sys.atlas_cursor_x = 100;
-        sys.atlas_cursor_y = 50;
+        assert!(!sys.atlas_needs_update() || sys.atlas_dirty);
 
         sys.clear_cache();
 
-        assert_eq!(
-            sys.atlas_cursor_x, 0,
-            "atlas_cursor_x should be 0 after clear_cache()"
+        assert!(
+            sys.glyph_cache.is_empty(),
+            "glyph_cache should be empty after clear_cache()"
         );
-        assert_eq!(
-            sys.atlas_cursor_y, 0,
-            "atlas_cursor_y should be 0 after clear_cache()"
+        assert!(
+            sys.atlas_data.iter().all(|&v| v == 0),
+            "atlas_data should be all zeros after clear_cache()"
         );
     }
 
     #[test]
     fn test_initialization_consistency() {
         let sys1 = FontSystem::new();
-        assert_eq!(sys1.atlas_cursor_x, 0);
-        assert_eq!(sys1.atlas_cursor_y, 0);
+        assert_eq!(sys1.atlas_data.len(), 256 * 256);
+        assert!(sys1.atlas_data.iter().all(|&v| v == 0));
 
         let sys2 = FontSystem::with_atlas_size(512, 512);
-        assert_eq!(sys2.atlas_cursor_x, 0);
-        assert_eq!(sys2.atlas_cursor_y, 0);
+        assert_eq!(sys2.atlas_data.len(), 512 * 512);
 
         let mut sys3 = FontSystem::new();
-        sys3.atlas_cursor_x = 100;
         sys3.clear_cache();
-        assert_eq!(sys3.atlas_cursor_x, 0);
-        assert_eq!(sys3.atlas_cursor_y, 0);
+        assert!(sys3.glyph_cache.is_empty());
     }
 
     #[test]
     fn test_subpixel_bin_comprehensive_fractional_coverage() {
         let test_cases = [
             (0.0, 0, SubpixelBin::Zero, "exact integer -> Zero"),
+            (0.1, 0, SubpixelBin::Zero, "well below 1/3 boundary -> Zero"),
             (
-                0.124,
+                0.332,
                 0,
                 SubpixelBin::Zero,
-                "just below 0.25 boundary -> Zero",
+                "just below 1/3 boundary -> Zero",
             ),
-            (
-                0.125,
-                0,
-                SubpixelBin::Zero,
-                "midpoint of Zero range -> Zero",
-            ),
-            (
-                0.249,
-                0,
-                SubpixelBin::Zero,
-                "just below 0.25 boundary -> Zero",
-            ),
-            (0.25, 0, SubpixelBin::One, "exact 0.25 boundary -> One"),
-            (0.375, 0, SubpixelBin::One, "midpoint of One range -> One"),
-            (0.499, 0, SubpixelBin::One, "just below 0.5 boundary -> One"),
-            (0.5, 0, SubpixelBin::Two, "exact 0.5 boundary -> Two"),
-            (0.625, 0, SubpixelBin::Two, "midpoint of Two range -> Two"),
-            (
-                0.749,
-                0,
-                SubpixelBin::Two,
-                "just below 0.75 boundary -> Two",
-            ),
-            (0.75, 0, SubpixelBin::Three, "exact 0.75 boundary -> Three"),
-            (
-                0.875,
-                0,
-                SubpixelBin::Three,
-                "midpoint of Three range -> Three",
-            ),
-            (
-                0.999,
-                0,
-                SubpixelBin::Three,
-                "just below 1.0 boundary -> Three",
-            ),
+            (0.334, 0, SubpixelBin::One, "just above 1/3 boundary -> One"),
+            (0.5, 0, SubpixelBin::One, "midpoint of One range -> One"),
+            (0.665, 0, SubpixelBin::One, "just below 2/3 boundary -> One"),
+            (0.667, 0, SubpixelBin::Two, "just above 2/3 boundary -> Two"),
+            (0.8, 0, SubpixelBin::Two, "midpoint of Two range -> Two"),
+            (0.999, 0, SubpixelBin::Two, "just below 1.0 boundary -> Two"),
             (10.0, 10, SubpixelBin::Zero, "integer 10 -> Zero"),
             (10.1, 10, SubpixelBin::Zero, "10.1 -> Zero"),
-            (10.25, 10, SubpixelBin::One, "10.25 -> One"),
-            (10.5, 10, SubpixelBin::Two, "10.5 -> Two"),
-            (10.75, 10, SubpixelBin::Three, "10.75 -> Three"),
-            (100.24, 100, SubpixelBin::Zero, "100.24 -> Zero"),
-            (100.26, 100, SubpixelBin::One, "100.26 -> One"),
+            (10.334, 10, SubpixelBin::One, "10.334 -> One"),
+            (10.667, 10, SubpixelBin::Two, "10.667 -> Two"),
+            (100.1, 100, SubpixelBin::Zero, "100.1 -> Zero"),
+            (100.4, 100, SubpixelBin::One, "100.4 -> One"),
         ];
 
         for (pos, expected_floor, expected_bin, desc) in test_cases {
@@ -600,9 +569,8 @@ mod tests {
                 bin.as_offset(),
                 match expected_bin {
                     SubpixelBin::Zero => 0.0,
-                    SubpixelBin::One => 0.25,
-                    SubpixelBin::Two => 0.5,
-                    SubpixelBin::Three => 0.75,
+                    SubpixelBin::One => 1.0 / 3.0,
+                    SubpixelBin::Two => 2.0 / 3.0,
                 },
                 "{}: offset mismatch for pos={}",
                 desc,
@@ -629,7 +597,7 @@ mod tests {
             );
         }
 
-        let text_start_pos2 = 100.3;
+        let text_start_pos2 = 100.4;
         let (floor2, bin2) = SubpixelBin::new(text_start_pos2);
         assert_eq!(floor2, 100);
         assert_eq!(bin2, SubpixelBin::One);
@@ -642,8 +610,8 @@ mod tests {
             );
         }
 
-        assert_eq!(bin.as_offset(), 0.0);
-        assert_eq!(bin2.as_offset(), 0.25);
+        assert!((bin.as_offset() - 0.0).abs() < 0.001);
+        assert!((bin2.as_offset() - 1.0 / 3.0).abs() < 0.001);
     }
 
     #[test]
@@ -864,5 +832,484 @@ mod tests {
                 "UV Y should scale with atlas height"
             );
         }
+    }
+
+    /// Load the bundled Roboto font for testing. Panics if not found.
+    fn load_roboto() -> Vec<u8> {
+        let candidates = [
+            "resources/fonts/roboto-regular.ttf",
+            "../resources/fonts/roboto-regular.ttf",
+            "../../resources/fonts/roboto-regular.ttf",
+        ];
+        for path in &candidates {
+            if let Ok(data) = std::fs::read(path) {
+                return data;
+            }
+        }
+        panic!("Could not find roboto-regular.ttf from any candidate path");
+    }
+
+    /// Helper: create FontSystem with Roboto loaded.
+    fn create_font_system_with_font() -> (FontSystem, FontId) {
+        let mut sys = FontSystem::new();
+        let font_data = load_roboto();
+        let font_id = sys.add_font(&font_data).expect("Failed to load Roboto");
+        (sys, font_id)
+    }
+
+    #[test]
+    fn test_etagere_atlas_packing_no_overlap() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let mut uv_rects: Vec<(char, Rect2D)> = Vec::new();
+
+        for c in 'A'..='z' {
+            let cached = sys
+                .get_or_rasterize(font_id, c, 16.0, 1.0, SubpixelBin::Zero)
+                .expect("Should rasterize");
+
+            if cached.size.x() > 0.0 && cached.size.y() > 0.0 {
+                uv_rects.push((c, cached.uv_rect));
+            }
+        }
+
+        assert!(
+            uv_rects.len() >= 50,
+            "Should have cached at least 50 glyphs, got {}",
+            uv_rects.len()
+        );
+
+        for i in 0..uv_rects.len() {
+            for j in (i + 1)..uv_rects.len() {
+                let (c1, r1) = &uv_rects[i];
+                let (c2, r2) = &uv_rects[j];
+
+                let overlap_x = r1.min.x() < r2.max.x() && r2.min.x() < r1.max.x();
+                let overlap_y = r1.min.y() < r2.max.y() && r2.min.y() < r1.max.y();
+
+                assert!(
+                    !(overlap_x && overlap_y),
+                    "Glyphs '{}' and '{}' have overlapping UV rects: {:?} vs {:?}",
+                    c1,
+                    c2,
+                    r1,
+                    r2
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_atlas_grows_when_full() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let initial_size = sys.atlas_size();
+        let mut max_atlas_width = initial_size.0;
+
+        for size in [12.0, 14.0, 16.0, 20.0, 24.0, 32.0] {
+            for c in ' '..='~' {
+                sys.get_or_rasterize(font_id, c, size, 1.0, SubpixelBin::Zero);
+            }
+            let (w, _h) = sys.atlas_size();
+            max_atlas_width = max_atlas_width.max(w);
+        }
+
+        let final_size = sys.atlas_size();
+        assert!(
+            final_size.0 > initial_size.0 || final_size.1 > initial_size.1,
+            "Atlas should have grown from {}x{} to {}x{}",
+            initial_size.0,
+            initial_size.1,
+            final_size.0,
+            final_size.1,
+        );
+
+        let cached_a = sys
+            .get_or_rasterize(font_id, 'A', 16.0, 1.0, SubpixelBin::Zero)
+            .expect("Should re-rasterize after growth");
+        assert!(
+            cached_a.size.x() > 0.0,
+            "Re-cached glyph should have non-zero size"
+        );
+        assert!(
+            cached_a.uv_rect.min.x() >= 0.0 && cached_a.uv_rect.max.x() <= 1.0,
+            "Re-cached glyph UV should be within atlas bounds"
+        );
+    }
+
+    #[test]
+    fn test_subpixel_bins_produce_distinct_entries() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let bins = [SubpixelBin::Zero, SubpixelBin::One, SubpixelBin::Two];
+
+        let cached: Vec<CachedGlyph> = bins
+            .iter()
+            .map(|&bin| {
+                sys.get_or_rasterize(font_id, 'A', 16.0, 1.0, bin)
+                    .expect("Should rasterize")
+            })
+            .collect();
+
+        for i in 0..cached.len() {
+            for j in (i + 1)..cached.len() {
+                let r1 = cached[i].uv_rect;
+                let r2 = cached[j].uv_rect;
+
+                let different = (r1.min.x() - r2.min.x()).abs() > 0.0001
+                    || (r1.min.y() - r2.min.y()).abs() > 0.0001
+                    || (r1.max.x() - r2.max.x()).abs() > 0.0001
+                    || (r1.max.y() - r2.max.y()).abs() > 0.0001;
+
+                assert!(
+                    different,
+                    "SubpixelBin::{:?} and SubpixelBin::{:?} should produce different UV rects: {:?} vs {:?}",
+                    bins[i], bins[j], r1, r2
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_cache_key_uniqueness() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let g1 = sys
+            .get_or_rasterize(font_id, 'A', 16.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize");
+        let g2 = sys
+            .get_or_rasterize(font_id, 'A', 24.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize");
+        let g3 = sys
+            .get_or_rasterize(font_id, 'B', 16.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize");
+        let g4 = sys
+            .get_or_rasterize(font_id, 'A', 16.0, 1.0, SubpixelBin::One)
+            .expect("Should rasterize");
+        let g5 = sys
+            .get_or_rasterize(font_id, 'A', 16.0, 2.0, SubpixelBin::Zero)
+            .expect("Should rasterize");
+
+        assert!(
+            (g1.uv_rect.min.x() - g2.uv_rect.min.x()).abs() > 0.0001
+                || (g1.uv_rect.min.y() - g2.uv_rect.min.y()).abs() > 0.0001,
+            "Different font sizes should produce different atlas entries"
+        );
+
+        assert!(
+            (g1.uv_rect.min.x() - g3.uv_rect.min.x()).abs() > 0.0001
+                || (g1.uv_rect.min.y() - g3.uv_rect.min.y()).abs() > 0.0001,
+            "Different characters should produce different atlas entries"
+        );
+
+        assert!(
+            (g1.uv_rect.min.x() - g4.uv_rect.min.x()).abs() > 0.0001
+                || (g1.uv_rect.min.y() - g4.uv_rect.min.y()).abs() > 0.0001,
+            "Different subpixel bins should produce different atlas entries"
+        );
+
+        assert!(
+            (g1.uv_rect.min.x() - g5.uv_rect.min.x()).abs() > 0.0001
+                || (g1.uv_rect.min.y() - g5.uv_rect.min.y()).abs() > 0.0001,
+            "Different scale factors should produce different atlas entries"
+        );
+    }
+
+    #[test]
+    fn test_atlas_stores_r8_alpha_only() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let cached = sys
+            .get_or_rasterize(font_id, 'W', 32.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize");
+
+        assert!(
+            cached.size.x() > 0.0 && cached.size.y() > 0.0,
+            "Glyph should have non-zero size"
+        );
+
+        let uv_min_x = cached.uv_rect.min.x();
+        let uv_min_y = cached.uv_rect.min.y();
+        let uv_max_x = cached.uv_rect.max.x();
+        let uv_max_y = cached.uv_rect.max.y();
+
+        let atlas_w = sys.atlas_width as f32;
+        let atlas_h = sys.atlas_height as f32;
+
+        let px_min_x = (uv_min_x * atlas_w) as usize;
+        let px_min_y = (uv_min_y * atlas_h) as usize;
+        let px_max_x = (uv_max_x * atlas_w) as usize;
+        let px_max_y = (uv_max_y * atlas_h) as usize;
+
+        let mut has_nonzero = false;
+        for y in px_min_y..px_max_y {
+            for x in px_min_x..px_max_x {
+                let alpha = sys.atlas_data[y * sys.atlas_width as usize + x];
+                if alpha > 0 {
+                    has_nonzero = true;
+                    assert!(
+                        alpha <= 255,
+                        "Alpha value {} should be <= 255 (R8 range)",
+                        alpha
+                    );
+                }
+            }
+        }
+
+        assert!(
+            has_nonzero,
+            "Glyph region in atlas should have non-zero alpha values"
+        );
+
+        assert_eq!(
+            sys.atlas_data.len(),
+            (sys.atlas_width * sys.atlas_height) as usize,
+            "Atlas data should be 1 byte per pixel (R8)"
+        );
+    }
+
+    #[test]
+    fn test_etagere_allocator_handles_glyph_packing() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let mut cached_count = 0;
+        let mut failed_count = 0;
+
+        for c in ' '..='~' {
+            for bin in [SubpixelBin::Zero, SubpixelBin::One, SubpixelBin::Two] {
+                match sys.get_or_rasterize(font_id, c, 16.0, 1.0, bin) {
+                    Some(_) => cached_count += 1,
+                    None => failed_count += 1,
+                }
+            }
+        }
+
+        assert_eq!(
+            failed_count, 0,
+            "All 95 printable ASCII × 3 subpixel bins should pack successfully"
+        );
+        assert_eq!(
+            cached_count,
+            95 * 3,
+            "Expected 285 cached glyphs (95 chars × 3 bins)"
+        );
+
+        assert!(
+            sys.atlas_dirty,
+            "Atlas should be dirty after caching glyphs"
+        );
+    }
+
+    #[test]
+    fn test_single_character_rasterize_and_atlas() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let cached = sys
+            .get_or_rasterize(font_id, 'X', 16.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize single character");
+
+        assert!(
+            cached.size.x() > 0.0,
+            "Single character should have non-zero width"
+        );
+        assert!(
+            cached.size.y() > 0.0,
+            "Single character should have non-zero height"
+        );
+        assert!(
+            cached.advance > 0.0,
+            "Single character should have non-zero advance"
+        );
+
+        assert!(
+            cached.uv_rect.min.x() >= 0.0 && cached.uv_rect.max.x() <= 1.0,
+            "UV X should be within [0, 1]"
+        );
+        assert!(
+            cached.uv_rect.min.y() >= 0.0 && cached.uv_rect.max.y() <= 1.0,
+            "UV Y should be within [0, 1]"
+        );
+        assert!(
+            cached.uv_rect.max.x() > cached.uv_rect.min.x(),
+            "UV rect should have non-zero width"
+        );
+        assert!(
+            cached.uv_rect.max.y() > cached.uv_rect.min.y(),
+            "UV rect should have non-zero height"
+        );
+    }
+
+    #[test]
+    fn test_mixed_font_sizes_in_atlas() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let small = sys
+            .get_or_rasterize(font_id, 'A', 10.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize 10px");
+        let medium = sys
+            .get_or_rasterize(font_id, 'A', 16.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize 16px");
+        let large = sys
+            .get_or_rasterize(font_id, 'A', 32.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize 32px");
+
+        assert!(
+            small.size.x() < medium.size.x(),
+            "10px should be smaller than 16px: {} vs {}",
+            small.size.x(),
+            medium.size.x()
+        );
+        assert!(
+            medium.size.x() < large.size.x(),
+            "16px should be smaller than 32px: {} vs {}",
+            medium.size.x(),
+            large.size.x()
+        );
+
+        assert!(
+            (small.uv_rect.min.x() - medium.uv_rect.min.x()).abs() > 0.0001
+                || (small.uv_rect.min.y() - medium.uv_rect.min.y()).abs() > 0.0001,
+            "Different sizes should have different atlas positions"
+        );
+        assert!(
+            (medium.uv_rect.min.x() - large.uv_rect.min.x()).abs() > 0.0001
+                || (medium.uv_rect.min.y() - large.uv_rect.min.y()).abs() > 0.0001,
+            "Different sizes should have different atlas positions"
+        );
+    }
+
+    #[test]
+    fn test_atlas_data_rgba_expansion() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        sys.get_or_rasterize(font_id, 'A', 16.0, 1.0, SubpixelBin::Zero);
+
+        let r8_data = sys.atlas_data();
+        let rgba_data = sys.atlas_data_rgba();
+
+        assert_eq!(rgba_data.len(), r8_data.len() * 4);
+
+        let atlas_w = sys.atlas_width as usize;
+        let atlas_h = sys.atlas_height as usize;
+        assert_eq!(r8_data.len(), atlas_w * atlas_h);
+
+        for i in 0..r8_data.len() {
+            let r = rgba_data[i * 4];
+            let g = rgba_data[i * 4 + 1];
+            let b = rgba_data[i * 4 + 2];
+            let a = rgba_data[i * 4 + 3];
+
+            assert_eq!(r, 255, "R channel should be 255");
+            assert_eq!(g, 255, "G channel should be 255");
+            assert_eq!(b, 255, "B channel should be 255");
+            assert_eq!(a, r8_data[i], "Alpha should match R8 data");
+        }
+    }
+
+    #[test]
+    fn test_clear_cache_allows_re_rasterization() {
+        let (mut sys, font_id) = create_font_system_with_font();
+
+        let first = sys
+            .get_or_rasterize(font_id, 'A', 16.0, 1.0, SubpixelBin::Zero)
+            .expect("Should rasterize");
+
+        sys.clear_cache();
+        assert!(sys.glyph_cache.is_empty());
+
+        let second = sys
+            .get_or_rasterize(font_id, 'A', 16.0, 1.0, SubpixelBin::Zero)
+            .expect("Should re-rasterize");
+
+        assert!(
+            (second.size.x() - first.size.x()).abs() < 0.001,
+            "Re-rasterized glyph should have same size"
+        );
+        assert!(
+            (second.advance - first.advance).abs() < 0.001,
+            "Re-rasterized glyph should have same advance"
+        );
+    }
+
+    #[test]
+    fn test_subpixel_bin_count() {
+        let mut bin_offsets = Vec::new();
+        for frac_100 in 0..100 {
+            let pos = frac_100 as f32 / 100.0;
+            let (_, bin) = SubpixelBin::new(pos);
+            bin_offsets.push(bin);
+        }
+
+        let zero_count = bin_offsets
+            .iter()
+            .filter(|b| **b == SubpixelBin::Zero)
+            .count();
+        let one_count = bin_offsets
+            .iter()
+            .filter(|b| **b == SubpixelBin::One)
+            .count();
+        let two_count = bin_offsets
+            .iter()
+            .filter(|b| **b == SubpixelBin::Two)
+            .count();
+
+        assert!(
+            zero_count > 0 && one_count > 0 && two_count > 0,
+            "All 3 subpixel bins should be represented: Zero={}, One={}, Two={}",
+            zero_count,
+            one_count,
+            two_count
+        );
+
+        assert_eq!(
+            zero_count + one_count + two_count,
+            100,
+            "All positions should map to a bin"
+        );
+    }
+
+    #[test]
+    fn test_glyph_pool_reuse() {
+        let mut pool = glyph_pool::GlyphRenderPool::new();
+
+        let font_data = load_roboto();
+        let font = swash::FontDataRef::new(&font_data)
+            .expect("Should parse font")
+            .get(0)
+            .expect("Should get font face");
+
+        let glyph_id = font.charmap().map('A');
+        assert_ne!(glyph_id, 0);
+
+        let result1 = pool.acquire(|cx| {
+            let mut scaler = cx.builder(font).size(16.0).build();
+            swash::scale::Render::new(&[swash::scale::Source::Outline])
+                .format(swash::zeno::Format::Alpha)
+                .render(&mut scaler, glyph_id)
+                .map(|img| img.placement.width)
+        });
+
+        let result2 = pool.acquire(|cx| {
+            let mut scaler = cx.builder(font).size(32.0).build();
+            swash::scale::Render::new(&[swash::scale::Source::Outline])
+                .format(swash::zeno::Format::Alpha)
+                .render(&mut scaler, glyph_id)
+                .map(|img| img.placement.width)
+        });
+
+        assert!(result1.is_some(), "First acquire should succeed");
+        assert!(
+            result2.is_some(),
+            "Second acquire should succeed (pool reuse)"
+        );
+
+        let w1 = result1.unwrap();
+        let w2 = result2.unwrap();
+        assert!(
+            w2 > w1,
+            "32px glyph should be wider than 16px: {} vs {}",
+            w2,
+            w1
+        );
     }
 }

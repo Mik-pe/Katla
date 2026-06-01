@@ -431,7 +431,7 @@ mod tests {
         let font_data = load_roboto();
         let size = 32.0;
 
-        for (bin_name, offset) in [("zero", 0.0), ("one", 0.25), ("two", 0.5), ("three", 0.75)] {
+        for (bin_name, offset) in [("zero", 0.0), ("one", 1.0 / 3.0), ("two", 2.0 / 3.0)] {
             let glyph = rasterize_glyph_raw(&font_data, 'E', size, offset)
                 .unwrap_or_else(|| panic!("Failed to rasterize 'E' with subpixel {}", bin_name));
 

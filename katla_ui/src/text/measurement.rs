@@ -164,12 +164,7 @@ impl super::FontSystem {
     /// rendering performance at any position.
     pub fn precache_ascii(&mut self, font_id: FontId, size: f32, scale_factor: f32) {
         for c in ' '..='~' {
-            for bin in [
-                SubpixelBin::Zero,
-                SubpixelBin::One,
-                SubpixelBin::Two,
-                SubpixelBin::Three,
-            ] {
+            for bin in [SubpixelBin::Zero, SubpixelBin::One, SubpixelBin::Two] {
                 self.get_or_rasterize(font_id, c, size, scale_factor, bin);
             }
         }
