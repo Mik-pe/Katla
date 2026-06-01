@@ -48,7 +48,6 @@ pub fn button(label: impl Into<String>) -> widgets::button::Button {
     widgets::button::Button {
         label: label.into(),
         fill_color: None,
-        hover_color: None,
         border_color: None,
         on_click: None,
     }
@@ -153,6 +152,10 @@ pub fn property_row(
         label: label.into(),
         value: value.into(),
     }
+}
+
+pub fn code_editor(state_id: StateId) -> widgets::code_editor::CodeEditor {
+    widgets::code_editor::CodeEditor { state_id }
 }
 
 pub fn color_picker(
@@ -600,7 +603,6 @@ mod tests {
         let w = button("ok");
         assert_eq!(w.label, "ok");
         assert!(w.fill_color.is_none());
-        assert!(w.hover_color.is_none());
         assert!(w.border_color.is_none());
         assert!(w.on_click.is_none());
     }
@@ -609,12 +611,6 @@ mod tests {
     fn test_button_modifier_fill() {
         let w = button("ok").fill(katla_math::Color::BLUE);
         assert_eq!(w.fill_color, Some(katla_math::Color::BLUE));
-    }
-
-    #[test]
-    fn test_button_modifier_hover() {
-        let w = button("ok").hover(katla_math::Color::RED);
-        assert_eq!(w.hover_color, Some(katla_math::Color::RED));
     }
 
     #[test]
@@ -1204,7 +1200,6 @@ mod tests {
             .font_size(FontSize::Small);
         let _ = button("ok")
             .fill(katla_math::Color::BLUE)
-            .hover(katla_math::Color::RED)
             .border(katla_math::Color::BLACK)
             .on_click(Callback(1));
         let _ = image_button('X')
