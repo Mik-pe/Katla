@@ -71,28 +71,28 @@ fn node_to_serializable<T: Clone + PartialEq + Serialize>(
 
 fn node_from_serializable<T: Clone + PartialEq + DeserializeOwned>(
     node: &SerializableDockNode,
-) -> DockNode<T> {
+) -> Result<DockNode<T>, serde_json::Error> {
     match node {
         SerializableDockNode::Split {
             direction,
             ratio,
             children,
-        } => DockNode::Split {
+        } => Ok(DockNode::Split {
             direction: SplitDirection::from(direction),
             ratio: *ratio,
             children: [
-                Box::new(node_from_serializable(&children[0])),
-                Box::new(node_from_serializable(&children[1])),
+                Box::new(node_from_serializable(&children[0])?),
+                Box::new(node_from_serializable(&children[1])?),
             ],
-        },
-        SerializableDockNode::Leaf { tabs, active } => DockNode::Leaf {
+        }),
+        SerializableDockNode::Leaf { tabs, active } => Ok(DockNode::Leaf {
             tabs: tabs
                 .iter()
-                .map(|v| serde_json::from_value(v.clone()).unwrap())
-                .collect(),
+                .map(|v| serde_json::from_value(v.clone()))
+                .collect::<Result<Vec<_>, _>>()?,
             active: *active,
-        },
-        SerializableDockNode::Empty => DockNode::Empty,
+        }),
+        SerializableDockNode::Empty => Ok(DockNode::Empty),
     }
 }
 
@@ -107,7 +107,7 @@ pub fn from_json<T: Clone + PartialEq + DeserializeOwned>(
     json: &str,
 ) -> Result<DockTree<T>, serde_json::Error> {
     let serializable: SerializableDockNode = serde_json::from_str(json)?;
-    Ok(DockTree::new(node_from_serializable(&serializable)))
+    Ok(DockTree::new(node_from_serializable(&serializable)?))
 }
 
 #[cfg(test)]

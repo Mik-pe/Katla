@@ -141,16 +141,10 @@ mod tests {
         }
     }
 
-    static mut CALLBACK_INVOKED: bool = false;
-
-    fn make_callback() -> Callback {
-        let mut table = crate::declarative::build::CallbackTable::new();
-        table.push(|_actions| unsafe { CALLBACK_INVOKED = true })
-    }
-
     #[test]
     fn test_image_button_click_fires_callback() {
-        let callback = make_callback();
+        let mut callbacks = crate::declarative::build::CallbackTable::new();
+        let callback = callbacks.push(|_actions| {});
         let _btn = make_image_button(Some(callback));
         let mut state = StateArena::new();
 

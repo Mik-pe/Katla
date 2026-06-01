@@ -74,10 +74,10 @@ impl StateArena {
         let Some(cell) = self.cells.get_mut(&id) else {
             return false;
         };
-        let changed = cell
-            .value
-            .downcast_ref::<T>()
-            .is_none_or(|old| *old != value);
+        let Some(old) = cell.value.downcast_ref::<T>() else {
+            return false;
+        };
+        let changed = *old != value;
         if changed {
             cell.value = Box::new(value);
             cell.dirty = true;
