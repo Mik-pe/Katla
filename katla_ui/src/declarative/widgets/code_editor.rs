@@ -36,6 +36,7 @@ struct SyntaxHighlighter {
 }
 
 impl SyntaxHighlighter {
+    #[cfg(test)]
     fn new() -> Self {
         Self {
             syntax_set: SyntaxSet::load_defaults_nonewlines(),
@@ -46,6 +47,7 @@ impl SyntaxHighlighter {
         }
     }
 
+    #[cfg(test)]
     fn set_extension(&mut self, extension: &str) {
         self.extension = extension.to_string();
         self.is_plain = self
@@ -101,7 +103,7 @@ impl SyntaxHighlighter {
             .themes
             .get(&self.theme_name)
             .and_then(|t| t.settings.foreground)
-            .map(|c| syntect_color_to_katla(c))
+            .map(syntect_color_to_katla)
             .unwrap_or(Color::new(0.76, 0.77, 0.78, 1.0))
     }
 }
@@ -144,7 +146,7 @@ impl SelectionState {
         }
     }
 
-    fn text<'a>(&self, lines: &'a [String]) -> String {
+    fn text(&self, lines: &[String]) -> String {
         let ((sl, sc), (el, ec)) = self.sorted();
         if sl == el {
             if sc < lines[sl].len() && ec <= lines[sl].len() {
@@ -157,9 +159,9 @@ impl SelectionState {
             if sc < lines[sl].len() {
                 result.push_str(&lines[sl][sc..]);
             }
-            for i in sl + 1..el {
+            for line in lines.iter().take(el).skip(sl + 1) {
                 result.push('\n');
-                result.push_str(&lines[i]);
+                result.push_str(line);
             }
             result.push('\n');
             if ec > 0 && ec <= lines[el].len() {
@@ -209,7 +211,7 @@ impl EditorChange {
 // Editor state (persists across frames)
 // ---------------------------------------------------------------------------
 
-struct EditorStateInner {
+pub(crate) struct EditorStateInner {
     lines: Vec<String>,
     cursor_line: usize,
     cursor_col: usize,
@@ -231,6 +233,7 @@ struct EditorStateInner {
 }
 
 impl EditorStateInner {
+    #[cfg(test)]
     fn new(text: &str) -> Self {
         let lines: Vec<String> = if text.is_empty() {
             vec![String::new()]
@@ -260,14 +263,17 @@ impl EditorStateInner {
         }
     }
 
+    #[cfg(test)]
     fn text(&self) -> String {
         self.lines.join("\n")
     }
 
+    #[cfg(test)]
     fn line_count(&self) -> usize {
         self.lines.len()
     }
 
+    #[cfg(test)]
     fn clamp_cursor(&mut self) {
         if self.cursor_line >= self.lines.len() {
             self.cursor_line = self.lines.len().saturating_sub(1);
@@ -1321,6 +1327,7 @@ impl CodeEditor {
 // Public helpers for testing
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
 impl EditorStateInner {
     pub(crate) fn cursor_position(&self) -> (usize, usize) {
         (self.cursor_line, self.cursor_col)

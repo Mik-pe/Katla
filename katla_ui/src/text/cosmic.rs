@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cosmic_text::SwashCache;
 use cosmic_text::fontdb::{self, Database, Source};
 
 use super::{FontError, FontId};
@@ -22,31 +21,22 @@ use super::{FontError, FontId};
 pub(crate) struct CosmicTextSystem {
     /// cosmic-text FontSystem (created once, manages fontdb internally).
     font_system: cosmic_text::FontSystem,
-    /// SwashCache for glyph rasterization caching.
-    swash_cache: SwashCache,
     /// Map from katla_ui FontId to the primary cosmic-text fontdb::ID.
     font_id_to_cosmic: HashMap<FontId, fontdb::ID>,
-    /// Map from cosmic-text fontdb::ID to katla_ui FontId.
-    cosmic_to_font_id: HashMap<fontdb::ID, FontId>,
-    /// Next FontId counter for newly loaded fonts.
-    next_font_id: u32,
 }
 
 impl CosmicTextSystem {
     /// Create a new CosmicTextSystem with system fonts loaded.
     ///
     /// This creates a `cosmic_text::FontSystem` which discovers and loads
-    /// system fonts. It also initializes a `SwashCache` for glyph rasterization.
+    /// system fonts.
+    #[cfg(test)]
     pub fn new() -> Self {
         let font_system = cosmic_text::FontSystem::new();
-        let swash_cache = SwashCache::new();
 
         Self {
             font_system,
-            swash_cache,
             font_id_to_cosmic: HashMap::new(),
-            cosmic_to_font_id: HashMap::new(),
-            next_font_id: 0,
         }
     }
 
@@ -57,14 +47,10 @@ impl CosmicTextSystem {
         let db = Database::new();
         let locale = "en-US".to_string();
         let font_system = cosmic_text::FontSystem::new_with_locale_and_db(locale, db);
-        let swash_cache = SwashCache::new();
 
         Self {
             font_system,
-            swash_cache,
             font_id_to_cosmic: HashMap::new(),
-            cosmic_to_font_id: HashMap::new(),
-            next_font_id: 0,
         }
     }
 
@@ -74,7 +60,11 @@ impl CosmicTextSystem {
     /// handle that can be used to reference this font in katla_ui.
     ///
     /// For font collections (TTC/OTC), only the first face's ID is mapped.
+    #[cfg(test)]
     pub fn add_font(&mut self, bytes: &[u8]) -> Result<FontId, FontError> {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static NEXT_ID: AtomicU32 = AtomicU32::new(0);
+
         if bytes.len() < 4 {
             return Err(FontError::LoadFailed("Font data too short".to_string()));
         }
@@ -91,12 +81,9 @@ impl CosmicTextSystem {
             ));
         }
 
-        let font_id = FontId(self.next_font_id);
-        self.next_font_id += 1;
-
+        let font_id = FontId(NEXT_ID.fetch_add(1, Ordering::Relaxed));
         let cosmic_id = ids[0];
         self.font_id_to_cosmic.insert(font_id, cosmic_id);
-        self.cosmic_to_font_id.insert(cosmic_id, font_id);
 
         Ok(font_id)
     }
@@ -124,7 +111,6 @@ impl CosmicTextSystem {
 
         let cosmic_id = ids[0];
         self.font_id_to_cosmic.insert(id, cosmic_id);
-        self.cosmic_to_font_id.insert(cosmic_id, id);
 
         Ok(())
     }
@@ -135,8 +121,12 @@ impl CosmicTextSystem {
     }
 
     /// Get the katla_ui FontId for a cosmic-text fontdb::ID.
+    #[cfg(test)]
     pub fn get_font_id(&self, cosmic_id: fontdb::ID) -> Option<FontId> {
-        self.cosmic_to_font_id.get(&cosmic_id).copied()
+        self.font_id_to_cosmic
+            .iter()
+            .find(|(_, id)| **id == cosmic_id)
+            .map(|(font_id, _)| *font_id)
     }
 
     /// Access the cosmic-text FontSystem mutably.
@@ -152,19 +142,14 @@ impl CosmicTextSystem {
         &self.font_system
     }
 
-    /// Access the SwashCache mutably.
-    ///
-    /// Required for glyph rasterization via `SwashCache::get_image`.
-    pub fn swash_cache_mut(&mut self) -> &mut SwashCache {
-        &mut self.swash_cache
-    }
-
     /// Get the number of loaded katla_ui fonts.
+    #[cfg(test)]
     pub fn font_count(&self) -> usize {
         self.font_id_to_cosmic.len()
     }
 
     /// Check if a font with the given FontId is loaded.
+    #[cfg(test)]
     pub fn has_font(&self, id: FontId) -> bool {
         self.font_id_to_cosmic.contains_key(&id)
     }
@@ -173,6 +158,7 @@ impl CosmicTextSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cosmic_text::SwashCache;
 
     /// Load the bundled Roboto font for testing. Panics if not found.
     fn load_roboto() -> Vec<u8> {
@@ -301,7 +287,8 @@ mod tests {
         let roboto = load_roboto();
         sys.add_font(&roboto).expect("Font should load");
 
-        let _cache = sys.swash_cache_mut();
+        let mut cache = SwashCache::new();
+        let _ = &mut cache;
     }
 
     #[test]
@@ -329,9 +316,8 @@ mod tests {
             cosmic_text::CacheKeyFlags::empty(),
         );
 
-        let image = sys
-            .swash_cache
-            .get_image_uncached(&mut sys.font_system, cache_key);
+        let mut swash_cache = SwashCache::new();
+        let image = swash_cache.get_image_uncached(&mut sys.font_system, cache_key);
 
         assert!(image.is_some(), "SwashCache should rasterize glyph 'A'");
         let img = image.unwrap();
