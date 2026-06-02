@@ -3,6 +3,8 @@
 //! All methods in this file are gated behind `#[cfg(feature = "editor")]`.
 //! Non-editor stubs live in `no_editor_methods.rs`.
 
+use std::io::Write;
+
 use super::Application;
 use katla_gfx::GpuRenderer;
 use katla_math::Vec2;
@@ -244,5 +246,45 @@ impl Application {
                 }
             }
         }
+    }
+
+    /// Serialize the UI layout tree and write to stdout or a file, then exit.
+    ///
+    /// Only runs once. Called after `render_editor_frame` so the ViewTree has been
+    /// built and laid out for the current frame.
+    pub(crate) fn dump_layout_if_needed(&mut self) {
+        if self.layout_dumped {
+            return;
+        }
+
+        let Some(target) = &self.info.dump_layout_path else {
+            return;
+        };
+
+        let size = self.window.inner_size();
+        let screen_size = Vec2::new(size.width as f32, size.height as f32) / self.scale_factor;
+
+        let output =
+            katla_ui::declarative::serialize_layout(self.editor.editor_ui.view_tree(), screen_size);
+
+        match target {
+            super::DumpLayoutTarget::Stdout => {
+                println!("{output}");
+            }
+            super::DumpLayoutTarget::File(path) => match std::fs::File::create(path) {
+                Ok(mut file) => {
+                    if let Err(e) = file.write_all(output.as_bytes()) {
+                        log::error!("Failed to write layout dump to {}: {e}", path);
+                    } else {
+                        log::info!("Layout dump written to {path}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to create layout dump file {}: {e}", path);
+                }
+            },
+        }
+
+        self.layout_dumped = true;
     }
 }

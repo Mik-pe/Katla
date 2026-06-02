@@ -142,6 +142,10 @@ impl ViewTree {
         self.nodes.iter()
     }
 
+    pub fn resolved_bounds(&self) -> &HashMap<ViewId, Rect2D> {
+        &self.resolved_bounds
+    }
+
     pub fn state_arena(&self) -> &StateArena {
         &self.state
     }

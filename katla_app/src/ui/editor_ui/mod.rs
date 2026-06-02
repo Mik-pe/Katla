@@ -220,6 +220,11 @@ impl EditorUI {
         }
     }
 
+    /// Access the declarative view tree (for layout serialization).
+    pub(crate) fn view_tree(&self) -> &ViewTree {
+        &self.view_tree
+    }
+
     /// Clear all entity references held by the UI.
     /// Called after scene restore invalidates all EntityIds.
     pub fn clear_entity_references(&mut self) {
