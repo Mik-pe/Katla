@@ -14,6 +14,11 @@ impl MetalRenderer {
     }
 
     pub(crate) fn begin_frame_impl(&mut self) -> Result<u32, RendererError> {
+        // If a headless drawable is already set, skip acquiring from the surface
+        if self.current_drawable_texture.is_some() {
+            return Ok(self.frame_index);
+        }
+
         let texture = self.context.surface.acquire_next_drawable()?;
         self.drawable_texture_view = Some(super::texture::MetalTextureView::new(
             texture.clone(),
@@ -24,7 +29,9 @@ impl MetalRenderer {
     }
 
     pub(crate) fn end_frame_impl(&mut self) -> Result<(), RendererError> {
-        self.current_drawable_texture = None;
+        // In headless mode, keep the drawable texture for readback.
+        // It will be cleaned up by take_headless_texture() or destroy().
+        // Just clear the view reference so the next frame gets a fresh view.
         self.drawable_texture_view = None;
         self.frame_index += 1;
         Ok(())

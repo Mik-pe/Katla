@@ -46,7 +46,6 @@ impl MetalSurface {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn headless_with_device(
         device: &ProtocolObject<dyn MTLDevice>,
         width: u32,

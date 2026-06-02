@@ -323,7 +323,6 @@ impl MetalContext {
         })
     }
 
-    #[cfg(test)]
     pub(crate) fn init_headless_with_size(width: u32, height: u32) -> Result<Self, RendererError> {
         let device = MTLCreateSystemDefaultDevice()
             .ok_or_else(|| RendererError::InitializationFailed("No Metal device found".into()))?;
