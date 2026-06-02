@@ -20,14 +20,18 @@ struct UnitQuadVertex {
     @location(0) local_pos: vec2f,
 }
 
+// Must match the Rust VertexUIInstance layout exactly (56 bytes, alignment 8).
+// Uses vec2f (align 8) and u32/f32 (align 4) — no vec4f to avoid 16-byte padding.
+// clip_rect is split into two vec2f to avoid vec4f alignment requirements.
 struct InstanceData {
     position: vec2f,
     size: vec2f,
     uv_min: vec2f,
     uv_max: vec2f,
-    color: vec4f,      // packed as u32, decoded in shader
+    packed_color: u32,
     texture_index: u32,
-    clip_rect: vec4f,
+    clip_rect_xy: vec2f,
+    clip_rect_wh: vec2f,
 }
 
 struct VertexOutput {
@@ -90,7 +94,7 @@ fn vs_instanced(
     out.uv = inst.uv_min + in.local_pos * (inst.uv_max - inst.uv_min);
 
     // Decode color from packed u32 and apply sRGB to linear
-    let raw_color = decode_color(u32(inst.color.x));
+    let raw_color = decode_color(inst.packed_color);
     out.color = vec4f(
         srgb_to_linear(raw_color.r),
         srgb_to_linear(raw_color.g),
@@ -100,7 +104,7 @@ fn vs_instanced(
 
     // Pass per-instance data to fragment shader via varyings
     out.texture_index = inst.texture_index;
-    out.clip_rect = inst.clip_rect;
+    out.clip_rect = vec4f(inst.clip_rect_xy, inst.clip_rect_wh);
 
     return out;
 }
@@ -144,9 +148,11 @@ fn fs_instanced(in: VertexOutput) -> @location(0) vec4f {
     // Shader-based clipping: discard fragments outside clip rect
     let clip = in.clip_rect;
     let pos = in.clip_position;
-    // Reconstruct screen position from clip position
+    // Reconstruct screen position from clip position.
+    // Invert the vertex shader's NDC transform: ndc_y = (y/h*2 - 1) * flip
+    // => y = (ndc_y/flip + 1) * h/2  (works for both Vulkan flip=1 and Metal flip=-1)
     let screen_x = (pos.x + 1.0) * 0.5 * uniforms.screen_size.x;
-    let screen_y = (1.0 - pos.y * uniforms.ndc_y_flip) * 0.5 * uniforms.screen_size.y;
+    let screen_y = (pos.y / uniforms.ndc_y_flip + 1.0) * 0.5 * uniforms.screen_size.y;
 
     if (screen_x < clip.x || screen_x > clip.x + clip.z ||
         screen_y < clip.y || screen_y > clip.y + clip.w) {
