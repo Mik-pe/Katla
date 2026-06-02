@@ -66,7 +66,8 @@ impl VulkanFrameCtx {
                 a: vk::ComponentSwizzle::IDENTITY,
             })
             .subresource_range(subresource_range);
-        unsafe { device.create_image_view(&create_info, None) }.unwrap()
+        unsafe { device.create_image_view(&create_info, None) }
+            .expect("Failed to create swapchain image view")
     }
 
     pub fn init(context: &Rc<VulkanContext>) -> Result<Self, crate::error::RendererError> {

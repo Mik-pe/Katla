@@ -71,7 +71,7 @@ impl Queue {
         unsafe {
             self.device
                 .queue_submit(self.queue, &[submit_info], signal_fence)
-                .unwrap();
+                .expect("Failed to submit queue");
         }
     }
 
