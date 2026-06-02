@@ -621,7 +621,7 @@ impl ViewTree {
         &self,
         child_id: ViewId,
         ui: &mut UiContext,
-        parent_bounds: Rect2D,
+        _parent_bounds: Rect2D,
         parent_scroll_offset: f32,
     ) {
         let Some(child_node) = self.nodes.get(child_id) else {
@@ -636,10 +636,7 @@ impl ViewTree {
             .unwrap_or_default();
 
         let draw_bounds = if parent_scroll_offset != 0.0 {
-            child_bounds
-                .intersection(&parent_bounds)
-                .unwrap_or(Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(0.0, 0.0)))
-                .translate(Vec2::new(0.0, -parent_scroll_offset))
+            child_bounds.translate(Vec2::new(0.0, -parent_scroll_offset))
         } else {
             child_bounds
         };
