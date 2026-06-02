@@ -29,51 +29,47 @@ impl Frame<'_, VulkanRenderer> {
             .get_material(material_handle)
             .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
 
-        let pipeline_handle = material
+        // Resolve both pipelines: regular (for vertex-based commands) and
+        // instanced (for instanced commands). The instanced pipeline uses
+        // vs_instanced/fs_instanced entry points with UnitQuadVertex format.
+        let regular_pipeline_handle = material
             .pipeline
             .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
-        let (pipeline, pipeline_layout) = self
+        let (regular_pipeline, pipeline_layout) = self
             .renderer
             .asset_registry
-            .get_pipeline_handles(pipeline_handle)?;
+            .get_pipeline_handles(regular_pipeline_handle)?;
 
-        // Bind graphics pipeline
-        unsafe {
-            self.renderer.context.device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline,
-            );
-        }
+        let instanced_pipeline_handle = material
+            .instanced_pipeline
+            .unwrap_or(regular_pipeline_handle);
+        let (instanced_pipeline, _) = self
+            .renderer
+            .asset_registry
+            .get_pipeline_handles(instanced_pipeline_handle)?;
 
         let frame_idx = self.renderer.current_frame();
         let has_instances = !ui_draw_list.instances.is_empty();
         let has_vertices = !ui_draw_list.indices.is_empty();
 
-        // Upload instance buffer if there are instanced commands
-        if has_instances {
+        // Upload instance buffers (unit quad index buffer + per-instance data)
+        // Instance data is bound as a storage buffer at descriptor binding 4,
+        // not as a vertex buffer — the shader reads it via instance_data[] array.
+        let instance_buffer: Option<vk::Buffer> = if has_instances {
             let (instance_vb, unit_quad_ib) =
                 self.get_or_update_ui_instance_buffers(frame_idx, ui_draw_list)?;
-            // Bind instance data as vertex buffer at binding 1
-            unsafe {
-                self.renderer.context.device.cmd_bind_vertex_buffers(
-                    cmd.vk_command_buffer(),
-                    1, // binding 1 for instance data
-                    std::slice::from_ref(&instance_vb.0),
-                    &[0],
-                );
-            }
             // Bind unit quad index buffer
             cmd.bind_index_buffer(unit_quad_ib, 0, vk::IndexType::UINT32);
-        }
+            Some(instance_vb.0)
+        } else {
+            None
+        };
 
         // Upload vertex/index buffers for complex geometry
         if has_vertices {
             let (vertex_buffer, index_buffer) =
                 self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
 
-            // Only bind vertex buffer at binding 0 if there are vertex commands
-            // We need to check if any non-instanced commands exist
             let has_vertex_cmds = ui_draw_list.commands.iter().any(|c| !c.is_instanced);
             if has_vertex_cmds {
                 cmd.bind_vertex_buffer(vertex_buffer.0, 0);
@@ -107,15 +103,15 @@ impl Frame<'_, VulkanRenderer> {
             ));
         }
 
-        // Bind UI descriptor sets (sampler, uniforms, bindless textures)
+        // Bind UI descriptor sets (sampler, uniforms, instance storage buffer, bindless textures)
         // Use screen_size from draw list (logical pixels, matches vertex coordinates)
-        // Bind set 0 once (sampler, uniforms don't change per frame)
-        // Bind set 1 once (bindless texture array, shared with 3D materials)
+        // Both pipelines share the same descriptor set layout, so binding once is sufficient.
         self.bind_ui_descriptor_sets(
             cmd,
-            pipeline_handle,
+            regular_pipeline_handle,
             pipeline_layout,
             ui_draw_list.screen_size,
+            instance_buffer,
         )?;
 
         for draw_cmd in &ui_draw_list.commands {
@@ -137,6 +133,25 @@ impl Frame<'_, VulkanRenderer> {
             }
 
             if draw_cmd.is_instanced {
+                // Bind instanced pipeline (vs_instanced/fs_instanced + UnitQuadVertex)
+                unsafe {
+                    self.renderer.context.device.cmd_bind_pipeline(
+                        cmd.vk_command_buffer(),
+                        vk::PipelineBindPoint::GRAPHICS,
+                        instanced_pipeline,
+                    );
+                }
+                // Re-bind unit quad vertex buffer at binding 0
+                let (unit_quad_vb, _) = self.get_or_update_ui_unit_quad(frame_idx)?;
+                unsafe {
+                    self.renderer.context.device.cmd_bind_vertex_buffers(
+                        cmd.vk_command_buffer(),
+                        0,
+                        std::slice::from_ref(&unit_quad_vb),
+                        &[0],
+                    );
+                }
+
                 // Instanced draw: unit quad + per-instance data
                 unsafe {
                     self.renderer.context.device.cmd_draw_indexed(
@@ -149,6 +164,25 @@ impl Frame<'_, VulkanRenderer> {
                     );
                 }
             } else {
+                // Bind regular pipeline (vs_main/fs_main + UiVertex)
+                unsafe {
+                    self.renderer.context.device.cmd_bind_pipeline(
+                        cmd.vk_command_buffer(),
+                        vk::PipelineBindPoint::GRAPHICS,
+                        regular_pipeline,
+                    );
+                }
+                // Re-bind vertex buffer for non-instanced path (full UiVertex at binding 0)
+                if has_vertices {
+                    let (vertex_buffer, _) =
+                        self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
+                    cmd.bind_vertex_buffer(vertex_buffer.0, 0);
+                }
+
+                // Update uniform buffer with per-command texture_index for non-instanced path
+                let texture_index = self.renderer.get_texture_bindless_index(draw_cmd.texture);
+                self.update_ui_uniform_texture_index(texture_index)?;
+
                 // Vertex-based draw: complex geometry
                 unsafe {
                     self.renderer.context.device.cmd_draw_indexed(
@@ -241,13 +275,14 @@ impl Frame<'_, VulkanRenderer> {
         Ok((quad_vb_handle, quad_ib_handle))
     }
 
-    /// Bind UI descriptor sets (Set 0: font atlas, sampler, uniforms).
+    /// Bind UI descriptor sets (Set 0: sampler, uniforms, instance buffer; Set 1: bindless textures).
     pub(super) fn bind_ui_descriptor_sets(
         &mut self,
         cmd: &CommandBuffer,
         pipeline_handle: PipelineHandle,
         pipeline_layout: vk::PipelineLayout,
         screen_size: [f32; 2],
+        instance_buffer: Option<vk::Buffer>,
     ) -> Result<(), RenderGraphError> {
         // Get the pipeline to access its descriptor set layouts (separate borrow to avoid conflicts)
         let descriptor_set_layout = {
@@ -269,8 +304,12 @@ impl Frame<'_, VulkanRenderer> {
 
         // Now we can mutate the renderer state
         let frame_idx = self.renderer.current_frame();
-        let descriptor_set =
-            self.get_or_create_ui_descriptor_set(frame_idx, descriptor_set_layout, screen_size)?;
+        let descriptor_set = self.get_or_create_ui_descriptor_set(
+            frame_idx,
+            descriptor_set_layout,
+            screen_size,
+            instance_buffer,
+        )?;
 
         // Bind descriptor set 0 (sampler, uniforms)
         cmd.bind_descriptor_sets(pipeline_layout, 0, &[descriptor_set], &[]);
@@ -287,6 +326,7 @@ impl Frame<'_, VulkanRenderer> {
         frame_idx: usize,
         layout: vk::DescriptorSetLayout,
         screen_size: [f32; 2],
+        instance_buffer: Option<vk::Buffer>,
     ) -> Result<vk::DescriptorSet, RenderGraphError> {
         let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
@@ -302,7 +342,7 @@ impl Frame<'_, VulkanRenderer> {
         let _ = ui_resources; // Release borrow before calling update
 
         if let Some(ds_handle) = descriptor_set_handle {
-            self.update_ui_descriptor_set(ds_handle, screen_size)?;
+            self.update_ui_descriptor_set(ds_handle, screen_size, instance_buffer)?;
             return Ok(ds_handle);
         }
 
@@ -315,6 +355,9 @@ impl Frame<'_, VulkanRenderer> {
                 .descriptor_count(1),
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1),
+            vk::DescriptorPoolSize::default()
+                .ty(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1),
         ];
 
@@ -370,16 +413,17 @@ impl Frame<'_, VulkanRenderer> {
         }
         let _ = ui_resources;
 
-        self.update_ui_descriptor_set(descriptor_set, screen_size)?;
+        self.update_ui_descriptor_set(descriptor_set, screen_size, instance_buffer)?;
 
         Ok(descriptor_set)
     }
 
-    /// Update UI descriptor set with sampler and uniforms.
+    /// Update UI descriptor set with sampler, uniforms, and instance storage buffer.
     pub(super) fn update_ui_descriptor_set(
         &mut self,
         descriptor_set: vk::DescriptorSet,
         screen_size: [f32; 2],
+        instance_buffer: Option<vk::Buffer>,
     ) -> Result<(), RenderGraphError> {
         let sampler = self.renderer.bindless_manager.ui_sampler();
 
@@ -412,7 +456,7 @@ impl Frame<'_, VulkanRenderer> {
             std::ptr::copy_nonoverlapping(uniform_bytes.as_ptr(), uniform_ptr, uniform_bytes.len());
         }
 
-        let buffer_info = vk::DescriptorBufferInfo::default()
+        let uniform_buffer_info = vk::DescriptorBufferInfo::default()
             .buffer(uniform_buffer)
             .offset(0)
             .range(uniform_bytes.len() as vk::DeviceSize);
@@ -422,7 +466,7 @@ impl Frame<'_, VulkanRenderer> {
             .image_view(vk::ImageView::null()) // Null for sampler-only write
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 
-        let writes = [
+        let mut writes = vec![
             // Binding 1: sampler
             vk::WriteDescriptorSet::default()
                 .dst_set(descriptor_set)
@@ -438,14 +482,61 @@ impl Frame<'_, VulkanRenderer> {
                 .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                 .descriptor_count(1)
-                .buffer_info(std::slice::from_ref(&buffer_info)),
+                .buffer_info(std::slice::from_ref(&uniform_buffer_info)),
         ];
+
+        // Binding 4: instance data storage buffer (only when instances exist)
+        let instance_buffer_info = instance_buffer.map(|buf| {
+            vk::DescriptorBufferInfo::default()
+                .buffer(buf)
+                .offset(0)
+                .range(vk::WHOLE_SIZE)
+        });
+
+        if let Some(ref info) = instance_buffer_info {
+            writes.push(
+                vk::WriteDescriptorSet::default()
+                    .dst_set(descriptor_set)
+                    .dst_binding(4)
+                    .dst_array_element(0)
+                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
+                    .descriptor_count(1)
+                    .buffer_info(std::slice::from_ref(info)),
+            );
+        }
 
         unsafe {
             self.renderer
                 .context
                 .device
                 .update_descriptor_sets(&writes, &[]);
+        }
+
+        Ok(())
+    }
+
+    /// Update the texture_index field in the UI uniform buffer for non-instanced draws.
+    ///
+    /// The uniform layout is: [screen_size.x, screen_size.y, ndc_y_flip, texture_index].
+    /// Only the texture_index (byte offset 12) is updated.
+    fn update_ui_uniform_texture_index(
+        &mut self,
+        texture_index: u32,
+    ) -> Result<(), RenderGraphError> {
+        let allocation = &self
+            .renderer
+            .ui_renderer
+            .ui_resources_mut()
+            .uniform_buffer
+            .as_ref()
+            .expect("UI uniform buffer allocated in constructor")
+            .1;
+        let ptr = self.renderer.context.map_buffer(allocation)?;
+
+        // texture_index is at byte offset 12 in the 16-byte uniform struct
+        unsafe {
+            let tex_idx_ptr = ptr.add(12) as *mut u32;
+            *tex_idx_ptr = texture_index;
         }
 
         Ok(())

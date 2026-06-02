@@ -248,6 +248,7 @@ impl MaterialCompiler {
             // Create deferred material - pipeline will be compiled on-demand
             let material_asset = crate::renderer::registry::MaterialAsset {
                 pipeline: None,
+                instanced_pipeline: None,
                 fully_compiled: false,
                 shader_path: Some(shader_path.to_path_buf()),
                 vertex_type: options.vertex_type,
@@ -290,11 +291,26 @@ impl MaterialCompiler {
         )?;
         log::debug!("compile: pipeline built");
 
+        // 4b. For UI materials, also compile an instanced pipeline
+        // using vs_instanced/fs_instanced entry points with UnitQuadVertex format.
+        let instanced_pipeline = if matches!(options.vertex_type, VertexType::Ui) {
+            match self.build_instanced_ui_pipeline(shader_path, &layouts) {
+                Ok(p) => Some(registry.register_pipeline(p)),
+                Err(e) => {
+                    log::error!("Failed to compile UI instanced pipeline: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         // 5. Register and return handle
         // Store shader_path so invalidate_compiled_materials can recompile
         // when descriptor layouts change (e.g., light culling resize).
         let material_asset = crate::renderer::registry::MaterialAsset {
             pipeline: Some(registry.register_pipeline(pipeline)),
+            instanced_pipeline,
             fully_compiled: true,
             shader_path: Some(shader_path.to_path_buf()),
             vertex_type: options.vertex_type,
@@ -507,7 +523,8 @@ impl MaterialCompiler {
     ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
         // UI descriptor set layout Set 0 (must match shader bindings in ui.wgsl):
         // - Binding 1: sampler (shared)
-        // - Binding 3: uniforms (screen_size)
+        // - Binding 3: uniforms (screen_size, ndc_y_flip, texture_index)
+        // - Binding 4: instance data storage buffer (for instanced draws)
         let ui_bindings = [
             vk::DescriptorSetLayoutBinding::default()
                 .binding(1)
@@ -517,6 +534,11 @@ impl MaterialCompiler {
             vk::DescriptorSetLayoutBinding::default()
                 .binding(3)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .descriptor_count(1)
+                .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+            vk::DescriptorSetLayoutBinding::default()
+                .binding(4)
+                .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1)
                 .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
         ];
@@ -613,6 +635,56 @@ impl MaterialCompiler {
 
     pub(crate) fn set_shadow_descriptor_layout(&mut self, layout: vk::DescriptorSetLayout) {
         self.shadow_descriptor_layout = Some(layout);
+    }
+
+    /// Build the instanced UI pipeline using `vs_instanced`/`fs_instanced` entry points.
+    ///
+    /// This pipeline uses the `UnitQuadVertex` format (Float2 only at binding 0) and
+    /// reads per-instance data from the `instance_data` storage buffer (binding 4, set 0).
+    /// The vertex format is minimal because all positioning/sizing/coloring comes from
+    /// the instance data, not from per-vertex attributes.
+    fn build_instanced_ui_pipeline(
+        &self,
+        shader_path: &Path,
+        layouts: &[vk::DescriptorSetLayout],
+    ) -> Result<crate::vulkan::material::builder::Pipeline, MaterialError> {
+        use crate::pipeline::{CullMode, FrontFace};
+        use crate::vulkan::material::builder::PipelineBuilder;
+
+        // Load shaders with instanced entry points
+        let cache = self.shader_cache.borrow();
+        let vert_module = cache
+            .load_shader_with_entry(shader_path, vk::ShaderStageFlags::VERTEX, "vs_instanced")
+            .map_err(|e| {
+                MaterialError::ShaderCompilation(format!("Instanced vertex shader: {:?}", e))
+            })?;
+        let frag_module = cache
+            .load_shader_with_entry(shader_path, vk::ShaderStageFlags::FRAGMENT, "fs_instanced")
+            .map_err(|e| {
+                MaterialError::ShaderCompilation(format!("Instanced fragment shader: {:?}", e))
+            })?;
+        drop(cache);
+
+        // Unit quad vertex binding: only Float2 local_pos
+        let quad_binding = crate::vulkan::vertexbinding::VertexBinding::from(
+            &crate::vertex::VertexLayout::new(vec![crate::vertex::VertexAttributeFormat::Float2]),
+        );
+
+        let pipeline = PipelineBuilder::new(self.context.clone())
+            .with_shaders(vert_module, frag_module)
+            .with_vertex_binding(quad_binding)
+            .with_descriptor_layouts(layouts.to_vec())
+            .with_rendering_formats(Some(crate::texture::ImageFormat::B8G8R8A8Srgb), None)
+            .with_depth_test(false, false, crate::pipeline::CompareOp::Always)
+            .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
+            .with_alpha_blending()
+            .build(crate::sync::VkRenderPass::default())
+            .map_err(|e| {
+                MaterialError::PipelineCreation(format!("Instanced UI pipeline: {}", e))
+            })?;
+
+        log::info!("UI instanced pipeline compiled with vs_instanced/fs_instanced entry points");
+        Ok(pipeline)
     }
 
     fn build_pipeline(
