@@ -4,9 +4,17 @@
 //! which reuses the exact same Application code (editor UI, scene, frame loop)
 //! as windowed mode, with only the window/drawable swapped for an offscreen texture.
 
-/// Headless offscreen texture dimensions.
-pub const HEADLESS_WIDTH: u32 = 1280;
-pub const HEADLESS_HEIGHT: u32 = 720;
+/// Headless offscreen texture dimensions (physical pixels).
+///
+/// Uses 2x resolution (2560x1440) with scale_factor=2 to match Retina rendering,
+/// ensuring text and UI elements render at full quality. The UI layout operates in
+/// logical coordinates (1280x720).
+pub const HEADLESS_WIDTH: u32 = 2560;
+pub const HEADLESS_HEIGHT: u32 = 1440;
+
+/// DPI scale factor for headless rendering. Matches Retina (2x) so font
+/// rasterization and UI sizing are identical to windowed mode.
+pub const HEADLESS_SCALE_FACTOR: f32 = 2.0;
 
 use crate::application::Application;
 use crate::error::AppResult;

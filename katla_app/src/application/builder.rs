@@ -736,13 +736,17 @@ impl ApplicationBuilder {
 
         // Create UI context and load fonts
         let mut ui_context = katla_ui::UiContext::new();
+        let scale_factor = crate::application::headless::HEADLESS_SCALE_FACTOR;
+
         let font_path = resources.font_path("roboto-regular.ttf");
         if font_path.exists() {
             if let Ok(font_bytes) = std::fs::read(&font_path) {
                 let font_id = ui_context.fonts_mut().add_font(&font_bytes).ok();
                 if let Some(font_id) = font_id {
                     for &size in DEFAULT_UI_FONT_SIZES {
-                        ui_context.fonts_mut().precache_ascii(font_id, size, 1.0);
+                        ui_context
+                            .fonts_mut()
+                            .precache_ascii(font_id, size, scale_factor);
                     }
                     ui_context.set_font(font_id);
                 }
@@ -760,7 +764,7 @@ impl ApplicationBuilder {
                         ui_context.fonts_mut().precache_icons(
                             katla_ui::FontId::ICON,
                             size,
-                            1.0,
+                            scale_factor,
                             katla_ui::ForkAwesome::common_icons(),
                         );
                     }
@@ -934,7 +938,7 @@ impl ApplicationBuilder {
             #[cfg(feature = "editor")]
             editor: { super::EditorState::new(ui_renderer, theme, &preferences, gui_state) },
             preferences,
-            scale_factor: 1.0,
+            scale_factor: crate::application::headless::HEADLESS_SCALE_FACTOR,
             start_time: Instant::now(),
             default_material_handle: katla_gfx::MaterialHandle::NONE,
             cleaned_up: false,
