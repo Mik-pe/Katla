@@ -870,8 +870,8 @@ mod tests {
         let w = tree_view(vec![], e, s, sc);
         assert_eq!(w.row_height, 20.0);
         assert_eq!(w.indent_per_level, 16.0);
-        assert!(w.on_select.is_none());
-        assert!(w.on_right_click.is_none());
+        assert!(w.callbacks.on_select.is_none());
+        assert!(w.callbacks.on_right_click.is_none());
     }
 
     #[test]
@@ -1082,14 +1082,14 @@ mod tests {
     fn test_tree_view_modifier_on_select() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
         let w = tree_view(vec![], e, s, sc).on_select(Callback(10));
-        assert!(w.on_select.is_some());
+        assert!(w.callbacks.on_select.is_some());
     }
 
     #[test]
     fn test_tree_view_modifier_on_right_click() {
         let (e, s, sc) = (dummy_state_id(), dummy_state_id(), dummy_state_id());
         let w = tree_view(vec![], e, s, sc).on_right_click(Callback(11));
-        assert!(w.on_right_click.is_some());
+        assert!(w.callbacks.on_right_click.is_some());
     }
 
     // -- Chained modifier test --
