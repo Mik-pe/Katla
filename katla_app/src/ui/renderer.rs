@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use katla_gfx::{TextureHandle, UIDrawList, UiDrawCommand, VertexUI, VertexUIInstance};
-use katla_ui::{DrawList, InstanceData, TextureId};
+use katla_ui::{DrawList, TextureId};
 
 /// UI renderer that converts UI draw lists for GPU rendering.
 ///
@@ -112,33 +112,67 @@ impl UIRenderer {
             }
         }
 
-        // Convert instances (simple quads: rects, textured rects)
-        for instance in draw_list.instances() {
-            let tex_index = self
+        // Build instance->texture map from instanced commands.
+        // Each instanced command covers a range of instances [offset, offset+count)
+        // with a specific texture.
+        let mut instance_texture_map: Vec<u32> = vec![0; draw_list.instances().len()];
+        for cmd in draw_list.commands() {
+            if !cmd.is_instanced || cmd.count == 0 {
+                continue;
+            }
+            let tex_idx = self
                 .texture_to_index
-                .get(&self.current_texture_for_instance(instance))
+                .get(&cmd.texture)
                 .copied()
                 .unwrap_or(0);
+            let start = cmd.offset as usize;
+            let end = start + cmd.count as usize;
+            for slot in instance_texture_map.iter_mut().take(end).skip(start) {
+                *slot = tex_idx;
+            }
+        }
+
+        // Convert instances (simple quads: rects, textured rects)
+        for (i, instance) in draw_list.instances().iter().enumerate() {
             self.instances.push(VertexUIInstance {
                 position: instance.position,
                 size: instance.size,
                 uv_min: instance.uv_min,
                 uv_max: instance.uv_max,
                 color: instance.color,
-                texture_index: tex_index,
+                texture_index: instance_texture_map[i],
                 clip_rect: instance.clip_rect,
             });
         }
 
         // Convert vertices (complex geometry: circles, rounded rects, lines, gradients)
+        // Build vertex->texture map in O(M) single pass through commands
+        let mut vertex_texture_map: Vec<u32> = vec![0; draw_list.vertices().len()];
+        for cmd in draw_list.commands() {
+            if cmd.is_instanced || cmd.count == 0 {
+                continue;
+            }
+            let tex_idx = self
+                .texture_to_index
+                .get(&cmd.texture)
+                .copied()
+                .unwrap_or(0);
+            let index_start = cmd.offset as usize;
+            let index_end = index_start + cmd.count as usize;
+            for &idx in &draw_list.indices()[index_start..index_end] {
+                let idx = idx as usize;
+                if idx < vertex_texture_map.len() {
+                    vertex_texture_map[idx] = tex_idx;
+                }
+            }
+        }
+
         for (i, v) in draw_list.vertices().iter().enumerate() {
-            // Find the texture index for this vertex by checking which command covers it
-            let tex_index = self.find_vertex_texture_index(draw_list, i);
             self.vertices.push(VertexUI::new(
                 [v.pos.x(), v.pos.y()],
                 [v.uv.x(), v.uv.y()],
                 v.color,
-                tex_index,
+                vertex_texture_map[i],
             ));
         }
 
@@ -176,55 +210,6 @@ impl UIRenderer {
             screen_size,
             scale_factor,
         }
-    }
-
-    /// Determine the TextureId for an instance based on its texture_index field.
-    ///
-    /// Since instance data is emitted after set_texture(), we check if
-    /// texture_index is 0 (no texture / solid color) and look up from the
-    /// texture_to_index mapping. For textured instances, the texture was
-    /// already resolved by set_texture() in the DrawList.
-    fn current_texture_for_instance(&self, instance: &InstanceData) -> TextureId {
-        // Instances with texture_index=0 that aren't solid color use FONT_ATLAS
-        // The actual texture resolution happens via texture_to_index
-        if instance.texture_index == 0
-            && instance.uv_min[0] == 0.0
-            && instance.uv_min[1] == 0.0
-            && instance.uv_max[0] == 1.0
-            && instance.uv_max[1] == 1.0
-        {
-            TextureId::NONE
-        } else {
-            TextureId::NONE
-        }
-    }
-
-    /// Find the bindless texture index for a vertex by scanning commands.
-    fn find_vertex_texture_index(&self, draw_list: &DrawList, vertex_idx: usize) -> u32 {
-        for cmd in draw_list.commands() {
-            if cmd.is_instanced {
-                continue;
-            }
-            let index_start = cmd.offset as usize;
-            let index_end = index_start + cmd.count as usize;
-            if index_start >= index_end {
-                continue;
-            }
-            let mut min_v = u32::MAX;
-            let mut max_v = 0u32;
-            for &idx in &draw_list.indices()[index_start..index_end] {
-                min_v = min_v.min(idx);
-                max_v = max_v.max(idx);
-            }
-            if min_v as usize <= vertex_idx && vertex_idx <= max_v as usize {
-                return self
-                    .texture_to_index
-                    .get(&cmd.texture)
-                    .copied()
-                    .unwrap_or(0);
-            }
-        }
-        0
     }
 
     /// Convert a TextureId to a bindless texture index.
