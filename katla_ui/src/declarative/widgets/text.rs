@@ -9,9 +9,7 @@ use crate::style::FontSize;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{
-    DrawInfo, InputContext, InputResult, MeasureFn, Widget,
-};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 pub struct Text {
     pub content: String,

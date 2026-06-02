@@ -7,9 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::{Alignment, FlexProps, Padding};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{
-    ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget,
-};
+use super::super::widget::{ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub struct VStack {

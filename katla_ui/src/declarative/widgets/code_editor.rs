@@ -14,9 +14,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{
-    DrawInfo, InputContext, InputResult, MeasureFn, Widget,
-};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 // ---------------------------------------------------------------------------
 // Editor actions (emitted through ActionStream)

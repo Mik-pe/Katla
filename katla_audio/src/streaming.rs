@@ -379,10 +379,7 @@ impl StreamingDecoder {
                 use symphonia::core::formats::{SeekMode, SeekTo};
                 use symphonia::core::units::Time;
                 let seek_to = SeekTo::Time {
-                    time: Time::new(
-                        position.as_secs(),
-                        position.subsec_nanos() as f64 / 1e9,
-                    ),
+                    time: Time::new(position.as_secs(), position.subsec_nanos() as f64 / 1e9),
                     track_id: Some(state.track_id),
                 };
                 state
