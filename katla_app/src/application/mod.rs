@@ -75,11 +75,12 @@ pub struct ApplicationInfo {
     check_black_frames: bool,
     scene_path: Option<String>, // Override scene to load on startup
     dump_layout_path: Option<DumpLayoutTarget>,
-    #[expect(dead_code)]
     screenshot_path: Option<String>, // Headless screenshot output path
+    headless: bool,                  // Running without a window
 }
 
 /// Where to write the layout dump.
+#[derive(Clone)]
 pub(crate) enum DumpLayoutTarget {
     Stdout,
     File(String),
@@ -322,7 +323,8 @@ impl PassIds {
 
 /// Main application struct containing all engine state.
 pub struct Application {
-    pub(crate) window: Window,
+    /// Window handle. `None` in headless mode.
+    pub(crate) window: Option<Window>,
     pub(crate) renderer: Renderer,
     pub(crate) frame_graph: FrameGraph,
     pub(crate) pass_ids: PassIds,
@@ -391,18 +393,44 @@ pub struct Application {
     layout_dumped: bool,
 }
 
+impl Application {
+    /// Returns true when running in headless mode (no window).
+    #[expect(dead_code)]
+    pub(crate) fn is_headless(&self) -> bool {
+        self.info.headless
+    }
+
+    /// Helper to access the window when it exists.
+    #[expect(dead_code)]
+    pub(crate) fn window(&self) -> &Window {
+        self.window
+            .as_ref()
+            .expect("window accessed in headless mode")
+    }
+
+    /// Helper to access the window mutably when it exists.
+    #[expect(dead_code)]
+    pub(crate) fn window_mut(&mut self) -> &mut Window {
+        self.window
+            .as_mut()
+            .expect("window accessed in headless mode")
+    }
+}
+
 impl ApplicationHandler for Application {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
-        // Enable IME for text input (required for receiving text input events)
-        self.window.set_ime_allowed(true);
+        if let Some(ref window) = self.window {
+            // Enable IME for text input (required for receiving text input events)
+            window.set_ime_allowed(true);
 
-        // Get initial DPI scale factor
-        self.scale_factor = self.window.scale_factor() as f32;
+            // Get initial DPI scale factor
+            self.scale_factor = window.scale_factor() as f32;
 
-        // Kickstart the render loop on macOS. Without this, RedrawRequested
-        // events are not delivered until the window is explicitly shown or
-        // receives focus (e.g., desktop switch), leaving the window blank.
-        self.window.request_redraw();
+            // Kickstart the render loop on macOS. Without this, RedrawRequested
+            // events are not delivered until the window is explicitly shown or
+            // receives focus (e.g., desktop switch), leaving the window blank.
+            window.request_redraw();
+        }
     }
 
     fn device_event(
@@ -517,7 +545,9 @@ impl ApplicationHandler for Application {
                     self.minimized = false;
                     info!("Window unoccluded, resuming rendering");
                     self.needs_swapchain_recreate = true;
-                    self.window.request_redraw();
+                    if let Some(ref window) = self.window {
+                        window.request_redraw();
+                    }
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {

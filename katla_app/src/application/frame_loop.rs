@@ -71,7 +71,9 @@ impl Application {
         }
 
         if self.minimized {
-            self.window.request_redraw();
+            if let Some(ref window) = self.window {
+                window.request_redraw();
+            }
             return;
         }
 
@@ -338,7 +340,9 @@ impl Application {
             event_loop.exit();
         }
 
-        self.window.request_redraw();
+        if let Some(ref window) = self.window {
+            window.request_redraw();
+        }
     }
 
     /// Save frame data as PNG file for visual inspection

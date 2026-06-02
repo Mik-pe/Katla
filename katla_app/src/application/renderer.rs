@@ -832,48 +832,52 @@ impl Application {
 
         if self.needs_swapchain_recreate {
             self.needs_swapchain_recreate = false;
-            let inner = self.window.inner_size();
-            let w = (inner.width as f32 / self.scale_factor) as u32;
-            let h = (inner.height as f32 / self.scale_factor) as u32;
-            if w > 0 && h > 0 {
-                if let Err(e) = self.renderer.wait_for_frame() {
-                    log::error!("Failed to wait for GPU before resize: {}", e);
-                }
-                if let Err(e) = self.renderer.resize(w, h) {
-                    log::error!("Failed to resize Metal renderer: {}", e);
-                }
+            if let Some(ref window) = self.window {
+                let inner = window.inner_size();
+                let w = (inner.width as f32 / self.scale_factor) as u32;
+                let h = (inner.height as f32 / self.scale_factor) as u32;
+                if w > 0 && h > 0 {
+                    if let Err(e) = self.renderer.wait_for_frame() {
+                        log::error!("Failed to wait for GPU before resize: {}", e);
+                    }
+                    if let Err(e) = self.renderer.resize(w, h) {
+                        log::error!("Failed to resize Metal renderer: {}", e);
+                    }
 
-                let phys = self.renderer.swapchain_extent();
-                if let Ok(textures) = self.frame_graph.recreate_transient_textures(
-                    &mut self.renderer,
-                    phys.width,
-                    phys.height,
-                ) {
-                    for (name, slot) in &textures {
-                        if name == "hdr_color" {
-                            self.frame_graph
-                                .set_tonemap_texture_index(self.pass_ids.tonemap, *slot)
-                                .ok();
-                        } else if name == "viewport_0" {
-                            self.on_viewport_texture_recreated(*slot);
-                            self.renderer.set_viewport_bindless_slot(*slot);
+                    let phys = self.renderer.swapchain_extent();
+                    if let Ok(textures) = self.frame_graph.recreate_transient_textures(
+                        &mut self.renderer,
+                        phys.width,
+                        phys.height,
+                    ) {
+                        for (name, slot) in &textures {
+                            if name == "hdr_color" {
+                                self.frame_graph
+                                    .set_tonemap_texture_index(self.pass_ids.tonemap, *slot)
+                                    .ok();
+                            } else if name == "viewport_0" {
+                                self.on_viewport_texture_recreated(*slot);
+                                self.renderer.set_viewport_bindless_slot(*slot);
+                            }
                         }
-                    }
 
-                    if let Some(view) = self.frame_graph.transient_image_view_metal("hdr_color", 0)
-                    {
-                        let hdr_transient_slot = self
-                            .frame_graph
-                            .transient_texture_metal("hdr_color", 0)
-                            .and_then(|t| t.bindless_slot)
-                            .unwrap_or(0);
-                        self.renderer
-                            .set_geometry_hdr_view(view, hdr_transient_slot);
-                    }
+                        if let Some(view) =
+                            self.frame_graph.transient_image_view_metal("hdr_color", 0)
+                        {
+                            let hdr_transient_slot = self
+                                .frame_graph
+                                .transient_texture_metal("hdr_color", 0)
+                                .and_then(|t| t.bindless_slot)
+                                .unwrap_or(0);
+                            self.renderer
+                                .set_geometry_hdr_view(view, hdr_transient_slot);
+                        }
 
-                    if let Some(view) = self.frame_graph.transient_image_view_metal("viewport_0", 0)
-                    {
-                        self.renderer.set_tonemap_output_view(view);
+                        if let Some(view) =
+                            self.frame_graph.transient_image_view_metal("viewport_0", 0)
+                        {
+                            self.renderer.set_tonemap_output_view(view);
+                        }
                     }
                 }
             }

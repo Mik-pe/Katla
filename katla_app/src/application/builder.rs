@@ -702,22 +702,266 @@ impl ApplicationBuilder {
 
     /// Build a headless application for offscreen rendering.
     ///
-    /// Returns a `HeadlessApplication` that renders without a window,
-    /// captures N frames, and saves a screenshot PNG.
+    /// Returns an `Application` configured for headless rendering (no window),
+    /// ready to run N frames and save a screenshot PNG.
     #[cfg(target_os = "macos")]
     pub fn build_headless(
         self,
         max_frames: usize,
         screenshot_path: String,
-    ) -> AppResult<super::headless::HeadlessApplication> {
-        super::headless::HeadlessApplication::build(
-            self.world,
-            self.dump_layout_path,
-            max_frames,
-            screenshot_path,
-            self.on_init,
-            self.on_update,
+    ) -> AppResult<Application> {
+        // Install logger
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+            .try_init()
+            .ok();
+
+        let preferences = Preferences::load();
+        #[cfg(feature = "editor")]
+        let (theme, gui_state) = Self::load_editor_state_static(&preferences);
+
+        let info = ApplicationInfo {
+            name: self.app_name.clone(),
+            validation_mode: self.validation_mode,
+            max_frames: Some(max_frames),
+            check_black_frames: false,
+            scene_path: self.scene_path.clone(),
+            dump_layout_path: self.dump_layout_path.clone(),
+            screenshot_path: Some(screenshot_path),
+            headless: true,
+        };
+
+        let mut world = self.world;
+        let camera = Camera::new(&mut world);
+        let resources = ResourceManager::discover()?;
+
+        // Create UI context and load fonts
+        let mut ui_context = katla_ui::UiContext::new();
+        let font_path = resources.font_path("roboto-regular.ttf");
+        if font_path.exists() {
+            if let Ok(font_bytes) = std::fs::read(&font_path) {
+                let font_id = ui_context.fonts_mut().add_font(&font_bytes).ok();
+                if let Some(font_id) = font_id {
+                    for &size in DEFAULT_UI_FONT_SIZES {
+                        ui_context.fonts_mut().precache_ascii(font_id, size, 1.0);
+                    }
+                    ui_context.set_font(font_id);
+                }
+            }
+        }
+        let icon_font_path = resources.font_path("forkawesome-webfont.ttf");
+        if icon_font_path.exists() {
+            if let Ok(font_bytes) = std::fs::read(&icon_font_path) {
+                if ui_context
+                    .fonts_mut()
+                    .add_font_with_id(&font_bytes, katla_ui::FontId::ICON)
+                    .is_ok()
+                {
+                    for &size in DEFAULT_UI_FONT_SIZES {
+                        ui_context.fonts_mut().precache_icons(
+                            katla_ui::FontId::ICON,
+                            size,
+                            1.0,
+                            katla_ui::ForkAwesome::common_icons(),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Create headless Metal renderer
+        let engine_name =
+            CString::new("Katla Engine").map_err(|e| crate::error::AppError::Other {
+                message: e.to_string(),
+            })?;
+        let app_name =
+            CString::new("Katla Headless").map_err(|e| crate::error::AppError::Other {
+                message: e.to_string(),
+            })?;
+
+        let mut renderer = Renderer::new_metal_headless(
+            crate::application::headless::HEADLESS_WIDTH,
+            crate::application::headless::HEADLESS_HEIGHT,
+            self.validation_mode,
+            app_name,
+            engine_name,
         )
+        .map_err(|e| crate::error::AppError::Graphics { source: e })?;
+
+        renderer
+            .init_particle_system()
+            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
+
+        // Upload font atlas
+        let (font_atlas_handle, atlas_width, atlas_height) = {
+            let fonts = ui_context.fonts();
+            let (w, h) = fonts.atlas_size();
+            let data = fonts.atlas_data_rgba();
+            (renderer.create_ui_font_atlas(w, h, &data), w, h)
+        };
+        log::info!(
+            "Uploaded font atlas: {}x{}, handle={:?}",
+            atlas_width,
+            atlas_height,
+            font_atlas_handle
+        );
+
+        // Build frame graph
+        let mut frame_graph = {
+            let metal_renderer = match &mut renderer {
+                katla_gfx::AnyRenderer::Metal(r) => r,
+                _ => unreachable!(),
+            };
+            Self::build_metal_frame_graph(metal_renderer)?
+        };
+
+        frame_graph
+            .initialize_transient_textures(&mut renderer)
+            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+
+        // Wire bindless slots
+        {
+            let hdr_slot = frame_graph
+                .register_transient_texture_bindless(&mut renderer, "hdr_color")
+                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+            log::info!("HDR texture registered with bindless at index {}", hdr_slot);
+
+            let vp_slot = frame_graph
+                .register_transient_texture_bindless(&mut renderer, "viewport_0")
+                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+            log::info!(
+                "Viewport texture registered with bindless at index {}",
+                vp_slot
+            );
+
+            let frame_idx = GpuRenderer::current_frame(&renderer);
+            if let Some(view) = frame_graph.transient_image_view_metal("hdr_color", frame_idx) {
+                let hdr_transient_slot = frame_graph
+                    .transient_texture_metal("hdr_color", frame_idx)
+                    .and_then(|t| t.bindless_slot)
+                    .unwrap_or(hdr_slot);
+                renderer.set_geometry_hdr_view(view, hdr_transient_slot);
+            }
+            if let Some(view) = frame_graph.transient_image_view_metal("viewport_0", 0) {
+                renderer.set_tonemap_output_view(view);
+            }
+            renderer.set_viewport_bindless_slot(vp_slot);
+        }
+
+        let pass_ids = super::PassIds {
+            depth_prepass: frame_graph
+                .pass_id("depth_prepass")
+                .unwrap_or(katla_gfx::render_graph::PassId(0)),
+            geometry: frame_graph
+                .pass_id("geometry")
+                .ok_or(crate::error::AppError::Other {
+                    message: "Frame graph must contain a 'geometry' pass".to_string(),
+                })?,
+            shadow: frame_graph
+                .pass_id("shadow")
+                .ok_or(crate::error::AppError::Other {
+                    message: "Frame graph must contain a 'shadow' pass".to_string(),
+                })?,
+            outline: frame_graph
+                .pass_id("outline")
+                .unwrap_or(katla_gfx::render_graph::PassId(0)),
+            stencil_indicator: frame_graph
+                .pass_id("stencil_indicator")
+                .unwrap_or(katla_gfx::render_graph::PassId(0)),
+            ui: frame_graph
+                .pass_id("ui")
+                .ok_or(crate::error::AppError::Other {
+                    message: "Frame graph must contain a 'ui' pass".to_string(),
+                })?,
+            tonemap: frame_graph
+                .pass_id("tonemap")
+                .ok_or(crate::error::AppError::Other {
+                    message: "Frame graph must contain a 'tonemap' pass".to_string(),
+                })?,
+            wallhack_overlay: frame_graph
+                .pass_id("wallhack_overlay")
+                .unwrap_or(katla_gfx::render_graph::PassId(0)),
+        };
+
+        // Initialize UI renderer for Metal
+        #[cfg(feature = "editor")]
+        let mut ui_renderer = crate::ui::UIRenderer::new();
+        #[cfg(feature = "editor")]
+        if let Some(font_handle) = renderer.ui_font_atlas_handle()
+            && let Some(bindless_slot) = renderer.get_bindless_slot(font_handle)
+        {
+            ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
+            log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
+        }
+
+        // Insert required ECS resources
+        world.insert_resource(crate::input::InputState::new());
+        world.insert_resource(katla_script::ScriptsActive(false));
+        world.insert_resource(katla_script::PendingAudioCommands::default());
+        world.insert_resource(katla_script::PendingRaycastCommands::default());
+        world.insert_resource(katla_script::PendingRaycastResults::default());
+        world.insert_resource(katla_script::PendingPhysicsEvents::default());
+        world.insert_resource(katla_script::ScriptInspectorData::default());
+        world.insert_resource(katla_script::PopulateScriptInspector(false));
+        world.insert_resource(katla_script::PendingScriptVarEdits::default());
+        world.insert_resource(katla_physics::PhysicsWorld::new());
+        world.insert_resource(katla_physics::PhysicsActive(false));
+        world.insert_resource(crate::geometry_cache::GeometryCache::default());
+        world.insert_resource(crate::resources::AmbientLight::default());
+
+        let gltf_loader: crate::util::GltfLoaderFn = Box::new(|path: &PathBuf| {
+            crate::util::GLTFModel::new(path).map_err(|e| {
+                log::error!("Failed to load GLTF model from {:?}: {e}", path);
+                e
+            })
+        });
+
+        let app = Application {
+            window: None,
+            renderer,
+            frame_graph,
+            pass_ids,
+            camera,
+            gltf_cache: GltfCache::new(gltf_loader),
+            timer: Timer::new(100),
+            info,
+            world,
+            input_mapper: InputMapper::new(),
+            current_modifiers: ModifiersState::empty(),
+            frame_count: 0,
+            last_draw_call_count: 0,
+            resources,
+            ui_context,
+            #[cfg(feature = "editor")]
+            editor: { super::EditorState::new(ui_renderer, theme, &preferences, gui_state) },
+            preferences,
+            scale_factor: 1.0,
+            start_time: Instant::now(),
+            default_material_handle: katla_gfx::MaterialHandle::NONE,
+            cleaned_up: false,
+            quit_requested: false,
+            particle_system: crate::systems::ParticleSystem::new(),
+            gpu_animation_system: None,
+            audio_system: None,
+            minimized: false,
+            needs_swapchain_recreate: false,
+            gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
+                katla_gfx::MaterialHandle::NONE,
+            ),
+            geometry_cache: crate::geometry_cache::GeometryCache::default(),
+            point_lights_buffer: Vec::new(),
+            on_init: self.on_init,
+            on_update: self.on_update,
+            on_shutdown: self.on_shutdown,
+            #[cfg(feature = "editor")]
+            play_mode: super::game_state::PlayMode::Editing,
+            #[cfg(feature = "editor")]
+            scene_snapshot: None,
+            #[cfg(feature = "editor")]
+            asset_watcher: None,
+            layout_dumped: false,
+        };
+
+        Ok(app)
     }
 
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
@@ -762,6 +1006,7 @@ impl ApplicationBuilder {
             scene_path: self.scene_path,
             dump_layout_path: self.dump_layout_path,
             screenshot_path: None,
+            headless: false,
         };
 
         let mut world = self.world;
@@ -1035,7 +1280,7 @@ impl ApplicationBuilder {
         world.insert_resource(crate::geometry_cache::GeometryCache::default());
 
         let app = Application {
-            window,
+            window: Some(window),
             renderer,
             frame_graph,
             pass_ids,

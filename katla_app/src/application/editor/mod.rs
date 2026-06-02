@@ -339,8 +339,14 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     app.editor.editor_ui.update_timers(dt);
 
     // Get physical window size and convert to logical for UI layout
-    let size = app.window.inner_size();
-    let physical_size = Vec2::new(size.width as f32, size.height as f32);
+    let physical_size = if let Some(ref window) = app.window {
+        let size = window.inner_size();
+        Vec2::new(size.width as f32, size.height as f32)
+    } else {
+        // Headless mode: use renderer swapchain extent
+        let extent = app.renderer.swapchain_extent();
+        Vec2::new(extent.width as f32, extent.height as f32)
+    };
 
     // UI uses logical coordinates - convert physical to logical
     let screen_size = physical_size / scale_factor;
@@ -1791,7 +1797,9 @@ pub fn process_editor_actions(app: &mut Application) {
         katla_ui::input::MouseCursor::Crosshair => CursorIcon::Crosshair,
         katla_ui::input::MouseCursor::NotAllowed => CursorIcon::NotAllowed,
     };
-    app.window.set_cursor(cursor_icon);
+    if let Some(ref window) = app.window {
+        window.set_cursor(cursor_icon);
+    }
 
     // Clear input state for next frame
     app.editor.gizmo_state.consumed_click = false;

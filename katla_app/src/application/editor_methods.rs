@@ -261,8 +261,14 @@ impl Application {
             return;
         };
 
-        let size = self.window.inner_size();
-        let screen_size = Vec2::new(size.width as f32, size.height as f32) / self.scale_factor;
+        let screen_size = if let Some(ref window) = self.window {
+            let size = window.inner_size();
+            Vec2::new(size.width as f32, size.height as f32) / self.scale_factor
+        } else {
+            // Headless mode: use renderer swapchain extent
+            let extent = self.renderer.swapchain_extent();
+            Vec2::new(extent.width as f32, extent.height as f32)
+        };
 
         let output =
             katla_ui::declarative::serialize_layout(self.editor.editor_ui.view_tree(), screen_size);
