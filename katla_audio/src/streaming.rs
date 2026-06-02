@@ -25,8 +25,10 @@ struct OggStreamState {
 }
 
 struct Mp3StreamState {
-    decoder: minimp3::Decoder<std::io::BufReader<std::fs::File>>,
-    path: std::path::PathBuf,
+    format_reader: Box<dyn symphonia::core::formats::FormatReader>,
+    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    track_id: u32,
+    sample_buf: Option<symphonia::core::audio::SampleBuffer<f32>>,
 }
 
 struct FlacStreamState {
@@ -65,15 +67,57 @@ impl StreamingDecoder {
 
     pub fn open_mp3(path: &Path) -> Result<Self, AudioError> {
         use std::fs::File;
+        use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+        use symphonia::core::formats::FormatOptions;
+        use symphonia::core::io::MediaSourceStream;
+        use symphonia::core::meta::MetadataOptions;
+        use symphonia::core::probe::Hint;
+
         let file = File::open(path).map_err(AudioError::Io)?;
-        let decoder = minimp3::Decoder::new(std::io::BufReader::new(file));
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+        let mut hint = Hint::new();
+        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            hint.with_extension(ext);
+        }
+
+        let format_opts = FormatOptions {
+            enable_gapless: true,
+            ..Default::default()
+        };
+
+        let probed = symphonia::default::get_probe()
+            .format(&hint, mss, &format_opts, &MetadataOptions::default())
+            .map_err(|e| AudioError::DecodeFailed(format!("Failed to probe MP3: {e}")))?;
+
+        let format_reader = probed.format;
+        let track = format_reader
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .ok_or_else(|| AudioError::DecodeFailed("No supported audio track found".into()))?;
+
+        let track_id = track.id;
+        let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
+        let channels = track
+            .codec_params
+            .channels
+            .map(|c| c.count() as u16)
+            .unwrap_or(2);
+
+        let decoder = symphonia::default::get_codecs()
+            .make(&track.codec_params, &DecoderOptions::default())
+            .map_err(|e| AudioError::DecodeFailed(format!("Failed to create MP3 decoder: {e}")))?;
+
         Ok(StreamingDecoder {
             inner: StreamingDecoderInner::Mp3(Mp3StreamState {
+                format_reader,
                 decoder,
-                path: path.to_path_buf(),
+                track_id,
+                sample_buf: None,
             }),
-            channels: 0,
-            sample_rate: 0,
+            channels,
+            sample_rate,
             exhausted: false,
         })
     }
@@ -193,30 +237,43 @@ impl StreamingDecoder {
             StreamingDecoderInner::Mp3(state) => {
                 let mut all_samples = Vec::with_capacity(STREAM_CHUNK_SAMPLES);
                 loop {
-                    match state.decoder.next_frame() {
-                        Ok(frame) => {
-                            if self.sample_rate == 0 {
-                                self.sample_rate = frame.sample_rate as u32;
-                                self.channels = frame.channels as u16;
-                            }
-                            for sample in frame.data {
-                                all_samples.push(sample as f32 / i16::MAX as f32);
-                            }
-                            if all_samples.len() >= STREAM_CHUNK_SAMPLES {
-                                break;
-                            }
-                        }
-                        Err(minimp3::Error::Eof) => {
+                    let packet = match state.format_reader.next_packet() {
+                        Ok(p) => p,
+                        Err(symphonia::core::errors::Error::IoError(ref e))
+                            if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+                        {
                             self.exhausted = true;
                             break;
                         }
                         Err(_) => {
-                            return Some(AudioBuffer {
-                                sample_rate: self.sample_rate,
-                                channels: self.channels,
-                                samples: all_samples,
-                            });
+                            break;
                         }
+                    };
+
+                    if packet.track_id() != state.track_id {
+                        continue;
+                    }
+
+                    let decoded = match state.decoder.decode(&packet) {
+                        Ok(d) => d,
+                        Err(_) => break,
+                    };
+
+                    if state.sample_buf.is_none() {
+                        let spec = *decoded.spec();
+                        let duration = decoded.capacity() as u64;
+                        state.sample_buf = Some(symphonia::core::audio::SampleBuffer::<f32>::new(
+                            duration, spec,
+                        ));
+                    }
+
+                    if let Some(ref mut buf) = state.sample_buf {
+                        buf.copy_interleaved_ref(decoded);
+                        all_samples.extend_from_slice(buf.samples());
+                    }
+
+                    if all_samples.len() >= STREAM_CHUNK_SAMPLES {
+                        break;
                     }
                 }
                 if all_samples.is_empty() {
@@ -277,9 +334,16 @@ impl StreamingDecoder {
                     .map_err(|e| AudioError::DecodeFailed(format!("OGG seek failed: {e}")))?;
             }
             StreamingDecoderInner::Mp3(state) => {
-                use std::fs::File;
-                let file = File::open(&state.path).map_err(AudioError::Io)?;
-                state.decoder = minimp3::Decoder::new(std::io::BufReader::new(file));
+                use symphonia::core::formats::{SeekMode, SeekTo};
+                use symphonia::core::units::Time;
+                let seek_to = SeekTo::Time {
+                    time: Time::new(0, 0.0),
+                    track_id: Some(state.track_id),
+                };
+                state
+                    .format_reader
+                    .seek(SeekMode::Accurate, seek_to)
+                    .map_err(|e| AudioError::DecodeFailed(format!("MP3 seek failed: {e}")))?;
             }
             StreamingDecoderInner::Flac(state) => {
                 use std::fs::File;
@@ -312,24 +376,19 @@ impl StreamingDecoder {
                     .map_err(|e| AudioError::DecodeFailed(format!("OGG seek failed: {e}")))?;
             }
             StreamingDecoderInner::Mp3(state) => {
-                use std::fs::File;
-                let file = File::open(&state.path).map_err(AudioError::Io)?;
-                state.decoder = minimp3::Decoder::new(std::io::BufReader::new(file));
-                let skip_samples = target_frame as usize * self.channels as usize;
-                let mut skipped = 0usize;
-                while skipped < skip_samples {
-                    match state.decoder.next_frame() {
-                        Ok(frame) => {
-                            if self.sample_rate == 0 {
-                                self.sample_rate = frame.sample_rate as u32;
-                                self.channels = frame.channels as u16;
-                            }
-                            skipped += frame.data.len();
-                        }
-                        Err(minimp3::Error::Eof) => break,
-                        Err(_) => break,
-                    }
-                }
+                use symphonia::core::formats::{SeekMode, SeekTo};
+                use symphonia::core::units::Time;
+                let seek_to = SeekTo::Time {
+                    time: Time::new(
+                        position.as_secs() as u64,
+                        position.subsec_nanos() as f64 / 1e9,
+                    ),
+                    track_id: Some(state.track_id),
+                };
+                state
+                    .format_reader
+                    .seek(SeekMode::Accurate, seek_to)
+                    .map_err(|e| AudioError::DecodeFailed(format!("MP3 seek failed: {e}")))?;
             }
             StreamingDecoderInner::Flac(state) => {
                 use std::fs::File;
