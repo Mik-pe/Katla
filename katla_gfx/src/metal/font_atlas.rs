@@ -13,8 +13,26 @@ impl MetalRenderer {
         height: u32,
         data: &[u8],
     ) -> TextureHandle {
+        log::warn!(
+            "METAL create_ui_font_atlas: {}x{}, {} bytes, current_font_atlas={:?}",
+            width,
+            height,
+            data.len(),
+            self.ui_font_atlas,
+        );
+        // Destroy the old atlas to free its bindless slot and GPU resource.
+        // Without this, repeated calls leak textures and exhaust bindless slots.
+        if let Some(old_handle) = self.ui_font_atlas.take() {
+            GpuRenderer::destroy_texture(self, old_handle);
+        }
         let desc = TextureDescriptor::new(width, height, ImageFormat::R8G8B8A8Srgb);
         let handle = GpuRenderer::create_texture(self, &desc, data);
+        let slot = self.get_bindless_slot(handle);
+        log::warn!(
+            "METAL create_ui_font_atlas: created texture handle idx={}, bindless_slot={:?}",
+            handle.index(),
+            slot,
+        );
         self.ui_font_atlas = Some(handle);
         handle
     }
