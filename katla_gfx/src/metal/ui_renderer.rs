@@ -247,7 +247,14 @@ impl MetalUIRenderer {
         let mut prev_scissor = full_scissor;
         let mut using_instanced_pipeline = false;
 
-        for cmd in &draw_list.commands {
+        log::warn!(
+            "METAL render_ui_commands: {} commands, screen_size={:?}, scale_factor={}",
+            draw_list.commands.len(),
+            draw_list.screen_size,
+            draw_list.scale_factor,
+        );
+
+        for (cmd_idx, cmd) in draw_list.commands.iter().enumerate() {
             let scissor = if let Some([x, y, w, h]) = cmd.clip_rect {
                 let s = draw_list.scale_factor;
                 let sx = (x * s).max(0.0) as u32;
@@ -290,18 +297,22 @@ impl MetalUIRenderer {
                     crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
                 );
                 // Bind instance data as storage buffer at buffer 11 (vertex stage).
-                // Metal's instance_id starts from 0 regardless of baseInstance,
-                // so we bind the buffer with a byte offset so instance_data[0]
-                // maps to the correct batch offset.
-                let instance_offset =
-                    cmd.offset as usize * std::mem::size_of::<crate::vertex::VertexUIInstance>();
+                // Use baseInstance so instance_id starts at cmd.offset, avoiding
+                // buffer offset alignment issues with per-batch offsets.
+                if cmd_idx < 5 {
+                    log::warn!(
+                        "METAL UI instanced[{}]: offset={}, count={}, texture={:?}",
+                        cmd_idx,
+                        cmd.offset,
+                        cmd.count,
+                        cmd.texture,
+                    );
+                }
                 if let Some(ref inst_buf) = self.instance_buffer {
                     unsafe {
-                        encoder.inner.setVertexBuffer_offset_atIndex(
-                            Some(&inst_buf.inner),
-                            instance_offset,
-                            11,
-                        );
+                        encoder
+                            .inner
+                            .setVertexBuffer_offset_atIndex(Some(&inst_buf.inner), 0, 11);
                     }
                 }
                 if let Some(ref quad_ib) = self.unit_quad_index_buffer {
@@ -314,7 +325,7 @@ impl MetalUIRenderer {
                 if let Some(ref quad_vb) = self.unit_quad_vertex_buffer {
                     encoder.bind_vertex_buffer(quad_vb, 0, 10);
                 }
-                encoder.draw_indexed(6, cmd.count, 0, 0, 0);
+                encoder.draw_indexed(6, cmd.count, 0, 0, cmd.offset);
             } else {
                 // Switch back to non-instanced pipeline if needed
                 if using_instanced_pipeline {
@@ -328,6 +339,14 @@ impl MetalUIRenderer {
                     ndc_y_flip: -1.0,
                     texture_index: cmd.texture.index(),
                 };
+                if cmd_idx < 5 {
+                    log::warn!(
+                        "METAL UI vertex[{}]: offset={}, count=1, texture_index={}",
+                        cmd_idx,
+                        cmd.offset,
+                        cmd.texture.index(),
+                    );
+                }
                 encoder.set_push_constants(
                     bytemuck::cast_slice(&[uniform_data]),
                     3,
