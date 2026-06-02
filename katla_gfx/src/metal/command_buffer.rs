@@ -188,7 +188,6 @@ unsafe impl Sync for MetalCommandBuffer {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::command::*;
     use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
     fn headless_context() -> super::super::context::MetalContext {
