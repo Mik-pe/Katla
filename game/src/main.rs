@@ -28,6 +28,14 @@ struct Args {
     /// Scene file to load on startup (e.g., assets/scenes/playground.katla)
     #[arg(long)]
     scene: Option<String>,
+
+    /// Dump UI layout tree to stdout after first frame, then exit
+    #[arg(long)]
+    dump_layout: bool,
+
+    /// Dump UI layout tree to a file after first frame, then exit
+    #[arg(long = "dump-layout-file", value_name = "PATH")]
+    dump_layout_file: Option<String>,
 }
 
 fn main() {
@@ -171,6 +179,16 @@ fn main() {
 
     if args.single_frame {
         builder = builder.max_frames(100);
+    }
+
+    if args.dump_layout {
+        builder = builder.max_frames(3).dump_layout_to_stdout();
+        info!("Layout dump mode: will print widget tree after first frame");
+    }
+
+    if let Some(ref path) = args.dump_layout_file {
+        builder = builder.max_frames(3).dump_layout_to_file(path.clone());
+        info!("Layout dump mode: will write widget tree to {}", path);
     }
 
     let result = builder.build();

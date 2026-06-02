@@ -66,4 +66,7 @@ impl Application {
             self.render_frame(None, dt, self.frame_count);
         }
     }
+
+    /// No-op in non-editor builds (no UI tree to dump).
+    pub(crate) fn dump_layout_if_needed(&mut self) {}
 }

@@ -66,6 +66,7 @@ pub struct ApplicationBuilder {
     check_black_frames: bool,
     world: World,
     scene_path: Option<String>,
+    dump_layout_path: Option<super::DumpLayoutTarget>,
     on_init: Option<InitHook>,
     on_update: Option<UpdateHook>,
     on_shutdown: Option<ShutdownHook>,
@@ -118,6 +119,18 @@ impl ApplicationBuilder {
     /// If not set, the default scene (`assets/scenes/default.katla`) is loaded.
     pub fn with_scene_path(mut self, path: impl Into<String>) -> Self {
         self.scene_path = Some(path.into());
+        self
+    }
+
+    /// Dump the UI layout tree to stdout after the first frame, then exit.
+    pub fn dump_layout_to_stdout(mut self) -> Self {
+        self.dump_layout_path = Some(super::DumpLayoutTarget::Stdout);
+        self
+    }
+
+    /// Dump the UI layout tree to a file after the first frame, then exit.
+    pub fn dump_layout_to_file(mut self, path: impl Into<String>) -> Self {
+        self.dump_layout_path = Some(super::DumpLayoutTarget::File(path.into()));
         self
     }
 
@@ -713,6 +726,7 @@ impl ApplicationBuilder {
             max_frames: self.max_frames,
             check_black_frames: self.check_black_frames,
             scene_path: self.scene_path,
+            dump_layout_path: self.dump_layout_path,
         };
 
         let mut world = self.world;
@@ -1033,6 +1047,7 @@ impl ApplicationBuilder {
             scene_snapshot: None,
             #[cfg(feature = "editor")]
             asset_watcher: Self::create_asset_watcher(),
+            layout_dumped: false,
         };
 
         Ok((app, event_loop))

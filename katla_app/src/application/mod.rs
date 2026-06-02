@@ -74,6 +74,13 @@ pub struct ApplicationInfo {
     max_frames: Option<usize>, // Some(n) = exit after n frames, None = run indefinitely
     check_black_frames: bool,
     scene_path: Option<String>, // Override scene to load on startup
+    dump_layout_path: Option<DumpLayoutTarget>,
+}
+
+/// Where to write the layout dump.
+pub(crate) enum DumpLayoutTarget {
+    Stdout,
+    File(String),
 }
 
 /// Main application struct containing all engine state.
@@ -378,6 +385,8 @@ pub struct Application {
     /// File watcher for shader and texture hot reload (editor only).
     #[cfg(feature = "editor")]
     pub(crate) asset_watcher: Option<crate::util::AssetWatcher>,
+    /// Whether the layout dump has already been performed.
+    layout_dumped: bool,
 }
 
 impl ApplicationHandler for Application {

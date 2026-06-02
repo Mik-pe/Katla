@@ -234,6 +234,9 @@ impl Application {
         // sample from the previous frame's stale texture.
         self.render_editor_frame(dt);
 
+        // Layout dump: if requested, serialize the UI tree and write to stdout/file, then exit.
+        self.dump_layout_if_needed();
+
         // Asynchronous black frame checking:
         // - On frame N: Queue async readback (non-blocking)
         // - On frame N+1: Check if readback from frame N is complete and save to disk
