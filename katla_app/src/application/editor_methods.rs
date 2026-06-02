@@ -265,9 +265,9 @@ impl Application {
             let size = window.inner_size();
             Vec2::new(size.width as f32, size.height as f32) / self.scale_factor
         } else {
-            // Headless mode: use renderer swapchain extent
+            // Headless mode: use renderer swapchain extent (physical), convert to logical
             let extent = self.renderer.swapchain_extent();
-            Vec2::new(extent.width as f32, extent.height as f32)
+            Vec2::new(extent.width as f32, extent.height as f32) / self.scale_factor
         };
 
         let output =
