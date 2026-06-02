@@ -133,17 +133,46 @@ pub trait Widget: Any + 'static {
         ChildWidgets::None
     }
 
-    /// Compute position delta for special positioning (Overlay, Modal, DraggablePanel).
+    /// Compute position delta for special positioning (Overlay, Modal, DraggablePanel, ZStack).
     ///
     /// Returns the offset to apply to the taffy-computed bounds.
+    /// For ZStack children, computes alignment-based offset from parent and child bounds.
     fn resolve_position_delta(
         &self,
-        _bounds: Rect2D,
-        _parent_bounds: Rect2D,
-        _zstack_alignment: Option<Alignment>,
+        bounds: Rect2D,
+        parent_bounds: Rect2D,
+        zstack_alignment: Option<Alignment>,
         _state: &StateArena,
     ) -> Vec2 {
-        Vec2::ZERO
+        match zstack_alignment {
+            Some(alignment) => {
+                let dx = parent_bounds.width() - bounds.width();
+                let dy = parent_bounds.height() - bounds.height();
+                let hx = match alignment {
+                    Alignment::TopLeading
+                    | Alignment::Leading
+                    | Alignment::BottomLeading => 0.0,
+                    Alignment::Top | Alignment::Center | Alignment::Bottom => dx * 0.5,
+                    Alignment::TopTrailing
+                    | Alignment::Trailing
+                    | Alignment::BottomTrailing => dx,
+                    Alignment::BottomCenter => dx * 0.5,
+                };
+                let vy = match alignment {
+                    Alignment::TopLeading
+                    | Alignment::Top
+                    | Alignment::TopTrailing => 0.0,
+                    Alignment::Leading | Alignment::Center | Alignment::Trailing => dy * 0.5,
+                    Alignment::BottomLeading
+                    | Alignment::Bottom
+                    | Alignment::BottomTrailing
+                    | Alignment::BottomCenter => dy,
+                };
+                let target = parent_bounds.min + Vec2::new(hx, vy);
+                target - bounds.min
+            }
+            None => Vec2::ZERO,
+        }
     }
 
     /// Whether this node should clip its children to its bounds.
