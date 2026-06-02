@@ -9,7 +9,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::SeparatorDirection;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 pub struct Separator {
     pub direction: SeparatorDirection,
@@ -70,9 +70,7 @@ impl Widget for Separator {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let line_color = self.color.unwrap_or(ctx.style().separator);
         match self.direction {

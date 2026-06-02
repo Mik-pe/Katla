@@ -10,7 +10,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 pub struct Button {
     pub label: String,
@@ -72,9 +72,7 @@ impl Widget for Button {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        interaction: &DrawInteraction,
-        view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        info: &DrawInfo,
     ) {
         let bg = self.fill_color.unwrap_or(ctx.style().button_normal);
         let bg = animation.apply_to_color(bg);
@@ -85,7 +83,7 @@ impl Widget for Button {
             ctx.draw_rounded_selection_border(bounds, border, 1.0, radius);
         }
 
-        if interaction.is_focused(view_id) {
+        if info.interaction.is_focused(info.view_id) {
             ctx.draw_rounded_selection_border(bounds, ctx.style().selectable_selected, 2.0, radius);
         }
 

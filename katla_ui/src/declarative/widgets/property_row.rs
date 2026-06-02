@@ -6,7 +6,7 @@ use taffy::{Dimension, Size, Style};
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub struct PropertyRow {
@@ -60,9 +60,7 @@ impl Widget for PropertyRow {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let font_size = ctx.style().font_size;
 

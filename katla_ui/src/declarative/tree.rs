@@ -588,6 +588,11 @@ impl ViewTree {
             active_id: self.interaction.active_id,
             focused_id: self.interaction.focused_id,
         };
+        let draw_info = super::widget::DrawInfo {
+            interaction: &draw_interaction,
+            view_id: node_id,
+            children_bounds: &children_bounds,
+        };
 
         node.widget.draw(
             ui,
@@ -595,9 +600,7 @@ impl ViewTree {
             bounds,
             &anim_state,
             &children,
-            &draw_interaction,
-            node_id,
-            &children_bounds,
+            &draw_info,
         );
 
         let scroll_offset = node.widget.scroll_offset(&self.state);
@@ -657,6 +660,11 @@ impl ViewTree {
             active_id: self.interaction.active_id,
             focused_id: self.interaction.focused_id,
         };
+        let draw_info = super::widget::DrawInfo {
+            interaction: &draw_interaction,
+            view_id: child_id,
+            children_bounds: &grandchildren_bounds,
+        };
 
         child_node.widget.draw(
             ui,
@@ -664,9 +672,7 @@ impl ViewTree {
             draw_bounds,
             &anim_state,
             &grandchildren,
-            &draw_interaction,
-            child_id,
-            &grandchildren_bounds,
+            &draw_info,
         );
 
         let child_scroll = child_node.widget.scroll_offset(&self.state);
@@ -1901,7 +1907,7 @@ mod tests {
     fn test_new_widget_extensibility() {
         // Define a minimal custom widget — no pipeline changes needed
         use crate::declarative::widget::{
-            DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+            DrawInfo, InputContext, InputResult, MeasureFn, Widget,
         };
         use std::any::Any;
 
@@ -1942,9 +1948,7 @@ mod tests {
                 _bounds: Rect2D,
                 _animation: &super::AnimationState,
                 _children: &[ViewId],
-                _interaction: &DrawInteraction,
-                _view_id: ViewId,
-                _children_bounds: &[Rect2D],
+                _info: &DrawInfo,
             ) {
             }
         }

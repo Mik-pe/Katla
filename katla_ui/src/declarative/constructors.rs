@@ -397,8 +397,10 @@ pub fn tree_view(
         scroll_id,
         20.0,
         16.0,
-        None,
-        None,
+        widgets::tree_view::TreeViewCallbacks {
+            on_select: None,
+            on_right_click: None,
+        },
     )
 }
 

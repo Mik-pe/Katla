@@ -415,11 +415,12 @@ impl MixerState {
         let mut best_slot = None;
         let mut best_priority = min_priority;
         for (i, voice_opt) in self.voices.iter().enumerate() {
-            if let Some(voice) = voice_opt {
-                if !voice.is_finished() && voice.priority() < best_priority {
-                    best_priority = voice.priority();
-                    best_slot = Some(i);
-                }
+            if let Some(voice) = voice_opt
+                && !voice.is_finished()
+                && voice.priority() < best_priority
+            {
+                best_priority = voice.priority();
+                best_slot = Some(i);
             }
         }
         best_slot
@@ -429,11 +430,12 @@ impl MixerState {
         let mut best_slot = None;
         let mut best_priority = min_priority;
         for (i, voice_opt) in self.streaming_voices.iter().enumerate() {
-            if let Some(voice) = voice_opt {
-                if !voice.is_finished() && voice.priority() < best_priority {
-                    best_priority = voice.priority();
-                    best_slot = Some(i);
-                }
+            if let Some(voice) = voice_opt
+                && !voice.is_finished()
+                && voice.priority() < best_priority
+            {
+                best_priority = voice.priority();
+                best_slot = Some(i);
             }
         }
         best_slot
@@ -745,7 +747,7 @@ impl AudioMixer {
             .scheduled_events
             .lock()
             .expect("scheduled_events lock poisoned");
-        events.push(ScheduledEvent::PlayAt {
+        events.push(ScheduledEvent::Play {
             buffer,
             category,
             priority,
@@ -758,7 +760,7 @@ impl AudioMixer {
             .scheduled_events
             .lock()
             .expect("scheduled_events lock poisoned");
-        events.push(ScheduledEvent::StopAt {
+        events.push(ScheduledEvent::Stop {
             voice_id,
             time_secs,
         });
@@ -769,7 +771,7 @@ impl AudioMixer {
             .scheduled_events
             .lock()
             .expect("scheduled_events lock poisoned");
-        events.push(ScheduledEvent::SetVolumeAt {
+        events.push(ScheduledEvent::SetVolume {
             voice_id,
             volume,
             time_secs,
@@ -960,8 +962,8 @@ impl AudioMixer {
 
             let mut finished_voice_count = 0usize;
             let mut finished_voices: [(usize, VoiceId); MAX_VOICES] = [(0, VoiceId(0)); MAX_VOICES];
-            for i in 0..voices.len() {
-                if let Some(v) = &voices[i]
+            for (i, voice) in voices.iter().enumerate() {
+                if let Some(v) = voice
                     && v.is_finished()
                 {
                     finished_voices[finished_voice_count] = (i, v.id());
@@ -977,8 +979,8 @@ impl AudioMixer {
             let mut finished_streaming_count = 0usize;
             let mut finished_streaming: [(usize, VoiceId); MAX_STREAMING_VOICES] =
                 [(0, VoiceId(0)); MAX_STREAMING_VOICES];
-            for i in 0..streaming_voices.len() {
-                if let Some(v) = &streaming_voices[i]
+            for (i, voice) in streaming_voices.iter().enumerate() {
+                if let Some(v) = voice
                     && v.is_finished()
                 {
                     finished_streaming[finished_streaming_count] = (i, v.id());
@@ -1020,14 +1022,14 @@ impl AudioMixer {
         let mut i = 0;
         while i < events.len() {
             let time = match &events[i] {
-                ScheduledEvent::PlayAt { time_secs, .. } => *time_secs,
-                ScheduledEvent::StopAt { time_secs, .. } => *time_secs,
-                ScheduledEvent::SetVolumeAt { time_secs, .. } => *time_secs,
+                ScheduledEvent::Play { time_secs, .. } => *time_secs,
+                ScheduledEvent::Stop { time_secs, .. } => *time_secs,
+                ScheduledEvent::SetVolume { time_secs, .. } => *time_secs,
             };
             if time <= current_time {
                 let event = events.swap_remove(i);
                 match event {
-                    ScheduledEvent::PlayAt {
+                    ScheduledEvent::Play {
                         buffer,
                         category,
                         priority,
@@ -1035,10 +1037,10 @@ impl AudioMixer {
                     } => {
                         self.play_internal(buffer, false, category, priority);
                     }
-                    ScheduledEvent::StopAt { voice_id, .. } => {
+                    ScheduledEvent::Stop { voice_id, .. } => {
                         self.stop(voice_id);
                     }
-                    ScheduledEvent::SetVolumeAt {
+                    ScheduledEvent::SetVolume {
                         voice_id, volume, ..
                     } => {
                         let state = self.state.lock().expect("AudioMixer state lock poisoned");

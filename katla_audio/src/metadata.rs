@@ -241,7 +241,7 @@ fn metadata_flac(path: &Path) -> Result<AudioMetadata, AudioError> {
     let channels = info.channels as u16;
     let sample_count = info
         .samples
-        .map(|s| s as u64 * channels as u64)
+        .map(|s| s * channels as u64)
         .unwrap_or(0);
     let duration_secs = if sample_rate > 0 {
         info.samples

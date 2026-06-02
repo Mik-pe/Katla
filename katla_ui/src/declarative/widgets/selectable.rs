@@ -8,7 +8,7 @@ use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{
-    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+    ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget,
 };
 use crate::context::UiContext;
 use crate::input::mouse_button;
@@ -68,9 +68,7 @@ impl Widget for Selectable {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let radius = bounds.height() * 0.4;
         if self.selected {

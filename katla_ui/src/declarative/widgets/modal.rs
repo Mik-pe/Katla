@@ -8,7 +8,7 @@ use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{
-    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+    ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget,
 };
 use crate::context::UiContext;
 use crate::input::{KeyCode, mouse_button};
@@ -109,9 +109,7 @@ impl Widget for Modal {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let is_open: bool = state.get(self.open_id).unwrap_or_default();
         if !is_open {

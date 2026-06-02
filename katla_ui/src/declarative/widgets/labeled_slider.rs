@@ -10,7 +10,7 @@ use crate::input::mouse_button;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 pub struct LabeledSlider {
     pub label: String,
@@ -85,9 +85,7 @@ impl Widget for LabeledSlider {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let value: f32 = state.get(self.value_id).unwrap_or_default();
         let t = if *self.range.end() > *self.range.start() {

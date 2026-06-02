@@ -7,7 +7,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::ContextMenuEntry;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 use crate::input::mouse_button;
 
@@ -95,9 +95,7 @@ impl Widget for ContextMenu {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let is_open: bool = state.get(self.open_id).unwrap_or_default();
         if !is_open {

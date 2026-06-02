@@ -11,7 +11,7 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 pub struct TextField {
     pub placeholder: String,
@@ -107,15 +107,13 @@ impl Widget for TextField {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        interaction: &DrawInteraction,
-        view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        info: &DrawInfo,
     ) {
         let text: String = state.get(self.value_id).unwrap_or_default();
 
         ctx.draw_rounded_rect(bounds, ctx.style().input_bg, ctx.style().input_rounding);
 
-        let border_color = if interaction.is_focused(view_id) {
+        let border_color = if info.interaction.is_focused(info.view_id) {
             ctx.style().selectable_selected
         } else {
             ctx.style().input_border
@@ -123,7 +121,7 @@ impl Widget for TextField {
         ctx.draw_rounded_selection_border(
             bounds,
             border_color,
-            if interaction.is_focused(view_id) {
+            if info.interaction.is_focused(info.view_id) {
                 2.0
             } else {
                 1.0

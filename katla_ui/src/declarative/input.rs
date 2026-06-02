@@ -310,7 +310,7 @@ mod tests {
     use crate::declarative::state::{StateArena, ViewId};
     use crate::declarative::tree::ViewTree;
     use crate::declarative::widget::{
-        ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget, WidgetBox,
+        ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget, WidgetBox,
     };
     use crate::input::UiInputState;
 
@@ -370,9 +370,7 @@ mod tests {
             _bounds: Rect2D,
             _animation: &AnimationState,
             _children: &[ViewId],
-            _interaction: &DrawInteraction,
-            _view_id: ViewId,
-            _children_bounds: &[Rect2D],
+            _info: &DrawInfo,
         ) {
         }
         fn interactive(&self) -> bool {

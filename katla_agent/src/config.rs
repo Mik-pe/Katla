@@ -261,12 +261,12 @@ impl LlmConfig {
             });
         }
 
-        if let Some(ref url) = self.base_url {
-            if url.is_empty() {
-                issues.push(ConfigIssue {
-                    message: "base_url is set but empty.".to_string(),
-                });
-            }
+        if let Some(ref url) = self.base_url
+            && url.is_empty()
+        {
+            issues.push(ConfigIssue {
+                message: "base_url is set but empty.".to_string(),
+            });
         }
 
         if self.rate_limit_max_calls_per_minute == 0 {

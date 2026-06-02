@@ -8,7 +8,7 @@ use super::super::descriptor::TabItem;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{
-    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+    ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget,
 };
 use crate::context::UiContext;
 use crate::input::mouse_button;
@@ -96,9 +96,7 @@ impl Widget for TabBar {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let font_size = ctx.style().font_size;
         let selected: usize = state.get(self.selected_id).unwrap_or_default();
