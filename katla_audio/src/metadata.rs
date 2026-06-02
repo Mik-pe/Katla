@@ -88,6 +88,11 @@ fn metadata_ogg(path: &Path) -> Result<AudioMetadata, AudioError> {
 fn metadata_mp3(path: &Path) -> Result<AudioMetadata, AudioError> {
     use std::fs::File;
     use std::io::{Read as _, Seek, SeekFrom};
+    use symphonia::core::codecs::CODEC_TYPE_NULL;
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::probe::Hint;
 
     let mut file = File::open(path).map_err(AudioError::Io)?;
     let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
@@ -181,18 +186,33 @@ fn metadata_mp3(path: &Path) -> Result<AudioMetadata, AudioError> {
 
     if !found {
         file.seek(SeekFrom::Start(0)).map_err(AudioError::Io)?;
-        let mut reader = minimp3::Decoder::new(std::io::BufReader::new(file));
-        match reader.next_frame() {
-            Ok(frame) => {
-                sample_rate = frame.sample_rate as u32;
-                channels = frame.channels as u16;
-            }
-            Err(e) => {
-                return Err(AudioError::DecodeFailed(format!(
-                    "Failed to parse MP3 header: {e}"
-                )));
-            }
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let mut hint = Hint::new();
+        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            hint.with_extension(ext);
         }
+        let probed = symphonia::default::get_probe()
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
+            .map_err(|e| AudioError::DecodeFailed(format!("Failed to probe MP3: {e}")))?;
+
+        let track = probed
+            .format
+            .tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .ok_or_else(|| AudioError::DecodeFailed("No audio track found".into()))?;
+
+        sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
+        channels = track
+            .codec_params
+            .channels
+            .map(|c| c.count() as u16)
+            .unwrap_or(2);
     }
 
     let duration_secs = if sample_rate > 0 && file_size > 0 {

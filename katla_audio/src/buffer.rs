@@ -106,28 +106,82 @@ pub fn load_ogg(path: &Path) -> Result<AudioBuffer, AudioError> {
 
 pub fn load_mp3(path: &Path) -> Result<AudioBuffer, AudioError> {
     use std::fs::File;
-    use std::io::BufReader;
+    use symphonia::core::audio::SampleBuffer;
+    use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::probe::Hint;
 
     let file = File::open(path).map_err(AudioError::Io)?;
-    let mut reader = minimp3::Decoder::new(BufReader::new(file));
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+
+    let format_opts = FormatOptions {
+        enable_gapless: true,
+        ..Default::default()
+    };
+
+    let probed = symphonia::default::get_probe()
+        .format(&hint, mss, &format_opts, &MetadataOptions::default())
+        .map_err(|e| AudioError::DecodeFailed(format!("Failed to probe MP3: {e}")))?;
+
+    let mut format_reader = probed.format;
+    let track = format_reader
+        .tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .ok_or_else(|| AudioError::DecodeFailed("No supported audio track found".into()))?;
+
+    let track_id = track.id;
+    let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
+    let channels = track
+        .codec_params
+        .channels
+        .map(|c| c.count() as u16)
+        .unwrap_or(2);
+
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|e| AudioError::DecodeFailed(format!("Failed to create MP3 decoder: {e}")))?;
 
     let mut all_samples: Vec<f32> = Vec::new();
-    let mut sample_rate = 0u32;
-    let mut channels = 0u16;
+    let mut sample_buf: Option<SampleBuffer<f32>> = None;
 
     loop {
-        match reader.next_frame() {
-            Ok(frame) => {
-                sample_rate = frame.sample_rate as u32;
-                channels = frame.channels as u16;
-                for sample in frame.data {
-                    all_samples.push(sample as f32 / i16::MAX as f32);
-                }
+        let packet = match format_reader.next_packet() {
+            Ok(p) => p,
+            Err(symphonia::core::errors::Error::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break;
             }
-            Err(minimp3::Error::Eof) => break,
             Err(e) => {
                 return Err(AudioError::DecodeFailed(format!("MP3 decode error: {e}")));
             }
+        };
+
+        if packet.track_id() != track_id {
+            continue;
+        }
+
+        let decoded = decoder
+            .decode(&packet)
+            .map_err(|e| AudioError::DecodeFailed(format!("MP3 decode error: {e}")))?;
+
+        if sample_buf.is_none() {
+            let spec = *decoded.spec();
+            let duration = decoded.capacity() as u64;
+            sample_buf = Some(SampleBuffer::<f32>::new(duration, spec));
+        }
+
+        if let Some(ref mut buf) = sample_buf {
+            buf.copy_interleaved_ref(decoded);
+            all_samples.extend_from_slice(buf.samples());
         }
     }
 
@@ -141,7 +195,6 @@ pub fn load_mp3(path: &Path) -> Result<AudioBuffer, AudioError> {
 pub fn load_flac(path: &Path) -> Result<AudioBuffer, AudioError> {
     let mut reader = claxon::FlacReader::open(path)
         .map_err(|e| AudioError::DecodeFailed(format!("Failed to parse FLAC: {e}")))?;
-
     let info = reader.streaminfo();
     let sample_rate = info.sample_rate;
     let channels = info.channels as u16;
