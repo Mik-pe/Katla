@@ -500,16 +500,12 @@ impl MetalRenderer {
         {
             log::warn!(
                 "METAL render_frame: UI pass — {} commands, {} vertices, {} indices, {} instances, \
-                 ui_load_op={:?}, screen_size={:?}",
+                 scene_blitted={}, screen_size={:?}",
                 ui_draw_list.commands.len(),
                 ui_draw_list.vertices.len(),
                 ui_draw_list.indices.len(),
                 ui_draw_list.instances.len(),
-                if self.tonemap_output_view.is_some() {
-                    LoadOp::Clear
-                } else {
-                    LoadOp::Load
-                },
+                scene_blitted_to_drawable,
                 ui_draw_list.screen_size,
             );
             let ui_material_handle = self.ui_renderer.ui_material();
@@ -518,16 +514,10 @@ impl MetalRenderer {
                 && let Some(ref ui_pipeline) = ui_material.pipeline
             {
                 drawable_written = true;
-                // When the scene was blitted to the drawable, load it so the UI
-                // draws on top of the 3D scene. Otherwise (tonemap wrote directly
-                // to drawable, or no tonemap) also load the prior pass output.
-                let ui_load_op = if scene_blitted_to_drawable {
-                    LoadOp::Load
-                } else if self.tonemap_output_view.is_some() {
-                    LoadOp::Clear
-                } else {
-                    LoadOp::Load
-                };
+                // The scene is always written to the drawable before the UI pass
+                // (either tonemap writes directly, or the blit copies viewport_0 → drawable).
+                // Load the prior pass output so the UI composites on top of the 3D scene.
+                let ui_load_op = LoadOp::Load;
                 let ui_pass_info = RenderPassInfo {
                     color_attachments: vec![ColorAttachmentInfo {
                         view: drawable_view.clone(),
