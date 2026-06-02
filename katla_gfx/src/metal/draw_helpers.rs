@@ -3,7 +3,7 @@ use objc2_metal::MTLRenderCommandEncoder;
 use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::renderer::types::DrawList;
 
-use super::metal_renderer::MetalRenderer;
+use super::metal_renderer::{MetalRenderer, OBJECT_UNIFORM_SIZE};
 use super::render_encoder::MetalRenderEncoder;
 
 impl MetalRenderer {
@@ -121,9 +121,28 @@ impl MetalRenderer {
                 encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
             }
 
+            // Metal's instance_id starts from 0 regardless of baseInstance,
+            // so rebind the object storage buffer with a byte offset so that
+            // objects[0] in the shader maps to the correct per-object data.
+            let object_offset = draw.instance_index as usize * OBJECT_UNIFORM_SIZE as usize;
+            if let Some(object_buf) = self.current_object_storage_buffer() {
+                unsafe {
+                    encoder.inner.setVertexBuffer_offset_atIndex(
+                        Some(&object_buf.inner),
+                        object_offset,
+                        1,
+                    );
+                    encoder.inner.setFragmentBuffer_offset_atIndex(
+                        Some(&object_buf.inner),
+                        object_offset,
+                        1,
+                    );
+                }
+            }
+
             encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
             encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
-            encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
+            encoder.draw_indexed(mesh.index_count, 1, 0, 0, 0);
         }
     }
 }
