@@ -24,11 +24,34 @@ use super::texture::{MetalTexture, MetalTextureView};
 
 impl MetalRenderer {
     pub(crate) fn render_frame(&mut self) -> Result<(), RendererError> {
-        log::debug!(
-            "render_frame: depth_view={}",
-            self.depth_stencil_view.is_some()
+        log::warn!(
+            "METAL render_frame: depth_view={}, drawable_size={}x{}, \
+             tonemap_pipeline={}, geometry_hdr_view={}, geometry_hdr_bindless_slot={:?}, \
+             tonemap_output_view={}, sky_pipeline={}, \
+             pending_draw_list={}, pending_shadow_draw_list={}, pending_ui_draw_list={}",
+            self.depth_stencil_view.is_some(),
+            self.drawable_size.width,
+            self.drawable_size.height,
+            self.tonemap_pipeline.is_some(),
+            self.geometry_hdr_view.is_some(),
+            self.geometry_hdr_bindless_slot,
+            self.tonemap_output_view.is_some(),
+            self.sky_pipeline.is_some(),
+            self.pending_draw_list
+                .as_ref()
+                .map(|dl| dl.draws.len())
+                .unwrap_or(0),
+            self.pending_shadow_draw_list
+                .as_ref()
+                .map(|dl| dl.draws.len())
+                .unwrap_or(0),
+            self.pending_ui_draw_list
+                .as_ref()
+                .map(|dl| dl.commands.len())
+                .unwrap_or(0),
         );
         if self.depth_stencil_view.is_none() {
+            log::error!("METAL render_frame: EARLY RETURN — no depth_stencil_view");
             self.current_drawable_texture = None;
             return Ok(());
         }
@@ -91,11 +114,15 @@ impl MetalRenderer {
         let draw_list = self.pending_draw_list.take();
         let picking_draw_list = draw_list.clone();
 
-        log::debug!(
-            "render_frame: has_tonemap={}, hdr_view={}, hdr_slot={:?}",
+        log::warn!(
+            "METAL render_frame: has_tonemap={}, hdr_view={}, hdr_slot={:?}, \
+             draw_list has {} draws, frame_uniform_buf={}, object_storage_buf={}",
             has_tonemap,
             self.geometry_hdr_view.is_some(),
             self.geometry_hdr_bindless_slot,
+            draw_list.as_ref().map(|dl| dl.draws.len()).unwrap_or(0),
+            self.current_frame_uniform_buffer().is_some(),
+            self.current_object_storage_buffer().is_some(),
         );
 
         if has_tonemap {
@@ -129,6 +156,19 @@ impl MetalRenderer {
             }
 
             Self::bind_common_resources(self, &mut encoder);
+
+            log::warn!(
+                "METAL geometry pass (HDR): sky_pipeline={}, draw_list={} draws, \
+                 camera_pos=[{:.2},{:.2},{:.2}], light_dir=[{:.2},{:.2},{:.2}]",
+                self.sky_pipeline.is_some(),
+                draw_list.as_ref().map(|dl| dl.draws.len()).unwrap_or(0),
+                self.frame_uniforms.camera_position[0],
+                self.frame_uniforms.camera_position[1],
+                self.frame_uniforms.camera_position[2],
+                self.frame_uniforms.light_direction[0],
+                self.frame_uniforms.light_direction[1],
+                self.frame_uniforms.light_direction[2],
+            );
 
             if let Some(ref sky_pipeline) = self.sky_pipeline {
                 if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
@@ -388,6 +428,12 @@ impl MetalRenderer {
             encoder.bind_graphics_pipeline(tonemap_pipeline);
             encoder.draw(3, 1, 0, 0);
 
+            log::warn!(
+                "METAL render_frame: tonemap pass submitted, hdr_slot={:?}, writes_to_drawable={}",
+                self.geometry_hdr_bindless_slot,
+                tonemap_writes_to_drawable,
+            );
+
             if let Some(ref fence) = self.tonemap_fence {
                 encoder
                     .inner
@@ -397,18 +443,47 @@ impl MetalRenderer {
             encoder.end_encoding();
         }
 
-        // Ensure tonemap output is visible to the UI pass. Metal's implicit
-        // barriers cover attachments but not textures accessed through
-        // argument buffers. The fence alone handles execution ordering, but
-        // some Apple GPU generations need an explicit encoder boundary to
-        // flush the render target cache.
-        if self.tonemap_output_view.is_some() {
-            let blit = cmd_buffer.inner.blitCommandEncoder();
-            if let Some(b) = blit {
-                if let Some(ref fence) = self.tonemap_fence {
-                    b.updateFence(fence);
+        // Blit the tonemapped viewport_0 texture into the drawable so the
+        // 3D scene is visible underneath the UI overlay.
+        let mut scene_blitted_to_drawable = false;
+        if let Some(ref tonemap_view) = self.tonemap_output_view {
+            if let Some(ref fence) = self.tonemap_fence {
+                // Wait for tonemap to finish before reading its output.
+                let blit = cmd_buffer.inner.blitCommandEncoder();
+                if let Some(b) = blit {
+                    b.waitForFence(fence);
+                    b.endEncoding();
                 }
-                b.endEncoding();
+            }
+
+            // Copy viewport_0 (LDR tonemapped scene) → drawable texture.
+            let src = &tonemap_view.inner;
+            let dst = &drawable_view.inner;
+            let w = self.drawable_size.width as usize;
+            let h = self.drawable_size.height as usize;
+            if w > 0 && h > 0 {
+                let blit = cmd_buffer.inner.blitCommandEncoder();
+                if let Some(b) = blit {
+                    unsafe {
+                        b.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
+                            src,
+                            0,
+                            0,
+                            objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                            objc2_metal::MTLSize {
+                                width: w,
+                                height: h,
+                                depth: 1,
+                            },
+                            dst,
+                            0,
+                            0,
+                            objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                        );
+                    }
+                    b.endEncoding();
+                    scene_blitted_to_drawable = true;
+                }
             }
         }
 
@@ -422,16 +497,32 @@ impl MetalRenderer {
                 .upload_draw_list(&self.context, &ui_draw_list)
                 .is_ok()
         {
+            log::warn!(
+                "METAL render_frame: UI pass — {} commands, {} vertices, {} indices, {} instances, \
+                 ui_load_op={:?}, screen_size={:?}",
+                ui_draw_list.commands.len(),
+                ui_draw_list.vertices.len(),
+                ui_draw_list.indices.len(),
+                ui_draw_list.instances.len(),
+                if self.tonemap_output_view.is_some() {
+                    LoadOp::Clear
+                } else {
+                    LoadOp::Load
+                },
+                ui_draw_list.screen_size,
+            );
             let ui_material_handle = self.ui_renderer.ui_material();
             if let Some(ui_mat_handle) = ui_material_handle
                 && let Some(ui_material) = self.materials.get(ui_mat_handle.index())
                 && let Some(ref ui_pipeline) = ui_material.pipeline
             {
                 drawable_written = true;
-                // When tonemap writes to viewport_0 (offscreen), the drawable
-                // has no prior content — clear it and let UI draw everything.
-                // Otherwise the tonemap wrote to the drawable directly, so load it.
-                let ui_load_op = if self.tonemap_output_view.is_some() {
+                // When the scene was blitted to the drawable, load it so the UI
+                // draws on top of the 3D scene. Otherwise (tonemap wrote directly
+                // to drawable, or no tonemap) also load the prior pass output.
+                let ui_load_op = if scene_blitted_to_drawable {
+                    LoadOp::Load
+                } else if self.tonemap_output_view.is_some() {
                     LoadOp::Clear
                 } else {
                     LoadOp::Load
@@ -474,6 +565,15 @@ impl MetalRenderer {
                         objc2_metal::MTLResourceUsage::Read,
                         objc2_metal::MTLRenderStages::Vertex
                             | objc2_metal::MTLRenderStages::Fragment,
+                    );
+                    let tex_count = self.bindless_manager.registered_textures().count();
+                    log::warn!(
+                        "METAL render_frame: UI bindless — arg_buffer bound, {} registered textures, \
+                         font_atlas={:?} (bindless_slot={:?})",
+                        tex_count,
+                        self.ui_font_atlas,
+                        self.ui_font_atlas
+                            .and_then(|h| self.get_bindless_slot_impl(h)),
                     );
                     for texture in self.bindless_manager.registered_textures() {
                         encoder.use_texture(
@@ -518,6 +618,7 @@ impl MetalRenderer {
         // viewport_0 and the UI pass was skipped), clear it to black before
         // presenting to avoid stale/undefined content from the drawable pool.
         if !drawable_written {
+            log::warn!("METAL render_frame: NO pass wrote to drawable — clearing to black!");
             let clear_pass_info = RenderPassInfo {
                 color_attachments: vec![ColorAttachmentInfo {
                     view: drawable_view,
@@ -529,6 +630,8 @@ impl MetalRenderer {
             };
             let encoder = cmd_buffer.begin_render_pass(clear_pass_info);
             encoder.end_encoding();
+        } else {
+            log::warn!("METAL render_frame: drawable was written to by render passes");
         }
 
         cmd_buffer.end();
