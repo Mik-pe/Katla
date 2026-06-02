@@ -7,7 +7,8 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_foundation::NSString;
 use objc2_metal::{
-    MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLOrigin, MTLPixelFormat, MTLSize,
+    MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLOrigin, MTLPixelFormat,
+    MTLRenderCommandEncoder, MTLSize,
 };
 
 use crate::backend::command::{
@@ -343,7 +344,21 @@ pub(crate) fn render_object_id_pass(
 
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
-        encoder.draw_indexed(mesh.index_count, 1, 0, 0, draw.instance_index);
+
+        // Metal's instance_id starts from 0 regardless of baseInstance,
+        // so rebind the object buffer with an offset so objects[0] maps
+        // to the correct per-object data.
+        let object_offset =
+            draw.instance_index as usize * super::metal_renderer::OBJECT_UNIFORM_SIZE as usize;
+        unsafe {
+            encoder.inner.setVertexBuffer_offset_atIndex(
+                Some(&object_storage_buffer.inner),
+                object_offset,
+                1,
+            );
+        }
+
+        encoder.draw_indexed(mesh.index_count, 1, 0, 0, 0);
     }
 
     encoder.end_encoding();
