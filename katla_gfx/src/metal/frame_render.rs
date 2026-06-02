@@ -483,6 +483,7 @@ impl MetalRenderer {
                     }
                     b.endEncoding();
                     scene_blitted_to_drawable = true;
+                    drawable_written = true;
                 }
             }
         }

@@ -237,6 +237,48 @@ impl MetalRenderer {
         Ok(renderer)
     }
 
+    /// Create a headless Metal renderer without a window.
+    ///
+    /// Uses an offscreen CAMetalLayer at the specified resolution.
+    /// Suitable for automated rendering and screenshot capture.
+    pub fn init_headless(
+        width: u32,
+        height: u32,
+        _validation_mode: crate::error::ValidationMode,
+        _app_name: std::ffi::CString,
+        _engine_name: std::ffi::CString,
+    ) -> Result<Self, RendererError> {
+        let context = MetalContext::init_headless_with_size(width, height)?;
+        let mut renderer = Self::new(context)?;
+
+        renderer.drawable_size = Size2D::new(width, height);
+        renderer.size = Size2D::new(width, height);
+        renderer.recreate_render_targets(width, height);
+        renderer.resize_light_culling(width, height);
+
+        Ok(renderer)
+    }
+
+    /// Set the offscreen texture as the current drawable for headless rendering.
+    ///
+    /// This replaces the normal `acquire_next_drawable()` from CAMetalLayer.
+    /// The texture must have Shared storage mode for CPU readback.
+    pub fn set_headless_drawable(&mut self, texture: Retained<ProtocolObject<dyn MTLTexture>>) {
+        self.current_drawable_texture = Some(texture.clone());
+        self.drawable_texture_view = Some(super::texture::MetalTextureView::new(
+            texture,
+            super::texture::MetalTexture::new(
+                self.current_drawable_texture.clone().unwrap(),
+                ImageFormat::B8G8R8A8Srgb,
+            ),
+        ));
+    }
+
+    /// Take back the offscreen texture after rendering (for readback).
+    pub fn take_headless_texture(&mut self) -> Option<Retained<ProtocolObject<dyn MTLTexture>>> {
+        self.current_drawable_texture.take()
+    }
+
     pub(crate) fn new(context: MetalContext) -> Result<Self, RendererError> {
         let features = context.detect_features();
         let bindless_manager = MetalBindlessTextureManager::new(features.max_bindless_textures)?;

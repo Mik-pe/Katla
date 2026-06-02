@@ -99,6 +99,57 @@ impl AnyRenderer {
             engine_name,
         )?))
     }
+
+    /// Create a new Metal renderer for headless (offscreen) rendering.
+    #[cfg(target_os = "macos")]
+    pub fn new_metal_headless(
+        width: u32,
+        height: u32,
+        validation_mode: crate::error::ValidationMode,
+        app_name: std::ffi::CString,
+        engine_name: std::ffi::CString,
+    ) -> Result<Self, RendererError> {
+        Ok(AnyRenderer::Metal(MetalRenderer::init_headless(
+            width,
+            height,
+            validation_mode,
+            app_name,
+            engine_name,
+        )?))
+    }
+
+    /// Get the Metal device (macOS only).
+    #[cfg(target_os = "macos")]
+    pub fn metal_device(&self) -> &objc2::runtime::ProtocolObject<dyn objc2_metal::MTLDevice> {
+        match self {
+            AnyRenderer::Vulkan(_) => panic!("metal_device called on Vulkan backend"),
+            AnyRenderer::Metal(r) => &r.context.device,
+        }
+    }
+
+    /// Set the headless offscreen texture as the drawable (macOS only).
+    #[cfg(target_os = "macos")]
+    pub fn set_headless_drawable(
+        &mut self,
+        texture: objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLTexture>>,
+    ) {
+        match self {
+            AnyRenderer::Vulkan(_) => panic!("set_headless_drawable called on Vulkan backend"),
+            AnyRenderer::Metal(r) => r.set_headless_drawable(texture),
+        }
+    }
+
+    /// Take back the headless texture for readback (macOS only).
+    #[cfg(target_os = "macos")]
+    pub fn take_headless_texture(
+        &mut self,
+    ) -> Option<objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLTexture>>>
+    {
+        match self {
+            AnyRenderer::Vulkan(_) => None,
+            AnyRenderer::Metal(r) => r.take_headless_texture(),
+        }
+    }
 }
 
 impl GpuRenderer for AnyRenderer {
@@ -674,6 +725,14 @@ impl AnyRenderer {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    pub fn viewport_bindless_slot(&self) -> Option<u32> {
+        match self {
+            AnyRenderer::Vulkan(_) => None,
+            AnyRenderer::Metal(r) => r.viewport_bindless_slot,
+        }
+    }
+
     // --- Metal-specific methods (take Metal types, not in trait) ---
 
     #[cfg(target_os = "macos")]
@@ -693,6 +752,28 @@ impl AnyRenderer {
         match self {
             AnyRenderer::Vulkan(_) => {}
             AnyRenderer::Metal(r) => r.set_tonemap_output_view(view),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn init_sky_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(_) => Ok(()),
+            AnyRenderer::Metal(r) => r.init_sky_pipeline(shader_path),
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn init_tonemap_pipeline(
+        &mut self,
+        shader_path: &std::path::Path,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(_) => Ok(()),
+            AnyRenderer::Metal(r) => r.init_tonemap_pipeline(shader_path),
         }
     }
 
@@ -725,5 +806,61 @@ impl AnyRenderer {
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.has_pending_picking_readback(),
         }
+    }
+
+    /// Create an offscreen BGRA8 texture suitable for headless rendering and CPU readback.
+    ///
+    /// Returns an opaque Metal texture handle that can be passed to `set_headless_drawable`.
+    #[cfg(target_os = "macos")]
+    pub fn create_offscreen_texture(
+        &self,
+        width: u32,
+        height: u32,
+    ) -> objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLTexture>> {
+        use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
+
+        match self {
+            AnyRenderer::Vulkan(_) => panic!("create_offscreen_texture called on Vulkan backend"),
+            AnyRenderer::Metal(r) => {
+                let desc = TextureDescriptor::new(width, height, ImageFormat::B8G8R8A8Srgb)
+                    .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
+                let (tex, _view) = r
+                    .context
+                    .create_texture_with_data(&desc)
+                    .expect("Failed to create offscreen texture");
+                tex.inner
+            }
+        }
+    }
+
+    /// Read back pixels from a Shared-storage Metal texture as BGRA8.
+    ///
+    /// Returns raw BGRA pixel data.
+    #[cfg(target_os = "macos")]
+    pub fn readback_bgra_texture(
+        texture: &objc2::runtime::ProtocolObject<dyn objc2_metal::MTLTexture>,
+        width: u32,
+        height: u32,
+    ) -> Vec<u8> {
+        use objc2_metal::MTLTexture;
+        let bytes_per_row = width as usize * 4;
+        let mut data = vec![0u8; bytes_per_row * height as usize];
+        let region = objc2_metal::MTLRegion {
+            origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
+            size: objc2_metal::MTLSize {
+                width: width as usize,
+                height: height as usize,
+                depth: 1,
+            },
+        };
+        unsafe {
+            texture.getBytes_bytesPerRow_fromRegion_mipmapLevel(
+                std::ptr::NonNull::new(data.as_mut_ptr() as *mut std::ffi::c_void).unwrap(),
+                bytes_per_row,
+                region,
+                0,
+            );
+        }
+        data
     }
 }

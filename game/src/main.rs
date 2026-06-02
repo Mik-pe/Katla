@@ -36,12 +36,23 @@ struct Args {
     /// Dump UI layout tree to a file after first frame, then exit
     #[arg(long = "dump-layout-file", value_name = "PATH")]
     dump_layout_file: Option<String>,
+
+    /// Run in headless mode (no window, offscreen rendering, save screenshot)
+    #[arg(long)]
+    headless: bool,
+
+    /// Screenshot output path (requires --headless, default: /tmp/katla_screenshot.png)
+    #[arg(long, value_name = "PATH")]
+    screenshot: Option<String>,
 }
 
 fn main() {
     let args = Args::parse();
 
     info!("Katla 3D Engine starting...");
+    if args.headless {
+        info!("Running in headless mode (offscreen rendering)");
+    }
     if args.single_frame {
         info!("Running in limited-frame mode (100 frames) for validation testing");
     }
@@ -50,6 +61,9 @@ fn main() {
     }
     if args.check_black_frames {
         info!("Black frame detection enabled - will check center pixel color");
+    }
+    if let Some(ref path) = args.screenshot {
+        info!("Screenshot will be saved to: {}", path);
     }
 
     // Build with conditional configuration
@@ -177,6 +191,16 @@ fn main() {
         info!("Loading scene: {}", scene);
     }
 
+    // --headless: offscreen rendering, no window
+    if args.headless {
+        builder = builder.headless(true);
+    }
+
+    // Screenshot output path (only meaningful in headless mode)
+    if let Some(ref path) = args.screenshot {
+        builder = builder.screenshot_path(path.clone());
+    }
+
     if args.single_frame {
         builder = builder.max_frames(100);
     }
@@ -191,23 +215,48 @@ fn main() {
         info!("Layout dump mode: will write widget tree to {}", path);
     }
 
-    let result = builder.build();
+    if args.headless {
+        let screenshot_path = args
+            .screenshot
+            .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
+        let max_frames = if args.single_frame { 100 } else { 10 };
 
-    match result {
-        Ok((mut application, event_loop)) => {
-            if let Err(e) = application.init() {
-                error!("Application init failed: {e}");
-                return;
+        let result = builder.build_headless(max_frames, screenshot_path);
+        match result {
+            Ok(mut app) => {
+                if let Err(e) = app.init() {
+                    error!("Application init failed: {e}");
+                    return;
+                }
+                if let Err(e) = app.run_headless() {
+                    error!("Headless render failed: {e}");
+                    std::process::exit(1);
+                }
             }
-            info!("About to enter event loop");
-            if let Err(e) = event_loop.run_app(&mut application) {
-                error!("Event loop error: {e}");
+            Err(e) => {
+                eprintln!("Failed to initialize headless application: {}", e);
+                std::process::exit(1);
             }
-            info!("Event loop exited");
         }
-        Err(e) => {
-            eprintln!("Failed to initialize application: {}", e);
-            std::process::exit(1);
+    } else {
+        let result = builder.build();
+
+        match result {
+            Ok((mut application, event_loop)) => {
+                if let Err(e) = application.init() {
+                    error!("Application init failed: {e}");
+                    return;
+                }
+                info!("About to enter event loop");
+                if let Err(e) = event_loop.run_app(&mut application) {
+                    error!("Event loop error: {e}");
+                }
+                info!("Event loop exited");
+            }
+            Err(e) => {
+                eprintln!("Failed to initialize application: {}", e);
+                std::process::exit(1);
+            }
         }
     }
 }

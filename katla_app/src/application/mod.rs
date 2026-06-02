@@ -22,10 +22,10 @@ pub mod editor;
 mod editor_methods;
 mod events;
 mod frame_loop;
-#[cfg(feature = "editor")]
 mod game_state;
 #[cfg(feature = "editor")]
 mod gizmo;
+mod headless;
 mod init;
 #[cfg(not(feature = "editor"))]
 mod no_editor_methods;
@@ -75,6 +75,8 @@ pub struct ApplicationInfo {
     check_black_frames: bool,
     scene_path: Option<String>, // Override scene to load on startup
     dump_layout_path: Option<DumpLayoutTarget>,
+    #[expect(dead_code)]
+    screenshot_path: Option<String>, // Headless screenshot output path
 }
 
 /// Where to write the layout dump.

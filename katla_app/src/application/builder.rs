@@ -67,6 +67,8 @@ pub struct ApplicationBuilder {
     world: World,
     scene_path: Option<String>,
     dump_layout_path: Option<super::DumpLayoutTarget>,
+    headless: bool,
+    screenshot_path: Option<String>,
     on_init: Option<InitHook>,
     on_update: Option<UpdateHook>,
     on_shutdown: Option<ShutdownHook>,
@@ -131,6 +133,18 @@ impl ApplicationBuilder {
     /// Dump the UI layout tree to a file after the first frame, then exit.
     pub fn dump_layout_to_file(mut self, path: impl Into<String>) -> Self {
         self.dump_layout_path = Some(super::DumpLayoutTarget::File(path.into()));
+        self
+    }
+
+    /// Enable headless mode — no window, offscreen rendering, screenshot output.
+    pub fn headless(mut self, enabled: bool) -> Self {
+        self.headless = enabled;
+        self
+    }
+
+    /// Set the screenshot output path (for headless mode).
+    pub fn screenshot_path(mut self, path: impl Into<String>) -> Self {
+        self.screenshot_path = Some(path.into());
         self
     }
 
@@ -686,6 +700,26 @@ impl ApplicationBuilder {
         }
     }
 
+    /// Build a headless application for offscreen rendering.
+    ///
+    /// Returns a `HeadlessApplication` that renders without a window,
+    /// captures N frames, and saves a screenshot PNG.
+    #[cfg(target_os = "macos")]
+    pub fn build_headless(
+        self,
+        max_frames: usize,
+        screenshot_path: String,
+    ) -> AppResult<super::headless::HeadlessApplication> {
+        super::headless::HeadlessApplication::build(
+            self.world,
+            self.dump_layout_path,
+            max_frames,
+            screenshot_path,
+            self.on_init,
+            self.on_update,
+        )
+    }
+
     pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
         let event_loop = Self::build_event_loop()?;
 
@@ -727,6 +761,7 @@ impl ApplicationBuilder {
             check_black_frames: self.check_black_frames,
             scene_path: self.scene_path,
             dump_layout_path: self.dump_layout_path,
+            screenshot_path: None,
         };
 
         let mut world = self.world;

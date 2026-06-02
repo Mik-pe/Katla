@@ -305,6 +305,12 @@ pub use renderer::pipeline_kind::PipelineKind;
 // Enum-based renderer dispatch (both backends)
 pub use renderer::any_renderer::AnyRenderer;
 
+/// Retained Metal texture handle (opaque, platform-specific).
+/// Only available on macOS.
+#[cfg(target_os = "macos")]
+pub type MetalTextureRetained =
+    objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLTexture>>;
+
 // Enum-based frame graph dispatch
 pub use render_graph::any_frame::AnyFrame;
 pub use render_graph::any_frame_graph::AnyFrameGraph;
