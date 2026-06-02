@@ -452,7 +452,7 @@ impl MaterialCompiler {
         }
 
         let mut layouts = vec![
-            self.storage_descriptor_layout.unwrap(),
+            self.storage_descriptor_layout.expect("storage descriptor layout not initialized"),
             self.bindless_descriptor_layout,
         ];
 
@@ -464,10 +464,10 @@ impl MaterialCompiler {
                 layouts.push(layout);
             } else {
                 // Fallback: compositing not set up yet, use empty placeholder
-                layouts.push(self.empty_descriptor_layout.unwrap());
+                layouts.push(self.empty_descriptor_layout.expect("empty descriptor layout not initialized"));
             }
         } else if matches!(options.vertex_type, VertexType::Skinned) {
-            layouts.push(self.skeleton_descriptor_layout.unwrap());
+            layouts.push(self.skeleton_descriptor_layout.expect("skeleton descriptor layout not initialized"));
         } else if matches!(options.vertex_type, VertexType::Pbr) {
             layouts.push(self.empty_descriptor_layout.unwrap());
         }
@@ -537,12 +537,12 @@ impl MaterialCompiler {
 
     /// Get the skeleton descriptor pool for allocating skeleton descriptor sets.
     pub(crate) fn skeleton_descriptor_pool(&self) -> vk::DescriptorPool {
-        self.skeleton_descriptor_pool.unwrap()
+        self.skeleton_descriptor_pool.expect("skeleton descriptor pool not initialized")
     }
 
     /// Get the skeleton descriptor layout.
     pub(crate) fn skeleton_descriptor_layout(&self) -> vk::DescriptorSetLayout {
-        self.skeleton_descriptor_layout.unwrap()
+        self.skeleton_descriptor_layout.expect("skeleton descriptor layout not initialized")
     }
 
     /// Invalidate cached shader modules for the given path.

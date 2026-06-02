@@ -85,7 +85,7 @@ impl Texture {
 
     fn create_texture_sampler(context: &VulkanContext) -> vk::Sampler {
         // Use the shared sampler factory for consistency
-        context.create_sampler_repeat_anisotropic().unwrap().into()
+        context.create_sampler_repeat_anisotropic().expect("Failed to create texture sampler").into()
     }
 
     /// Convert RGB pixel data to RGBA format.

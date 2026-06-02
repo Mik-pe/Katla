@@ -269,10 +269,10 @@ impl<T: Clone + PartialEq> DockTree<T> {
 
         let _tab = match zone {
             DockZone::Center => {
-                let from_node = self.root.get_mut(from_path.as_slice()).unwrap();
+                let from_node = self.root.get_mut(from_path.as_slice()).ok_or(DockError::NodeNotFound)?;
                 match from_node {
                     DockNode::Leaf { tabs, active } => {
-                        let pos = tabs.iter().position(|t| t == &tab).unwrap();
+                        let pos = tabs.iter().position(|t| t == &tab).ok_or(DockError::TabNotFound)?;
                         tabs.remove(pos);
                         if tabs.is_empty() {
                             *active = 0;
@@ -314,10 +314,10 @@ impl<T: Clone + PartialEq> DockTree<T> {
                     _ => unreachable!(),
                 };
 
-                let from_node = self.root.get_mut(from_path.as_slice()).unwrap();
+                let from_node = self.root.get_mut(from_path.as_slice()).ok_or(DockError::NodeNotFound)?;
                 match from_node {
                     DockNode::Leaf { tabs, active } => {
-                        let pos = tabs.iter().position(|t| t == &tab).unwrap();
+                        let pos = tabs.iter().position(|t| t == &tab).ok_or(DockError::TabNotFound)?;
                         tabs.remove(pos);
                         if tabs.is_empty() {
                             *active = 0;
@@ -360,10 +360,10 @@ impl<T: Clone + PartialEq> DockTree<T> {
                     _ => unreachable!(),
                 };
 
-                let from_node = self.root.get_mut(from_path.as_slice()).unwrap();
+                let from_node = self.root.get_mut(from_path.as_slice()).ok_or(DockError::NodeNotFound)?;
                 match from_node {
                     DockNode::Leaf { tabs, active } => {
-                        let pos = tabs.iter().position(|t| t == &tab).unwrap();
+                        let pos = tabs.iter().position(|t| t == &tab).ok_or(DockError::TabNotFound)?;
                         tabs.remove(pos);
                         if tabs.is_empty() {
                             *active = 0;

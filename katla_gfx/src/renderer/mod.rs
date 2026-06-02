@@ -855,8 +855,8 @@ impl VulkanRenderer {
     }
 
     pub fn wait_for_device(&self) {
-        unsafe {
-            self.context.device.device_wait_idle().unwrap();
+        if let Err(e) = unsafe { self.context.device.device_wait_idle() } {
+            error!("device_wait_idle failed: {e}");
         }
     }
 

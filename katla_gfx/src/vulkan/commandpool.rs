@@ -13,7 +13,8 @@ impl CommandPool {
         let create_info = vk::CommandPoolCreateInfo::default()
             .queue_family_index(queue_family_idx)
             .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let command_pool = unsafe { device.create_command_pool(&create_info, None) }.unwrap();
+        let command_pool = unsafe { device.create_command_pool(&create_info, None) }
+            .expect("Failed to create command pool");
         Self {
             device,
             command_pool,

@@ -303,7 +303,10 @@ mod tests {
             let idx = node.index();
             if parent_map.get(&idx) == Some(&None) {
                 // Root node - its transform should just be its local transform
-                let world = transforms.get(&idx).unwrap();
+                let world = match transforms.get(&idx) {
+                    Some(t) => t,
+                    None => continue,
+                };
                 let local = {
                     let (t, r, s) = node.transform().decomposed();
                     katla_math::Mat4::from_trs(

@@ -182,7 +182,9 @@ fn main() {
                 return;
             }
             info!("About to enter event loop");
-            event_loop.run_app(&mut application).unwrap();
+            if let Err(e) = event_loop.run_app(&mut application) {
+                error!("Event loop error: {e}");
+            }
             info!("Event loop exited");
         }
         Err(e) => {
