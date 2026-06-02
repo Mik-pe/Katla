@@ -133,26 +133,22 @@ impl super::FontSystem {
                 ));
             }
 
-            // Add 1px padding on all sides to prevent edge clipping
-            let padded_width = width + 2;
-            let padded_height = height + 2;
-            let mut alpha = vec![0u8; padded_width * padded_height];
+            let mut alpha = vec![0u8; width * height];
 
             for y in 0..height {
                 for x in 0..width {
-                    let src_idx = y * width + x;
-                    let dst_idx = (y + 1) * padded_width + (x + 1);
-                    let coverage_f = image.data[src_idx] as f32 / 255.0;
-                    alpha[dst_idx] = (coverage_to_alpha(coverage_f) * 255.0) as u8;
+                    let idx = y * width + x;
+                    let coverage_f = image.data[idx] as f32 / 255.0;
+                    alpha[idx] = (coverage_to_alpha(coverage_f) * 255.0) as u8;
                 }
             }
 
             Some((
                 alpha,
-                padded_width,
-                padded_height,
-                image.placement.left - 1,
-                image.placement.top + 1,
+                width,
+                height,
+                image.placement.left,
+                image.placement.top,
             ))
         });
 
@@ -263,25 +259,22 @@ impl super::FontSystem {
                 });
             }
 
-            let padded_width = width + 2;
-            let padded_height = height + 2;
-            let mut alpha = vec![0u8; padded_width * padded_height];
+            let mut alpha = vec![0u8; width * height];
 
             for y in 0..height {
                 for x in 0..width {
-                    let src_idx = y * width + x;
-                    let dst_idx = (y + 1) * padded_width + (x + 1);
-                    let coverage_f = image.data[src_idx] as f32 / 255.0;
-                    alpha[dst_idx] = (coverage_to_alpha(coverage_f) * 255.0) as u8;
+                    let idx = y * width + x;
+                    let coverage_f = image.data[idx] as f32 / 255.0;
+                    alpha[idx] = (coverage_to_alpha(coverage_f) * 255.0) as u8;
                 }
             }
 
             Some(RasterizedPixels {
                 data: alpha,
-                width: padded_width,
-                height: padded_height,
-                left: image.placement.left - 1,
-                top: image.placement.top + 1,
+                width,
+                height,
+                left: image.placement.left,
+                top: image.placement.top,
             })
         });
 
@@ -391,28 +384,24 @@ mod tests {
             return None;
         }
 
-        // Add 1px padding on all sides
-        let padded_width = width + 2;
-        let padded_height = height + 2;
-        let mut pixels = vec![0u8; padded_width * padded_height];
+        let mut pixels = vec![0u8; width * height];
 
         for y in 0..height {
             for x in 0..width {
-                let src_idx = y * width + x;
-                let dst_idx = (y + 1) * padded_width + (x + 1);
-                let coverage_f = image.data[src_idx] as f32 / 255.0;
+                let idx = y * width + x;
+                let coverage_f = image.data[idx] as f32 / 255.0;
                 let alpha = coverage_f.powf(1.0 / 1.45);
-                pixels[dst_idx] = (alpha * 255.0) as u8;
+                pixels[idx] = (alpha * 255.0) as u8;
             }
         }
 
         let glyph = RasterizedGlyph {
             c,
             pixels,
-            width: padded_width,
-            height: padded_height,
-            offset_x: (image.placement.left - 1) as f32,
-            top_offset: (image.placement.top + 1) as f32,
+            width,
+            height,
+            offset_x: image.placement.left as f32,
+            top_offset: image.placement.top as f32,
             ascender: 0.0,
             advance: 0.0,
         };
@@ -444,45 +433,9 @@ mod tests {
         output
     }
 
-    /// Check if any edge pixels have non-zero alpha (potential clipping indicator).
-    fn edge_coverage(glyph: &RasterizedGlyph, threshold: u8) -> EdgeCoverage {
-        let mut top = 0;
-        let mut bottom = 0;
-        let mut left = 0;
-        let mut right = 0;
-
-        for x in 0..glyph.width {
-            if glyph.pixels[x] >= threshold {
-                top += 1;
-            }
-            let last_row = (glyph.height - 1) * glyph.width + x;
-            if glyph.pixels[last_row] >= threshold {
-                bottom += 1;
-            }
-        }
-        for y in 0..glyph.height {
-            if glyph.pixels[y * glyph.width] >= threshold {
-                left += 1;
-            }
-            let last_col = y * glyph.width + (glyph.width - 1);
-            if glyph.pixels[last_col] >= threshold {
-                right += 1;
-            }
-        }
-
-        EdgeCoverage {
-            top,
-            bottom,
-            left,
-            right,
-        }
-    }
-
-    struct EdgeCoverage {
-        top: usize,
-        bottom: usize,
-        left: usize,
-        right: usize,
+    /// Count non-zero pixels in the glyph bitmap.
+    fn nonzero_pixel_count(glyph: &RasterizedGlyph) -> usize {
+        glyph.pixels.iter().filter(|&&p| p > 0).count()
     }
 
     #[test]
@@ -497,16 +450,12 @@ mod tests {
         eprintln!("Bitmap: {}x{}", glyph.width, glyph.height);
         eprintln!("{}", render_pixel_grid(&glyph, 10));
 
-        let edges = edge_coverage(&glyph, 10);
-        eprintln!(
-            "Edge pixels: top={} bottom={} left={} right={}",
-            edges.top, edges.bottom, edges.left, edges.right
-        );
+        let nonzero = nonzero_pixel_count(&glyph);
+        eprintln!("Non-zero pixels: {}", nonzero);
 
-        assert_eq!(edges.top, 0, "Top edge should be empty with padding");
-        assert_eq!(edges.bottom, 0, "Bottom edge should be empty with padding");
-        assert_eq!(edges.left, 0, "Left edge should be empty with padding");
-        assert_eq!(edges.right, 0, "Right edge should be empty with padding");
+        assert!(glyph.width > 0, "Glyph should have non-zero width");
+        assert!(glyph.height > 0, "Glyph should have non-zero height");
+        assert!(nonzero > 0, "Glyph should have non-zero pixels");
     }
 
     #[test]
@@ -521,16 +470,12 @@ mod tests {
         eprintln!("Bitmap: {}x{}", glyph.width, glyph.height);
         eprintln!("{}", render_pixel_grid(&glyph, 10));
 
-        let edges = edge_coverage(&glyph, 10);
-        eprintln!(
-            "Edge pixels: top={} bottom={} left={} right={}",
-            edges.top, edges.bottom, edges.left, edges.right
-        );
+        let nonzero = nonzero_pixel_count(&glyph);
+        eprintln!("Non-zero pixels: {}", nonzero);
 
-        assert_eq!(edges.top, 0, "Top edge should be empty");
-        assert_eq!(edges.bottom, 0, "Bottom edge should be empty");
-        assert_eq!(edges.left, 0, "Left edge should be empty");
-        assert_eq!(edges.right, 0, "Right edge should be empty");
+        assert!(glyph.width > 0, "Glyph should have non-zero width");
+        assert!(glyph.height > 0, "Glyph should have non-zero height");
+        assert!(nonzero > 0, "Glyph should have non-zero pixels");
     }
 
     #[test]
@@ -545,16 +490,12 @@ mod tests {
         eprintln!("Bitmap: {}x{}", glyph.width, glyph.height);
         eprintln!("{}", render_pixel_grid(&glyph, 10));
 
-        let edges = edge_coverage(&glyph, 10);
-        eprintln!(
-            "Edge pixels: top={} bottom={} left={} right={}",
-            edges.top, edges.bottom, edges.left, edges.right
-        );
+        let nonzero = nonzero_pixel_count(&glyph);
+        eprintln!("Non-zero pixels: {}", nonzero);
 
-        assert_eq!(edges.top, 0, "Top edge should be empty");
-        assert_eq!(edges.bottom, 0, "Bottom edge should be empty");
-        assert_eq!(edges.left, 0, "Left edge should be empty");
-        assert_eq!(edges.right, 0, "Right edge should be empty");
+        assert!(glyph.width > 0, "Glyph should have non-zero width");
+        assert!(glyph.height > 0, "Glyph should have non-zero height");
+        assert!(nonzero > 0, "Glyph should have non-zero pixels");
     }
 
     #[test]
@@ -572,30 +513,22 @@ mod tests {
             );
             eprintln!("Bitmap: {}x{}", glyph.width, glyph.height);
 
-            let edges = edge_coverage(&glyph, 10);
-            eprintln!(
-                "Edge pixels: top={} bottom={} left={} right={}",
-                edges.top, edges.bottom, edges.left, edges.right
-            );
+            let nonzero = nonzero_pixel_count(&glyph);
+            eprintln!("Non-zero pixels: {}", nonzero);
 
-            assert_eq!(
-                edges.top, 0,
-                "Subpixel {}: top edge should be empty",
+            assert!(
+                glyph.width > 0,
+                "Subpixel {}: glyph should have non-zero width",
                 bin_name
             );
-            assert_eq!(
-                edges.bottom, 0,
-                "Subpixel {}: bottom edge should be empty",
+            assert!(
+                glyph.height > 0,
+                "Subpixel {}: glyph should have non-zero height",
                 bin_name
             );
-            assert_eq!(
-                edges.left, 0,
-                "Subpixel {}: left edge should be empty",
-                bin_name
-            );
-            assert_eq!(
-                edges.right, 0,
-                "Subpixel {}: right edge should be empty",
+            assert!(
+                nonzero > 0,
+                "Subpixel {}: glyph should have non-zero pixels",
                 bin_name
             );
         }
