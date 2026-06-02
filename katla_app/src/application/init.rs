@@ -495,6 +495,10 @@ impl Application {
                     reason: format!("Failed to create default PBR material: {e}"),
                 })?;
 
+        // Propagate to the renderer so its default_material() returns the correct handle
+        self.renderer
+            .set_default_material(self.default_material_handle);
+
         self.gpu_resource_tracker
             .set_protected_material(self.default_material_handle);
 

@@ -329,6 +329,14 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn set_default_material(&mut self, material: MaterialHandle) {
+        match self {
+            AnyRenderer::Vulkan(r) => r.set_default_material(material),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.set_default_material(material),
+        }
+    }
+
     fn default_material(&self) -> MaterialHandle {
         match self {
             AnyRenderer::Vulkan(r) => r.default_material(),
