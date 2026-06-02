@@ -6,9 +6,7 @@ use taffy::{Dimension, FlexDirection, LengthPercentage, Size, Style};
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{
-    ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget,
-};
+use super::super::widget::{ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub struct StatusBar {

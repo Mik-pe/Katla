@@ -594,14 +594,8 @@ impl ViewTree {
             children_bounds: &children_bounds,
         };
 
-        node.widget.draw(
-            ui,
-            &self.state,
-            bounds,
-            &anim_state,
-            &children,
-            &draw_info,
-        );
+        node.widget
+            .draw(ui, &self.state, bounds, &anim_state, &children, &draw_info);
 
         let scroll_offset = node.widget.scroll_offset(&self.state);
         let skip_children = !node.widget.should_draw_children(&self.state);
@@ -1906,9 +1900,7 @@ mod tests {
     #[test]
     fn test_new_widget_extensibility() {
         // Define a minimal custom widget — no pipeline changes needed
-        use crate::declarative::widget::{
-            DrawInfo, InputContext, InputResult, MeasureFn, Widget,
-        };
+        use crate::declarative::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
         use std::any::Any;
 
         struct CustomWidget {
