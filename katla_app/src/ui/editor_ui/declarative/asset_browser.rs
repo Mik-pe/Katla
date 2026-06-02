@@ -106,7 +106,6 @@ impl Build for AssetBrowserView {
                 breadcrumb_items.push(
                     button(segment)
                         .fill(katla_math::Color::TRANSPARENT)
-                        .hover(draw_ctx.theme.selection_hover)
                         .border(katla_math::Color::TRANSPARENT)
                         .on_click(ctx.on_click(move |actions| {
                             actions.emit(AssetBrowserAction::NavigateToSegment(seg_index));
