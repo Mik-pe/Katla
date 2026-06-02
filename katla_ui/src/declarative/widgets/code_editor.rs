@@ -14,7 +14,9 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{
+    DrawInfo, InputContext, InputResult, MeasureFn, Widget,
+};
 
 // ---------------------------------------------------------------------------
 // Editor actions (emitted through ActionStream)
@@ -1260,9 +1262,7 @@ impl Widget for CodeEditor {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        interaction: &DrawInteraction,
-        view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        info: &DrawInfo,
     ) {
         let Some(shared) = state.get::<SharedEditorState>(self.state_id) else {
             return;
@@ -1384,7 +1384,7 @@ impl Widget for CodeEditor {
         }
 
         // Draw cursor
-        let is_focused = interaction.is_focused(view_id);
+        let is_focused = info.interaction.is_focused(info.view_id);
         if is_focused {
             let cursor_y = bounds.min.y() + (inner.cursor_line as f32) * line_height - scroll_y;
             let char_width = font_size * 0.6;
@@ -1471,7 +1471,7 @@ mod tests {
     use super::*;
     use crate::declarative::diff::DiffAction;
     use crate::declarative::state::{StateArena, StateId};
-    use crate::declarative::widget::Widget;
+    use crate::declarative::widget::{DrawInteraction, Widget};
     use crate::declarative::widgets::text::Text;
 
     fn make_editor_state_id(arena: &mut StateArena, text: &str) -> StateId {
@@ -2756,6 +2756,11 @@ mod tests {
             active_id: None,
             focused_id: Some(view_id),
         };
+        let info = DrawInfo {
+            interaction: &interaction,
+            view_id,
+            children_bounds: &[],
+        };
 
         editor.draw(
             &mut ui,
@@ -2763,9 +2768,7 @@ mod tests {
             bounds,
             &AnimationState::default(),
             &[],
-            &interaction,
-            view_id,
-            &[],
+            &info,
         );
 
         ui.draw_list.finalize();
@@ -2811,6 +2814,11 @@ mod tests {
             active_id: None,
             focused_id: None,
         };
+        let info = DrawInfo {
+            interaction: &interaction,
+            view_id,
+            children_bounds: &[],
+        };
 
         editor.draw(
             &mut ui,
@@ -2818,9 +2826,7 @@ mod tests {
             bounds,
             &AnimationState::default(),
             &[],
-            &interaction,
-            view_id,
-            &[],
+            &info,
         );
 
         ui.draw_list.finalize();

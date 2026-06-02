@@ -5,17 +5,17 @@ use crate::command_queue::AudioCategoryValue;
 use crate::voice::{VoiceId, VoicePriority};
 
 pub enum ScheduledEvent {
-    PlayAt {
+    Play {
         buffer: Arc<AudioBuffer>,
         category: AudioCategoryValue,
         priority: VoicePriority,
         time_secs: f64,
     },
-    StopAt {
+    Stop {
         voice_id: VoiceId,
         time_secs: f64,
     },
-    SetVolumeAt {
+    SetVolume {
         voice_id: VoiceId,
         volume: f32,
         time_secs: f64,

@@ -10,8 +10,14 @@ use super::super::animation::AnimationState;
 use super::super::descriptor::{Callback, TreeItem};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
+
+/// Callbacks for [`TreeView`] interaction events.
+pub struct TreeViewCallbacks {
+    pub on_select: Option<Callback>,
+    pub on_right_click: Option<Callback>,
+}
 
 pub struct TreeView {
     pub items: Vec<TreeItem>,
@@ -20,8 +26,7 @@ pub struct TreeView {
     pub scroll_id: StateId,
     pub row_height: f32,
     pub indent_per_level: f32,
-    pub on_select: Option<Callback>,
-    pub on_right_click: Option<Callback>,
+    pub callbacks: TreeViewCallbacks,
     children: Vec<ViewId>,
 }
 
@@ -33,8 +38,7 @@ impl TreeView {
         scroll_id: StateId,
         row_height: f32,
         indent_per_level: f32,
-        on_select: Option<Callback>,
-        on_right_click: Option<Callback>,
+        callbacks: TreeViewCallbacks,
     ) -> Self {
         Self {
             items,
@@ -43,8 +47,7 @@ impl TreeView {
             scroll_id,
             row_height,
             indent_per_level,
-            on_select,
-            on_right_click,
+            callbacks,
             children: Vec::new(),
         }
     }
@@ -160,7 +163,7 @@ impl Widget for TreeView {
 
                 if ctx.input.mouse_clicked(mouse_button::LEFT) {
                     state.set(self.selected_id, Some(item.id));
-                    if let Some(ref callback) = self.on_select {
+                    if let Some(ref callback) = self.callbacks.on_select {
                         ctx.callbacks.invoke(callback, ctx.actions);
                     }
                     return InputResult::Consumed;
@@ -168,7 +171,7 @@ impl Widget for TreeView {
 
                 if ctx.input.mouse_clicked(mouse_button::RIGHT) {
                     state.set(self.selected_id, Some(item.id));
-                    if let Some(ref callback) = self.on_right_click {
+                    if let Some(ref callback) = self.callbacks.on_right_click {
                         ctx.callbacks.invoke(callback, ctx.actions);
                     }
                     return InputResult::Consumed;
@@ -224,9 +227,7 @@ impl Widget for TreeView {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let font_size = ctx.style().font_size;
         let row_height = self.row_height;
@@ -332,11 +333,11 @@ impl TreeView {
         self
     }
     pub fn on_select(mut self, cb: super::super::descriptor::Callback) -> Self {
-        self.on_select = Some(cb);
+        self.callbacks.on_select = Some(cb);
         self
     }
     pub fn on_right_click(mut self, cb: super::super::descriptor::Callback) -> Self {
-        self.on_right_click = Some(cb);
+        self.callbacks.on_right_click = Some(cb);
         self
     }
 }
@@ -359,8 +360,10 @@ mod tests {
             scroll_id,
             20.0,
             16.0,
-            None,
-            None,
+            TreeViewCallbacks {
+                on_select: None,
+                on_right_click: None,
+            },
         )
     }
 
@@ -418,8 +421,10 @@ mod tests {
             scroll_id,
             20.0,
             16.0,
-            Some(cb),
-            None,
+            TreeViewCallbacks {
+                on_select: Some(cb),
+                on_right_click: None,
+            },
         );
 
         let mut input = crate::input::UiInputState::default();
@@ -473,8 +478,10 @@ mod tests {
             scroll_id,
             20.0,
             16.0,
-            None,
-            None,
+            TreeViewCallbacks {
+                on_select: None,
+                on_right_click: None,
+            },
         );
 
         let mut input = crate::input::UiInputState::default();

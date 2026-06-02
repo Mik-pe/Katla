@@ -9,7 +9,7 @@ use crate::context::UiContext;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 pub struct Progress {
     pub value: f32,
@@ -62,9 +62,7 @@ impl Widget for Progress {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let t = if *self.range.end() > *self.range.start() {
             (self.value - *self.range.start()) / (*self.range.end() - *self.range.start())

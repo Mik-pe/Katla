@@ -8,7 +8,7 @@ use super::super::descriptor::FlexProps;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{
-    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+    ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget,
 };
 use crate::context::UiContext;
 
@@ -80,9 +80,7 @@ impl Widget for Panel {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let bg = ctx.style().window_bg;
         ctx.draw_rect(bounds, bg);

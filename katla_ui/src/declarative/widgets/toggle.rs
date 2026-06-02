@@ -9,7 +9,7 @@ use crate::input::mouse_button;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 pub struct Toggle {
     pub label: String,
@@ -66,9 +66,7 @@ impl Widget for Toggle {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        interaction: &DrawInteraction,
-        view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        info: &DrawInfo,
     ) {
         let checked: bool = state.get(self.value_id).unwrap_or(false);
 
@@ -81,7 +79,7 @@ impl Widget for Toggle {
         let radius = animation.apply_to_corner_radius(ctx.style().button_rounding);
         ctx.draw_rounded_rect(bounds, bg_color, radius);
 
-        if interaction.is_focused(view_id) {
+        if info.interaction.is_focused(info.view_id) {
             ctx.draw_rounded_selection_border(bounds, ctx.style().selectable_selected, 2.0, radius);
         }
 

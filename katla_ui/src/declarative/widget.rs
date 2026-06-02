@@ -81,9 +81,7 @@ pub trait Widget: Any + 'static {
 
     /// Draw this widget using the UI context.
     ///
-    /// `interaction` provides hover/active/focus state for the node.
-    /// `view_id` identifies this node for interaction checks.
-    /// `children_bounds` provides resolved bounds of child nodes.
+    /// `info` provides interaction state, node identity, and resolved child bounds.
     fn draw(
         &self,
         ctx: &mut UiContext,
@@ -91,9 +89,7 @@ pub trait Widget: Any + 'static {
         bounds: Rect2D,
         animation: &AnimationState,
         children: &[ViewId],
-        interaction: &DrawInteraction,
-        view_id: ViewId,
-        children_bounds: &[Rect2D],
+        info: &DrawInfo,
     );
 
     /// Whether to rebuild this widget's subtree.
@@ -149,19 +145,13 @@ pub trait Widget: Any + 'static {
                 let dx = parent_bounds.width() - bounds.width();
                 let dy = parent_bounds.height() - bounds.height();
                 let hx = match alignment {
-                    Alignment::TopLeading
-                    | Alignment::Leading
-                    | Alignment::BottomLeading => 0.0,
+                    Alignment::TopLeading | Alignment::Leading | Alignment::BottomLeading => 0.0,
                     Alignment::Top | Alignment::Center | Alignment::Bottom => dx * 0.5,
-                    Alignment::TopTrailing
-                    | Alignment::Trailing
-                    | Alignment::BottomTrailing => dx,
+                    Alignment::TopTrailing | Alignment::Trailing | Alignment::BottomTrailing => dx,
                     Alignment::BottomCenter => dx * 0.5,
                 };
                 let vy = match alignment {
-                    Alignment::TopLeading
-                    | Alignment::Top
-                    | Alignment::TopTrailing => 0.0,
+                    Alignment::TopLeading | Alignment::Top | Alignment::TopTrailing => 0.0,
                     Alignment::Leading | Alignment::Center | Alignment::Trailing => dy * 0.5,
                     Alignment::BottomLeading
                     | Alignment::Bottom
@@ -283,20 +273,9 @@ impl Widget for Box<dyn Widget> {
         bounds: Rect2D,
         animation: &AnimationState,
         children: &[ViewId],
-        interaction: &DrawInteraction,
-        view_id: ViewId,
-        children_bounds: &[Rect2D],
+        info: &DrawInfo,
     ) {
-        (**self).draw(
-            ctx,
-            state,
-            bounds,
-            animation,
-            children,
-            interaction,
-            view_id,
-            children_bounds,
-        )
+        (**self).draw(ctx, state, bounds, animation, children, info)
     }
 
     fn should_rebuild(&self, prev: &dyn Widget) -> bool {
@@ -404,6 +383,16 @@ impl DrawInteraction {
     }
 }
 
+/// Per-node drawing info passed to [`Widget::draw()`].
+///
+/// Bundles interaction state, node identity, and resolved child bounds
+/// into a single struct to keep the trait method signature manageable.
+pub struct DrawInfo<'a> {
+    pub interaction: &'a DrawInteraction,
+    pub view_id: ViewId,
+    pub children_bounds: &'a [Rect2D],
+}
+
 /// Tracks interactive state across frames for the declarative view tree.
 ///
 /// Analogous to the immediate mode `active_id`/`hovered_id`/`focused_id` pattern,
@@ -474,9 +463,7 @@ mod tests {
             _bounds: Rect2D,
             _animation: &AnimationState,
             _children: &[ViewId],
-            _interaction: &DrawInteraction,
-            _view_id: ViewId,
-            _children_bounds: &[Rect2D],
+            _info: &DrawInfo,
         ) {
         }
     }

@@ -8,7 +8,7 @@ use super::super::descriptor::FlexProps;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{
-    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+    ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget,
 };
 use crate::context::UiContext;
 use crate::dock::{DockNode, DockPath, DockTree, DockZone, SplitDirection};
@@ -476,9 +476,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         if self.is_empty_tree(state) {
             return;
@@ -762,7 +760,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> DockSpace<T> {
 mod tests {
     use super::*;
     use crate::declarative::layout::measure_text_descriptor;
-    use crate::declarative::widget::WidgetBox;
+    use crate::declarative::widget::{DrawInteraction, WidgetBox};
 
     fn make_leaf(tabs: Vec<u32>) -> DockNode<u32> {
         DockNode::Leaf { tabs, active: 0 }
@@ -869,7 +867,12 @@ mod tests {
             focused_id: None,
         };
         let vid = make_view_id(1);
-        ds.draw(&mut ui, &arena, bounds, &anim, &[], &interaction, vid, &[]);
+        let info = DrawInfo {
+            interaction: &interaction,
+            view_id: vid,
+            children_bounds: &[],
+        };
+        ds.draw(&mut ui, &arena, bounds, &anim, &[], &info);
         ds.draw_after_children(&mut ui, &arena, bounds, &[], &[]);
     }
 
@@ -905,7 +908,12 @@ mod tests {
         };
         let vid = make_view_id(1);
 
-        ds.draw(&mut ui, &arena, bounds, &anim, &[], &interaction, vid, &[]);
+        let info = DrawInfo {
+            interaction: &interaction,
+            view_id: vid,
+            children_bounds: &[],
+        };
+        ds.draw(&mut ui, &arena, bounds, &anim, &[], &info);
         ds.draw_after_children(&mut ui, &arena, bounds, &[], &[]);
     }
 

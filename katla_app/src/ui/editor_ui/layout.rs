@@ -47,23 +47,22 @@ impl EditorUI {
             if let Some(node) = self.dock_tree.get(path)
                 && let katla_ui::dock::DockNode::Leaf { tabs, active } = node
                 && let Some(&panel_id) = tabs.get(*active)
+                && EditorPanel::from_id(panel_id) == Some(EditorPanel::Viewport)
             {
-                if EditorPanel::from_id(panel_id) == Some(EditorPanel::Viewport) {
-                    dock_viewport_bounds = Some(*content_bounds);
-                    self.last_viewport_size = (
-                        content_bounds.width().max(1.0) as u32,
-                        content_bounds.height().max(1.0) as u32,
-                    );
-                    self.last_viewport_bounds = *content_bounds;
+                dock_viewport_bounds = Some(*content_bounds);
+                self.last_viewport_size = (
+                    content_bounds.width().max(1.0) as u32,
+                    content_bounds.height().max(1.0) as u32,
+                );
+                self.last_viewport_bounds = *content_bounds;
 
-                    if content_bounds.contains(mouse_pos) {
-                        crate::input::update_active_viewport(
-                            &mut self.viewport_grid_state,
-                            mouse_pos,
-                            content_bounds.min,
-                            content_bounds.max,
-                        );
-                    }
+                if content_bounds.contains(mouse_pos) {
+                    crate::input::update_active_viewport(
+                        &mut self.viewport_grid_state,
+                        mouse_pos,
+                        content_bounds.min,
+                        content_bounds.max,
+                    );
                 }
             }
         }

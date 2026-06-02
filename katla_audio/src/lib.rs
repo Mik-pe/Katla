@@ -73,7 +73,7 @@
 //! **The `Mutex<MixerState>`** guards the voice pool, voice index map, effect chains,
 //! aux buses, and streaming decoders. It is held briefly by:
 //! - The main thread for play/allocate operations and property queries (e.g. `volume()`,
-//!     `position()`, `state()`).
+//!   `position()`, `state()`).
 //! - The audio thread for the entire render cycle.
 //!
 //! Because the main-thread lock durations are short (voice allocation is O(1) with a

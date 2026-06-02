@@ -6,7 +6,7 @@ use taffy::{Dimension, Size, Style};
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 use crate::context::UiContext;
 
 pub struct VuMeter {
@@ -58,9 +58,7 @@ impl Widget for VuMeter {
         bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let track_color = ctx.style().slider_track;
 

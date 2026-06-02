@@ -8,7 +8,7 @@ use super::super::descriptor::{Alignment, FlexProps, Padding};
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, ViewId};
 use super::super::widget::{
-    ChildWidgets, DrawInteraction, InputContext, InputResult, MeasureFn, Widget,
+    ChildWidgets, DrawInfo, InputContext, InputResult, MeasureFn, Widget,
 };
 use crate::context::UiContext;
 
@@ -89,9 +89,7 @@ impl Widget for HStack {
         _bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         // HStack has no chrome — children are positioned by taffy layout
     }

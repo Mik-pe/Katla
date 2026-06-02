@@ -10,7 +10,7 @@ use crate::input::mouse_button;
 use super::super::animation::AnimationState;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
-use super::super::widget::{DrawInteraction, InputContext, InputResult, MeasureFn, Widget};
+use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
 
 pub struct Vec3Slider {
     pub label: String,
@@ -89,9 +89,7 @@ impl Widget for Vec3Slider {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _interaction: &DrawInteraction,
-        _view_id: ViewId,
-        _children_bounds: &[Rect2D],
+        _info: &DrawInfo,
     ) {
         let font_size = ctx.style().font_size;
         let text_color = animation.apply_to_color(ctx.style().text_color);
