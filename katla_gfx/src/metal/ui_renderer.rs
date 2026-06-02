@@ -289,12 +289,19 @@ impl MetalUIRenderer {
                     3,
                     crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
                 );
-                // Bind instance data as storage buffer at buffer 11 (vertex stage)
+                // Bind instance data as storage buffer at buffer 11 (vertex stage).
+                // Metal's instance_id starts from 0 regardless of baseInstance,
+                // so we bind the buffer with a byte offset so instance_data[0]
+                // maps to the correct batch offset.
+                let instance_offset =
+                    cmd.offset as usize * std::mem::size_of::<crate::vertex::VertexUIInstance>();
                 if let Some(ref inst_buf) = self.instance_buffer {
                     unsafe {
-                        encoder
-                            .inner
-                            .setVertexBuffer_offset_atIndex(Some(&inst_buf.inner), 0, 11);
+                        encoder.inner.setVertexBuffer_offset_atIndex(
+                            Some(&inst_buf.inner),
+                            instance_offset,
+                            11,
+                        );
                     }
                 }
                 if let Some(ref quad_ib) = self.unit_quad_index_buffer {
@@ -307,7 +314,7 @@ impl MetalUIRenderer {
                 if let Some(ref quad_vb) = self.unit_quad_vertex_buffer {
                     encoder.bind_vertex_buffer(quad_vb, 0, 10);
                 }
-                encoder.draw_indexed(6, cmd.count, 0, 0, cmd.offset);
+                encoder.draw_indexed(6, cmd.count, 0, 0, 0);
             } else {
                 // Switch back to non-instanced pipeline if needed
                 if using_instanced_pipeline {
