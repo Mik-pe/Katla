@@ -488,15 +488,31 @@ impl MetalRenderer {
         frame_graph: &crate::render_graph::FrameGraph<Self>,
         _frame_idx: usize,
     ) -> Result<(), RendererError> {
+        log::warn!(
+            "METAL execute_metal_passes: {} pending pass entries, \
+             geometry_hdr_view={}, tonemap_output_view={}, \
+             geometry_hdr_bindless_slot={:?}",
+            pending.len(),
+            self.geometry_hdr_view.is_some(),
+            self.tonemap_output_view.is_some(),
+            self.geometry_hdr_bindless_slot,
+        );
+
         // Extract shadow draw list
         let shadow_data = frame_graph
             .pass_id("shadow")
             .and_then(|id| pending.remove(&(id.0 as usize)));
         if let Some(data) = &shadow_data {
             let combined = Self::merge_draw_lists(&data.draw_lists);
+            log::warn!(
+                "METAL execute_metal_passes: shadow pass found, {} draws",
+                combined.draws.len()
+            );
             if !combined.draws.is_empty() {
                 self.pending_shadow_draw_list = Some(combined);
             }
+        } else {
+            log::warn!("METAL execute_metal_passes: shadow pass NOT found in pending data");
         }
 
         // Extract depth prepass draw list
@@ -505,9 +521,15 @@ impl MetalRenderer {
             .and_then(|id| pending.remove(&(id.0 as usize)));
         if let Some(data) = &depth_data {
             let combined = Self::merge_draw_lists(&data.draw_lists);
+            log::warn!(
+                "METAL execute_metal_passes: depth_prepass pass found, {} draws",
+                combined.draws.len()
+            );
             if !combined.draws.is_empty() {
                 self.pending_draw_list = Some(combined);
             }
+        } else {
+            log::warn!("METAL execute_metal_passes: depth_prepass pass NOT found in pending data");
         }
 
         // Extract geometry draw list
@@ -516,9 +538,15 @@ impl MetalRenderer {
             .and_then(|id| pending.remove(&(id.0 as usize)));
         if let Some(data) = &geometry_data {
             let combined = Self::merge_draw_lists(&data.draw_lists);
+            log::warn!(
+                "METAL execute_metal_passes: geometry pass found, {} draws (OVERRIDES pending_draw_list)",
+                combined.draws.len()
+            );
             if !combined.draws.is_empty() {
                 self.pending_draw_list = Some(combined);
             }
+        } else {
+            log::warn!("METAL execute_metal_passes: geometry pass NOT found in pending data");
         }
 
         // Extract outline draw list
@@ -539,8 +567,31 @@ impl MetalRenderer {
         if let Some(data) = &ui_data
             && let Some(ui_list) = data.ui_draw_lists.first()
         {
+            log::warn!(
+                "METAL execute_metal_passes: ui pass found, {} commands",
+                ui_list.commands.len()
+            );
             self.pending_ui_draw_list = Some(ui_list.clone());
+        } else {
+            log::warn!("METAL execute_metal_passes: ui pass NOT found in pending data (or empty)");
         }
+
+        log::warn!(
+            "METAL execute_metal_passes: final state — pending_draw_list={}, \
+             pending_shadow={}, pending_ui={}",
+            self.pending_draw_list
+                .as_ref()
+                .map(|dl| dl.draws.len())
+                .unwrap_or(0),
+            self.pending_shadow_draw_list
+                .as_ref()
+                .map(|dl| dl.draws.len())
+                .unwrap_or(0),
+            self.pending_ui_draw_list
+                .as_ref()
+                .map(|dl| dl.commands.len())
+                .unwrap_or(0),
+        );
 
         self.render_frame()?;
 
@@ -1078,6 +1129,10 @@ impl GpuRenderer for MetalRenderer {
 
     fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
         self.set_material_texture_indices_impl(material, indices)
+    }
+
+    fn set_default_material(&mut self, material: MaterialHandle) {
+        self.default_material = Some(material);
     }
 
     fn default_material(&self) -> MaterialHandle {
