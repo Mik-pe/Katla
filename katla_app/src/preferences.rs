@@ -95,8 +95,8 @@ impl Preferences {
 
     fn validate(&mut self) {
         if ColorScheme::by_name(&self.theme).is_none() {
-            warn!("Unknown theme '{}', using dark", self.theme);
-            self.theme = "dark".to_string();
+            warn!("Unknown theme '{}', using rcp", self.theme);
+            self.theme = "rcp".to_string();
         }
         self.font_scale = self.font_scale.clamp(0.5, 3.0);
     }
@@ -150,6 +150,6 @@ font_scale = 1.25
         let content = "theme = \"nonexistent\"";
         let mut prefs: Preferences = toml::from_str(content).unwrap();
         prefs.validate();
-        assert_eq!(prefs.theme, "dark");
+        assert_eq!(prefs.theme, "rcp");
     }
 }
