@@ -375,6 +375,16 @@ impl ForkAwesome {
             Self::CUBE,
             Self::CUBES,
             Self::CAMERA,
+            // Shapes (entity type icons)
+            Self::CIRCLE,
+            Self::CIRCLE_OUTLINE,
+            Self::SQUARE,
+            Self::SQUARE_OUTLINE,
+            // Scene objects
+            Self::LIGHTBULB,
+            Self::SUN,
+            Self::FIRE,
+            Self::VOLUME_UP,
             // Visibility
             Self::EYE,
             Self::EYE_SLASH,

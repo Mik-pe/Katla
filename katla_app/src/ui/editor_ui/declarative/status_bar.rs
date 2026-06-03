@@ -72,18 +72,23 @@ impl Build for StatusBarView {
             text(format!("FPS: {:.0}", data.fps))
                 .color(fps_color)
                 .boxed(),
+            text("·").color(data.theme.text_muted).boxed(),
             text(format!("{:.2} ms", data.frame_time_ms))
                 .color(frame_time_color)
                 .boxed(),
+            text("·").color(data.theme.text_muted).boxed(),
             text(format!("Frame: {}", data.frame_count))
                 .color(data.theme.text_secondary)
                 .boxed(),
+            text("·").color(data.theme.text_muted).boxed(),
             text(format!("Entities: {}", data.entity_count))
                 .color(data.theme.text_secondary)
                 .boxed(),
+            text("·").color(data.theme.text_muted).boxed(),
             text(format!("Draws: {}", data.draw_call_count))
                 .color(data.theme.text_secondary)
                 .boxed(),
+            text("·").color(data.theme.text_muted).boxed(),
             text(selection_text).color(selection_color).boxed(),
         ];
 
@@ -91,6 +96,7 @@ impl Build for StatusBarView {
             text(format!("ColorScheme: {}", data.theme.name))
                 .color(data.theme.text_muted)
                 .boxed(),
+            text("·").color(data.theme.text_muted).boxed(),
             text(mode_text).color(mode_color).boxed(),
         ];
 

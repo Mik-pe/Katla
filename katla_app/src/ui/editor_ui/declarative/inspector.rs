@@ -5,7 +5,7 @@ use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Build, BuildContext, StateId, Widget, WidgetBox, button, empty, panel, scroll,
+    Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, empty, panel, scroll,
     separator_horizontal, text, vstack,
 };
 
@@ -117,9 +117,12 @@ impl Build for InspectorView {
 
             vstack(children).boxed()
         } else {
-            text("No entity selected")
+            vstack([text("Select an object to inspect")
                 .color(draw_ctx.theme.text_muted)
-                .boxed()
+                .font_size(FontSize::Small)
+                .boxed()])
+            .padding(Padding::all(12.0))
+            .boxed()
         };
 
         let panel_content = scroll(content, scroll_id).flex_grow(1.0).boxed();

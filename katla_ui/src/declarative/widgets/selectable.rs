@@ -69,10 +69,17 @@ impl Widget for Selectable {
         _info: &DrawInfo,
     ) {
         let radius = bounds.height() * 0.4;
+        let is_hovered = bounds.contains(ctx.mouse_pos());
         if self.selected {
             ctx.draw_rounded_rect(
                 bounds,
                 animation.apply_to_color(ctx.style().selectable_selected),
+                radius,
+            );
+        } else if is_hovered {
+            ctx.draw_rounded_rect(
+                bounds,
+                animation.apply_to_color(ctx.style().selectable_hovered),
                 radius,
             );
         }

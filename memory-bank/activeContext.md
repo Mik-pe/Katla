@@ -4,7 +4,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **Editor color scheme updated to design brief palette** — `ColorScheme::dark()` now uses neutral cool-dark palette (`#1E1E1E` canvas, `#2A2A2A` panels, `#F79545` orange accent, `#5AC8FA` cyan secondary). Metal viewport clear color changed from Catppuccin `#181825` to `#1E1E1E`.
+- **UI polish round 3 complete** — fixed gizmo button clipping (positioned at viewport offset), auto-numbered duplicate entity names (Sphere.001), added per-type mesh icons, added hover state to selectable/radio widgets, added status bar separators, fixed viewport label alignment, improved inspector empty state text.
 
 ## UI Design Target
 - **Reference**: Apple Reality Composer Pro — clean, modern, minimal chrome
@@ -27,3 +27,6 @@ What is being worked on right now. **Update this file when starting or finishing
 - Font atlas properly destroyed before recreation (prevents slot thrashing)
 - Draw list now preserves submission order across instance/vertex batch types
 - Metal instanced pipeline now uses bind_graphics_pipeline (not raw setRenderPipelineState)
+- `STATUS_BAR_HEIGHT` defined once in `editor_root.rs`, re-exported from `declarative/mod.rs`
+- Metal canvas clear color extracted to `CANVAS_CLEAR_COLOR` constant (#1E1E1E)
+- `ToolbarDrawCtx` now carries `error` color for stop button — no hardcoded colors in toolbar

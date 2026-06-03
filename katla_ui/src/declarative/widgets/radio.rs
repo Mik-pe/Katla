@@ -37,8 +37,8 @@ impl Widget for RadioButton {
         let text_size = measure(&self.label, None);
         Style {
             size: Size {
-                width: Dimension::Length(text_size.x() + 24.0),
-                height: Dimension::Length(text_size.y() + 8.0),
+                width: Dimension::Length(text_size.x() + 28.0),
+                height: Dimension::Length(text_size.y() + 16.0),
             },
             ..Style::default()
         }
@@ -69,9 +69,12 @@ impl Widget for RadioButton {
     ) {
         let selected: usize = state.get(self.value_id).unwrap_or_default();
         let is_selected = selected == self.index;
+        let is_hovered = bounds.contains(ctx.mouse_pos());
 
         let bg = if is_selected {
             ctx.style().selectable_selected
+        } else if is_hovered {
+            ctx.style().button_hovered
         } else {
             ctx.style().button_normal
         };
@@ -101,10 +104,15 @@ impl Widget for RadioButton {
             bounds.min.x() + indicator_radius * 4.0,
             bounds.center().y() - text_size.y() * 0.5,
         );
+        let text_color = if is_selected {
+            ctx.style().text_color
+        } else {
+            ctx.style().button_text
+        };
         ctx.draw_text(
             &self.label,
             text_pos,
-            animation.apply_to_color(ctx.style().button_text),
+            animation.apply_to_color(text_color),
             font_size,
         );
     }

@@ -23,22 +23,19 @@ impl Build for GizmoButtonsView {
 
         let current: usize = ctx.get_state(mode_id).unwrap();
 
-        // If the state arena differs from what the app set, the radio buttons
-        // were clicked during the previous frame's input pass. Emit the change.
         if current != mode_from_env {
             ctx.emit(GizmoModeChanged(current as u8));
         }
 
-        // Sync the state arena to the app's authoritative value for this frame.
         ctx.set_state(mode_id, mode_from_env);
 
-        let modes: [(usize, &str); 3] = [(0, "W:Move"), (1, "E:Rotate"), (2, "R:Scale")];
+        let modes: [(usize, &str); 3] = [(0, "Move"), (1, "Rotate"), (2, "Scale")];
 
         let children: Vec<Box<dyn Widget>> = modes
             .iter()
             .map(|&(index, label)| radio(mode_id, index, label).boxed())
             .collect();
 
-        hstack(children).spacing(2.0).padding_all(10.0).boxed()
+        hstack(children).spacing(4.0).padding_all(4.0).boxed()
     }
 }
