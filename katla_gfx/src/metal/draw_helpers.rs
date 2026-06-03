@@ -94,7 +94,7 @@ impl MetalRenderer {
     }
 
     pub(crate) fn draw_objects(&self, encoder: &mut MetalRenderEncoder, draw_list: &DrawList) {
-        log::warn!(
+        log::debug!(
             "METAL draw_objects: {} draws, frame_buf={}, object_buf={}",
             draw_list.draws.len(),
             self.current_frame_uniform_buffer().is_some(),
@@ -120,7 +120,7 @@ impl MetalRenderer {
             };
 
             if i < 3 || i == draw_list.draws.len() - 1 {
-                log::warn!(
+                log::debug!(
                     "METAL draw_objects[{}]: mesh_idx={}, mat_idx={}, instance_index={}, \
                      skeleton={:?}, index_count={}, tex_indices={:?}, vertex_type={:?}",
                     i,

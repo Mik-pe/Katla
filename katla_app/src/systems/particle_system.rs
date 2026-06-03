@@ -5,7 +5,7 @@
 //! based on ECS entity lifecycle.
 
 use katla_gfx::particles::EmitterHandle;
-use log::{debug, info, warn};
+use log::{info, warn};
 
 use katla_ecs::{EntityId, World};
 use std::collections::HashMap;
@@ -118,10 +118,6 @@ impl ParticleSystem {
                             emitter.config.position = *pos;
                         }
                         particle_system.update_emitter(handle, emitter.config);
-                        debug!(
-                            "Updated particle emitter at position {:?}",
-                            emitter.config.position
-                        );
 
                         // Process burst queue
                         for burst_count in emitter.burst_queue.drain(..) {
