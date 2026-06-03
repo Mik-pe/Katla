@@ -6,7 +6,7 @@ use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::declarative::{
     Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, context_entry, context_menu,
-    empty, grid, hstack, icon, image, image_button, modal, scroll, selectable,
+    empty, grid, hstack, icon, image, image_button, modal, panel, scroll, selectable,
     separator_horizontal, text, textfield, vstack,
 };
 use katla_ui::{FontSize, ForkAwesome, TextureId};
@@ -146,8 +146,8 @@ impl Build for AssetBrowserView {
         .boxed();
 
         // Grid of assets
-        let item_size = 64.0;
-        let cell_size = Vec2::new(item_size + 4.0, item_size + 20.0);
+        let item_size = 80.0;
+        let cell_size = Vec2::new(item_size + 4.0, item_size + 24.0);
         let col_count = if draw_ctx.bounds.width() > 0.0 {
             ((draw_ctx.bounds.width() - 8.0) / (item_size + 4.0)).max(1.0) as usize
         } else {
@@ -165,12 +165,15 @@ impl Build for AssetBrowserView {
                 )
                 .boxed(),
                 ThumbnailState::Loading => icon(ForkAwesome::CIRCLE_OUTLINE)
+                    .icon_size(FontSize::Huge)
                     .color(draw_ctx.theme.text_secondary)
                     .boxed(),
                 ThumbnailState::Failed => icon(ForkAwesome::TIMES_CIRCLE)
+                    .icon_size(FontSize::Huge)
                     .color(draw_ctx.theme.error)
                     .boxed(),
                 ThumbnailState::Pending => icon(asset.asset_type.icon())
+                    .icon_size(FontSize::Huge)
                     .color(asset.asset_type.color(&draw_ctx.theme))
                     .boxed(),
             };
@@ -322,10 +325,13 @@ impl Build for AssetBrowserView {
             }),
         );
 
-        vstack([content, ctx_menu, confirm_modal.boxed()])
-            .flex_width(draw_ctx.bounds.width())
-            .flex_height(draw_ctx.bounds.height())
-            .boxed()
+        panel(
+            "Asset Browser",
+            vstack([content, ctx_menu, confirm_modal.boxed()]).boxed(),
+        )
+        .flex_width(draw_ctx.bounds.width())
+        .flex_height(draw_ctx.bounds.height())
+        .boxed()
     }
 }
 
