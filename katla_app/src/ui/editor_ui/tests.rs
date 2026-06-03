@@ -17,7 +17,7 @@ fn test_preferences_tab_click_does_not_close_panel() {
     let preferences = crate::Preferences::default();
     let editor_settings = EditorSettings::default();
     let theme = ColorScheme::default();
-    let theme_key = "dark";
+    let theme_key = "rcp";
 
     let tab_x = 100.0 + 450.0 / 3.0;
     let tab_y = 100.0 + 32.0;
@@ -248,7 +248,7 @@ fn test_editor_overlay_produces_dockspace_in_zstack() {
             selected_count: 0,
             total_assets: 0,
             is_playing: false,
-            theme: ColorScheme::by_name("dark").unwrap_or_default(),
+            theme: ColorScheme::by_name("rcp").unwrap_or_default(),
             save_confirmation_timer: 0.0,
         });
     view_tree

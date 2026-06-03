@@ -1196,11 +1196,10 @@ impl ColorScheme {
 
     pub fn all_names() -> &'static [&'static str] {
         &[
+            "rcp",
             "dark",
             "light",
             "classic",
-            "rcp",
-            "default",
             "nord",
             "tokyo_night",
             "dracula",

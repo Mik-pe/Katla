@@ -188,7 +188,7 @@ impl EditorUI {
             last_viewport_size: (800, 600),
             last_viewport_bounds: Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(800.0, 600.0)),
             last_screen_size: Vec2::new(800.0, 600.0),
-            theme: ColorScheme::by_name("dark").unwrap_or_default(),
+            theme: ColorScheme::by_name("rcp").unwrap_or_default(),
             asset_browser: AssetBrowserState::new(),
             focused_panel: FocusedPanel::Viewport,
             viewport_grid_state: ViewportGridState::new(),
@@ -381,7 +381,6 @@ impl EditorUI {
             "Light" => "light",
             "Classic" => "classic",
             "Reality Composer Pro" => "rcp",
-            "Default" => "default",
             "Nord" => "nord",
             "Tokyo Night" => "tokyo_night",
             "Dracula" => "dracula",
@@ -394,7 +393,7 @@ impl EditorUI {
             "Rosé Pine" => "rose_pine",
             "Kanagawa" => "kanagawa",
             "Solarized Dark" => "solarized_dark",
-            _ => "dark",
+            _ => "rcp",
         }
     }
 
