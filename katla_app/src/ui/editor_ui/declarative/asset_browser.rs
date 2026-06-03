@@ -188,7 +188,8 @@ impl Build for AssetBrowserView {
                     .boxed(),
             ])
             .spacing(2.0)
-            .padding_all(2.0);
+            .padding_all(2.0)
+            .align(katla_ui::declarative::Alignment::Center);
 
             let click_index = i;
             let click_path = asset.path.clone();
