@@ -71,7 +71,7 @@ impl Build for ConsoleView {
                 } else {
                     Color::TRANSPARENT
                 })
-                .border(draw_ctx.theme.border)
+                .border(Color::TRANSPARENT)
                 .boxed();
             filter_toggles.push(toggle);
         }
@@ -82,7 +82,7 @@ impl Build for ConsoleView {
         // Clear button
         let clear_button = button("Clear")
             .fill(draw_ctx.theme.button_bg)
-            .border(draw_ctx.theme.border)
+            .border(Color::TRANSPARENT)
             .boxed();
 
         let toolbar = hstack([

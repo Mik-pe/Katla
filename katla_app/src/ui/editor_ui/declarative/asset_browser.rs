@@ -295,14 +295,14 @@ impl Build for AssetBrowserView {
         // Confirmation modal
         let no_btn = button("No")
             .fill(katla_math::Color::TRANSPARENT)
-            .border(draw_ctx.theme.border)
+            .border(katla_math::Color::TRANSPARENT)
             .on_click(ctx.on_click(|actions| {
                 actions.emit(AssetBrowserAction::CancelDelete);
             }))
             .boxed();
         let yes_btn = button("Yes")
             .fill(draw_ctx.theme.error.with_alpha(0.3))
-            .border(draw_ctx.theme.error.with_alpha(0.5))
+            .border(katla_math::Color::TRANSPARENT)
             .on_click(ctx.on_click(|actions| {
                 actions.emit(AssetBrowserAction::ConfirmDelete(PathBuf::new()));
             }))

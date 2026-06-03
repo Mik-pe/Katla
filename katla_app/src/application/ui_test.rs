@@ -1,8 +1,9 @@
-use katla_ecs::EntityId;
 use log::info;
 
 #[cfg(feature = "editor")]
 use crate::components::rendering::DrawableComponent;
+#[cfg(feature = "editor")]
+use crate::ui::{EditorUI, Panel};
 
 pub struct UiTestRunner {
     output_dir: String,
@@ -62,7 +63,7 @@ impl UiTestRunner {
     pub fn on_frame(
         &mut self,
         frame: usize,
-        selected_entity: &mut Option<EntityId>,
+        editor_ui: &mut EditorUI,
         world: &katla_ecs::World,
     ) -> Option<String> {
         match self.state {
@@ -74,11 +75,11 @@ impl UiTestRunner {
                 );
                 self.screenshots_taken += 1;
                 self.state = UiTestState::EntitySelected;
-                *selected_entity = world
+                editor_ui.selected_entity = world
                     .query_ref::<&DrawableComponent>()
                     .next()
                     .map(|(id, _)| id);
-                if let Some(id) = selected_entity {
+                if let Some(id) = editor_ui.selected_entity {
                     info!("UI test: selected entity {:?}", id);
                 } else {
                     info!(
@@ -98,6 +99,10 @@ impl UiTestRunner {
                 Some(path)
             }
             UiTestState::HierarchyExpanded if frame == 70 => {
+                if let Some(id) = editor_ui.selected_entity {
+                    editor_ui.expand_entity(id);
+                    info!("UI test: expanded entity {:?} in hierarchy", id);
+                }
                 let path = self.screenshot_path(self.state.screenshot_name());
                 info!(
                     "UI test [{}]: taking screenshot",
@@ -118,6 +123,8 @@ impl UiTestRunner {
                 Some(path)
             }
             UiTestState::Preferences if frame == 99 => {
+                editor_ui.open_panel(Panel::Preferences);
+                info!("UI test: opened preferences panel");
                 let path = self.screenshot_path(self.state.screenshot_name());
                 info!(
                     "UI test [{}]: taking screenshot",
