@@ -518,7 +518,7 @@ impl ColorScheme {
             popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
 
             selectable_hovered: Color::from_rgb_hex(0x3A3A3A),
-            selectable_selected: Color::from_rgb_hex(0x3A3A3C),
+            selectable_selected: Color::new(0.969, 0.584, 0.271, 0.18),
 
             combo_bg: Color::from_rgb_hex(0x2A2A2A),
             combo_border: Color::from_rgb_hex(0x3A3A3B),

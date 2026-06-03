@@ -85,11 +85,11 @@ impl Build for ViewportGridView {
                 }
 
                 let label_text = text(label)
-                    .color(Color::WHITE.with_alpha(0.8))
+                    .color(Color::WHITE.with_alpha(0.6))
                     .font_size(FontSize::Small)
                     .boxed();
 
-                cell_content.push((Alignment::Leading, label_text));
+                cell_content.push((Alignment::TopLeading, label_text));
 
                 let content = zstack(cell_content).boxed();
 

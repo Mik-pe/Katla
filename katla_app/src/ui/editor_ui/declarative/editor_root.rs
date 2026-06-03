@@ -108,11 +108,11 @@ impl Build for EditorOverlayView {
         // Overlay panels: use ZStack alignment
         let toolbar = ToolbarView.build(ctx);
         let status_bar = StatusBarView.build(ctx);
-        let gizmo = overlay(
-            Anchor::TopLeft,
-            Vec2::new(0.0, TOOLBAR_HEIGHT),
-            GizmoButtonsView.build(ctx),
-        );
+        let gizmo_offset = ctx
+            .env::<ViewportGridDrawCtx>()
+            .map(|c| Vec2::new(c.bounds.min.x() + 8.0, c.bounds.min.y() + 8.0))
+            .unwrap_or(Vec2::new(0.0, TOOLBAR_HEIGHT));
+        let gizmo = overlay(Anchor::TopLeft, gizmo_offset, GizmoButtonsView.build(ctx));
         let co_creator = CoCreatorView.build(ctx);
         let particle_inspector = ParticleInspectorView.build(ctx);
         let preferences = PreferencesView.build(ctx);

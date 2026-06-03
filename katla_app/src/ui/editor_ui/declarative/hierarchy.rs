@@ -1,4 +1,5 @@
 use std::boxed::Box;
+use std::collections::HashMap;
 
 use katla_ecs::EntityId;
 use katla_math::Rect2D;
@@ -51,7 +52,7 @@ impl Build for HierarchyView {
                 .collect()
         };
 
-        let parent_map: std::collections::HashMap<EntityId, Option<EntityId>> = draw_ctx
+        let parent_map: HashMap<EntityId, Option<EntityId>> = draw_ctx
             .entities
             .iter()
             .map(|e| (e.id, e.parent_id))
@@ -68,21 +69,21 @@ impl Build for HierarchyView {
 
         let search_field = textfield("Filter entities...", search_id).boxed();
 
+        let display_names = build_display_names(&filtered_entities);
+
         let mut tree_children = Vec::new();
-        for entity in filtered_entities.iter() {
+        for (i, entity) in filtered_entities.iter().enumerate() {
             let is_selected = draw_ctx.selected_entity == Some(entity.id);
 
             let (entity_icon, icon_color) =
-                entity_icon_for_type(&entity.entity_type, &draw_ctx.theme);
+                entity_icon_for_name(&entity.name, &entity.entity_type, &draw_ctx.theme);
 
             let entity_id = entity.id;
+            let display_name = &display_names[i];
             let row = hstack([
-                icon(entity_icon)
-                    .color(icon_color)
-                    .icon_size(FontSize::Small)
-                    .boxed(),
-                text(&entity.name)
-                    .color(draw_ctx.theme.text_secondary)
+                icon(entity_icon).color(icon_color).boxed(),
+                text(display_name)
+                    .color(draw_ctx.theme.text_primary)
                     .font_size(FontSize::Small)
                     .boxed(),
             ])
@@ -124,15 +125,61 @@ impl Build for HierarchyView {
     }
 }
 
-fn entity_icon_for_type(entity_type: &str, theme: &ColorScheme) -> (char, katla_math::Color) {
+/// Build display names with auto-numbering for duplicates (e.g. "Sphere.001", "Sphere.002").
+fn build_display_names(entities: &[&EntityInfo]) -> Vec<String> {
+    let mut name_count: HashMap<String, usize> = HashMap::new();
+    for entity in entities {
+        *name_count.entry(entity.name.clone()).or_default() += 1;
+    }
+
+    let mut display_names = Vec::with_capacity(entities.len());
+    let mut name_seen: HashMap<String, usize> = HashMap::new();
+    for entity in entities {
+        let total = name_count[&entity.name];
+        if total > 1 {
+            let seen = name_seen.entry(entity.name.clone()).or_insert(0);
+            *seen += 1;
+            display_names.push(format!("{}.{:03}", entity.name, *seen));
+        } else {
+            display_names.push(entity.name.clone());
+        }
+    }
+    display_names
+}
+
+/// Determine icon and color based on entity name and type.
+fn entity_icon_for_name(
+    name: &str,
+    entity_type: &str,
+    theme: &ColorScheme,
+) -> (char, katla_math::Color) {
     match entity_type {
-        "Mesh" => (katla_ui::ForkAwesome::CUBE, theme.entity_mesh),
         "Particle Emitter" => (katla_ui::ForkAwesome::FIRE, theme.entity_particle),
         "Directional Light" => (katla_ui::ForkAwesome::SUN, theme.entity_light),
         "Point Light" => (katla_ui::ForkAwesome::LIGHTBULB, theme.entity_light),
         "Audio Source" | "AudioListener" => (katla_ui::ForkAwesome::VOLUME_UP, theme.highlight),
         "Camera" | "PerspectiveCamera" => (katla_ui::ForkAwesome::CAMERA, theme.highlight),
-        "Script" => (katla_ui::ForkAwesome::FILE_CODE, theme.success),
+        "Mesh" => mesh_icon_for_name(name, theme),
         _ => (katla_ui::ForkAwesome::CIRCLE_OUTLINE, theme.entity_empty),
+    }
+}
+
+/// Pick a per-shape icon for mesh entities based on their name.
+fn mesh_icon_for_name(name: &str, theme: &ColorScheme) -> (char, katla_math::Color) {
+    let lower = name.to_lowercase();
+    if lower.contains("sphere") {
+        (katla_ui::ForkAwesome::CIRCLE, theme.entity_mesh)
+    } else if lower.contains("cylinder") {
+        (katla_ui::ForkAwesome::CUBE, theme.entity_mesh)
+    } else if lower.contains("plane") || lower.contains("ground") || lower.contains("floor") {
+        (katla_ui::ForkAwesome::SQUARE_OUTLINE, theme.entity_mesh)
+    } else if lower.contains("torus") {
+        (katla_ui::ForkAwesome::CIRCLE_OUTLINE, theme.entity_mesh)
+    } else if lower.contains("light") || lower.contains("lamp") {
+        (katla_ui::ForkAwesome::LIGHTBULB, theme.entity_light)
+    } else if lower.contains("camera") {
+        (katla_ui::ForkAwesome::CAMERA, theme.highlight)
+    } else {
+        (katla_ui::ForkAwesome::SQUARE, theme.entity_mesh)
     }
 }
