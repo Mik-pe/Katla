@@ -44,6 +44,11 @@ struct Args {
     /// Screenshot output path (requires --headless, default: /tmp/katla_screenshot.png)
     #[arg(long, value_name = "PATH")]
     screenshot: Option<String>,
+
+    /// UI test mode: capture multiple screenshots at different UI states into <DIR>
+    /// Implies --headless and --single-frame (100 frames)
+    #[arg(long, value_name = "DIR")]
+    ui_test: Option<String>,
 }
 
 fn main() {
@@ -64,6 +69,9 @@ fn main() {
     }
     if let Some(ref path) = args.screenshot {
         info!("Screenshot will be saved to: {}", path);
+    }
+    if let Some(ref dir) = args.ui_test {
+        info!("UI test mode: screenshots will be saved to: {}", dir);
     }
 
     // Build with conditional configuration
@@ -192,7 +200,7 @@ fn main() {
     }
 
     // --headless: offscreen rendering, no window
-    if args.headless {
+    if args.headless || args.ui_test.is_some() {
         builder = builder.headless(true);
     }
 
@@ -201,7 +209,8 @@ fn main() {
         builder = builder.screenshot_path(path.clone());
     }
 
-    if args.single_frame {
+    // UI test mode implies single-frame (100 frames)
+    if args.single_frame || args.ui_test.is_some() {
         builder = builder.max_frames(100);
     }
 
@@ -215,11 +224,18 @@ fn main() {
         info!("Layout dump mode: will write widget tree to {}", path);
     }
 
-    if args.headless {
+    if args.headless || args.ui_test.is_some() {
+        if let Some(ref dir) = args.ui_test {
+            builder = builder.ui_test_path(dir.clone());
+        }
         let screenshot_path = args
             .screenshot
             .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
-        let max_frames = if args.single_frame { 100 } else { 10 };
+        let max_frames = if args.single_frame || args.ui_test.is_some() {
+            100
+        } else {
+            10
+        };
 
         let result = builder.build_headless(max_frames, screenshot_path);
         match result {
