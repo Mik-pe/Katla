@@ -548,7 +548,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
                     ctx.draw_line(
                         Vec2::new(tab_bounds.min.x(), tab_bounds.max.y() - 2.0),
                         Vec2::new(tab_bounds.max.x(), tab_bounds.max.y() - 2.0),
-                        ctx.style().text_color,
+                        ctx.style().tab_active_text,
                         2.0,
                     );
                 }
@@ -560,7 +560,12 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
                     tab_bounds.center().x() - label_size.x() * 0.5,
                     tab_bounds.center().y() - label_size.y() * 0.5,
                 );
-                ctx.draw_text(&label, text_pos, ctx.style().text_color, font_size);
+                let text_color = if is_active {
+                    ctx.style().tab_active_text
+                } else {
+                    ctx.style().tab_text
+                };
+                ctx.draw_text(&label, text_pos, text_color, font_size);
             }
         }
 

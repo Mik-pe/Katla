@@ -1175,8 +1175,8 @@ impl ColorScheme {
             entity_particle: Color::from_rgb_hex(0xFF9F0A),
             entity_empty: Color::from_rgb_hex(0x636366),
 
-            accent: Color::from_rgb_hex(0x0A84FF),
-            highlight: Color::from_rgb_hex(0x0058D0),
+            accent: Color::from_rgb_hex(0xF79545),
+            highlight: Color::from_rgb_hex(0x5AC8FA),
 
             selection: style.selectable_selected,
             selection_hover: style.selectable_hovered,
@@ -1190,7 +1190,7 @@ impl ColorScheme {
             text_primary: style.text_color,
             text_secondary: style.text_disabled,
             text_muted: style.text_hint,
-            text_accent: Color::from_rgb_hex(0x0A84FF),
+            text_accent: Color::from_rgb_hex(0xF79545),
 
             panel_bg: style.window_bg,
             panel_border: style.window_border,
@@ -1372,8 +1372,8 @@ impl UiStyle {
             widget_pressed_bg: Color::from_rgb_hex(0x2A2A2E),
             focus_ring_width: 2.0,
 
-            menu_item_hover_bg: Color::from_rgb_hex(0x0A84FF),
-            check_mark_color: Color::from_rgb_hex(0x0A84FF),
+            menu_item_hover_bg: Color::from_rgb_hex(0xF79545),
+            check_mark_color: Color::from_rgb_hex(0xF79545),
 
             tab_bar_height: 28.0,
             tab_inactive_bg: Color::from_rgb_hex(0x1E1E1E),

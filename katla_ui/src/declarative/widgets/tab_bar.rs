@@ -122,7 +122,7 @@ impl Widget for TabBar {
                 ctx.draw_line(
                     Vec2::new(tab_bounds.min.x(), tab_bounds.max.y() - 2.0),
                     Vec2::new(tab_bounds.max.x(), tab_bounds.max.y() - 2.0),
-                    animation.apply_to_color(ctx.style().text_color),
+                    animation.apply_to_color(ctx.style().tab_active_text),
                     2.0,
                 );
             }
@@ -132,10 +132,15 @@ impl Widget for TabBar {
                 tab_bounds.center().x() - label_size.x() * 0.5,
                 tab_bounds.center().y() - label_size.y() * 0.5,
             );
+            let text_color = if is_selected {
+                ctx.style().tab_active_text
+            } else {
+                ctx.style().tab_text
+            };
             ctx.draw_text(
                 &tab.label,
                 text_pos,
-                animation.apply_to_color(ctx.style().text_color),
+                animation.apply_to_color(text_color),
                 font_size,
             );
         }
