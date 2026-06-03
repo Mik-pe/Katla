@@ -536,11 +536,11 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
                 let is_hovered = tab_bounds.contains(ctx.mouse_pos());
 
                 let bg = if is_active {
-                    ctx.style().selectable_selected
+                    ctx.style().tab_active_bg
                 } else if is_hovered {
-                    ctx.style().button_hovered
+                    ctx.style().tab_hover_bg
                 } else {
-                    ctx.style().button_normal
+                    ctx.style().tab_inactive_bg
                 };
                 ctx.draw_rect(tab_bounds, bg);
 

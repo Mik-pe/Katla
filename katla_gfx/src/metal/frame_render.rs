@@ -22,8 +22,11 @@ use crate::texture::ImageFormat;
 use super::metal_renderer::MetalRenderer;
 use super::texture::{MetalTexture, MetalTextureView};
 
-/// Canvas clear color (#1E1E1E in linear) — matches UI canvas background.
-const CANVAS_CLEAR_COLOR: (f64, f64, f64, f64) = (30.0 / 255.0, 30.0 / 255.0, 30.0 / 255.0, 1.0);
+/// Canvas clear color — appears as #1E1E1E on an sRGB framebuffer.
+///
+/// The drawable is BGRA8Unorm_sRGB, so Metal interprets clear values as linear.
+/// sRGB #1E1E1E (30/255 ≈ 0.118) corresponds to linear ≈ 0.013.
+const CANVAS_CLEAR_COLOR: (f64, f64, f64, f64) = (0.013, 0.013, 0.013, 1.0);
 
 impl MetalRenderer {
     pub(crate) fn render_frame(&mut self) -> Result<(), RendererError> {
