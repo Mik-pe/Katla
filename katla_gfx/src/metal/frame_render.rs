@@ -24,32 +24,6 @@ use super::texture::{MetalTexture, MetalTextureView};
 
 impl MetalRenderer {
     pub(crate) fn render_frame(&mut self) -> Result<(), RendererError> {
-        log::warn!(
-            "METAL render_frame: depth_view={}, drawable_size={}x{}, \
-             tonemap_pipeline={}, geometry_hdr_view={}, geometry_hdr_bindless_slot={:?}, \
-             tonemap_output_view={}, sky_pipeline={}, \
-             pending_draw_list={}, pending_shadow_draw_list={}, pending_ui_draw_list={}",
-            self.depth_stencil_view.is_some(),
-            self.drawable_size.width,
-            self.drawable_size.height,
-            self.tonemap_pipeline.is_some(),
-            self.geometry_hdr_view.is_some(),
-            self.geometry_hdr_bindless_slot,
-            self.tonemap_output_view.is_some(),
-            self.sky_pipeline.is_some(),
-            self.pending_draw_list
-                .as_ref()
-                .map(|dl| dl.draws.len())
-                .unwrap_or(0),
-            self.pending_shadow_draw_list
-                .as_ref()
-                .map(|dl| dl.draws.len())
-                .unwrap_or(0),
-            self.pending_ui_draw_list
-                .as_ref()
-                .map(|dl| dl.commands.len())
-                .unwrap_or(0),
-        );
         if self.depth_stencil_view.is_none() {
             log::error!("METAL render_frame: EARLY RETURN — no depth_stencil_view");
             self.current_drawable_texture = None;
@@ -77,6 +51,13 @@ impl MetalRenderer {
 
         let width = self.drawable_size.width as f32;
         let height = self.drawable_size.height as f32;
+
+        // Viewport panel rect in physical pixels — restrict 3D scene to this area.
+        let vp = self.viewport_panel_rect;
+        let vp_x = vp.map_or(0.0, |r| r.min[0]);
+        let vp_y = vp.map_or(0.0, |r| r.min[1]);
+        let vp_w = vp.map_or(width, |r| r.width());
+        let vp_h = vp.map_or(height, |r| r.height());
 
         // =========================================================================
         // Pass 0: Shadow cascade rendering → shadow map texture
@@ -114,17 +95,6 @@ impl MetalRenderer {
         let draw_list = self.pending_draw_list.take();
         let picking_draw_list = draw_list.clone();
 
-        log::warn!(
-            "METAL render_frame: has_tonemap={}, hdr_view={}, hdr_slot={:?}, \
-             draw_list has {} draws, frame_uniform_buf={}, object_storage_buf={}",
-            has_tonemap,
-            self.geometry_hdr_view.is_some(),
-            self.geometry_hdr_bindless_slot,
-            draw_list.as_ref().map(|dl| dl.draws.len()).unwrap_or(0),
-            self.current_frame_uniform_buffer().is_some(),
-            self.current_object_storage_buffer().is_some(),
-        );
-
         if has_tonemap {
             let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
 
@@ -151,24 +121,7 @@ impl MetalRenderer {
 
             let mut encoder = cmd_buffer.begin_render_pass(geometry_pass_info);
 
-            if width > 0.0 && height > 0.0 {
-                encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
-            }
-
             Self::bind_common_resources(self, &mut encoder);
-
-            log::warn!(
-                "METAL geometry pass (HDR): sky_pipeline={}, draw_list={} draws, \
-                 camera_pos=[{:.2},{:.2},{:.2}], light_dir=[{:.2},{:.2},{:.2}]",
-                self.sky_pipeline.is_some(),
-                draw_list.as_ref().map(|dl| dl.draws.len()).unwrap_or(0),
-                self.frame_uniforms.camera_position[0],
-                self.frame_uniforms.camera_position[1],
-                self.frame_uniforms.camera_position[2],
-                self.frame_uniforms.light_direction[0],
-                self.frame_uniforms.light_direction[1],
-                self.frame_uniforms.light_direction[2],
-            );
 
             if let Some(ref sky_pipeline) = self.sky_pipeline {
                 if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
@@ -202,16 +155,12 @@ impl MetalRenderer {
                     view: drawable_view.clone(),
                     load_op: LoadOp::Clear,
                     store_op: StoreOp::Store,
-                    clear_value: ClearValue::OPAQUE_BLACK,
+                    clear_value: ClearValue::color(24.0 / 255.0, 24.0 / 255.0, 37.0 / 255.0, 1.0),
                 }],
                 depth_attachment,
             };
 
             let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
-
-            if width > 0.0 && height > 0.0 {
-                encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
-            }
 
             Self::bind_common_resources(self, &mut encoder);
 
@@ -375,10 +324,6 @@ impl MetalRenderer {
 
             let mut encoder = cmd_buffer.begin_render_pass(tonemap_pass_info);
 
-            if width > 0.0 && height > 0.0 {
-                encoder.set_viewport(0.0, 0.0, width, height, 0.0, 1.0);
-            }
-
             if let Some(frame_buf) = self.current_frame_uniform_buffer() {
                 encoder.bind_storage_buffer(frame_buf, 0, 0, ShaderStages::VERTEX_FRAGMENT);
             }
@@ -428,12 +373,6 @@ impl MetalRenderer {
             encoder.bind_graphics_pipeline(tonemap_pipeline);
             encoder.draw(3, 1, 0, 0);
 
-            log::warn!(
-                "METAL render_frame: tonemap pass submitted, hdr_slot={:?}, writes_to_drawable={}",
-                self.geometry_hdr_bindless_slot,
-                tonemap_writes_to_drawable,
-            );
-
             if let Some(ref fence) = self.tonemap_fence {
                 encoder
                     .inner
@@ -445,7 +384,7 @@ impl MetalRenderer {
 
         // Blit the tonemapped viewport_0 texture into the drawable so the
         // 3D scene is visible underneath the UI overlay.
-        let mut scene_blitted_to_drawable = false;
+        let mut _scene_blitted_to_drawable = false;
         if let Some(ref tonemap_view) = self.tonemap_output_view {
             if let Some(ref fence) = self.tonemap_fence {
                 // Wait for tonemap to finish before reading its output.
@@ -456,12 +395,38 @@ impl MetalRenderer {
                 }
             }
 
+            // Clear the entire drawable to panel background color before blitting
+            // the 3D scene into the viewport rect area.
+            {
+                let clear_desc = objc2_metal::MTLRenderPassDescriptor::new();
+                let color_attach =
+                    unsafe { clear_desc.colorAttachments().objectAtIndexedSubscript(0) };
+                color_attach.setTexture(Some(&drawable_view.inner));
+                color_attach.setLoadAction(objc2_metal::MTLLoadAction::Clear);
+                color_attach.setStoreAction(objc2_metal::MTLStoreAction::Store);
+                color_attach.setClearColor(objc2_metal::MTLClearColor {
+                    red: 24.0 / 255.0,
+                    green: 24.0 / 255.0,
+                    blue: 37.0 / 255.0,
+                    alpha: 1.0,
+                });
+                let clear_encoder = cmd_buffer
+                    .inner
+                    .renderCommandEncoderWithDescriptor(&clear_desc)
+                    .expect("Failed to create clear encoder");
+                let label = objc2_foundation::NSString::from_str("clear_drawable");
+                clear_encoder.setLabel(Some(&label));
+                clear_encoder.endEncoding();
+            }
+
             // Copy viewport_0 (LDR tonemapped scene) → drawable texture.
             let src = &tonemap_view.inner;
             let dst = &drawable_view.inner;
-            let w = self.drawable_size.width as usize;
-            let h = self.drawable_size.height as usize;
-            if w > 0 && h > 0 {
+            let blit_w = vp_w as usize;
+            let blit_h = vp_h as usize;
+            let dst_x = vp_x as usize;
+            let dst_y = vp_y as usize;
+            if blit_w > 0 && blit_h > 0 {
                 let blit = cmd_buffer.inner.blitCommandEncoder();
                 if let Some(b) = blit {
                     unsafe {
@@ -471,18 +436,18 @@ impl MetalRenderer {
                             0,
                             objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
                             objc2_metal::MTLSize {
-                                width: w,
-                                height: h,
+                                width: blit_w,
+                                height: blit_h,
                                 depth: 1,
                             },
                             dst,
                             0,
                             0,
-                            objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                            objc2_metal::MTLOrigin { x: dst_x, y: dst_y, z: 0 },
                         );
                     }
                     b.endEncoding();
-                    scene_blitted_to_drawable = true;
+                    _scene_blitted_to_drawable = true;
                     drawable_written = true;
                 }
             }
@@ -498,16 +463,6 @@ impl MetalRenderer {
                 .upload_draw_list(&self.context, &ui_draw_list)
                 .is_ok()
         {
-            log::warn!(
-                "METAL render_frame: UI pass — {} commands, {} vertices, {} indices, {} instances, \
-                 scene_blitted={}, screen_size={:?}",
-                ui_draw_list.commands.len(),
-                ui_draw_list.vertices.len(),
-                ui_draw_list.indices.len(),
-                ui_draw_list.instances.len(),
-                scene_blitted_to_drawable,
-                ui_draw_list.screen_size,
-            );
             let ui_material_handle = self.ui_renderer.ui_material();
             if let Some(ui_mat_handle) = ui_material_handle
                 && let Some(ui_material) = self.materials.get(ui_mat_handle.index())
@@ -556,15 +511,6 @@ impl MetalRenderer {
                         objc2_metal::MTLResourceUsage::Read,
                         objc2_metal::MTLRenderStages::Vertex
                             | objc2_metal::MTLRenderStages::Fragment,
-                    );
-                    let tex_count = self.bindless_manager.registered_textures().count();
-                    log::warn!(
-                        "METAL render_frame: UI bindless — arg_buffer bound, {} registered textures, \
-                         font_atlas={:?} (bindless_slot={:?})",
-                        tex_count,
-                        self.ui_font_atlas,
-                        self.ui_font_atlas
-                            .and_then(|h| self.get_bindless_slot_impl(h)),
                     );
                     for texture in self.bindless_manager.registered_textures() {
                         encoder.use_texture(
@@ -622,7 +568,7 @@ impl MetalRenderer {
             let encoder = cmd_buffer.begin_render_pass(clear_pass_info);
             encoder.end_encoding();
         } else {
-            log::warn!("METAL render_frame: drawable was written to by render passes");
+            // drawable_written stays true, no need to clear
         }
 
         cmd_buffer.end();

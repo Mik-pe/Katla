@@ -12,8 +12,10 @@ A Vulkan game engine in Rust. Playground for graphics experiments. 🐒
 - **PBR materials** 💎 - Hot reload support, template-based definitions
 - **WGSL shaders** ✨ - Compiled via naga at runtime
 - **GLTF support** 🦊 - Skeletal animation, PBR materials, background loading
-- **Editor UI** 🖼️ - Asset browser, entity inspector, transform gizmos
+- **Editor UI** 🖼️ - Declarative dockable panels, asset browser, entity inspector, transform gizmos, CodeEditor with syntect highlighting
 - **Bindless textures** 🎨 - Single texture array for UI rendering, texture switching via vertex indices, no push descriptor overhead
+- **Text pipeline** 🔤 - cosmic-text with HarfBuzz shaping, BiDi, CJK, word wrapping, font fallback; swash rasterization, etagere atlas packing, subpixel positioning
+- **GPU-instanced UI** ⚡ - Instanced rendering (shared unit quad + per-instance data) replaces per-quad vertex emission; incremental Taffy layout caching via dirty flags
 
 ## Crates 📚
 
@@ -22,7 +24,7 @@ A Vulkan game engine in Rust. Playground for graphics experiments. 🐒
 | `katla_gfx` | Vulkan wrapper, render graph, materials |
 | `katla_ecs` | Entity component system |
 | `katla_math` | SIMD math library |
-| `katla_ui` | Immediate mode UI system |
+| `katla_ui` | Declarative UI system — Widget trait, focus chains, dockable panels, cosmic-text pipeline, GPU-instanced rendering, CodeEditor (622 tests) |
 | `katla_app` | Application framework, components, systems |
 
 ## Running 🏃

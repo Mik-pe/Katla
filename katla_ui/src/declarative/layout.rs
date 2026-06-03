@@ -345,6 +345,7 @@ pub fn measure_text_descriptor(content: &str, font_size: Option<FontSize>) -> Ve
 mod tests {
     use super::*;
     use crate::declarative::constructors::*;
+    use crate::declarative::descriptor::Anchor;
     use crate::declarative::widget::WidgetBox;
     use katla_math::Vec2;
 
@@ -1766,5 +1767,78 @@ mod tests {
                 id,
             );
         }
+    }
+
+    /// Verify that Overlay wrapping a Panel with explicit dimensions
+    /// gets proper Taffy bounds (not zero-sized). This is the exact pattern
+    /// used for docked panels in the editor.
+    #[test]
+    fn test_overlay_panel_has_nonzero_bounds() {
+        let panel_w = 200.0;
+        let panel_h = 400.0;
+        let offset = Vec2::new(100.0, 50.0);
+
+        let desc = zstack([(
+            Alignment::TopLeading,
+            overlay(
+                Anchor::TopLeft,
+                offset,
+                panel("Test", text("content").boxed())
+                    .flex_width(panel_w)
+                    .flex_height(panel_h)
+                    .boxed(),
+            )
+            .boxed(),
+        )]);
+
+        let mut tree = ViewTree::new();
+        build_tree(&mut tree, desc.boxed());
+
+        let mut taffy = TaffyNodeMap::new();
+        taffy.sync(&mut tree, &measure_text_descriptor);
+        let bounds = taffy.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
+
+        let root = tree.root().unwrap();
+        let root_node = tree.get(root).unwrap();
+
+        // ZStack should fill the screen
+        let zstack_bounds = bounds.get(&root).copied().unwrap_or_default();
+        assert!(zstack_bounds.width() > 0.0, "ZStack should have width");
+        assert!(zstack_bounds.height() > 0.0, "ZStack should have height");
+
+        // Overlay (ZStack's child)
+        let overlay_id = root_node.children[0];
+        let overlay_bounds = bounds.get(&overlay_id).copied().unwrap_or_default();
+        eprintln!("Overlay bounds: {:?}", overlay_bounds);
+
+        // Panel (Overlay's child)
+        let overlay_node = tree.get(overlay_id).unwrap();
+        let panel_id = overlay_node.children[0];
+        let panel_bounds = bounds.get(&panel_id).copied().unwrap_or_default();
+        eprintln!("Panel bounds: {:?}", panel_bounds);
+
+        // Both Overlay and Panel should have non-zero dimensions
+        assert!(
+            overlay_bounds.width() > 1.0,
+            "Overlay should have non-zero width, got {}",
+            overlay_bounds.width(),
+        );
+        assert!(
+            overlay_bounds.height() > 1.0,
+            "Overlay should have non-zero height, got {}",
+            overlay_bounds.height(),
+        );
+        assert!(
+            approx_eq(panel_bounds.width(), panel_w),
+            "Panel width should be {}, got {}",
+            panel_w,
+            panel_bounds.width(),
+        );
+        assert!(
+            approx_eq(panel_bounds.height(), panel_h),
+            "Panel height should be {}, got {}",
+            panel_h,
+            panel_bounds.height(),
+        );
     }
 }

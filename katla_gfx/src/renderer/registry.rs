@@ -96,6 +96,10 @@ pub struct MaterialAsset {
     /// - Some(PipelineHandle) when fully_compiled = true
     /// - None when fully_compiled = false (deferred compilation)
     pub pipeline: Option<PipelineHandle>,
+    /// Instanced pipeline handle for UI materials.
+    /// Compiled with `vs_instanced`/`fs_instanced` entry points and UnitQuadVertex format.
+    /// Only set for VertexType::Ui materials.
+    pub instanced_pipeline: Option<PipelineHandle>,
     /// Whether this material has been fully compiled.
     /// When false, the pipeline will be compiled on-demand when first used.
     pub fully_compiled: bool,
@@ -307,6 +311,9 @@ impl AssetRegistry {
             if material.fully_compiled && material.shader_path.is_some() {
                 material.fully_compiled = false;
                 if let Some(pipeline_handle) = material.pipeline.take() {
+                    pipelines_to_destroy.push(pipeline_handle);
+                }
+                if let Some(pipeline_handle) = material.instanced_pipeline.take() {
                     pipelines_to_destroy.push(pipeline_handle);
                 }
             }

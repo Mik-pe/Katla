@@ -963,17 +963,13 @@ impl ViewTree {
                 self.sync_keyed_multi(node_id, &old_children, children);
             }
             ChildWidgets::ZStack(children) => {
+                // Collect alignments BEFORE draining — the (alignment, key, widget)
+                // tuples carry the alignment info that take_children() already
+                // drained from the ZStack's child_widgets vec.
+                let alignments: Vec<Alignment> = children.iter().map(|(a, _, _)| *a).collect();
+
                 let owned_children: Vec<(Option<u64>, Box<dyn Widget>)> =
                     children.into_iter().map(|(_, key, w)| (key, w)).collect();
-
-                let alignments: Vec<Alignment> = {
-                    let node = self.nodes.get(node_id).unwrap();
-                    node.widget
-                        .as_any()
-                        .downcast_ref::<super::widgets::zstack::ZStack>()
-                        .map(|z| z.child_widgets.iter().map(|(a, _)| *a).collect())
-                        .unwrap_or_default()
-                };
 
                 self.sync_keyed_multi(node_id, &old_children, owned_children);
 

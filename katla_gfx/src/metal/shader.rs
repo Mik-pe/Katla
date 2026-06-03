@@ -479,7 +479,7 @@ pub(crate) fn compile_wgsl_to_metal(
         profile
     );
 
-    #[cfg(debug_assertions)]
+    // Always dump MSL to /tmp for debugging Metal rendering issues
     {
         let debug_name = entry_points.first().unwrap_or(&"");
         let _ = std::fs::write(

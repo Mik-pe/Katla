@@ -94,6 +94,12 @@ impl MetalRenderer {
     }
 
     pub(crate) fn draw_objects(&self, encoder: &mut MetalRenderEncoder, draw_list: &DrawList) {
+        log::warn!(
+            "METAL draw_objects: {} draws, frame_buf={}, object_buf={}",
+            draw_list.draws.len(),
+            self.current_frame_uniform_buffer().is_some(),
+            self.current_object_storage_buffer().is_some(),
+        );
         let stages = ShaderStages::VERTEX_FRAGMENT;
         for (i, draw) in draw_list.draws.iter().enumerate() {
             let Some(mesh) = self.meshes.get(draw.mesh.index()) else {
@@ -112,6 +118,21 @@ impl MetalRenderer {
                 log::warn!("Draw {}: no pipeline", i);
                 continue;
             };
+
+            if i < 3 || i == draw_list.draws.len() - 1 {
+                log::warn!(
+                    "METAL draw_objects[{}]: mesh_idx={}, mat_idx={}, instance_index={}, \
+                     skeleton={:?}, index_count={}, tex_indices={:?}, vertex_type={:?}",
+                    i,
+                    draw.mesh.index(),
+                    draw.material.index(),
+                    draw.instance_index,
+                    draw.skeleton,
+                    mesh.index_count,
+                    material.texture_indices,
+                    material.vertex_type,
+                );
+            }
 
             encoder.bind_graphics_pipeline(pipeline);
 

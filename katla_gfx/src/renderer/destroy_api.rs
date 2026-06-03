@@ -33,6 +33,10 @@ impl VulkanRenderer {
             if let Some(pipeline_handle) = material.pipeline {
                 self.asset_registry.remove_pipeline(pipeline_handle);
             }
+            // Destroy the instanced pipeline if present (UI materials only)
+            if let Some(pipeline_handle) = material.instanced_pipeline {
+                self.asset_registry.remove_pipeline(pipeline_handle);
+            }
         }
     }
 
@@ -80,6 +84,7 @@ mod tests {
     fn make_material() -> MaterialAsset {
         MaterialAsset {
             pipeline: None,
+            instanced_pipeline: None,
             fully_compiled: false,
             shader_path: None,
             vertex_type: crate::vulkan::material::compiler::VertexType::Pbr,

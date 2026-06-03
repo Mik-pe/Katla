@@ -9,11 +9,11 @@ use crate::error::RendererError;
 use crate::renderer::types::UIDrawList;
 use crate::vertex::{UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES};
 
-use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLRenderCommandEncoder, MTLRenderPipelineState};
+use objc2_metal::MTLRenderCommandEncoder;
 
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
+use super::pipeline::MetalGraphicsPipeline;
 
 const INITIAL_VERTEX_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
 const INITIAL_INDEX_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
@@ -42,7 +42,7 @@ pub(crate) struct MetalUIRenderer {
     index_buffer_capacity: u64,
     instance_buffer_capacity: u64,
     ui_material: Option<crate::handle::MaterialHandle>,
-    instanced_pipeline: Option<objc2::rc::Retained<ProtocolObject<dyn MTLRenderPipelineState>>>,
+    instanced_pipeline: Option<MetalGraphicsPipeline>,
 }
 
 impl MetalUIRenderer {
@@ -69,10 +69,7 @@ impl MetalUIRenderer {
         self.ui_material = Some(handle);
     }
 
-    pub(crate) fn set_instanced_pipeline(
-        &mut self,
-        pipeline: objc2::rc::Retained<ProtocolObject<dyn MTLRenderPipelineState>>,
-    ) {
+    pub(crate) fn set_instanced_pipeline(&mut self, pipeline: MetalGraphicsPipeline) {
         self.instanced_pipeline = Some(pipeline);
     }
 
@@ -247,14 +244,15 @@ impl MetalUIRenderer {
         let mut prev_scissor = full_scissor;
         let mut using_instanced_pipeline = false;
 
-        log::warn!(
-            "METAL render_ui_commands: {} commands, screen_size={:?}, scale_factor={}",
+        log::debug!(
+            "METAL render_ui_commands: {} commands, {} instances, screen_size={:?}, scale_factor={}",
             draw_list.commands.len(),
+            draw_list.instances.len(),
             draw_list.screen_size,
             draw_list.scale_factor,
         );
 
-        for (cmd_idx, cmd) in draw_list.commands.iter().enumerate() {
+        for (_cmd_idx, cmd) in draw_list.commands.iter().enumerate() {
             let scissor = if let Some([x, y, w, h]) = cmd.clip_rect {
                 let s = draw_list.scale_factor;
                 let sx = (x * s).max(0.0) as u32;
@@ -277,10 +275,13 @@ impl MetalUIRenderer {
             }
 
             if cmd.is_instanced {
-                // Switch to instanced pipeline if not already bound
+                // Switch to instanced pipeline if not already bound.
+                // Use bind_graphics_pipeline (not raw setRenderPipelineState) to
+                // ensure depth stencil state, cull mode, and front face winding
+                // are properly set for the instanced pipeline.
                 if !using_instanced_pipeline {
                     if let Some(inst_pipe) = self.instanced_pipeline.as_ref() {
-                        encoder.inner.setRenderPipelineState(inst_pipe);
+                        encoder.bind_graphics_pipeline(inst_pipe);
                     }
                     using_instanced_pipeline = true;
                 }
@@ -297,22 +298,18 @@ impl MetalUIRenderer {
                     crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
                 );
                 // Bind instance data as storage buffer at buffer 11 (vertex stage).
-                // Use baseInstance so instance_id starts at cmd.offset, avoiding
-                // buffer offset alignment issues with per-batch offsets.
-                if cmd_idx < 5 {
-                    log::warn!(
-                        "METAL UI instanced[{}]: offset={}, count={}, texture={:?}",
-                        cmd_idx,
-                        cmd.offset,
-                        cmd.count,
-                        cmd.texture,
-                    );
-                }
+                // Metal's instance_id starts from 0 regardless of baseInstance,
+                // so we bind the buffer with a byte offset so instance_data[0]
+                // maps to the correct batch offset.
+                let instance_offset =
+                    cmd.offset as usize * std::mem::size_of::<crate::vertex::VertexUIInstance>();
                 if let Some(ref inst_buf) = self.instance_buffer {
                     unsafe {
-                        encoder
-                            .inner
-                            .setVertexBuffer_offset_atIndex(Some(&inst_buf.inner), 0, 11);
+                        encoder.inner.setVertexBuffer_offset_atIndex(
+                            Some(&inst_buf.inner),
+                            instance_offset,
+                            11,
+                        );
                     }
                 }
                 if let Some(ref quad_ib) = self.unit_quad_index_buffer {
@@ -325,7 +322,7 @@ impl MetalUIRenderer {
                 if let Some(ref quad_vb) = self.unit_quad_vertex_buffer {
                     encoder.bind_vertex_buffer(quad_vb, 0, 10);
                 }
-                encoder.draw_indexed(6, cmd.count, 0, 0, cmd.offset);
+                encoder.draw_indexed(6, cmd.count, 0, 0, 0);
             } else {
                 // Switch back to non-instanced pipeline if needed
                 if using_instanced_pipeline {
@@ -339,14 +336,6 @@ impl MetalUIRenderer {
                     ndc_y_flip: -1.0,
                     texture_index: cmd.texture.index(),
                 };
-                if cmd_idx < 5 {
-                    log::warn!(
-                        "METAL UI vertex[{}]: offset={}, count=1, texture_index={}",
-                        cmd_idx,
-                        cmd.offset,
-                        cmd.texture.index(),
-                    );
-                }
                 encoder.set_push_constants(
                     bytemuck::cast_slice(&[uniform_data]),
                     3,

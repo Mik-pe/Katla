@@ -469,9 +469,9 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
 
     fn draw(
         &self,
-        ctx: &mut UiContext,
+        _ctx: &mut UiContext,
         state: &StateArena,
-        bounds: Rect2D,
+        _bounds: Rect2D,
         _animation: &AnimationState,
         _children: &[ViewId],
         _info: &DrawInfo,
@@ -479,18 +479,9 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         if self.is_empty_tree(state) {
             return;
         }
-
-        let dock_bounds = self.effective_bounds(bounds);
-
-        // Draw panel content area backgrounds
-        if let Some(tree) = self.read_tree(state) {
-            let leaf_info = compute_leaf_info(tree.root(), dock_bounds, self.tab_bar_height);
-            for leaf in &leaf_info {
-                if !leaf.tabs.is_empty() {
-                    ctx.draw_rect(leaf.content_bounds, ctx.style().window_bg);
-                }
-            }
-        }
+        // Background is drawn by individual panel widgets — do not draw
+        // content area backgrounds here, as this widget is layered on top of
+        // the panel overlays and would overwrite their children (text, icons).
     }
 
     fn draw_after_children(

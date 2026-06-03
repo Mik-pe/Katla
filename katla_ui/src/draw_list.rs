@@ -34,6 +34,8 @@ pub struct DrawList {
     pending_instance_batches: Vec<PendingInstanceBatch>,
     /// Pending vertex batches before finalization.
     pending_vertex_batches: Vec<PendingVertexBatch>,
+    /// Global submission order counter — incremented each time a batch is flushed.
+    submission_order: u32,
 }
 
 /// Internal instance batch being accumulated before finalization.
@@ -44,6 +46,7 @@ struct PendingInstanceBatch {
     z_index: u32,
     instance_start: u32,
     instance_count: u32,
+    order: u32,
 }
 
 /// Internal vertex batch being accumulated before finalization.
@@ -54,6 +57,7 @@ struct PendingVertexBatch {
     z_index: u32,
     index_start: u32,
     index_count: u32,
+    order: u32,
 }
 
 impl DrawList {
@@ -70,6 +74,7 @@ impl DrawList {
             scratch_points: Vec::new(),
             pending_instance_batches: Vec::new(),
             pending_vertex_batches: Vec::new(),
+            submission_order: 0,
         }
     }
 
@@ -85,6 +90,7 @@ impl DrawList {
         self.scratch_points.clear();
         self.pending_instance_batches.clear();
         self.pending_vertex_batches.clear();
+        self.submission_order = 0;
     }
 
     /// Set the current Z-index for subsequent draw commands.
@@ -121,6 +127,7 @@ impl DrawList {
 
     /// Add a solid-color rectangle (instanced).
     pub fn add_rect(&mut self, bounds: Rect2D, color: Color) {
+        self.flush_vertex_batch(); // maintain submission order
         self.set_texture(TextureId::NONE);
         let mut instance = InstanceData::rect(bounds, color);
         instance.clip_rect = self.clip_to_array();
@@ -138,6 +145,7 @@ impl DrawList {
         br: Color,
         bl: Color,
     ) {
+        self.flush_instance_batch(); // maintain submission order
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
@@ -181,6 +189,7 @@ impl DrawList {
         color: Color,
         texture: TextureId,
     ) {
+        self.flush_vertex_batch(); // maintain submission order
         self.set_texture(texture);
         let mut instance = InstanceData::textured(bounds, uv, color, 0);
         instance.clip_rect = self.clip_to_array();
@@ -206,6 +215,7 @@ impl DrawList {
             return;
         }
 
+        self.flush_instance_batch(); // maintain submission order
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
@@ -236,6 +246,7 @@ impl DrawList {
         let nx = dy / len * thickness * 0.5;
         let ny = -dx / len * thickness * 0.5;
 
+        self.flush_instance_batch(); // maintain submission order
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
@@ -301,6 +312,7 @@ impl DrawList {
             return;
         }
 
+        self.flush_instance_batch(); // maintain submission order
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
@@ -392,6 +404,7 @@ impl DrawList {
         let inner_points = std::mem::take(&mut self.scratch_points);
         let n = inner_points.len();
 
+        self.flush_instance_batch(); // maintain submission order
         self.set_texture(TextureId::NONE);
 
         let vertex_offset = self.vertices.len() as u32;
@@ -496,6 +509,7 @@ impl DrawList {
         let n = outer_points.len();
         debug_assert_eq!(inner_points.len(), n);
 
+        self.flush_instance_batch(); // maintain submission order
         self.set_texture(TextureId::NONE);
 
         let color_arr = color.to_bytes();
@@ -600,6 +614,7 @@ impl DrawList {
         debug_assert_eq!(outer_aa_points.len(), n);
         debug_assert_eq!(inner_points.len(), n);
 
+        self.flush_instance_batch(); // maintain submission order
         self.set_texture(TextureId::NONE);
 
         let color_full = color.to_bytes();
@@ -680,12 +695,15 @@ impl DrawList {
             .unwrap_or(0);
         let count = total - prev_end;
         if count > 0 {
+            let order = self.submission_order;
+            self.submission_order += 1;
             self.pending_instance_batches.push(PendingInstanceBatch {
                 texture: self.current_texture,
                 clip_rect: self.current_clip,
                 z_index: self.current_z,
                 instance_start: prev_end,
                 instance_count: count,
+                order,
             });
         }
     }
@@ -700,12 +718,15 @@ impl DrawList {
             .unwrap_or(0);
         let count = total - prev_end;
         if count > 0 {
+            let order = self.submission_order;
+            self.submission_order += 1;
             self.pending_vertex_batches.push(PendingVertexBatch {
                 texture: self.current_texture,
                 clip_rect: self.current_clip,
                 z_index: self.current_z,
                 index_start: prev_end,
                 index_count: count,
+                order,
             });
         }
     }
@@ -715,12 +736,17 @@ impl DrawList {
         self.flush_instance_batch();
         self.flush_vertex_batch();
 
-        // Combine all batches into a unified list for z-sorting
+        // Combine all batches into a unified list for z-sorting.
+        // Each batch carries a submission order counter so that instance and
+        // vertex batches are interleaved correctly — a widget that draws a
+        // rounded-rect background (vertex) then an icon (instance) must have
+        // the background drawn BEFORE the icon, not after all instances.
         let mut all_batches: Vec<SortedBatch> = Vec::new();
 
         for batch in &self.pending_instance_batches {
             all_batches.push(SortedBatch {
                 z_index: batch.z_index,
+                order: batch.order,
                 texture: batch.texture,
                 clip_rect: batch.clip_rect,
                 is_instanced: true,
@@ -732,6 +758,7 @@ impl DrawList {
         for batch in &self.pending_vertex_batches {
             all_batches.push(SortedBatch {
                 z_index: batch.z_index,
+                order: batch.order,
                 texture: batch.texture,
                 clip_rect: batch.clip_rect,
                 is_instanced: false,
@@ -740,8 +767,9 @@ impl DrawList {
             });
         }
 
-        // Sort by z-index (stable sort preserves order within same z)
-        all_batches.sort_by_key(|b| b.z_index);
+        // Sort by (z_index, submission_order) to preserve draw order within
+        // the same z-level while still allowing explicit z-ordering.
+        all_batches.sort_by_key(|b| (b.z_index, b.order));
 
         // Convert to GPU commands
         self.commands.clear();
@@ -832,6 +860,7 @@ impl DrawList {
 /// Unified batch for z-sorting.
 struct SortedBatch {
     z_index: u32,
+    order: u32,
     texture: TextureId,
     clip_rect: Rect2D,
     is_instanced: bool,
@@ -1223,5 +1252,77 @@ mod tests {
 
         let inst = &list.instances()[0];
         assert_eq!(inst.clip_rect, [5.0, 10.0, 100.0, 200.0]);
+    }
+
+    #[test]
+    fn test_instance_vertex_interleaving_preserves_order() {
+        // Regression test: vertex and instance batches must preserve submission
+        // order within the same z-index. A widget that draws a rounded-rect
+        // background (vertex) then an icon (instance) must have the background
+        // drawn first, not after all instances.
+        let mut list = DrawList::new();
+
+        // 1. Instance: solid rect (e.g., panel background)
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(100.0, 50.0)),
+            Color::RED,
+        );
+        // 2. Vertex: line (e.g., tab underline)
+        list.add_line(
+            Vec2::new(0.0, 50.0),
+            Vec2::new(100.0, 50.0),
+            Color::WHITE,
+            2.0,
+        );
+        // 3. Instance: another rect (e.g., text quad)
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(10.0, 10.0), Vec2::new(80.0, 30.0)),
+            Color::GREEN,
+        );
+
+        list.finalize();
+
+        // Should have 3 commands in submission order: instanced, vertex, instanced
+        assert_eq!(list.command_count(), 3);
+        assert!(
+            list.commands()[0].is_instanced,
+            "1st cmd should be instanced (rect)"
+        );
+        assert!(
+            !list.commands()[1].is_instanced,
+            "2nd cmd should be vertex (line)"
+        );
+        assert!(
+            list.commands()[2].is_instanced,
+            "3rd cmd should be instanced (rect)"
+        );
+    }
+
+    #[test]
+    fn test_z_index_overrides_submission_order() {
+        let mut list = DrawList::new();
+
+        // Draw in order: z=0, z=2, z=1 — should sort to z=0, z=1, z=2
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+            Color::RED,
+        );
+        list.set_z_index(2);
+        list.add_line(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0), Color::BLUE, 1.0);
+        list.set_z_index(1);
+        list.add_rect(
+            Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+            Color::GREEN,
+        );
+
+        list.finalize();
+
+        assert_eq!(list.command_count(), 3);
+        // z=0: instanced (RED rect)
+        assert!(list.commands()[0].is_instanced);
+        // z=1: instanced (GREEN rect)
+        assert!(list.commands()[1].is_instanced);
+        // z=2: vertex (BLUE line)
+        assert!(!list.commands()[2].is_instanced);
     }
 }

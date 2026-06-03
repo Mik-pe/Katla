@@ -650,6 +650,14 @@ impl GpuRenderer for AnyRenderer {
             AnyRenderer::Metal(r) => r.read_timestamps(),
         }
     }
+
+    fn set_viewport_panel_rect(&mut self, rect: Option<crate::rect::Rect>) {
+        match self {
+            AnyRenderer::Vulkan(r) => r.set_viewport_panel_rect(rect),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.set_viewport_panel_rect(rect),
+        }
+    }
 }
 
 // --- Non-trait methods that both backends implement ---

@@ -152,6 +152,15 @@ impl Application {
 
             editor::upload_font_atlas(self);
 
+            // Pass viewport panel bounds to renderer (logical → physical pixels)
+            let vp_bounds = self.editor.editor_ui.last_viewport_bounds;
+            let sf = self.scale_factor;
+            let phys_rect = katla_gfx::Rect::new(
+                [vp_bounds.min.x() * sf, vp_bounds.min.y() * sf],
+                [vp_bounds.max.x() * sf, vp_bounds.max.y() * sf],
+            );
+            self.renderer.set_viewport_panel_rect(Some(phys_rect));
+
             log::debug!("Rendering frame (Metal)...");
             self.render_frame(ui_draw_list, dt, self.frame_count);
             self.editor.editor_ui.last_draw_call_count = self.last_draw_call_count;
