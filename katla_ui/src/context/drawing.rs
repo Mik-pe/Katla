@@ -165,7 +165,7 @@ impl UiContext {
                 Some(shaped) => {
                     for run in shaped.buffer.layout_runs() {
                         for glyph in run.glyphs.iter() {
-                            let physical = glyph.physical((0.0, 0.0), 1.0);
+                            let physical = glyph.physical((0.0, 0.0), scale);
 
                             let cached = fonts.get_or_rasterize_shaped(physical.cache_key, scale);
 
@@ -174,10 +174,15 @@ impl UiContext {
                                     continue;
                                 }
 
+                                // All positions in logical pixels for the shader.
+                                // physical.x is in physical pixels (from glyph.physical with
+                                // scale), convert back to logical. Cached offsets are already
+                                // logical (divided by scale_factor during rasterization).
                                 let pos_x =
-                                    position.x() + physical.x as f32 + cached.offset_x * scale;
-                                let pos_y = position.y() + (run.line_y - glyph.y_offset) * scale
-                                    - cached.top_offset * scale;
+                                    position.x() + physical.x as f32 / scale + cached.offset_x;
+                                let pos_y = position.y() + run.line_y + glyph.y
+                                    - glyph.font_size * glyph.y_offset
+                                    - cached.top_offset;
 
                                 glyphs.push(GlyphEntry {
                                     bounds: Rect2D::from_origin_size(
@@ -192,7 +197,7 @@ impl UiContext {
                                 glyphs.push(GlyphEntry {
                                     bounds: Rect2D::from_origin_size(
                                         Vec2::new(
-                                            position.x() + physical.x as f32,
+                                            position.x() + physical.x as f32 / scale,
                                             position.y() + run.line_y,
                                         ),
                                         placeholder_size,

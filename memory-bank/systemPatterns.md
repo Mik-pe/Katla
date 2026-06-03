@@ -47,7 +47,16 @@ Backend code lives in `vulkan/` and `metal/`. When adding features:
 2. Implement for both backends
 3. Add dispatch to `AnyRenderer`
 
-### Vulkan Descriptor Sets
+`katla_gfx` does NOT depend on `katla_math`. Use `crate::Size2D`, `crate::Rect`, etc. for native types.
+
+### Viewport Panel Containment
+
+The 3D scene is restricted to the editor's viewport panel area via `set_viewport_panel_rect()`. The editor converts logical dock layout bounds to physical pixels and passes them before each frame. The Metal renderer:
+- Sets geometry/tonemap viewport to the panel rect (restricts GPU rasterization)
+- Clears the drawable to Catppuccin Mocha base color (24/255, 24/255, 37/255, 1.0)
+- Blits only the rendered sub-rect from tonemap output to the drawable
+
+When `viewport_panel_rect` is None, behavior is identical to full-screen rendering.
 
 3-set layout: Set 0 (per-frame uniforms + storage buffer), Set 1 (bindless texture array up to 4096), Set 2 (skeletal animation joints). Never use push constants.
 

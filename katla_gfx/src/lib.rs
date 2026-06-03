@@ -253,6 +253,11 @@ mod size;
 
 pub use crate::size::Size2D;
 
+// Rect type
+mod rect;
+
+pub use crate::rect::Rect;
+
 // Error handling
 pub use error::RendererError;
 pub use error::ValidationMode;

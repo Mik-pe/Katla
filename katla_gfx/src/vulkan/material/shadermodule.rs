@@ -266,6 +266,43 @@ impl ShaderCache {
     /// Removes all cached modules (vertex, fragment, compute stages) for the
     /// given shader path and destroys the underlying Vulkan shader modules.
     /// Used for shader hot reload to force recompilation from disk.
+    /// Load a shader with a custom entry point name.
+    ///
+    /// Similar to `load_shader` but uses the provided entry point instead of
+    /// the default (`vs_main`/`fs_main`/`cs_main`). Used for UI instanced
+    /// pipeline compilation where the shader has `vs_instanced`/`fs_instanced`
+    /// entry points alongside the default ones.
+    ///
+    /// Note: Does NOT cache the result since the cache key doesn't include
+    /// entry point names. This is fine since it's called once at init.
+    pub fn load_shader_with_entry(
+        &self,
+        path: impl AsRef<Path>,
+        stage: vk::ShaderStageFlags,
+        entry_point: &str,
+    ) -> Result<vk::ShaderModule, ShaderError> {
+        let path = path.as_ref();
+        log::debug!(
+            "load_shader_with_entry: loading {:?} stage={:?} entry={:?}",
+            path,
+            stage,
+            entry_point
+        );
+        if let Some(extension) = path.extension()
+            && extension == "wgsl"
+        {
+            let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, entry_point)?;
+            let module = shader.module;
+            std::mem::forget(shader);
+            return Ok(module);
+        }
+
+        let shader = ShaderModule::from_file(self.device.clone(), path, stage, entry_point)?;
+        let module = shader.module;
+        std::mem::forget(shader);
+        Ok(module)
+    }
+
     pub fn invalidate(&mut self, path: &Path) {
         let stages = [
             vk::ShaderStageFlags::VERTEX,

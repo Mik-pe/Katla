@@ -191,7 +191,7 @@ impl MetalRenderer {
         let handle = MaterialHandle::new(id);
 
         if let Some(inst) = instanced_pipeline {
-            self.ui_renderer.set_instanced_pipeline(inst.pipeline_state);
+            self.ui_renderer.set_instanced_pipeline(inst);
         }
 
         Ok(handle)

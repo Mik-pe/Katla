@@ -199,6 +199,7 @@ pub struct MetalRenderer {
     pub(crate) tonemap_fence: Option<Retained<ProtocolObject<dyn objc2_metal::MTLFence>>>,
     pub(crate) capabilities: crate::renderer::types::GpuCapabilities,
     pub(crate) timestamp_queries: Option<super::timestamp_queries::MetalTimestampQueries>,
+    pub(crate) viewport_panel_rect: Option<crate::rect::Rect>,
 }
 
 impl MetalRenderer {
@@ -345,6 +346,7 @@ impl MetalRenderer {
                 }
             },
             timestamp_queries: None,
+            viewport_panel_rect: None,
         };
 
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
@@ -1398,6 +1400,10 @@ impl GpuRenderer for MetalRenderer {
         } else {
             Vec::new()
         }
+    }
+
+    fn set_viewport_panel_rect(&mut self, rect: Option<crate::rect::Rect>) {
+        self.viewport_panel_rect = rect;
     }
 }
 

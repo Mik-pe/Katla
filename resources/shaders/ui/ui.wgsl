@@ -4,10 +4,6 @@
 // 1. Instanced: unit quad + per-instance data for simple rects/textured quads
 // 2. Non-instanced: per-vertex data for complex geometry (circles, rounded rects, gradients)
 //
-// The shader selects between modes based on instance_index.
-// For instanced draws (instance_count > 1), the vertex shader reads per-instance data.
-// For vertex draws (instance_count = 1), the vertex shader reads per-vertex data directly.
-//
 // ndc_y_flip: 1.0 for Vulkan (Y-down), -1.0 for Metal (Y-up).
 
 struct UiVertex {
@@ -39,7 +35,6 @@ struct VertexOutput {
     @location(0) uv: vec2f,
     @location(1) color: vec4f,
     @location(2) @interpolate(flat) texture_index: u32,
-    @location(3) clip_rect: vec4f,
 }
 
 struct UiUniforms {
@@ -102,9 +97,7 @@ fn vs_instanced(
         raw_color.a,
     );
 
-    // Pass per-instance data to fragment shader via varyings
     out.texture_index = inst.texture_index;
-    out.clip_rect = vec4f(inst.clip_rect_xy, inst.clip_rect_wh);
 
     return out;
 }
@@ -126,7 +119,6 @@ fn vs_main(in: UiVertex) -> VertexOutput {
         in.color.a,
     );
     out.texture_index = 0u;
-    out.clip_rect = vec4f(0.0);
 
     return out;
 }
@@ -139,25 +131,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     return in.color * tex_color;
 }
 
-// Fragment shader for instanced draws (uses per-instance varyings)
+// Fragment shader for instanced draws — clipping is handled by GPU scissor rect
 @fragment
 fn fs_instanced(in: VertexOutput) -> @location(0) vec4f {
     let texture = bindless_textures[in.texture_index];
     let tex_color = textureSample(texture, font_sampler, in.uv);
-
-    // Shader-based clipping: discard fragments outside clip rect
-    let clip = in.clip_rect;
-    let pos = in.clip_position;
-    // Reconstruct screen position from clip position.
-    // Invert the vertex shader's NDC transform: ndc_y = (y/h*2 - 1) * flip
-    // => y = (ndc_y/flip + 1) * h/2  (works for both Vulkan flip=1 and Metal flip=-1)
-    let screen_x = (pos.x + 1.0) * 0.5 * uniforms.screen_size.x;
-    let screen_y = (pos.y / uniforms.ndc_y_flip + 1.0) * 0.5 * uniforms.screen_size.y;
-
-    if (screen_x < clip.x || screen_x > clip.x + clip.z ||
-        screen_y < clip.y || screen_y > clip.y + clip.w) {
-        discard;
-    }
-
     return in.color * tex_color;
 }

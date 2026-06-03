@@ -6,27 +6,19 @@ When making changes to a workspace crate, read the crate's own AGENTS.md (e.g. `
 
 ## Memory Bank
 
-This project uses a **memory bank** in `memory-bank/` to persist context across sessions. The architecture and patterns live in `memory-bank/systemPatterns.md` — read it before making architectural changes.
+`memory-bank/` is how you remember across sessions. You are stateless — these files are your state.
 
-### Your responsibilities as an agent:
+**Every session:**
+1. Read all files in `memory-bank/` before making changes
+2. Update `activeContext.md` and `progress.md` when you finish work
 
-1. **Read `memory-bank/activeContext.md`** at the start of each session to understand what's in progress.
-2. **Read `memory-bank/progress.md`** to see what's been done and what's planned.
-3. **Update `memory-bank/activeContext.md`** when you start or finish a task. Remove entries when work is complete.
-4. **Update `memory-bank/progress.md`** when you complete work. Remove stale completed entries.
-5. **Update `memory-bank/systemPatterns.md`** when you change the architecture, add new crates, change dependency boundaries, or establish new conventions. This is the single source of truth — if it's wrong, fix it.
-6. **Update `memory-bank/techContext.md`** when adding/removing dependencies or changing build commands.
-7. **Never leave stale entries.** If you refactored away a component, deleted a file, or reversed a decision, remove the old references from the memory bank. Stale docs are worse than no docs.
-
-### Memory bank file guide:
-
-| File | Stability | What goes here |
-|------|-----------|----------------|
-| `projectbrief.md` | Rarely changes | What the project is and why it exists |
-| `systemPatterns.md` | Changes slowly | Architecture, conventions, dependency rules, crate responsibilities |
-| `techContext.md` | Changes slowly | Dependencies, build commands, tooling |
-| `activeContext.md` | Changes often | What's being worked on right now, recent decisions, open questions |
-| `progress.md` | Changes often | What's done, in progress, and upcoming |
+**Principles:**
+- Write what you'd need re-explained if you started fresh — architecture decisions, conventions, gotchas, what's in-flight
+- Never leave stale entries. If code was removed, decisions reversed, or bugs fixed — delete the old reference
+- Keep `activeContext.md` lean: only what's in-flight right now
+- `systemPatterns.md` is the architecture bible — update it when crate structure or conventions change
+- Don't put code snippets or implementation details in memory bank — the code is the source of truth
+- When in doubt, update. Stale docs are worse than no docs
 
 ## Project Overview
 

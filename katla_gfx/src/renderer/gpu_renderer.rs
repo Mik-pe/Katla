@@ -379,6 +379,14 @@ pub trait GpuRenderer: Sized + 'static {
     fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
         Vec::new()
     }
+
+    // ========================================================================
+    // Viewport Panel Rect
+    // ========================================================================
+
+    /// Set the viewport panel bounds in physical pixel coordinates.
+    /// When Some, the 3D scene is restricted to this rect. When None, full-screen.
+    fn set_viewport_panel_rect(&mut self, _rect: Option<crate::rect::Rect>) {}
 }
 
 // ---------------------------------------------------------------------------
