@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::Rect2D;
-use taffy::{FlexDirection, Style};
+use taffy::{FlexDirection, LengthPercentage, Style};
 
 use super::super::animation::AnimationState;
 use super::super::descriptor::FlexProps;
@@ -55,6 +55,12 @@ impl Widget for Panel {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let mut style = Style {
             flex_direction: FlexDirection::Column,
+            padding: taffy::Rect {
+                top: LengthPercentage::Length(self.header_height),
+                right: LengthPercentage::Length(0.0),
+                bottom: LengthPercentage::Length(0.0),
+                left: LengthPercentage::Length(0.0),
+            },
             ..Style::default()
         };
         crate::declarative::layout::apply_flex_props(&mut style, &self.flex);

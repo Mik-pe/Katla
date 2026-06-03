@@ -4,16 +4,15 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## Completed Recently
 
-- Fixed gizmo buttons clipped behind hierarchy panel — positioned at viewport panel offset with 8px padding
-- Auto-numbered duplicate entity names in hierarchy (Sphere.001, Sphere.002, etc.)
-- Added per-type mesh icons in hierarchy (sphere→circle, cube→cube, plane→square, torus→circle-outline)
-- Added hover state to Selectable widget (draws selectable_hovered background on mouse-over)
-- Added hover state to RadioButton widget (draws button_hovered background, brighter text when selected)
-- Changed hierarchy list item text from text_secondary to text_primary for better contrast
-- Added "·" separators between status bar items for visual clarity
-- Fixed viewport "3D View" label position from Leading (centered-left) to TopLeading
-- Improved inspector empty state text to "Select an object to inspect" with text_secondary color
-- Simplified gizmo mode labels from "W:Move"/"E:Rotate"/"R:Scale" to "Move"/"Rotate"/"Scale"
+- Fixed Panel content overlapping DockSpace tab bars — Panel now uses `header_height` (28px) as top padding in layout style, pushing content below tab bars
+- Fixed gizmo buttons (Move/Rotate/Scale) clipped behind viewport tab bar — offset now includes `TAB_BAR_HEIGHT + 8px`
+- Fixed inspector empty state hidden behind tab bar — automatically fixed by Panel top padding
+- Fixed first hierarchy item clipped behind tab bar — automatically fixed by Panel top padding
+- Fixed gizmo radio button text clipping — increased vertical padding from `text_size.y() + 10` to `+ 16`
+- Improved per-type hierarchy icons — sphere→CIRCLE, cube→SQUARE, plane→SQUARE_OUTLINE, torus→CIRCLE_OUTLINE, cylinder→CUBE, default mesh→SQUARE
+- Precached shape and scene object icons (CIRCLE, SQUARE, LIGHTBULB, SUN, FIRE, VOLUME_UP, etc.) in ForkAwesome font
+- Fixed selection highlighting — changed selectable_selected from near-invisible `#3A3A3C` to accent color at 18% opacity
+- Used default icon size (Medium) for hierarchy entity icons instead of Small
 
 ## In Progress
 
