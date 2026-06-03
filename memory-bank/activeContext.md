@@ -4,7 +4,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **UI polish round 7 complete** — fixed tab bar colors (use tab_text/tab_active_text from theme), centered asset browser icons, reverted toolbar button icon sizes.
+- **UI polish round 9 complete** — RCP theme color accuracy: accent changed from blue to muted orange, DockSpace tab bar now uses dedicated tab colors instead of selectable_selected, canvas clear color fixed for sRGB framebuffer interpretation.
 
 ## Architecture Note
 
@@ -27,7 +27,8 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Recent Decisions
 
-- Default theme changed to "Dark" (neutral dark #1E1E1E–#2A2A2A) — Catppuccin "Default" theme had baby blue/purple tint
+- Default theme is "rcp" (Reality Composer Pro): neutral dark #1E1E1E, muted orange #D97706 accent. "default" and "catppuccin" keys still map to RCP for backward compat. Preferences dropdown lists RCP first.
+- RCP selection colors: primary #D97706 (amber), hover #E8913A (warm orange), highlight #B45309 (dark amber)
 - Asset browser now uses `panel()` like other docked panels — provides background fill and tab bar padding
 - Asset browser item_size increased from 64→80px, icons use FontSize::Huge (24px)
 - Asset browser grid cells use `Alignment::Center` for centered icons
@@ -42,5 +43,7 @@ What is being worked on right now. **Update this file when starting or finishing
 - Draw list now preserves submission order across instance/vertex batch types
 - Metal instanced pipeline now uses bind_graphics_pipeline (not raw setRenderPipelineState)
 - `STATUS_BAR_HEIGHT` defined once in `editor_root.rs`, re-exported from `declarative/mod.rs`
-- Metal canvas clear color extracted to `CANVAS_CLEAR_COLOR` constant (#1E1E1E)
+- Metal canvas clear color uses linear value (0.013) so it appears as #1E1E1E on sRGB framebuffer (BGRA8Unorm_sRGB interprets clears as linear)
+- DockSpace tab bars use `tab_active_bg`/`tab_inactive_bg`/`tab_hover_bg` from UiStyle, not generic button/selection colors
+- UI shader applies srgb_to_linear() in vertex shader — hex colors round-trip correctly through sRGB framebuffers
 - `ToolbarDrawCtx` now carries `error` color for stop button — no hardcoded colors in toolbar
