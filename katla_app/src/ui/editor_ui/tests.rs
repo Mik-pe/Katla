@@ -262,7 +262,6 @@ fn test_editor_overlay_produces_dockspace_in_zstack() {
             is_playing: false,
             is_paused: false,
             highlight: Color::WHITE,
-            success: Color::WHITE,
             warning: Color::WHITE,
             accent: Color::WHITE,
             error: Color::WHITE,

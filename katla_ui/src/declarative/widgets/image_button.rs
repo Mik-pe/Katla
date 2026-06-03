@@ -37,10 +37,11 @@ impl Widget for ImageButton {
     }
 
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        let size = crate::style::DEFAULTS.icon_button_size;
         Style {
             size: Size {
-                width: Dimension::Length(28.0),
-                height: Dimension::Length(28.0),
+                width: Dimension::Length(size),
+                height: Dimension::Length(size),
             },
             ..Style::default()
         }

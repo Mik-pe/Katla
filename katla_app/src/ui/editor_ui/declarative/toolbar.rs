@@ -20,7 +20,6 @@ pub(crate) struct ToolbarDrawCtx {
     pub is_playing: bool,
     pub is_paused: bool,
     pub highlight: Color,
-    pub success: Color,
     pub warning: Color,
     pub accent: Color,
     pub error: Color,

@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 use taffy::{Dimension, Size, Style};
 
 use super::super::animation::AnimationState;
@@ -61,6 +61,9 @@ impl Widget for VuMeter {
         _info: &DrawInfo,
     ) {
         let track_color = ctx.style().slider_track;
+        let success_color = ctx.style().success;
+        let warning_color = ctx.style().warning;
+        let error_color = ctx.style().error;
 
         let db_to_t = |db: f32| (db + 60.0).clamp(0.0, 60.0) / 60.0;
 
@@ -77,11 +80,11 @@ impl Widget for VuMeter {
             );
 
             let bar_color = if self.rms_db >= -3.0 {
-                Color::new(0.9, 0.15, 0.15, 1.0)
+                error_color
             } else if self.rms_db >= -12.0 {
-                Color::new(0.9, 0.75, 0.1, 1.0)
+                warning_color
             } else {
-                Color::new(0.2, 0.8, 0.2, 1.0)
+                success_color
             };
 
             ctx.draw_rounded_rect(fill_bounds, bar_color, 2.0);
@@ -90,11 +93,11 @@ impl Widget for VuMeter {
         if peak_t > 0.0 {
             let peak_y = bounds.max.y() - peak_t * bounds.height();
             let peak_color = if self.peak_db >= -3.0 {
-                Color::new(1.0, 0.3, 0.3, 1.0)
+                error_color.with_alpha(1.0)
             } else if self.peak_db >= -12.0 {
-                Color::new(1.0, 0.9, 0.3, 1.0)
+                warning_color.with_alpha(1.0)
             } else {
-                Color::new(0.5, 1.0, 0.5, 1.0)
+                success_color.with_alpha(1.0)
             };
             ctx.draw_line(
                 Vec2::new(bounds.min.x(), peak_y),
