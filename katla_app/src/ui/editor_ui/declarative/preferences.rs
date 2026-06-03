@@ -117,7 +117,10 @@ fn build_general_tab(
     );
 
     let theme_names = [
+        ("dark", "Dark"),
+        ("rcp", "Reality Composer Pro"),
         ("default", "Default"),
+        ("light", "Light"),
         ("nord", "Nord"),
         ("tokyo_night", "Tokyo Night"),
         ("dracula", "Dracula"),
