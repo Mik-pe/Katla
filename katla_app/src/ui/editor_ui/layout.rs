@@ -461,7 +461,7 @@ impl EditorUI {
     fn request_visible_thumbnails(&mut self, params: &mut EditorRenderParams) {
         let scroll_offset = self.asset_browser.scroll_state.scroll_offset;
         let content_height = self.last_viewport_bounds.height();
-        let item_size = 64.0;
+        let item_size = 80.0;
         let row_height = item_size + 24.0;
         let col_count = self.asset_browser.last_col_count.max(1);
 
