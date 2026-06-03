@@ -4,7 +4,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **Contained 3D viewport within dock panel** — The Metal renderer now restricts 3D scene rendering to the viewport panel bounds. The editor passes viewport panel rect (logical→physical conversion) to the renderer via `set_viewport_panel_rect()`. Geometry and tonemap passes use restricted Metal viewport; the drawable is cleared to Catppuccin Mocha base color before blitting the scene sub-rect.
+- **Editor color scheme updated to design brief palette** — `ColorScheme::dark()` now uses neutral cool-dark palette (`#1E1E1E` canvas, `#2A2A2A` panels, `#F79545` orange accent, `#5AC8FA` cyan secondary). Metal viewport clear color changed from Catppuccin `#181825` to `#1E1E1E`.
 
 ## UI Design Target
 - **Reference**: Apple Reality Composer Pro — clean, modern, minimal chrome
