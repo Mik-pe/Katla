@@ -77,7 +77,6 @@ impl Application {
             return;
         }
 
-        debug!("RedrawRequested (frame {})", self.frame_count);
         self.timer.add_timestamp();
         let dt = self.timer.get_delta() as f32;
 
@@ -96,9 +95,7 @@ impl Application {
         }
 
         // Update world (runs ECS systems in parallel where possible)
-        debug!("Updating world...");
         self.world.update_parallel(dt);
-        debug!("World updated");
 
         // Clear per-frame mouse delta after the tick.
         if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {

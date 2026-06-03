@@ -991,7 +991,7 @@ impl ApplicationBuilder {
                     message: e.to_string(),
                 }
             })?;
-            log::set_max_level(log::LevelFilter::Debug);
+            log::set_max_level(log::LevelFilter::Info);
             buffer
         };
         #[cfg(not(feature = "editor"))]
