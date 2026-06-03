@@ -66,12 +66,11 @@ impl Build for ConsoleView {
         for (i, label) in LEVEL_LABELS.iter().enumerate() {
             let is_active = draw_ctx.filter_levels[i];
             let toggle = button(*label)
-                .fill(Color::new(
-                    0.0,
-                    0.0,
-                    0.0,
-                    if is_active { 0.15 } else { 0.0 },
-                ))
+                .fill(if is_active {
+                    draw_ctx.theme.selection
+                } else {
+                    Color::TRANSPARENT
+                })
                 .border(draw_ctx.theme.border)
                 .boxed();
             filter_toggles.push(toggle);
@@ -105,7 +104,7 @@ impl Build for ConsoleView {
                         log::Level::Warn => draw_ctx.theme.warning,
                         log::Level::Info => draw_ctx.theme.success,
                         log::Level::Debug => draw_ctx.theme.text_muted,
-                        log::Level::Trace => Color::new(0.4, 0.4, 0.4, 1.0),
+                        log::Level::Trace => draw_ctx.theme.text_muted,
                     };
                     let level_badge = text(format!("{} ", log_level_badge(entry.level)))
                         .color(level_color)

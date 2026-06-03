@@ -19,7 +19,7 @@ use super::{
 
 use super::declarative::toolbar::TOOLBAR_HEIGHT;
 
-const STATUS_BAR_HEIGHT: f32 = 22.0;
+use super::declarative::STATUS_BAR_HEIGHT;
 
 impl EditorUI {
     pub(super) fn build(&mut self, ui: &mut UiContext, params: &mut EditorRenderParams) {
@@ -108,6 +108,8 @@ impl EditorUI {
             highlight: self.theme.highlight,
             success: self.theme.success,
             warning: self.theme.warning,
+            accent: self.theme.accent,
+            error: self.theme.error,
         });
 
         // Gizmo

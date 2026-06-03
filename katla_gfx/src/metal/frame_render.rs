@@ -22,6 +22,9 @@ use crate::texture::ImageFormat;
 use super::metal_renderer::MetalRenderer;
 use super::texture::{MetalTexture, MetalTextureView};
 
+/// Canvas clear color (#1E1E1E in linear) — matches UI canvas background.
+const CANVAS_CLEAR_COLOR: (f64, f64, f64, f64) = (30.0 / 255.0, 30.0 / 255.0, 30.0 / 255.0, 1.0);
+
 impl MetalRenderer {
     pub(crate) fn render_frame(&mut self) -> Result<(), RendererError> {
         if self.depth_stencil_view.is_none() {
@@ -155,7 +158,12 @@ impl MetalRenderer {
                     view: drawable_view.clone(),
                     load_op: LoadOp::Clear,
                     store_op: StoreOp::Store,
-                    clear_value: ClearValue::color(24.0 / 255.0, 24.0 / 255.0, 37.0 / 255.0, 1.0),
+                    clear_value: ClearValue::color(
+                        CANVAS_CLEAR_COLOR.0 as f32,
+                        CANVAS_CLEAR_COLOR.1 as f32,
+                        CANVAS_CLEAR_COLOR.2 as f32,
+                        CANVAS_CLEAR_COLOR.3 as f32,
+                    ),
                 }],
                 depth_attachment,
             };
@@ -405,10 +413,10 @@ impl MetalRenderer {
                 color_attach.setLoadAction(objc2_metal::MTLLoadAction::Clear);
                 color_attach.setStoreAction(objc2_metal::MTLStoreAction::Store);
                 color_attach.setClearColor(objc2_metal::MTLClearColor {
-                    red: 24.0 / 255.0,
-                    green: 24.0 / 255.0,
-                    blue: 37.0 / 255.0,
-                    alpha: 1.0,
+                    red: CANVAS_CLEAR_COLOR.0,
+                    green: CANVAS_CLEAR_COLOR.1,
+                    blue: CANVAS_CLEAR_COLOR.2,
+                    alpha: CANVAS_CLEAR_COLOR.3,
                 });
                 let clear_encoder = cmd_buffer
                     .inner

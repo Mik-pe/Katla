@@ -297,8 +297,8 @@ impl Build for AssetBrowserView {
             }))
             .boxed();
         let yes_btn = button("Yes")
-            .fill(katla_math::Color::new(0.4, 0.1, 0.1, 1.0))
-            .border(katla_math::Color::new(1.0, 0.3, 0.3, 0.2))
+            .fill(draw_ctx.theme.error.with_alpha(0.3))
+            .border(draw_ctx.theme.error.with_alpha(0.5))
             .on_click(ctx.on_click(|actions| {
                 actions.emit(AssetBrowserAction::ConfirmDelete(PathBuf::new()));
             }))

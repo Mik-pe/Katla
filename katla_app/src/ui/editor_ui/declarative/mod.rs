@@ -21,6 +21,7 @@ pub(super) use co_creator::{
 };
 pub(super) use console::{ConsoleDrawCtx, ConsoleState};
 pub(super) use editor_root::EditorOverlayView;
+pub(super) use editor_root::STATUS_BAR_HEIGHT;
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
 pub(super) use hierarchy::{HierarchyAction, HierarchyDrawCtx};
 pub(super) use inspector::InspectorDrawCtx;
