@@ -37,11 +37,10 @@ impl Widget for ImageButton {
     }
 
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
-        let size = crate::style::DEFAULTS.icon_button_size;
         Style {
             size: Size {
-                width: Dimension::Length(size),
-                height: Dimension::Length(size),
+                width: Dimension::Length(28.0),
+                height: Dimension::Length(28.0),
             },
             ..Style::default()
         }
@@ -82,7 +81,7 @@ impl Widget for ImageButton {
         let radius = animation.apply_to_corner_radius(ctx.style().button_rounding);
         ctx.draw_rounded_rect(bounds, bg, radius);
 
-        let font_size = ctx.style().icon_button_size * 0.6;
+        let font_size = 14.0;
         let text_size = ctx.measure_icon(self.icon, font_size);
         let text_pos = Vec2::new(
             bounds.center().x() - text_size.x() * 0.5,
