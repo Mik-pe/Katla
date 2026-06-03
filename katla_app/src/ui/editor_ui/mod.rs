@@ -232,6 +232,11 @@ impl EditorUI {
         self.hierarchy_state.expanded_entities.clear();
     }
 
+    /// Expand an entity in the hierarchy panel (show its children).
+    pub fn expand_entity(&mut self, id: EntityId) {
+        self.hierarchy_state.expanded_entities.insert(id);
+    }
+
     /// Set the shared log buffer (called by ApplicationBuilder after ConsoleLogger init).
     pub(crate) fn set_log_buffer(&mut self, buffer: Arc<Mutex<LogBuffer>>) {
         self.log_buffer = buffer;
