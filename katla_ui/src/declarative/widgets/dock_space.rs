@@ -736,7 +736,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> DockSpace<T> {
                             leaf.full_bounds.max,
                         ),
                     };
-                    let overlay_color = Color::new(0.3, 0.6, 1.0, 0.3);
+                    let overlay_color = Color::new(0.969, 0.584, 0.271, 0.3);
                     ctx.draw_rect(zone_rect, overlay_color);
                     break;
                 }
