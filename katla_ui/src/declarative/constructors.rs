@@ -344,7 +344,7 @@ pub fn zstack(
 }
 
 pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> widgets::panel::Panel {
-    widgets::panel::Panel::new(title.into(), 24.0, FlexProps::default(), Some(content))
+    widgets::panel::Panel::new(title.into(), 28.0, FlexProps::default(), Some(content))
 }
 
 pub fn scroll(content: Box<dyn Widget>, scroll_state_id: StateId) -> widgets::scroll::ScrollView {
@@ -826,7 +826,7 @@ mod tests {
     fn test_panel_defaults() {
         let w = panel("title", text("body").boxed());
         assert_eq!(w.title, "title");
-        assert_eq!(w.header_height, 24.0);
+        assert_eq!(w.header_height, 28.0);
     }
 
     #[test]

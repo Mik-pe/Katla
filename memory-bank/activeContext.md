@@ -4,7 +4,12 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **UI polish round 3 complete** — fixed gizmo button clipping (positioned at viewport offset), auto-numbered duplicate entity names (Sphere.001), added per-type mesh icons, added hover state to selectable/radio widgets, added status bar separators, fixed viewport label alignment, improved inspector empty state text.
+- **UI polish round 5 complete** — fixed Panel content overlapping DockSpace tab bars (Panel now uses `header_height` as top padding in Taffy layout, default changed from 24→28 to match `tab_bar_height`), fixed gizmo buttons clipped behind viewport tab bar (offset now includes `TAB_BAR_HEIGHT + 8px`), fixed inspector empty state hidden behind tab bar, fixed first hierarchy item clipped behind tab bar.
+
+## Architecture Note
+
+- Panel widget now reserves top padding via `header_height` (28px by default) so content renders below the DockSpace tab bar. The DockSpace draws tab bars as an overlay on top of panels, so panels must offset their content.
+- `TAB_BAR_HEIGHT` constant (28.0) defined in `editor_root.rs`, matching `DockSpace::tab_bar_height`.
 
 ## UI Design Target
 - **Reference**: Apple Reality Composer Pro — clean, modern, minimal chrome

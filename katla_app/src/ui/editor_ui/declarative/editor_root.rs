@@ -31,6 +31,9 @@ use super::super::types::EditorPanel;
 
 pub(crate) const STATUS_BAR_HEIGHT: f32 = 22.0;
 
+/// Height of the DockSpace tab bars, matching DockSpace::tab_bar_height.
+pub(crate) const TAB_BAR_HEIGHT: f32 = 28.0;
+
 /// Panel labels for the DockSpace tab bars.
 fn panel_labels() -> Vec<(u64, String)> {
     EditorPanel::all_editor_panels()
@@ -110,7 +113,12 @@ impl Build for EditorOverlayView {
         let status_bar = StatusBarView.build(ctx);
         let gizmo_offset = ctx
             .env::<ViewportGridDrawCtx>()
-            .map(|c| Vec2::new(c.bounds.min.x() + 8.0, c.bounds.min.y() + 8.0))
+            .map(|c| {
+                Vec2::new(
+                    c.bounds.min.x() + 8.0,
+                    c.bounds.min.y() + TAB_BAR_HEIGHT + 8.0,
+                )
+            })
             .unwrap_or(Vec2::new(0.0, TOOLBAR_HEIGHT));
         let gizmo = overlay(Anchor::TopLeft, gizmo_offset, GizmoButtonsView.build(ctx));
         let co_creator = CoCreatorView.build(ctx);
