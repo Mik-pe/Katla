@@ -33,6 +33,7 @@ mod picking;
 mod renderer;
 mod resource_loading;
 pub(crate) mod spawning;
+pub(crate) mod ui_test;
 
 #[cfg(feature = "editor")]
 use std::collections::HashMap;
@@ -77,6 +78,7 @@ pub struct ApplicationInfo {
     dump_layout_path: Option<DumpLayoutTarget>,
     screenshot_path: Option<String>, // Headless screenshot output path
     headless: bool,                  // Running without a window
+    pub(crate) ui_test_path: Option<String>, // UI test mode: output directory for screenshots
 }
 
 /// Where to write the layout dump.

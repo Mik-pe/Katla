@@ -69,6 +69,7 @@ pub struct ApplicationBuilder {
     dump_layout_path: Option<super::DumpLayoutTarget>,
     headless: bool,
     screenshot_path: Option<String>,
+    ui_test_path: Option<String>,
     on_init: Option<InitHook>,
     on_update: Option<UpdateHook>,
     on_shutdown: Option<ShutdownHook>,
@@ -145,6 +146,13 @@ impl ApplicationBuilder {
     /// Set the screenshot output path (for headless mode).
     pub fn screenshot_path(mut self, path: impl Into<String>) -> Self {
         self.screenshot_path = Some(path.into());
+        self
+    }
+
+    /// Enable UI test mode: capture multiple screenshots at different UI states.
+    /// Implies `--headless` and `--single-frame`. The directory will be created if it doesn't exist.
+    pub fn ui_test_path(mut self, dir: impl Into<String>) -> Self {
+        self.ui_test_path = Some(dir.into());
         self
     }
 
@@ -728,6 +736,7 @@ impl ApplicationBuilder {
             dump_layout_path: self.dump_layout_path.clone(),
             screenshot_path: Some(screenshot_path),
             headless: true,
+            ui_test_path: self.ui_test_path.clone(),
         };
 
         let mut world = self.world;
@@ -1011,6 +1020,7 @@ impl ApplicationBuilder {
             dump_layout_path: self.dump_layout_path,
             screenshot_path: None,
             headless: false,
+            ui_test_path: None,
         };
 
         let mut world = self.world;

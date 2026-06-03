@@ -36,6 +36,12 @@ impl Application {
             .clone()
             .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
 
+        let mut ui_test = self
+            .info
+            .ui_test_path
+            .as_ref()
+            .map(|dir| crate::application::ui_test::UiTestRunner::new(dir.clone()));
+
         info!(
             "Running {} headless frames at {}x{}",
             max_frames, HEADLESS_WIDTH, HEADLESS_HEIGHT
@@ -52,12 +58,28 @@ impl Application {
         #[cfg(target_os = "macos")]
         let mut last_offscreen: Option<MetalTextureRetained> = None;
 
-        for _ in 0..max_frames {
+        for frame in 0..max_frames {
             #[cfg(target_os = "macos")]
             {
                 last_offscreen = self.run_one_headless_frame();
             }
+
+            // UI test: check for screenshot and inject state changes
+            #[cfg(all(target_os = "macos", feature = "editor"))]
+            if let Some(ref mut runner) = ui_test {
+                if let Some(screenshot_dest) = runner.on_frame(
+                    frame,
+                    &mut self.editor.editor_ui.selected_entity,
+                    &self.world,
+                ) {
+                    self.save_headless_screenshot(&screenshot_dest, last_offscreen.clone())?;
+                }
+            }
+
             self.frame_count += 1;
+
+            #[cfg(all(target_os = "macos", not(feature = "editor")))]
+            let _ = &mut ui_test;
         }
 
         // Wait for GPU to finish the last frame
@@ -65,9 +87,11 @@ impl Application {
             log::error!("Failed to wait for frame: {}", e);
         }
 
-        // Save screenshot from the last frame's offscreen texture
+        // Save screenshot from the last frame's offscreen texture (standard mode only)
         #[cfg(target_os = "macos")]
-        self.save_headless_screenshot(&screenshot_path, last_offscreen)?;
+        if ui_test.is_none() {
+            self.save_headless_screenshot(&screenshot_path, last_offscreen)?;
+        }
 
         // Layout dump (if both --headless and --dump-layout are set)
         self.dump_layout_if_needed();
@@ -75,7 +99,16 @@ impl Application {
         // Cleanup
         self.cleanup_on_exit();
 
-        info!("Headless render complete");
+        if let Some(ref runner) = ui_test {
+            info!(
+                "UI test complete: {} screenshots saved to {}",
+                runner.screenshots_taken(),
+                self.info.ui_test_path.as_deref().unwrap_or("?")
+            );
+        } else {
+            info!("Headless render complete");
+        }
+
         Ok(())
     }
 
