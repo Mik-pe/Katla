@@ -867,19 +867,7 @@ macro_rules! color_scheme {
 
 impl ColorScheme {
     pub fn default_theme() -> Self {
-        color_scheme!(
-            name: "Default",
-            bg: 0x1E1E2E, 0x313244, 0x181825,
-            panel: 0x1E1E2E, 0x313244, 0x45475A,
-            text: 0xC9CBFF, 0xBABCF2, 0x6C7086, 0xA6DA95,
-            button: 0x313244, 0x45475A, 0x3B3B52, 0xC9CBFF,
-            selection: 0x89B4FA, 0xA8C8FF, 0xF5C2E7,
-            misc: 0x45475A, 0x585B70,
-            entity: 0xA6DA95, 0xFAB387, 0xF9E2AF, 0x6C7086,
-            status: 0xA6DA95, 0xF9E2AF, 0xF38BA8, 0x89D9EB,
-            viewport: 0x89B4FA,
-            popup: 0x313244, 0x45475A,
-        )
+        Self::rcp()
     }
 
     pub fn nord() -> Self {

@@ -4,12 +4,14 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **UI polish round 5 complete** — fixed Panel content overlapping DockSpace tab bars (Panel now uses `header_height` as top padding in Taffy layout, default changed from 24→28 to match `tab_bar_height`), fixed gizmo buttons clipped behind viewport tab bar (offset now includes `TAB_BAR_HEIGHT + 8px`), fixed inspector empty state hidden behind tab bar, fixed first hierarchy item clipped behind tab bar.
+- **UI polish round 7 complete** — fixed tab bar colors (use tab_text/tab_active_text from theme), centered asset browser icons, reverted toolbar button icon sizes.
 
 ## Architecture Note
 
 - Panel widget now reserves top padding via `header_height` (28px by default) so content renders below the DockSpace tab bar. The DockSpace draws tab bars as an overlay on top of panels, so panels must offset their content.
 - `TAB_BAR_HEIGHT` constant (28.0) defined in `editor_root.rs`, matching `DockSpace::tab_bar_height`.
+- DockSpace tab bar now uses `tab_text` (inactive, #8E8E93) and `tab_active_text` (active, #FFFFFF) from UiStyle instead of generic `text_color`.
+- TabBar widget (preferences) uses the same proper theme colors.
 
 ## UI Design Target
 - **Reference**: Apple Reality Composer Pro — clean, modern, minimal chrome
@@ -25,6 +27,13 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Recent Decisions
 
+- Default theme changed to "Dark" (neutral dark #1E1E1E–#2A2A2A) — Catppuccin "Default" theme had baby blue/purple tint
+- Asset browser now uses `panel()` like other docked panels — provides background fill and tab bar padding
+- Asset browser item_size increased from 64→80px, icons use FontSize::Huge (24px)
+- Asset browser grid cells use `Alignment::Center` for centered icons
+- ImageButton reverted to 28px button size and 14px icon font (toolbar-sized, not gigantic)
+- `from_style()` and `default_dimensions()` use orange (#F79545) for accent/text_accent instead of blue
+- DockSpace and TabBar widgets use tab_text/tab_active_text for proper inactive/active tab colors
 - Headless mode uses scale_factor=2.0 and 2560x1440 offscreen texture (matches Retina)
 - Headless mode uses the same `Application` code as windowed — no separate code paths
 - Instance buffer binding uses byte offsets (not baseInstance) because Metal's instance_id ignores baseInstance
