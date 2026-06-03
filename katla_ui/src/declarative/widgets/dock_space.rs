@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use katla_math::{Color, Rect2D, Vec2};
+use katla_math::{Rect2D, Vec2};
 use taffy::{Dimension, Size as TaffySize, Style};
 
 use super::super::animation::AnimationState;
@@ -736,7 +736,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> DockSpace<T> {
                             leaf.full_bounds.max,
                         ),
                     };
-                    let overlay_color = Color::new(0.969, 0.584, 0.271, 0.3);
+                    let overlay_color = ctx.style().selectable_selected.with_alpha(0.3);
                     ctx.draw_rect(zone_rect, overlay_color);
                     break;
                 }

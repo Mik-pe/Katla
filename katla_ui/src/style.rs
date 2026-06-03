@@ -458,6 +458,16 @@ pub struct UiStyle {
     pub tab_active_text: Color,
     /// Border color for tabs.
     pub tab_border: Color,
+
+    // Status semantic colors (for widgets like VU meters, status indicators)
+    /// Status: success (green).
+    pub success: Color,
+    /// Status: warning (yellow/amber).
+    pub warning: Color,
+    /// Status: error (red).
+    pub error: Color,
+    /// Status: info (blue/cyan).
+    pub info: Color,
 }
 
 impl ColorScheme {
@@ -1252,21 +1262,21 @@ impl Default for ColorScheme {
 impl UiStyle {
     fn default_dimensions() -> Self {
         Self {
-            window_rounding: 6.0,
+            window_rounding: 10.0,
             window_padding: 10.0,
-            button_rounding: 4.0,
-            input_rounding: 3.0,
+            button_rounding: 8.0,
+            input_rounding: 8.0,
             font_size: FontSize::Medium.to_pixels(),
 
             text_input_max_length: 256,
             text_area_max_length: 4096,
 
-            menu_rounding: 5.0,
+            menu_rounding: 8.0,
             menu_item_height: 24.0,
             menu_padding: 4.0,
             menu_min_width: 120.0,
 
-            popup_rounding: 6.0,
+            popup_rounding: 8.0,
 
             item_spacing: 8.0,
             item_inner_spacing: 4.0,
@@ -1372,6 +1382,11 @@ impl UiStyle {
             tab_text: Color::from_rgb_hex(0x8C8C8C),
             tab_active_text: Color::from_rgb_hex(0xD9D9D9),
             tab_border: Color::from_rgb_hex(0x38383A),
+
+            success: Color::BLACK,
+            warning: Color::BLACK,
+            error: Color::BLACK,
+            info: Color::BLACK,
         }
     }
 
@@ -1437,6 +1452,25 @@ impl UiStyle {
         self.scrollbar_handle = c.scrollbar_handle;
         self.scrollbar_handle_hovered = c.scrollbar_handle_hovered;
         self.focus_ring_color = c.focus_ring_color;
+
+        self.success = c.success;
+        self.warning = c.warning;
+        self.error = c.error;
+        self.info = c.info;
+
+        self.widget_hovered_bg = c.button_hovered;
+        self.widget_active_bg = c.selectable_selected;
+        self.widget_pressed_bg = c.button_active;
+
+        self.menu_item_hover_bg = c.selectable_hovered;
+        self.check_mark_color = c.checkbox_check;
+
+        self.tab_inactive_bg = c.background_dark;
+        self.tab_active_bg = c.panel_bg;
+        self.tab_hover_bg = c.background_light;
+        self.tab_text = c.text_secondary;
+        self.tab_active_text = c.text_primary;
+        self.tab_border = c.border;
     }
 
     /// Create a dark theme style.

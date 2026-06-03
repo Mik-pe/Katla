@@ -106,7 +106,6 @@ impl EditorUI {
             is_playing: self.is_playing,
             is_paused: self.is_paused,
             highlight: self.theme.highlight,
-            success: self.theme.success,
             warning: self.theme.warning,
             accent: self.theme.accent,
             error: self.theme.error,

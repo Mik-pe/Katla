@@ -13,7 +13,6 @@ mod declarative;
 mod layout;
 #[cfg(test)]
 mod tests;
-#[allow(dead_code)]
 mod types;
 
 use std::sync::{Arc, Mutex};
@@ -545,8 +544,8 @@ impl EditorUI {
     /// on a panel both sets focus AND is forwarded to the correct input handler
     /// without a one-frame delay.
     pub fn update_focused_panel_from_click(&mut self, mouse_pos: Vec2) {
-        let toolbar_height = 32.0;
-        if mouse_pos.y() < toolbar_height {
+        use declarative::toolbar::TOOLBAR_HEIGHT;
+        if mouse_pos.y() < TOOLBAR_HEIGHT {
             return;
         }
 
@@ -560,7 +559,7 @@ impl EditorUI {
         }
 
         let left_bounds = Rect2D::from_origin_size(
-            Vec2::new(0.0, toolbar_height),
+            Vec2::new(0.0, TOOLBAR_HEIGHT),
             Vec2::new(self.left_panel_width, self.last_viewport_bounds.height()),
         );
         if left_bounds.contains(mouse_pos) {
@@ -570,7 +569,7 @@ impl EditorUI {
 
         let right_panel_x = self.last_viewport_bounds.max.x();
         let right_bounds = Rect2D::from_origin_size(
-            Vec2::new(right_panel_x, toolbar_height),
+            Vec2::new(right_panel_x, TOOLBAR_HEIGHT),
             Vec2::new(self.right_panel_width, self.last_viewport_bounds.height()),
         );
         if right_bounds.contains(mouse_pos) {
