@@ -4,10 +4,9 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## Completed Recently
 
+- UI polish round 9: RCP theme color accuracy — accent changed from blue (#0A84FF) to muted orange (#D97706), DockSpace tab bar uses dedicated tab colors, canvas clear color fixed for sRGB interpretation
+- UI polish round 8: RCP theme as proper default — removed redundant "Default" from dropdown, RCP listed first, all fallbacks use "rcp" instead of "dark"
 - UI polish round 7: Fixed tab bar colors (tab_text/tab_active_text), centered asset browser icons, reverted toolbar button sizes
-- Fixed asset browser rectangle overlay — wrapped in panel() for background + tab bar offset
-- Switched default theme from Catppuccin to Dark (neutral dark colors #1E1E1E–#2A2A2A)
-- Increased asset browser item_size from 64→80px, icons to FontSize::Huge (24px)
 
 ## In Progress
 
