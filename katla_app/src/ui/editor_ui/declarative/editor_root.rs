@@ -29,7 +29,7 @@ use super::viewport_grid::ViewportGridView;
 
 use super::super::types::EditorPanel;
 
-pub(super) const STATUS_BAR_HEIGHT: f32 = 22.0;
+pub(crate) const STATUS_BAR_HEIGHT: f32 = 22.0;
 
 /// Panel labels for the DockSpace tab bars.
 fn panel_labels() -> Vec<(u64, String)> {

@@ -22,6 +22,8 @@ pub(crate) struct ToolbarDrawCtx {
     pub highlight: Color,
     pub success: Color,
     pub warning: Color,
+    pub accent: Color,
+    pub error: Color,
 }
 
 /// Actions emitted by the declarative toolbar.
@@ -212,11 +214,11 @@ fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
 }
 
 fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
-    let stop_color = Color::from_rgb_hex(0xe06c75);
+    let stop_color = draw_ctx.error;
 
     if !draw_ctx.is_playing && !draw_ctx.is_paused {
         let play = image_button(ForkAwesome::PLAY)
-            .fill(draw_ctx.success)
+            .fill(draw_ctx.accent)
             .on_click(ctx.on_click(|actions| {
                 actions.emit(ToolbarAction::PlayStart);
             }));
@@ -238,7 +240,7 @@ fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn 
             .boxed()
     } else {
         let play = image_button(ForkAwesome::PLAY)
-            .fill(draw_ctx.success)
+            .fill(draw_ctx.accent)
             .on_click(ctx.on_click(|actions| {
                 actions.emit(ToolbarAction::PlayPause);
             }));
