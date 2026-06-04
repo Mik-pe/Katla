@@ -83,12 +83,17 @@ impl Build for HierarchyView {
             let row = hstack([
                 icon(entity_icon).color(icon_color).boxed(),
                 text(display_name)
-                    .color(draw_ctx.theme.text_primary)
+                    .color(draw_ctx.theme.text_secondary)
                     .font_size(FontSize::Small)
                     .boxed(),
             ])
             .spacing(6.0)
-            .padding(Padding::all(4.0));
+            .padding(Padding {
+                top: 9.0,
+                right: 6.0,
+                bottom: 9.0,
+                left: 6.0,
+            });
 
             tree_children.push(
                 selectable(row.boxed())
@@ -106,7 +111,7 @@ impl Build for HierarchyView {
                 .font_size(FontSize::Small)
                 .boxed()
         } else {
-            vstack(tree_children).spacing(2.0).boxed()
+            vstack(tree_children).spacing(4.0).boxed()
         };
 
         let content = vstack([
