@@ -179,6 +179,13 @@ impl Application {
         // Render editor frame (same as windowed — includes UI generation)
         self.render_editor_frame(dt);
 
+        // Wait for the GPU to finish rendering before returning the texture.
+        // Without this, getBytes() reads partial/stale data because the command
+        // buffer submitted during render_frame is asynchronous.
+        if let Err(e) = self.renderer.wait_for_frame() {
+            log::error!("Failed to wait for GPU frame: {}", e);
+        }
+
         Some(offscreen_clone)
     }
 
