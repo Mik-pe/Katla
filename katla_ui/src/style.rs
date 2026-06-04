@@ -1452,7 +1452,7 @@ impl UiStyle {
         self.menu_item_hover_bg = c.selectable_hovered;
         self.check_mark_color = c.checkbox_check;
 
-        self.tab_inactive_bg = c.background_dark;
+        self.tab_inactive_bg = c.panel_bg;
         self.tab_active_bg = c.panel_bg;
         self.tab_hover_bg = c.background_light;
         self.tab_text = c.text_secondary;

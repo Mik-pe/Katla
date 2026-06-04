@@ -119,10 +119,11 @@ impl Widget for TabBar {
             ctx.draw_rect(tab_bounds, animation.apply_to_color(bg));
 
             if is_selected {
+                let y = tab_bounds.max.y() - 1.5;
                 ctx.draw_line(
-                    Vec2::new(tab_bounds.min.x(), tab_bounds.max.y() - 2.0),
-                    Vec2::new(tab_bounds.max.x(), tab_bounds.max.y() - 2.0),
-                    animation.apply_to_color(ctx.style().tab_active_text),
+                    Vec2::new(tab_bounds.min.x(), y),
+                    Vec2::new(tab_bounds.max.x(), y),
+                    animation.apply_to_color(ctx.style().selectable_selected),
                     2.0,
                 );
             }
