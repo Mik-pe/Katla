@@ -94,7 +94,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] **Implement save path for Rapier physics components** — Reads all 5 physics components from ECS entities, converts to descriptor types, skips runtime-only fields.
 - [x] **Implement load path for Rapier physics components** — Creates ECS components from physics descriptors and adds them to spawned entities.
 - [x] **Remove hardcoded `spawn_physics_demo_objects()`** — Removed function and call site; physics entities now serialize to scene files.
-- [ ] **Add physics entities to default.katla scene** — Add a static floor plane with box collider + PBR material, and several dynamic spheres/cubes with colliders + PBR materials at various heights. These should be visible (have drawable + mesh) and demonstrate physics on scene load.
+- [x] **Add physics entities to default.katla scene** — Static ground box (10x0.05x10 half-extents, friction 0.7), 10 dynamic grid spheres (top 2 rows of 5x5, radius 0.4, friction 0.5, restitution 0.3), dynamic CenterCube (box [0.5,0.5,0.5]), dynamic CyanSphere (sphere 0.7), dynamic MagentaCylinder (capsule half_height 0.375 radius 0.5). LimeTorus stays visual (torus trimesh is separate TODO). PhysicsActive(true) at builder init so the demo plays on load.
 
 ### Phase 7: Physics entity lifecycle
 

@@ -4,7 +4,8 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **UI polish round 9 complete** — RCP theme color accuracy: accent changed from blue to muted orange, DockSpace tab bar now uses dedicated tab colors instead of selectable_selected, canvas clear color fixed for sRGB framebuffer interpretation.
+- **Default scene has physics entities + active physics on load** — Ground is a static box collider (10x0.05x10 half-extents, friction 0.7, restitution 0.1). Top 2 rows of the 5x5 PBR grid are dynamic sphere colliders (10 spheres, radius 0.4, friction 0.5, restitution 0.3). CenterCube is dynamic with box collider [0.5,0.5,0.5] (lifted to y=2.0 so it falls). CyanSphere is dynamic sphere (radius 0.7) lifted to y=3.0. MagentaCylinder is dynamic capsule collider (half_height=0.375, radius=0.5) lifted to y=3.0. LimeTorus stays visual-only (torus trimesh collider is a separate TODO).
+- **PhysicsActive(true) at builder init** — both headless (line ~920) and windowed (line ~1293) now default to active, so the scene plays its falling demo on load. User can still pause via play/pause toggle. Trade-off: SceneSnapshot::capture doesn't preserve physics components (separate bug in spawn_from_descriptor), so the play/stop cycle loses physics bodies on stop. Acceptable for now.
 
 ## Architecture Note
 
