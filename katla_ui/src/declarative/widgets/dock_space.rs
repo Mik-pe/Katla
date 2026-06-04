@@ -545,10 +545,11 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
                 ctx.draw_rect(tab_bounds, bg);
 
                 if is_active {
+                    let y = tab_bounds.max.y() - 1.5;
                     ctx.draw_line(
-                        Vec2::new(tab_bounds.min.x(), tab_bounds.max.y() - 2.0),
-                        Vec2::new(tab_bounds.max.x(), tab_bounds.max.y() - 2.0),
-                        ctx.style().tab_active_text,
+                        Vec2::new(tab_bounds.min.x(), y),
+                        Vec2::new(tab_bounds.max.x(), y),
+                        ctx.style().selectable_selected,
                         2.0,
                     );
                 }
@@ -569,7 +570,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             }
         }
 
-        // Draw splitter handles
+        // Draw splitter handles (skip when separator is transparent)
         for split in &splits {
             let is_hovered = split.handle_rect.contains(ctx.mouse_pos());
             let color = if is_hovered {
@@ -577,7 +578,9 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             } else {
                 ctx.style().separator
             };
-            ctx.draw_rect(split.handle_rect, color);
+            if color.a > 0.0 {
+                ctx.draw_rect(split.handle_rect, color);
+            }
         }
 
         // Draw drag overlay
