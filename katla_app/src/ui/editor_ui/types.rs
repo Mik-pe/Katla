@@ -2,9 +2,7 @@ use std::collections::HashSet;
 
 use katla_ecs::EntityId;
 use katla_math::Vec3;
-use katla_ui::ForkAwesome;
 use katla_ui::ScrollAreaState;
-use katla_ui::declarative::DraggablePanelState;
 
 /// Panel IDs for the dockable panel system.
 /// Each variant maps to a unique u64 ID used by the dock layout.
@@ -643,35 +641,6 @@ pub enum PreferencesTab {
     Ai,
 }
 
-impl PreferencesTab {
-    pub fn all() -> &'static [PreferencesTab] {
-        &[
-            PreferencesTab::General,
-            PreferencesTab::Viewport,
-            PreferencesTab::Audio,
-            PreferencesTab::Ai,
-        ]
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            PreferencesTab::General => "General",
-            PreferencesTab::Viewport => "Viewport",
-            PreferencesTab::Audio => "Audio",
-            PreferencesTab::Ai => "AI",
-        }
-    }
-
-    pub fn icon(&self) -> char {
-        match self {
-            PreferencesTab::General => ForkAwesome::PAINT_BRUSH,
-            PreferencesTab::Viewport => ForkAwesome::CUBE,
-            PreferencesTab::Audio => ForkAwesome::VOLUME_UP,
-            PreferencesTab::Ai => ForkAwesome::CUBE,
-        }
-    }
-}
-
 /// Session-only editor settings (not persisted between sessions).
 #[derive(Debug, Clone)]
 pub struct EditorSettings {
@@ -688,16 +657,6 @@ impl Default for EditorSettings {
             grid_size: 1.0,
         }
     }
-}
-
-/// Internal state for the preferences panel widget.
-#[derive(Debug, Clone, Default)]
-pub struct PreferencesPanelState {
-    pub panel: DraggablePanelState,
-    pub current_tab: PreferencesTab,
-    pub scroll_state: ScrollAreaState,
-    /// Snapshot of LLM config, refreshed from EditorState each frame.
-    pub llm_config: katla_agent::LlmConfig,
 }
 
 /// Actions emitted by the preferences panel.

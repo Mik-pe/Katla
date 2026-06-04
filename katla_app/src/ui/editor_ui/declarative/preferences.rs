@@ -10,6 +10,34 @@ use crate::Preferences;
 use super::super::ColorScheme;
 use super::super::types::{EditorSettings, PreferencesAction, PreferencesTab};
 
+/// Sync a slider state: allocate state with `initial` value, read current,
+/// and emit `action` if changed beyond epsilon. Returns the StateId.
+fn sync_slider<F>(ctx: &mut BuildContext, initial: f32, action: F) -> StateId
+where
+    F: Fn(f32) -> PreferencesAction,
+{
+    let id: StateId = ctx.state(initial);
+    let current: f32 = ctx.get_state(id).unwrap();
+    if (current - initial).abs() > 1e-4 {
+        ctx.emit(action(current));
+    }
+    id
+}
+
+/// Sync a toggle state: allocate state with `initial` value, read current,
+/// and emit `action` if changed. Returns the StateId.
+fn sync_toggle<F>(ctx: &mut BuildContext, initial: bool, action: F) -> StateId
+where
+    F: Fn(bool) -> PreferencesAction,
+{
+    let id: StateId = ctx.state(initial);
+    let current: bool = ctx.get_state(id).unwrap();
+    if current != initial {
+        ctx.emit(action(current));
+    }
+    id
+}
+
 #[derive(Clone)]
 pub(crate) struct PreferencesDrawCtx {
     pub is_open: bool,
@@ -72,8 +100,6 @@ impl Build for PreferencesView {
             PreferencesTab::Audio => build_audio_tab(ctx, theme, &draw_ctx),
             PreferencesTab::Ai => build_ai_tab(ctx, theme, &draw_ctx),
         };
-
-        let _scroll_id: StateId = ctx.state(0.0f32);
 
         draggable_panel(
             "Preferences",
@@ -162,11 +188,11 @@ fn build_general_tab(
             .boxed(),
     );
 
-    let scale_id: StateId = ctx.state(draw_ctx.preferences.font_scale);
-    let current_scale: f32 = ctx.get_state(scale_id).unwrap();
-    if (current_scale - draw_ctx.preferences.font_scale).abs() > 1e-4 {
-        ctx.emit(PreferencesAction::SetFontScale(current_scale));
-    }
+    let scale_id = sync_slider(
+        ctx,
+        draw_ctx.preferences.font_scale,
+        PreferencesAction::SetFontScale,
+    );
 
     children.push(
         labeled_slider("Scale:", scale_id, 0.75..=2.0)
@@ -194,18 +220,14 @@ fn build_viewport_tab(
             .boxed(),
     );
 
-    let grid_toggle_id: StateId = ctx.state(draw_ctx.preferences.show_grid);
-    let current_show_grid: bool = ctx.get_state(grid_toggle_id).unwrap();
-    if current_show_grid != draw_ctx.preferences.show_grid {
-        ctx.emit(PreferencesAction::ToggleGrid);
-    }
+    let grid_toggle_id = sync_toggle(ctx, draw_ctx.preferences.show_grid, |_| {
+        PreferencesAction::ToggleGrid
+    });
     children.push(toggle("Show Grid", grid_toggle_id).boxed());
 
-    let stats_toggle_id: StateId = ctx.state(draw_ctx.preferences.show_stats);
-    let current_show_stats: bool = ctx.get_state(stats_toggle_id).unwrap();
-    if current_show_stats != draw_ctx.preferences.show_stats {
-        ctx.emit(PreferencesAction::ToggleStats);
-    }
+    let stats_toggle_id = sync_toggle(ctx, draw_ctx.preferences.show_stats, |_| {
+        PreferencesAction::ToggleStats
+    });
     children.push(toggle("Show Stats Panel", stats_toggle_id).boxed());
 
     // Grid section
@@ -235,11 +257,11 @@ fn build_viewport_tab(
             .boxed(),
     );
 
-    let snap_id: StateId = ctx.state(draw_ctx.editor_settings.snap_to_grid);
-    let current_snap: bool = ctx.get_state(snap_id).unwrap();
-    if current_snap != draw_ctx.editor_settings.snap_to_grid {
-        ctx.emit(PreferencesAction::SetSnapToGrid(current_snap));
-    }
+    let snap_id = sync_toggle(
+        ctx,
+        draw_ctx.editor_settings.snap_to_grid,
+        PreferencesAction::SetSnapToGrid,
+    );
     children.push(toggle("Snap to Grid", snap_id).boxed());
 
     // Camera section
@@ -250,11 +272,11 @@ fn build_viewport_tab(
             .boxed(),
     );
 
-    let speed_id: StateId = ctx.state(draw_ctx.editor_settings.camera_speed);
-    let current_speed: f32 = ctx.get_state(speed_id).unwrap();
-    if (current_speed - draw_ctx.editor_settings.camera_speed).abs() > 1e-4 {
-        ctx.emit(PreferencesAction::SetCameraSpeed(current_speed));
-    }
+    let speed_id = sync_slider(
+        ctx,
+        draw_ctx.editor_settings.camera_speed,
+        PreferencesAction::SetCameraSpeed,
+    );
     children.push(
         labeled_slider("Speed:", speed_id, 5.0..=200.0)
             .label_width(60.0)
@@ -280,11 +302,11 @@ fn build_audio_tab(
             .boxed(),
     );
 
-    let master_id: StateId = ctx.state(draw_ctx.preferences.audio.master_volume);
-    let current_master: f32 = ctx.get_state(master_id).unwrap();
-    if (current_master - draw_ctx.preferences.audio.master_volume).abs() > 1e-4 {
-        ctx.emit(PreferencesAction::SetMasterVolume(current_master));
-    }
+    let master_id = sync_slider(
+        ctx,
+        draw_ctx.preferences.audio.master_volume,
+        PreferencesAction::SetMasterVolume,
+    );
     children.push(
         labeled_slider("Master:", master_id, 0.0..=1.0)
             .label_width(70.0)
@@ -293,11 +315,11 @@ fn build_audio_tab(
             .boxed(),
     );
 
-    let sfx_id: StateId = ctx.state(draw_ctx.preferences.audio.sfx_volume);
-    let current_sfx: f32 = ctx.get_state(sfx_id).unwrap();
-    if (current_sfx - draw_ctx.preferences.audio.sfx_volume).abs() > 1e-4 {
-        ctx.emit(PreferencesAction::SetSfxVolume(current_sfx));
-    }
+    let sfx_id = sync_slider(
+        ctx,
+        draw_ctx.preferences.audio.sfx_volume,
+        PreferencesAction::SetSfxVolume,
+    );
     children.push(
         labeled_slider("SFX:", sfx_id, 0.0..=1.0)
             .label_width(70.0)
@@ -306,11 +328,11 @@ fn build_audio_tab(
             .boxed(),
     );
 
-    let music_id: StateId = ctx.state(draw_ctx.preferences.audio.music_volume);
-    let current_music: f32 = ctx.get_state(music_id).unwrap();
-    if (current_music - draw_ctx.preferences.audio.music_volume).abs() > 1e-4 {
-        ctx.emit(PreferencesAction::SetMusicVolume(current_music));
-    }
+    let music_id = sync_slider(
+        ctx,
+        draw_ctx.preferences.audio.music_volume,
+        PreferencesAction::SetMusicVolume,
+    );
     children.push(
         labeled_slider("Music:", music_id, 0.0..=1.0)
             .label_width(70.0)
@@ -319,11 +341,11 @@ fn build_audio_tab(
             .boxed(),
     );
 
-    let ambient_id: StateId = ctx.state(draw_ctx.preferences.audio.ambient_volume);
-    let current_ambient: f32 = ctx.get_state(ambient_id).unwrap();
-    if (current_ambient - draw_ctx.preferences.audio.ambient_volume).abs() > 1e-4 {
-        ctx.emit(PreferencesAction::SetAmbientVolume(current_ambient));
-    }
+    let ambient_id = sync_slider(
+        ctx,
+        draw_ctx.preferences.audio.ambient_volume,
+        PreferencesAction::SetAmbientVolume,
+    );
     children.push(
         labeled_slider("Ambient:", ambient_id, 0.0..=1.0)
             .label_width(70.0)
@@ -452,12 +474,11 @@ fn build_ai_tab(
     }
 
     // Temperature
-    let temp_id: StateId = ctx.state(llm_config.temperature);
-    let current_temp: f32 = ctx.get_state(temp_id).unwrap();
-    if (current_temp - llm_config.temperature).abs() > 1e-4 {
-        ctx.emit(PreferencesAction::SetLlmTemperature(current_temp));
-        ctx.emit(PreferencesAction::SaveLlmConfig);
-    }
+    let temp_id = sync_slider(
+        ctx,
+        llm_config.temperature,
+        PreferencesAction::SetLlmTemperature,
+    );
     children.push(
         labeled_slider("Temperature:", temp_id, 0.0..=2.0)
             .label_width(100.0)

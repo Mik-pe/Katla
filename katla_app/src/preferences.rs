@@ -99,6 +99,10 @@ impl Preferences {
             self.theme = "rcp".to_string();
         }
         self.font_scale = self.font_scale.clamp(0.5, 3.0);
+        self.audio.master_volume = self.audio.master_volume.clamp(0.0, 1.0);
+        self.audio.sfx_volume = self.audio.sfx_volume.clamp(0.0, 1.0);
+        self.audio.music_volume = self.audio.music_volume.clamp(0.0, 1.0);
+        self.audio.ambient_volume = self.audio.ambient_volume.clamp(0.0, 1.0);
     }
 }
 

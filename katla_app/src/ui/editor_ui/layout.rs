@@ -216,7 +216,7 @@ impl EditorUI {
         // Floating panel contexts
         let theme_key = self.theme_key().to_string();
         self.view_tree.env_mut().set(PreferencesDrawCtx {
-            is_open: self.preferences_panel_state.panel.is_visible(),
+            is_open: self.preferences_panel.is_visible(),
             preferences: params.preferences.clone(),
             editor_settings: self.editor_settings.clone(),
             theme: self.theme.clone(),
@@ -354,7 +354,7 @@ impl EditorUI {
         }
 
         for sync in self.view_tree.actions_mut().drain::<PreferencesPanelSync>() {
-            self.preferences_panel_state.panel.visibility = sync.visibility;
+            self.preferences_panel.visibility = sync.visibility;
         }
         for action in self.view_tree.actions_mut().drain::<PreferencesAction>() {
             self.apply_preferences_action(action);
@@ -406,7 +406,6 @@ impl EditorUI {
         self.inspector_edit = inspector_edit;
         self.hierarchy_state = hierarchy_state;
         self.last_screen_size = screen_size;
-        self.preferences_panel_state.llm_config = params.llm_config.clone();
     }
 
     /// Sync the DockTree from EditorUI to StateArena so the DockSpace widget can read it.
