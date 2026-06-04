@@ -89,7 +89,7 @@ impl Widget for Slider {
         if info.interaction.is_focused(info.view_id) {
             ctx.draw_rounded_selection_border(
                 bounds,
-                ctx.style().selectable_selected,
+                ctx.style().check_mark_color,
                 2.0,
                 ctx.style().button_rounding,
             );

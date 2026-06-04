@@ -84,7 +84,7 @@ impl Widget for Button {
         }
 
         if info.interaction.is_focused(info.view_id) {
-            ctx.draw_rounded_selection_border(bounds, ctx.style().selectable_selected, 2.0, radius);
+            ctx.draw_rounded_selection_border(bounds, ctx.style().check_mark_color, 2.0, radius);
         }
 
         let font_size = ctx.style().font_size;

@@ -78,7 +78,7 @@ impl Widget for ImageButton {
     ) {
         let bg = self.fill_color.unwrap_or(ctx.style().button_normal);
         let bg = animation.apply_to_color(bg);
-        let radius = animation.apply_to_corner_radius(ctx.style().button_rounding);
+        let radius = animation.apply_to_corner_radius(ctx.style().input_rounding);
         ctx.draw_rounded_rect(bounds, bg, radius);
 
         let font_size = 14.0;

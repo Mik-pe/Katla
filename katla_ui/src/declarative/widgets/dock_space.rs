@@ -544,16 +544,6 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
                 };
                 ctx.draw_rect(tab_bounds, bg);
 
-                if is_active {
-                    let y = tab_bounds.max.y() - 1.5;
-                    ctx.draw_line(
-                        Vec2::new(tab_bounds.min.x(), y),
-                        Vec2::new(tab_bounds.max.x(), y),
-                        ctx.style().selectable_selected,
-                        2.0,
-                    );
-                }
-
                 let label = self.get_label(tab_val);
                 let font_size = ctx.style().font_size;
                 let label_size = ctx.measure_text(&label, font_size);
@@ -744,7 +734,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> DockSpace<T> {
                             leaf.full_bounds.max,
                         ),
                     };
-                    let overlay_color = ctx.style().selectable_selected.with_alpha(0.3);
+                    let overlay_color = ctx.style().check_mark_color.with_alpha(0.3);
                     ctx.draw_rect(zone_rect, overlay_color);
                     break;
                 }

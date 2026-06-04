@@ -114,7 +114,7 @@ impl Widget for TextField {
         ctx.draw_rounded_rect(bounds, ctx.style().input_bg, ctx.style().input_rounding);
 
         let border_color = if info.interaction.is_focused(info.view_id) {
-            ctx.style().selectable_selected
+            ctx.style().check_mark_color
         } else {
             ctx.style().input_border
         };
