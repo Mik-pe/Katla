@@ -29,21 +29,9 @@ impl Build for StatusBarView {
             return empty().boxed();
         };
 
-        let fps_color = if data.fps >= 55.0 {
-            data.theme.success
-        } else if data.fps >= 30.0 {
-            data.theme.warning
-        } else {
-            data.theme.error
-        };
+        let fps_color = data.theme.text_color;
 
-        let frame_time_color = if data.frame_time_ms <= 18.0 {
-            data.theme.success
-        } else if data.frame_time_ms <= 33.0 {
-            data.theme.warning
-        } else {
-            data.theme.error
-        };
+        let frame_time_color = data.theme.text_color;
 
         let selection_color = if data.selected_count > 0 {
             data.theme.highlight

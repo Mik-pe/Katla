@@ -120,7 +120,7 @@ impl AssetType {
             Self::Image => theme.warning,
             Self::Font => theme.text_secondary,
             Self::Audio => Color::rgb(0.4, 0.6, 0.9),
-            Self::Folder => theme.highlight,
+            Self::Folder => theme.text_secondary,
             Self::Unknown => theme.text_muted,
         }
     }

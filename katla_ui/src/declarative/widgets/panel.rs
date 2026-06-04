@@ -87,7 +87,8 @@ impl Widget for Panel {
         _info: &DrawInfo,
     ) {
         let bg = ctx.style().window_bg;
-        ctx.draw_rect(bounds, bg);
+        let radius = ctx.style().window_rounding;
+        ctx.draw_rounded_rect(bounds, bg, radius);
     }
 
     fn focusable(&self) -> bool {

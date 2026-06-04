@@ -146,12 +146,6 @@ impl Widget for MenuBar {
         _info: &DrawInfo,
     ) {
         ctx.draw_rect(bounds, ctx.style().menu_bg);
-        ctx.draw_line(
-            Vec2::new(bounds.min.x(), bounds.max.y()),
-            Vec2::new(bounds.max.x(), bounds.max.y()),
-            ctx.style().separator,
-            1.0,
-        );
 
         let font_size = ctx.style().font_size;
         let item_spacing = ctx.style().window_padding;
