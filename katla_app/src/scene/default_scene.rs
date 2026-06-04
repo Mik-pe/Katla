@@ -1,6 +1,7 @@
 use super::descriptors::{
-    AnimationDescriptor, DrawableDescriptor, EntityDescriptor, ParticleEmitterDescriptor,
-    PointLightDescriptor, Scene, TransformDescriptor,
+    AnimationDescriptor, ColliderShapeDescriptor, DrawableDescriptor, EntityDescriptor,
+    ParticleEmitterDescriptor, PhysicsMaterialDescriptor, PointLightDescriptor,
+    RigidBodyDescriptor, Scene, TransformDescriptor,
 };
 use super::entity_source::EntitySource;
 
@@ -48,9 +49,13 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
-        rigid_body: None,
-        collider_shape: None,
-        physics_material: None,
+        rigid_body: Some(RigidBodyDescriptor::Static),
+        collider_shape: Some(ColliderShapeDescriptor::Box([10.0, 0.05, 10.0])),
+        physics_material: Some(PhysicsMaterialDescriptor {
+            friction: 0.7,
+            restitution: 0.1,
+            density: 1.0,
+        }),
         trigger_volume: None,
         collision_filter: None,
     });
@@ -64,6 +69,8 @@ pub fn build_default_scene() -> Scene {
             let roughness = x as f32 / (grid_size - 1).max(1) as f32;
             let base_r = 0.4 + metallic * 0.2;
             let base_g = 0.6 + metallic * 0.2;
+            // Top two rows of the grid fall and stack on the ground.
+            let is_dynamic = y >= grid_size - 2;
             scene.entities.push(EntityDescriptor {
                 name: Some(format!("Sphere_{}_{}", x, y)),
                 parent: None,
@@ -95,9 +102,13 @@ pub fn build_default_scene() -> Scene {
                 perspective: None,
                 directional_light: None,
                 audio_emitter: None,
-                rigid_body: None,
-                collider_shape: None,
-                physics_material: None,
+                rigid_body: is_dynamic.then_some(RigidBodyDescriptor::Dynamic),
+                collider_shape: is_dynamic.then_some(ColliderShapeDescriptor::Sphere(0.4)),
+                physics_material: is_dynamic.then_some(PhysicsMaterialDescriptor {
+                    friction: 0.5,
+                    restitution: 0.3,
+                    density: 1.0,
+                }),
                 trigger_volume: None,
                 collision_filter: None,
             });
@@ -109,7 +120,7 @@ pub fn build_default_scene() -> Scene {
         name: Some("CenterCube".to_string()),
         parent: None,
         transform: TransformDescriptor {
-            position: [-5.0, 0.0, -5.0],
+            position: [-5.0, 2.0, -5.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
             scale: [1.0, 1.0, 1.0],
         },
@@ -130,9 +141,13 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
-        rigid_body: None,
-        collider_shape: None,
-        physics_material: None,
+        rigid_body: Some(RigidBodyDescriptor::Dynamic),
+        collider_shape: Some(ColliderShapeDescriptor::Box([0.5, 0.5, 0.5])),
+        physics_material: Some(PhysicsMaterialDescriptor {
+            friction: 0.6,
+            restitution: 0.2,
+            density: 1.0,
+        }),
         trigger_volume: None,
         collision_filter: None,
     });
@@ -142,7 +157,7 @@ pub fn build_default_scene() -> Scene {
         name: Some("CyanSphere".to_string()),
         parent: None,
         transform: TransformDescriptor {
-            position: [-7.0, 0.0, -5.0],
+            position: [-7.0, 3.0, -5.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
             scale: [1.0, 1.0, 1.0],
         },
@@ -165,9 +180,13 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
-        rigid_body: None,
-        collider_shape: None,
-        physics_material: None,
+        rigid_body: Some(RigidBodyDescriptor::Dynamic),
+        collider_shape: Some(ColliderShapeDescriptor::Sphere(0.7)),
+        physics_material: Some(PhysicsMaterialDescriptor {
+            friction: 0.4,
+            restitution: 0.4,
+            density: 1.0,
+        }),
         trigger_volume: None,
         collision_filter: None,
     });
@@ -177,7 +196,7 @@ pub fn build_default_scene() -> Scene {
         name: Some("MagentaCylinder".to_string()),
         parent: None,
         transform: TransformDescriptor {
-            position: [5.0, 0.0, -5.0],
+            position: [5.0, 3.0, -5.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
             scale: [1.0, 1.0, 1.0],
         },
@@ -200,9 +219,16 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
-        rigid_body: None,
-        collider_shape: None,
-        physics_material: None,
+        rigid_body: Some(RigidBodyDescriptor::Dynamic),
+        collider_shape: Some(ColliderShapeDescriptor::Capsule {
+            half_height: 0.375,
+            radius: 0.5,
+        }),
+        physics_material: Some(PhysicsMaterialDescriptor {
+            friction: 0.5,
+            restitution: 0.2,
+            density: 1.0,
+        }),
         trigger_volume: None,
         collision_filter: None,
     });

@@ -917,7 +917,7 @@ impl ApplicationBuilder {
         world.insert_resource(katla_script::PopulateScriptInspector(false));
         world.insert_resource(katla_script::PendingScriptVarEdits::default());
         world.insert_resource(katla_physics::PhysicsWorld::new());
-        world.insert_resource(katla_physics::PhysicsActive(false));
+        world.insert_resource(katla_physics::PhysicsActive(true));
         world.insert_resource(crate::geometry_cache::GeometryCache::default());
         world.insert_resource(crate::resources::AmbientLight::default());
 
@@ -1290,7 +1290,7 @@ impl ApplicationBuilder {
         world.insert_resource(katla_script::PopulateScriptInspector(false));
         world.insert_resource(katla_script::PendingScriptVarEdits::default());
         world.insert_resource(katla_physics::PhysicsWorld::new());
-        world.insert_resource(katla_physics::PhysicsActive(false));
+        world.insert_resource(katla_physics::PhysicsActive(true));
         world.insert_resource(crate::geometry_cache::GeometryCache::default());
 
         let app = Application {
