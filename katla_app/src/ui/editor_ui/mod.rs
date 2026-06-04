@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
-use katla_ui::declarative::{StateId, ViewTree};
+use katla_ui::declarative::{DraggablePanelState, StateId, ViewTree};
 use katla_ui::dock::DockTree;
 use katla_ui::{ColorScheme, DrawList, UiContext};
 
@@ -32,9 +32,7 @@ use crate::{
     resources::viewport_state::ViewportGridState,
     ui::{
         ParticleInspectorAction, ParticleInspectorData, ParticleInspectorState,
-        editor_ui::types::{
-            EditorSettings, HierarchyState, PreferencesAction, PreferencesPanelState,
-        },
+        editor_ui::types::{EditorSettings, HierarchyState, PreferencesAction},
     },
 };
 
@@ -70,8 +68,8 @@ pub struct EditorRenderParams<'a> {
 pub struct EditorUI {
     /// Currently selected entity.
     pub selected_entity: Option<EntityId>,
-    /// Preferences panel state (visibility, position, tab, scroll).
-    preferences_panel_state: PreferencesPanelState,
+    /// Preferences panel state (visibility).
+    preferences_panel: DraggablePanelState,
     /// Session-only editor settings (not persisted).
     editor_settings: EditorSettings,
     /// Hierarchy panel state (scroll, expanded entities, context menu).
@@ -171,7 +169,7 @@ impl EditorUI {
     pub fn new() -> Self {
         Self {
             selected_entity: None,
-            preferences_panel_state: PreferencesPanelState::default(),
+            preferences_panel: DraggablePanelState::default(),
             editor_settings: EditorSettings::default(),
             hierarchy_state: HierarchyState::default(),
             left_panel_width: 220.0,
@@ -415,7 +413,7 @@ impl EditorUI {
     pub fn open_panel(&mut self, panel: Panel) {
         match panel {
             Panel::Preferences => {
-                self.preferences_panel_state.panel.open();
+                self.preferences_panel.open();
             }
             Panel::ParticleInspector => {
                 self.particle_inspector_state.panel.open();
@@ -519,10 +517,7 @@ impl EditorUI {
     fn is_click_on_floating_panel(&self, pos: Vec2) -> bool {
         let screen = self.last_screen_size;
 
-        if let Some(bounds) = self
-            .preferences_panel_state
-            .panel
-            .bounds(450.0, 500.0, screen)
+        if let Some(bounds) = self.preferences_panel.bounds(450.0, 500.0, screen)
             && bounds.contains(pos)
         {
             return true;
