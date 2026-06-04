@@ -5,8 +5,8 @@ use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, empty, panel, scroll,
-    separator_horizontal, text, vstack,
+    Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, empty, panel, property_row,
+    scroll, separator_horizontal, text, vstack,
 };
 
 use crate::ui::editor_ui::ColorScheme;
@@ -59,29 +59,62 @@ impl Build for InspectorView {
             // Transform
             children.push(text("Transform").font_size(FontSize::Small).boxed());
             children.push(separator_horizontal().boxed());
-            children.push(text(format!("Position: {:?}", entity.position)).boxed());
-            children.push(text(format!("Rotation: {:?}", entity.rotation)).boxed());
-            children.push(text(format!("Scale: {:?}", entity.scale)).boxed());
+            children.push(
+                property_row(
+                    "Position",
+                    format!(
+                        "{:.2}, {:.2}, {:.2}",
+                        entity.position.x(),
+                        entity.position.y(),
+                        entity.position.z()
+                    ),
+                )
+                .boxed(),
+            );
+            children.push(
+                property_row(
+                    "Rotation",
+                    format!(
+                        "{:.2}, {:.2}, {:.2}",
+                        entity.rotation.x(),
+                        entity.rotation.y(),
+                        entity.rotation.z()
+                    ),
+                )
+                .boxed(),
+            );
+            children.push(
+                property_row(
+                    "Scale",
+                    format!(
+                        "{:.2}, {:.2}, {:.2}",
+                        entity.scale.x(),
+                        entity.scale.y(),
+                        entity.scale.z()
+                    ),
+                )
+                .boxed(),
+            );
             children.push(separator_horizontal().boxed());
 
             // Type
             children.push(text("Type").font_size(FontSize::Small).boxed());
-            children.push(text(&entity.entity_type).boxed());
+            children.push(property_row("Type", &entity.entity_type).boxed());
             children.push(separator_horizontal().boxed());
 
             // AudioSource
             if let Some(ref src) = entity.audio_source {
                 children.push(text("Audio Source").font_size(FontSize::Small).boxed());
                 children.push(separator_horizontal().boxed());
-                children.push(text(format!("Path: {}", src.path)).boxed());
+                children.push(property_row("Path", &src.path).boxed());
                 if let Some(sr) = src.sample_rate {
-                    children.push(text(format!("Sample Rate: {} Hz", sr)).boxed());
+                    children.push(property_row("Sample Rate", format!("{} Hz", sr)).boxed());
                 }
                 if let Some(ch) = src.channels {
-                    children.push(text(format!("Channels: {}", ch)).boxed());
+                    children.push(property_row("Channels", ch.to_string()).boxed());
                 }
                 if let Some(dur) = src.duration_secs {
-                    children.push(text(format!("Duration: {:.2}s", dur)).boxed());
+                    children.push(property_row("Duration", format!("{:.2}s", dur)).boxed());
                 }
                 let path_clone = src.path.clone();
                 let play_btn = button("▶ Play Preview")
@@ -115,7 +148,10 @@ impl Build for InspectorView {
                 children.push(separator_horizontal().boxed());
             }
 
-            vstack(children).boxed()
+            vstack(children)
+                .spacing(4.0)
+                .padding(Padding::all(8.0))
+                .boxed()
         } else {
             vstack([text("Select an object to inspect")
                 .color(draw_ctx.theme.text_muted)

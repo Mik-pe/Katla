@@ -1408,7 +1408,7 @@ impl Widget for CodeEditor {
 
         // Border
         let border_color = if is_focused {
-            ctx.style().selectable_selected
+            ctx.style().check_mark_color
         } else {
             ctx.style().input_border
         };

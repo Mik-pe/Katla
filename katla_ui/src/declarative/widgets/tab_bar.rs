@@ -110,23 +110,13 @@ impl Widget for TabBar {
             let is_tab_hovered = tab_bounds.contains(ctx.mouse_pos());
 
             let bg = if is_selected {
-                ctx.style().selectable_selected
+                ctx.style().check_mark_color
             } else if is_tab_hovered {
                 ctx.style().button_hovered
             } else {
                 ctx.style().button_normal
             };
             ctx.draw_rect(tab_bounds, animation.apply_to_color(bg));
-
-            if is_selected {
-                let y = tab_bounds.max.y() - 1.5;
-                ctx.draw_line(
-                    Vec2::new(tab_bounds.min.x(), y),
-                    Vec2::new(tab_bounds.max.x(), y),
-                    animation.apply_to_color(ctx.style().selectable_selected),
-                    2.0,
-                );
-            }
 
             let label_size = ctx.measure_text(&tab.label, font_size);
             let text_pos = Vec2::new(

@@ -1077,17 +1077,19 @@ impl ColorScheme {
             popup: 0x2C2C2E, 0x38383A,
         );
 
-        let subtle_border = Color::new(1.0, 1.0, 1.0, 0.08);
-        let panel_border = Color::new(1.0, 1.0, 1.0, 0.06);
-
-        scheme.window_border = panel_border;
-        scheme.input_border = subtle_border;
-        scheme.checkbox_border = subtle_border;
-        scheme.combo_border = subtle_border;
-        scheme.popup_border = subtle_border;
-        scheme.panel_border = panel_border;
+        scheme.window_bg = Color::from_rgb_hex(0x252527);
+        scheme.panel_bg = Color::from_rgb_hex(0x252527);
+        scheme.window_border = Color::TRANSPARENT;
+        scheme.input_border = Color::TRANSPARENT;
+        scheme.checkbox_border = Color::TRANSPARENT;
+        scheme.combo_border = Color::TRANSPARENT;
+        scheme.popup_border = Color::TRANSPARENT;
+        scheme.panel_border = Color::TRANSPARENT;
         scheme.separator = Color::TRANSPARENT;
         scheme.border = Color::TRANSPARENT;
+
+        scheme.selectable_selected = Color::from_rgb_hex(0x333333);
+        scheme.selectable_hovered = Color::from_rgb_hex(0x3A3A3C);
 
         scheme
     }
@@ -1252,7 +1254,7 @@ impl UiStyle {
             window_rounding: 10.0,
             window_padding: 10.0,
             button_rounding: 8.0,
-            input_rounding: 8.0,
+            input_rounding: 6.0,
             font_size: FontSize::Medium.to_pixels(),
 
             text_input_max_length: 256,
@@ -1366,8 +1368,8 @@ impl UiStyle {
             tab_inactive_bg: Color::from_rgb_hex(0x1E1E1E),
             tab_active_bg: Color::from_rgb_hex(0x2A2A2E),
             tab_hover_bg: Color::from_rgb_hex(0x38383A),
-            tab_text: Color::from_rgb_hex(0x8C8C8C),
-            tab_active_text: Color::from_rgb_hex(0xD9D9D9),
+            tab_text: Color::from_rgb_hex(0x8E8E93),
+            tab_active_text: Color::from_rgb_hex(0xFFFFFF),
             tab_border: Color::from_rgb_hex(0x38383A),
 
             success: Color::BLACK,

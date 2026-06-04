@@ -147,9 +147,9 @@ impl Build for AssetBrowserView {
 
         // Grid of assets
         let item_size = 80.0;
-        let cell_size = Vec2::new(item_size + 4.0, item_size + 24.0);
+        let cell_size = Vec2::new(item_size + 16.0, item_size + 32.0);
         let col_count = if draw_ctx.bounds.width() > 0.0 {
-            ((draw_ctx.bounds.width() - 8.0) / (item_size + 4.0)).max(1.0) as usize
+            ((draw_ctx.bounds.width() - 8.0) / (item_size + 16.0)).max(1.0) as usize
         } else {
             8
         };
@@ -184,10 +184,10 @@ impl Build for AssetBrowserView {
                 icon_content,
                 text(display_name)
                     .color(draw_ctx.theme.text_secondary)
-                    .font_size(FontSize::XSmall)
+                    .font_size(FontSize::Small)
                     .boxed(),
             ])
-            .spacing(2.0)
+            .spacing(8.0)
             .padding_all(2.0)
             .align(katla_ui::declarative::Alignment::Center);
 
@@ -221,7 +221,7 @@ impl Build for AssetBrowserView {
                 .boxed()
         } else {
             grid(col_count, cell_size, grid_children)
-                .grid_spacing(4.0)
+                .grid_spacing(16.0)
                 .boxed()
         };
 

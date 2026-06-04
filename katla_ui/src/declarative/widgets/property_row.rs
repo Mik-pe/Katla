@@ -37,7 +37,13 @@ impl Widget for PropertyRow {
         Style {
             size: Size {
                 width: Dimension::Length(label_size.x() + value_size.x() + 16.0),
-                height: Dimension::Length(label_size.y().max(value_size.y()) + 4.0),
+                height: Dimension::Length(30.0),
+            },
+            padding: taffy::Rect {
+                top: taffy::LengthPercentage::Length(6.0),
+                right: taffy::LengthPercentage::Length(0.0),
+                bottom: taffy::LengthPercentage::Length(6.0),
+                left: taffy::LengthPercentage::Length(0.0),
             },
             ..Style::default()
         }
@@ -69,7 +75,7 @@ impl Widget for PropertyRow {
         ctx.draw_text(
             &self.label,
             Vec2::new(bounds.min.x(), label_y),
-            animation.apply_to_color(ctx.style().text_color),
+            animation.apply_to_color(ctx.style().tab_text),
             font_size,
         );
 
@@ -79,7 +85,7 @@ impl Widget for PropertyRow {
         ctx.draw_text(
             &self.value,
             Vec2::new(value_x, value_y),
-            animation.apply_to_color(ctx.style().text_hint),
+            animation.apply_to_color(ctx.style().text_color),
             font_size,
         );
     }

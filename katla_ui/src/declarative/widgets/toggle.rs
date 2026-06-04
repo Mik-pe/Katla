@@ -71,7 +71,7 @@ impl Widget for Toggle {
         let checked: bool = state.get(self.value_id).unwrap_or(false);
 
         let bg_color = if checked {
-            ctx.style().selectable_selected
+            ctx.style().check_mark_color
         } else {
             ctx.style().button_normal
         };
@@ -80,7 +80,7 @@ impl Widget for Toggle {
         ctx.draw_rounded_rect(bounds, bg_color, radius);
 
         if info.interaction.is_focused(info.view_id) {
-            ctx.draw_rounded_selection_border(bounds, ctx.style().selectable_selected, 2.0, radius);
+            ctx.draw_rounded_selection_border(bounds, ctx.style().check_mark_color, 2.0, radius);
         }
 
         let indicator_size = bounds.height() * 0.5;

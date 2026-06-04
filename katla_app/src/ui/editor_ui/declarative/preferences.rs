@@ -149,7 +149,7 @@ fn build_general_tab(
         .collect();
 
     children.push(
-        grid(3, katla_math::Vec2::new(130.0, 28.0), theme_buttons)
+        grid(3, katla_math::Vec2::new(130.0, 40.0), theme_buttons)
             .grid_spacing(8.0)
             .boxed(),
     );
@@ -230,7 +230,7 @@ fn build_viewport_tab(
         })
         .collect();
     children.push(
-        grid(5, katla_math::Vec2::new(70.0, 28.0), grid_buttons)
+        grid(5, katla_math::Vec2::new(70.0, 40.0), grid_buttons)
             .grid_spacing(8.0)
             .boxed(),
     );
@@ -378,7 +378,7 @@ fn build_ai_tab(
         })
         .collect();
     children.push(
-        grid(3, katla_math::Vec2::new(130.0, 28.0), provider_buttons)
+        grid(3, katla_math::Vec2::new(130.0, 40.0), provider_buttons)
             .grid_spacing(8.0)
             .boxed(),
     );
@@ -482,7 +482,7 @@ fn build_ai_tab(
         })
         .collect();
     children.push(
-        grid(4, katla_math::Vec2::new(90.0, 28.0), token_buttons)
+        grid(4, katla_math::Vec2::new(90.0, 40.0), token_buttons)
             .grid_spacing(8.0)
             .boxed(),
     );

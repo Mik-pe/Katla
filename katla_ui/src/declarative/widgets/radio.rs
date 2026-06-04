@@ -72,11 +72,11 @@ impl Widget for RadioButton {
         let is_hovered = bounds.contains(ctx.mouse_pos());
 
         let bg = if is_selected {
-            ctx.style().selectable_selected
+            ctx.style().check_mark_color
         } else if is_hovered {
             ctx.style().button_hovered
         } else {
-            ctx.style().button_normal
+            ctx.style().window_title_bg
         };
         let bg = animation.apply_to_color(bg);
         let radius = animation.apply_to_corner_radius(ctx.style().button_rounding);
@@ -107,7 +107,7 @@ impl Widget for RadioButton {
         let text_color = if is_selected {
             ctx.style().text_color
         } else {
-            ctx.style().button_text
+            ctx.style().text_disabled
         };
         ctx.draw_text(
             &self.label,
