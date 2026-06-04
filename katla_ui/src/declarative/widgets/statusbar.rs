@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use katla_math::{Rect2D, Vec2};
+use katla_math::Rect2D;
 use taffy::{Dimension, FlexDirection, LengthPercentage, Size, Style};
 
 use super::super::animation::AnimationState;
@@ -79,12 +79,6 @@ impl Widget for StatusBar {
         _info: &DrawInfo,
     ) {
         ctx.draw_rect(bounds, ctx.style().window_bg);
-        ctx.draw_line(
-            Vec2::new(bounds.min.x(), bounds.min.y()),
-            Vec2::new(bounds.max.x(), bounds.min.y()),
-            ctx.style().separator,
-            1.0,
-        );
     }
 
     fn focusable(&self) -> bool {

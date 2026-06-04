@@ -268,16 +268,6 @@ impl Widget for TreeView {
                 ctx.draw_rect(item_bounds, ctx.style().selectable_hovered);
             }
 
-            for depth_level in 0..item.depth {
-                let guide_x = bounds.min.x() + depth_level as f32 * indent + item_spacing;
-                ctx.draw_line(
-                    Vec2::new(guide_x, item_bounds.min.y()),
-                    Vec2::new(guide_x, item_bounds.max.y()),
-                    ctx.style().border,
-                    1.0,
-                );
-            }
-
             let arrow_x = bounds.min.x() + item.depth as f32 * indent + item_spacing;
             let arrow_y = item_bounds.center().y() - font_size * 0.5;
 

@@ -1086,8 +1086,8 @@ impl ColorScheme {
         scheme.combo_border = subtle_border;
         scheme.popup_border = subtle_border;
         scheme.panel_border = panel_border;
-        scheme.separator = Color::new(1.0, 1.0, 1.0, 0.06);
-        scheme.border = subtle_border;
+        scheme.separator = Color::TRANSPARENT;
+        scheme.border = Color::TRANSPARENT;
 
         scheme
     }
