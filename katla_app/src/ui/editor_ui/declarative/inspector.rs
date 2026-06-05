@@ -57,7 +57,7 @@ impl Build for InspectorView {
             let mut children = Vec::new();
 
             // Transform
-            children.push(text("Transform").font_size(FontSize::Small).boxed());
+            children.push(text("Transform").font_size(FontSize::Medium).boxed());
             children.push(separator_horizontal().boxed());
             children.push(
                 property_row(
@@ -98,13 +98,13 @@ impl Build for InspectorView {
             children.push(separator_horizontal().boxed());
 
             // Type
-            children.push(text("Type").font_size(FontSize::Small).boxed());
+            children.push(text("Type").font_size(FontSize::Medium).boxed());
             children.push(property_row("Type", &entity.entity_type).boxed());
             children.push(separator_horizontal().boxed());
 
             // AudioSource
             if let Some(ref src) = entity.audio_source {
-                children.push(text("Audio Source").font_size(FontSize::Small).boxed());
+                children.push(text("Audio Source").font_size(FontSize::Medium).boxed());
                 children.push(separator_horizontal().boxed());
                 children.push(property_row("Path", &src.path).boxed());
                 if let Some(sr) = src.sample_rate {
@@ -132,7 +132,7 @@ impl Build for InspectorView {
 
             // AudioListener
             if entity.has_audio_listener {
-                children.push(text("Audio Listener").font_size(FontSize::Small).boxed());
+                children.push(text("Audio Listener").font_size(FontSize::Medium).boxed());
                 children.push(separator_horizontal().boxed());
                 children.push(text("Active listener").boxed());
                 if draw_ctx.audio_listener_count > 1 {
@@ -150,7 +150,7 @@ impl Build for InspectorView {
 
             vstack(children)
                 .spacing(4.0)
-                .padding(Padding::all(8.0))
+                .padding(Padding::all(12.0))
                 .boxed()
         } else {
             vstack([text("Select an object to inspect")

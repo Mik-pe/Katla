@@ -118,8 +118,8 @@ impl Build for HierarchyView {
             search_field,
             scroll(tree_content, scroll_id).flex_grow(1.0).boxed(),
         ])
-        .spacing(4.0)
-        .padding(Padding::all(4.0))
+        .spacing(6.0)
+        .padding(Padding::all(8.0))
         .flex_grow(1.0)
         .boxed();
 
