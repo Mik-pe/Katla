@@ -145,17 +145,11 @@ impl Widget for DraggablePanel {
 
         let title_bar_height = 25.0_f32;
 
-        let shadow_offset = Vec2::new(6.0, 6.0);
-        let shadow_bounds = Rect2D::new(bounds.min + shadow_offset, bounds.max + shadow_offset);
-        ctx.draw_rect(shadow_bounds, ctx.style().popup_shadow);
+        let screen_size = ctx.screen_size();
+        let screen_bounds = Rect2D::new(Vec2::new(0.0, 0.0), screen_size);
+        ctx.draw_rect(screen_bounds, ctx.style().popup_shadow);
 
-        ctx.draw_rect(bounds, ctx.style().window_bg);
-        ctx.draw_rect_border(
-            bounds,
-            ctx.style().window_bg,
-            ctx.style().window_border,
-            1.0,
-        );
+        ctx.draw_rounded_rect(bounds, ctx.style().window_bg, 10.0);
 
         let title_bounds = Rect2D::new(
             bounds.min,
@@ -168,19 +162,7 @@ impl Widget for DraggablePanel {
         } else {
             ctx.style().window_title_bg
         };
-        ctx.draw_rect(title_bounds, title_color);
-
-        let handle_x = bounds.min.x() + self.width * 0.5 - 20.0;
-        let handle_y = bounds.min.y() + 6.0;
-        for i in 0..3 {
-            let line_y = handle_y + i as f32 * 3.0;
-            ctx.draw_line(
-                Vec2::new(handle_x, line_y),
-                Vec2::new(handle_x + 40.0, line_y),
-                ctx.style().text_disabled,
-                1.0,
-            );
-        }
+        ctx.draw_rounded_rect(title_bounds, title_color, 10.0);
 
         let font_size = ctx.style().font_size;
         let title_pos = Vec2::new(bounds.min.x() + font_size, bounds.min.y() + font_size);
