@@ -118,12 +118,7 @@ impl Widget for Modal {
         let screen_bounds = Rect2D::new(Vec2::new(0.0, 0.0), screen_size);
         ctx.draw_rect(screen_bounds, ctx.style().popup_shadow);
 
-        ctx.draw_rect_border(
-            bounds,
-            ctx.style().window_bg,
-            ctx.style().window_border,
-            1.0,
-        );
+        ctx.draw_rounded_rect(bounds, ctx.style().window_bg, 10.0);
     }
 
     fn focusable(&self) -> bool {

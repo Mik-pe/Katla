@@ -1088,8 +1088,8 @@ impl ColorScheme {
         scheme.separator = Color::TRANSPARENT;
         scheme.border = Color::TRANSPARENT;
 
-        scheme.selectable_selected = Color::from_rgb_hex(0x333333);
-        scheme.selectable_hovered = Color::from_rgb_hex(0x3A3A3C);
+        scheme.selectable_selected = Color::from_rgb_hex(0x3A3A3C);
+        scheme.selectable_hovered = Color::from_rgb_hex(0x484848);
 
         scheme
     }
