@@ -130,6 +130,10 @@ impl SceneSnapshot {
         use crate::components::ParticleEmitterComponent;
         use crate::components::{DrawableComponent, NameComponent, PointLight, TransformComponent};
         use crate::scene::entity_source::EntitySource;
+        use katla_physics::{
+            BoxShape, CapsuleShape, ColliderShape, CollisionFilter, HeightfieldShape,
+            PhysicsMaterial, RigidBody, SphereShape, TriggerVolume,
+        };
 
         let pos = desc.transform.position;
         let entity_id = if desc.source.is_mesh_primitive() {
@@ -283,6 +287,65 @@ impl SceneSnapshot {
             app.world.add_component(
                 entity_id,
                 katla_script::ScriptComponent::new(&script_desc.script_path),
+            );
+        }
+
+        // Restore physics components
+        if let Some(ref rb_desc) = desc.rigid_body {
+            let rb = match rb_desc {
+                crate::scene::descriptors::RigidBodyDescriptor::Static => RigidBody::static_body(),
+                crate::scene::descriptors::RigidBodyDescriptor::Dynamic => RigidBody::dynamic(),
+                crate::scene::descriptors::RigidBodyDescriptor::Kinematic => RigidBody::kinematic(),
+            };
+            app.world.add_component(entity_id, rb);
+        }
+
+        if let Some(ref cs_desc) = desc.collider_shape {
+            let shape = match cs_desc {
+                crate::scene::descriptors::ColliderShapeDescriptor::Sphere(radius) => {
+                    ColliderShape::Sphere(SphereShape::new(*radius))
+                }
+                crate::scene::descriptors::ColliderShapeDescriptor::Box(half_extents) => {
+                    ColliderShape::Box(BoxShape {
+                        half_extents: *half_extents,
+                    })
+                }
+                crate::scene::descriptors::ColliderShapeDescriptor::Capsule {
+                    half_height,
+                    radius,
+                } => ColliderShape::Capsule(CapsuleShape::new(*half_height, *radius)),
+                crate::scene::descriptors::ColliderShapeDescriptor::Trimesh {
+                    mesh_handle_index,
+                } => ColliderShape::Trimesh(katla_gfx::MeshHandle::new(*mesh_handle_index)),
+                crate::scene::descriptors::ColliderShapeDescriptor::ConvexHull {
+                    mesh_handle_index,
+                } => ColliderShape::ConvexHull(katla_gfx::MeshHandle::new(*mesh_handle_index)),
+                crate::scene::descriptors::ColliderShapeDescriptor::Heightfield {
+                    rows,
+                    cols,
+                    heights,
+                } => {
+                    ColliderShape::Heightfield(HeightfieldShape::new(*rows, *cols, heights.clone()))
+                }
+            };
+            app.world.add_component(entity_id, shape);
+        }
+
+        if let Some(ref pm_desc) = desc.physics_material {
+            app.world.add_component(
+                entity_id,
+                PhysicsMaterial::new(pm_desc.friction, pm_desc.restitution, pm_desc.density),
+            );
+        }
+
+        if desc.trigger_volume.is_some() {
+            app.world.add_component(entity_id, TriggerVolume::new());
+        }
+
+        if let Some(ref cf_desc) = desc.collision_filter {
+            app.world.add_component(
+                entity_id,
+                CollisionFilter::new(cf_desc.layers, cf_desc.mask),
             );
         }
 
