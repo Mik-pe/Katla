@@ -443,7 +443,7 @@ fn identify_widget(widget: &dyn Widget) -> WidgetInfo {
 
     // Fallback: unknown widget type
     WidgetInfo {
-        type_name: type_name,
+        type_name,
         label: None,
         details: Vec::new(),
     }
