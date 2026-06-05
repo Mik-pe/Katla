@@ -5,14 +5,23 @@ What's been done and what's next. **Update this file when completing or starting
 ## Completed Recently
 
 - Default scene physics entities + active on load: ground static box, 10 dynamic spheres (top 2 grid rows), dynamic cube, dynamic cyan sphere, dynamic magenta cylinder. PhysicsActive(true) at builder init for both headless and windowed.
-- UI polish round 9: RCP theme color accuracy — accent changed from blue (#0A84FF) to muted orange (#D97706), DockSpace tab bar uses dedicated tab colors, canvas clear color fixed for sRGB interpretation
-- UI polish round 8: RCP theme as proper default — removed redundant "Default" from dropdown, RCP listed first, all fallbacks use "rcp" instead of "dark"
-- UI polish round 7: Fixed tab bar colors (tab_text/tab_active_text), centered asset browser icons, reverted toolbar button sizes
+- UI polish round 10: hierarchy text color (#8E8E93), row padding (29px height), vstack spacing
+- UI polish round 11 (overnight R2): DraggablePanel and Modal — 10px rounded corners, zero borders, full-screen popup_shadow backdrop, removed crude drag handle lines from title bar. RCP selectable_selected brightened to #3A3A3C, hovered to #484848.
+- UI polish round 12 (overnight R3 final): panel bg #252527→#2C2C2E (matches spec, better canvas/panel contrast), inspector padding 8→12px, inspector section headers 11→12px (FontSize::Medium), hierarchy panel padding 4→8px spacing 4→6px. Vision score: 7/10 — all spec compliance issues resolved. Remaining gaps are structural (empty states, panel dividers, asset browser sizing).
+- UI polish round 13 (Droid duty): Modal backdrop alpha 0.5→0.7 for clear visibility. Theme grid now shows ✓ check mark on selected theme. Inspector sections (Transform, Type, Audio Source, Audio Listener) now collapsible with chevron indicators via section() widget. selectable_selected alpha 0.18→0.30.
+- SceneSnapshot physics bug fixed: spawn_from_descriptor now restores RigidBody, ColliderShape, PhysicsMaterial, TriggerVolume, CollisionFilter — physics bodies survive play/stop cycles.
+- Code health pass: cargo fmt/clippy/test all clean.
+- Pushed 49 commits to origin/main.
 
 ## In Progress
 
 (Nothing in progress — add entries when work begins.)
 
 ## Upcoming / Blocked
+
+- Preferences theme grid: consider orange accent tint in addition to check mark for even more prominence.
+- Asset browser sizing still needs work (structural gap from vision score 7/10).
+- Empty states for panels (hierarchy, inspector with no selection).
+- Panel dividers between docked panels.
 
 <!-- Things planned but not started. Remove when started (move to In Progress). -->
