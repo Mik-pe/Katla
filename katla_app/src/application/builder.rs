@@ -748,36 +748,34 @@ impl ApplicationBuilder {
         let scale_factor = crate::application::headless::HEADLESS_SCALE_FACTOR;
 
         let font_path = resources.font_path("roboto-regular.ttf");
-        if font_path.exists() {
-            if let Ok(font_bytes) = std::fs::read(&font_path) {
-                let font_id = ui_context.fonts_mut().add_font(&font_bytes).ok();
-                if let Some(font_id) = font_id {
-                    for &size in DEFAULT_UI_FONT_SIZES {
-                        ui_context
-                            .fonts_mut()
-                            .precache_ascii(font_id, size, scale_factor);
-                    }
-                    ui_context.set_font(font_id);
+        if font_path.exists()
+            && let Ok(font_bytes) = std::fs::read(&font_path)
+        {
+            let font_id = ui_context.fonts_mut().add_font(&font_bytes).ok();
+            if let Some(font_id) = font_id {
+                for &size in DEFAULT_UI_FONT_SIZES {
+                    ui_context
+                        .fonts_mut()
+                        .precache_ascii(font_id, size, scale_factor);
                 }
+                ui_context.set_font(font_id);
             }
         }
         let icon_font_path = resources.font_path("forkawesome-webfont.ttf");
-        if icon_font_path.exists() {
-            if let Ok(font_bytes) = std::fs::read(&icon_font_path) {
-                if ui_context
-                    .fonts_mut()
-                    .add_font_with_id(&font_bytes, katla_ui::FontId::ICON)
-                    .is_ok()
-                {
-                    for &size in DEFAULT_UI_FONT_SIZES {
-                        ui_context.fonts_mut().precache_icons(
-                            katla_ui::FontId::ICON,
-                            size,
-                            scale_factor,
-                            katla_ui::ForkAwesome::common_icons(),
-                        );
-                    }
-                }
+        if icon_font_path.exists()
+            && let Ok(font_bytes) = std::fs::read(&icon_font_path)
+            && ui_context
+                .fonts_mut()
+                .add_font_with_id(&font_bytes, katla_ui::FontId::ICON)
+                .is_ok()
+        {
+            for &size in DEFAULT_UI_FONT_SIZES {
+                ui_context.fonts_mut().precache_icons(
+                    katla_ui::FontId::ICON,
+                    size,
+                    scale_factor,
+                    katla_ui::ForkAwesome::common_icons(),
+                );
             }
         }
 

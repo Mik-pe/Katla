@@ -476,8 +476,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         _children: &[ViewId],
         _info: &DrawInfo,
     ) {
-        if self.is_empty_tree(state) {
-        }
+        if self.is_empty_tree(state) {}
         // Background is drawn by individual panel widgets — do not draw
         // content area backgrounds here, as this widget is layered on top of
         // the panel overlays and would overwrite their children (text, icons).
