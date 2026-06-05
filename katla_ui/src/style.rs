@@ -1077,8 +1077,8 @@ impl ColorScheme {
             popup: 0x2C2C2E, 0x38383A,
         );
 
-        scheme.window_bg = Color::from_rgb_hex(0x252527);
-        scheme.panel_bg = Color::from_rgb_hex(0x252527);
+        scheme.window_bg = Color::from_rgb_hex(0x2C2C2E);
+        scheme.panel_bg = Color::from_rgb_hex(0x2C2C2E);
         scheme.window_border = Color::TRANSPARENT;
         scheme.input_border = Color::TRANSPARENT;
         scheme.checkbox_border = Color::TRANSPARENT;
