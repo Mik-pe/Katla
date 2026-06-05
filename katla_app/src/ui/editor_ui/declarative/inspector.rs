@@ -6,7 +6,7 @@ use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
     Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, empty, panel, property_row,
-    scroll, separator_horizontal, text, vstack,
+    scroll, section, text, vstack,
 };
 
 use crate::ui::editor_ui::ColorScheme;
@@ -54,12 +54,11 @@ impl Build for InspectorView {
             .iter()
             .find(|e| draw_ctx.selected_entity == Some(e.id))
         {
-            let mut children = Vec::new();
+            let mut sections: Vec<Box<dyn Widget>> = Vec::new();
 
-            // Transform
-            children.push(text("Transform").font_size(FontSize::Medium).boxed());
-            children.push(separator_horizontal().boxed());
-            children.push(
+            // Transform section (collapsible)
+            let transform_expanded_id: StateId = ctx.state(true);
+            let transform_content = vstack([
                 property_row(
                     "Position",
                     format!(
@@ -70,8 +69,6 @@ impl Build for InspectorView {
                     ),
                 )
                 .boxed(),
-            );
-            children.push(
                 property_row(
                     "Rotation",
                     format!(
@@ -82,8 +79,6 @@ impl Build for InspectorView {
                     ),
                 )
                 .boxed(),
-            );
-            children.push(
                 property_row(
                     "Scale",
                     format!(
@@ -94,49 +89,61 @@ impl Build for InspectorView {
                     ),
                 )
                 .boxed(),
-            );
-            children.push(separator_horizontal().boxed());
+            ])
+            .spacing(4.0)
+            .boxed();
+            sections.push(section("Transform", transform_content, transform_expanded_id).boxed());
 
-            // Type
-            children.push(text("Type").font_size(FontSize::Medium).boxed());
-            children.push(property_row("Type", &entity.entity_type).boxed());
-            children.push(separator_horizontal().boxed());
+            // Type section (collapsible)
+            let type_expanded_id: StateId = ctx.state(true);
+            let type_content = vstack([property_row("Type", &entity.entity_type).boxed()])
+                .spacing(4.0)
+                .boxed();
+            sections.push(section("Type", type_content, type_expanded_id).boxed());
 
-            // AudioSource
+            // AudioSource section (collapsible)
             if let Some(ref src) = entity.audio_source {
-                children.push(text("Audio Source").font_size(FontSize::Medium).boxed());
-                children.push(separator_horizontal().boxed());
-                children.push(property_row("Path", &src.path).boxed());
+                let audio_expanded_id: StateId = ctx.state(true);
+                let mut audio_children: Vec<Box<dyn Widget>> = Vec::new();
+                audio_children.push(property_row("Path", &src.path).boxed());
                 if let Some(sr) = src.sample_rate {
-                    children.push(property_row("Sample Rate", format!("{} Hz", sr)).boxed());
+                    audio_children.push(property_row("Sample Rate", format!("{} Hz", sr)).boxed());
                 }
                 if let Some(ch) = src.channels {
-                    children.push(property_row("Channels", ch.to_string()).boxed());
+                    audio_children.push(property_row("Channels", ch.to_string()).boxed());
                 }
                 if let Some(dur) = src.duration_secs {
-                    children.push(property_row("Duration", format!("{:.2}s", dur)).boxed());
+                    audio_children.push(property_row("Duration", format!("{:.2}s", dur)).boxed());
                 }
                 let path_clone = src.path.clone();
-                let play_btn = button("▶ Play Preview")
-                    .on_click(ctx.on_click(move |actions| {
-                        actions.emit(
-                            crate::ui::editor_ui::types::EditorAction::AudioPreviewToggle {
-                                path: PathBuf::from(&path_clone),
-                            },
-                        );
-                    }))
-                    .boxed();
-                children.push(play_btn);
-                children.push(separator_horizontal().boxed());
+                audio_children.push(
+                    button("▶ Play Preview")
+                        .on_click(ctx.on_click(move |actions| {
+                            actions.emit(
+                                crate::ui::editor_ui::types::EditorAction::AudioPreviewToggle {
+                                    path: PathBuf::from(&path_clone),
+                                },
+                            );
+                        }))
+                        .boxed(),
+                );
+                sections.push(
+                    section(
+                        "Audio Source",
+                        vstack(audio_children).spacing(4.0).boxed(),
+                        audio_expanded_id,
+                    )
+                    .boxed(),
+                );
             }
 
-            // AudioListener
+            // AudioListener section (collapsible)
             if entity.has_audio_listener {
-                children.push(text("Audio Listener").font_size(FontSize::Medium).boxed());
-                children.push(separator_horizontal().boxed());
-                children.push(text("Active listener").boxed());
+                let listener_expanded_id: StateId = ctx.state(true);
+                let mut listener_children: Vec<Box<dyn Widget>> = Vec::new();
+                listener_children.push(text("Active listener").boxed());
                 if draw_ctx.audio_listener_count > 1 {
-                    children.push(
+                    listener_children.push(
                         text(format!(
                             "⚠ {} listeners in scene",
                             draw_ctx.audio_listener_count
@@ -145,11 +152,18 @@ impl Build for InspectorView {
                         .boxed(),
                     );
                 }
-                children.push(separator_horizontal().boxed());
+                sections.push(
+                    section(
+                        "Audio Listener",
+                        vstack(listener_children).spacing(4.0).boxed(),
+                        listener_expanded_id,
+                    )
+                    .boxed(),
+                );
             }
 
-            vstack(children)
-                .spacing(4.0)
+            vstack(sections)
+                .spacing(2.0)
                 .padding(Padding::all(12.0))
                 .boxed()
         } else {

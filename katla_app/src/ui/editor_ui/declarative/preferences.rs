@@ -1,8 +1,9 @@
+use katla_icons::ForkAwesome;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
-    WidgetBox, draggable_panel, grid, labeled_slider, selectable, tab_bar, tab_item, text,
-    textfield, toggle, vstack,
+    WidgetBox, draggable_panel, grid, hstack, icon, labeled_slider, selectable, tab_bar, tab_item,
+    text, textfield, toggle, vstack,
 };
 
 use crate::Preferences;
@@ -165,7 +166,17 @@ fn build_general_tab(
         .map(|(key, display_name)| {
             let is_selected = *key == draw_ctx.theme_key;
             let key_owned = key.to_string();
-            selectable(text(*display_name).boxed())
+            let label: Box<dyn Widget> = if is_selected {
+                hstack([
+                    icon(ForkAwesome::CHECK).boxed(),
+                    text(*display_name).boxed(),
+                ])
+                .spacing(4.0)
+                .boxed()
+            } else {
+                text(*display_name).boxed()
+            };
+            selectable(label)
                 .selected(is_selected)
                 .on_click(ctx.on_click(move |actions| {
                     actions.emit(PreferencesAction::SetTheme(key_owned.clone()));

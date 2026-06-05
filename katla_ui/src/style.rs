@@ -515,10 +515,10 @@ impl ColorScheme {
 
             popup_bg: Color::from_rgb_hex(0x2A2A2A),
             popup_border: Color::from_rgb_hex(0x3A3A3B),
-            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.7),
 
             selectable_hovered: Color::from_rgb_hex(0x3A3A3A),
-            selectable_selected: Color::new(0.969, 0.584, 0.271, 0.18),
+            selectable_selected: Color::new(0.969, 0.584, 0.271, 0.3),
 
             combo_bg: Color::from_rgb_hex(0x2A2A2A),
             combo_border: Color::from_rgb_hex(0x3A3A3B),
@@ -705,7 +705,7 @@ impl ColorScheme {
 
             popup_bg: Color::from_rgb_hex(0x1f1f1f),
             popup_border: Color::from_rgb_hex(0x555555),
-            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.6),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.7),
 
             selectable_hovered: Color::from_rgb_hex(0x4a4a4a),
             selectable_selected: Color::new(0.2, 0.4, 0.64, 0.5),
@@ -813,7 +813,7 @@ macro_rules! color_scheme {
 
             popup_bg: Color::from_rgb_hex($popup_bg),
             popup_border: Color::from_rgb_hex($popup_border),
-            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.5),
+            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.7),
 
             selectable_hovered: Color::from_rgb_hex($selection_hover),
             selectable_selected: Color::from_rgb_hex($selection),
