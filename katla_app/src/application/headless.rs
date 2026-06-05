@@ -66,12 +66,11 @@ impl Application {
 
             // UI test: check for screenshot and inject state changes
             #[cfg(all(target_os = "macos", feature = "editor"))]
-            if let Some(ref mut runner) = ui_test {
-                if let Some(screenshot_dest) =
+            if let Some(ref mut runner) = ui_test
+                && let Some(screenshot_dest) =
                     runner.on_frame(frame, &mut self.editor.editor_ui, &self.world)
-                {
-                    self.save_headless_screenshot(&screenshot_dest, last_offscreen.clone())?;
-                }
+            {
+                self.save_headless_screenshot(&screenshot_dest, last_offscreen.clone())?;
             }
 
             self.frame_count += 1;
