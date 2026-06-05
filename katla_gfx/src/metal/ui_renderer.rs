@@ -252,7 +252,7 @@ impl MetalUIRenderer {
             draw_list.scale_factor,
         );
 
-        for (_cmd_idx, cmd) in draw_list.commands.iter().enumerate() {
+        for cmd in draw_list.commands.iter() {
             let scissor = if let Some([x, y, w, h]) = cmd.clip_rect {
                 let s = draw_list.scale_factor;
                 let sx = (x * s).max(0.0) as u32;
