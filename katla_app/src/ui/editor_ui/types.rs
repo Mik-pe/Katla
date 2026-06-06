@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use katla_ecs::EntityId;
 use katla_math::Vec3;
-use katla_ui::ScrollAreaState;
 
 /// Panel IDs for the dockable panel system.
 /// Each variant maps to a unique u64 ID used by the dock layout.
@@ -301,23 +300,6 @@ pub struct PhysicsMaterialInfo {
     pub density: f32,
 }
 
-/// Audio emitter f32 field names for inspector edits.
-#[derive(Debug, Clone)]
-pub enum AudioEmitterField {
-    Volume,
-    MinDistance,
-    MaxDistance,
-    RolloffFactor,
-}
-
-/// Audio emitter bool field names for inspector toggles.
-#[derive(Debug, Clone)]
-pub enum AudioEmitterBoolField {
-    Looping,
-    Spatial,
-    Playing,
-}
-
 #[derive(Debug, Clone)]
 pub enum Panel {
     Preferences,
@@ -435,17 +417,6 @@ pub enum EditorAction {
     },
     /// Set the audio source path on an entity's AudioEmitter component.
     SetAudioSourcePath { entity: EntityId, path: String },
-    /// Set an AudioEmitter field on an entity.
-    SetAudioEmitterField {
-        entity: EntityId,
-        field: AudioEmitterField,
-        value: f32,
-    },
-    /// Toggle an AudioEmitter bool field on an entity.
-    ToggleAudioEmitterBool {
-        entity: EntityId,
-        field: AudioEmitterBoolField,
-    },
     /// Attach a script to the selected entity.
     AttachScript { entity: EntityId, path: String },
     /// Spawn a new entity with a ScriptComponent at a viewport position.
@@ -466,54 +437,11 @@ pub enum EditorAction {
         entity: EntityId,
         shape_type: ColliderShapeType,
     },
-    /// Set a collider shape parameter on an entity.
-    SetColliderField {
-        entity: EntityId,
-        field: ColliderField,
-        value: f32,
-    },
     /// Change rigid body type on an entity.
     SetRigidBodyType {
         entity: EntityId,
         body_type: RigidBodyType,
     },
-    /// Set a rigid body field on an entity.
-    SetRigidBodyField {
-        entity: EntityId,
-        field: RigidBodyField,
-        value: f32,
-    },
-    /// Set a physics material field on an entity.
-    SetPhysicsMaterialField {
-        entity: EntityId,
-        field: PhysicsMaterialField,
-        value: f32,
-    },
-}
-
-/// Collider shape field names for inspector edits.
-#[derive(Debug, Clone)]
-pub enum ColliderField {
-    SphereRadius,
-    BoxHalfExtentX,
-    BoxHalfExtentY,
-    BoxHalfExtentZ,
-    CapsuleHalfHeight,
-    CapsuleRadius,
-}
-
-/// Rigid body field names for inspector edits.
-#[derive(Debug, Clone)]
-pub enum RigidBodyField {
-    GravityScale,
-}
-
-/// Physics material field names for inspector edits.
-#[derive(Debug, Clone)]
-pub enum PhysicsMaterialField {
-    Friction,
-    Restitution,
-    Density,
 }
 
 /// Which panel is currently focused (receives input).
@@ -571,8 +499,6 @@ pub struct InspectorEditState {
     pub physics_friction: f32,
     pub physics_restitution: f32,
     pub physics_density: f32,
-    /// Cached audio metadata for the selected entity's AudioSource path.
-    pub audio_source_metadata: Option<katla_audio::AudioMetadata>,
     /// Cached script variables from the current frame's script instance.
     pub script_vars: Vec<(String, katla_script::ScriptVarValue)>,
 }
@@ -616,19 +542,15 @@ impl Default for InspectorEditState {
             physics_friction: 0.5,
             physics_restitution: 0.0,
             physics_density: 1.0,
-            audio_source_metadata: None,
             script_vars: Vec::new(),
         }
     }
 }
 
-/// Hierarchy panel state (scroll, expanded entities, context menu).
+/// Hierarchy panel state (expanded entities tracking).
 #[derive(Debug, Clone, Default)]
 pub struct HierarchyState {
-    pub scroll_state: ScrollAreaState,
     pub expanded_entities: HashSet<EntityId>,
-    pub context_menu_open: bool,
-    pub context_entity: Option<EntityId>,
 }
 
 /// Preferences panel tabs.

@@ -22,9 +22,9 @@ use crate::components::{
 };
 
 use crate::ui::{
-    AudioEmitterBoolField, AudioEmitterField, ColliderField, ColliderShapeInfo, ColliderShapeType,
+    ColliderShapeInfo, ColliderShapeType,
     DirectionalLightInfo, EditorAction, EntityInfo, ParticleEmitterInfo, PerspectiveInfo,
-    PhysicsMaterialField, PhysicsMaterialInfo, PointLightInfo, RigidBodyField, RigidBodyInfo,
+    PhysicsMaterialInfo, PointLightInfo, RigidBodyInfo,
     RigidBodyType,
 };
 
@@ -710,7 +710,6 @@ fn apply_inspector_slider_changes(app: &mut Application) {
         physics_friction,
         physics_restitution,
         physics_density,
-        audio_source_metadata: _,
         script_vars: _,
     } = &app.editor.editor_ui.inspector_edit;
 
@@ -1609,35 +1608,6 @@ pub fn process_editor_actions(app: &mut Application) {
                     ae.source_path = path;
                 }
             }
-            EditorAction::SetAudioEmitterField {
-                entity,
-                field,
-                value,
-            } => {
-                if let Some(ae) = app
-                    .world
-                    .get_component_mut::<crate::components::AudioEmitter>(entity)
-                {
-                    match field {
-                        AudioEmitterField::Volume => ae.volume = value,
-                        AudioEmitterField::MinDistance => ae.min_distance = value,
-                        AudioEmitterField::MaxDistance => ae.max_distance = value,
-                        AudioEmitterField::RolloffFactor => ae.rolloff_factor = value,
-                    }
-                }
-            }
-            EditorAction::ToggleAudioEmitterBool { entity, field } => {
-                if let Some(ae) = app
-                    .world
-                    .get_component_mut::<crate::components::AudioEmitter>(entity)
-                {
-                    match field {
-                        AudioEmitterBoolField::Looping => ae.looping = !ae.looping,
-                        AudioEmitterBoolField::Spatial => ae.spatial = !ae.spatial,
-                        AudioEmitterBoolField::Playing => ae.playing = !ae.playing,
-                    }
-                }
-            }
             EditorAction::AudioPreviewToggle { path } => {
                 if let Some(ref mut audio_sys) = app.audio_system {
                     let key = path.to_string_lossy().to_string();
@@ -1673,56 +1643,6 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
                 app.world.add_component(entity, new_shape);
             }
-            EditorAction::SetColliderField {
-                entity,
-                field,
-                value,
-            } => {
-                if let Some(mut cs) = app
-                    .world
-                    .get_component_mut::<katla_physics::ColliderShape>(entity)
-                {
-                    match field {
-                        ColliderField::SphereRadius => {
-                            if let katla_physics::ColliderShape::Sphere(s) = &mut cs {
-                                s.radius = value;
-                            }
-                        }
-                        ColliderField::BoxHalfExtentX => {
-                            if let katla_physics::ColliderShape::Box(b) = &mut cs {
-                                b.half_extents[0] = value;
-                            }
-                        }
-                        ColliderField::BoxHalfExtentY => {
-                            if let katla_physics::ColliderShape::Box(b) = &mut cs {
-                                b.half_extents[1] = value;
-                            }
-                        }
-                        ColliderField::BoxHalfExtentZ => {
-                            if let katla_physics::ColliderShape::Box(b) = &mut cs {
-                                b.half_extents[2] = value;
-                            }
-                        }
-                        ColliderField::CapsuleHalfHeight => {
-                            if let katla_physics::ColliderShape::Capsule(c) = &mut cs {
-                                c.half_height = value;
-                            }
-                        }
-                        ColliderField::CapsuleRadius => {
-                            if let katla_physics::ColliderShape::Capsule(c) = &mut cs {
-                                c.radius = value;
-                            }
-                        }
-                    }
-                }
-                if let Some(rb) = app
-                    .world
-                    .get_component_mut::<katla_physics::RigidBody>(entity)
-                {
-                    rb.body_handle = None;
-                    rb.collider_handle = None;
-                }
-            }
             EditorAction::SetRigidBodyType { entity, body_type } => {
                 if let Some(rb) = app
                     .world
@@ -1735,36 +1655,6 @@ pub fn process_editor_actions(app: &mut Application) {
                     };
                     rb.body_handle = None;
                     rb.collider_handle = None;
-                }
-            }
-            EditorAction::SetRigidBodyField {
-                entity,
-                field,
-                value,
-            } => {
-                if let Some(rb) = app
-                    .world
-                    .get_component_mut::<katla_physics::RigidBody>(entity)
-                {
-                    match field {
-                        RigidBodyField::GravityScale => rb.gravity_scale = value,
-                    }
-                }
-            }
-            EditorAction::SetPhysicsMaterialField {
-                entity,
-                field,
-                value,
-            } => {
-                if let Some(pm) = app
-                    .world
-                    .get_component_mut::<katla_physics::PhysicsMaterial>(entity)
-                {
-                    match field {
-                        PhysicsMaterialField::Friction => pm.friction = value,
-                        PhysicsMaterialField::Restitution => pm.restitution = value,
-                        PhysicsMaterialField::Density => pm.density = value,
-                    }
                 }
             }
         }
