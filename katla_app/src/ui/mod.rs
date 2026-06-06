@@ -13,10 +13,10 @@ pub mod renderer;
 
 #[cfg(feature = "editor")]
 pub use editor_ui::{
-    AudioEmitterBoolField, AudioEmitterField, AudioEmitterInfo, AudioSourceInfo, ColliderField,
-    ColliderShapeInfo, ColliderShapeType, DirectionalLightInfo, EditorAction, EditorRenderParams,
+    AudioEmitterInfo, AudioSourceInfo, ColliderShapeInfo, ColliderShapeType,
+    DirectionalLightInfo, EditorAction, EditorRenderParams,
     EditorUI, EntityInfo, FocusedPanel, InspectorEditState, Panel, ParticleEmitterInfo,
-    PerspectiveInfo, PhysicsMaterialField, PhysicsMaterialInfo, PointLightInfo, RigidBodyField,
+    PerspectiveInfo, PhysicsMaterialInfo, PointLightInfo,
     RigidBodyInfo, RigidBodyType, SpawnableModel, ThumbnailState,
 };
 pub use katla_ui::ColorScheme;
