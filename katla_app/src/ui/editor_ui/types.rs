@@ -312,15 +312,6 @@ pub enum Panel {
 pub enum EditorAction {
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
-    /// Spawn a model from a specific file path at the given screen position.
-    SpawnModelAtPath {
-        path: std::path::PathBuf,
-        screen_pos: katla_math::Vec2,
-    },
-    /// Delete an entity.
-    DeleteEntity(EntityId),
-    /// Duplicate an entity.
-    DuplicateEntity(EntityId),
     /// Save the current scene to the default path.
     SaveScene,
     /// Open a scene from a file dialog.
@@ -387,61 +378,13 @@ pub enum EditorAction {
     PlayPause,
     /// Stop playing, return to editing and restore scene.
     PlayStop,
-    /// Add a component to an entity by type name.
-    AddComponent {
-        entity: EntityId,
-        component_type: String,
-    },
-    /// Remove a component from an entity by type name.
-    RemoveComponent {
-        entity: EntityId,
-        component_type: String,
-    },
-    /// Clear all console log entries.
-    ClearConsole,
-    /// Toggle a console log level filter.
-    ToggleConsoleFilterLevel { level_index: usize },
-    /// Set the console search filter text.
-    SetConsoleSearch { text: String },
-    /// Set the script path on an entity's ScriptComponent.
-    SetScriptPath { entity: EntityId, path: String },
     /// Update a particle emitter config field on an entity.
     SetEmitterField {
         entity: EntityId,
         field: crate::ui::particle_inspector::EmitterField,
     },
-    /// Spawn an AudioEmitter entity at a viewport position.
-    SpawnAudioEmitter {
-        path: std::path::PathBuf,
-        screen_pos: katla_math::Vec2,
-    },
-    /// Set the audio source path on an entity's AudioEmitter component.
-    SetAudioSourcePath { entity: EntityId, path: String },
-    /// Attach a script to the selected entity.
-    AttachScript { entity: EntityId, path: String },
-    /// Spawn a new entity with a ScriptComponent at a viewport position.
-    SpawnScriptEntity {
-        path: std::path::PathBuf,
-        screen_pos: katla_math::Vec2,
-    },
-    /// Set a script variable on an entity's script instance.
-    SetScriptVar {
-        entity: EntityId,
-        var_name: String,
-        value: katla_script::ScriptVarValue,
-    },
     /// Play/stop audio preview in asset browser.
     AudioPreviewToggle { path: std::path::PathBuf },
-    /// Change collider shape type on an entity.
-    SetColliderShapeType {
-        entity: EntityId,
-        shape_type: ColliderShapeType,
-    },
-    /// Change rigid body type on an entity.
-    SetRigidBodyType {
-        entity: EntityId,
-        body_type: RigidBodyType,
-    },
 }
 
 /// Which panel is currently focused (receives input).
