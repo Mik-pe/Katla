@@ -731,7 +731,7 @@ fn execute_save_scene(app: &mut super::super::Application, tool_call: &ToolCall)
 
     let path_str = args
         .path
-        .unwrap_or_else(|| crate::scene::DEFAULT_SCENE_PATH.to_string());
+        .unwrap_or_else(|| crate::scene::default_scene_path().display().to_string());
     let path = std::path::Path::new(&path_str);
     match crate::scene::SceneManager::save_to_file(app, path) {
         Ok(()) => {

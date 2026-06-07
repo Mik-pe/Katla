@@ -6,7 +6,7 @@ pub mod serialization;
 #[cfg(test)]
 mod tests;
 
-pub use default_scene::{DEFAULT_SCENE_PATH, build_default_scene};
+pub use default_scene::{DEFAULT_SCENE_PATH, build_default_scene, default_scene_path};
 pub use descriptors::{
     AnimationDescriptor, ColliderShapeDescriptor, CollisionFilterDescriptor, DrawableDescriptor,
     EntityDescriptor, ParticleEmitterDescriptor, PerspectiveDescriptor, PhysicsMaterialDescriptor,

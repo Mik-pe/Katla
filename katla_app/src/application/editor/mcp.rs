@@ -72,7 +72,9 @@ fn execute_save_scene(
     app: &mut crate::application::Application,
     path: Option<&str>,
 ) -> McpResponse {
-    let path_str = path.unwrap_or(crate::scene::DEFAULT_SCENE_PATH).to_string();
+    let path_str = path
+        .map(String::from)
+        .unwrap_or_else(|| crate::scene::default_scene_path().display().to_string());
     let file_path = std::path::Path::new(&path_str);
     match crate::scene::SceneManager::save_to_file(app, file_path) {
         Ok(()) => McpResponse {

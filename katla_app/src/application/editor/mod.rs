@@ -926,7 +926,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 app.editor.push_undo(undo_group);
             }
             EditorAction::SaveScene => {
-                let path = std::path::PathBuf::from("assets/scenes/default.katla");
+                let path = crate::scene::default_scene_path();
                 match crate::scene::SceneManager::save_to_file(app, &path) {
                     Ok(()) => {
                         info!("Scene saved to {:?}", path);
@@ -936,7 +936,7 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
             EditorAction::OpenScene => {
-                let path = std::path::PathBuf::from("assets/scenes/default.katla");
+                let path = crate::scene::default_scene_path();
                 match crate::scene::SceneManager::load_from_file(app, &path) {
                     Ok(()) => {
                         app.editor.clear_entity_references();
