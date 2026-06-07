@@ -7,8 +7,21 @@ use super::entity_source::EntitySource;
 
 use super::serialization::SCENE_VERSION;
 
-/// Path to the default scene file, relative to the working directory.
+/// Path to the default scene file, relative to the workspace root.
 pub const DEFAULT_SCENE_PATH: &str = "assets/scenes/default.katla";
+
+/// Resolve the default scene path to an absolute path using `CARGO_MANIFEST_DIR`.
+///
+/// `CARGO_MANIFEST_DIR` points to `katla_app/`. Going up one level gives the
+/// workspace root, where `assets/scenes/default.katla` actually lives. This
+/// works regardless of cwd — both `cargo run` and `cargo test` get the same
+/// canonical file.
+pub fn default_scene_path() -> std::path::PathBuf {
+    let mut path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.pop(); // up to workspace root
+    path.push(DEFAULT_SCENE_PATH);
+    path
+}
 
 /// Build the default scene as a pure `Scene` descriptor (no GPU access required).
 ///

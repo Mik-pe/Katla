@@ -57,7 +57,7 @@ impl Application {
             .info
             .scene_path
             .clone()
-            .unwrap_or_else(|| crate::scene::DEFAULT_SCENE_PATH.to_string());
+            .unwrap_or_else(|| crate::scene::default_scene_path().display().to_string());
         let scene_path = std::path::Path::new(&scene_path_str);
         match crate::scene::SceneManager::load_from_file(self, scene_path) {
             Ok(()) => info!("Loaded scene from {}", scene_path_str),

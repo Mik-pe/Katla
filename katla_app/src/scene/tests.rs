@@ -913,7 +913,7 @@ fn test_default_scene_matches_disk() {
     let scene = build_default_scene();
     let canonical_ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
 
-    let disk_path = std::path::Path::new(DEFAULT_SCENE_PATH);
+    let disk_path = super::default_scene_path();
     if !disk_path.exists() {
         panic!(
             "Default scene file not found at {:?}. Run test_regenerate_default_scene to create it.",
@@ -921,9 +921,8 @@ fn test_default_scene_matches_disk() {
         );
     }
 
-    let disk_content = std::fs::read_to_string(disk_path)
+    let disk_content = std::fs::read_to_string(&disk_path)
         .unwrap_or_else(|e| panic!("Failed to read {:?}: {}", disk_path, e));
-
     assert_eq!(
         canonical_ron, disk_content,
         "Default scene on disk does not match build_default_scene(). \
@@ -938,11 +937,11 @@ fn test_regenerate_default_scene() {
     let scene = build_default_scene();
     let canonical_ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
 
-    let disk_path = std::path::Path::new(DEFAULT_SCENE_PATH);
+    let disk_path = super::default_scene_path();
     if let Some(parent) = disk_path.parent() {
         std::fs::create_dir_all(parent).unwrap();
     }
-    std::fs::write(disk_path, &canonical_ron).unwrap();
+    std::fs::write(&disk_path, &canonical_ron).unwrap();
 
     println!(
         "Regenerated default scene at {:?} ({} entities, {} bytes)",
