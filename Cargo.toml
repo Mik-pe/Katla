@@ -9,6 +9,11 @@ vello_cpu = "0.0.7"
 approx = "0.5"
 ash = "0.38"
 ash-window = "0.13"
+# NOTE: block v0.1.6 future-incompat (uninhabited static) comes transitively via
+# ash-window → raw-window-metal 0.4 → cocoa 0.25 → block. Cannot be fixed until
+# ash-window upgrades to raw-window-metal ≥ 1.1 (which drops cocoa/block entirely).
+# Track: https://github.com/SSheldon/rust-block/issues — no upstream release since 2020.
+# Impact: will become a hard error in a future Rust edition. Safe to ignore for now.
 bitflags = "2.11"
 bytemuck = { version = "1.25", features = ["derive"] }
 byteorder = "1.5"
