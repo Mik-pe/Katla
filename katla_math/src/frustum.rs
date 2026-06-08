@@ -1,6 +1,6 @@
 #[cfg(test)]
 use crate::Quat;
-use crate::{AABB, Mat4, Plane, Sphere, Vec3, Vec4};
+use crate::{Mat4, Plane, Sphere, Vec3, Vec4, AABB};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frustum {
@@ -745,7 +745,7 @@ mod tests {
         );
     }
 
-    // --- Plane extraction tests (TODO 176a) ---
+    // --- Plane extraction tests (ref: 176a) ---
 
     #[test]
     fn test_frustum_plane_normals_point_inward() {
