@@ -5,7 +5,8 @@ use katla_ui::{UiContext, mouse_button};
 
 use super::*;
 use crate::ui::editor_ui::declarative::{
-    EditorOverlayView, HierarchyDrawCtx, PreferencesDrawCtx, PreferencesPanelSync,
+    EditorOverlayView, HierarchyAction, HierarchyDrawCtx, PreferencesDrawCtx,
+    PreferencesPanelSync,
 };
 
 /// Test that clicking a tab in the preferences panel doesn't dismiss the window.
@@ -158,12 +159,18 @@ fn test_hierarchy_entity_selection_works() {
     view_tree.env_mut().set(hierarchy_ctx);
     let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
 
-    // TODO: Implement proper sync - for now, we're not syncing state back
-    // This test will need to be updated once HierarchySync emission is implemented
-    // state = hierarchy_ctx.hierarchy_state;
-    // selected_entity = hierarchy_ctx.selected_entity;
+    // Drain hierarchy actions emitted during the frame
+    let actions: Vec<HierarchyAction> = view_tree.actions_mut().drain();
+    let selected = actions.into_iter().find_map(|a| match a {
+        HierarchyAction::SelectEntity(id) => Some(id),
+    });
 
-    // For now, just verify the view tree frame completes without panicking
+    // The click was positioned on the second entity row (entity2 "Sphere")
+    assert_eq!(
+        selected,
+        Some(entity2),
+        "clicking the second entity row should emit SelectEntity(entity2)"
+    );
 }
 
 /// Test that save confirmation timer starts at 2.0 and counts down.
