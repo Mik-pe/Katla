@@ -1,6 +1,6 @@
 #[cfg(test)]
 use crate::Quat;
-use crate::{Mat4, Plane, Sphere, Vec3, Vec4, AABB};
+use crate::{AABB, Mat4, Plane, Sphere, Vec3, Vec4};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frustum {

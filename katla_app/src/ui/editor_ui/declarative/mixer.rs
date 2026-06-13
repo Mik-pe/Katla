@@ -29,10 +29,45 @@ pub(crate) struct MixerView;
 
 impl Build for MixerView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
+        // Always reserve state slots in the same order regardless of whether
+        // the env is set, so that subsequent sibling views don't get their
+        // StateId slots shifted when this view becomes active/inactive.
+        let master_id = ctx.state(0.0f32);
+        let sfx_id = ctx.state(0.0f32);
+        let music_id = ctx.state(0.0f32);
+        let ambient_id = ctx.state(0.0f32);
+
         let draw_ctx = ctx.env::<MixerDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
             return empty().boxed();
         };
+
+        // Sync preference values into state when the mixer becomes active.
+        // get_or_create initialized these to 0.0; overwrite with actual prefs.
+        let pref_master = draw_ctx.preferences.audio.master_volume;
+        let pref_sfx = draw_ctx.preferences.audio.sfx_volume;
+        let pref_music = draw_ctx.preferences.audio.music_volume;
+        let pref_ambient = draw_ctx.preferences.audio.ambient_volume;
+        if (ctx.get_state::<f32>(master_id).unwrap_or(0.0) - pref_master).abs() > 1e-4
+            && ctx.get_state::<f32>(master_id).unwrap_or(-1.0).abs() < 1e-6
+        {
+            ctx.set_state(master_id, pref_master);
+        }
+        if (ctx.get_state::<f32>(sfx_id).unwrap_or(0.0) - pref_sfx).abs() > 1e-4
+            && ctx.get_state::<f32>(sfx_id).unwrap_or(-1.0).abs() < 1e-6
+        {
+            ctx.set_state(sfx_id, pref_sfx);
+        }
+        if (ctx.get_state::<f32>(music_id).unwrap_or(0.0) - pref_music).abs() > 1e-4
+            && ctx.get_state::<f32>(music_id).unwrap_or(-1.0).abs() < 1e-6
+        {
+            ctx.set_state(music_id, pref_music);
+        }
+        if (ctx.get_state::<f32>(ambient_id).unwrap_or(0.0) - pref_ambient).abs() > 1e-4
+            && ctx.get_state::<f32>(ambient_id).unwrap_or(-1.0).abs() < 1e-6
+        {
+            ctx.set_state(ambient_id, pref_ambient);
+        }
 
         let theme = &draw_ctx.theme;
         let levels = &draw_ctx.levels;
@@ -48,7 +83,6 @@ impl Build for MixerView {
 
         let master_db_peak = clamp_db(linear_to_db(levels.master.peak));
         let master_db_rms = clamp_db(linear_to_db(levels.master.rms));
-        let master_id = ctx.state(draw_ctx.preferences.audio.master_volume);
         let current_master: f32 = ctx.get_state(master_id).unwrap();
         if (current_master - draw_ctx.preferences.audio.master_volume).abs() > 1e-4 {
             ctx.emit(PreferencesAction::SetMasterVolume(current_master));
@@ -58,7 +92,6 @@ impl Build for MixerView {
 
         let sfx_db_peak = clamp_db(linear_to_db(levels.sfx.peak));
         let sfx_db_rms = clamp_db(linear_to_db(levels.sfx.rms));
-        let sfx_id = ctx.state(draw_ctx.preferences.audio.sfx_volume);
         let current_sfx: f32 = ctx.get_state(sfx_id).unwrap();
         if (current_sfx - draw_ctx.preferences.audio.sfx_volume).abs() > 1e-4 {
             ctx.emit(PreferencesAction::SetSfxVolume(current_sfx));
@@ -68,7 +101,6 @@ impl Build for MixerView {
 
         let music_db_peak = clamp_db(linear_to_db(levels.music.peak));
         let music_db_rms = clamp_db(linear_to_db(levels.music.rms));
-        let music_id = ctx.state(draw_ctx.preferences.audio.music_volume);
         let current_music: f32 = ctx.get_state(music_id).unwrap();
         if (current_music - draw_ctx.preferences.audio.music_volume).abs() > 1e-4 {
             ctx.emit(PreferencesAction::SetMusicVolume(current_music));
@@ -78,7 +110,6 @@ impl Build for MixerView {
 
         let ambient_db_peak = clamp_db(linear_to_db(levels.ambient.peak));
         let ambient_db_rms = clamp_db(linear_to_db(levels.ambient.rms));
-        let ambient_id = ctx.state(draw_ctx.preferences.audio.ambient_volume);
         let current_ambient: f32 = ctx.get_state(ambient_id).unwrap();
         if (current_ambient - draw_ctx.preferences.audio.ambient_volume).abs() > 1e-4 {
             ctx.emit(PreferencesAction::SetAmbientVolume(current_ambient));

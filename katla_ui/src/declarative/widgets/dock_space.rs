@@ -600,11 +600,11 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
     }
 
     fn interactive(&self) -> bool {
-        true
+        false
     }
 
     fn is_focus_scope(&self) -> bool {
-        true
+        false
     }
 }
 
@@ -1222,14 +1222,14 @@ mod tests {
     fn test_dockspace_interactive() {
         let (_, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-        assert!(ds.interactive());
+        assert!(!ds.interactive());
     }
 
     #[test]
     fn test_dockspace_focus_scope() {
         let (_, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-        assert!(ds.is_focus_scope());
+        assert!(!ds.is_focus_scope());
     }
 
     #[test]

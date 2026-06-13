@@ -709,7 +709,7 @@ mod tests {
         let img = img.image_size(cell_w, cell_h);
 
         let inner_zstack = zstack([(Alignment::Center, img.boxed())]);
-        let sel = selectable(inner_zstack.boxed());
+        let sel = selectable(inner_zstack.boxed()).flex_grow(1.0);
         let desc = grid(1, cell_size, [sel.boxed()])
             .flex_width(cell_w)
             .flex_height(cell_h);
@@ -725,13 +725,10 @@ mod tests {
 
         let root = tree.root().unwrap();
         let root_node = tree.get(root).unwrap();
-        let vstack_id = root_node.children[0];
-        let vstack_node = tree.get(vstack_id).unwrap();
-        let selectable_id = vstack_node.children[0];
+        let grid_id = root_node.children[0];
+        let selectable_id = tree.get(grid_id).unwrap().children[0];
         let selectable_node = tree.get(selectable_id).unwrap();
         let zstack_id = selectable_node.children[0];
-        let zstack_node = tree.get(zstack_id).unwrap();
-        let _image_id = zstack_node.children[0];
 
         let zstack_bounds = bounds.get(&zstack_id).copied().unwrap_or_default();
 

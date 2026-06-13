@@ -255,6 +255,11 @@ impl EditorUI {
         // ── Sync DockTree to StateArena and run frame ──
         self.sync_dock_state_to_arena();
 
+        // Process DockSpace input (tab clicks, splitter drags) before the
+        // main input pass. The DockSpace widget is non-interactive so it
+        // doesn't block hit-testing for panels underneath.
+        self.process_dockspace_input(ui, mouse_pos, dock_bounds);
+
         let input_consumed =
             self.view_tree
                 .frame(ui, &super::declarative::EditorOverlayView, screen_size);
@@ -427,6 +432,120 @@ impl EditorUI {
                 self.drag_state_id = Some(ds.drag_state_id);
                 break;
             }
+        }
+    }
+
+    /// Process DockSpace chrome input (tab clicks, splitter drags) directly,
+    /// since the DockSpace widget is non-interactive to avoid blocking panel input.
+    fn process_dockspace_input(
+        &mut self,
+        ui: &mut UiContext,
+        mouse_pos: Vec2,
+        dock_bounds: Rect2D,
+    ) {
+        use katla_ui::declarative::widgets::dock_space::{compute_leaf_info, compute_split_info};
+        use katla_ui::dock::DockNode;
+
+        if matches!(self.dock_tree.root(), DockNode::Empty) {
+            return;
+        }
+
+        let clicked = ui.mouse_clicked(mouse_button::LEFT);
+        let mouse_down = ui.input().mouse_down[mouse_button::LEFT];
+
+        // Check splitter handle drag
+        let splitter_width = 4.0_f32;
+        let splits = compute_split_info(self.dock_tree.root(), dock_bounds, splitter_width);
+        for split in &splits {
+            if split.handle_rect.contains(mouse_pos) {
+                if clicked {
+                    // Start splitter drag via drag state
+                    if let Some(drag_id) = self.drag_state_id {
+                        use katla_ui::declarative::widgets::dock_space::DockDragState;
+                        let mut drag: DockDragState<u64> = self
+                            .view_tree
+                            .state_arena()
+                            .get(drag_id)
+                            .unwrap_or_default();
+                        drag.dragging = true;
+                        drag.source_path = split.path.clone();
+                        self.view_tree.state_arena_mut().set(drag_id, drag);
+                    }
+                }
+                if mouse_down && clicked {
+                    ui.set_declarative_input_consumed(true);
+                }
+                return;
+            }
+        }
+
+        // Handle active splitter drag
+        if let Some(drag_id) = self.drag_state_id {
+            use katla_ui::declarative::widgets::dock_space::DockDragState;
+            let drag: DockDragState<u64> = self
+                .view_tree
+                .state_arena()
+                .get(drag_id)
+                .unwrap_or_default();
+            if drag.dragging {
+                let is_splitter = self
+                    .dock_tree
+                    .get(&drag.source_path)
+                    .is_some_and(|n| matches!(n, DockNode::Split { .. }));
+                if is_splitter && mouse_down {
+                    if let Some(DockNode::Split { direction, .. }) =
+                        self.dock_tree.get(&drag.source_path)
+                    {
+                        let new_ratio = match direction {
+                            katla_ui::dock::SplitDirection::Horizontal => {
+                                ((mouse_pos.x() - dock_bounds.min.x()) / dock_bounds.width())
+                                    .clamp(0.05, 0.95)
+                            }
+                            katla_ui::dock::SplitDirection::Vertical => {
+                                ((mouse_pos.y() - dock_bounds.min.y()) / dock_bounds.height())
+                                    .clamp(0.05, 0.95)
+                            }
+                        };
+                        let _ = self.dock_tree.set_ratio(&drag.source_path, new_ratio);
+                    }
+                    ui.set_declarative_input_consumed(true);
+                    return;
+                } else if !mouse_down {
+                    let mut drag = drag;
+                    drag.dragging = false;
+                    self.view_tree.state_arena_mut().set(drag_id, drag);
+                }
+            }
+        }
+
+        // Check tab bar clicks
+        let tab_bar_height = 28.0_f32;
+        let leaf_info = compute_leaf_info(self.dock_tree.root(), dock_bounds, tab_bar_height);
+        for leaf in &leaf_info {
+            if leaf.tabs.is_empty() {
+                continue;
+            }
+            let tab_bar_bounds = Rect2D::new(
+                leaf.full_bounds.min,
+                Vec2::new(
+                    leaf.full_bounds.max.x(),
+                    leaf.full_bounds.min.y() + tab_bar_height,
+                ),
+            );
+            if !tab_bar_bounds.contains(mouse_pos) {
+                continue;
+            }
+            let tab_count = leaf.tabs.len();
+            let tab_width = tab_bar_bounds.width() / tab_count as f32;
+            let tab_index = ((mouse_pos.x() - tab_bar_bounds.min.x()) / tab_width)
+                .clamp(0.0, tab_count as f32 - 0.01) as usize;
+            if tab_index < leaf.tabs.len() && clicked {
+                let _ = self
+                    .dock_tree
+                    .activate_tab(&leaf.path, &leaf.tabs[tab_index]);
+                ui.set_declarative_input_consumed(true);
+            }
+            return;
         }
     }
 

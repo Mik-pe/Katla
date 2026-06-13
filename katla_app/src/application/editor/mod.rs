@@ -22,9 +22,8 @@ use crate::components::{
 };
 
 use crate::ui::{
-    ColliderShapeInfo, ColliderShapeType,
-    DirectionalLightInfo, EditorAction, EntityInfo, ParticleEmitterInfo, PerspectiveInfo,
-    PhysicsMaterialInfo, PointLightInfo, RigidBodyInfo,
+    ColliderShapeInfo, ColliderShapeType, DirectionalLightInfo, EditorAction, EntityInfo,
+    ParticleEmitterInfo, PerspectiveInfo, PhysicsMaterialInfo, PointLightInfo, RigidBodyInfo,
 };
 
 use super::Application;
