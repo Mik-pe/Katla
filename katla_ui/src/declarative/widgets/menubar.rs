@@ -67,6 +67,12 @@ impl Widget for MenuBar {
             .unwrap_or(ChildWidgets::None)
     }
 
+    fn wants_global_input(&self, state: &StateArena) -> bool {
+        self.groups
+            .iter()
+            .any(|g| state.get::<bool>(g.open_id).unwrap_or_default())
+    }
+
     fn handle_input(
         &self,
         ctx: &mut InputContext<'_>,
@@ -78,61 +84,109 @@ impl Widget for MenuBar {
         let mut x = bounds.min.x() + item_spacing;
         let bar_height = self.height;
 
-        for group in &self.groups {
-            let label_size = measure_menu_label(&group.label, 14.0);
-            let group_bounds = Rect2D::from_origin_size(
-                Vec2::new(x, bounds.min.y()),
-                Vec2::new(label_size + item_spacing * 2.0, bar_height),
-            );
+        // Check if ANY group is currently open
+        let any_open = self
+            .groups
+            .iter()
+            .any(|g| state.get::<bool>(g.open_id).unwrap_or_default());
 
-            if group_bounds.contains(ctx.mouse_pos) && ctx.input.mouse_clicked(mouse_button::LEFT) {
-                let is_open: bool = state.get(group.open_id).unwrap_or_default();
-                state.set(group.open_id, !is_open);
-                return InputResult::Consumed;
+        // Compute all group bounds
+        let group_bounds_list: Vec<Rect2D> = self
+            .groups
+            .iter()
+            .map(|group| {
+                let label_size = measure_menu_label(&group.label, 14.0);
+                let gb = Rect2D::from_origin_size(
+                    Vec2::new(x, bounds.min.y()),
+                    Vec2::new(label_size + item_spacing * 2.0, bar_height),
+                );
+                x += label_size + item_spacing * 2.0;
+                gb
+            })
+            .collect();
+
+        // Hover-switch: if any menu is open and mouse is over another group,
+        // switch to that group
+        if any_open && bounds.contains(ctx.mouse_pos) {
+            for (i, &gb) in group_bounds_list.iter().enumerate() {
+                if gb.contains(ctx.mouse_pos) {
+                    let currently_open: bool =
+                        state.get(self.groups[i].open_id).unwrap_or_default();
+                    if !currently_open {
+                        for g in &self.groups {
+                            state.set(g.open_id, false);
+                        }
+                        state.set(self.groups[i].open_id, true);
+                    }
+                    return InputResult::Consumed;
+                }
             }
+        }
 
-            let is_open: bool = state.get(group.open_id).unwrap_or_default();
-            if is_open {
-                let dropdown_y = group_bounds.max.y();
+        // Handle clicks on group labels (open/close toggle)
+        if bounds.contains(ctx.mouse_pos) && ctx.input.mouse_clicked(mouse_button::LEFT) {
+            for (i, &gb) in group_bounds_list.iter().enumerate() {
+                if gb.contains(ctx.mouse_pos) {
+                    let is_open: bool = state.get(self.groups[i].open_id).unwrap_or_default();
+                    for g in &self.groups {
+                        state.set(g.open_id, false);
+                    }
+                    state.set(self.groups[i].open_id, !is_open);
+                    return InputResult::Consumed;
+                }
+            }
+        }
+
+        // Handle dropdown item clicks (may be outside menu bar bounds)
+        if any_open && ctx.input.mouse_clicked(mouse_button::LEFT) {
+            for (i, &gb) in group_bounds_list.iter().enumerate() {
+                let is_open: bool = state.get(self.groups[i].open_id).unwrap_or_default();
+                if !is_open {
+                    continue;
+                }
+
+                let dropdown_y = gb.max.y();
                 let dropdown_width = 180.0_f32;
                 let entry_height = 28.0_f32;
                 let dropdown_bounds = Rect2D::from_origin_size(
-                    Vec2::new(group_bounds.min.x(), dropdown_y),
-                    Vec2::new(dropdown_width, group.items.len() as f32 * entry_height),
+                    Vec2::new(gb.min.x(), dropdown_y),
+                    Vec2::new(
+                        dropdown_width,
+                        self.groups[i].items.len() as f32 * entry_height,
+                    ),
                 );
 
-                if dropdown_bounds.contains(ctx.mouse_pos)
-                    && ctx.input.mouse_clicked(mouse_button::LEFT)
-                {
-                    for (i, entry) in group.items.iter().enumerate() {
+                // Click on dropdown item
+                if dropdown_bounds.contains(ctx.mouse_pos) {
+                    for (_ei, entry) in self.groups[i].items.iter().enumerate() {
                         let entry_bounds = Rect2D::from_origin_size(
                             Vec2::new(
                                 dropdown_bounds.min.x(),
-                                dropdown_y + i as f32 * entry_height,
+                                dropdown_y + _ei as f32 * entry_height,
                             ),
                             Vec2::new(dropdown_width, entry_height),
                         );
-                        if entry_bounds.contains(ctx.mouse_pos) && !entry.disabled {
+                        if entry_bounds.contains(ctx.mouse_pos)
+                            && !entry.disabled
+                            && !entry.label.is_empty()
+                        {
                             if let Some(ref callback) = entry.on_click {
                                 ctx.callbacks.invoke(callback, ctx.actions);
                             }
-                            state.set(group.open_id, false);
+                            state.set(self.groups[i].open_id, false);
                             return InputResult::Consumed;
                         }
                     }
                 }
 
-                if !group_bounds.contains(ctx.mouse_pos)
-                    && !dropdown_bounds.contains(ctx.mouse_pos)
-                    && ctx.input.mouse_clicked(mouse_button::LEFT)
-                {
-                    state.set(group.open_id, false);
+                // Click outside both group label and dropdown closes the menu
+                if !gb.contains(ctx.mouse_pos) && !dropdown_bounds.contains(ctx.mouse_pos) {
+                    state.set(self.groups[i].open_id, false);
                     return InputResult::Consumed;
                 }
             }
-
-            x += label_size + item_spacing * 2.0;
         }
+
         InputResult::Ignore
     }
 
