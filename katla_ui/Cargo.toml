@@ -14,10 +14,10 @@ taffy = "0.7"
 
 # Font handling
 skrifa = { workspace = true }
-cosmic-text = { version = "0.19", features = ["vi"] }
+cosmic-text = { version = "0.19" }
 etagere = "0.3"
 swash = "0.2"
-syntect = "5"
+syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

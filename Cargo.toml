@@ -23,7 +23,7 @@ arboard = "3.4"
 env_logger = "0.11"
 gltf = { version = "1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
 gpu-allocator = "0.28"
-image = "0.25"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "tiff"] }
 itertools = "0.14"
 libc = "0.2"
 log = "0.4"
@@ -56,16 +56,24 @@ katla_icons = { path = "katla_icons" }
 katla_agent = { path = "katla_agent" }
 katla_physics = { path = "katla_physics" }
 
-# Faster dev builds with some optimizations
+# Faster dev builds with minimal optimizations
 [profile.dev]
-opt-level = 1               # Basic optimizations
+opt-level = 1               # Basic optimizations for own crates
 debug = 1                   # Line tables only (faster builds)
 debug-assertions = true     # Keep debug assertions
 overflow-checks = true      # Keep overflow checks
+codegen-units = 256         # Max parallelism for faster builds
 
-# Optimize heavy dependencies even in dev mode
+# Dependencies: opt-level=1 for fast compile + decent runtime.
+# Only specific hot-path crates get opt-level=2 below.
 [profile.dev.package."*"]
-opt-level = 2               # Higher optimization for dependencies
+opt-level = 1
+
+# Selectively optimize performance-critical crates in dev mode
+[profile.dev.package.rapier3d]
+opt-level = 2
+[profile.dev.package.naga]
+opt-level = 2
 
 # Release profile with full optimizations
 [profile.release]
