@@ -1155,10 +1155,10 @@ impl ColorScheme {
 
             focus_ring_color: style.focus_ring_color,
 
-            success: Color::from_rgb_hex(0x30D158),
-            warning: Color::from_rgb_hex(0xFF9F0A),
-            error: Color::from_rgb_hex(0xFF453A),
-            info: Color::from_rgb_hex(0x64D2FF),
+            success: style.success,
+            warning: style.warning,
+            error: style.error,
+            info: style.info,
 
             entity_mesh: Color::from_rgb_hex(0x30D158),
             entity_light: Color::from_rgb_hex(0xFFD60A),

@@ -63,7 +63,7 @@ impl CosmicTextSystem {
     #[cfg(test)]
     pub fn add_font(&mut self, bytes: &[u8]) -> Result<FontId, FontError> {
         use std::sync::atomic::{AtomicU32, Ordering};
-        static NEXT_ID: AtomicU32 = AtomicU32::new(0);
+        static NEXT_ID: AtomicU32 = AtomicU32::new(100);
 
         if bytes.len() < 4 {
             return Err(FontError::LoadFailed("Font data too short".to_string()));

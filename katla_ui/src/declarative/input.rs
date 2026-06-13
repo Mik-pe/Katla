@@ -42,26 +42,17 @@ fn hit_test_recursive(
         return None;
     }
 
-    // Skip Modal children when modal is closed
-    if let Some(modal) = node
-        .widget
-        .as_any()
-        .downcast_ref::<super::widgets::modal::Modal>()
-    {
-        let is_open: bool = tree.state_arena().get(modal.open_id).unwrap_or_default();
-        if !is_open {
-            return None;
+    // Only descend into children if the widget is currently drawing them
+    let draw_children = node.widget.should_draw_children(tree.state_arena());
+
+    if draw_children {
+        for &child_id in node.children.iter().rev() {
+            if let Some(hit) = hit_test_recursive(tree, child_id, mouse_pos, bounds_map) {
+                return Some(hit);
+            }
         }
     }
 
-    // Walk children in reverse order (topmost first for Z-ordering)
-    for &child_id in node.children.iter().rev() {
-        if let Some(hit) = hit_test_recursive(tree, child_id, mouse_pos, bounds_map) {
-            return Some(hit);
-        }
-    }
-
-    // No child hit — check if this node itself is interactive
     if node.widget.interactive() {
         Some(HitResult { id: node_id })
     } else {

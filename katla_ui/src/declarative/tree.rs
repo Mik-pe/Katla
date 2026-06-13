@@ -606,7 +606,7 @@ impl ViewTree {
 
         if !skip_children {
             for &child_id in &children {
-                self.draw_child_recursive(child_id, ui, bounds, scroll_offset);
+                self.draw_child_recursive(child_id, ui, scroll_offset);
             }
         }
 
@@ -622,7 +622,6 @@ impl ViewTree {
         &self,
         child_id: ViewId,
         ui: &mut UiContext,
-        _parent_bounds: Rect2D,
         parent_scroll_offset: f32,
     ) {
         let Some(child_node) = self.nodes.get(child_id) else {
@@ -642,10 +641,12 @@ impl ViewTree {
             child_bounds
         };
 
+        let scroll_delta = draw_bounds.min - child_bounds.min;
         let grandchildren: Vec<ViewId> = child_node.children.clone();
         let grandchildren_bounds: Vec<Rect2D> = grandchildren
             .iter()
             .filter_map(|&id| self.resolved_bounds.get(&id).copied())
+            .map(|b| b.translate(scroll_delta))
             .collect();
 
         let child_needs_clip = child_node.widget.needs_clip_children();
@@ -678,7 +679,8 @@ impl ViewTree {
 
         if !skip_children {
             for &grandchild_id in &grandchildren {
-                self.draw_child_recursive(grandchild_id, ui, draw_bounds, child_scroll);
+                let total_scroll = parent_scroll_offset + child_scroll;
+                self.draw_child_recursive(grandchild_id, ui, total_scroll);
             }
         }
 
@@ -834,30 +836,15 @@ impl ViewTree {
         }
     }
 
-    /// Core sync: compare the stored widget at `node_id` with itself,
-    /// extract children via `take_children()`, and recurse.
+    /// Extract children from the widget at `node_id` and recurse into them.
+    ///
+    /// The widget has already been stored and diffed by the caller (set_root or build_from).
+    /// This method extracts child widgets via `take_children()` and reconciles them
+    /// against the current tree.
     fn sync_tree_from_node(&mut self, node_id: ViewId) {
-        let _old_widget_type = if let Some(node) = self.nodes.get(node_id) {
-            node.widget.widget_type()
-        } else {
+        if self.nodes.get(node_id).is_none() {
             return;
-        };
-
-        // Diff the stored widget against itself to determine action
-        // (This seems odd but the widget was just set via set_root or build_from)
-        // Actually, we need to compare the NEW widget against the OLD widget that was there before.
-        // But since build_from already stored the new widget, we need the old one.
-        // Wait - this approach is wrong. Let me rethink.
-
-        // The correct approach: build_from stored the new widget, and we call sync_tree_from_node.
-        // But we need to compare new vs old. The old widget is gone since we replaced it.
-        //
-        // Solution: build_from should NOT store the widget first. Instead, sync_tree should
-        // take the new widget, compare with the old, then store and recurse.
-
-        // For now, let's assume the widget was just stored. We still need to extract children.
-        // The diff is already done by the caller (set_root or build_from).
-        // We just need to extract children and recurse.
+        }
 
         let child_info = {
             let node = self.nodes.get_mut(node_id).unwrap();

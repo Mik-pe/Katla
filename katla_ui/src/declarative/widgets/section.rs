@@ -51,7 +51,7 @@ impl Widget for Section {
         bounds: Rect2D,
         _children: &[ViewId],
     ) -> InputResult {
-        let font_size = 14.0_f32;
+        let font_size = crate::style::FontSize::Medium.to_pixels();
         let header_height = font_size + 8.0;
 
         let header_bounds =
@@ -240,7 +240,7 @@ mod tests {
         let (section, mut table) = make_section_with_remove();
         let mut state = StateArena::new();
 
-        let font_size = 14.0_f32;
+        let font_size = crate::style::FontSize::Medium.to_pixels();
         let bounds = Rect2D::new(Vec2::new(0.0, 0.0), Vec2::new(200.0, 100.0));
 
         let close_x = bounds.max.x() - font_size - 4.0;
