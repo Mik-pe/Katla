@@ -5,8 +5,7 @@ use katla_ui::{UiContext, mouse_button};
 
 use super::*;
 use crate::ui::editor_ui::declarative::{
-    EditorOverlayView, HierarchyAction, HierarchyDrawCtx, PreferencesDrawCtx,
-    PreferencesPanelSync,
+    EditorOverlayView, HierarchyAction, HierarchyDrawCtx, PreferencesDrawCtx, PreferencesPanelSync,
 };
 
 /// Test that clicking a tab in the preferences panel doesn't dismiss the window.

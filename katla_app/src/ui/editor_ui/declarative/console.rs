@@ -52,13 +52,16 @@ impl Build for ConsoleView {
             button, empty, hstack, panel, scroll, text, textfield, vstack,
         };
 
+        // Always reserve state slots in the same order regardless of whether
+        // the env is set, so that subsequent sibling views don't get their
+        // StateId slots shifted when this view becomes active/inactive.
+        let search_id: StateId = ctx.state(String::new());
+        let scroll_id: StateId = ctx.state(0.0f32);
+
         let draw_ctx = ctx.env::<ConsoleDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
             return empty().boxed();
         };
-
-        let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
-        let scroll_id: StateId = ctx.state(0.0f32);
 
         // Build filter level toggles
         const LEVEL_LABELS: [&str; 5] = ["Error", "Warn", "Info", "Debug", "Trace"];

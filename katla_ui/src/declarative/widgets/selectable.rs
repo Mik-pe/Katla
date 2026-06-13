@@ -14,6 +14,7 @@ use crate::input::mouse_button;
 pub struct Selectable {
     pub on_click: Option<Callback>,
     pub selected: bool,
+    pub flex_grow: f32,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     pub(crate) children: Vec<ViewId>,
 }
@@ -38,7 +39,7 @@ impl Widget for Selectable {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             flex_direction: FlexDirection::Column,
-            flex_grow: 1.0,
+            flex_grow: self.flex_grow,
             ..Style::default()
         }
     }
@@ -68,7 +69,7 @@ impl Widget for Selectable {
         _children: &[ViewId],
         _info: &DrawInfo,
     ) {
-        let radius = bounds.height() * 0.4;
+        let radius = bounds.height().min(bounds.width()) * 0.15;
         let is_hovered = bounds.contains(ctx.mouse_pos());
         if self.selected {
             ctx.draw_rounded_rect(
@@ -119,6 +120,10 @@ impl Selectable {
         self.selected = sel;
         self
     }
+    pub fn flex_grow(mut self, grow: f32) -> Self {
+        self.flex_grow = grow;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -129,6 +134,7 @@ mod tests {
         Selectable {
             on_click: None,
             selected,
+            flex_grow: 0.0,
             child_widget: None,
             children: Vec::new(),
         }
@@ -141,6 +147,7 @@ mod tests {
             Selectable {
                 on_click: Some(cb),
                 selected: false,
+                flex_grow: 0.0,
                 child_widget: None,
                 children: Vec::new(),
             },
