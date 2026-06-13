@@ -5,8 +5,9 @@ authors = ["Mik-pe <mikael.pettersson201@gmail.com>"]
 edition = "2024"
 
 [features]
-default = ["editor"]
+default = ["editor", "llm"]
 editor = ["katla_ecs/editor", "katla_script/editor"]
+llm = ["katla_agent/llm-assistant"]
 mcp = ["katla_agent/mcp-server"]
 
 [dependencies]
@@ -19,7 +20,7 @@ katla_derive = { workspace = true }
 katla_script = { workspace = true }
 katla_audio = { workspace = true }
 katla_physics = { workspace = true }
-katla_agent = { workspace = true, features = ["llm-assistant"] }
+katla_agent = { workspace = true }
 ash = { workspace = true }
 bytemuck = { workspace = true }
 byteorder = { workspace = true }
