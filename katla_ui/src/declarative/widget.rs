@@ -185,6 +185,15 @@ pub trait Widget: Any + 'static {
         false
     }
 
+    /// Whether this widget should handle input even when the mouse is outside
+    /// its layout bounds (e.g. MenuBar with open dropdowns).
+    ///
+    /// When `true`, the input dispatch loop will call `handle_input` on this
+    /// widget as a secondary pass, regardless of hit-test results.
+    fn wants_global_input(&self, _state: &StateArena) -> bool {
+        false
+    }
+
     /// Whether this widget creates an isolated focus scope.
     ///
     /// Focus scope widgets (Panel, Modal, DraggablePanel) limit Tab/Shift+Tab
@@ -322,6 +331,10 @@ impl Widget for Box<dyn Widget> {
 
     fn interactive(&self) -> bool {
         (**self).interactive()
+    }
+
+    fn wants_global_input(&self, state: &StateArena) -> bool {
+        (**self).wants_global_input(state)
     }
 
     fn is_focus_scope(&self) -> bool {

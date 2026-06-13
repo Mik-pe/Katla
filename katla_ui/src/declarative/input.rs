@@ -120,10 +120,64 @@ pub(crate) fn process_input(
     }
 
     // --- Hit test for new interactions ---
-    let Some(hit) = hit_test(tree, input.mouse_pos, bounds_map) else {
-        if input.mouse_clicked(mouse_button::LEFT) {
-            close_outside_draggable_panels(tree, bounds_map, input.mouse_pos);
+    let hit = hit_test(tree, input.mouse_pos, bounds_map);
+
+    if hit.is_none() && input.mouse_clicked(mouse_button::LEFT) {
+        close_outside_draggable_panels(tree, bounds_map, input.mouse_pos);
+    }
+
+    let Some(hit) = hit else {
+        // No widget hit by normal hit-test. Still run global input pass
+        // for widgets that want input outside their bounds (e.g. MenuBar).
+        let mut actions = std::mem::take(tree.actions_mut());
+        let mut state_arena = std::mem::take(tree.state_arena_mut());
+        let new_active_id = tree.interaction().active_id;
+        let focused_id = tree.interaction().focused_id;
+
+        let global_ids: Vec<ViewId> = tree
+            .iter_nodes()
+            .filter(|(_, node)| node.widget.wants_global_input(&state_arena))
+            .map(|(id, _)| id)
+            .collect();
+
+        for gid in global_ids {
+            let (children, bounds) = {
+                let Some(node) = tree.get(gid) else {
+                    continue;
+                };
+                (
+                    node.children.clone(),
+                    bounds_map.get(&gid).copied().unwrap_or_default(),
+                )
+            };
+
+            let mut ctx = InputContext {
+                input,
+                mouse_pos: input.mouse_pos,
+                callbacks: &mut *callbacks,
+                actions: &mut actions,
+                view_id: gid,
+                active_id: new_active_id,
+                focused_id,
+            };
+
+            let widget_result = tree
+                .get(gid)
+                .map(|n| {
+                    n.widget
+                        .handle_input(&mut ctx, &mut state_arena, bounds, &children)
+                })
+                .unwrap_or(WidgetInputResult::Ignore);
+
+            if widget_result == WidgetInputResult::Consumed {
+                result.input_consumed = true;
+                result.clicked_id = Some(gid);
+                break;
+            }
         }
+
+        *tree.state_arena_mut() = state_arena;
+        *tree.actions_mut() = actions;
         return result;
     };
 
@@ -200,6 +254,55 @@ pub(crate) fn process_input(
                 };
             }
             WidgetInputResult::Ignore => {
+                break;
+            }
+        }
+    }
+
+    // --- Global input pass: dispatch to widgets that want input outside bounds ---
+    // This handles cases like MenuBar dropdowns that extend beyond the widget's
+    // layout bounds. Only runs if the normal hit-test didn't consume input.
+    if !result.input_consumed {
+        let global_ids: Vec<ViewId> = tree
+            .iter_nodes()
+            .filter(|(_, node)| node.widget.wants_global_input(&state_arena))
+            .map(|(id, _)| id)
+            .collect();
+
+        for gid in global_ids {
+            let (children, bounds) = {
+                let Some(node) = tree.get(gid) else {
+                    continue;
+                };
+                (
+                    node.children.clone(),
+                    bounds_map.get(&gid).copied().unwrap_or_default(),
+                )
+            };
+
+            let mut ctx = InputContext {
+                input,
+                mouse_pos: input.mouse_pos,
+                callbacks: &mut *callbacks,
+                actions: &mut actions,
+                view_id: gid,
+                active_id: new_active_id,
+                focused_id,
+            };
+
+            let widget_result = tree
+                .get(gid)
+                .map(|n| {
+                    n.widget
+                        .handle_input(&mut ctx, &mut state_arena, bounds, &children)
+                })
+                .unwrap_or(WidgetInputResult::Ignore);
+
+            new_active_id = ctx.active_id;
+
+            if widget_result == WidgetInputResult::Consumed {
+                result.input_consumed = true;
+                result.clicked_id = Some(gid);
                 break;
             }
         }
