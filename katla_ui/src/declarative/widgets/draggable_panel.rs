@@ -145,9 +145,8 @@ impl Widget for DraggablePanel {
 
         let title_bar_height = 25.0_f32;
 
-        let screen_size = ctx.screen_size();
-        let screen_bounds = Rect2D::new(Vec2::new(0.0, 0.0), screen_size);
-        ctx.draw_rect(screen_bounds, ctx.style().popup_shadow);
+        let shadow_bounds = bounds.translate(Vec2::new(2.0, 2.0)).inflate(4.0);
+        ctx.draw_rounded_rect(shadow_bounds, ctx.style().popup_shadow, 12.0);
 
         ctx.draw_rounded_rect(bounds, ctx.style().window_bg, 10.0);
 

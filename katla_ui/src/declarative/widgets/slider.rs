@@ -55,7 +55,7 @@ impl Widget for Slider {
         bounds: Rect2D,
         _children: &[ViewId],
     ) -> InputResult {
-        if bounds.contains(ctx.mouse_pos) && ctx.input.mouse_down[mouse_button::LEFT] {
+        if bounds.contains(ctx.mouse_pos) && ctx.input.mouse_pressed[mouse_button::LEFT] {
             let t = if bounds.width() > 0.0 {
                 ((ctx.mouse_pos.x() - bounds.min.x()) / bounds.width()).clamp(0.0, 1.0)
             } else {

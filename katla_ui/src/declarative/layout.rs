@@ -144,16 +144,10 @@ impl TaffyNodeMap {
             self.dirty = true;
             let taffy_id = existing_taffy_id.unwrap();
             self.taffy.set_style(taffy_id, style).unwrap();
-
-            // Update children list if needed
-            if !children.is_empty() {
-                self.update_children_if_changed(taffy_id, &children);
-            }
+            self.update_children_if_changed(taffy_id, &children);
         } else {
             // Not dirty, but children structure might have changed
-            if let Some(taffy_id) = existing_taffy_id
-                && !children.is_empty()
-            {
+            if let Some(taffy_id) = existing_taffy_id {
                 self.update_children_if_changed(taffy_id, &children);
             }
         }
