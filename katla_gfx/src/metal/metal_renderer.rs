@@ -1217,6 +1217,14 @@ impl GpuRenderer for MetalRenderer {
         Ok(())
     }
 
+    fn recreate_scene_render_targets(&mut self, width: u32, height: u32) {
+        self.recreate_render_targets(width, height);
+        // The Forward+ light culling grid must match the scene render target
+        // size: the PBR shader looks up tiles by framebuffer pixel coordinate,
+        // and the HDR attachment is now panel-sized.
+        self.resize_light_culling(width, height);
+    }
+
     fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
         self.create_skeleton_impl(joint_count)
     }

@@ -231,6 +231,15 @@ pub trait GpuRenderer: Sized + 'static {
     /// Recreate swapchain after resize. Returns updated texture names and slots.
     fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError>;
 
+    /// Recreate the 3D-scene render targets (depth, HDR, picking) at the given
+    /// size, independent of the swapchain. Under the editor the scene is
+    /// composed for the viewport panel's aspect ratio, so its render targets
+    /// must be sized to the panel — not the window — to avoid stretching the
+    /// scene across the full drawable and then cropping. Backends whose scene
+    /// targets are frame-graph transients (and thus sized via the frame graph)
+    /// can leave this as a no-op.
+    fn recreate_scene_render_targets(&mut self, _width: u32, _height: u32) {}
+
     // ========================================================================
     // Lighting
     // ========================================================================

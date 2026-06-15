@@ -160,6 +160,77 @@ impl Application {
     ) {
         (draw_list.clone(), None)
     }
+
+    /// Recreate the 3D-scene render targets (depth, HDR, tonemap-output, picking)
+    /// at the current viewport panel size. The scene is composed for the panel's
+    /// aspect ratio, so its render targets must be panel-sized — not swapchain-
+    /// sized — or the scene gets stretched across the full drawable and the
+    /// post-tonemap blit crops the wrong slice. No-op when the panel size hasn't
+    /// changed since the last call (or is still zero before the first layout).
+    pub(crate) fn recreate_panel_rt_resources(&mut self) {
+        #[cfg(feature = "editor")]
+        {
+            let vp = self.editor.editor_ui.last_viewport_bounds;
+            let sf = self.scale_factor;
+            let w = (vp.width() * sf) as u32;
+            let h = (vp.height() * sf) as u32;
+            if w == 0 || h == 0 {
+                return;
+            }
+            let new_size = katla_gfx::Size2D::new(w, h);
+            if new_size == self.panel_rt_size {
+                return;
+            }
+            self.panel_rt_size = new_size;
+            log::debug!(
+                "Recreating panel-sized render targets at {}x{} (panel {}x{} @ {}x)",
+                w,
+                h,
+                vp.width(),
+                vp.height(),
+                sf
+            );
+
+            if let Err(e) = self.renderer.wait_for_frame() {
+                log::error!("Failed to wait for GPU before panel RT resize: {}", e);
+            }
+            self.renderer.recreate_scene_render_targets(w, h);
+
+            if let Ok(textures) =
+                self.frame_graph
+                    .recreate_transient_textures(&mut self.renderer, w, h)
+            {
+                for (name, slot) in &textures {
+                    if name == "hdr_color" {
+                        self.frame_graph
+                            .set_tonemap_texture_index(self.pass_ids.tonemap, *slot)
+                            .ok();
+                    } else if name == "viewport_0" {
+                        self.on_viewport_texture_recreated(*slot);
+                        self.renderer.set_viewport_bindless_slot(*slot);
+                    }
+                }
+
+                #[cfg(target_os = "macos")]
+                {
+                    if let Some(view) = self.frame_graph.transient_image_view_metal("hdr_color", 0)
+                    {
+                        let hdr_transient_slot = self
+                            .frame_graph
+                            .transient_texture_metal("hdr_color", 0)
+                            .and_then(|t| t.bindless_slot)
+                            .unwrap_or(0);
+                        self.renderer
+                            .set_geometry_hdr_view(view, hdr_transient_slot);
+                    }
+                    if let Some(view) = self.frame_graph.transient_image_view_metal("viewport_0", 0)
+                    {
+                        self.renderer.set_tonemap_output_view(view);
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -182,6 +253,10 @@ impl Application {
             self.recreate_swapchain_resources();
             info!("=== Resize complete ===");
         }
+
+        // Size the 3D-scene render targets to the viewport panel (after UI
+        // layout populated the bounds). No-op when unchanged.
+        self.recreate_panel_rt_resources();
 
         // Note: viewport bindless index is updated BEFORE generate_ui_draw_list()
         // in the RedrawRequested handler to ensure the UI samples from the
@@ -235,9 +310,16 @@ impl Application {
         // Tile grid dimensions for Forward+ light culling.
         // Must match the render target (swapchain) size, NOT the editor viewport panel size,
         // because clip_position in the fragment shader covers the full render target.
-        let extent = self.renderer.swapchain_extent();
-        let tiles_x = extent.width.div_ceil(16);
-        let tiles_y = extent.height.div_ceil(16);
+        // Tile grid must match the panel-sized scene render targets (set in
+        // recreate_panel_rt_resources). Fall back to the swapchain extent before
+        // the first layout runs.
+        let scene_extent = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+            self.panel_rt_size
+        } else {
+            self.renderer.swapchain_extent()
+        };
+        let tiles_x = scene_extent.width.div_ceil(16);
+        let tiles_y = scene_extent.height.div_ceil(16);
 
         let frame_uniforms = FrameUniforms {
             view_matrix: view_mat.to_array(),
@@ -921,9 +1003,16 @@ impl Application {
                 .unwrap_or_else(Mat4::identity)
         };
 
-        let extent = self.renderer.swapchain_extent();
-        let tiles_x = extent.width.div_ceil(16);
-        let tiles_y = extent.height.div_ceil(16);
+        // Tile grid must match the panel-sized scene render targets (set in
+        // recreate_panel_rt_resources). Fall back to the swapchain extent before
+        // the first layout runs.
+        let scene_extent = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+            self.panel_rt_size
+        } else {
+            self.renderer.swapchain_extent()
+        };
+        let tiles_x = scene_extent.width.div_ceil(16);
+        let tiles_y = scene_extent.height.div_ceil(16);
 
         let frame_uniforms = FrameUniforms {
             view_matrix: view_mat.to_array(),
