@@ -216,8 +216,10 @@ impl MetalRenderer {
             })?;
             let frame_buf = self.current_frame_uniform_buffer().unwrap();
             let object_buf = self.current_object_storage_buffer().unwrap();
-            let w = self.drawable_size.width;
-            let h = self.drawable_size.height;
+            // Scene render targets are panel-sized, so the outline viewport must
+            // match the panel — not the drawable.
+            let w = vp_w as u32;
+            let h = vp_h as u32;
 
             if let Some(stencil_pipeline) = self.outline.stencil_mark_pipeline() {
                 super::outline::render_stencil_mark(
@@ -269,8 +271,9 @@ impl MetalRenderer {
         {
             let frame_buf = self.current_frame_uniform_buffer().unwrap();
             let object_buf = self.current_object_storage_buffer().unwrap();
-            let w = self.drawable_size.width;
-            let h = self.drawable_size.height;
+            // Picking texture is panel-sized, so use the panel dimensions.
+            let w = vp_w as u32;
+            let h = vp_h as u32;
 
             super::picking::render_object_id_pass(
                 &mut cmd_buffer,

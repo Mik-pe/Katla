@@ -2,9 +2,6 @@
 use log::info;
 
 #[cfg(feature = "editor")]
-use katla_gfx::GpuRenderer;
-
-#[cfg(feature = "editor")]
 use crate::application::Application;
 
 #[cfg(feature = "editor")]
@@ -59,25 +56,28 @@ impl Application {
             let vp = &self.editor.editor_ui.last_viewport_bounds;
             let panel_width = vp.width().max(1.0);
             let panel_height = vp.height().max(1.0);
-            let extent = self.renderer.swapchain_extent();
-            let physical_x = ((rel_x / panel_width) * extent.width as f32) as u32;
-            let mut physical_y = ((rel_y / panel_height) * extent.height as f32) as u32;
+            // The picking texture is panel-sized (matches the scene render
+            // targets), so map panel-local coords into panel-physical pixels.
+            let pick_w = self.panel_rt_size.width.max(1);
+            let pick_h = self.panel_rt_size.height.max(1);
+            let physical_x = ((rel_x / panel_width) * pick_w as f32) as u32;
+            let mut physical_y = ((rel_y / panel_height) * pick_h as f32) as u32;
 
             // Metal's viewport maps clip Y = +1 → pixel Y = 0 (top), which inverts Y
             // compared to the tonemapped display. Flip the readback Y so that
             // screen-top (rel_y=0) reads the pixel corresponding to what the user sees.
             #[cfg(target_os = "macos")]
             if matches!(self.renderer, katla_gfx::AnyRenderer::Metal(_)) {
-                physical_y = extent.height.saturating_sub(1 + physical_y);
+                physical_y = pick_h.saturating_sub(1 + physical_y);
             }
 
-            if physical_x >= extent.width || physical_y >= extent.height {
+            if physical_x >= pick_w || physical_y >= pick_h {
                 log::debug!(
                     "Picking coords ({}, {}) out of render target bounds ({}x{}), skipping",
                     physical_x,
                     physical_y,
-                    extent.width,
-                    extent.height
+                    pick_w,
+                    pick_h
                 );
                 return;
             }

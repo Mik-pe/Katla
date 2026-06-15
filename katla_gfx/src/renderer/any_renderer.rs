@@ -484,6 +484,14 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn recreate_scene_render_targets(&mut self, width: u32, height: u32) {
+        match self {
+            AnyRenderer::Vulkan(r) => r.recreate_scene_render_targets(width, height),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.recreate_scene_render_targets(width, height),
+        }
+    }
+
     fn upload_lights(&mut self, lights: &[PointLightGPU]) {
         match self {
             AnyRenderer::Vulkan(r) => r.upload_lights(lights),

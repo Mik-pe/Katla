@@ -161,6 +161,10 @@ impl Application {
             );
             self.renderer.set_viewport_panel_rect(Some(phys_rect));
 
+            // Size the 3D-scene render targets to the panel (done after UI
+            // layout populated the panel bounds and before rendering).
+            self.recreate_panel_rt_resources();
+
             log::debug!("Rendering frame (Metal)...");
             self.render_frame(ui_draw_list, dt, self.frame_count);
             self.editor.editor_ui.last_draw_call_count = self.last_draw_call_count;

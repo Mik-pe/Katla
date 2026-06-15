@@ -955,6 +955,7 @@ impl ApplicationBuilder {
             audio_system: None,
             minimized: false,
             needs_swapchain_recreate: false,
+            panel_rt_size: katla_gfx::Size2D::new(0, 0),
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),
@@ -1325,6 +1326,7 @@ impl ApplicationBuilder {
             audio_system: None,
             minimized: false,
             needs_swapchain_recreate: false,
+            panel_rt_size: katla_gfx::Size2D::new(0, 0),
             gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker::new(
                 katla_gfx::MaterialHandle::NONE,
             ),

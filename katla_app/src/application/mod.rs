@@ -365,6 +365,12 @@ pub struct Application {
     pub(crate) minimized: bool,
     /// Whether the swapchain needs recreation (set when acquire/present returns out-of-date).
     pub(crate) needs_swapchain_recreate: bool,
+    /// Current 3D-scene render target size in physical pixels. The HDR, depth,
+    /// tonemap-output, and picking textures are sized to this (the viewport panel
+    /// size under the editor, or the swapchain extent otherwise) so the scene —
+    /// composed for the panel aspect ratio — fills the target exactly and the
+    /// post-tonemap blit into the drawable is a clean 1:1 copy.
+    pub(crate) panel_rt_size: katla_gfx::Size2D,
     /// Tracks GPU resource reference counts for automatic cleanup on entity/component destruction.
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
     /// CPU-side geometry data cache keyed by MeshHandle for collider generation etc.
