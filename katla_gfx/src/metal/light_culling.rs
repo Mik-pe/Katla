@@ -121,7 +121,7 @@ impl MetalLightCulling {
 
         // Compile the light culling compute shader
         let shader_rel = "lighting/light_cull.wgsl";
-        let wgsl_source = find_and_read_shader(shader_rel)?;
+        let wgsl_source = super::metal_renderer::read_shader(shader_rel)?;
 
         let compiled = shader::compile_wgsl_to_metal(
             &context.device,
@@ -348,81 +348,6 @@ impl MetalLightCulling {
 
         Ok(())
     }
-}
-
-/// Find and read a shader file by probing common relative paths.
-///
-/// Shader files live at `resources/shaders/` in the workspace root, but the
-/// CWD at runtime varies (workspace root, crate dir, etc.). This helper tries
-/// multiple relative locations, resolves `#include` directives, and returns
-/// the fully expanded source.
-fn find_and_read_shader(rel_path: &str) -> Result<String, RendererError> {
-    let candidates: Vec<std::path::PathBuf> = [
-        format!("resources/shaders/{rel_path}"),
-        format!("../resources/shaders/{rel_path}"),
-        format!("../../resources/shaders/{rel_path}"),
-    ]
-    .iter()
-    .map(std::path::PathBuf::from)
-    .collect();
-
-    for path in &candidates {
-        if path.exists() {
-            let raw = std::fs::read_to_string(path).map_err(|e| {
-                RendererError::InvalidOperation(format!(
-                    "Failed to read shader '{}': {}",
-                    path.display(),
-                    e
-                ))
-            })?;
-            let resolved = resolve_wgsl_includes(&raw, path)?;
-            return Ok(resolved);
-        }
-    }
-
-    Err(RendererError::InvalidOperation(format!(
-        "Failed to find shader '{}': tried {:?}",
-        rel_path,
-        candidates.iter().map(|p| p.display()).collect::<Vec<_>>()
-    )))
-}
-
-/// Recursively resolve `#include "..."` directives in WGSL source.
-fn resolve_wgsl_includes(
-    source: &str,
-    file_path: &std::path::Path,
-) -> Result<String, RendererError> {
-    let mut result = String::new();
-    let base_dir = file_path.parent().unwrap_or(std::path::Path::new("."));
-
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if let Some(path_str) = trimmed
-            .strip_prefix("//include ")
-            .or_else(|| trimmed.strip_prefix("#include "))
-        {
-            let path_str = path_str.trim();
-            let include_rel = path_str
-                .strip_prefix('"')
-                .and_then(|s| s.strip_suffix('"'))
-                .unwrap_or(path_str);
-            let include_path = base_dir.join(include_rel);
-            let include_source = std::fs::read_to_string(&include_path).map_err(|e| {
-                RendererError::InvalidOperation(format!(
-                    "Failed to read include '{}': {}",
-                    include_path.display(),
-                    e
-                ))
-            })?;
-            let expanded = resolve_wgsl_includes(&include_source, &include_path)?;
-            result.push_str(&expanded);
-        } else {
-            result.push_str(line);
-        }
-        result.push('\n');
-    }
-
-    Ok(result)
 }
 
 #[cfg(test)]

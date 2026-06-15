@@ -502,7 +502,6 @@ mod tests {
         let physics = world.get_resource::<PhysicsWorld>().unwrap();
         assert_eq!(physics.collider_count(), 1);
 
-        drop(physics);
         world.destroy_entity(entity);
         system.update(&mut world, 1.0 / 60.0);
 
@@ -613,11 +612,10 @@ mod tests {
 
         let rb = world.get_component::<RigidBody>(entity).unwrap();
         assert!(rb.is_spawned());
-        drop(rb);
 
         let new_pos = Vec3::new(5.0, 10.0, 3.0);
         {
-            let mut tc = world
+            let tc = world
                 .get_component_mut::<TransformComponent>(entity)
                 .unwrap();
             tc.transform = Transform::new_from_position(new_pos);
@@ -654,10 +652,9 @@ mod tests {
 
         let rb = world.get_component::<RigidBody>(entity).unwrap();
         let body_handle = rb.body_handle.unwrap();
-        drop(rb);
 
         {
-            let mut physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
+            let physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
             physics.apply_force(body_handle, Vec3::new(0.0, 1000.0, 0.0));
         }
 
@@ -697,10 +694,9 @@ mod tests {
 
         let rb = world.get_component::<RigidBody>(entity).unwrap();
         let body_handle = rb.body_handle.unwrap();
-        drop(rb);
 
         {
-            let mut physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
+            let physics = world.get_resource_mut::<PhysicsWorld>().unwrap();
             physics.apply_impulse(body_handle, Vec3::new(0.0, 10.0, 0.0));
         }
 
@@ -745,7 +741,6 @@ mod tests {
 
         let physics = world.get_resource::<PhysicsWorld>().unwrap();
         assert_eq!(physics.collider_count(), count);
-        drop(physics);
 
         for _ in 0..60 {
             system.update(&mut world, 1.0 / 60.0);
@@ -794,7 +789,6 @@ mod tests {
 
         let joint = world.get_component::<Joint>(entity_b).unwrap();
         assert!(joint.is_spawned());
-        drop(joint);
 
         world.destroy_entity(entity_a);
         system.update(&mut world, 1.0 / 60.0);

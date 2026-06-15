@@ -134,8 +134,8 @@ mod tests {
 
     #[test]
     fn test_classify_shader() {
-        let watcher = AssetWatcher::new(&[]).unwrap();
-        let path = PathBuf::from("/some/project/resources/shaders/pbr.wgsl");
+        let _watcher = AssetWatcher::new(&[]).unwrap();
+        let _path = PathBuf::from("/some/project/resources/shaders/pbr.wgsl");
         // Can't test classification without matching watched_dirs prefix,
         // but the basic structure compiles.
         assert!(SHADER_EXTENSIONS.contains(&"wgsl"));
