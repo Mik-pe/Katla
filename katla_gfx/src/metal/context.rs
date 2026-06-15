@@ -1,15 +1,12 @@
-#![allow(unused_imports)]
-
 use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_foundation::NSString;
 use objc2_metal::{
-    MTLCommandBuffer, MTLCommandQueue, MTLCompareFunction, MTLComputePipelineState,
-    MTLCreateSystemDefaultDevice, MTLDepthStencilDescriptor, MTLDepthStencilState, MTLDevice,
-    MTLFunction, MTLGPUFamily, MTLPixelFormat, MTLRenderPipelineDescriptor, MTLRenderPipelineState,
-    MTLResourceOptions, MTLStencilDescriptor, MTLStencilOperation, MTLStorageMode,
-    MTLTextureDescriptor, MTLVertexDescriptor, MTLVertexFormat, MTLVertexStepFunction,
+    MTLCommandQueue, MTLCompareFunction, MTLCreateSystemDefaultDevice, MTLDepthStencilDescriptor,
+    MTLDepthStencilState, MTLDevice, MTLFunction, MTLGPUFamily, MTLPixelFormat,
+    MTLRenderPipelineDescriptor, MTLResourceOptions, MTLStencilDescriptor, MTLStencilOperation,
+    MTLStorageMode, MTLTextureDescriptor, MTLVertexDescriptor, MTLVertexFormat,
+    MTLVertexStepFunction,
 };
 
 use crate::backend::traits::{GpuBackend, GpuContext};
@@ -730,6 +727,7 @@ mod tests {
     use crate::backend::resource::GpuImage;
     use crate::metal::shader;
     use crate::texture::TextureUsage;
+    use objc2_metal::MTLCommandBuffer;
 
     #[test]
     fn test_metal_context_headless() {

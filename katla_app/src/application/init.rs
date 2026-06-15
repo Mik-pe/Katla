@@ -542,6 +542,19 @@ impl Application {
             info!("Shadow pipeline initialized (Metal)");
         }
 
+        // Initialize skinned shadow depth pipeline
+        let shadow_skinned_shader_path = self
+            .resources
+            .shader_path("shadow/shadow_depth_skinned.wgsl");
+        if let Err(e) = self.renderer.init_pass_pipeline(
+            katla_gfx::PipelineKind::ShadowSkinned,
+            &[&shadow_skinned_shader_path],
+        ) {
+            warn!("Failed to initialize Metal skinned shadow pipeline: {}", e);
+        } else {
+            info!("Skinned shadow pipeline initialized (Metal)");
+        }
+
         // Initialize GPU animation compute pipeline
         let anim_shader_path = self
             .resources
@@ -598,6 +611,35 @@ impl Application {
             warn!("Failed to initialize Metal depth prepass pipeline: {}", e);
         } else {
             info!("Depth prepass pipeline initialized (Metal)");
+        }
+
+        // Initialize skinned depth prepass pipeline
+        let depth_prepass_skinned_shader_path =
+            self.resources.shader_path("depth_prepass_skinned.wgsl");
+        if let Err(e) = self.renderer.init_pass_pipeline(
+            katla_gfx::PipelineKind::DepthPrepassSkinned,
+            &[&depth_prepass_skinned_shader_path],
+        ) {
+            warn!(
+                "Failed to initialize Metal skinned depth prepass pipeline: {}",
+                e
+            );
+        } else {
+            info!("Skinned depth prepass pipeline initialized (Metal)");
+        }
+
+        // Initialize billboard depth prepass pipeline
+        let billboard_depth_shader_path = self.resources.shader_path("billboard_depth.wgsl");
+        if let Err(e) = self.renderer.init_pass_pipeline(
+            katla_gfx::PipelineKind::DepthPrepassBillboard,
+            &[&billboard_depth_shader_path],
+        ) {
+            warn!(
+                "Failed to initialize Metal billboard depth prepass pipeline: {}",
+                e
+            );
+        } else {
+            info!("Billboard depth prepass pipeline initialized (Metal)");
         }
 
         // Initialize outline pipelines for stencil-based selection highlight

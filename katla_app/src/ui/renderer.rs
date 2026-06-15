@@ -747,7 +747,7 @@ mod tests {
     #[test]
     fn test_bindless_texture_id_decoding() {
         // Test that bindless texture IDs (with high bit set) are correctly decoded
-        let mut renderer = UIRenderer::new();
+        let renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
@@ -767,7 +767,7 @@ mod tests {
     #[test]
     fn test_bindless_texture_id_preserves_index() {
         // Test that different bindless indices are preserved correctly
-        let mut renderer = UIRenderer::new();
+        let renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
@@ -806,7 +806,7 @@ mod tests {
     #[test]
     fn test_texture_id_none_returns_white_texture_slot() {
         // Test that TextureId::NONE uses white texture slot for solid color rendering
-        let mut renderer = UIRenderer::new();
+        let renderer = UIRenderer::new();
 
         // White texture is at slot 0 by default
         let none_index = renderer.texture_id_to_bindless_index(TextureId::NONE);
@@ -836,7 +836,7 @@ mod tests {
     #[test]
     fn test_viewport_bindless_texture_mapping() {
         // Test viewport bindless texture IDs are correctly mapped
-        let mut renderer = UIRenderer::new();
+        let renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
@@ -856,7 +856,7 @@ mod tests {
     #[test]
     fn test_multi_viewport_bindless_indices() {
         // Test that multiple viewports can have different bindless indices
-        let mut renderer = UIRenderer::new();
+        let renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 
@@ -878,7 +878,7 @@ mod tests {
     #[test]
     fn test_bindless_flag_detection() {
         // Test that the high bit correctly identifies bindless textures
-        let mut renderer = UIRenderer::new();
+        let renderer = UIRenderer::new();
 
         const BINDLESS_FLAG: u64 = 1 << 63;
 

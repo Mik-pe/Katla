@@ -479,8 +479,8 @@ pub(crate) fn compile_wgsl_to_metal(
         profile
     );
 
-    // Always dump MSL to /tmp for debugging Metal rendering issues
-    {
+    // Dump MSL to /tmp when debug logging is enabled
+    if log::log_enabled!(log::Level::Debug) {
         let debug_name = entry_points.first().unwrap_or(&"");
         let _ = std::fs::write(
             format!("/tmp/katla_msl_{debug_name}_{}.metal", msl_source.len()),

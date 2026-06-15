@@ -556,7 +556,7 @@ impl MetalRenderer {
                 self.pending_shadow_draw_list = Some(combined);
             }
         } else {
-            log::warn!("METAL execute_metal_passes: shadow pass NOT found in pending data");
+            log::debug!("METAL execute_metal_passes: shadow pass NOT found in pending data");
         }
 
         // Extract depth prepass draw list
@@ -573,7 +573,7 @@ impl MetalRenderer {
                 self.pending_draw_list = Some(combined);
             }
         } else {
-            log::warn!("METAL execute_metal_passes: depth_prepass pass NOT found in pending data");
+            log::debug!("METAL execute_metal_passes: depth_prepass pass NOT found in pending data");
         }
 
         // Extract geometry draw list
@@ -590,7 +590,7 @@ impl MetalRenderer {
                 self.pending_draw_list = Some(combined);
             }
         } else {
-            log::warn!("METAL execute_metal_passes: geometry pass NOT found in pending data");
+            log::debug!("METAL execute_metal_passes: geometry pass NOT found in pending data");
         }
 
         // Extract outline draw list
@@ -617,7 +617,7 @@ impl MetalRenderer {
             );
             self.pending_ui_draw_list = Some(ui_list.clone());
         } else {
-            log::warn!("METAL execute_metal_passes: ui pass NOT found in pending data (or empty)");
+            log::debug!("METAL execute_metal_passes: ui pass NOT found in pending data (or empty)");
         }
 
         log::debug!(
@@ -1014,6 +1014,7 @@ impl GpuRenderer for MetalRenderer {
         }
 
         let object_buf = self.current_object_storage_buffer().unwrap();
+        let buf_size = object_buf.size() as usize;
         let ptr = object_buf.map();
 
         for draw in &draw_list.draws {
@@ -1022,8 +1023,15 @@ impl GpuRenderer for MetalRenderer {
                 None => continue,
             };
 
-            let offset = draw.instance_index as u64 * OBJECT_UNIFORM_SIZE;
-            let dst = unsafe { ptr.add(offset as usize) };
+            let offset = draw.instance_index as usize * OBJECT_UNIFORM_SIZE as usize;
+            if offset + OBJECT_UNIFORM_SIZE as usize > buf_size {
+                log::warn!(
+                    "Draw call instance_index {} exceeds object storage buffer capacity, skipping",
+                    draw.instance_index
+                );
+                continue;
+            }
+            let dst = unsafe { ptr.add(offset) };
 
             let material_params = draw.material_params();
 

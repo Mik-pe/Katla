@@ -97,11 +97,28 @@ impl Build for ConsoleView {
         .padding(Padding::all(4.0))
         .boxed();
 
-        // Build log entries
+        // Build log entries, filtered by active level toggles and search text
+        let search_lower = draw_ctx.search_filter.to_lowercase();
+        let level_index = |level: log::Level| -> usize {
+            match level {
+                log::Level::Error => 0,
+                log::Level::Warn => 1,
+                log::Level::Info => 2,
+                log::Level::Debug => 3,
+                log::Level::Trace => 4,
+            }
+        };
+
         let log_entries = {
             let mut entries = Vec::new();
             if let Ok(buf) = draw_ctx.log_buffer.lock() {
-                for entry in buf.entries() {
+                for entry in buf
+                    .entries()
+                    .filter(|e| draw_ctx.filter_levels[level_index(e.level)])
+                    .filter(|e| {
+                        search_lower.is_empty() || e.message.to_lowercase().contains(&search_lower)
+                    })
+                {
                     let level_color = match entry.level {
                         log::Level::Error => draw_ctx.theme.error,
                         log::Level::Warn => draw_ctx.theme.warning,

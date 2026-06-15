@@ -32,10 +32,11 @@ impl MetalRenderer {
         let Some(buffer) = self.skeletons.get_mut(handle.index()) else {
             return;
         };
+        let max_matrices = (buffer.size() / 64) as usize;
+        let count = matrices.len().min(max_matrices);
         let ptr = buffer.map();
-        let matrices_bytes = unsafe {
-            std::slice::from_raw_parts(matrices.as_ptr() as *const u8, matrices.len() * 64)
-        };
+        let matrices_bytes =
+            unsafe { std::slice::from_raw_parts(matrices.as_ptr() as *const u8, count * 64) };
         unsafe {
             std::ptr::copy_nonoverlapping(matrices_bytes.as_ptr(), ptr, matrices_bytes.len());
         }

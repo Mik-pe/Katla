@@ -13,7 +13,7 @@ impl MetalRenderer {
         height: u32,
         data: &[u8],
     ) -> TextureHandle {
-        log::warn!(
+        log::debug!(
             "METAL create_ui_font_atlas: {}x{}, {} bytes, current_font_atlas={:?}",
             width,
             height,
@@ -28,7 +28,7 @@ impl MetalRenderer {
         let desc = TextureDescriptor::new(width, height, ImageFormat::R8G8B8A8Srgb);
         let handle = GpuRenderer::create_texture(self, &desc, data);
         let slot = self.get_bindless_slot(handle);
-        log::warn!(
+        log::debug!(
             "METAL create_ui_font_atlas: created texture handle idx={}, bindless_slot={:?}",
             handle.index(),
             slot,

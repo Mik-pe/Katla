@@ -203,8 +203,6 @@ impl MetalUIRenderer {
         let quad_vb_data = bytemuck::cast_slice(&UNIT_QUAD_VERTICES);
         let quad_ib_data = bytemuck::cast_slice(&UNIT_QUAD_INDICES);
 
-        self.ensure_instance_buffer(context, quad_vb_data.len() as u64)?;
-        // Reuse instance buffer capacity check for unit quad buffers
         if self.unit_quad_vertex_buffer.is_none() {
             self.unit_quad_vertex_buffer = Some(context.create_buffer(256, true)?);
             self.unit_quad_index_buffer = Some(context.create_buffer(256, true)?);
