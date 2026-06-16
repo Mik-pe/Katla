@@ -55,7 +55,7 @@ The 3D scene is composed for the editor's viewport panel's aspect ratio (the cam
 
 `set_viewport_panel_rect()` (called each frame before render) passes the panel rect in physical pixels. The Metal renderer:
 - Clears the drawable to Catppuccin Mocha base color (24/255, 24/255, 37/255, 1.0)
-- Blits the whole panel-sized tonemap output (1:1 copy) to the panel rect of the drawable
+- Tonemaps the panel-sized HDR **directly into the drawable**, constrained to the panel rect via `set_viewport` + `set_scissor` (Metal viewport originY is bottom-up, so it's converted from the top-down panel rect). No separate viewport_0 intermediate or blit — rendering to a panel-sized intermediate and blitting caused a vertical duplication of the scene.
 
 When `viewport_panel_rect` is None, behavior is identical to full-screen rendering (panel size == swapchain extent).
 

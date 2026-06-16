@@ -5,9 +5,7 @@
 
 use std::mem;
 
-use objc2_metal::{
-    MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLRenderCommandEncoder,
-};
+use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLRenderCommandEncoder};
 
 use crate::backend::command::{
     ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
@@ -314,22 +312,45 @@ impl MetalRenderer {
                 }
             }
 
-            // Write tonemapped output to viewport_0 LDR texture (for UI compositing),
-            // or fall back to the drawable if no viewport texture is available.
-            let tonemap_writes_to_drawable = self.tonemap_output_view.is_none();
-            if tonemap_writes_to_drawable {
-                drawable_written = true;
+            // Clear the entire drawable to panel background color before the tonemap
+            // pass loads it and renders the 3D scene into the viewport panel rect.
+            {
+                let clear_desc = objc2_metal::MTLRenderPassDescriptor::new();
+                let color_attach =
+                    unsafe { clear_desc.colorAttachments().objectAtIndexedSubscript(0) };
+                color_attach.setTexture(Some(&drawable_view.inner));
+                color_attach.setLoadAction(objc2_metal::MTLLoadAction::Clear);
+                color_attach.setStoreAction(objc2_metal::MTLStoreAction::Store);
+                color_attach.setClearColor(objc2_metal::MTLClearColor {
+                    red: CANVAS_CLEAR_COLOR.0,
+                    green: CANVAS_CLEAR_COLOR.1,
+                    blue: CANVAS_CLEAR_COLOR.2,
+                    alpha: CANVAS_CLEAR_COLOR.3,
+                });
+                let clear_encoder = cmd_buffer
+                    .inner
+                    .renderCommandEncoderWithDescriptor(&clear_desc)
+                    .expect("Failed to create clear encoder");
+                let label = objc2_foundation::NSString::from_str("clear_drawable");
+                clear_encoder.setLabel(Some(&label));
+                clear_encoder.endEncoding();
             }
-            let tonemap_target = self
-                .tonemap_output_view
-                .as_ref()
-                .unwrap_or(&drawable_view)
-                .clone();
+
+            // Tonemap renders directly into the drawable, constrained to the
+            // Tonemap renders directly into the drawable, constrained to the
+            // viewport panel rect. Rendering to a separate panel-sized
+            // intermediate (viewport_0) and blitting produced a vertical
+            // duplication of the scene, so we render in place instead.
+            drawable_written = true;
+            let tonemap_target = drawable_view.clone();
+            // Metal viewport originY is measured from the bottom of the
+            // attachment; the panel rect uses top-down coordinates.
+            let mtl_vp_y = height - (vp_y + vp_h);
 
             let tonemap_pass_info = RenderPassInfo {
                 color_attachments: vec![ColorAttachmentInfo {
                     view: tonemap_target,
-                    load_op: LoadOp::Clear,
+                    load_op: LoadOp::Load,
                     store_op: StoreOp::Store,
                     clear_value: ClearValue::OPAQUE_BLACK,
                 }],
@@ -337,6 +358,8 @@ impl MetalRenderer {
             };
 
             let mut encoder = cmd_buffer.begin_render_pass(tonemap_pass_info);
+            encoder.set_viewport(vp_x, mtl_vp_y, vp_w, vp_h, 0.0, 1.0);
+            encoder.set_scissor(vp_x as u32, mtl_vp_y as u32, vp_w as u32, vp_h as u32);
 
             if let Some(frame_buf) = self.current_frame_uniform_buffer() {
                 encoder.bind_storage_buffer(frame_buf, 0, 0, ShaderStages::VERTEX_FRAGMENT);
@@ -394,77 +417,6 @@ impl MetalRenderer {
             }
 
             encoder.end_encoding();
-        }
-
-        // Blit the tonemapped viewport_0 texture into the drawable so the
-        // 3D scene is visible underneath the UI overlay.
-        let mut _scene_blitted_to_drawable = false;
-        if let Some(ref tonemap_view) = self.tonemap_output_view {
-            if let Some(ref fence) = self.tonemap_fence {
-                // Wait for tonemap to finish before reading its output.
-                let blit = cmd_buffer.inner.blitCommandEncoder();
-                if let Some(b) = blit {
-                    b.waitForFence(fence);
-                    b.endEncoding();
-                }
-            }
-
-            // Clear the entire drawable to panel background color before blitting
-            // the 3D scene into the viewport rect area.
-            {
-                let clear_desc = objc2_metal::MTLRenderPassDescriptor::new();
-                let color_attach =
-                    unsafe { clear_desc.colorAttachments().objectAtIndexedSubscript(0) };
-                color_attach.setTexture(Some(&drawable_view.inner));
-                color_attach.setLoadAction(objc2_metal::MTLLoadAction::Clear);
-                color_attach.setStoreAction(objc2_metal::MTLStoreAction::Store);
-                color_attach.setClearColor(objc2_metal::MTLClearColor {
-                    red: CANVAS_CLEAR_COLOR.0,
-                    green: CANVAS_CLEAR_COLOR.1,
-                    blue: CANVAS_CLEAR_COLOR.2,
-                    alpha: CANVAS_CLEAR_COLOR.3,
-                });
-                let clear_encoder = cmd_buffer
-                    .inner
-                    .renderCommandEncoderWithDescriptor(&clear_desc)
-                    .expect("Failed to create clear encoder");
-                let label = objc2_foundation::NSString::from_str("clear_drawable");
-                clear_encoder.setLabel(Some(&label));
-                clear_encoder.endEncoding();
-            }
-
-            // Copy viewport_0 (LDR tonemapped scene) → drawable texture.
-            let src = &tonemap_view.inner;
-            let dst = &drawable_view.inner;
-            let blit_w = vp_w as usize;
-            let blit_h = vp_h as usize;
-            let dst_x = vp_x as usize;
-            let dst_y = vp_y as usize;
-            if blit_w > 0 && blit_h > 0 {
-                let blit = cmd_buffer.inner.blitCommandEncoder();
-                if let Some(b) = blit {
-                    unsafe {
-                        b.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
-                            src,
-                            0,
-                            0,
-                            objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                            objc2_metal::MTLSize {
-                                width: blit_w,
-                                height: blit_h,
-                                depth: 1,
-                            },
-                            dst,
-                            0,
-                            0,
-                            objc2_metal::MTLOrigin { x: dst_x, y: dst_y, z: 0 },
-                        );
-                    }
-                    b.endEncoding();
-                    _scene_blitted_to_drawable = true;
-                    drawable_written = true;
-                }
-            }
         }
 
         // =========================================================================
