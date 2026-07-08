@@ -24,6 +24,7 @@ Active design documents and API references:
 | `declarative_ui_design.md` | Declarative UI system architecture |
 | `katla_script_architecture.md` | Luau scripting system design |
 | `physics-engine-adr.md` | ADR: Why Rapier3D was chosen |
+| `character-controller-design.md` | ECS-facing character controller architecture and implementation plan |
 
 ## Archive (`archive/`)
 
