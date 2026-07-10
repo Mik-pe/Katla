@@ -113,6 +113,8 @@ Rendering: `DrawList` of `InstanceData` (GPU-instanced quads, 56 bytes each) + `
 
 Editor dock panels are all built in a stable order because their current state hooks are positional within the root `BuildContext`. `EditorOverlayView` only mounts the active tab from each `DockTree` leaf into the ZStack; building an inactive tab preserves its state slots, while leaving it unmounted prevents stale environment data from drawing or receiving input.
 
+`DockSpace` is the sole owner of tab and splitter interaction. It remains non-interactive in normal hit testing so panel content is not blocked, and receives chrome/drag events through the declarative global-input pass. Dock actions are applied by the editor after `ViewTree::frame()`. Splitter ratios are local to each split node's bounds, and tab move actions retain the exact dragged tab identity.
+
 ## Physics (katla_physics)
 
 Rapier3D wrapper. `PhysicsWorld` owns all Rapier state. ECS components: `RigidBody`, `ColliderShape` (Sphere/Box/Capsule/Trimesh/ConvexHull/Heightfield), `CollisionFilter` (layers+mask bitfields). `PhysicsActive(bool)` resource gates simulation behind play mode.
