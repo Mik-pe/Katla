@@ -52,16 +52,24 @@ impl Build for ConsoleView {
             button, empty, hstack, panel, scroll, text, textfield, vstack,
         };
 
+        let draw_ctx = ctx.env::<ConsoleDrawCtx>().cloned();
+        let initial_search = draw_ctx
+            .as_ref()
+            .map(|draw_ctx| draw_ctx.search_filter.clone())
+            .unwrap_or_default();
+
         // Always reserve state slots in the same order regardless of whether
         // the env is set, so that subsequent sibling views don't get their
         // StateId slots shifted when this view becomes active/inactive.
-        let search_id: StateId = ctx.state(String::new());
+        let search_id: StateId = ctx.state(initial_search);
         let scroll_id: StateId = ctx.state(0.0f32);
 
-        let draw_ctx = ctx.env::<ConsoleDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
             return empty().boxed();
         };
+        let search_filter: String = ctx
+            .get_state(search_id)
+            .unwrap_or_else(|| draw_ctx.search_filter.clone());
 
         // Build filter level toggles
         const LEVEL_LABELS: [&str; 5] = ["Error", "Warn", "Info", "Debug", "Trace"];
@@ -98,7 +106,7 @@ impl Build for ConsoleView {
         .boxed();
 
         // Build log entries, filtered by active level toggles and search text
-        let search_lower = draw_ctx.search_filter.to_lowercase();
+        let search_lower = search_filter.to_lowercase();
         let level_index = |level: log::Level| -> usize {
             match level {
                 log::Level::Error => 0,
