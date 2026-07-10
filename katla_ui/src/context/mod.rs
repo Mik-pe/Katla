@@ -190,9 +190,9 @@ impl UiContext {
         self.declarative_input_consumed
     }
 
-    /// Set whether the declarative view tree consumed input this frame.
+    /// Record whether a declarative input pass consumed input this frame.
     pub fn set_declarative_input_consumed(&mut self, consumed: bool) {
-        self.declarative_input_consumed = consumed;
+        self.declarative_input_consumed |= consumed;
     }
 
     /// Defer a tooltip for rendering during `end()`.
