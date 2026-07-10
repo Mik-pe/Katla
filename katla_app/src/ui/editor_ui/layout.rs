@@ -1,14 +1,16 @@
 use std::path::PathBuf;
 
 use katla_math::{Rect2D, Vec2, Vec3};
-use katla_ui::{UiContext, declarative::widgets::dock_space::DockAction, mouse_button};
+use katla_ui::declarative::widgets::dock_space::DockAction;
+use katla_ui::dock::{DockError, DockNode, DockPath, DockTree, DockZone};
+use katla_ui::{UiContext, mouse_button};
 
 use super::declarative::{
-    AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleDrawCtx, GizmoDrawCtx,
-    GizmoModeChanged, HierarchyAction, HierarchyDrawCtx, InspectorDrawCtx, MixerDrawCtx,
-    ParticleInspectorDrawCtx, ParticleInspectorPanelSync, PreferencesDrawCtx, PreferencesPanelSync,
-    StatusBarData, ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx, process_asset_actions,
-    process_declarative_actions,
+    AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleAction, ConsoleDrawCtx,
+    GizmoDrawCtx, GizmoModeChanged, HierarchyAction, HierarchyDrawCtx, InspectorDrawCtx,
+    MixerDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync, PreferencesDrawCtx,
+    PreferencesPanelSync, StatusBarData, ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx,
+    process_asset_actions, process_declarative_actions,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI,
@@ -20,6 +22,30 @@ use super::{
 use super::declarative::toolbar::TOOLBAR_HEIGHT;
 
 use super::declarative::STATUS_BAR_HEIGHT;
+
+fn move_dock_tab(
+    tree: &mut DockTree<u64>,
+    from_path: &DockPath,
+    to_path: &DockPath,
+    zone: DockZone,
+    tab: u64,
+) -> Result<(), DockError> {
+    let source = tree.get_mut(from_path).ok_or(DockError::NodeNotFound)?;
+    match source {
+        DockNode::Leaf { tabs, active } => {
+            let position = tabs
+                .iter()
+                .position(|candidate| *candidate == tab)
+                .ok_or(DockError::TabNotFound)?;
+            let selected = tabs.remove(position);
+            tabs.insert(0, selected);
+            *active = 0;
+        }
+        _ => return Err(DockError::NotALeaf),
+    }
+
+    tree.move_tab(from_path, to_path, zone)
+}
 
 impl EditorUI {
     pub(super) fn build(&mut self, ui: &mut UiContext, params: &mut EditorRenderParams) {
@@ -45,7 +71,7 @@ impl EditorUI {
         for (path, content_bounds) in &panel_bounds {
             // Get the active tab for this leaf to identify which panel it is
             if let Some(node) = self.dock_tree.get(path)
-                && let katla_ui::dock::DockNode::Leaf { tabs, active } = node
+                && let DockNode::Leaf { tabs, active } = node
                 && let Some(&panel_id) = tabs.get(*active)
                 && EditorPanel::from_id(panel_id) == Some(EditorPanel::Viewport)
             {
@@ -130,7 +156,7 @@ impl EditorUI {
         // Set docked panel envs using computed bounds
         for (path, content_bounds) in &panel_bounds {
             if let Some(node) = self.dock_tree.get(path)
-                && let katla_ui::dock::DockNode::Leaf { tabs, active } = node
+                && let DockNode::Leaf { tabs, active } = node
                 && let Some(&panel_id) = tabs.get(*active)
             {
                 match EditorPanel::from_id(panel_id) {
@@ -255,18 +281,13 @@ impl EditorUI {
         // ── Sync DockTree to StateArena and run frame ──
         self.sync_dock_state_to_arena();
 
-        // Process DockSpace input (tab clicks, splitter drags) before the
-        // main input pass. The DockSpace widget is non-interactive so it
-        // doesn't block hit-testing for panels underneath.
-        self.process_dockspace_input(ui, mouse_pos, dock_bounds);
-
         let input_consumed =
             self.view_tree
                 .frame(ui, &super::declarative::EditorOverlayView, screen_size);
         ui.set_declarative_input_consumed(input_consumed);
 
         // ── Discover DockSpace state IDs on first frame ──
-        if self.dock_state_id.is_none() {
+        if self.dock_state_id.is_none() || self.drag_state_id.is_none() {
             self.discover_dock_state_ids();
         }
 
@@ -312,6 +333,21 @@ impl EditorUI {
                 HierarchyAction::SelectEntity(id) => {
                     self.selected_entity = Some(id);
                     self.pending_actions.push(EditorAction::SelectEntity(id));
+                }
+            }
+        }
+
+        for action in self.view_tree.actions_mut().drain::<ConsoleAction>() {
+            match action {
+                ConsoleAction::ToggleLevel(index) => {
+                    if let Some(enabled) = self.console_state.filter_levels.get_mut(index) {
+                        *enabled = !*enabled;
+                    }
+                }
+                ConsoleAction::Clear => {
+                    if let Ok(mut buffer) = self.log_buffer.lock() {
+                        buffer.clear();
+                    }
                 }
             }
         }
@@ -393,7 +429,7 @@ impl EditorUI {
             for (path, bounds) in &panel_bounds {
                 if bounds.contains(mouse_pos)
                     && let Some(node) = self.dock_tree.get(path)
-                    && let katla_ui::dock::DockNode::Leaf { tabs, active } = node
+                    && let DockNode::Leaf { tabs, active } = node
                     && let Some(&panel_id) = tabs.get(*active)
                 {
                     self.focused_panel = match EditorPanel::from_id(panel_id) {
@@ -428,124 +464,14 @@ impl EditorUI {
 
         for (_, node) in self.view_tree.iter_nodes() {
             if let Some(ds) = node.widget.as_any().downcast_ref::<DockSpace<u64>>() {
-                self.dock_state_id = Some(ds.dock_state_id);
-                self.drag_state_id = Some(ds.drag_state_id);
+                if self.dock_state_id.is_none() {
+                    self.dock_state_id = Some(ds.dock_state_id);
+                }
+                if self.drag_state_id.is_none() {
+                    self.drag_state_id = Some(ds.drag_state_id);
+                }
                 break;
             }
-        }
-    }
-
-    /// Process DockSpace chrome input (tab clicks, splitter drags) directly,
-    /// since the DockSpace widget is non-interactive to avoid blocking panel input.
-    fn process_dockspace_input(
-        &mut self,
-        ui: &mut UiContext,
-        mouse_pos: Vec2,
-        dock_bounds: Rect2D,
-    ) {
-        use katla_ui::declarative::widgets::dock_space::{compute_leaf_info, compute_split_info};
-        use katla_ui::dock::DockNode;
-
-        if matches!(self.dock_tree.root(), DockNode::Empty) {
-            return;
-        }
-
-        let clicked = ui.mouse_clicked(mouse_button::LEFT);
-        let mouse_down = ui.input().mouse_down[mouse_button::LEFT];
-
-        // Check splitter handle drag
-        let splitter_width = 4.0_f32;
-        let splits = compute_split_info(self.dock_tree.root(), dock_bounds, splitter_width);
-        for split in &splits {
-            if split.handle_rect.contains(mouse_pos) {
-                if clicked {
-                    // Start splitter drag via drag state
-                    if let Some(drag_id) = self.drag_state_id {
-                        use katla_ui::declarative::widgets::dock_space::DockDragState;
-                        let mut drag: DockDragState<u64> = self
-                            .view_tree
-                            .state_arena()
-                            .get(drag_id)
-                            .unwrap_or_default();
-                        drag.dragging = true;
-                        drag.source_path = split.path.clone();
-                        self.view_tree.state_arena_mut().set(drag_id, drag);
-                    }
-                }
-                if mouse_down && clicked {
-                    ui.set_declarative_input_consumed(true);
-                }
-                return;
-            }
-        }
-
-        // Handle active splitter drag
-        if let Some(drag_id) = self.drag_state_id {
-            use katla_ui::declarative::widgets::dock_space::DockDragState;
-            let drag: DockDragState<u64> = self
-                .view_tree
-                .state_arena()
-                .get(drag_id)
-                .unwrap_or_default();
-            if drag.dragging {
-                let is_splitter = self
-                    .dock_tree
-                    .get(&drag.source_path)
-                    .is_some_and(|n| matches!(n, DockNode::Split { .. }));
-                if is_splitter && mouse_down {
-                    if let Some(DockNode::Split { direction, .. }) =
-                        self.dock_tree.get(&drag.source_path)
-                    {
-                        let new_ratio = match direction {
-                            katla_ui::dock::SplitDirection::Horizontal => {
-                                ((mouse_pos.x() - dock_bounds.min.x()) / dock_bounds.width())
-                                    .clamp(0.05, 0.95)
-                            }
-                            katla_ui::dock::SplitDirection::Vertical => {
-                                ((mouse_pos.y() - dock_bounds.min.y()) / dock_bounds.height())
-                                    .clamp(0.05, 0.95)
-                            }
-                        };
-                        let _ = self.dock_tree.set_ratio(&drag.source_path, new_ratio);
-                    }
-                    ui.set_declarative_input_consumed(true);
-                    return;
-                } else if !mouse_down {
-                    let mut drag = drag;
-                    drag.dragging = false;
-                    self.view_tree.state_arena_mut().set(drag_id, drag);
-                }
-            }
-        }
-
-        // Check tab bar clicks
-        let tab_bar_height = 28.0_f32;
-        let leaf_info = compute_leaf_info(self.dock_tree.root(), dock_bounds, tab_bar_height);
-        for leaf in &leaf_info {
-            if leaf.tabs.is_empty() {
-                continue;
-            }
-            let tab_bar_bounds = Rect2D::new(
-                leaf.full_bounds.min,
-                Vec2::new(
-                    leaf.full_bounds.max.x(),
-                    leaf.full_bounds.min.y() + tab_bar_height,
-                ),
-            );
-            if !tab_bar_bounds.contains(mouse_pos) {
-                continue;
-            }
-            let tab_count = leaf.tabs.len();
-            let tab_width = tab_bar_bounds.width() / tab_count as f32;
-            let tab_index = ((mouse_pos.x() - tab_bar_bounds.min.x()) / tab_width)
-                .clamp(0.0, tab_count as f32 - 0.01) as usize;
-            if tab_index < leaf.tabs.len() && clicked {
-                let _ = self
-                    .dock_tree
-                    .activate_tab(&leaf.path, &leaf.tabs[tab_index]);
-                ui.set_declarative_input_consumed(true);
-            }
-            return;
         }
     }
 
@@ -560,8 +486,13 @@ impl EditorUI {
                     zone,
                     tab,
                 } => {
-                    let _ = self.dock_tree.move_tab(&from_path, &to_path, zone);
-                    let _ = tab; // used by move_tab
+                    let _ = move_dock_tab(
+                        &mut self.dock_tree,
+                        &from_path,
+                        &to_path,
+                        zone,
+                        tab,
+                    );
                 }
                 DockAction::TabClosed { path, tab } => {
                     let _ = self.dock_tree.remove_tab(&path, &tab);
@@ -606,5 +537,45 @@ impl EditorUI {
             self.asset_browser.assets[idx].thumbnail_state =
                 super::asset_browser::ThumbnailState::Loading;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use katla_ui::dock::SplitDirection;
+
+    #[test]
+    fn test_move_dock_tab_moves_requested_tab() {
+        let mut tree = DockTree::new(DockNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            children: [
+                Box::new(DockNode::Leaf {
+                    tabs: vec![10, 20, 30],
+                    active: 1,
+                }),
+                Box::new(DockNode::Leaf {
+                    tabs: vec![40],
+                    active: 0,
+                }),
+            ],
+        });
+
+        move_dock_tab(
+            &mut tree,
+            &DockPath(vec![0]),
+            &DockPath(vec![1]),
+            DockZone::Center,
+            20,
+        )
+        .unwrap();
+
+        assert!(
+            matches!(tree.get(&DockPath(vec![0])), Some(DockNode::Leaf { tabs, .. }) if tabs == &[10, 30])
+        );
+        assert!(
+            matches!(tree.get(&DockPath(vec![1])), Some(DockNode::Leaf { tabs, active }) if tabs == &[40, 20] && *active == 1)
+        );
     }
 }
