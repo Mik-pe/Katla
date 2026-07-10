@@ -40,11 +40,14 @@ impl Build for HierarchyView {
 
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
         let scroll_id: StateId = ctx.state(0.0f32);
+        let search_filter: String = ctx
+            .get_state(search_id)
+            .unwrap_or_else(|| draw_ctx.search_filter.clone());
 
-        let filtered_entities: Vec<&EntityInfo> = if draw_ctx.search_filter.is_empty() {
+        let filtered_entities: Vec<&EntityInfo> = if search_filter.is_empty() {
             draw_ctx.entities.iter().collect()
         } else {
-            let filter_lower = draw_ctx.search_filter.to_lowercase();
+            let filter_lower = search_filter.to_lowercase();
             draw_ctx
                 .entities
                 .iter()
