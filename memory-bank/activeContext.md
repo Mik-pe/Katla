@@ -15,8 +15,10 @@ What is being worked on right now. **Update this file when starting or finishing
 - `TAB_BAR_HEIGHT` constant (28.0) defined in `editor_root.rs`, matching `DockSpace::tab_bar_height`.
 - DockSpace tab bar now uses `tab_text` (inactive, #8E8E93) and `tab_active_text` (active, #FFFFFF) from UiStyle instead of generic `text_color`.
 - TabBar widget (preferences) uses the same proper theme colors.
+- `EditorOverlayView` builds every docked panel in a stable order to preserve positional state slots, but only mounts the active tab from each `DockTree` leaf into the ZStack. Stale environment values for inactive tabs therefore cannot render over the active panel.
 
 ## UI Design Target
+
 - **Reference**: Apple Reality Composer Pro — clean, modern, minimal chrome
 - **Font**: Proper sizing with Retina scale support (scale_factor aware)
 - **Layout**: Well-spaced panels with correct padding, margins, and alignment
@@ -24,6 +26,7 @@ What is being worked on right now. **Update this file when starting or finishing
 - **Goal**: State-of-the-art game engine editor UI, not a prototype
 
 ## Vision Debugging Pipeline
+
 1. `cargo run -- --headless -s --screenshot /tmp/katla.png` — headless render
 2. Feed PNG to vision model for analysis
 3. Fix issues, repeat until clean
