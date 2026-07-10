@@ -6,7 +6,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 - **PhysicsActive(false) at builder init** — physics is now off in editing mode (the default). PlayStart action sets it to true, PlayStop sets it back to false. SceneSnapshot preserves physics components for restore on stop.
 - **State slot stability** — ConsoleView and MixerView now always call `ctx.state()` unconditionally (even when their env is not set) to prevent slot shifts that corrupt DockSpace/Toolbar state IDs when tabs become active.
-- **DockSpace non-interactive** — DockSpace widget's `interactive()` returns `false` to prevent blocking hit-testing on panels beneath it. Tab clicks and splitter drags are handled directly in `layout.rs::process_dockspace_input()` before `view_tree.frame()`.
+- **DockSpace global input** — DockSpace remains non-interactive for normal hit testing so panels underneath receive input, but owns tab and splitter interaction through the declarative global-input pass. There is no separate editor-side dock input path.
 - **Selectable flex_grow opt-in** — Selectable widget defaults to `flex_grow: 0.0` (content-sized) instead of `1.0` (fill parent). Call `.flex_grow(1.0)` where fill behavior is needed.
 
 ## Architecture Note
@@ -18,6 +18,9 @@ What is being worked on right now. **Update this file when starting or finishing
 - `EditorOverlayView` builds every docked panel in a stable order to preserve positional state slots, but only mounts the active tab from each `DockTree` leaf into the ZStack. Stale environment values for inactive tabs therefore cannot render over the active panel.
 - Declarative text fields are read back from their `StateId` during the same build; environment search strings are initial values, not the live source after editing.
 - Declarative input consumption accumulates across multiple input passes during a frame and is reset by `UiContext::begin()`.
+- Splitter drag ratios are computed against the bounds of the split node being resized, including nested splits.
+- Dock tab move actions carry the exact dragged tab; the editor preserves that identity when applying the tree mutation.
+- Console level filters and Clear emit typed actions that are applied after the declarative frame.
 
 ## UI Design Target
 
