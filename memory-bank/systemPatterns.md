@@ -111,6 +111,8 @@ Two layers:
 
 Rendering: `DrawList` of `InstanceData` (GPU-instanced quads, 56 bytes each) + `Vertex`/`DrawCmd` (complex geometry). `TextureId` is opaque — katla_app maps to GPU handles. Taffy does Flexbox layout.
 
+Editor dock panels are all built in a stable order because their current state hooks are positional within the root `BuildContext`. `EditorOverlayView` only mounts the active tab from each `DockTree` leaf into the ZStack; building an inactive tab preserves its state slots, while leaving it unmounted prevents stale environment data from drawing or receiving input.
+
 ## Physics (katla_physics)
 
 Rapier3D wrapper. `PhysicsWorld` owns all Rapier state. ECS components: `RigidBody`, `ColliderShape` (Sphere/Box/Capsule/Trimesh/ConvexHull/Heightfield), `CollisionFilter` (layers+mask bitfields). `PhysicsActive(bool)` resource gates simulation behind play mode.
@@ -122,5 +124,5 @@ mlua with Luau. Per-entity instances with lifecycle hooks: `on_spawn`, `on_updat
 ## Matrix/Math Conventions
 
 - Column-major only. `Mat4(pub [Vec4; 4])`. `m[col][row]`. `m[0]` = column 0.
-- Vec2/3 scalar (not worth SSE). Vec4/Mat4/Quat use SSE on x86.
+- Vec2/Mat4/Quat use SSE on x86.
 - Colors in spawning functions are sRGB, converted to linear internally.
