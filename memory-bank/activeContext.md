@@ -16,6 +16,8 @@ What is being worked on right now. **Update this file when starting or finishing
 - DockSpace tab bar now uses `tab_text` (inactive, #8E8E93) and `tab_active_text` (active, #FFFFFF) from UiStyle instead of generic `text_color`.
 - TabBar widget (preferences) uses the same proper theme colors.
 - `EditorOverlayView` builds every docked panel in a stable order to preserve positional state slots, but only mounts the active tab from each `DockTree` leaf into the ZStack. Stale environment values for inactive tabs therefore cannot render over the active panel.
+- Declarative text fields are read back from their `StateId` during the same build; environment search strings are initial values, not the live source after editing.
+- Declarative input consumption accumulates across multiple input passes during a frame and is reset by `UiContext::begin()`.
 
 ## UI Design Target
 
