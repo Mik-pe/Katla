@@ -1,4 +1,5 @@
 use std::boxed::Box;
+use std::collections::HashSet;
 
 use katla_math::Vec2;
 use katla_ui::declarative::FlexProps;
@@ -6,7 +7,7 @@ use katla_ui::declarative::widgets::dock_space::{DockDragState, DockSpace};
 use katla_ui::declarative::{
     Alignment, Anchor, Build, BuildContext, Widget, WidgetBox, overlay, zstack,
 };
-use katla_ui::dock::DockTree;
+use katla_ui::dock::{DockNode, DockTree};
 
 use super::asset_browser::AssetBrowserDrawCtx;
 use super::asset_browser::AssetBrowserView;
@@ -42,6 +43,21 @@ fn panel_labels() -> Vec<(u64, String)> {
         .collect()
 }
 
+fn collect_active_panels(node: &DockNode<u64>, active_panels: &mut HashSet<u64>) {
+    match node {
+        DockNode::Split { children, .. } => {
+            collect_active_panels(&children[0], active_panels);
+            collect_active_panels(&children[1], active_panels);
+        }
+        DockNode::Leaf { tabs, active } => {
+            if let Some(panel_id) = tabs.get(*active) {
+                active_panels.insert(*panel_id);
+            }
+        }
+        DockNode::Empty => {}
+    }
+}
+
 /// Full editor view. Docked panels are positioned via Overlay with their
 /// dock-computed bounds. The DockSpace widget renders chrome (tab bars,
 /// splitter handles, drag overlay) on top. Overlay panels (toolbar, status bar,
@@ -50,7 +66,15 @@ pub(crate) struct EditorOverlayView;
 
 impl Build for EditorOverlayView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
-        // Docked panels: read bounds.min from their specific env context, wrap in Overlay
+        let initial_tree: DockTree<u64> = ctx
+            .env::<DockTree<u64>>()
+            .cloned()
+            .unwrap_or_else(|| DockTree::new(DockNode::Empty));
+        let mut active_panels = HashSet::new();
+        collect_active_panels(initial_tree.root(), &mut active_panels);
+
+        // Build every docked panel in a stable order so their positional state
+        // slots remain stable, but only mount the active tab from each leaf.
         let viewport_offset = ctx
             .env::<ViewportGridDrawCtx>()
             .map(|c| c.bounds.min)
@@ -92,10 +116,6 @@ impl Build for EditorOverlayView {
         let mixer = overlay(Anchor::TopLeft, mixer_offset, MixerView.build(ctx));
 
         // DockSpace: reads DockTree from StateArena, renders chrome only (no children)
-        let initial_tree: DockTree<u64> = ctx
-            .env::<DockTree<u64>>()
-            .cloned()
-            .unwrap_or_else(|| DockTree::new(katla_ui::dock::DockNode::Empty));
         let dock_state_id = ctx.state(initial_tree);
         let drag_state_id = ctx.state(DockDragState::<u64>::default());
         let mut dockspace = DockSpace::new(
@@ -125,14 +145,27 @@ impl Build for EditorOverlayView {
         let particle_inspector = ParticleInspectorView.build(ctx);
         let preferences = PreferencesView.build(ctx);
 
-        zstack([
-            // Docked panels — positioned via Overlay offset
-            (Alignment::TopLeading, viewport_grid.boxed()),
-            (Alignment::TopLeading, hierarchy.boxed()),
-            (Alignment::TopLeading, inspector.boxed()),
-            (Alignment::TopLeading, asset_browser.boxed()),
-            (Alignment::TopLeading, console.boxed()),
-            (Alignment::TopLeading, mixer.boxed()),
+        let mut layers: Vec<(Alignment, Box<dyn Widget>)> = Vec::new();
+        if active_panels.contains(&EditorPanel::Viewport.id()) {
+            layers.push((Alignment::TopLeading, viewport_grid.boxed()));
+        }
+        if active_panels.contains(&EditorPanel::Hierarchy.id()) {
+            layers.push((Alignment::TopLeading, hierarchy.boxed()));
+        }
+        if active_panels.contains(&EditorPanel::Inspector.id()) {
+            layers.push((Alignment::TopLeading, inspector.boxed()));
+        }
+        if active_panels.contains(&EditorPanel::AssetBrowser.id()) {
+            layers.push((Alignment::TopLeading, asset_browser.boxed()));
+        }
+        if active_panels.contains(&EditorPanel::Console.id()) {
+            layers.push((Alignment::TopLeading, console.boxed()));
+        }
+        if active_panels.contains(&EditorPanel::Mixer.id()) {
+            layers.push((Alignment::TopLeading, mixer.boxed()));
+        }
+
+        layers.extend([
             // DockSpace chrome — tabs, splitters, drag overlay
             (Alignment::TopLeading, dockspace.boxed()),
             // Overlay panels — positioned via ZStack alignment
@@ -142,7 +175,37 @@ impl Build for EditorOverlayView {
             (Alignment::TopLeading, co_creator),
             (Alignment::TopLeading, particle_inspector),
             (Alignment::TopLeading, preferences),
-        ])
-        .boxed()
+        ]);
+
+        zstack(layers).boxed()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use katla_ui::dock::SplitDirection;
+
+    #[test]
+    fn test_collect_active_panels_only_selects_active_tabs() {
+        let tree = DockTree::new(DockNode::Split {
+            direction: SplitDirection::Horizontal,
+            ratio: 0.5,
+            children: [
+                Box::new(DockNode::Leaf {
+                    tabs: vec![1, 2],
+                    active: 1,
+                }),
+                Box::new(DockNode::Leaf {
+                    tabs: vec![3, 4, 5],
+                    active: 0,
+                }),
+            ],
+        });
+
+        let mut active_panels = HashSet::new();
+        collect_active_panels(tree.root(), &mut active_panels);
+
+        assert_eq!(active_panels, HashSet::from([2, 3]));
     }
 }
