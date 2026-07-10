@@ -19,7 +19,7 @@ pub(super) use asset_browser::{
 pub(super) use co_creator::{
     CoCreatorDrawCtx, CoCreatorPanelSync, CoCreatorSubmitAction, CoCreatorUndoAction,
 };
-pub(super) use console::{ConsoleDrawCtx, ConsoleState};
+pub(super) use console::{ConsoleAction, ConsoleDrawCtx, ConsoleState};
 pub(super) use editor_root::EditorOverlayView;
 pub(super) use editor_root::STATUS_BAR_HEIGHT;
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
