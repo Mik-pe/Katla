@@ -124,5 +124,5 @@ mlua with Luau. Per-entity instances with lifecycle hooks: `on_spawn`, `on_updat
 ## Matrix/Math Conventions
 
 - Column-major only. `Mat4(pub [Vec4; 4])`. `m[col][row]`. `m[0]` = column 0.
-- Vec2/Mat4/Quat use SSE on x86.
+- Vec2/3 scalar (not worth SSE). Vec4/Mat4/Quat use SSE on x86.
 - Colors in spawning functions are sRGB, converted to linear internally.
