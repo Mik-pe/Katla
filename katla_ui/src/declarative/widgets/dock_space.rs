@@ -12,6 +12,8 @@ use crate::context::UiContext;
 use crate::dock::{DockNode, DockPath, DockTree, DockZone, SplitDirection};
 use crate::input::mouse_button;
 
+const TAB_DRAG_THRESHOLD: f32 = 3.0;
+
 /// Actions emitted by DockSpace through ActionStream.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DockAction<T: Clone + PartialEq> {
@@ -35,12 +37,15 @@ pub enum DockAction<T: Clone + PartialEq> {
     },
 }
 
-/// Drag state for tab drag-drop operations, stored in StateArena.
+/// Drag state for tab and splitter drag operations, stored in StateArena.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DockDragState<T: Clone + PartialEq> {
     pub dragging: bool,
+    pub drag_started: bool,
+    pub source_is_splitter: bool,
     pub source_path: DockPath,
     pub source_tab: T,
+    pub drag_start: Vec2,
     pub drag_pos: Vec2,
     pub target_zone: Option<DockZone>,
     pub target_path: Option<DockPath>,
@@ -50,8 +55,11 @@ impl<T: Clone + PartialEq + Default> Default for DockDragState<T> {
     fn default() -> Self {
         Self {
             dragging: false,
+            drag_started: false,
+            source_is_splitter: false,
             source_path: DockPath::root(),
             source_tab: T::default(),
+            drag_start: Vec2::ZERO,
             drag_pos: Vec2::ZERO,
             target_zone: None,
             target_path: None,
@@ -72,6 +80,7 @@ pub struct LeafInfo<T: Clone + PartialEq> {
 pub struct SplitInfo {
     pub path: DockPath,
     pub direction: SplitDirection,
+    pub node_bounds: Rect2D,
     pub handle_rect: Rect2D,
 }
 
@@ -210,6 +219,7 @@ fn compute_split_info_recursive<T: Clone + PartialEq>(
             let mut result = vec![SplitInfo {
                 path: path.clone(),
                 direction: *direction,
+                node_bounds: area,
                 handle_rect,
             }];
 
@@ -275,6 +285,17 @@ fn split_handle_rect(
                 Vec2::new(area.min.x(), split_y - half),
                 Vec2::new(area.max.x(), split_y + half),
             )
+        }
+    }
+}
+
+fn splitter_ratio_from_pos(split: &SplitInfo, pos: Vec2) -> f32 {
+    match split.direction {
+        SplitDirection::Horizontal => {
+            ((pos.x() - split.node_bounds.min.x()) / split.node_bounds.width()).clamp(0.05, 0.95)
+        }
+        SplitDirection::Vertical => {
+            ((pos.y() - split.node_bounds.min.y()) / split.node_bounds.height()).clamp(0.05, 0.95)
         }
     }
 }
@@ -404,25 +425,31 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         let dock_bounds = self.effective_bounds(bounds);
         let mut drag_state: DockDragState<T> = state.get(self.drag_state_id).unwrap_or_default();
 
-        // Handle active drag
         if drag_state.dragging {
             return self.handle_drag(ctx, state, dock_bounds, &tree, &mut drag_state);
         }
 
-        // Check for splitter handle click
-        let splits = compute_split_info(tree.root(), dock_bounds, self.splitter_width);
-        for split in &splits {
-            if split.handle_rect.contains(ctx.mouse_pos)
-                && ctx.input.mouse_clicked(mouse_button::LEFT)
-            {
-                drag_state.dragging = true;
-                drag_state.source_path = split.path.clone();
-                state.set(self.drag_state_id, drag_state);
-                return InputResult::Consumed;
-            }
+        if !ctx.input.mouse_clicked(mouse_button::LEFT) {
+            return InputResult::Ignore;
         }
 
-        // Check for tab click
+        let splits = compute_split_info(tree.root(), dock_bounds, self.splitter_width);
+        if let Some(split) = splits
+            .iter()
+            .find(|split| split.handle_rect.contains(ctx.mouse_pos))
+        {
+            drag_state.dragging = true;
+            drag_state.drag_started = true;
+            drag_state.source_is_splitter = true;
+            drag_state.source_path = split.path.clone();
+            drag_state.drag_start = ctx.mouse_pos;
+            drag_state.drag_pos = ctx.mouse_pos;
+            drag_state.target_zone = None;
+            drag_state.target_path = None;
+            state.set(self.drag_state_id, drag_state);
+            return InputResult::Consumed;
+        }
+
         let leaf_info = compute_leaf_info(tree.root(), dock_bounds, self.tab_bar_height);
         for leaf in &leaf_info {
             if leaf.tabs.is_empty() {
@@ -446,20 +473,26 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             let tab_index = ((ctx.mouse_pos.x() - tab_bar_bounds.min.x()) / tab_width)
                 .clamp(0.0, tab_count as f32 - 0.01) as usize;
 
-            if tab_index < leaf.tabs.len() && ctx.input.mouse_clicked(mouse_button::LEFT) {
+            if tab_index < leaf.tabs.len() {
+                let source_tab = leaf.tabs[tab_index].clone();
                 let delta = ctx.input.mouse_delta;
-                if delta.x().abs() > 3.0 || delta.y().abs() > 3.0 {
-                    drag_state.dragging = true;
-                    drag_state.source_path = leaf.path.clone();
-                    drag_state.source_tab = leaf.tabs[tab_index].clone();
-                    drag_state.drag_pos = ctx.mouse_pos;
-                    state.set(self.drag_state_id, drag_state);
-                } else {
-                    ctx.actions.emit(DockAction::TabActivated {
-                        path: leaf.path.clone(),
-                        tab: leaf.tabs[tab_index].clone(),
-                    });
-                }
+                let delta_sq = delta.x() * delta.x() + delta.y() * delta.y();
+
+                ctx.actions.emit(DockAction::TabActivated {
+                    path: leaf.path.clone(),
+                    tab: source_tab.clone(),
+                });
+
+                drag_state.dragging = true;
+                drag_state.drag_started = delta_sq > TAB_DRAG_THRESHOLD * TAB_DRAG_THRESHOLD;
+                drag_state.source_is_splitter = false;
+                drag_state.source_path = leaf.path.clone();
+                drag_state.source_tab = source_tab;
+                drag_state.drag_start = ctx.mouse_pos;
+                drag_state.drag_pos = ctx.mouse_pos;
+                drag_state.target_zone = None;
+                drag_state.target_path = None;
+                state.set(self.drag_state_id, drag_state);
                 return InputResult::Consumed;
             }
         }
@@ -477,9 +510,6 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         _info: &DrawInfo,
     ) {
         if self.is_empty_tree(state) {}
-        // Background is drawn by individual panel widgets — do not draw
-        // content area backgrounds here, as this widget is layered on top of
-        // the panel overlays and would overwrite their children (text, icons).
     }
 
     fn draw_after_children(
@@ -500,11 +530,9 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         }
 
         let dock_bounds = self.effective_bounds(bounds);
-
         let leaf_info = compute_leaf_info(tree.root(), dock_bounds, self.tab_bar_height);
         let splits = compute_split_info(tree.root(), dock_bounds, self.splitter_width);
 
-        // Draw tab bars for each leaf
         for leaf in &leaf_info {
             if leaf.tabs.is_empty() {
                 continue;
@@ -558,7 +586,6 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             }
         }
 
-        // Draw splitter handles (skip when separator is transparent)
         for split in &splits {
             let is_hovered = split.handle_rect.contains(ctx.mouse_pos());
             let color = if is_hovered {
@@ -571,9 +598,8 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             }
         }
 
-        // Draw drag overlay
         let drag_state: DockDragState<T> = state.get(self.drag_state_id).unwrap_or_default();
-        if drag_state.dragging {
+        if drag_state.dragging && drag_state.drag_started && !drag_state.source_is_splitter {
             self.draw_drag_overlay(ctx, &leaf_info, &drag_state);
         }
     }
@@ -603,6 +629,10 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         false
     }
 
+    fn wants_global_input(&self, _state: &StateArena) -> bool {
+        true
+    }
+
     fn is_focus_scope(&self) -> bool {
         false
     }
@@ -617,41 +647,46 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> DockSpace<T> {
         tree: &DockTree<T>,
         drag_state: &mut DockDragState<T>,
     ) -> InputResult {
-        // Check if this is a splitter drag (source_tab is default = likely splitter)
-        let is_splitter_drag = drag_state.source_tab == T::default()
-            && tree
-                .get(&drag_state.source_path)
-                .is_some_and(|n| matches!(n, DockNode::Split { .. }));
+        if drag_state.source_is_splitter {
+            if ctx.input.is_mouse_down(mouse_button::LEFT) {
+                let splits = compute_split_info(tree.root(), bounds, self.splitter_width);
+                if let Some(split) = splits
+                    .iter()
+                    .find(|split| split.path == drag_state.source_path)
+                {
+                    ctx.actions.emit::<DockAction<T>>(DockAction::SplitResized {
+                        path: drag_state.source_path.clone(),
+                        ratio: splitter_ratio_from_pos(split, ctx.mouse_pos),
+                    });
+                }
+                return InputResult::Consumed;
+            }
 
-        if is_splitter_drag
-            && ctx.input.is_mouse_down(mouse_button::LEFT)
-            && let Some(DockNode::Split { direction, .. }) = tree.get(&drag_state.source_path)
-        {
-            let new_ratio = match direction {
-                SplitDirection::Horizontal => {
-                    ((ctx.mouse_pos.x() - bounds.min.x()) / bounds.width()).clamp(0.05, 0.95)
-                }
-                SplitDirection::Vertical => {
-                    ((ctx.mouse_pos.y() - bounds.min.y()) / bounds.height()).clamp(0.05, 0.95)
-                }
-            };
-            ctx.actions.emit::<DockAction<T>>(DockAction::SplitResized {
-                path: drag_state.source_path.clone(),
-                ratio: new_ratio,
-            });
+            *drag_state = DockDragState::default();
+            state.set(self.drag_state_id, drag_state.clone());
             return InputResult::Consumed;
         }
 
-        // Tab drag
         if ctx.input.is_mouse_down(mouse_button::LEFT) {
             drag_state.drag_pos = ctx.mouse_pos;
 
-            let leaf_info = compute_leaf_info(tree.root(), bounds, self.tab_bar_height);
-            for leaf in &leaf_info {
-                if leaf.full_bounds.contains(ctx.mouse_pos) {
-                    drag_state.target_path = Some(leaf.path.clone());
-                    drag_state.target_zone = Some(zone_from_pos(leaf.full_bounds, ctx.mouse_pos));
-                    break;
+            if !drag_state.drag_started {
+                let delta = ctx.mouse_pos - drag_state.drag_start;
+                let delta_sq = delta.x() * delta.x() + delta.y() * delta.y();
+                drag_state.drag_started = delta_sq > TAB_DRAG_THRESHOLD * TAB_DRAG_THRESHOLD;
+            }
+
+            if drag_state.drag_started {
+                drag_state.target_path = None;
+                drag_state.target_zone = None;
+                let leaf_info = compute_leaf_info(tree.root(), bounds, self.tab_bar_height);
+                for leaf in &leaf_info {
+                    if leaf.full_bounds.contains(ctx.mouse_pos) {
+                        drag_state.target_path = Some(leaf.path.clone());
+                        drag_state.target_zone =
+                            Some(zone_from_pos(leaf.full_bounds, ctx.mouse_pos));
+                        break;
+                    }
                 }
             }
 
@@ -659,25 +694,20 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> DockSpace<T> {
             return InputResult::Consumed;
         }
 
-        // Released - complete drag
-        if let (Some(ref to_path), Some(ref zone)) =
-            (drag_state.target_path.clone(), drag_state.target_zone)
+        if drag_state.drag_started
+            && let (Some(to_path), Some(zone)) =
+                (drag_state.target_path.clone(), drag_state.target_zone)
+            && (to_path != drag_state.source_path || zone != DockZone::Center)
         {
-            if is_splitter_drag {
-                // Splitter released - just end drag
-            } else if *to_path != drag_state.source_path || *zone != DockZone::Center {
-                ctx.actions.emit(DockAction::TabMoved {
-                    from_path: drag_state.source_path.clone(),
-                    to_path: to_path.clone(),
-                    zone: *zone,
-                    tab: drag_state.source_tab.clone(),
-                });
-            }
+            ctx.actions.emit(DockAction::TabMoved {
+                from_path: drag_state.source_path.clone(),
+                to_path,
+                zone,
+                tab: drag_state.source_tab.clone(),
+            });
         }
 
-        drag_state.dragging = false;
-        drag_state.target_zone = None;
-        drag_state.target_path = None;
+        *drag_state = DockDragState::default();
         state.set(self.drag_state_id, drag_state.clone());
         InputResult::Consumed
     }
@@ -798,8 +828,6 @@ mod tests {
         )
     }
 
-    // ── VAL-DOCK-027: layout_style fills available space ──
-
     #[test]
     fn test_dockspace_layout_style_fills_space() {
         let (_arena, dock_id, drag_id) = setup_dock_tree();
@@ -808,8 +836,6 @@ mod tests {
         assert_eq!(style.flex_grow, 1.0);
         assert_eq!(style.flex_shrink, 1.0);
     }
-
-    // ── VAL-DOCK-020: reads DockTree from StateArena ──
 
     #[test]
     fn test_dockspace_reads_docktree_from_state_arena() {
@@ -829,8 +855,6 @@ mod tests {
         let ds = make_dock_space(dock_id, drag_id);
         assert!(ds.is_empty_tree(&arena));
     }
-
-    // ── VAL-DOCK-028: empty tree renders nothing ──
 
     #[test]
     fn test_dockspace_empty_tree_renders_nothing() {
@@ -861,27 +885,20 @@ mod tests {
         ds.draw_after_children(&mut ui, &arena, bounds, &[], &[]);
     }
 
-    // ── VAL-DOCK-021: draws chrome (tab bars, splitters) ──
-
     #[test]
     fn test_dockspace_draws_chrome() {
         let (arena, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-
         let mut ui = crate::context::UiContext::new();
         ui.begin(Vec2::new(1920.0, 1080.0), 1.0);
         let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
-
         ds.draw_after_children(&mut ui, &arena, bounds, &[], &[]);
     }
-
-    // ── VAL-DOCK-022: content first, then chrome ──
 
     #[test]
     fn test_dockspace_draw_order_content_then_chrome() {
         let (arena, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-
         let mut ui = crate::context::UiContext::new();
         ui.begin(Vec2::new(1920.0, 1080.0), 1.0);
         let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
@@ -892,7 +909,6 @@ mod tests {
             focused_id: None,
         };
         let vid = make_view_id(1);
-
         let info = DrawInfo {
             interaction: &interaction,
             view_id: vid,
@@ -902,22 +918,16 @@ mod tests {
         ds.draw_after_children(&mut ui, &arena, bounds, &[], &[]);
     }
 
-    // ── VAL-DOCK-023: splitter drag resizes split ──
-
     #[test]
     fn test_dockspace_splitter_drag() {
         let (mut arena, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-
-        // Simulate clicking on splitter handle (at x=960 center)
         let mut input = crate::input::UiInputState::default();
         input.set_mouse_pos(Vec2::new(960.0, 540.0));
         input.set_mouse_button(mouse_button::LEFT, true);
-
         let mut callbacks = crate::declarative::build::CallbackTable::new();
         let mut actions = crate::declarative::actions::ActionStream::new();
         let view_id = make_view_id(1);
-
         let mut ctx = InputContext {
             input: &input,
             mouse_pos: Vec2::new(960.0, 540.0),
@@ -927,33 +937,25 @@ mod tests {
             active_id: None,
             focused_id: None,
         };
-
         let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
         let result = ds.handle_input(&mut ctx, &mut arena, bounds, &[]);
         assert_eq!(result, InputResult::Consumed);
-
-        // Verify drag state was set
         let drag: DockDragState<u32> = arena.get(drag_id).unwrap();
         assert!(drag.dragging);
+        assert!(drag.source_is_splitter);
     }
-
-    // ── VAL-DOCK-024: tab drag initiates tab move ──
 
     #[test]
     fn test_dockspace_tab_drag_initiates() {
         let (mut arena, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-
-        // Simulate clicking on a tab with significant mouse delta (drag start)
         let mut input = crate::input::UiInputState::default();
         input.set_mouse_pos(Vec2::new(240.0, 14.0));
         input.set_mouse_button(mouse_button::LEFT, true);
-        input.mouse_delta = Vec2::new(5.0, 0.0); // significant delta = drag
-
+        input.mouse_delta = Vec2::new(5.0, 0.0);
         let mut callbacks = crate::declarative::build::CallbackTable::new();
         let mut actions = crate::declarative::actions::ActionStream::new();
         let view_id = make_view_id(1);
-
         let mut ctx = InputContext {
             input: &input,
             mouse_pos: Vec2::new(240.0, 14.0),
@@ -963,33 +965,25 @@ mod tests {
             active_id: None,
             focused_id: None,
         };
-
         let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
         let result = ds.handle_input(&mut ctx, &mut arena, bounds, &[]);
         assert_eq!(result, InputResult::Consumed);
-
         let drag: DockDragState<u32> = arena.get(drag_id).unwrap();
         assert!(drag.dragging);
+        assert!(drag.drag_started);
         assert_eq!(drag.source_tab, 1u32);
     }
-
-    // ── VAL-DOCK-025: emits DockAction ──
 
     #[test]
     fn test_dockspace_emits_tab_activated() {
         let (mut arena, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-
-        // Click on second tab (x=480..960) with no delta (click, not drag)
         let mut input = crate::input::UiInputState::default();
         input.set_mouse_pos(Vec2::new(600.0, 14.0));
         input.set_mouse_button(mouse_button::LEFT, true);
-        input.mouse_delta = Vec2::ZERO;
-
         let mut callbacks = crate::declarative::build::CallbackTable::new();
         let mut actions = crate::declarative::actions::ActionStream::new();
         let view_id = make_view_id(1);
-
         let mut ctx = InputContext {
             input: &input,
             mouse_pos: Vec2::new(600.0, 14.0),
@@ -999,34 +993,24 @@ mod tests {
             active_id: None,
             focused_id: None,
         };
-
         let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
         ds.handle_input(&mut ctx, &mut arena, bounds, &[]);
-
         let emitted: Vec<DockAction<u32>> = ctx.actions.drain();
-        assert!(
-            emitted
-                .iter()
-                .any(|a| matches!(a, DockAction::TabActivated { tab, .. } if *tab == 2)),
-            "Should emit TabActivated for tab 2, got {:?}",
-            emitted
-        );
+        assert!(emitted
+            .iter()
+            .any(|action| matches!(action, DockAction::TabActivated { tab, .. } if *tab == 2)));
     }
 
     #[test]
     fn test_dockspace_emits_split_resized() {
         let (mut arena, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-
-        // First, initiate splitter drag
         let mut input = crate::input::UiInputState::default();
         input.set_mouse_pos(Vec2::new(960.0, 540.0));
         input.set_mouse_button(mouse_button::LEFT, true);
-
         let mut callbacks = crate::declarative::build::CallbackTable::new();
         let mut actions = crate::declarative::actions::ActionStream::new();
         let view_id = make_view_id(1);
-
         let mut ctx = InputContext {
             input: &input,
             mouse_pos: Vec2::new(960.0, 540.0),
@@ -1036,12 +1020,9 @@ mod tests {
             active_id: None,
             focused_id: None,
         };
-
         let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
         ds.handle_input(&mut ctx, &mut arena, bounds, &[]);
-        // Drag state is now set
 
-        // Now simulate drag continuation
         input.set_mouse_pos(Vec2::new(700.0, 540.0));
         let mut ctx2 = InputContext {
             input: &input,
@@ -1053,89 +1034,61 @@ mod tests {
             focused_id: None,
         };
         ds.handle_input(&mut ctx2, &mut arena, bounds, &[]);
-
         let emitted: Vec<DockAction<u32>> = ctx2.actions.drain();
-        assert!(
-            emitted
-                .iter()
-                .any(|a| matches!(a, DockAction::SplitResized { .. })),
-            "Should emit SplitResized, got {:?}",
-            emitted
-        );
+        assert!(emitted
+            .iter()
+            .any(|action| matches!(action, DockAction::SplitResized { .. })));
     }
 
-    // ── VAL-DOCK-026: drag state via StateArena ──
+    #[test]
+    fn test_nested_splitter_ratio_uses_node_bounds() {
+        let split = SplitInfo {
+            path: DockPath(vec![1]),
+            direction: SplitDirection::Horizontal,
+            node_bounds: Rect2D::new(Vec2::new(960.0, 0.0), Vec2::new(1920.0, 1080.0)),
+            handle_rect: Rect2D::default(),
+        };
+        assert!((splitter_ratio_from_pos(&split, Vec2::new(1440.0, 540.0)) - 0.5).abs() < 1e-4);
+    }
 
     #[test]
     fn test_dockspace_drag_state_persistence() {
         let (mut arena, _dock_id, drag_id) = setup_dock_tree();
-
         let drag = DockDragState {
             dragging: true,
+            drag_started: true,
+            source_is_splitter: false,
             source_path: DockPath(vec![0]),
             source_tab: 1u32,
+            drag_start: Vec2::new(80.0, 50.0),
             drag_pos: Vec2::new(100.0, 50.0),
             target_zone: Some(DockZone::Center),
             target_path: Some(DockPath(vec![1])),
         };
         arena.set(drag_id, drag.clone());
-
         let read_back: DockDragState<u32> = arena.get(drag_id).unwrap();
         assert!(read_back.dragging);
         assert_eq!(read_back.source_tab, 1u32);
         assert_eq!(read_back.target_zone, Some(DockZone::Center));
     }
 
-    // ── VAL-DOCK-030: all five DockZones work ──
-
     #[test]
     fn test_dockzone_all_five_zones() {
         let area = Rect2D::new(Vec2::ZERO, Vec2::new(400.0, 400.0));
-
-        // Center: near center
-        assert_eq!(
-            zone_from_pos(area, Vec2::new(200.0, 200.0)),
-            DockZone::Center
-        );
-
-        // Left: far left of center
+        assert_eq!(zone_from_pos(area, Vec2::new(200.0, 200.0)), DockZone::Center);
         assert_eq!(zone_from_pos(area, Vec2::new(50.0, 200.0)), DockZone::Left);
-
-        // Right: far right of center
-        assert_eq!(
-            zone_from_pos(area, Vec2::new(350.0, 200.0)),
-            DockZone::Right
-        );
-
-        // Top: above center
+        assert_eq!(zone_from_pos(area, Vec2::new(350.0, 200.0)), DockZone::Right);
         assert_eq!(zone_from_pos(area, Vec2::new(200.0, 50.0)), DockZone::Top);
-
-        // Bottom: below center
-        assert_eq!(
-            zone_from_pos(area, Vec2::new(200.0, 350.0)),
-            DockZone::Bottom
-        );
+        assert_eq!(zone_from_pos(area, Vec2::new(200.0, 350.0)), DockZone::Bottom);
     }
-
-    // ── VAL-DOCK-031: DockZone hit testing ──
 
     #[test]
     fn test_zone_from_pos_edge_cases() {
         let area = Rect2D::new(Vec2::ZERO, Vec2::new(400.0, 400.0));
-
-        // Outside returns Center (default)
-        assert_eq!(
-            zone_from_pos(area, Vec2::new(500.0, 500.0)),
-            DockZone::Center
-        );
-
-        // Corner regions: when dx.abs() == dy.abs(), the tie-breaker favors
-        // vertical zones (Top/Bottom) in the zone_from_pos implementation.
+        assert_eq!(zone_from_pos(area, Vec2::new(500.0, 500.0)), DockZone::Center);
         assert_eq!(zone_from_pos(area, Vec2::new(50.0, 50.0)), DockZone::Top);
         assert_eq!(zone_from_pos(area, Vec2::new(350.0, 50.0)), DockZone::Top);
     }
-
-    // ── Helper function tests ──
 
     #[test]
     fn test_compute_leaf_info_single_leaf() {
@@ -1177,11 +1130,9 @@ mod tests {
         let splits = compute_split_info(tree.root(), area, 4.0);
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].direction, SplitDirection::Horizontal);
-        let center_x = splits[0].handle_rect.center().x();
-        assert!((center_x - 960.0).abs() < 1.0);
+        assert_eq!(splits[0].node_bounds, area);
+        assert!((splits[0].handle_rect.center().x() - 960.0).abs() < 1.0);
     }
-
-    // ── Diff and children tests ──
 
     #[test]
     fn test_dockspace_diff_same_type() {
@@ -1213,7 +1164,7 @@ mod tests {
             FlexProps::default(),
         );
         match ds.take_children() {
-            ChildWidgets::Multi(v) => assert_eq!(v.len(), 2),
+            ChildWidgets::Multi(children) => assert_eq!(children.len(), 2),
             _ => panic!("Expected Multi children"),
         }
     }
@@ -1223,6 +1174,7 @@ mod tests {
         let (_, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
         assert!(!ds.interactive());
+        assert!(ds.wants_global_input(&StateArena::new()));
     }
 
     #[test]
@@ -1252,9 +1204,7 @@ mod tests {
             path: DockPath(vec![0]),
             tab: 1u32,
         };
-
-        let moved2 = moved.clone();
-        assert_eq!(moved, moved2);
+        assert_eq!(moved, moved.clone());
         assert_ne!(moved, closed);
         let _ = format!("{:?}", closed);
         let _ = format!("{:?}", resized);
@@ -1265,6 +1215,8 @@ mod tests {
     fn test_dock_drag_state_default() {
         let state = DockDragState::<u32>::default();
         assert!(!state.dragging);
+        assert!(!state.drag_started);
+        assert!(!state.source_is_splitter);
         assert_eq!(state.source_tab, 0u32);
     }
 }
