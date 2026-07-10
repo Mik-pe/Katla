@@ -17,6 +17,12 @@ pub(crate) struct ConsoleDrawCtx {
     pub log_buffer: Arc<Mutex<LogBuffer>>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) enum ConsoleAction {
+    ToggleLevel(usize),
+    Clear,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ConsoleState {
     #[expect(dead_code)]
@@ -71,7 +77,6 @@ impl Build for ConsoleView {
             .get_state(search_id)
             .unwrap_or_else(|| draw_ctx.search_filter.clone());
 
-        // Build filter level toggles
         const LEVEL_LABELS: [&str; 5] = ["Error", "Warn", "Info", "Debug", "Trace"];
         let mut filter_toggles = Vec::new();
         for (i, label) in LEVEL_LABELS.iter().enumerate() {
@@ -83,17 +88,21 @@ impl Build for ConsoleView {
                     Color::TRANSPARENT
                 })
                 .border(Color::TRANSPARENT)
+                .on_click(ctx.on_click(move |actions| {
+                    actions.emit(ConsoleAction::ToggleLevel(i));
+                }))
                 .boxed();
             filter_toggles.push(toggle);
         }
 
-        // Search field
         let search_field = textfield("Filter...", search_id).boxed();
 
-        // Clear button
         let clear_button = button("Clear")
             .fill(draw_ctx.theme.button_bg)
             .border(Color::TRANSPARENT)
+            .on_click(ctx.on_click(|actions| {
+                actions.emit(ConsoleAction::Clear);
+            }))
             .boxed();
 
         let toolbar = hstack([
@@ -105,7 +114,6 @@ impl Build for ConsoleView {
         .padding(Padding::all(4.0))
         .boxed();
 
-        // Build log entries, filtered by active level toggles and search text
         let search_lower = search_filter.to_lowercase();
         let level_index = |level: log::Level| -> usize {
             match level {
