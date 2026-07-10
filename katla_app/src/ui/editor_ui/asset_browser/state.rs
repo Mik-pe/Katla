@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use katla_ui::ScrollAreaState;
+use katla_ui::{ScrollAreaState, input::DOUBLE_CLICK_TIME};
 
 use super::types::{AssetAction, AssetEntry, AssetType, ThumbnailState};
 
@@ -49,6 +49,10 @@ pub struct AssetBrowserState {
     pub(crate) confirm_pending_action: Option<AssetAction>,
     /// Last computed column count from the rendering pass, used for keyboard navigation.
     pub(crate) last_col_count: usize,
+    /// Asset index from the first click in a possible double-click sequence.
+    last_click_index: Option<usize>,
+    /// Time of the first click in a possible double-click sequence.
+    last_click_time: Option<Instant>,
 }
 
 impl AssetBrowserState {
@@ -78,6 +82,8 @@ impl AssetBrowserState {
             confirm_dialog_message: String::new(),
             confirm_pending_action: None,
             last_col_count: 8,
+            last_click_index: None,
+            last_click_time: None,
         }
     }
 
@@ -93,6 +99,8 @@ impl AssetBrowserState {
             .collect();
 
         self.assets.clear();
+        self.last_click_index = None;
+        self.last_click_time = None;
 
         if let Some(parent) = self.current_path.parent()
             && parent != self.current_path
@@ -284,6 +292,29 @@ impl AssetBrowserState {
         }
     }
 
+    /// Register a click and return true only for a valid second click on the same asset.
+    pub(crate) fn register_click(&mut self, asset_index: usize) -> bool {
+        self.register_click_at(asset_index, Instant::now())
+    }
+
+    fn register_click_at(&mut self, asset_index: usize, now: Instant) -> bool {
+        let is_double_click = self.last_click_index == Some(asset_index)
+            && self.last_click_time.is_some_and(|last| {
+                now.checked_duration_since(last)
+                    .is_some_and(|elapsed| elapsed.as_secs_f64() <= DOUBLE_CLICK_TIME)
+            });
+
+        if is_double_click {
+            self.last_click_index = None;
+            self.last_click_time = None;
+        } else {
+            self.last_click_index = Some(asset_index);
+            self.last_click_time = Some(now);
+        }
+
+        is_double_click
+    }
+
     /// Take pending actions, clearing the list.
     pub fn take_actions(&mut self) -> Vec<AssetAction> {
         std::mem::take(&mut self.pending_actions)
@@ -293,5 +324,32 @@ impl AssetBrowserState {
 impl Default for AssetBrowserState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn double_click_requires_same_asset_within_time_window() {
+        let mut state = AssetBrowserState::new();
+        let start = Instant::now();
+
+        assert!(!state.register_click_at(1, start));
+        assert!(!state.register_click_at(2, start + Duration::from_millis(100)));
+        assert!(state.register_click_at(2, start + Duration::from_millis(200)));
+    }
+
+    #[test]
+    fn click_after_timeout_starts_a_new_sequence() {
+        let mut state = AssetBrowserState::new();
+        let start = Instant::now();
+
+        assert!(!state.register_click_at(3, start));
+        assert!(!state.register_click_at(3, start + Duration::from_millis(600)));
+        assert!(state.register_click_at(3, start + Duration::from_millis(700)));
     }
 }
