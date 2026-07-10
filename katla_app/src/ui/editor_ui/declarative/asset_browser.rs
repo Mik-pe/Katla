@@ -364,10 +364,214 @@ pub(crate) fn process_asset_actions(
             AssetAction::ModelPreviewRequested(_path) => {
                 log::debug!("Model preview requested but feature is disabled");
             }
-            other => pending_actions.push(other.into()),
+            AssetAction::AudioPreviewToggle { path } => {
+                pending_actions.push(EditorAction::AudioPreviewToggle { path });
+            }
+            AssetAction::CreateFolder(parent_path) => {
+                let mut new_folder = parent_path.join("New Folder");
+                let mut counter = 1;
+                while new_folder.exists() {
+                    new_folder = parent_path.join(format!("New Folder {}", counter));
+                    counter += 1;
+                }
+                if let Err(e) = std::fs::create_dir(&new_folder) {
+                    log::warn!("Failed to create folder: {}", e);
+                } else {
+                    log::info!("Created folder: {:?}", new_folder);
+                    state.scan_directory(thumbnail_texture_handles);
+                }
+            }
+            AssetAction::Delete(path) => {
+                if path.is_dir() {
+                    if let Err(e) = std::fs::remove_dir_all(&path) {
+                        log::warn!("Failed to delete folder: {}", e);
+                    } else {
+                        log::info!("Deleted folder: {:?}", path);
+                        state.scan_directory(thumbnail_texture_handles);
+                    }
+                } else if let Err(e) = std::fs::remove_file(&path) {
+                    log::warn!("Failed to delete file: {}", e);
+                } else {
+                    log::info!("Deleted file: {:?}", path);
+                    state.scan_directory(thumbnail_texture_handles);
+                }
+            }
+            AssetAction::Open(path) => {
+                if path.is_dir() {
+                    state.navigate_to(&path, thumbnail_texture_handles);
+                } else {
+                    log::info!("Open file: {:?}", path);
+                }
+            }
+            AssetAction::CopyPath(path) => {
+                log::info!("Copy path: {:?}", path);
+            }
+            AssetAction::ShowInExplorer(path) => {
+                #[cfg(target_os = "windows")]
+                {
+                    if let Err(e) = std::process::Command::new("explorer")
+                        .args(["/select,", &path.to_string_lossy()])
+                        .spawn()
+                    {
+                        log::warn!("Failed to open explorer: {}", e);
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    if let Err(e) = std::process::Command::new("open")
+                        .args(["-R", &path.to_string_lossy()])
+                        .spawn()
+                    {
+                        log::warn!("Failed to open finder: {}", e);
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    if let Err(e) = std::process::Command::new("xdg-open")
+                        .arg(path.parent().unwrap_or(&path))
+                        .spawn()
+                    {
+                        log::warn!("Failed to open file manager: {}", e);
+                    }
+                }
+            }
         }
     }
 
-    state.process_thumbnail_results(thumbnail_texture_handles);
     pending_actions
+}
+
+/// Process declarative asset browser actions emitted from the view tree.
+/// Maps high-level UI actions to state mutations and editor actions.
+pub(crate) fn process_declarative_actions(
+    state: &mut AssetBrowserState,
+    thumbnail_texture_handles: &HashMap<PathBuf, TextureHandle>,
+    viewport_bounds: Rect2D,
+    actions: Vec<AssetBrowserAction>,
+) -> Vec<EditorAction> {
+    let mut pending = Vec::new();
+
+    for action in actions {
+        match action {
+            AssetBrowserAction::NavigateToSegment(idx) => {
+                state.navigate_to_segment(idx, thumbnail_texture_handles);
+            }
+            AssetBrowserAction::NavigateBack => {
+                state.navigate_back(thumbnail_texture_handles);
+            }
+            AssetBrowserAction::NavigateForward => {
+                state.navigate_forward(thumbnail_texture_handles);
+            }
+            AssetBrowserAction::Refresh => {
+                state.refresh(thumbnail_texture_handles);
+            }
+            AssetBrowserAction::AssetClicked(idx) => {
+                state.selected_index = Some(idx);
+                state.selected_indices.clear();
+            }
+            AssetBrowserAction::AssetDoubleClicked {
+                asset_type, path, ..
+            } => {
+                if asset_type == AssetType::Folder {
+                    if path.ends_with("..") {
+                        state.navigate_up(thumbnail_texture_handles);
+                    } else {
+                        state.navigate_to(&path, thumbnail_texture_handles);
+                    }
+                } else if asset_type == AssetType::Model {
+                    state
+                        .pending_actions
+                        .push(AssetAction::ModelPreviewRequested(path));
+                } else if asset_type == AssetType::Audio {
+                    state
+                        .pending_actions
+                        .push(AssetAction::AudioPreviewToggle { path });
+                }
+            }
+            AssetBrowserAction::ContextMenuAction {
+                action,
+                asset_index,
+            } => {
+                let asset_path = asset_index
+                    .and_then(|idx| state.assets.get(idx))
+                    .map(|a| a.path.clone())
+                    .unwrap_or_else(|| state.current_path.clone());
+                let asset_type = asset_index
+                    .and_then(|idx| state.assets.get(idx))
+                    .map(|a| a.asset_type);
+
+                state.context_menu_open = false;
+                state.context_menu_asset = None;
+
+                match action.as_str() {
+                    "Open" => {
+                        if asset_type == Some(AssetType::Folder) {
+                            if asset_path.file_name().map(|n| n == "..").unwrap_or(false) {
+                                state.navigate_up(thumbnail_texture_handles);
+                            } else {
+                                state.navigate_to(&asset_path, thumbnail_texture_handles);
+                            }
+                        } else if asset_type.is_some() {
+                            state.pending_actions.push(AssetAction::Open(asset_path));
+                        }
+                    }
+                    "Rename" => {
+                        if let Some(idx) = asset_index {
+                            state.start_rename(idx);
+                        }
+                    }
+                    "Copy Path" => {
+                        state
+                            .pending_actions
+                            .push(AssetAction::CopyPath(asset_path));
+                    }
+                    "Show in Explorer" => {
+                        state
+                            .pending_actions
+                            .push(AssetAction::ShowInExplorer(asset_path));
+                    }
+                    "Delete" => {
+                        let is_folder = asset_path.is_dir();
+                        let name = asset_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "this item".to_string());
+                        state.confirm_dialog_message = if is_folder {
+                            format!("Delete folder \"{}\" and all its contents?", name)
+                        } else {
+                            format!("Delete \"{}\"?", name)
+                        };
+                        state.confirm_pending_action = Some(AssetAction::Delete(asset_path));
+                        state.confirm_dialog_open = true;
+                    }
+                    "New Folder" => {
+                        state
+                            .pending_actions
+                            .push(AssetAction::CreateFolder(asset_path));
+                    }
+                    "Refresh" => {
+                        state.refresh(thumbnail_texture_handles);
+                    }
+                    _ => {}
+                }
+            }
+            AssetBrowserAction::ConfirmDelete(path) => {
+                state.confirm_dialog_open = false;
+                state.pending_actions.push(AssetAction::Delete(path));
+            }
+            AssetBrowserAction::CancelDelete => {
+                state.confirm_dialog_open = false;
+                state.confirm_pending_action = None;
+            }
+        }
+    }
+
+    // Process any pending AssetActions that were queued by the action handlers
+    pending.extend(process_asset_actions(
+        state,
+        thumbnail_texture_handles,
+        viewport_bounds,
+    ));
+
+    pending
 }
