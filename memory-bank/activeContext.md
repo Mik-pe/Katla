@@ -8,6 +8,7 @@ What is being worked on right now. **Update this file when starting or finishing
 - **State slot stability** — ConsoleView and MixerView now always call `ctx.state()` unconditionally (even when their env is not set) to prevent slot shifts that corrupt DockSpace/Toolbar state IDs when tabs become active.
 - **DockSpace global input** — DockSpace remains non-interactive for normal hit testing so panels underneath receive input, but owns tab and splitter interaction through the declarative global-input pass. There is no separate editor-side dock input path.
 - **Selectable flex_grow opt-in** — Selectable widget defaults to `flex_grow: 0.0` (content-sized) instead of `1.0` (fill parent). Call `.flex_grow(1.0)` where fill behavior is needed.
+- **Asset browser click semantics** — the first click selects an asset; a second click on the same asset within the UI double-click window activates it. Destructive context actions resolve the stored asset index and never fall back to deleting the current directory.
 
 ## Architecture Note
 
@@ -21,6 +22,7 @@ What is being worked on right now. **Update this file when starting or finishing
 - Splitter drag ratios are computed against the bounds of the split node being resized, including nested splits.
 - Dock tab move actions carry the exact dragged tab; the editor preserves that identity when applying the tree mutation.
 - Console level filters and Clear emit typed actions that are applied after the declarative frame.
+- Asset browser confirmation dialogs store the pending `AssetAction`; confirmation consumes that exact action rather than reconstructing a path from UI data.
 
 ## UI Design Target
 
@@ -38,6 +40,8 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Recent Decisions
 
+- Asset browser activation is derived from repeated `AssetClicked` actions tracked in `AssetBrowserState`; grid cells do not emit activation on every click.
+- Asset deletion refuses empty paths and the synthetic `..` parent entry.
 - Default theme is "rcp" (Reality Composer Pro): neutral dark #1E1E1E, muted orange #D97706 accent. "default" and "catppuccin" keys still map to RCP for backward compat. Preferences dropdown lists RCP first.
 - RCP selection colors: primary #D97706 (amber), hover #E8913A (warm orange), highlight #B45309 (dark amber)
 - Asset browser now uses `panel()` like other docked panels — provides background fill and tab bar padding
