@@ -14,7 +14,9 @@ use katla_ui::{FontSize, ForkAwesome, TextureId};
 use crate::ui::ColorScheme;
 use crate::ui::editor_ui::EditorAction;
 use crate::ui::editor_ui::ThumbnailState;
-use crate::ui::editor_ui::asset_browser::{AssetAction, AssetBrowserState, AssetType};
+use crate::ui::editor_ui::asset_browser::{
+    AssetAction, AssetBrowserState, AssetEntry, AssetType,
+};
 
 /// Environment data injected before each frame for the asset browser panel.
 #[derive(Clone)]
@@ -51,15 +53,11 @@ pub(crate) enum AssetBrowserAction {
     NavigateForward,
     Refresh,
     AssetClicked(usize),
-    AssetDoubleClicked {
-        path: PathBuf,
-        asset_type: AssetType,
-    },
     ContextMenuAction {
         action: String,
         asset_index: Option<usize>,
     },
-    ConfirmDelete(PathBuf),
+    ConfirmDelete,
     CancelDelete,
 }
 
@@ -80,13 +78,14 @@ impl Build for AssetBrowserView {
         let scroll_id: StateId = ctx.state(0.0f32);
         let context_open_id: StateId = ctx.state(draw_ctx.context_menu_open);
         let confirm_open_id: StateId = ctx.state(draw_ctx.confirm_dialog_open);
+        ctx.set_state(context_open_id, draw_ctx.context_menu_open);
         ctx.set_state(confirm_open_id, draw_ctx.confirm_dialog_open);
+
         let search_filter: String = ctx
             .get_state(search_id)
             .unwrap_or_else(|| draw_ctx.search_filter.clone());
         let search_lower = search_filter.to_lowercase();
 
-        // Breadcrumbs
         let mut breadcrumb_items: Vec<Box<dyn Widget>> = Vec::new();
         for (i, segment) in draw_ctx.path_segments.iter().enumerate() {
             if i > 0 {
@@ -97,6 +96,7 @@ impl Build for AssetBrowserView {
                         .boxed(),
                 );
             }
+
             let is_last = i == draw_ctx.path_segments.len() - 1;
             if is_last {
                 breadcrumb_items.push(
@@ -106,20 +106,19 @@ impl Build for AssetBrowserView {
                         .boxed(),
                 );
             } else {
-                let seg_index = i;
+                let segment_index = i;
                 breadcrumb_items.push(
                     button(segment)
                         .fill(katla_math::Color::TRANSPARENT)
                         .border(katla_math::Color::TRANSPARENT)
                         .on_click(ctx.on_click(move |actions| {
-                            actions.emit(AssetBrowserAction::NavigateToSegment(seg_index));
+                            actions.emit(AssetBrowserAction::NavigateToSegment(segment_index));
                         }))
                         .boxed(),
                 );
             }
         }
 
-        // Navigation buttons
         let back_cb = ctx.on_click(|actions| {
             actions.emit(AssetBrowserAction::NavigateBack);
         });
@@ -149,7 +148,6 @@ impl Build for AssetBrowserView {
         .padding(Padding::all(4.0))
         .boxed();
 
-        // Grid of assets
         let item_size = 80.0;
         let cell_size = Vec2::new(item_size + 16.0, item_size + 32.0);
         let col_count = if draw_ctx.bounds.width() > 0.0 {
@@ -185,7 +183,6 @@ impl Build for AssetBrowserView {
             };
 
             let display_name = truncate_name(&asset.name, 12);
-
             let cell = vstack([
                 icon_content,
                 text(display_name)
@@ -198,18 +195,11 @@ impl Build for AssetBrowserView {
             .align(katla_ui::declarative::Alignment::Center);
 
             let click_index = i;
-            let click_path = asset.path.clone();
-            let click_type = asset.asset_type;
-
             grid_children.push(
                 selectable(cell.boxed())
                     .selected(is_selected)
                     .on_click(ctx.on_click(move |actions| {
                         actions.emit(AssetBrowserAction::AssetClicked(click_index));
-                        actions.emit(AssetBrowserAction::AssetDoubleClicked {
-                            path: click_path.clone(),
-                            asset_type: click_type,
-                        });
                     }))
                     .boxed(),
             );
@@ -234,18 +224,18 @@ impl Build for AssetBrowserView {
         let content = vstack([
             toolbar,
             separator_horizontal().boxed(),
-            scroll(grid_content, scroll_id).boxed(),
+            scroll(grid_content, scroll_id).flex_grow(1.0).boxed(),
         ])
+        .flex_grow(1.0)
         .boxed();
 
-        // Context menu
         let context_items: Vec<katla_ui::declarative::ContextMenuEntry> =
             if draw_ctx.context_menu_is_asset {
                 vec![
                     context_entry("Open").on_click(ctx.on_click(|actions| {
                         actions.emit(AssetBrowserAction::ContextMenuAction {
                             action: "Open".to_string(),
-                            asset_index: None, // resolved from state in processor
+                            asset_index: None,
                         });
                     })),
                     context_entry("Rename").on_click(ctx.on_click(|actions| {
@@ -279,7 +269,7 @@ impl Build for AssetBrowserView {
                         actions.emit(AssetBrowserAction::ContextMenuAction {
                             action: "New Folder".to_string(),
                             asset_index: None,
-                        })
+                        });
                     })),
                     context_entry("Refresh").on_click(ctx.on_click(|actions| {
                         actions.emit(AssetBrowserAction::ContextMenuAction {
@@ -296,21 +286,20 @@ impl Build for AssetBrowserView {
                 ]
             };
 
-        let ctx_menu = context_menu(context_items, context_open_id).boxed();
+        let context_menu = context_menu(context_items, context_open_id).boxed();
 
-        // Confirmation modal
-        let no_btn = button("No")
+        let no_button = button("No")
             .fill(katla_math::Color::TRANSPARENT)
             .border(katla_math::Color::TRANSPARENT)
             .on_click(ctx.on_click(|actions| {
                 actions.emit(AssetBrowserAction::CancelDelete);
             }))
             .boxed();
-        let yes_btn = button("Yes")
+        let yes_button = button("Yes")
             .fill(draw_ctx.theme.error.with_alpha(0.3))
             .border(katla_math::Color::TRANSPARENT)
             .on_click(ctx.on_click(|actions| {
-                actions.emit(AssetBrowserAction::ConfirmDelete(PathBuf::new()));
+                actions.emit(AssetBrowserAction::ConfirmDelete);
             }))
             .boxed();
 
@@ -321,7 +310,7 @@ impl Build for AssetBrowserView {
             text(&draw_ctx.confirm_dialog_message)
                 .color(draw_ctx.theme.text_secondary)
                 .boxed(),
-            hstack([no_btn, yes_btn]).spacing(8.0).boxed(),
+            hstack([no_button, yes_button]).spacing(8.0).boxed(),
         ])
         .spacing(8.0)
         .padding_all(8.0);
@@ -334,7 +323,9 @@ impl Build for AssetBrowserView {
 
         panel(
             "Asset Browser",
-            vstack([content, ctx_menu, confirm_modal.boxed()]).boxed(),
+            vstack([content, context_menu, confirm_modal.boxed()])
+                .flex_grow(1.0)
+                .boxed(),
         )
         .flex_width(draw_ctx.bounds.width())
         .flex_height(draw_ctx.bounds.height())
@@ -347,6 +338,29 @@ fn truncate_name(name: &str, max_chars: usize) -> String {
         format!("{}...", name.chars().take(max_chars).collect::<String>())
     } else {
         name.to_string()
+    }
+}
+
+fn activate_asset(
+    state: &mut AssetBrowserState,
+    asset: AssetEntry,
+    thumbnail_texture_handles: &HashMap<PathBuf, TextureHandle>,
+) {
+    match asset.asset_type {
+        AssetType::Folder => {
+            if asset.name == ".." {
+                state.navigate_up(thumbnail_texture_handles);
+            } else {
+                state.navigate_to(&asset.path, thumbnail_texture_handles);
+            }
+        }
+        AssetType::Model => state
+            .pending_actions
+            .push(AssetAction::ModelPreviewRequested(asset.path)),
+        AssetType::Audio => state
+            .pending_actions
+            .push(AssetAction::AudioPreviewToggle { path: asset.path }),
+        _ => {}
     }
 }
 
@@ -374,23 +388,28 @@ pub(crate) fn process_asset_actions(
                     new_folder = parent_path.join(format!("New Folder {}", counter));
                     counter += 1;
                 }
-                if let Err(e) = std::fs::create_dir(&new_folder) {
-                    log::warn!("Failed to create folder: {}", e);
+                if let Err(error) = std::fs::create_dir(&new_folder) {
+                    log::warn!("Failed to create folder: {}", error);
                 } else {
                     log::info!("Created folder: {:?}", new_folder);
                     state.scan_directory(thumbnail_texture_handles);
                 }
             }
             AssetAction::Delete(path) => {
+                if path.as_os_str().is_empty() {
+                    log::warn!("Refusing to delete an empty asset path");
+                    continue;
+                }
+
                 if path.is_dir() {
-                    if let Err(e) = std::fs::remove_dir_all(&path) {
-                        log::warn!("Failed to delete folder: {}", e);
+                    if let Err(error) = std::fs::remove_dir_all(&path) {
+                        log::warn!("Failed to delete folder: {}", error);
                     } else {
                         log::info!("Deleted folder: {:?}", path);
                         state.scan_directory(thumbnail_texture_handles);
                     }
-                } else if let Err(e) = std::fs::remove_file(&path) {
-                    log::warn!("Failed to delete file: {}", e);
+                } else if let Err(error) = std::fs::remove_file(&path) {
+                    log::warn!("Failed to delete file: {}", error);
                 } else {
                     log::info!("Deleted file: {:?}", path);
                     state.scan_directory(thumbnail_texture_handles);
@@ -409,29 +428,29 @@ pub(crate) fn process_asset_actions(
             AssetAction::ShowInExplorer(path) => {
                 #[cfg(target_os = "windows")]
                 {
-                    if let Err(e) = std::process::Command::new("explorer")
+                    if let Err(error) = std::process::Command::new("explorer")
                         .args(["/select,", &path.to_string_lossy()])
                         .spawn()
                     {
-                        log::warn!("Failed to open explorer: {}", e);
+                        log::warn!("Failed to open explorer: {}", error);
                     }
                 }
                 #[cfg(target_os = "macos")]
                 {
-                    if let Err(e) = std::process::Command::new("open")
+                    if let Err(error) = std::process::Command::new("open")
                         .args(["-R", &path.to_string_lossy()])
                         .spawn()
                     {
-                        log::warn!("Failed to open finder: {}", e);
+                        log::warn!("Failed to open finder: {}", error);
                     }
                 }
                 #[cfg(target_os = "linux")]
                 {
-                    if let Err(e) = std::process::Command::new("xdg-open")
+                    if let Err(error) = std::process::Command::new("xdg-open")
                         .arg(path.parent().unwrap_or(&path))
                         .spawn()
                     {
-                        log::warn!("Failed to open file manager: {}", e);
+                        log::warn!("Failed to open file manager: {}", error);
                     }
                 }
             }
@@ -453,8 +472,8 @@ pub(crate) fn process_declarative_actions(
 
     for action in actions {
         match action {
-            AssetBrowserAction::NavigateToSegment(idx) => {
-                state.navigate_to_segment(idx, thumbnail_texture_handles);
+            AssetBrowserAction::NavigateToSegment(index) => {
+                state.navigate_to_segment(index, thumbnail_texture_handles);
             }
             AssetBrowserAction::NavigateBack => {
                 state.navigate_back(thumbnail_texture_handles);
@@ -465,89 +484,77 @@ pub(crate) fn process_declarative_actions(
             AssetBrowserAction::Refresh => {
                 state.refresh(thumbnail_texture_handles);
             }
-            AssetBrowserAction::AssetClicked(idx) => {
-                state.selected_index = Some(idx);
+            AssetBrowserAction::AssetClicked(index) => {
+                let activate = state.register_click(index);
+                state.selected_index = Some(index);
                 state.selected_indices.clear();
-            }
-            AssetBrowserAction::AssetDoubleClicked {
-                asset_type, path, ..
-            } => {
-                if asset_type == AssetType::Folder {
-                    if path.ends_with("..") {
-                        state.navigate_up(thumbnail_texture_handles);
-                    } else {
-                        state.navigate_to(&path, thumbnail_texture_handles);
-                    }
-                } else if asset_type == AssetType::Model {
-                    state
-                        .pending_actions
-                        .push(AssetAction::ModelPreviewRequested(path));
-                } else if asset_type == AssetType::Audio {
-                    state
-                        .pending_actions
-                        .push(AssetAction::AudioPreviewToggle { path });
+
+                if activate
+                    && let Some(asset) = state.assets.get(index).cloned()
+                {
+                    activate_asset(state, asset, thumbnail_texture_handles);
                 }
             }
             AssetBrowserAction::ContextMenuAction {
                 action,
                 asset_index,
             } => {
-                let asset_path = asset_index
-                    .and_then(|idx| state.assets.get(idx))
-                    .map(|a| a.path.clone())
-                    .unwrap_or_else(|| state.current_path.clone());
-                let asset_type = asset_index
-                    .and_then(|idx| state.assets.get(idx))
-                    .map(|a| a.asset_type);
+                let resolved_index = asset_index.or(state.context_menu_asset);
+                let target = resolved_index.and_then(|index| state.assets.get(index)).cloned();
 
                 state.context_menu_open = false;
                 state.context_menu_asset = None;
 
                 match action.as_str() {
                     "Open" => {
-                        if asset_type == Some(AssetType::Folder) {
-                            if asset_path.file_name().map(|n| n == "..").unwrap_or(false) {
-                                state.navigate_up(thumbnail_texture_handles);
-                            } else {
-                                state.navigate_to(&asset_path, thumbnail_texture_handles);
-                            }
-                        } else if asset_type.is_some() {
-                            state.pending_actions.push(AssetAction::Open(asset_path));
+                        if let Some(asset) = target {
+                            activate_asset(state, asset, thumbnail_texture_handles);
                         }
                     }
                     "Rename" => {
-                        if let Some(idx) = asset_index {
-                            state.start_rename(idx);
+                        if let Some(index) = resolved_index {
+                            state.start_rename(index);
                         }
                     }
                     "Copy Path" => {
-                        state
-                            .pending_actions
-                            .push(AssetAction::CopyPath(asset_path));
+                        if let Some(asset) = target {
+                            state
+                                .pending_actions
+                                .push(AssetAction::CopyPath(asset.path));
+                        }
                     }
                     "Show in Explorer" => {
+                        let path = target
+                            .map(|asset| asset.path)
+                            .unwrap_or_else(|| state.current_path.clone());
                         state
                             .pending_actions
-                            .push(AssetAction::ShowInExplorer(asset_path));
+                            .push(AssetAction::ShowInExplorer(path));
                     }
                     "Delete" => {
-                        let is_folder = asset_path.is_dir();
-                        let name = asset_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "this item".to_string());
-                        state.confirm_dialog_message = if is_folder {
-                            format!("Delete folder \"{}\" and all its contents?", name)
-                        } else {
-                            format!("Delete \"{}\"?", name)
-                        };
-                        state.confirm_pending_action = Some(AssetAction::Delete(asset_path));
-                        state.confirm_dialog_open = true;
+                        if let Some(asset) = target {
+                            if asset.name == ".." {
+                                log::warn!("Refusing to delete the parent-directory entry");
+                            } else {
+                                let is_folder = asset.asset_type == AssetType::Folder;
+                                state.confirm_dialog_message = if is_folder {
+                                    format!(
+                                        "Delete folder \"{}\" and all its contents?",
+                                        asset.name
+                                    )
+                                } else {
+                                    format!("Delete \"{}\"?", asset.name)
+                                };
+                                state.confirm_pending_action =
+                                    Some(AssetAction::Delete(asset.path));
+                                state.confirm_dialog_open = true;
+                            }
+                        }
                     }
                     "New Folder" => {
                         state
                             .pending_actions
-                            .push(AssetAction::CreateFolder(asset_path));
+                            .push(AssetAction::CreateFolder(state.current_path.clone()));
                     }
                     "Refresh" => {
                         state.refresh(thumbnail_texture_handles);
@@ -555,9 +562,11 @@ pub(crate) fn process_declarative_actions(
                     _ => {}
                 }
             }
-            AssetBrowserAction::ConfirmDelete(path) => {
+            AssetBrowserAction::ConfirmDelete => {
                 state.confirm_dialog_open = false;
-                state.pending_actions.push(AssetAction::Delete(path));
+                if let Some(action) = state.confirm_pending_action.take() {
+                    state.pending_actions.push(action);
+                }
             }
             AssetBrowserAction::CancelDelete => {
                 state.confirm_dialog_open = false;
@@ -566,7 +575,6 @@ pub(crate) fn process_declarative_actions(
         }
     }
 
-    // Process any pending AssetActions that were queued by the action handlers
     pending.extend(process_asset_actions(
         state,
         thumbnail_texture_handles,
@@ -574,4 +582,120 @@ pub(crate) fn process_declarative_actions(
     ));
 
     pending
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn audio_asset(path: &str) -> AssetEntry {
+        AssetEntry {
+            name: "sound.wav".to_string(),
+            path: PathBuf::from(path),
+            asset_type: AssetType::Audio,
+            thumbnail_state: ThumbnailState::Pending,
+        }
+    }
+
+    #[test]
+    fn asset_activation_requires_second_click() {
+        let mut state = AssetBrowserState::new();
+        let audio_path = PathBuf::from("resources/sound.wav");
+        state.assets.push(audio_asset("resources/sound.wav"));
+        let handles = HashMap::new();
+        let bounds = Rect2D::default();
+
+        let first = process_declarative_actions(
+            &mut state,
+            &handles,
+            bounds,
+            vec![AssetBrowserAction::AssetClicked(0)],
+        );
+        assert!(first.is_empty());
+
+        let second = process_declarative_actions(
+            &mut state,
+            &handles,
+            bounds,
+            vec![AssetBrowserAction::AssetClicked(0)],
+        );
+        assert!(matches!(
+            second.as_slice(),
+            [EditorAction::AudioPreviewToggle { path }] if path == &audio_path
+        ));
+    }
+
+    #[test]
+    fn confirm_delete_uses_the_stored_pending_action() {
+        let mut state = AssetBrowserState::new();
+        let audio_path = PathBuf::from("resources/pending.wav");
+        state.confirm_dialog_open = true;
+        state.confirm_pending_action = Some(AssetAction::AudioPreviewToggle {
+            path: audio_path.clone(),
+        });
+
+        let actions = process_declarative_actions(
+            &mut state,
+            &HashMap::new(),
+            Rect2D::default(),
+            vec![AssetBrowserAction::ConfirmDelete],
+        );
+
+        assert!(!state.confirm_dialog_open);
+        assert!(state.confirm_pending_action.is_none());
+        assert!(matches!(
+            actions.as_slice(),
+            [EditorAction::AudioPreviewToggle { path }] if path == &audio_path
+        ));
+    }
+
+    #[test]
+    fn context_menu_uses_the_asset_index_stored_in_state() {
+        let mut state = AssetBrowserState::new();
+        let audio_path = PathBuf::from("resources/context.wav");
+        state.assets.push(audio_asset("resources/context.wav"));
+        state.context_menu_open = true;
+        state.context_menu_asset = Some(0);
+
+        let actions = process_declarative_actions(
+            &mut state,
+            &HashMap::new(),
+            Rect2D::default(),
+            vec![AssetBrowserAction::ContextMenuAction {
+                action: "Open".to_string(),
+                asset_index: None,
+            }],
+        );
+
+        assert!(matches!(
+            actions.as_slice(),
+            [EditorAction::AudioPreviewToggle { path }] if path == &audio_path
+        ));
+    }
+
+    #[test]
+    fn parent_directory_entry_cannot_be_deleted() {
+        let mut state = AssetBrowserState::new();
+        state.assets.push(AssetEntry {
+            name: "..".to_string(),
+            path: PathBuf::from("resources"),
+            asset_type: AssetType::Folder,
+            thumbnail_state: ThumbnailState::Pending,
+        });
+        state.context_menu_asset = Some(0);
+
+        let actions = process_declarative_actions(
+            &mut state,
+            &HashMap::new(),
+            Rect2D::default(),
+            vec![AssetBrowserAction::ContextMenuAction {
+                action: "Delete".to_string(),
+                asset_index: None,
+            }],
+        );
+
+        assert!(actions.is_empty());
+        assert!(!state.confirm_dialog_open);
+        assert!(state.confirm_pending_action.is_none());
+    }
 }
