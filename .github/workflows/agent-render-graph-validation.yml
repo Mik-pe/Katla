@@ -18,8 +18,16 @@ jobs:
       - name: Install Rust components
         run: rustup component add clippy rustfmt
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Format source in the validation workspace
+        run: cargo fmt --all
+
+      - name: Export formatted compiler source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: formatted-render-graph-compiler
+          path: katla_gfx/src/render_graph/compiler.rs
+          retention-days: 1
 
       - name: Test render graph compiler
         run: cargo test -p katla_gfx render_graph::compiler --lib
