@@ -25,4 +25,18 @@ jobs:
         run: cargo test -p katla_gfx --bench command_buffer_recording --no-run
 
       - name: Lint benchmark target
-        run: cargo clippy -p katla_gfx --bench command_buffer_recording -- -D warnings
+        id: clippy
+        continue-on-error: true
+        run: cargo clippy -p katla_gfx --bench command_buffer_recording -- -D warnings 2>&1 | tee /tmp/benchmark-clippy.log
+
+      - name: Upload lint diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-clippy-log
+          path: /tmp/benchmark-clippy.log
+          retention-days: 1
+
+      - name: Require successful lint
+        if: always()
+        run: test "${{ steps.clippy.outcome }}" = success
