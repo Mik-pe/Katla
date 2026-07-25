@@ -19,21 +19,46 @@ jobs:
         run: rustup component add clippy rustfmt
 
       - name: Format source in the validation workspace
-        run: cargo fmt --all
-
-      - name: Export formatted compiler source
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: formatted-render-graph-compiler
-          path: katla_gfx/src/render_graph/compiler.rs
-          retention-days: 1
+        run: |
+          cargo fmt --all
+          git diff --name-only > format-changes.txt
 
       - name: Test render graph compiler
         run: cargo test -p katla_gfx render_graph::compiler --lib
 
       - name: Test graphics library
-        run: cargo test -p katla_gfx --lib
+        shell: bash
+        run: |
+          set +e
+          cargo test -p katla_gfx --lib 2>&1 | tee gfx-test.log
+          status=${PIPESTATUS[0]}
+          echo "$status" > gfx-test-status.txt
+          exit "$status"
+
+      - name: Export validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-graph-validation-diagnostics
+          path: |
+            format-changes.txt
+            gfx-test.log
+            gfx-test-status.txt
+          retention-days: 1
 
       - name: Lint graphics library
-        run: cargo clippy -p katla_gfx --lib -- -D warnings
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          cargo clippy -p katla_gfx --lib -- -D warnings 2>&1 | tee gfx-clippy.log
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Export clippy diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-graph-clippy-diagnostics
+          path: gfx-clippy.log
+          retention-days: 1
