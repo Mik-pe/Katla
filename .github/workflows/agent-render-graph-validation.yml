@@ -1,0 +1,31 @@
+name: Agent render graph validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-14
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust components
+        run: rustup component add clippy rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Test render graph compiler
+        run: cargo test -p katla_gfx render_graph::compiler --lib
+
+      - name: Test graphics library
+        run: cargo test -p katla_gfx --lib
+
+      - name: Lint graphics library
+        run: cargo clippy -p katla_gfx --lib -- -D warnings
