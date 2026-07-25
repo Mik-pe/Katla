@@ -6,14 +6,16 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: macos-14
     steps:
-      - name: Check out repository
+      - name: Check out pull request branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Install Rust components
         run: rustup component add clippy rustfmt
@@ -33,13 +35,18 @@ jobs:
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --lib -- -D warnings
 
-      - name: Export validated source
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: validated-render-graph-builder
-          path: |
-            katla_gfx/src/render_graph/error.rs
-            katla_gfx/src/render_graph/frame_graph.rs
+      - name: Commit validated render graph source
+        shell: bash
+        run: |
+          git add \
+            katla_gfx/src/render_graph/error.rs \
+            katla_gfx/src/render_graph/frame_graph.rs \
             katla_gfx/src/render_graph/mod.rs
-          retention-days: 1
+          if git diff --cached --quiet; then
+            echo "Validated source is already committed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Validate render graph structure before compilation"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
