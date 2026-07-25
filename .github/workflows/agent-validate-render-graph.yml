@@ -15,5 +15,31 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Smoke test validation harness
-        run: echo "render graph validation harness is active"
+      - name: Install Rust components
+        run: rustup component add clippy rustfmt
+
+      - name: Apply candidate validation patch
+        run: python3 .github/scripts/apply_render_graph_validation.py
+
+      - name: Format candidate source
+        run: cargo fmt --all
+
+      - name: Test render graph validation
+        run: cargo test -p katla_gfx render_graph::frame_graph --lib -- --test-threads=1
+
+      - name: Check graphics library
+        run: cargo check -p katla_gfx --lib
+
+      - name: Lint graphics library
+        run: cargo clippy -p katla_gfx --lib -- -D warnings
+
+      - name: Export validated source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-render-graph-builder
+          path: |
+            katla_gfx/src/render_graph/error.rs
+            katla_gfx/src/render_graph/frame_graph.rs
+            katla_gfx/src/render_graph/mod.rs
+          retention-days: 1
