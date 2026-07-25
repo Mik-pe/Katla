@@ -1,9 +1,9 @@
 name: Agent Metal frame schedule
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/metal-semantic-frame-schedule
+      - main
 
 permissions:
   contents: write
@@ -12,10 +12,10 @@ jobs:
   validate:
     runs-on: macos-14
     steps:
-      - name: Check out validation branch
+      - name: Check out pull request branch
         uses: actions/checkout@v4
         with:
-          ref: agent/metal-semantic-frame-schedule
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - name: Install Rust components
@@ -79,4 +79,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Drive Metal rendering from the compiled frame graph"
-          git push origin HEAD:agent/metal-semantic-frame-schedule
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
