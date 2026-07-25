@@ -39,7 +39,20 @@ jobs:
           retention-days: 1
 
       - name: Test render graph compiler
-        run: cargo test -p katla_gfx render_graph::compiler --lib
+        shell: bash
+        run: |
+          set +e
+          cargo test -p katla_gfx render_graph::compiler --lib 2>&1 | tee /tmp/render-graph-test.log
+          status=${PIPESTATUS[0]}
+          exit "$status"
+
+      - name: Upload compiler test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: render-graph-test-log
+          path: /tmp/render-graph-test.log
+          retention-days: 1
 
       - name: Test graphics crate
         run: cargo test -p katla_gfx --all-targets
