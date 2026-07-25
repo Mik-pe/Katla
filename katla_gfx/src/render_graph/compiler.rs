@@ -130,9 +130,7 @@ impl GraphCompiler {
 
         for (pass_index, pass) in self.passes.iter().enumerate() {
             for resource in &pass.reads {
-                let last_writer = resources
-                    .get(resource)
-                    .and_then(|state| state.last_writer);
+                let last_writer = resources.get(resource).and_then(|state| state.last_writer);
                 if let Some(writer) = last_writer {
                     add_dependency(&mut graph, writer, pass_index);
                 }
@@ -150,7 +148,11 @@ impl GraphCompiler {
                     .map(|state| {
                         (
                             state.last_writer,
-                            state.readers_since_write.iter().copied().collect::<Vec<_>>(),
+                            state
+                                .readers_since_write
+                                .iter()
+                                .copied()
+                                .collect::<Vec<_>>(),
                         )
                     })
                     .unwrap_or_default();
@@ -203,9 +205,11 @@ impl GraphCompiler {
             return Ok(sorted);
         }
 
-        let cycle = self
-            .detect_cycle()
-            .unwrap_or_else(|| (0..self.passes.len()).filter(|i| !sorted.contains(i)).collect());
+        let cycle = self.detect_cycle().unwrap_or_else(|| {
+            (0..self.passes.len())
+                .filter(|i| !sorted.contains(i))
+                .collect()
+        });
         let names = cycle
             .iter()
             .map(|&index| self.passes[index].name.as_str())
@@ -259,12 +263,7 @@ impl GraphCompiler {
 
         for pass_index in 0..self.passes.len() {
             if state[pass_index] == VisitState::Unvisited
-                && let Some(cycle) = dfs(
-                    pass_index,
-                    &self.dependency_graph,
-                    &mut state,
-                    &mut path,
-                )
+                && let Some(cycle) = dfs(pass_index, &self.dependency_graph, &mut state, &mut path)
             {
                 return Some(cycle);
             }
