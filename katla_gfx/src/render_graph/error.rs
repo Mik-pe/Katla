@@ -4,9 +4,80 @@ use std::fmt;
 
 use super::resource::ResourceState;
 
+/// Structural errors detected before a render graph is compiled or allocated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GraphValidationError {
+    /// A resource declaration or import has an empty name.
+    EmptyResourceName,
+    /// A resource name is declared more than once.
+    DuplicateResourceName(String),
+    /// A transient texture has a zero-sized extent.
+    InvalidResourceExtent {
+        resource: String,
+        width: u32,
+        height: u32,
+    },
+    /// An imported resource uses the sentinel NONE handle.
+    InvalidImportedResource(String),
+    /// A pass has an empty name.
+    EmptyPassName,
+    /// A pass name is declared more than once.
+    DuplicatePassName(String),
+    /// A pass references an empty resource name.
+    EmptyPassResource { pass: String },
+    /// A pass references a resource that was never declared or imported.
+    UndeclaredResource { pass: String, resource: String },
+    /// A transient descriptor is missing from the graph resource namespace.
+    MissingResourceNamespaceEntry(String),
+}
+
+impl fmt::Display for GraphValidationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyResourceName => write!(f, "resource names must not be empty"),
+            Self::DuplicateResourceName(name) => {
+                write!(f, "resource '{}' is declared more than once", name)
+            }
+            Self::InvalidResourceExtent {
+                resource,
+                width,
+                height,
+            } => write!(
+                f,
+                "resource '{}' has invalid extent {}x{}",
+                resource, width, height
+            ),
+            Self::InvalidImportedResource(name) => write!(
+                f,
+                "imported resource '{}' uses GraphResourceHandle::NONE",
+                name
+            ),
+            Self::EmptyPassName => write!(f, "pass names must not be empty"),
+            Self::DuplicatePassName(name) => {
+                write!(f, "pass '{}' is declared more than once", name)
+            }
+            Self::EmptyPassResource { pass } => {
+                write!(f, "pass '{}' references an empty resource name", pass)
+            }
+            Self::UndeclaredResource { pass, resource } => write!(
+                f,
+                "pass '{}' references undeclared resource '{}'",
+                pass, resource
+            ),
+            Self::MissingResourceNamespaceEntry(resource) => write!(
+                f,
+                "transient resource '{}' is missing from the graph namespace",
+                resource
+            ),
+        }
+    }
+}
+
 /// Render graph errors.
 #[derive(Debug)]
 pub enum RenderGraphError {
+    /// Invalid graph structure discovered before compilation.
+    Validation(GraphValidationError),
     /// Resource not found.
     ResourceNotFound(String),
     /// Pass not found.
@@ -42,6 +113,7 @@ pub enum RenderGraphError {
 impl fmt::Display for RenderGraphError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Validation(error) => write!(f, "Invalid render graph: {}", error),
             Self::ResourceNotFound(name) => write!(f, "Resource '{}' not found", name),
             Self::PassNotFound(name) => write!(f, "Pass '{}' not found", name),
             Self::DependencyCycle(msg) => write!(f, "Cycle detected in dependency graph: {}", msg),
@@ -80,6 +152,12 @@ impl fmt::Display for RenderGraphError {
 }
 
 impl std::error::Error for RenderGraphError {}
+
+impl From<GraphValidationError> for RenderGraphError {
+    fn from(error: GraphValidationError) -> Self {
+        Self::Validation(error)
+    }
+}
 
 impl From<ash::vk::Result> for RenderGraphError {
     fn from(result: ash::vk::Result) -> Self {
