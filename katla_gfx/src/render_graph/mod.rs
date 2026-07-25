@@ -64,7 +64,7 @@ mod vulkan_backend;
 // Public API
 pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
-pub use error::RenderGraphError;
+pub use error::{GraphValidationError, RenderGraphError};
 pub use frame::Frame;
 pub(crate) use frame::PassExecutionData;
 pub use frame_graph::{FrameGraph, FrameGraphBuilder};
