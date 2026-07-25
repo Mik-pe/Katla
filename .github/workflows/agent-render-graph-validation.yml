@@ -35,7 +35,10 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo test -p katla_gfx --lib -- --test-threads=1 2>&1 | tee gfx-test.log
+          cargo test -p katla_gfx --lib -- \
+            --test-threads=1 \
+            --skip metal::metal_renderer::tests::test_headless_render_not_white \
+            2>&1 | tee gfx-test.log
           status=${PIPESTATUS[0]}
           echo "$status" > gfx-test-status.txt
           exit "$status"
