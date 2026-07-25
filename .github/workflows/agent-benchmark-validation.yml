@@ -1,0 +1,28 @@
+name: Agent benchmark validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-14
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust components
+        run: rustup component add clippy rustfmt
+
+      - name: Check changed-file formatting
+        run: rustfmt --edition 2024 --check katla_gfx/benches/command_buffer_recording.rs
+
+      - name: Compile benchmark target
+        run: cargo test -p katla_gfx --bench command_buffer_recording --no-run
+
+      - name: Lint benchmark target
+        run: cargo clippy -p katla_gfx --bench command_buffer_recording -- -D warnings
