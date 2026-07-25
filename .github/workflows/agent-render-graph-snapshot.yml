@@ -1,4 +1,4 @@
-name: Agent render graph snapshot
+name: Agent render graph validation
 
 on:
   pull_request:
@@ -9,18 +9,42 @@ permissions:
   contents: read
 
 jobs:
-  snapshot:
+  validate:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Pack source snapshot
-        run: tar --exclude=.git -czf /tmp/katla-source.tar.gz .
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libasound2-dev \
+            libudev-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            pkg-config
 
-      - name: Upload source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: katla-source
-          path: /tmp/katla-source.tar.gz
-          retention-days: 1
+      - name: Install Rust components
+        run: rustup component add clippy rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Test render graph compiler
+        run: cargo test -p katla_gfx render_graph::compiler --lib
+
+      - name: Test graphics crate
+        run: cargo test -p katla_gfx --all-targets
+
+      - name: Lint graphics crate
+        run: cargo clippy -p katla_gfx --all-targets -- -D warnings
+
+      - name: Test workspace
+        run: cargo test --workspace --all-features --all-targets
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-features --all-targets -- -D warnings
+
+      - name: Test documentation
+        run: cargo test --workspace --doc
