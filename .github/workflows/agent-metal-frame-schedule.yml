@@ -1,0 +1,581 @@
+name: Agent Metal frame schedule
+
+on:
+  pull_request:
+    branches:
+      - agent/render-graph-compiler
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-14
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust components
+        run: rustup component add clippy rustfmt
+
+      - name: Apply candidate Metal frame schedule patch
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          pass_path = Path("katla_gfx/src/render_graph/pass.rs")
+          source = pass_path.read_text()
+          if "    /// UI overlay" not in source:
+              source = source.replace(
+                  "    /// Compositing — multi-viewport compositing.\n    Compositing,\n",
+                  "    /// Compositing — multi-viewport compositing.\n    Compositing,\n    /// UI overlay — composites UI commands over the rendered frame.\n    Ui,\n",
+                  1,
+              )
+              pass_path.write_text(source)
+
+          ui_path = Path("katla_gfx/src/render_graph/passes/ui.rs")
+          source = ui_path.read_text()
+          source = source.replace(
+              "use crate::render_graph::pass::PassType;",
+              "use crate::render_graph::pass::{PassKind, PassType};",
+              1,
+          )
+          source = source.replace("            kind: None,", "            kind: Some(PassKind::Ui),", 1)
+          ui_path.write_text(source)
+
+          metal_mod_path = Path("katla_gfx/src/metal/mod.rs")
+          source = metal_mod_path.read_text()
+          if "pub(crate) mod frame_schedule;" not in source:
+              source = source.replace(
+                  "pub(crate) mod frame_render;\n",
+                  "pub(crate) mod frame_render;\npub(crate) mod frame_schedule;\n",
+                  1,
+              )
+              metal_mod_path.write_text(source)
+
+          schedule_path = Path("katla_gfx/src/metal/frame_schedule.rs")
+          if not schedule_path.exists():
+              schedule_path.write_text(r'''//! Validated semantic schedule for Metal frame encoding.
+
+use crate::render_graph::{FrameGraph, PassDesc, PassKind, PassType, RenderGraphError};
+
+use super::metal_renderer::MetalRenderer;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MetalScheduledPass {
+    pub(crate) pass_index: usize,
+    pub(crate) kind: PassKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MetalFrameSchedule {
+    passes: Vec<MetalScheduledPass>,
+}
+
+impl MetalFrameSchedule {
+    pub(crate) fn compile(
+        frame_graph: &FrameGraph<MetalRenderer>,
+    ) -> Result<Self, RenderGraphError> {
+        let order = frame_graph.execution_order();
+        Self::compile_order(&order, |index| frame_graph.pass(index))
+    }
+
+    fn compile_order<'a>(
+        order: &[usize],
+        mut pass_at: impl FnMut(usize) -> Option<&'a PassDesc>,
+    ) -> Result<Self, RenderGraphError> {
+        let mut passes = Vec::with_capacity(order.len());
+        let mut seen = Vec::new();
+        let mut previous: Option<(usize, PassKind, String)> = None;
+
+        for &pass_index in order {
+            let pass = pass_at(pass_index).ok_or_else(|| {
+                RenderGraphError::BackendError(format!(
+                    "Metal execution schedule references missing pass index {pass_index}"
+                ))
+            })?;
+
+            if pass.pass_type == PassType::Compute {
+                return Err(RenderGraphError::BackendError(format!(
+                    "Metal frame graph pass '{}' is compute; backend-neutral compute commands are not implemented",
+                    pass.name
+                )));
+            }
+
+            let kind = pass.kind.ok_or_else(|| {
+                RenderGraphError::BackendError(format!(
+                    "Metal frame graph pass '{}' has no semantic PassKind",
+                    pass.name
+                ))
+            })?;
+            let rank = Self::rank(kind).ok_or_else(|| {
+                RenderGraphError::BackendError(format!(
+                    "Metal frame graph pass '{}' uses unsupported semantic kind {:?}",
+                    pass.name, kind
+                ))
+            })?;
+
+            if seen.contains(&kind) {
+                return Err(RenderGraphError::BackendError(format!(
+                    "Metal frame graph contains duplicate singleton pass kind {:?}",
+                    kind
+                )));
+            }
+
+            if let Some((previous_rank, previous_kind, previous_name)) = &previous
+                && rank < *previous_rank
+            {
+                return Err(RenderGraphError::BackendError(format!(
+                    "Metal frame graph order is invalid: pass '{}' ({:?}) appears after '{}' ({:?})",
+                    pass.name, kind, previous_name, previous_kind
+                )));
+            }
+
+            seen.push(kind);
+            previous = Some((rank, kind, pass.name.clone()));
+            passes.push(MetalScheduledPass { pass_index, kind });
+        }
+
+        if !seen.contains(&PassKind::Geometry) {
+            return Err(RenderGraphError::BackendError(
+                "Metal frame graph requires exactly one Geometry pass".to_string(),
+            ));
+        }
+
+        Ok(Self { passes })
+    }
+
+    fn rank(kind: PassKind) -> Option<usize> {
+        match kind {
+            PassKind::Shadow => Some(0),
+            PassKind::DepthPrepass => Some(1),
+            PassKind::Geometry => Some(2),
+            PassKind::Outline => Some(3),
+            PassKind::Fullscreen => Some(4),
+            PassKind::Ui => Some(5),
+            PassKind::Particles | PassKind::StencilIndicator | PassKind::Compositing => None,
+        }
+    }
+
+    pub(crate) fn passes(&self) -> &[MetalScheduledPass] {
+        &self.passes
+    }
+
+    pub(crate) fn contains(&self, kind: PassKind) -> bool {
+        self.passes.iter().any(|pass| pass.kind == kind)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pass(name: &str, pass_type: PassType, kind: Option<PassKind>) -> PassDesc {
+        let mut pass = PassDesc::new(name, pass_type, Vec::new(), Vec::new());
+        pass.kind = kind;
+        pass
+    }
+
+    fn compile(
+        passes: &[PassDesc],
+        order: &[usize],
+    ) -> Result<MetalFrameSchedule, RenderGraphError> {
+        MetalFrameSchedule::compile_order(order, |index| passes.get(index))
+    }
+
+    #[test]
+    fn preserves_compiled_semantic_order() {
+        let passes = vec![
+            pass("shadow", PassType::Graphics, Some(PassKind::Shadow)),
+            pass(
+                "depth_prepass",
+                PassType::Graphics,
+                Some(PassKind::DepthPrepass),
+            ),
+            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("outline", PassType::Graphics, Some(PassKind::Outline)),
+            pass("tonemap", PassType::Graphics, Some(PassKind::Fullscreen)),
+            pass("ui", PassType::Graphics, Some(PassKind::Ui)),
+        ];
+
+        let schedule = compile(&passes, &[0, 1, 2, 3, 4, 5]).unwrap();
+        assert_eq!(
+            schedule
+                .passes()
+                .iter()
+                .map(|pass| pass.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                PassKind::Shadow,
+                PassKind::DepthPrepass,
+                PassKind::Geometry,
+                PassKind::Outline,
+                PassKind::Fullscreen,
+                PassKind::Ui,
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_missing_semantic_kind() {
+        let passes = vec![pass("geometry", PassType::Graphics, None)];
+        let error = compile(&passes, &[0]).unwrap_err().to_string();
+        assert!(error.contains("has no semantic PassKind"));
+    }
+
+    #[test]
+    fn rejects_compute_passes_before_encoding() {
+        let passes = vec![pass(
+            "light_cull",
+            PassType::Compute,
+            Some(PassKind::Geometry),
+        )];
+        let error = compile(&passes, &[0]).unwrap_err().to_string();
+        assert!(error.contains("backend-neutral compute commands are not implemented"));
+    }
+
+    #[test]
+    fn rejects_duplicate_singleton_kinds() {
+        let passes = vec![
+            pass("geometry_a", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("geometry_b", PassType::Graphics, Some(PassKind::Geometry)),
+        ];
+        let error = compile(&passes, &[0, 1]).unwrap_err().to_string();
+        assert!(error.contains("duplicate singleton pass kind Geometry"));
+    }
+
+    #[test]
+    fn rejects_unsupported_kinds() {
+        let passes = vec![
+            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("particles", PassType::Graphics, Some(PassKind::Particles)),
+        ];
+        let error = compile(&passes, &[0, 1]).unwrap_err().to_string();
+        assert!(error.contains("unsupported semantic kind Particles"));
+    }
+
+    #[test]
+    fn rejects_backend_order_drift() {
+        let passes = vec![
+            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("shadow", PassType::Graphics, Some(PassKind::Shadow)),
+        ];
+        let error = compile(&passes, &[0, 1]).unwrap_err().to_string();
+        assert!(error.contains("order is invalid"));
+    }
+
+    #[test]
+    fn accepts_optional_passes_around_required_geometry() {
+        let passes = vec![
+            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("ui", PassType::Graphics, Some(PassKind::Ui)),
+        ];
+        let schedule = compile(&passes, &[0, 1]).unwrap();
+        assert!(schedule.contains(PassKind::Geometry));
+        assert!(schedule.contains(PassKind::Ui));
+        assert!(!schedule.contains(PassKind::DepthPrepass));
+    }
+}
+''')
+
+          renderer_path = Path("katla_gfx/src/metal/metal_renderer.rs")
+          source = renderer_path.read_text()
+          if "pending_depth_prepass_draw_list" not in source:
+              source = source.replace(
+                  "    pub(crate) pending_draw_list: Option<DrawList>,\n",
+                  "    pub(crate) pending_draw_list: Option<DrawList>,\n    pub(crate) pending_depth_prepass_draw_list: Option<DrawList>,\n",
+                  1,
+              )
+              source = source.replace(
+                  "            pending_draw_list: None,\n",
+                  "            pending_draw_list: None,\n            pending_depth_prepass_draw_list: None,\n",
+                  1,
+              )
+
+              start = source.index("    fn execute_metal_passes(\n")
+              end = source.index("    fn merge_draw_lists", start)
+              replacement = r'''    fn execute_metal_passes(
+        &mut self,
+        mut pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
+        frame_graph: &crate::render_graph::FrameGraph<Self>,
+        _frame_idx: usize,
+    ) -> Result<(), RendererError> {
+        let schedule = super::frame_schedule::MetalFrameSchedule::compile(frame_graph)
+            .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
+
+        self.pending_shadow_draw_list = None;
+        self.pending_depth_prepass_draw_list = None;
+        self.pending_draw_list = None;
+        self.pending_outline_draw_list = None;
+        self.pending_ui_draw_list = None;
+
+        for scheduled in schedule.passes() {
+            let Some(data) = pending.remove(&scheduled.pass_index) else {
+                continue;
+            };
+
+            match scheduled.kind {
+                crate::render_graph::PassKind::Shadow => {
+                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
+                    if !draw_list.draws.is_empty() {
+                        self.pending_shadow_draw_list = Some(draw_list);
+                    }
+                }
+                crate::render_graph::PassKind::DepthPrepass => {
+                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
+                    if !draw_list.draws.is_empty() {
+                        self.pending_depth_prepass_draw_list = Some(draw_list);
+                    }
+                }
+                crate::render_graph::PassKind::Geometry => {
+                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
+                    if !draw_list.draws.is_empty() {
+                        self.pending_draw_list = Some(draw_list);
+                    }
+                }
+                crate::render_graph::PassKind::Outline => {
+                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
+                    if !draw_list.draws.is_empty() {
+                        self.pending_outline_draw_list = Some(draw_list);
+                    }
+                }
+                crate::render_graph::PassKind::Ui => {
+                    if let Some(ui_list) = data.ui_draw_lists.first() {
+                        self.pending_ui_draw_list = Some(ui_list.clone());
+                    }
+                }
+                crate::render_graph::PassKind::Fullscreen => {}
+                crate::render_graph::PassKind::Particles
+                | crate::render_graph::PassKind::StencilIndicator
+                | crate::render_graph::PassKind::Compositing => unreachable!(
+                    "unsupported Metal pass kinds are rejected while compiling the schedule"
+                ),
+            }
+        }
+
+        if let Some(pass_index) = pending.keys().next().copied() {
+            return Err(RendererError::InvalidOperation(format!(
+                "Metal received submissions for unscheduled pass index {pass_index}"
+            )));
+        }
+
+        self.render_frame(&schedule)?;
+        Ok(())
+    }
+
+'''
+              source = source[:start] + replacement + source[end:]
+              renderer_path.write_text(source)
+
+          frame_path = Path("katla_gfx/src/metal/frame_render.rs")
+          source = frame_path.read_text()
+          if "schedule: &MetalFrameSchedule" not in source:
+              source = source.replace(
+                  "//! Metal frame rendering — hardcoded pass sequence.\n//!\n//! This is the legacy Metal render path that executes passes directly\n//! without going through the frame graph. Used by Metal validation tests.\n",
+                  "//! Metal frame rendering driven by a validated semantic frame schedule.\n//!\n//! Encoder implementations remain backend-specific, while pass presence and order\n//! come from the compiled render graph schedule.\n",
+                  1,
+              )
+              source = source.replace(
+                  "use crate::render_pass::{ClearValue, LoadOp, StoreOp};\n",
+                  "use crate::render_graph::PassKind;\nuse crate::render_pass::{ClearValue, LoadOp, StoreOp};\n",
+                  1,
+              )
+              source = source.replace(
+                  "use super::metal_renderer::MetalRenderer;\n",
+                  "use super::frame_schedule::MetalFrameSchedule;\nuse super::metal_renderer::MetalRenderer;\n",
+                  1,
+              )
+              source = source.replace(
+                  "    pub(crate) fn render_frame(&mut self) -> Result<(), RendererError> {",
+                  "    pub(crate) fn render_frame(\n        &mut self,\n        schedule: &MetalFrameSchedule,\n    ) -> Result<(), RendererError> {",
+                  1,
+              )
+              source = source.replace(
+                  "        if let Some(shadow_draw_list) = self.pending_shadow_draw_list.take()\n",
+                  "        if schedule.contains(PassKind::Shadow)\n            && let Some(shadow_draw_list) = self.pending_shadow_draw_list.take()\n",
+                  1,
+              )
+
+              geometry_marker = '''        // =========================================================================
+        // Pass 1: Geometry (sky + PBR) → HDR intermediate texture
+        // =========================================================================
+'''
+              depth_block = r'''        // =========================================================================
+        // Pass 1: Depth prepass → shared scene depth
+        // =========================================================================
+        let mut depth_prepass_ran = false;
+        if schedule.contains(PassKind::DepthPrepass)
+            && let Some(depth_draw_list) = self.pending_depth_prepass_draw_list.take()
+            && !depth_draw_list.draws.is_empty()
+        {
+            let depth_pipeline = self.depth_prepass.pipeline().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal depth prepass is scheduled but its pipeline is not initialized".into(),
+                )
+            })?;
+            let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal depth prepass is scheduled without a depth-stencil target".into(),
+                )
+            })?;
+            let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal depth prepass is scheduled without frame uniforms".into(),
+                )
+            })?;
+            let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal depth prepass is scheduled without object storage".into(),
+                )
+            })?;
+
+            super::depth_prepass::render_depth_prepass(
+                &mut cmd_buffer,
+                depth_pipeline,
+                self.depth_prepass.pipeline_skinned(),
+                self.depth_prepass.pipeline_billboard(),
+                depth_view,
+                vp_w as u32,
+                vp_h as u32,
+                frame_buf,
+                object_buf,
+                &self.meshes,
+                &self.materials,
+                &depth_draw_list,
+                &self.skeletons,
+            );
+            depth_prepass_ran = true;
+        }
+
+        // =========================================================================
+        // Pass 2: Geometry (sky + PBR) → HDR intermediate texture
+        // =========================================================================
+'''
+              if geometry_marker not in source:
+                  raise SystemExit("Metal geometry marker did not match")
+              source = source.replace(geometry_marker, depth_block, 1)
+              source = source.replace(
+                  "        let has_tonemap = self.tonemap_pipeline.is_some() && self.geometry_hdr_view.is_some();",
+                  "        let has_tonemap = schedule.contains(PassKind::Fullscreen)\n            && self.tonemap_pipeline.is_some()\n            && self.geometry_hdr_view.is_some();",
+                  1,
+              )
+              source = source.replace(
+                  "                        load_op: LoadOp::Clear,\n                        store_op: StoreOp::DontCare,",
+                  "                        load_op: if depth_prepass_ran {\n                            LoadOp::Load\n                        } else {\n                            LoadOp::Clear\n                        },\n                        store_op: StoreOp::Store,",
+                  2,
+              )
+              source = source.replace(
+                  "        if let Some(outline_draw_list) = self.pending_outline_draw_list.take()\n",
+                  "        if schedule.contains(PassKind::Outline)\n            && let Some(outline_draw_list) = self.pending_outline_draw_list.take()\n",
+                  1,
+              )
+              source = source.replace(
+                  "        if let Some(ui_draw_list) = self.pending_ui_draw_list.take()\n",
+                  "        if schedule.contains(PassKind::Ui)\n            && let Some(ui_draw_list) = self.pending_ui_draw_list.take()\n",
+                  1,
+              )
+              source = source.replace(
+                  "                let ui_load_op = LoadOp::Load;",
+                  "                let ui_load_op = if drawable_written {\n                    LoadOp::Load\n                } else {\n                    LoadOp::Clear\n                };",
+                  1,
+              )
+              frame_path.write_text(source)
+
+          app_path = Path("katla_app/src/application/builder.rs")
+          source = app_path.read_text()
+          old = '''    /// Build a minimal frame graph for the Metal backend.
+    ///
+    /// Creates transient resources (hdr_color, viewport_0) without passes.
+    /// Metal uses hardcoded pass execution but benefits from frame graph
+    /// transient texture management and bindless registration.
+    fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
+        use katla_gfx::render_graph::{
+            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassType, SimplePass,
+        };
+'''
+          new = '''    /// Build the semantic frame graph used by the Metal backend.
+    ///
+    /// Metal owns its encoder implementations, but pass presence and order are
+    /// validated against this compiled graph before any command encoding starts.
+    fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
+        use katla_gfx::render_graph::{
+            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
+        };
+'''
+          if old not in source:
+              raise SystemExit("Metal frame graph documentation/import block did not match")
+          source = source.replace(old, new, 1)
+          old_passes = '''            .add_pass(SimplePass::new("geometry", PassType::Graphics).write("hdr_color"))
+            .add_pass(SimplePass::new("shadow", PassType::Graphics))
+            .add_pass(SimplePass::new("depth_prepass", PassType::Graphics))
+            .add_pass(SimplePass::new("outline", PassType::Graphics))
+            .add_pass(
+                SimplePass::new("tonemap", PassType::Graphics)
+                    .read("hdr_color")
+                    .write("viewport_0"),
+            )
+            .add_pass(SimplePass::new("ui", PassType::Graphics))
+'''
+          new_passes = '''            .add_pass(
+                SimplePass::new("shadow", PassType::Graphics).with_kind(PassKind::Shadow),
+            )
+            .add_pass(
+                SimplePass::new("depth_prepass", PassType::Graphics)
+                    .with_kind(PassKind::DepthPrepass),
+            )
+            .add_pass(
+                SimplePass::new("geometry", PassType::Graphics)
+                    .write("hdr_color")
+                    .with_kind(PassKind::Geometry),
+            )
+            .add_pass(
+                SimplePass::new("outline", PassType::Graphics)
+                    .read("hdr_color")
+                    .write("hdr_color")
+                    .with_kind(PassKind::Outline),
+            )
+            .add_pass(
+                SimplePass::new("tonemap", PassType::Graphics)
+                    .read("hdr_color")
+                    .write("viewport_0")
+                    .with_kind(PassKind::Fullscreen),
+            )
+            .add_pass(
+                SimplePass::new("ui", PassType::Graphics)
+                    .write("backbuffer")
+                    .with_kind(PassKind::Ui),
+            )
+'''
+          if old_passes not in source:
+              raise SystemExit("Metal frame graph pass block did not match")
+          source = source.replace(old_passes, new_passes, 1)
+          app_path.write_text(source)
+          PY
+
+      - name: Format source
+        run: cargo fmt --all
+
+      - name: Test Metal frame schedule
+        run: cargo test -p katla_gfx metal::frame_schedule --lib
+
+      - name: Check graphics and application crates
+        run: cargo check -p katla_gfx -p katla_app
+
+      - name: Lint graphics and application crates
+        run: cargo clippy -p katla_gfx -p katla_app -- -D warnings
+
+      - name: Export validated source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-metal-frame-schedule
+          path: |
+            katla_gfx/src/render_graph/pass.rs
+            katla_gfx/src/render_graph/passes/ui.rs
+            katla_gfx/src/metal/mod.rs
+            katla_gfx/src/metal/frame_schedule.rs
+            katla_gfx/src/metal/metal_renderer.rs
+            katla_gfx/src/metal/frame_render.rs
+            katla_app/src/application/builder.rs
+          retention-days: 1
