@@ -87,10 +87,9 @@ fn record_parallel(commands: &[MockDrawCommand]) -> u64 {
     let chunks: Vec<&[MockDrawCommand]> = commands.chunks(chunk_size).collect();
 
     std::thread::scope(|s| {
-        for (i, chunk) in chunks.iter().enumerate() {
-            let results_ptr = &mut results[..];
+        for (result, chunk) in results.iter_mut().zip(chunks) {
             s.spawn(move || {
-                results_ptr[i] = record_sequential(chunk);
+                *result = record_sequential(chunk);
             });
         }
     });
