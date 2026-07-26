@@ -43,6 +43,24 @@ if old_eager_init in renderer:
 elif new_lazy_init not in renderer:
     raise SystemExit("eager Metal argument-buffer initialization did not match")
 
+old_test_setup = '''        let mut renderer = MetalRenderer::new(context).expect("Failed to create MetalRenderer");
+
+        // Resize to set up render targets (depth, HDR, depth-stencil)
+'''
+new_test_setup = '''        let mut renderer = MetalRenderer::new(context).expect("Failed to create MetalRenderer");
+
+        if let Some(reason) = super::super::argument_buffer::MetalBindlessTextureManager::unsupported_device_reason(&renderer.context.device) {
+            eprintln!("SKIP test_headless_render_not_white: {reason}");
+            return;
+        }
+
+        // Resize to set up render targets (depth, HDR, depth-stencil)
+'''
+if old_test_setup in renderer:
+    renderer = renderer.replace(old_test_setup, new_test_setup, 1)
+elif new_test_setup not in renderer:
+    raise SystemExit("headless Metal test setup did not match")
+
 old_readback = '''        let (_readback_tex, readback_view) = renderer
             .context
             .create_texture_with_data(&readback_desc)
