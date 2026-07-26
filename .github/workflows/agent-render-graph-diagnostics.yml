@@ -20,6 +20,31 @@ jobs:
       - name: Install Rust components
         run: rustup component add clippy rustfmt
 
+      - name: Apply diagnostics namespace fix
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("katla_gfx/src/render_graph/diagnostics.rs")
+          source = path.read_text()
+          source = source.replace(
+              "        let resources = resources\n            .iter()",
+              "        let diagnostic_resources = resources\n            .iter()",
+              1,
+          )
+          source = source.replace(
+              "            resources: resources.len(),",
+              "            resources: diagnostic_resources.len(),",
+              1,
+          )
+          source = source.replace(
+              "            resources,\n            passes: diagnostic_passes,",
+              "            resources: diagnostic_resources,\n            passes: diagnostic_passes,",
+              1,
+          )
+          path.write_text(source)
+          PY
+
       - name: Format source
         run: cargo fmt --all
 
@@ -50,17 +75,17 @@ jobs:
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --lib -- -D warnings
 
-      - name: Commit validated formatting
+      - name: Commit validated diagnostics
         shell: bash
         run: |
           git add \
             katla_gfx/src/render_graph/diagnostics.rs \
             katla_gfx/src/render_graph/mod.rs
           if git diff --cached --quiet; then
-            echo "Source is already formatted"
+            echo "Source is already validated"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Format render graph diagnostics"
+          git commit -m "Add deterministic render graph diagnostics"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
