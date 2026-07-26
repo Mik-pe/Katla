@@ -1,0 +1,57 @@
+name: Agent diagnose focused Metal renderer test
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-test:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Enable Objective-C exception conversion for diagnosis
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("katla_gfx/Cargo.toml")
+          source = path.read_text()
+          source = source.replace(
+              'objc2 = { version = "0.6" }',
+              'objc2 = { version = "0.6", features = ["catch-all"] }',
+              1,
+          )
+          path.write_text(source)
+          PY
+
+      - name: Run focused Metal renderer test
+        shell: bash
+        env:
+          RUST_BACKTRACE: full
+          RUST_LOG: trace
+        run: |
+          set +e
+          cargo test -p katla_gfx \
+            metal::metal_renderer::tests::test_metal_execute_draw_calls \
+            --lib -- --exact --nocapture --test-threads=1 \
+            2>&1 | tee /tmp/katla-metal-test.log
+          status=${PIPESTATUS[0]}
+          echo "$status" >/tmp/katla-metal-test-status.txt
+          exit 0
+
+      - name: Upload focused diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: katla-focused-metal-exception-diagnosis
+          path: |
+            /tmp/katla-metal-test.log
+            /tmp/katla-metal-test-status.txt
+          retention-days: 1
