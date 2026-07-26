@@ -4,7 +4,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **Metal/render-graph hardening (#49 / PR #50)** — the Metal schedule now validates the required geometry/fullscreen/UI pipeline and the concrete `hdr_color -> viewport_0 -> backbuffer` resource contract before encoding. Retained command-buffer failures are returned as typed renderer errors with native Metal diagnostics. Remaining typed-access, buffer, synchronization, culling, aliasing, frame-lifetime, direct-path removal, diagnostics, pipeline-cache, Metal 4, residency, and executable-plan work is split into #30–#37 and #51–#56.
+- **Metal/render-graph hardening (#49 / PR #50)** — the Metal schedule now validates the required geometry/fullscreen/UI pipeline and the concrete `hdr_color -> viewport_0 -> backbuffer` resource contract before encoding. Retained command-buffer failures are returned as typed renderer errors with native Metal diagnostics. Remaining typed-access, buffer, synchronization, culling, aliasing, frame-lifetime, direct-path removal, diagnostics, pipeline-cache, Metal 4, residency, executable-plan, thread-affinity, and upload work is split into #30–#37 and #51–#58.
 - **PhysicsActive(false) at builder init** — physics is now off in editing mode (the default). PlayStart action sets it to true, PlayStop sets it back to false. SceneSnapshot preserves physics components for restore on stop.
 - **State slot stability** — ConsoleView and MixerView now always call `ctx.state()` unconditionally (even when their env is not set) to prevent slot shifts that corrupt DockSpace/Toolbar state IDs when tabs become active.
 - **DockSpace global input** — DockSpace remains non-interactive for normal hit testing so panels underneath receive input, but owns tab and splitter interaction through the declarative global-input pass. There is no separate editor-side dock input path.
@@ -25,6 +25,8 @@ What is being worked on right now. **Update this file when starting or finishing
 - Compiled graphs expose deterministic human-readable, JSON, and Graphviz DOT diagnostics containing stable pass/resource metadata, execution order, parallel levels, lifetimes, and RAW/WAR/WAW hazards. Backend pointers and unstable IDs are excluded.
 - CI uses one explicit current macOS environment: `macos-26` on Apple Silicon. Katla does not run a backwards-compatible macOS matrix, and mutable `macos-latest` is not used.
 - The Metal 4 migration is a clean cut after frame-slot and synchronization ownership are defined: replace the old command path (#54), then move binding/residency to argument tables and residency sets (#55). Do not retain parallel old/new production paths.
+- Metal surface ownership must encode AppKit/CAMetalLayer thread affinity in types. Unconditional `unsafe impl Send/Sync` for surface/drawable state is tracked by #57 and is not accepted as a permanent invariant.
+- Texture uploads should use format-aware staged copies into private GPU storage with completion-owned staging lifetime. Direct shared-texture writes and silent default-texture substitution are tracked by #58.
 - Panel widget now reserves top padding via `header_height` (28px by default) so content renders below the DockSpace tab bar. The DockSpace draws tab bars as an overlay on top of panels, so panels must offset their content.
 - `TAB_BAR_HEIGHT` constant (28.0) defined once in `editor_root.rs`, matching `DockSpace::tab_bar_height`.
 - DockSpace tab bar now uses `tab_text` (inactive, #8E8E93) and `tab_active_text` (active, #FFFFFF) from UiStyle instead of generic `text_color`.
@@ -62,6 +64,8 @@ What is being worked on right now. **Update this file when starting or finishing
 - Metal object-buffer overflow is a hard renderer error; invalid offsets are never submitted after a warning-and-continue fallback.
 - macOS CI tracks one current explicit generation. A future upgrade replaces `macos-26` directly instead of retaining an older compatibility job.
 - Metal 4 adoption removes the pre-Metal-4 production command path instead of adding a compatibility switch.
+- AppKit/Metal surface thread affinity must be explicit; blanket unsafe sharing is not a scheduling strategy.
+- Low-level GPU texture allocation/upload failures remain errors; asset placeholder substitution is an explicit higher-level policy.
 - Asset browser activation is derived from repeated `AssetClicked` actions tracked in `AssetBrowserState`; grid cells do not emit activation on every click.
 - Asset deletion refuses empty paths and the synthetic `..` parent entry.
 - Default theme is "rcp" (Reality Composer Pro): neutral dark #1E1E1E, muted orange #D97706 accent. "default" and "catppuccin" keys still map to RCP for backward compat. Preferences dropdown lists RCP first.
