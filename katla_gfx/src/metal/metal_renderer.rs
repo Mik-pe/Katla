@@ -38,6 +38,66 @@ use super::ui_renderer::MetalUIRenderer;
 pub(crate) const OBJECT_UNIFORM_SIZE: u64 = 16 * 4 + 4 * 4 + 4 * 4 + 4 * 4;
 pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 
+fn validate_object_buffer_capacity(
+    draw_list: &DrawList,
+    buffer_size: usize,
+) -> Result<(), RendererError> {
+    let Some(max_instance_index) = draw_list.draws.iter().map(|draw| draw.instance_index).max()
+    else {
+        return Ok(());
+    };
+
+    let required_size = (max_instance_index as usize)
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(OBJECT_UNIFORM_SIZE as usize))
+        .ok_or_else(|| {
+            RendererError::InvalidOperation(format!(
+                "Object uniform size overflow for instance index {max_instance_index}"
+            ))
+        })?;
+
+    if required_size > buffer_size {
+        let capacity = buffer_size / OBJECT_UNIFORM_SIZE as usize;
+        return Err(RendererError::InvalidOperation(format!(
+            "Draw list requires object instance index {max_instance_index}, but the Metal object buffer only has {capacity} slots"
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod object_buffer_capacity_tests {
+    use super::*;
+    use crate::renderer::types::DrawCall;
+
+    fn draw_list(indices: &[u32]) -> DrawList {
+        let mut draws = DrawList::new();
+        for &index in indices {
+            draws.push(
+                DrawCall::new(MeshHandle::NONE, MaterialHandle::NONE).with_instance_index(index),
+            );
+        }
+        draws
+    }
+
+    #[test]
+    fn empty_draw_list_needs_no_object_storage() {
+        assert!(validate_object_buffer_capacity(&DrawList::new(), 0).is_ok());
+    }
+
+    #[test]
+    fn highest_instance_index_must_fit_the_uploaded_buffer() {
+        let two_slots = OBJECT_UNIFORM_SIZE as usize * 2;
+        assert!(validate_object_buffer_capacity(&draw_list(&[0, 1]), two_slots).is_ok());
+
+        let error = validate_object_buffer_capacity(&draw_list(&[0, 2]), two_slots)
+            .expect_err("instance index 2 must not fit a two-slot object buffer");
+        assert!(error.to_string().contains("instance index 2"));
+        assert!(error.to_string().contains("2 slots"));
+    }
+}
+
 /// A mesh stored in Metal GPU buffers.
 pub(crate) struct MetalMesh {
     pub(crate) vertex_buffer: MetalBuffer,
@@ -970,6 +1030,7 @@ impl GpuRenderer for MetalRenderer {
 
         let object_buf = self.current_object_storage_buffer().unwrap();
         let buf_size = object_buf.size() as usize;
+        validate_object_buffer_capacity(draw_list, buf_size)?;
         let ptr = object_buf.map();
 
         for draw in &draw_list.draws {
@@ -979,13 +1040,7 @@ impl GpuRenderer for MetalRenderer {
             };
 
             let offset = draw.instance_index as usize * OBJECT_UNIFORM_SIZE as usize;
-            if offset + OBJECT_UNIFORM_SIZE as usize > buf_size {
-                log::warn!(
-                    "Draw call instance_index {} exceeds object storage buffer capacity, skipping",
-                    draw.instance_index
-                );
-                continue;
-            }
+            debug_assert!(offset + OBJECT_UNIFORM_SIZE as usize <= buf_size);
             let dst = unsafe { ptr.add(offset) };
 
             let material_params = draw.material_params();

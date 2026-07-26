@@ -1056,6 +1056,11 @@ impl Application {
         self.last_draw_call_count = draw_list.len();
         draw_list.sort_by_material();
 
+        // Selection and editor overlays append gizmo/debug draws with fresh instance
+        // indices. Prepare them before uploading object uniforms so every submitted
+        // draw references initialized GPU data.
+        let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
+
         if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {
             log::error!("Failed to execute draw calls: {}", e);
             return;
@@ -1065,8 +1070,6 @@ impl Application {
             "About to submit {} draw calls to Metal renderer",
             draw_list.len()
         );
-
-        let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
 
         if let Err(e) = self.renderer.render(&mut self.frame_graph, |frame| {
             let ids = &self.pass_ids;
