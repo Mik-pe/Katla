@@ -1,0 +1,82 @@
+name: Agent asset browser cleanup
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Install Rust components
+        run: rustup component add clippy rustfmt
+
+      - name: Remove obsolete asset browser data
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          types_path = Path("katla_app/src/ui/editor_ui/asset_browser/types.rs")
+          source = types_path.read_text()
+          source = source.replace(
+              "    /// Open asset (double-click equivalent)\n    Open(PathBuf),\n",
+              "",
+              1,
+          )
+          types_path.write_text(source)
+
+          view_path = Path("katla_app/src/ui/editor_ui/declarative/asset_browser.rs")
+          source = view_path.read_text()
+          source = source.replace("    pub path: PathBuf,\n", "", 1)
+          source = source.replace(
+              "            AssetAction::Open(path) => {\n"
+              "                if path.is_dir() {\n"
+              "                    state.navigate_to(&path, thumbnail_texture_handles);\n"
+              "                } else {\n"
+              "                    log::info!(\"Open file: {:?}\", path);\n"
+              "                }\n"
+              "            }\n",
+              "",
+              1,
+          )
+          view_path.write_text(source)
+
+          layout_path = Path("katla_app/src/ui/editor_ui/layout.rs")
+          source = layout_path.read_text()
+          source = source.replace("                                    path: a.path.clone(),\n", "", 1)
+          layout_path.write_text(source)
+          PY
+
+      - name: Format source
+        run: cargo fmt --all
+
+      - name: Check application crate
+        run: cargo check -p katla_app
+
+      - name: Lint application source
+        run: cargo clippy -p katla_app --no-deps -- -D warnings
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git add \
+            katla_app/src/ui/editor_ui/asset_browser/types.rs \
+            katla_app/src/ui/editor_ui/declarative/asset_browser.rs \
+            katla_app/src/ui/editor_ui/layout.rs
+          if git diff --cached --quiet; then
+            echo "Asset browser source is already clean"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Remove obsolete asset browser action data"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
