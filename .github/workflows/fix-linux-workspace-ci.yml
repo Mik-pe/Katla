@@ -36,7 +36,21 @@ jobs:
         run: cargo fmt --all
 
       - name: Check workspace
-        run: cargo check --workspace --locked
+        shell: bash
+        run: |
+          set +e
+          cargo check --workspace --locked --quiet > /tmp/portability-check.log 2>&1
+          status=$?
+          cat /tmp/portability-check.log
+          exit "$status"
+
+      - name: Upload portability diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-portability-check
+          path: /tmp/portability-check.log
+          retention-days: 1
 
       - name: Test workspace
         run: cargo test --workspace --locked
