@@ -448,30 +448,51 @@ mod tests {
     fn rejects_resource_contract_drift() {
         let mut passes = contract_passes();
         passes[0].writes = vec![rid(3)];
-        assert_contract_error(&passes, "Geometry) must declare a write access to resource 'hdr_color'");
+        assert_contract_error(
+            &passes,
+            "Geometry) must declare a write access to resource 'hdr_color'",
+        );
 
         let mut passes = contract_passes();
         passes[1].reads = vec![rid(3)];
-        assert_contract_error(&passes, "Outline) must declare a read access to resource 'hdr_color'");
+        assert_contract_error(
+            &passes,
+            "Outline) must declare a read access to resource 'hdr_color'",
+        );
 
         let mut passes = contract_passes();
         passes[1].writes = vec![rid(3)];
-        assert_contract_error(&passes, "Outline) must declare a write access to resource 'hdr_color'");
+        assert_contract_error(
+            &passes,
+            "Outline) must declare a write access to resource 'hdr_color'",
+        );
 
         let mut passes = contract_passes();
         passes[2].reads = vec![rid(3)];
-        assert_contract_error(&passes, "Fullscreen) must declare a read access to resource 'hdr_color'");
+        assert_contract_error(
+            &passes,
+            "Fullscreen) must declare a read access to resource 'hdr_color'",
+        );
 
         let mut passes = contract_passes();
         passes[2].writes = vec![rid(3)];
-        assert_contract_error(&passes, "Fullscreen) must declare a write access to resource 'viewport_0'");
+        assert_contract_error(
+            &passes,
+            "Fullscreen) must declare a write access to resource 'viewport_0'",
+        );
 
         let mut passes = contract_passes();
         passes[3].reads = vec![rid(3)];
-        assert_contract_error(&passes, "Ui) must declare a read access to resource 'viewport_0'");
+        assert_contract_error(
+            &passes,
+            "Ui) must declare a read access to resource 'viewport_0'",
+        );
 
         let mut passes = contract_passes();
         passes[3].writes = vec![rid(3)];
-        assert_contract_error(&passes, "Ui) must declare a write access to resource 'backbuffer'");
+        assert_contract_error(
+            &passes,
+            "Ui) must declare a write access to resource 'backbuffer'",
+        );
     }
 }
