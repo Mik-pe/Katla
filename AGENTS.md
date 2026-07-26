@@ -59,6 +59,14 @@ cargo run -p katla_gfx --example particle_validation  # Headless GPU validation
 
 `METAL_DEVICE_WRAPPER_TYPE=1` must be set before process launch — `std::env::set_var()` is too late.
 
+## CI Runner Policy
+
+- Primary Metal CI uses the explicit `macos-26` Apple Silicon runner.
+- Compatibility CI uses the explicit `macos-15` Apple Silicon runner.
+- Do not use `macos-latest`; it is a mutable alias and does not currently mean macOS 26.
+- Do not add `macos-14` to required CI unless the supported-platform policy is deliberately changed.
+- When a new macOS runner becomes generally available, move the two-generation matrix forward intentionally and update `docs/ci.md` in the same change.
+
 ## Working Conventions
 
 - **Task Continuity**: Continue through the task list without asking for confirmation between tasks.
