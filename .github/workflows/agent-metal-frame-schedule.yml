@@ -1,0 +1,211 @@
+name: Agent Metal frame schedule
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: macos-14
+    steps:
+      - name: Check out pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Install Rust components
+        run: rustup component add clippy rustfmt
+
+      - name: Apply Metal semantic schedule integration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git show agent/metal-schedule-patch-source:.github/workflows/agent-metal-frame-schedule.yml \
+            | sed -n "/python3 <<'PY'/,/^          PY$/p" \
+            | sed '1d;$d;s/^          //' \
+            > /tmp/apply_metal_frame_schedule.py
+          test -s /tmp/apply_metal_frame_schedule.py
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("/tmp/apply_metal_frame_schedule.py")
+          source = path.read_text()
+          marker = 'app_path = Path("katla_app/src/application/builder.rs")'
+          if marker not in source:
+              raise SystemExit("Metal application patch marker not found")
+          path.write_text(source.split(marker, 1)[0])
+          PY
+
+          python3 /tmp/apply_metal_frame_schedule.py
+
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              if old not in source:
+                  raise SystemExit(f"expected source fragment not found: {label}")
+              return source.replace(old, new, 1)
+
+          app_path = Path("katla_app/src/application/builder.rs")
+          source = app_path.read_text()
+          source = replace_once(
+              source,
+              "    /// Build a minimal frame graph for the Metal backend.\n"
+              "    ///\n"
+              "    /// Creates transient resources (hdr_color, viewport_0) without passes.\n"
+              "    /// Metal uses hardcoded pass execution but benefits from frame graph\n"
+              "    /// transient texture management and bindless registration.\n",
+              "    /// Build the semantic frame graph used by the Metal backend.\n"
+              "    ///\n"
+              "    /// Metal owns its encoder implementations, but pass presence and order are\n"
+              "    /// validated against this compiled graph before command encoding starts.\n",
+              "Metal frame graph documentation",
+          )
+          source = replace_once(
+              source,
+              "            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassType, SimplePass,\n",
+              "            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType,\n"
+              "            SimplePass,\n",
+              "Metal frame graph imports",
+          )
+          source = replace_once(
+              source,
+              "            .add_pass(SimplePass::new(\"geometry\", PassType::Graphics).write(\"hdr_color\"))\n"
+              "            .add_pass(SimplePass::new(\"shadow\", PassType::Graphics))\n"
+              "            .add_pass(SimplePass::new(\"depth_prepass\", PassType::Graphics))\n"
+              "            .add_pass(SimplePass::new(\"outline\", PassType::Graphics))\n"
+              "            .add_pass(\n"
+              "                SimplePass::new(\"tonemap\", PassType::Graphics)\n"
+              "                    .read(\"hdr_color\")\n"
+              "                    .write(\"viewport_0\"),\n"
+              "            )\n"
+              "            .add_pass(SimplePass::new(\"ui\", PassType::Graphics))\n",
+              "            .add_pass(\n"
+              "                SimplePass::new(\"shadow\", PassType::Graphics)\n"
+              "                    .with_kind(PassKind::Shadow),\n"
+              "            )\n"
+              "            .add_pass(\n"
+              "                SimplePass::new(\"depth_prepass\", PassType::Graphics)\n"
+              "                    .with_kind(PassKind::DepthPrepass),\n"
+              "            )\n"
+              "            .add_pass(\n"
+              "                SimplePass::new(\"geometry\", PassType::Graphics)\n"
+              "                    .write(\"hdr_color\")\n"
+              "                    .with_kind(PassKind::Geometry),\n"
+              "            )\n"
+              "            .add_pass(\n"
+              "                SimplePass::new(\"outline\", PassType::Graphics)\n"
+              "                    .read(\"hdr_color\")\n"
+              "                    .write(\"hdr_color\")\n"
+              "                    .with_kind(PassKind::Outline),\n"
+              "            )\n"
+              "            .add_pass(\n"
+              "                SimplePass::new(\"tonemap\", PassType::Graphics)\n"
+              "                    .read(\"hdr_color\")\n"
+              "                    .write(\"viewport_0\")\n"
+              "                    .with_kind(PassKind::Fullscreen),\n"
+              "            )\n"
+              "            .add_pass(\n"
+              "                SimplePass::new(\"ui\", PassType::Graphics)\n"
+              "                    .read(\"viewport_0\")\n"
+              "                    .write(\"backbuffer\")\n"
+              "                    .with_kind(PassKind::Ui),\n"
+              "            )\n",
+              "Metal semantic pass declarations",
+          )
+          app_path.write_text(source)
+
+          frame_path = Path("katla_gfx/src/render_graph/frame/mod.rs")
+          source = frame_path.read_text()
+          ui_arm = (
+              "                    Some(super::pass::PassKind::Ui) => {\n"
+              "                        self.execute_graphics_pass(&cmd, pass, data)?;\n"
+              "                    }\n"
+          )
+          marker = "                    Some(super::pass::PassKind::Fullscreen) => {\n"
+          if ui_arm not in source:
+              if marker not in source:
+                  raise SystemExit("Vulkan fullscreen dispatch marker not found")
+              source = source.replace(marker, ui_arm + marker, 1)
+              frame_path.write_text(source)
+
+          schedule_path = Path("katla_gfx/src/metal/frame_schedule.rs")
+          source = schedule_path.read_text()
+          test_helper = (
+              "    #[cfg(test)]\n"
+              "    pub(crate) fn for_test(kinds: &[PassKind]) -> Self {\n"
+              "        Self {\n"
+              "            passes: kinds\n"
+              "                .iter()\n"
+              "                .copied()\n"
+              "                .enumerate()\n"
+              "                .map(|(pass_index, kind)| MetalScheduledPass { pass_index, kind })\n"
+              "                .collect(),\n"
+              "        }\n"
+              "    }\n\n"
+          )
+          marker = "    pub(crate) fn passes(&self) -> &[MetalScheduledPass] {\n"
+          if test_helper not in source:
+              if marker not in source:
+                  raise SystemExit("Metal schedule accessor marker not found")
+              source = source.replace(marker, test_helper + marker, 1)
+              schedule_path.write_text(source)
+
+          renderer_path = Path("katla_gfx/src/metal/metal_renderer.rs")
+          source = renderer_path.read_text()
+          old_call = '        renderer.render_frame().expect("render_frame failed");\n'
+          new_call = (
+              "        let schedule = crate::metal::frame_schedule::MetalFrameSchedule::for_test(&[\n"
+              "            crate::render_graph::PassKind::Geometry,\n"
+              "            crate::render_graph::PassKind::Fullscreen,\n"
+              "        ]);\n"
+              "        renderer\n"
+              "            .render_frame(&schedule)\n"
+              "            .expect(\"render_frame failed\");\n"
+          )
+          if old_call in source:
+              source = source.replace(old_call, new_call, 1)
+              renderer_path.write_text(source)
+          elif ".render_frame(&schedule)" not in source:
+              raise SystemExit("Metal renderer test render_frame call not found")
+          PY
+
+      - name: Format source
+        run: cargo fmt --all
+
+      - name: Test Metal frame schedule
+        run: cargo test -p katla_gfx metal::frame_schedule --lib -- --test-threads=1
+
+      - name: Check graphics and application crates
+        run: cargo check -p katla_gfx -p katla_app
+
+      - name: Lint graphics and application crates
+        run: cargo clippy -p katla_gfx -p katla_app -- -D warnings
+
+      - name: Commit validated Metal integration
+        shell: bash
+        run: |
+          git add \
+            katla_gfx/src/render_graph/pass.rs \
+            katla_gfx/src/render_graph/passes/ui.rs \
+            katla_gfx/src/render_graph/frame/mod.rs \
+            katla_gfx/src/metal/mod.rs \
+            katla_gfx/src/metal/frame_schedule.rs \
+            katla_gfx/src/metal/metal_renderer.rs \
+            katla_gfx/src/metal/frame_render.rs \
+            katla_app/src/application/builder.rs
+          if git diff --cached --quiet; then
+            echo "Validated source is already committed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Drive Metal rendering from the compiled frame graph"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
