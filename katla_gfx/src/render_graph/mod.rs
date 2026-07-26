@@ -58,6 +58,7 @@ mod backend;
 pub mod any_frame;
 pub mod any_frame_graph;
 mod frame;
+#[cfg(target_os = "macos")]
 mod metal_backend;
 mod transient_texture;
 mod vulkan_backend;
@@ -67,6 +68,7 @@ pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
 pub use error::RenderGraphError;
 pub use frame::Frame;
+#[cfg(target_os = "macos")]
 pub(crate) use frame::PassExecutionData;
 pub use frame_graph::{FrameGraph, FrameGraphBuilder};
 pub use handles::{PassId, ResourceId};

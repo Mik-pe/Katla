@@ -6,6 +6,7 @@ use super::frame_graph::FrameGraph;
 use super::handles::PassId;
 use super::pass::PassDesc;
 
+#[cfg(target_os = "macos")]
 use crate::metal::metal_renderer::MetalRenderer;
 use crate::renderer::VulkanRenderer;
 
@@ -190,6 +191,7 @@ impl AnyFrameGraph {
             (AnyFrameGraph::Metal(fg), crate::renderer::any_renderer::AnyRenderer::Metal(r)) => {
                 fg.recreate_transient_textures(r, width, height)
             }
+            #[cfg(target_os = "macos")]
             _ => Err(RenderGraphError::BackendError(
                 "Backend mismatch between frame graph and renderer".into(),
             )),
@@ -209,6 +211,7 @@ impl AnyFrameGraph {
             (AnyFrameGraph::Metal(fg), crate::renderer::any_renderer::AnyRenderer::Metal(r)) => {
                 fg.initialize_transient_textures(r)
             }
+            #[cfg(target_os = "macos")]
             _ => Err(RenderGraphError::BackendError(
                 "Backend mismatch between frame graph and renderer".into(),
             )),
@@ -229,6 +232,7 @@ impl AnyFrameGraph {
             (AnyFrameGraph::Metal(fg), crate::renderer::any_renderer::AnyRenderer::Metal(r)) => {
                 fg.register_transient_texture_bindless(r, name)
             }
+            #[cfg(target_os = "macos")]
             _ => Err(RenderGraphError::BackendError(
                 "Backend mismatch between frame graph and renderer".into(),
             )),
