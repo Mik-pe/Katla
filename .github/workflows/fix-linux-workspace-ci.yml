@@ -44,7 +44,7 @@ jobs:
           cat /tmp/portability-check.log
           exit "$status"
 
-      - name: Upload portability diagnostics
+      - name: Upload check diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -53,7 +53,21 @@ jobs:
           retention-days: 1
 
       - name: Test workspace
-        run: cargo test --workspace --locked --quiet
+        shell: bash
+        run: |
+          set +e
+          cargo test --workspace --locked --quiet > /tmp/portability-test.log 2>&1
+          status=$?
+          cat /tmp/portability-test.log
+          exit "$status"
+
+      - name: Upload test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-portability-test
+          path: /tmp/portability-test.log
+          retention-days: 1
 
       - name: Lint workspace
         run: cargo clippy --workspace --all-targets --locked --quiet -- -D warnings
