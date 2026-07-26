@@ -168,6 +168,26 @@ if expand_gated not in editor_ui:
 editor_ui_path.write_text(editor_ui)
 
 
+ui_mod_path = Path("katla_app/src/ui/mod.rs")
+ui_mod = ui_mod_path.read_text()
+ui_mod = ui_mod.replace(
+    "    Panel, ParticleEmitterInfo, PerspectiveInfo, PhysicsMaterialInfo, PointLightInfo,\n",
+    "    ParticleEmitterInfo, PerspectiveInfo, PhysicsMaterialInfo, PointLightInfo,\n",
+    1,
+)
+panel_export = '''#[cfg(all(feature = "editor", target_os = "macos"))]
+pub use editor_ui::Panel;
+'''
+if panel_export not in ui_mod:
+    ui_mod = replace_once(
+        ui_mod,
+        "pub use katla_ui::ColorScheme;\n",
+        panel_export + "pub use katla_ui::ColorScheme;\n",
+        "macOS UI-test Panel export",
+    )
+ui_mod_path.write_text(ui_mod)
+
+
 picking_path = Path("katla_app/src/application/picking.rs")
 picking = picking_path.read_text()
 old_y = '''            let physical_x = ((rel_x / panel_width) * pick_w as f32) as u32;
@@ -281,3 +301,81 @@ if headless_branch in game_main:
 elif headless_branch_cfg not in game_main:
     raise SystemExit("game headless platform branch did not match")
 game_main_path.write_text(game_main)
+
+
+text_path = Path("katla_ui/src/text/mod.rs")
+text = text_path.read_text()
+text = text.replace(
+    '''                    assert!(
+                        alpha <= 255,
+                        "Alpha value {} should be <= 255 (R8 range)",
+                        alpha
+                    );
+''',
+    "",
+    1,
+)
+text = text.replace(
+    '''        let atlas_data = sys.atlas_data();
+        for &byte in atlas_data {
+            assert!(byte <= 255, "Atlas should store single-byte alpha values");
+        }
+''',
+    '''        let atlas_data = sys.atlas_data();
+        assert!(!atlas_data.is_empty(), "Atlas should contain rasterized alpha data");
+''',
+    1,
+)
+text_path.write_text(text)
+
+
+preset_test_path = Path("katla_gfx/tests/particle_preset_tests.rs")
+preset_test = preset_test_path.read_text().replace("mod common;\n\n", "", 1)
+preset_test_path.write_text(preset_test)
+
+
+bindless_path = Path("katla_gfx/src/vulkan/bindless_texture.rs")
+bindless = bindless_path.read_text()
+lookup_method = '''    /// Get the bindless slot index for a texture handle.
+    ///
+    /// This is used internally by the renderer to map TextureHandle values
+    /// to their bindless slot indices for shader binding.
+    ///
+    /// # Arguments
+    /// * `image_view` - The Vulkan image view to look up
+    ///
+    /// # Returns
+    /// The slot index if the texture is registered, None otherwise.
+    ///
+    /// # Note
+    /// Currently unused but kept for future texture management features.
+    #[cfg(test)]
+    pub(crate) fn get_slot_for_image_view(&self, image_view: vk::ImageView) -> Option<u32> {
+        self.slots
+            .iter()
+            .position(|&slot| slot == Some(image_view))
+            .map(|i| i as u32)
+    }
+
+'''
+bindless = bindless.replace(lookup_method, "", 1)
+default_helpers = '''    /// Check if a slot is a default texture slot.
+    ///
+    /// # Arguments
+    /// * `slot` - The slot index to check
+    ///
+    /// # Returns
+    /// true if the slot is reserved for default textures (0-4).
+    #[cfg(test)]
+    pub(crate) fn is_default_slot(&self, slot: u32) -> bool {
+        slot < DEFAULT_TEXTURE_COUNT
+    }
+
+    /// Get the number of slots reserved for default textures.
+    #[cfg(test)]
+    pub(crate) fn default_texture_count(&self) -> u32 {
+        DEFAULT_TEXTURE_COUNT
+    }
+'''
+bindless = bindless.replace(default_helpers, "", 1)
+bindless_path.write_text(bindless)
