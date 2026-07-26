@@ -34,6 +34,22 @@ if "    #[cfg(target_os = \"macos\")]\n" + metal_marker not in builder:
         "    #[cfg(target_os = \"macos\")]\n" + metal_marker,
         "Metal frame graph cfg gate",
     )
+normal_info = '''            dump_layout_path: self.dump_layout_path,
+            screenshot_path: None,
+            headless: false,
+            ui_test_path: None,
+'''
+normal_info_cfg = '''            dump_layout_path: self.dump_layout_path,
+            #[cfg(target_os = "macos")]
+            screenshot_path: None,
+            headless: false,
+            #[cfg(target_os = "macos")]
+            ui_test_path: None,
+'''
+if normal_info in builder:
+    builder = builder.replace(normal_info, normal_info_cfg, 1)
+elif normal_info_cfg not in builder:
+    raise SystemExit("windowed ApplicationInfo platform fields did not match")
 builder_path.write_text(builder)
 
 
@@ -100,63 +116,56 @@ frame_loop_path.write_text(frame_loop)
 
 headless_path = Path("katla_app/src/application/headless.rs")
 headless = headless_path.read_text()
-old_setup = '''        let screenshot_path = self
-            .info
-            .screenshot_path
-            .clone()
-            .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
+if not headless.startswith('#![cfg(target_os = "macos")]'):
+    headless = '#![cfg(target_os = "macos")]\n\n' + headless
+headless_path.write_text(headless)
 
-        let mut ui_test = self
-            .info
-            .ui_test_path
-            .as_ref()
-            .map(|dir| crate::application::ui_test::UiTestRunner::new(dir.clone()));
-'''
-new_setup = '''        #[cfg(target_os = "macos")]
-        let screenshot_path = self
-            .info
-            .screenshot_path
-            .clone()
-            .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
 
-        #[cfg(all(target_os = "macos", feature = "editor"))]
-        let mut ui_test = self
-            .info
-            .ui_test_path
-            .as_ref()
-            .map(|dir| crate::application::ui_test::UiTestRunner::new(dir.clone()));
-        #[cfg(not(all(target_os = "macos", feature = "editor")))]
-        let ui_test = self
-            .info
-            .ui_test_path
-            .as_ref()
-            .map(|dir| crate::application::ui_test::UiTestRunner::new(dir.clone()));
+ui_test_path = Path("katla_app/src/application/ui_test.rs")
+ui_test = ui_test_path.read_text()
+if not ui_test.startswith('#![cfg(target_os = "macos")]'):
+    ui_test = '#![cfg(target_os = "macos")]\n\n' + ui_test
+ui_test_path.write_text(ui_test)
+
+
+application_mod_path = Path("katla_app/src/application/mod.rs")
+application_mod = application_mod_path.read_text()
+old_info_fields = '''    dump_layout_path: Option<DumpLayoutTarget>,
+    screenshot_path: Option<String>, // Headless screenshot output path
+    headless: bool,                  // Running without a window
+    pub(crate) ui_test_path: Option<String>, // UI test mode: output directory for screenshots
 '''
-if old_setup in headless:
-    headless = headless.replace(old_setup, new_setup, 1)
-elif new_setup not in headless:
-    raise SystemExit("headless platform-local setup did not match")
-loop_marker = "        for frame in 0..max_frames {\n"
-loop_replacement = '''        for frame in 0..max_frames {
-            #[cfg(not(all(target_os = "macos", feature = "editor")))]
-            let _ = frame;
+new_info_fields = '''    dump_layout_path: Option<DumpLayoutTarget>,
+    #[cfg(target_os = "macos")]
+    screenshot_path: Option<String>, // Headless screenshot output path
+    headless: bool, // Running without a window
+    #[cfg(target_os = "macos")]
+    pub(crate) ui_test_path: Option<String>, // UI test mode: output directory for screenshots
 '''
-if loop_replacement not in headless:
-    headless = replace_once(
-        headless,
-        loop_marker,
-        loop_replacement,
-        "headless frame platform use",
-    )
-headless = headless.replace(
-    '''
-            #[cfg(all(target_os = "macos", not(feature = "editor")))]
-            let _ = &mut ui_test;
-''',
-    "\n",
+if old_info_fields in application_mod:
+    application_mod = application_mod.replace(old_info_fields, new_info_fields, 1)
+elif new_info_fields not in application_mod:
+    raise SystemExit("ApplicationInfo platform fields did not match")
+application_mod = application_mod.replace(
+    "    #[expect(dead_code)]\n    pub(crate) point_lights_buffer: Vec<katla_gfx::PointLightGPU>,",
+    "    pub(crate) point_lights_buffer: Vec<katla_gfx::PointLightGPU>,",
     1,
 )
-headless_path.write_text(headless)
+application_mod_path.write_text(application_mod)
+
+
+editor_ui_path = Path("katla_app/src/ui/editor_ui/mod.rs")
+editor_ui = editor_ui_path.read_text()
+expand_marker = '''    /// Expand an entity in the hierarchy panel (show its children).
+    pub fn expand_entity(&mut self, id: EntityId) {
+'''
+expand_gated = '''    /// Expand an entity in the hierarchy panel (show its children).
+    #[cfg(target_os = "macos")]
+    pub fn expand_entity(&mut self, id: EntityId) {
+'''
+if expand_gated not in editor_ui:
+    editor_ui = replace_once(editor_ui, expand_marker, expand_gated, "UI-test hierarchy expansion cfg")
+editor_ui_path.write_text(editor_ui)
 
 
 picking_path = Path("katla_app/src/application/picking.rs")
@@ -190,3 +199,85 @@ if old_y in picking:
 elif new_y not in picking:
     raise SystemExit("platform-local picking Y conversion did not match")
 picking_path.write_text(picking)
+
+
+game_main_path = Path("game/src/main.rs")
+game_main = game_main_path.read_text()
+headless_branch = '''    if args.headless || args.ui_test.is_some() {
+        if let Some(ref dir) = args.ui_test {
+            builder = builder.ui_test_path(dir.clone());
+        }
+        let screenshot_path = args
+            .screenshot
+            .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
+        let max_frames = if args.single_frame || args.ui_test.is_some() {
+            100
+        } else {
+            10
+        };
+
+        let result = builder.build_headless(max_frames, screenshot_path);
+        match result {
+            Ok(mut app) => {
+                if let Err(e) = app.init() {
+                    error!("Application init failed: {e}");
+                    std::process::exit(1);
+                }
+                if let Err(e) = app.run_headless() {
+                    error!("Headless render failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to initialize headless application: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+'''
+headless_branch_cfg = '''    if args.headless || args.ui_test.is_some() {
+        #[cfg(not(target_os = "macos"))]
+        {
+            error!("Headless rendering is currently supported only on macOS with Metal");
+            std::process::exit(2);
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(ref dir) = args.ui_test {
+                builder = builder.ui_test_path(dir.clone());
+            }
+            let screenshot_path = args
+                .screenshot
+                .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
+            let max_frames = if args.single_frame || args.ui_test.is_some() {
+                100
+            } else {
+                10
+            };
+
+            let result = builder.build_headless(max_frames, screenshot_path);
+            match result {
+                Ok(mut app) => {
+                    if let Err(e) = app.init() {
+                        error!("Application init failed: {e}");
+                        std::process::exit(1);
+                    }
+                    if let Err(e) = app.run_headless() {
+                        error!("Headless render failed: {e}");
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to initialize headless application: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+    } else {
+'''
+if headless_branch in game_main:
+    game_main = game_main.replace(headless_branch, headless_branch_cfg, 1)
+elif headless_branch_cfg not in game_main:
+    raise SystemExit("game headless platform branch did not match")
+game_main_path.write_text(game_main)
