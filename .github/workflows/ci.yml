@@ -42,7 +42,8 @@ jobs:
             libasound2-dev \
             libvulkan1 \
             mesa-vulkan-drivers \
-            vulkan-tools
+            vulkan-tools \
+            vulkan-validationlayers
           vulkaninfo --summary
 
       - name: Check formatting
