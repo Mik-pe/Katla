@@ -21,7 +21,7 @@ What is being worked on right now. **Update this file when starting or finishing
 - Editor gizmo/debug draws are prepared before Metal object-uniform upload. The renderer validates the highest submitted instance index against object-buffer capacity before any encoder binds an offset.
 - Metal bindless argument buffers are initialized from real device capabilities: Tier 2 uses direct `MTLResourceID` entries, supported Tier 1 devices use shader-reflected layouts, and unsupported virtual devices fail with a typed error before an invalid Objective-C call.
 - Compiled graphs expose deterministic human-readable, JSON, and Graphviz DOT diagnostics containing stable pass/resource metadata, execution order, parallel levels, lifetimes, and RAW/WAR/WAW hazards. Backend pointers and unstable IDs are excluded.
-- CI uses explicit runner generations: `macos-26` is the primary Apple Silicon Metal environment and `macos-15` is the compatibility environment. Mutable `macos-latest` and deprecated `macos-14` are not part of the required matrix.
+- CI uses one explicit current macOS environment: `macos-26` on Apple Silicon. Katla does not run a backwards-compatible macOS matrix, and mutable `macos-latest` is not used.
 - Panel widget now reserves top padding via `header_height` (28px by default) so content renders below the DockSpace tab bar. The DockSpace draws tab bars as an overlay on top of panels, so panels must offset their content.
 - `TAB_BAR_HEIGHT` constant (28.0) defined in `editor_root.rs`, matching `DockSpace::tab_bar_height`.
 - DockSpace tab bar now uses `tab_text` (inactive, #8E8E93) and `tab_active_text` (active, #FFFFFF) from UiStyle instead of generic `text_color`.
@@ -55,7 +55,7 @@ What is being worked on right now. **Update this file when starting or finishing
 - Metal pass routing uses compiled pass indices and semantic `PassKind`, never string-name dispatch. Depth-prepass and geometry submissions remain distinct, and geometry loads/stores depth when a prepass ran.
 - The application graph's `hdr_color -> viewport_0 -> backbuffer` chain is now the actual editor render path, not metadata alongside a separate drawable path.
 - Metal object-buffer overflow is a hard renderer error; invalid offsets are never submitted after a warning-and-continue fallback.
-- macOS CI labels are pinned to supported generations and advanced intentionally; `macos-latest` is not a support-policy mechanism.
+- macOS CI tracks one current explicit generation. A future upgrade replaces `macos-26` directly instead of retaining an older compatibility job.
 - Asset browser activation is derived from repeated `AssetClicked` actions tracked in `AssetBrowserState`; grid cells do not emit activation on every click.
 - Asset deletion refuses empty paths and the synthetic `..` parent entry.
 - Default theme is "rcp" (Reality Composer Pro): neutral dark #1E1E1E, muted orange #D97706 accent. "default" and "catppuccin" keys still map to RCP for backward compat. Preferences dropdown lists RCP first.
