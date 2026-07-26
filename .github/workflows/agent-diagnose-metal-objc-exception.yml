@@ -23,14 +23,15 @@ jobs:
         shell: bash
         run: |
           cat >/tmp/katla-lldb.txt <<'EOF'
-          settings set target.env-vars RUST_BACKTRACE=full RUST_LOG=trace MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=0 MTL_DEBUG_LAYER_WARNING_MODE=0 NSZombieEnabled=YES MallocStackLogging=1
+          settings set target.env-vars RUST_BACKTRACE=full RUST_LOG=trace MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=exception MTL_DEBUG_LAYER_WARNING_MODE=nslog
           breakpoint set -n objc_exception_throw
+          process handle SIGABRT -n false -p true -s true
           run --headless -s --screenshot /tmp/katla-editor.png
-          echo --- Objective-C exception object ---
+          script print("--- Objective-C exception object ---")
           po $x0
-          echo --- Current thread ---
+          script print("--- Current thread ---")
           thread backtrace
-          echo --- All threads ---
+          script print("--- All threads ---")
           thread backtrace all
           quit
           EOF
