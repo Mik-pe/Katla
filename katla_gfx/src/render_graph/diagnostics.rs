@@ -171,7 +171,7 @@ impl RenderGraphDiagnostics {
             .collect::<BTreeMap<_, _>>();
         let lifetimes = resource_lifetimes(passes, &plan.sorted_passes);
 
-        let resources = resources
+        let diagnostic_resources = resources
             .iter()
             .enumerate()
             .map(|(index, namespace_resource)| {
@@ -232,7 +232,7 @@ impl RenderGraphDiagnostics {
             declared_passes: passes.len(),
             live_passes: passes.len(),
             culled_passes: 0,
-            resources: resources.len(),
+            resources: diagnostic_resources.len(),
             dependency_edges: dependencies.len(),
             parallel_levels: plan.parallel_groups.len(),
         };
@@ -240,7 +240,7 @@ impl RenderGraphDiagnostics {
         Self {
             schema_version: RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION,
             summary,
-            resources,
+            resources: diagnostic_resources,
             passes: diagnostic_passes,
             dependencies,
             execution_order: plan.sorted_passes.clone(),
@@ -303,13 +303,7 @@ impl RenderGraphDiagnostics {
             let label = dependency
                 .hazards
                 .iter()
-                .map(|hazard| {
-                    format!(
-                        "{:?} {}",
-                        hazard.kind,
-                        escape_dot(&hazard.resource.name)
-                    )
-                })
+                .map(|hazard| format!("{:?} {}", hazard.kind, escape_dot(&hazard.resource.name)))
                 .collect::<Vec<_>>()
                 .join("\\n");
             let _ = writeln!(
@@ -415,7 +409,10 @@ fn append_hazards(
     kind: RenderGraphHazardKind,
     resources: &[GraphResourceDesc],
 ) {
-    let right = right.iter().map(|resource| resource.0).collect::<BTreeSet<_>>();
+    let right = right
+        .iter()
+        .map(|resource| resource.0)
+        .collect::<BTreeSet<_>>();
     for resource in left {
         if right.contains(&resource.0) {
             hazards.push(RenderGraphDiagnosticHazard {
@@ -530,9 +527,7 @@ mod tests {
     fn transient_resource(name: &str) -> GraphResourceDesc {
         GraphResourceDesc {
             name: name.to_string(),
-            resource_type: GraphResourceType::ColorAttachment {
-                clear_value: None,
-            },
+            resource_type: GraphResourceType::ColorAttachment { clear_value: None },
             format: ImageFormat::R8G8B8A8Unorm,
             width: 128,
             height: 64,
@@ -540,11 +535,7 @@ mod tests {
         }
     }
 
-    fn pass(
-        name: &str,
-        reads: Vec<ResourceId>,
-        writes: Vec<ResourceId>,
-    ) -> PassDesc {
+    fn pass(name: &str, reads: Vec<ResourceId>, writes: Vec<ResourceId>) -> PassDesc {
         PassDesc::new(name, PassType::Graphics, reads, writes)
     }
 
@@ -554,27 +545,15 @@ mod tests {
             namespace_resource("color"),
             namespace_resource("post"),
         ];
-        let transient_resources = vec![
-            transient_resource("color"),
-            transient_resource("post"),
-        ];
+        let transient_resources = vec![transient_resource("color"), transient_resource("post")];
         let passes = vec![
             pass("geometry", Vec::new(), vec![ResourceId(1)]),
             pass("post", vec![ResourceId(1)], vec![ResourceId(2)]),
             pass("feedback", vec![ResourceId(2)], vec![ResourceId(1)]),
-            pass(
-                "present",
-                vec![ResourceId(1)],
-                vec![ResourceId(0)],
-            ),
+            pass("present", vec![ResourceId(1)], vec![ResourceId(0)]),
         ];
         let plan = GraphCompiler::from_pass_descs(&passes).compile().unwrap();
-        RenderGraphDiagnostics::from_parts(
-            &passes,
-            &resources,
-            &transient_resources,
-            &plan,
-        )
+        RenderGraphDiagnostics::from_parts(&passes, &resources, &transient_resources, &plan)
     }
 
     #[test]
