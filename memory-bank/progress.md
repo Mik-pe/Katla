@@ -4,8 +4,10 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## Completed Recently
 
-- Audited the render graph end-to-end across builder, compiler, frame submission, transient resources, Vulkan, Metal, and application graph construction. Merged the canonical dependency DAG (#21), platform isolation (#24), benchmark ownership fix (#26), and fail-fast builder validation (#28). Captured larger follow-up work as focused issues #30–#38 and #41 instead of a tracking epic.
-- Fixed asset browser action safety: single clicks now select without immediately opening folders or previews, double-click activation is tracked per asset, context actions resolve the stored asset index, delete confirmation consumes the exact pending action, and deletion refuses empty paths plus the synthetic `..` entry. Added regression tests for click activation, stored confirmation actions, context target resolution, and parent-entry protection.
+- Audited the render graph end-to-end across builder, compiler, frame submission, transient resources, Vulkan, Metal, and application graph construction. Merged the canonical dependency DAG (#21), platform isolation (#24), benchmark ownership fix (#26), fail-fast builder validation (#28), Metal semantic scheduling/depth-prepass integration (#39), and deterministic graph diagnostics (#42). Captured larger follow-up work as focused issues #30–#38 and #41 instead of a tracking epic.
+- Added deterministic render-graph diagnostics with stable human-readable, JSON, and Graphviz DOT exports. Snapshots include pass/resource metadata, canonical order, parallel levels, resource lifetimes, and concrete RAW/WAR/WAW hazards without backend pointers or hash-order instability.
+- Metal now validates a semantic frame schedule compiled from the canonical graph order, routes submissions by pass index and `PassKind`, keeps depth-prepass and geometry submissions separate, loads/stores shared depth correctly, and treats UI as a first-class semantic pass in both Metal and Vulkan dispatch.
+- Fixed asset browser action safety: single clicks now select without immediately opening folders or previews, double-click activation is tracked per asset, context actions resolve the stored asset index, delete confirmation consumes the exact pending action, and deletion refuses empty paths plus the synthetic `..` entry. Removed the obsolete `AssetAction::Open` path and unused render-only asset path discovered by full Clippy validation.
 - Restored complete editor docking interaction: DockSpace now owns tab activation, tab drag/drop, and splitter dragging through the declarative global-input pass; the duplicate manual editor input path was removed. Nested splitter ratios use local split bounds, and tab moves preserve the exact dragged tab. Added regression tests for nested ratios and non-first-tab moves.
 - Wired the Console toolbar: level buttons toggle their filters and Clear empties the shared log buffer through typed declarative actions.
 - Fixed declarative input state regressions: Hierarchy, Asset Browser, and Console now filter from their live text-field `StateId` values, and `UiContext` preserves input consumption across multiple passes within a frame. Added tests for consumption accumulation and frame reset.
@@ -21,18 +23,16 @@ What's been done and what's next. **Update this file when completing or starting
 - SceneSnapshot physics bug fixed: spawn_from_descriptor now restores RigidBody, ColliderShape, PhysicsMaterial, TriggerVolume, CollisionFilter — physics bodies survive play/stop cycles.
 - Default scene path fix: added default_scene_path() resolving via CARGO_MANIFEST_DIR, eliminating test/runtime path drift. Both now target workspace-root assets/scenes/default.katla.
 - Code health pass: cargo fmt/clippy/test all clean.
-- Pushed 49 commits to origin/main.
 
 ## In Progress
 
-- Metal semantic frame scheduling and depth-prepass integration (#39), including cleanup of its temporary macOS validation workflow before merge.
 - Metal renderer tests still abort the macOS test process on Objective-C exceptions; root-cause work is scoped in #38.
 
 ## Upcoming / Blocked
 
 - Typed image accesses and subresource ranges (#30).
 - First-class buffer resources and dependencies (#31), followed by backend-neutral compute commands (#32) and one compiled synchronization plan (#33).
-- Pass culling (#34), transient aliasing (#35), real Metal frames in flight (#36), deterministic graph diagnostics (#37), and one graph-owned Metal editor viewport output (#41).
+- Pass culling (#34), transient aliasing (#35), real Metal frames in flight (#36), extensions to deterministic graph diagnostics (#37), and one graph-owned Metal editor viewport output (#41).
 - Preferences theme grid: consider orange accent tint in addition to check mark for even more prominence.
 - Asset browser sizing still needs work (structural gap from vision score 7/10).
 - Empty states for panels (hierarchy, inspector with no selection).
