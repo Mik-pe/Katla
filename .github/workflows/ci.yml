@@ -44,13 +44,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Check workspace
-        run: cargo check --workspace --locked
+        run: cargo check --workspace --locked --quiet
 
       - name: Test workspace
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --quiet
 
       - name: Lint workspace
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked --quiet -- -D warnings
 
   macos:
     name: ${{ matrix.name }}
@@ -83,11 +83,11 @@ jobs:
           system_profiler SPDisplaysDataType || true
 
       - name: Check graphics and application crates
-        run: cargo check -p katla_gfx -p katla_app --locked
+        run: cargo check -p katla_gfx -p katla_app --locked --quiet
 
       - name: Test graphics library
-        run: cargo test -p katla_gfx --lib --locked
+        run: cargo test -p katla_gfx --lib --locked --quiet
 
       - name: Lint graphics and application crates
         if: matrix.lint
-        run: cargo clippy -p katla_gfx -p katla_app --locked -- -D warnings
+        run: cargo clippy -p katla_gfx -p katla_app --locked --quiet -- -D warnings
