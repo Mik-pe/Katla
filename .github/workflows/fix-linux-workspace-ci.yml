@@ -1,0 +1,64 @@
+name: Fix Linux workspace portability
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.head_ref == 'agent/modern-macos-ci'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out pull request branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Install Linux development packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+
+      - name: Apply portability fixes
+        run: python3 .github/scripts/fix_linux_workspace_ci.py
+
+      - name: Format workspace
+        run: cargo fmt --all
+
+      - name: Check workspace
+        run: cargo check --workspace --locked
+
+      - name: Test workspace
+        run: cargo test --workspace --locked
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Commit validated fixes
+        run: |
+          git add \
+            katla_app/src/application/builder.rs \
+            katla_app/src/application/editor/mod.rs \
+            katla_app/src/application/frame_loop.rs \
+            katla_app/src/application/gizmo.rs \
+            katla_app/src/application/headless.rs \
+            katla_app/src/application/picking.rs \
+            katla_app/src/application/renderer.rs
+          if git diff --cached --quiet; then
+            echo "Portability fixes are already committed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Restore Linux workspace portability"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
