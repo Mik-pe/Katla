@@ -20,13 +20,13 @@ jobs:
       - name: Install Rust components
         run: rustup component add clippy rustfmt
 
-      - name: Apply diagnostics namespace fix
+      - name: Apply diagnostics fixes
         run: |
           python3 <<'PY'
           from pathlib import Path
 
-          path = Path("katla_gfx/src/render_graph/diagnostics.rs")
-          source = path.read_text()
+          diagnostics_path = Path("katla_gfx/src/render_graph/diagnostics.rs")
+          source = diagnostics_path.read_text()
           source = source.replace(
               "        let resources = resources\n            .iter()",
               "        let diagnostic_resources = resources\n            .iter()",
@@ -42,7 +42,28 @@ jobs:
               "            resources: diagnostic_resources,\n            passes: diagnostic_passes,",
               1,
           )
-          path.write_text(source)
+          diagnostics_path.write_text(source)
+
+          compiler_path = Path("katla_gfx/src/render_graph/compiler.rs")
+          source = compiler_path.read_text()
+          source = source.replace(
+              "#[derive(Debug, Clone)]\n#[expect(dead_code)]\npub(crate) struct PassDagNode",
+              "#[derive(Debug, Clone)]\npub(crate) struct PassDagNode",
+              1,
+          )
+          compiler_path.write_text(source)
+
+          shader_path = Path("katla_gfx/src/vulkan/material/shadermodule.rs")
+          source = shader_path.read_text()
+          source = source.replace(
+              "        match dir.parent() {\n"
+              "            Some(parent) => dir = parent,\n"
+              "            None => return None,\n"
+              "        }",
+              "        dir = dir.parent()?;",
+              1,
+          )
+          shader_path.write_text(source)
           PY
 
       - name: Format source
@@ -92,7 +113,9 @@ jobs:
         run: |
           git add \
             katla_gfx/src/render_graph/diagnostics.rs \
-            katla_gfx/src/render_graph/mod.rs
+            katla_gfx/src/render_graph/mod.rs \
+            katla_gfx/src/render_graph/compiler.rs \
+            katla_gfx/src/vulkan/material/shadermodule.rs
           if git diff --cached --quiet; then
             echo "Source is already validated"
             exit 0
