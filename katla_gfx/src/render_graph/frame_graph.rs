@@ -1,10 +1,10 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::backend::RenderGraphBackend;
 use super::builder::{InternalPassBuilder, PassBuilder};
 use super::compiler::{ExecutionPlan, GraphCompiler};
-use super::error::RenderGraphError;
+use super::error::{GraphValidationError, RenderGraphError};
 use super::handles::{PassId, ResourceId};
 use super::pass::PassDesc;
 use super::passes::geometry::GeometryPassData;
@@ -405,11 +405,17 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             let mut frame_textures = HashMap::new();
 
             for desc in &self.transient_resources {
-                let resource_id = self
-                    .resource_by_name
-                    .get(&desc.name)
-                    .copied()
-                    .unwrap_or(ResourceId(frame_textures.len() as u32));
+                let resource_id =
+                    self.resource_by_name
+                        .get(&desc.name)
+                        .copied()
+                        .ok_or_else(|| {
+                            RenderGraphError::Validation(
+                                GraphValidationError::MissingResourceNamespaceEntry(
+                                    desc.name.clone(),
+                                ),
+                            )
+                        })?;
 
                 let texture = B::create_transient_texture(backend, desc)?;
                 frame_textures.insert(resource_id, texture);
@@ -774,7 +780,7 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
 /// Provides a fluent API for adding passes before building the executable [`FrameGraph`].
 pub struct FrameGraphBuilder {
     pass_builders: Vec<InternalPassBuilder>,
-    resources: HashMap<String, GraphResourceHandle>,
+    resources: Vec<(String, GraphResourceHandle)>,
     transient_resources: Vec<GraphResourceDesc>,
 }
 
@@ -783,7 +789,7 @@ impl FrameGraphBuilder {
     pub fn new() -> Self {
         Self {
             pass_builders: Vec::new(),
-            resources: HashMap::new(),
+            resources: Vec::new(),
             transient_resources: Vec::new(),
         }
     }
@@ -796,7 +802,7 @@ impl FrameGraphBuilder {
 
     /// Import an external resource into the graph.
     pub fn import_resource(mut self, name: impl Into<String>, handle: GraphResourceHandle) -> Self {
-        self.resources.insert(name.into(), handle);
+        self.resources.push((name.into(), handle));
         self
     }
 
@@ -806,66 +812,132 @@ impl FrameGraphBuilder {
         self
     }
 
-    /// Build the frame graph.
+    fn validate(&self) -> Result<(), RenderGraphError> {
+        let mut resource_names = HashSet::from([BACKBUFFER_NAME.to_string()]);
+
+        for desc in &self.transient_resources {
+            if desc.name.trim().is_empty() {
+                return Err(GraphValidationError::EmptyResourceName.into());
+            }
+            if desc.width == 0 || desc.height == 0 {
+                return Err(GraphValidationError::InvalidResourceExtent {
+                    resource: desc.name.clone(),
+                    width: desc.width,
+                    height: desc.height,
+                }
+                .into());
+            }
+            if !resource_names.insert(desc.name.clone()) {
+                return Err(GraphValidationError::DuplicateResourceName(desc.name.clone()).into());
+            }
+        }
+
+        for (name, handle) in &self.resources {
+            if name.trim().is_empty() {
+                return Err(GraphValidationError::EmptyResourceName.into());
+            }
+            if handle.is_none() {
+                return Err(GraphValidationError::InvalidImportedResource(name.clone()).into());
+            }
+            if !resource_names.insert(name.clone()) {
+                return Err(GraphValidationError::DuplicateResourceName(name.clone()).into());
+            }
+        }
+
+        let mut pass_names = HashSet::new();
+        for pass in &self.pass_builders {
+            if pass.name.trim().is_empty() {
+                return Err(GraphValidationError::EmptyPassName.into());
+            }
+            if !pass_names.insert(pass.name.clone()) {
+                return Err(GraphValidationError::DuplicatePassName(pass.name.clone()).into());
+            }
+
+            for resource in pass.reads.iter().chain(&pass.writes) {
+                if resource.trim().is_empty() {
+                    return Err(GraphValidationError::EmptyPassResource {
+                        pass: pass.name.clone(),
+                    }
+                    .into());
+                }
+                if !resource_names.contains(resource) {
+                    return Err(GraphValidationError::UndeclaredResource {
+                        pass: pass.name.clone(),
+                        resource: resource.clone(),
+                    }
+                    .into());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Build the frame graph after validating its complete resource namespace.
     pub fn build<B: RenderGraphBackend>(self) -> Result<FrameGraph<B>, RenderGraphError> {
-        let mut graph = FrameGraph::new();
+        self.validate()?;
 
-        graph.transient_resources = self.transient_resources;
+        let FrameGraphBuilder {
+            pass_builders,
+            resources,
+            transient_resources,
+        } = self;
 
-        let transient_names: Vec<String> = graph
-            .transient_resources
+        let transient_names = transient_resources
             .iter()
-            .map(|d| d.name.clone())
-            .collect();
-        for name in &transient_names {
+            .map(|desc| desc.name.clone())
+            .collect::<Vec<_>>();
+
+        let mut graph = FrameGraph::new();
+        graph.transient_resources = transient_resources;
+
+        // The swapchain backbuffer is the only built-in resource. Every other
+        // name has already been declared or imported by the validated builder.
+        graph.create_resource_id(BACKBUFFER_NAME);
+        for name in transient_names {
             graph.create_resource_id(name);
         }
-        for name in self.resources.keys() {
-            graph.create_resource_id(name);
-        }
-        for pass_builder in &self.pass_builders {
-            for read_name in &pass_builder.reads {
-                graph.create_resource_id(read_name);
-            }
-            for write_name in &pass_builder.writes {
-                graph.create_resource_id(write_name);
-            }
+        for (name, _) in &resources {
+            graph.create_resource_id(name.clone());
         }
 
         let mut global_resource_map = HashMap::new();
         for (name, &resource_id) in &graph.resource_by_name {
             global_resource_map.insert(name.clone(), GraphResourceHandle::new(resource_id.0));
         }
-        for (name, handle) in &self.resources {
+        for (name, handle) in &resources {
             global_resource_map.insert(name.clone(), *handle);
         }
 
-        for pass_builder in self.pass_builders {
+        for pass_builder in pass_builders {
             let pass_data = (pass_builder.build_fn)(&global_resource_map)?;
+            let pass_name = pass_builder.name.clone();
 
-            let read_ids: Vec<ResourceId> = pass_builder
+            let read_ids = pass_builder
                 .reads
                 .iter()
                 .map(|name| {
-                    graph
-                        .resource_by_name
-                        .get(name)
-                        .copied()
-                        .unwrap_or_else(|| graph.create_resource_id(name))
+                    graph.resource_by_name.get(name).copied().ok_or_else(|| {
+                        RenderGraphError::Validation(GraphValidationError::UndeclaredResource {
+                            pass: pass_name.clone(),
+                            resource: name.clone(),
+                        })
+                    })
                 })
-                .collect();
+                .collect::<Result<Vec<_>, _>>()?;
 
-            let write_ids: Vec<ResourceId> = pass_builder
+            let write_ids = pass_builder
                 .writes
                 .iter()
                 .map(|name| {
-                    graph
-                        .resource_by_name
-                        .get(name)
-                        .copied()
-                        .unwrap_or_else(|| graph.create_resource_id(name))
+                    graph.resource_by_name.get(name).copied().ok_or_else(|| {
+                        RenderGraphError::Validation(GraphValidationError::UndeclaredResource {
+                            pass: pass_name.clone(),
+                            resource: name.clone(),
+                        })
+                    })
                 })
-                .collect();
+                .collect::<Result<Vec<_>, _>>()?;
 
             let mut pass = PassDesc::new(
                 pass_builder.name,
@@ -1097,5 +1169,159 @@ mod tests {
         assert_eq!(graph.resource_id("hdr_color"), Some(id));
         assert_eq!(graph.resource_name(id), Some("hdr_color"));
         assert_eq!(graph.resource_id("nonexistent"), None);
+    }
+
+    fn validation_resource(name: &str, width: u32, height: u32) -> GraphResourceDesc {
+        GraphResourceDesc {
+            name: name.to_string(),
+            resource_type: super::super::resource::GraphResourceType::ColorAttachment {
+                clear_value: None,
+            },
+            format: crate::texture::ImageFormat::R8G8B8A8Unorm,
+            width,
+            height,
+            tracks_swapchain_size: true,
+        }
+    }
+
+    fn validation_error(builder: FrameGraphBuilder) -> GraphValidationError {
+        match builder.build::<MockBackend>() {
+            Err(RenderGraphError::Validation(error)) => error,
+            Err(error) => panic!("expected graph validation error, got {error}"),
+            Ok(_) => panic!("expected graph validation to fail"),
+        }
+    }
+
+    #[test]
+    fn builder_rejects_duplicate_resource_names() {
+        let error = validation_error(
+            FrameGraphBuilder::new()
+                .create_resource(validation_resource("color", 1, 1))
+                .import_resource("color", GraphResourceHandle::new(7)),
+        );
+        assert_eq!(
+            error,
+            GraphValidationError::DuplicateResourceName("color".to_string())
+        );
+    }
+
+    #[test]
+    fn builder_rejects_repeated_imports() {
+        let error = validation_error(
+            FrameGraphBuilder::new()
+                .import_resource("external", GraphResourceHandle::new(1))
+                .import_resource("external", GraphResourceHandle::new(2)),
+        );
+        assert_eq!(
+            error,
+            GraphValidationError::DuplicateResourceName("external".to_string())
+        );
+    }
+
+    #[test]
+    fn builder_rejects_duplicate_pass_names() {
+        let error = validation_error(
+            FrameGraphBuilder::new()
+                .add_pass(super::super::builder::SimplePass::new(
+                    "same",
+                    PassType::Graphics,
+                ))
+                .add_pass(super::super::builder::SimplePass::new(
+                    "same",
+                    PassType::Graphics,
+                )),
+        );
+        assert_eq!(
+            error,
+            GraphValidationError::DuplicatePassName("same".to_string())
+        );
+    }
+
+    #[test]
+    fn builder_rejects_undeclared_pass_resources() {
+        let error = validation_error(
+            FrameGraphBuilder::new().add_pass(
+                super::super::builder::SimplePass::new("geometry", PassType::Graphics)
+                    .write("typo_color"),
+            ),
+        );
+        assert_eq!(
+            error,
+            GraphValidationError::UndeclaredResource {
+                pass: "geometry".to_string(),
+                resource: "typo_color".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn builder_rejects_invalid_resource_descriptors_and_imports() {
+        assert_eq!(
+            validation_error(
+                FrameGraphBuilder::new().create_resource(validation_resource("color", 0, 64))
+            ),
+            GraphValidationError::InvalidResourceExtent {
+                resource: "color".to_string(),
+                width: 0,
+                height: 64,
+            }
+        );
+        assert_eq!(
+            validation_error(
+                FrameGraphBuilder::new().import_resource("external", GraphResourceHandle::NONE)
+            ),
+            GraphValidationError::InvalidImportedResource("external".to_string())
+        );
+    }
+
+    #[test]
+    fn builder_rejects_empty_names() {
+        assert_eq!(
+            validation_error(
+                FrameGraphBuilder::new().create_resource(validation_resource("", 1, 1))
+            ),
+            GraphValidationError::EmptyResourceName
+        );
+        assert_eq!(
+            validation_error(FrameGraphBuilder::new().add_pass(
+                super::super::builder::SimplePass::new("", PassType::Graphics)
+            )),
+            GraphValidationError::EmptyPassName
+        );
+    }
+
+    #[test]
+    fn builder_accepts_declared_resources_and_builtin_backbuffer() {
+        let result = FrameGraphBuilder::new()
+            .create_resource(validation_resource("color", 64, 64))
+            .add_pass(
+                super::super::builder::SimplePass::new("geometry", PassType::Graphics)
+                    .write("color"),
+            )
+            .add_pass(
+                super::super::builder::SimplePass::new("present", PassType::Graphics)
+                    .read("color")
+                    .write(BACKBUFFER_NAME),
+            )
+            .build::<MockBackend>();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn transient_initialization_rejects_a_missing_namespace_entry() {
+        let mut graph = TestGraph::new();
+        graph
+            .transient_resources
+            .push(validation_resource("orphan", 1, 1));
+
+        let error = graph
+            .initialize_transient_textures(&MockBackend)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RenderGraphError::Validation(
+                GraphValidationError::MissingResourceNamespaceEntry(resource)
+            ) if resource == "orphan"
+        ));
     }
 }
