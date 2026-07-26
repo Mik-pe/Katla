@@ -1,12 +1,10 @@
 use std::collections::HashSet;
+use std::panic::AssertUnwindSafe;
 
-use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_foundation::NSArray;
 use objc2_metal::{
-    MTLArgumentDescriptor, MTLArgumentEncoder, MTLBindingAccess, MTLBuffer, MTLDataType, MTLDevice,
-    MTLResourceOptions, MTLTexture, MTLTextureType,
+    MTLArgumentEncoder, MTLBuffer, MTLDevice, MTLFunction, MTLResourceOptions, MTLTexture,
 };
 
 use crate::error::RendererError;
@@ -14,21 +12,26 @@ use crate::error::RendererError;
 /// Maximum number of textures in the bindless array.
 const MAX_BINDLESS_TEXTURES: u32 = 4096;
 
+/// Naga maps Katla's bindless texture array to `[[buffer(9)]]` in MSL.
+const BINDLESS_ARGUMENT_BUFFER_INDEX: usize = 9;
+
 /// Metal bindless texture manager using an argument buffer.
 ///
 /// This is the Metal equivalent of Vulkan's descriptor indexing
-/// (binding_array<texture2d>). Textures are stored in a Vec indexed
+/// (`binding_array<texture2d>`). Textures are stored in a Vec indexed
 /// by slot and encoded into a Metal argument buffer that is bound
 /// at buffer index 9 for both vertex and fragment stages.
 ///
-/// The generated MSL expects:
-/// `constant NagaArgumentBufferWrapper<texture2d<float>>* bindless_textures [[buffer(9)]]`
-/// and reads textures as `bindless_textures[idx].inner.sample(...)`.
+/// The argument-buffer layout is created lazily from an actual compiled
+/// `MTLFunction`. Creating an arbitrary layout through
+/// `MTLDevice::newArgumentEncoderWithArguments` is not supported by every Metal
+/// implementation (notably Apple's virtualized `AppleParavirtDevice`) and may
+/// raise an Objective-C exception instead of returning an error.
 pub(crate) struct MetalBindlessTextureManager {
     textures: Vec<Option<Retained<ProtocolObject<dyn MTLTexture>>>>,
     /// Stack of free slot indices for O(1) allocation.
     free_slots: Vec<u32>,
-    /// Argument encoder for the texture array.
+    /// Argument encoder derived from the compiled shader's buffer-9 layout.
     encoder: Option<Retained<ProtocolObject<dyn MTLArgumentEncoder>>>,
     /// The argument buffer containing all bindless textures.
     argument_buffer: Option<Retained<ProtocolObject<dyn MTLBuffer>>>,
@@ -41,6 +44,12 @@ pub(crate) struct MetalBindlessTextureManager {
 impl MetalBindlessTextureManager {
     pub(crate) fn new(capacity: u32) -> Result<Self, RendererError> {
         let capacity = capacity.min(MAX_BINDLESS_TEXTURES);
+        if capacity == 0 {
+            return Err(RendererError::InitializationFailed(
+                "Metal bindless texture capacity must be greater than zero".into(),
+            ));
+        }
+
         Ok(Self {
             textures: vec![None; capacity as usize],
             free_slots: (0..capacity).rev().collect(),
@@ -51,56 +60,95 @@ impl MetalBindlessTextureManager {
         })
     }
 
-    /// Initialize the argument buffer with a device and default texture.
+    /// Set the texture used to populate unoccupied bindless slots.
     ///
-    /// Must be called after `new()`, once a default texture is available.
-    /// Encodes all currently registered textures into the argument buffer.
-    pub(crate) fn init_argument_buffer(
+    /// Texture registration is allowed before the shader layout is available.
+    /// Once [`Self::initialize_from_function`] succeeds, every existing slot is
+    /// encoded in one deterministic pass.
+    pub(crate) fn set_default_texture(
         &mut self,
-        device: &ProtocolObject<dyn MTLDevice>,
-        default_texture: &ProtocolObject<dyn MTLTexture>,
+        texture: &ProtocolObject<dyn MTLTexture>,
     ) {
-        self.default_texture = Some(default_texture.retain());
+        self.default_texture = Some(texture.retain());
+    }
 
-        let capacity = self.textures.len() as u32;
+    pub(crate) fn is_initialized(&self) -> bool {
+        self.encoder.is_some() && self.argument_buffer.is_some()
+    }
 
-        let arg_desc = {
-            let desc = MTLArgumentDescriptor::argumentDescriptor();
-            desc.setDataType(MTLDataType::Texture);
-            desc.setIndex(0);
-            desc.setArrayLength(capacity as usize);
-            desc.setTextureType(MTLTextureType::Type2D);
-            desc.setAccess(MTLBindingAccess::ReadOnly);
-            desc
-        };
+    /// Initialize the bindless argument buffer from the actual shader layout.
+    ///
+    /// `newArgumentEncoderWithBufferIndex` is the shader-reflection path: Metal
+    /// owns the concrete ABI for the generated argument-buffer struct and returns
+    /// an encoder with exactly the layout expected at buffer index 9.
+    ///
+    /// The single risky Objective-C message is wrapped in a scoped exception
+    /// boundary. Unsupported devices therefore produce a normal `RendererError`
+    /// rather than unwinding a foreign exception through Rust and aborting the
+    /// process.
+    pub(crate) fn initialize_from_function(
+        &mut self,
+        function: &ProtocolObject<dyn MTLFunction>,
+    ) -> Result<(), RendererError> {
+        if self.is_initialized() {
+            return Ok(());
+        }
 
-        let descriptors = NSArray::from_slice(&[&*arg_desc]);
+        let default_texture = self.default_texture.clone().ok_or_else(|| {
+            RendererError::InitializationFailed(
+                "Metal bindless argument buffer has no default texture".into(),
+            )
+        })?;
+
+        let encoder = objc2::exception::catch(AssertUnwindSafe(|| unsafe {
+            function.newArgumentEncoderWithBufferIndex(BINDLESS_ARGUMENT_BUFFER_INDEX)
+        }))
+        .map_err(|exception| {
+            RendererError::InitializationFailed(format!(
+                "Metal device cannot create the bindless shader argument layout at buffer {}: {:?}",
+                BINDLESS_ARGUMENT_BUFFER_INDEX, exception
+            ))
+        })?;
+
+        let encoded_length = encoder.encodedLength();
+        if encoded_length == 0 {
+            return Err(RendererError::InitializationFailed(format!(
+                "Metal shader reported an empty bindless argument layout at buffer {}",
+                BINDLESS_ARGUMENT_BUFFER_INDEX
+            )));
+        }
+
+        let device = function.device();
+        let buffer = device
+            .newBufferWithLength_options(encoded_length, MTLResourceOptions::StorageModeShared)
+            .ok_or_else(|| {
+                RendererError::ResourceCreationFailed(format!(
+                    "Failed to allocate {} bytes for the Metal bindless argument buffer",
+                    encoded_length
+                ))
+            })?;
 
         unsafe {
-            let encoder = device
-                .newArgumentEncoderWithArguments(&descriptors)
-                .expect("Failed to create argument encoder for bindless textures");
-
-            let encoded_length = encoder.encodedLength();
-            let buffer = device
-                .newBufferWithLength_options(encoded_length, MTLResourceOptions::StorageModeShared)
-                .expect("Failed to create argument buffer for bindless textures");
-
             encoder.setArgumentBuffer_offset(Some(&buffer), 0);
-
-            for (i, slot) in self.textures.iter().enumerate() {
-                let tex = slot.as_ref().map(|t| t.as_ref()).unwrap_or(default_texture);
-                encoder.setTexture_atIndex(Some(tex), i);
+            for (index, slot) in self.textures.iter().enumerate() {
+                let texture = slot
+                    .as_deref()
+                    .unwrap_or(default_texture.as_ref());
+                encoder.setTexture_atIndex(Some(texture), index);
             }
-
-            self.encoder = Some(encoder);
-            self.argument_buffer = Some(buffer);
         }
+
+        self.encoder = Some(encoder);
+        self.argument_buffer = Some(buffer);
+        self.dirty_slots.clear();
+        Ok(())
     }
 
     /// Allocate a free slot and store the texture.
     ///
-    /// Returns the assigned slot index.
+    /// Returns the assigned slot index. Registration may happen before the
+    /// argument-buffer layout is initialized; the slot is encoded during lazy
+    /// initialization or the next flush.
     pub(crate) fn register_texture(
         &mut self,
         texture: &ProtocolObject<dyn MTLTexture>,
@@ -155,7 +203,9 @@ impl MetalBindlessTextureManager {
     ///
     /// Call once per frame after the CPU-GPU sync point. Only slots that
     /// changed since the last flush are re-encoded, avoiding O(N) work
-    /// when the texture set is stable.
+    /// when the texture set is stable. Before lazy initialization this is an
+    /// intentional no-op; all registered slots are encoded by
+    /// [`Self::initialize_from_function`].
     pub(crate) fn flush_argument_buffer(&mut self) {
         if self.dirty_slots.is_empty() {
             return;
@@ -172,11 +222,10 @@ impl MetalBindlessTextureManager {
         unsafe {
             encoder.setArgumentBuffer_offset(Some(buffer), 0);
             for &slot in &self.dirty_slots {
-                let tex = self.textures[slot as usize]
-                    .as_ref()
-                    .map(|t| t.as_ref())
+                let texture = self.textures[slot as usize]
+                    .as_deref()
                     .unwrap_or(default);
-                encoder.setTexture_atIndex(Some(tex), slot as usize);
+                encoder.setTexture_atIndex(Some(texture), slot as usize);
             }
         }
         self.dirty_slots.clear();
@@ -193,7 +242,22 @@ impl MetalBindlessTextureManager {
     ) -> impl Iterator<Item = &ProtocolObject<dyn MTLTexture>> {
         self.textures
             .iter()
-            .filter_map(|opt| opt.as_deref())
+            .filter_map(|texture| texture.as_deref())
             .chain(self.default_texture.as_deref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_zero_capacity() {
+        let result = MetalBindlessTextureManager::new(0);
+        assert!(matches!(
+            result,
+            Err(RendererError::InitializationFailed(message))
+                if message.contains("greater than zero")
+        ));
     }
 }
