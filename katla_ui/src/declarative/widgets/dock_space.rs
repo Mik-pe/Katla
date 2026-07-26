@@ -996,9 +996,11 @@ mod tests {
         let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
         ds.handle_input(&mut ctx, &mut arena, bounds, &[]);
         let emitted: Vec<DockAction<u32>> = ctx.actions.drain();
-        assert!(emitted
-            .iter()
-            .any(|action| matches!(action, DockAction::TabActivated { tab, .. } if *tab == 2)));
+        assert!(
+            emitted
+                .iter()
+                .any(|action| matches!(action, DockAction::TabActivated { tab, .. } if *tab == 2))
+        );
     }
 
     #[test]
@@ -1035,9 +1037,11 @@ mod tests {
         };
         ds.handle_input(&mut ctx2, &mut arena, bounds, &[]);
         let emitted: Vec<DockAction<u32>> = ctx2.actions.drain();
-        assert!(emitted
-            .iter()
-            .any(|action| matches!(action, DockAction::SplitResized { .. })));
+        assert!(
+            emitted
+                .iter()
+                .any(|action| matches!(action, DockAction::SplitResized { .. }))
+        );
     }
 
     #[test]
@@ -1075,17 +1079,29 @@ mod tests {
     #[test]
     fn test_dockzone_all_five_zones() {
         let area = Rect2D::new(Vec2::ZERO, Vec2::new(400.0, 400.0));
-        assert_eq!(zone_from_pos(area, Vec2::new(200.0, 200.0)), DockZone::Center);
+        assert_eq!(
+            zone_from_pos(area, Vec2::new(200.0, 200.0)),
+            DockZone::Center
+        );
         assert_eq!(zone_from_pos(area, Vec2::new(50.0, 200.0)), DockZone::Left);
-        assert_eq!(zone_from_pos(area, Vec2::new(350.0, 200.0)), DockZone::Right);
+        assert_eq!(
+            zone_from_pos(area, Vec2::new(350.0, 200.0)),
+            DockZone::Right
+        );
         assert_eq!(zone_from_pos(area, Vec2::new(200.0, 50.0)), DockZone::Top);
-        assert_eq!(zone_from_pos(area, Vec2::new(200.0, 350.0)), DockZone::Bottom);
+        assert_eq!(
+            zone_from_pos(area, Vec2::new(200.0, 350.0)),
+            DockZone::Bottom
+        );
     }
 
     #[test]
     fn test_zone_from_pos_edge_cases() {
         let area = Rect2D::new(Vec2::ZERO, Vec2::new(400.0, 400.0));
-        assert_eq!(zone_from_pos(area, Vec2::new(500.0, 500.0)), DockZone::Center);
+        assert_eq!(
+            zone_from_pos(area, Vec2::new(500.0, 500.0)),
+            DockZone::Center
+        );
         assert_eq!(zone_from_pos(area, Vec2::new(50.0, 50.0)), DockZone::Top);
         assert_eq!(zone_from_pos(area, Vec2::new(350.0, 50.0)), DockZone::Top);
     }

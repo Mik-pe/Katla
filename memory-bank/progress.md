@@ -4,8 +4,10 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## Completed Recently
 
+- Added permanent CI with one explicit current macOS environment: `macos-26` on Apple Silicon. Katla intentionally has no backwards-compatible macOS job; future runner upgrades replace the current label directly. Added focused Ubuntu 24.04 Vulkan/graphics-library validation, documented the policy, and removed mutable/deprecated runner choices.
+- Fixed the Metal Objective-C exception path (#47). Bindless argument buffers are initialized lazily from device capabilities, Tier 2 uses direct resource IDs, supported Tier 1 devices use reflected layouts, unsupported Apple paravirtual devices fail before invalid selectors or GPU submission, and application initialization errors return a non-zero process status.
 - Fixed the Metal editor viewport and hierarchy-selection crash (#44). The editor now tonemaps into graph-owned `viewport_0` in local texture coordinates before UI composition, so the 3D scene fills the complete viewport instead of presenting a stale drawable-relative quadrant. Selection gizmo/debug draws are prepared before object-uniform upload, and Metal rejects out-of-capacity instance indices before command encoding.
-- Audited the render graph end-to-end across builder, compiler, frame submission, transient resources, Vulkan, Metal, and application graph construction. Merged the canonical dependency DAG (#21), platform isolation (#24), benchmark ownership fix (#26), fail-fast builder validation (#28), Metal semantic scheduling/depth-prepass integration (#39), deterministic graph diagnostics (#42), and graph-owned editor viewport output (#44). Captured larger follow-up work as focused issues #30–#38 instead of a tracking epic.
+- Audited the render graph end-to-end across builder, compiler, frame submission, transient resources, Vulkan, Metal, and application graph construction. Merged the canonical dependency DAG (#21), platform isolation (#24), benchmark ownership fix (#26), fail-fast builder validation (#28), Metal semantic scheduling/depth-prepass integration (#39), deterministic graph diagnostics (#42), graph-owned editor viewport output (#44), and safe Metal capability handling (#47). Captured larger follow-up work as focused issues #30–#37 instead of a tracking epic.
 - Added deterministic render-graph diagnostics with stable human-readable, JSON, and Graphviz DOT exports. Snapshots include pass/resource metadata, canonical order, parallel levels, resource lifetimes, and concrete RAW/WAR/WAW hazards without backend pointers or hash-order instability.
 - Metal now validates a semantic frame schedule compiled from the canonical graph order, routes submissions by pass index and `PassKind`, keeps depth-prepass and geometry submissions separate, loads/stores shared depth correctly, and treats UI as a first-class semantic pass in both Metal and Vulkan dispatch.
 - Fixed asset browser action safety: single clicks now select without immediately opening folders or previews, double-click activation is tracked per asset, context actions resolve the stored asset index, delete confirmation consumes the exact pending action, and deletion refuses empty paths plus the synthetic `..` entry. Removed the obsolete `AssetAction::Open` path and unused render-only asset path discovered by full Clippy validation.
@@ -26,7 +28,7 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## In Progress
 
-- Metal renderer tests still abort the macOS test process on Objective-C exceptions; root-cause work is scoped in #38.
+<!-- Move active implementation work here. -->
 
 ## Upcoming / Blocked
 
