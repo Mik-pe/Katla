@@ -35,8 +35,10 @@ jobs:
             vulkan-validationlayers
           vulkaninfo --summary
 
-      - name: Apply portability fixes
-        run: python3 .github/scripts/fix_linux_workspace_ci.py
+      - name: Apply portability and Clippy fixes
+        run: |
+          python3 .github/scripts/fix_linux_workspace_ci.py
+          python3 .github/scripts/fix_workspace_clippy.py
 
       - name: Format workspace
         run: cargo fmt --all
@@ -97,6 +99,8 @@ jobs:
         run: |
           git add \
             game/src/main.rs \
+            katla_app/src/animation/gltf_loader.rs \
+            katla_app/src/animation/tests.rs \
             katla_app/src/application/builder.rs \
             katla_app/src/application/editor/mod.rs \
             katla_app/src/application/frame_loop.rs \
@@ -106,18 +110,23 @@ jobs:
             katla_app/src/application/picking.rs \
             katla_app/src/application/renderer.rs \
             katla_app/src/application/ui_test.rs \
+            katla_app/src/scene/tests.rs \
             katla_app/src/ui/editor_ui/mod.rs \
+            katla_app/src/ui/editor_ui/tests.rs \
             katla_app/src/ui/mod.rs \
             katla_gfx/src/vulkan/bindless_texture.rs \
             katla_gfx/src/vulkan/context/mod.rs \
             katla_gfx/src/vulkan/context/validation.rs \
             katla_gfx/tests/particle_preset_tests.rs \
+            katla_ui/src/declarative/widgets/memoize.rs \
+            katla_ui/src/dock/tree.rs \
+            katla_ui/src/draw_list.rs \
             katla_ui/src/text/mod.rs
           if git diff --cached --quiet; then
-            echo "Portability fixes are already committed"
+            echo "Portability and lint fixes are already committed"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "Restore Linux workspace portability"
+          git commit -m "Restore cross-platform workspace quality"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
