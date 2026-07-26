@@ -122,3 +122,37 @@ if marker in material:
 elif replacement not in material:
     raise SystemExit("Metal material fragment-function block did not match")
 material_path.write_text(material)
+
+
+main_path = Path("game/src/main.rs")
+main_source = main_path.read_text()
+headless_init = '''                if let Err(e) = app.init() {
+                    error!("Application init failed: {e}");
+                    return;
+                }
+'''
+failed_init = '''                if let Err(e) = app.init() {
+                    error!("Application init failed: {e}");
+                    std::process::exit(1);
+                }
+'''
+if headless_init in main_source:
+    main_source = main_source.replace(headless_init, failed_init, 1)
+elif failed_init not in main_source:
+    raise SystemExit("headless application init error path did not match")
+
+windowed_init = '''                if let Err(e) = application.init() {
+                    error!("Application init failed: {e}");
+                    return;
+                }
+'''
+windowed_failed_init = '''                if let Err(e) = application.init() {
+                    error!("Application init failed: {e}");
+                    std::process::exit(1);
+                }
+'''
+if windowed_init in main_source:
+    main_source = main_source.replace(windowed_init, windowed_failed_init, 1)
+elif windowed_failed_init not in main_source:
+    raise SystemExit("windowed application init error path did not match")
+main_path.write_text(main_source)
