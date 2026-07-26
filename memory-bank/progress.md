@@ -28,13 +28,17 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## In Progress
 
-<!-- Move active implementation work here. -->
+- PR #50 / #49 hardens Metal frame execution: requires the geometry/fullscreen/UI semantic pipeline, validates `hdr_color -> viewport_0 -> backbuffer` accesses before encoding, and propagates retained command-buffer GPU failures as typed renderer errors with native diagnostics.
 
 ## Upcoming / Blocked
 
 - Typed image accesses and subresource ranges (#30).
 - First-class buffer resources and dependencies (#31), followed by backend-neutral compute commands (#32) and one compiled synchronization plan (#33).
 - Pass culling (#34), transient aliasing (#35), real Metal frames in flight (#36), and extensions to deterministic graph diagnostics (#37).
+- Remove the implicit Metal direct-to-drawable legacy path (#51) and add per-encoder validation diagnostics (#52).
+- Add deterministic persistent pipeline caching and asynchronous warmup (#53).
+- Replace the command path with Metal 4 after frame-slot/synchronization ownership is ready (#54), then move bindings and residency to argument tables/residency sets (#55).
+- Execute Metal passes directly from the compiled graph plan instead of fixed semantic blocks (#56).
 - Preferences theme grid: consider orange accent tint in addition to check mark for even more prominence.
 - Asset browser sizing still needs work (structural gap from vision score 7/10).
 - Empty states for panels (hierarchy, inspector with no selection).
