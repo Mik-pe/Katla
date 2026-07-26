@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          git show agent/metal-schedule-patch-source:.github/workflows/agent-metal-frame-schedule.yml \
+          git show origin/agent/metal-schedule-patch-source:.github/workflows/agent-metal-frame-schedule.yml \
             | sed -n "/python3 <<'PY'/,/^          PY$/p" \
             | sed '1d;$d;s/^          //' \
             > /tmp/apply_metal_frame_schedule.py
