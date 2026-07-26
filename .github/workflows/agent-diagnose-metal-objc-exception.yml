@@ -1,0 +1,55 @@
+name: Agent diagnose Metal Objective-C exception
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build Katla with debug symbols
+        run: cargo build -p game --bin katla
+
+      - name: Capture Objective-C exception under LLDB
+        shell: bash
+        run: |
+          cat >/tmp/katla-lldb.txt <<'EOF'
+          settings set target.env-vars RUST_BACKTRACE=full RUST_LOG=trace MTL_DEBUG_LAYER=1 MTL_DEBUG_LAYER_ERROR_MODE=0 MTL_DEBUG_LAYER_WARNING_MODE=0 NSZombieEnabled=YES MallocStackLogging=1
+          breakpoint set -n objc_exception_throw
+          run --headless -s --screenshot /tmp/katla-editor.png
+          echo --- Objective-C exception object ---
+          po $x0
+          echo --- Current thread ---
+          thread backtrace
+          echo --- All threads ---
+          thread backtrace all
+          quit
+          EOF
+
+          set +e
+          lldb --batch -s /tmp/katla-lldb.txt target/debug/katla \
+            2>&1 | tee /tmp/katla-lldb.log
+          status=${PIPESTATUS[0]}
+          echo "$status" >/tmp/katla-lldb-status.txt
+          exit 0
+
+      - name: Upload native diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: katla-metal-objc-exception-diagnosis
+          path: |
+            /tmp/katla-lldb.log
+            /tmp/katla-lldb-status.txt
+            /tmp/katla-editor.png
+          if-no-files-found: warn
+          retention-days: 1
