@@ -85,6 +85,22 @@ impl MetalFrameSchedule {
             passes.push(MetalScheduledPass { pass_index, kind });
         }
 
+        if seen.contains(&PassKind::Fullscreen) && !seen.contains(&PassKind::Geometry) {
+            return Err(RenderGraphError::BackendError(
+                "Metal's current fixed Fullscreen handler requires a preceding Geometry pass; arbitrary fullscreen inputs require plan-driven execution"
+                    .to_string(),
+            ));
+        }
+
+        if seen.contains(&PassKind::Outline)
+            && (!seen.contains(&PassKind::Geometry) || !seen.contains(&PassKind::Fullscreen))
+        {
+            return Err(RenderGraphError::BackendError(
+                "Metal's current fixed Outline handler requires Geometry and Fullscreen passes; arbitrary outline targets require plan-driven execution"
+                    .to_string(),
+            ));
+        }
+
         Ok(Self { passes })
     }
 
@@ -208,6 +224,15 @@ mod tests {
         assert!(schedule.contains(PassKind::Geometry));
         assert!(!schedule.contains(PassKind::Fullscreen));
         assert!(!schedule.contains(PassKind::Ui));
+
+        let geometry_and_ui = vec![
+            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("ui", PassType::Graphics, Some(PassKind::Ui)),
+        ];
+        let schedule = compile(&geometry_and_ui, &[0, 1]).unwrap();
+        assert!(schedule.contains(PassKind::Geometry));
+        assert!(!schedule.contains(PassKind::Fullscreen));
+        assert!(schedule.contains(PassKind::Ui));
     }
 
     #[test]
@@ -258,5 +283,28 @@ mod tests {
         ];
         let error = compile(&passes, &[0, 1]).unwrap_err().to_string();
         assert!(error.contains("current fixed encoder cannot honor graph order"));
+    }
+
+    #[test]
+    fn rejects_fullscreen_without_geometry_for_the_fixed_handler() {
+        let passes = vec![pass(
+            "postprocess",
+            PassType::Graphics,
+            Some(PassKind::Fullscreen),
+        )];
+        let error = compile(&passes, &[0]).unwrap_err().to_string();
+        assert!(error.contains("current fixed Fullscreen handler"));
+        assert!(error.contains("plan-driven execution"));
+    }
+
+    #[test]
+    fn rejects_outline_without_the_fixed_hdr_path() {
+        let passes = vec![
+            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("outline", PassType::Graphics, Some(PassKind::Outline)),
+        ];
+        let error = compile(&passes, &[0, 1]).unwrap_err().to_string();
+        assert!(error.contains("current fixed Outline handler"));
+        assert!(error.contains("plan-driven execution"));
     }
 }
