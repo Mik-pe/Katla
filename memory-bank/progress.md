@@ -4,6 +4,7 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## Completed Recently
 
+- Audited the render graph end-to-end across builder, compiler, frame submission, transient resources, Vulkan, Metal, and application graph construction. Merged the canonical dependency DAG (#21), platform isolation (#24), benchmark ownership fix (#26), and fail-fast builder validation (#28). Captured larger follow-up work as focused issues #30–#38 and #41 instead of a tracking epic.
 - Fixed asset browser action safety: single clicks now select without immediately opening folders or previews, double-click activation is tracked per asset, context actions resolve the stored asset index, delete confirmation consumes the exact pending action, and deletion refuses empty paths plus the synthetic `..` entry. Added regression tests for click activation, stored confirmation actions, context target resolution, and parent-entry protection.
 - Restored complete editor docking interaction: DockSpace now owns tab activation, tab drag/drop, and splitter dragging through the declarative global-input pass; the duplicate manual editor input path was removed. Nested splitter ratios use local split bounds, and tab moves preserve the exact dragged tab. Added regression tests for nested ratios and non-first-tab moves.
 - Wired the Console toolbar: level buttons toggle their filters and Clear empties the shared log buffer through typed declarative actions.
@@ -24,10 +25,14 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## In Progress
 
-(Nothing in progress — add entries when work begins.)
+- Metal semantic frame scheduling and depth-prepass integration (#39), including cleanup of its temporary macOS validation workflow before merge.
+- Metal renderer tests still abort the macOS test process on Objective-C exceptions; root-cause work is scoped in #38.
 
 ## Upcoming / Blocked
 
+- Typed image accesses and subresource ranges (#30).
+- First-class buffer resources and dependencies (#31), followed by backend-neutral compute commands (#32) and one compiled synchronization plan (#33).
+- Pass culling (#34), transient aliasing (#35), real Metal frames in flight (#36), deterministic graph diagnostics (#37), and one graph-owned Metal editor viewport output (#41).
 - Preferences theme grid: consider orange accent tint in addition to check mark for even more prominence.
 - Asset browser sizing still needs work (structural gap from vision score 7/10).
 - Empty states for panels (hierarchy, inspector with no selection).
