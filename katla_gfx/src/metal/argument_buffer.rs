@@ -20,9 +20,9 @@ const BINDLESS_ARGUMENT_BUFFER_INDEX: usize = 9;
 
 /// How texture references are written into the argument buffer.
 enum ArgumentBufferEncoding {
-    /// The argument buffer contains one `MTLResourceID` per texture slot.
+    /// Tier 2 argument buffers contain one `MTLResourceID` per texture slot.
     DirectResourceIds,
-    /// Compatibility path for devices with a private argument-buffer ABI.
+    /// Tier 1 devices use the private layout reflected from the shader function.
     Encoder(Retained<ProtocolObject<dyn MTLArgumentEncoder>>),
 }
 
@@ -67,14 +67,32 @@ impl MetalBindlessTextureManager {
         self.encoding.is_some() && self.argument_buffer.is_some()
     }
 
+    /// Return why this device cannot execute Katla's bindless shader profile.
+    ///
+    /// GitHub's `AppleParavirtDevice` reports Tier 1 but does not implement the
+    /// argument-encoder selector required to obtain Tier 1's private layout. The
+    /// condition is detected before calling that selector or submitting GPU work.
+    pub(crate) fn unsupported_device_reason(
+        device: &ProtocolObject<dyn MTLDevice>,
+    ) -> Option<String> {
+        if device.argumentBuffersSupport() == MTLArgumentBuffersTier::Tier2 {
+            return None;
+        }
+
+        let name = device.name().to_string();
+        name.contains("AppleParavirt").then(|| {
+            format!(
+                "Metal device '{name}' exposes only Tier 1 argument buffers but does not implement shader argument-encoder reflection"
+            )
+        })
+    }
+
     /// Initialize the bindless argument buffer for the device used by `function`.
     ///
-    /// Tier 2 uses direct `MTLResourceID` encoding. Tier 1 first tries the
-    /// shader-reflection encoder because its ABI is normally private. Some
-    /// virtualized Metal devices report Tier 1 while implementing neither
-    /// argument-encoder factory; the Objective-C call is therefore scoped in an
-    /// exception boundary and a direct-resource-ID fallback is validated at
-    /// runtime instead of aborting the process.
+    /// Tier 2 uses direct `MTLResourceID` encoding. Tier 1 uses the layout
+    /// reflected from the compiled shader function. Every Objective-C call that
+    /// can raise is scoped in an exception boundary and converted into a normal
+    /// `RendererError`.
     pub(crate) fn initialize_from_function(
         &mut self,
         function: &ProtocolObject<dyn MTLFunction>,
@@ -90,22 +108,25 @@ impl MetalBindlessTextureManager {
         })?;
         let device = function.device();
 
+        if let Some(reason) = Self::unsupported_device_reason(&device) {
+            return Err(RendererError::UnsupportedFeature(reason));
+        }
+
         if device.argumentBuffersSupport() == MTLArgumentBuffersTier::Tier2 {
             return self.initialize_direct_resource_ids(&device, default_texture.as_ref());
         }
 
-        let encoder = match objc2::exception::catch(AssertUnwindSafe(|| unsafe {
+        let encoder = objc2::exception::catch(AssertUnwindSafe(|| unsafe {
             function.newArgumentEncoderWithBufferIndex(BINDLESS_ARGUMENT_BUFFER_INDEX)
-        })) {
-            Ok(encoder) => encoder,
-            Err(exception) => {
-                log::warn!(
-                    "Metal Tier 1 argument-buffer reflection is unavailable ({:?}); trying direct resource IDs",
-                    exception
-                );
-                return self.initialize_direct_resource_ids(&device, default_texture.as_ref());
-            }
-        };
+        }))
+        .map_err(|exception| {
+            RendererError::UnsupportedFeature(format!(
+                "Metal device '{}' could not reflect the bindless shader layout at buffer {}: {:?}",
+                device.name(),
+                BINDLESS_ARGUMENT_BUFFER_INDEX,
+                exception
+            ))
+        })?;
 
         let encoded_length = encoder.encodedLength();
         if encoded_length == 0 {
@@ -179,7 +200,7 @@ impl MetalBindlessTextureManager {
     ) -> Result<u64, RendererError> {
         objc2::exception::catch(AssertUnwindSafe(|| texture.gpuResourceID().to_raw())).map_err(
             |exception| {
-                RendererError::InitializationFailed(format!(
+                RendererError::UnsupportedFeature(format!(
                     "Metal texture does not expose a GPU resource ID for direct argument-buffer encoding: {:?}",
                     exception
                 ))
