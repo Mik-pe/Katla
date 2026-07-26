@@ -5,7 +5,7 @@
 
 use std::mem;
 
-use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLRenderCommandEncoder};
+use objc2_metal::{MTLCommandBuffer, MTLRenderCommandEncoder};
 
 use crate::backend::command::{
     ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
@@ -27,6 +27,26 @@ use super::texture::{MetalTexture, MetalTextureView};
 /// The drawable is BGRA8Unorm_sRGB, so Metal interprets clear values as linear.
 /// sRGB #1E1E1E (30/255 ≈ 0.118) corresponds to linear ≈ 0.013.
 const CANVAS_CLEAR_COLOR: (f64, f64, f64, f64) = (0.013, 0.013, 0.013, 1.0);
+
+fn tonemap_viewport(
+    drawable_height: f32,
+    panel_x: f32,
+    panel_y: f32,
+    panel_width: f32,
+    panel_height: f32,
+    offscreen: bool,
+) -> (f32, f32, f32, f32) {
+    if offscreen {
+        (0.0, 0.0, panel_width, panel_height)
+    } else {
+        (
+            panel_x,
+            drawable_height - (panel_y + panel_height),
+            panel_width,
+            panel_height,
+        )
+    }
+}
 
 impl MetalRenderer {
     pub(crate) fn render_frame(
@@ -67,6 +87,12 @@ impl MetalRenderer {
         let vp_y = vp.map_or(0.0, |r| r.min[1]);
         let vp_w = vp.map_or(width, |r| r.width());
         let vp_h = vp.map_or(height, |r| r.height());
+        let ui_will_composite_viewport = schedule.contains(PassKind::Ui)
+            && self
+                .pending_ui_draw_list
+                .as_ref()
+                .is_some_and(|draw_list| !draw_list.is_empty())
+            && self.tonemap_output_view.is_some();
 
         // =========================================================================
         // Pass 0: Shadow cascade rendering → shadow map texture
@@ -376,54 +402,48 @@ impl MetalRenderer {
                 }
             }
 
-            // Clear the entire drawable to panel background color before the tonemap
-            // pass loads it and renders the 3D scene into the viewport panel rect.
-            {
-                let clear_desc = objc2_metal::MTLRenderPassDescriptor::new();
-                let color_attach =
-                    unsafe { clear_desc.colorAttachments().objectAtIndexedSubscript(0) };
-                color_attach.setTexture(Some(&drawable_view.inner));
-                color_attach.setLoadAction(objc2_metal::MTLLoadAction::Clear);
-                color_attach.setStoreAction(objc2_metal::MTLStoreAction::Store);
-                color_attach.setClearColor(objc2_metal::MTLClearColor {
-                    red: CANVAS_CLEAR_COLOR.0,
-                    green: CANVAS_CLEAR_COLOR.1,
-                    blue: CANVAS_CLEAR_COLOR.2,
-                    alpha: CANVAS_CLEAR_COLOR.3,
-                });
-                let clear_encoder = cmd_buffer
-                    .inner
-                    .renderCommandEncoderWithDescriptor(&clear_desc)
-                    .expect("Failed to create clear encoder");
-                let label = objc2_foundation::NSString::from_str("clear_drawable");
-                clear_encoder.setLabel(Some(&label));
-                clear_encoder.endEncoding();
-            }
-
-            // Tonemap renders directly into the drawable, constrained to the
-            // Tonemap renders directly into the drawable, constrained to the
-            // viewport panel rect. Rendering to a separate panel-sized
-            // intermediate (viewport_0) and blitting produced a vertical
-            // duplication of the scene, so we render in place instead.
-            drawable_written = true;
-            let tonemap_target = drawable_view.clone();
-            // Metal viewport originY is measured from the bottom of the
-            // attachment; the panel rect uses top-down coordinates.
-            let mtl_vp_y = height - (vp_y + vp_h);
+            let (tonemap_target, tonemap_load_op) = if ui_will_composite_viewport {
+                // The editor UI samples viewport_0. Render in the panel-sized
+                // texture's local coordinate system so the image fills the whole
+                // viewport widget instead of occupying a drawable-relative quadrant.
+                (
+                    self.tonemap_output_view
+                        .as_ref()
+                        .expect("viewport_0 view checked above")
+                        .clone(),
+                    LoadOp::Clear,
+                )
+            } else {
+                // Non-editor/headless fallback when there is no UI composition pass.
+                drawable_written = true;
+                (drawable_view.clone(), LoadOp::Clear)
+            };
+            let (tonemap_x, tonemap_y, tonemap_w, tonemap_h) =
+                tonemap_viewport(height, vp_x, vp_y, vp_w, vp_h, ui_will_composite_viewport);
 
             let tonemap_pass_info = RenderPassInfo {
                 color_attachments: vec![ColorAttachmentInfo {
                     view: tonemap_target,
-                    load_op: LoadOp::Load,
+                    load_op: tonemap_load_op,
                     store_op: StoreOp::Store,
-                    clear_value: ClearValue::OPAQUE_BLACK,
+                    clear_value: ClearValue::color(
+                        CANVAS_CLEAR_COLOR.0 as f32,
+                        CANVAS_CLEAR_COLOR.1 as f32,
+                        CANVAS_CLEAR_COLOR.2 as f32,
+                        CANVAS_CLEAR_COLOR.3 as f32,
+                    ),
                 }],
                 depth_attachment: None,
             };
 
             let mut encoder = cmd_buffer.begin_render_pass(tonemap_pass_info);
-            encoder.set_viewport(vp_x, mtl_vp_y, vp_w, vp_h, 0.0, 1.0);
-            encoder.set_scissor(vp_x as u32, mtl_vp_y as u32, vp_w as u32, vp_h as u32);
+            encoder.set_viewport(tonemap_x, tonemap_y, tonemap_w, tonemap_h, 0.0, 1.0);
+            encoder.set_scissor(
+                tonemap_x as u32,
+                tonemap_y as u32,
+                tonemap_w as u32,
+                tonemap_h as u32,
+            );
 
             if let Some(frame_buf) = self.current_frame_uniform_buffer() {
                 encoder.bind_storage_buffer(frame_buf, 0, 0, ShaderStages::VERTEX_FRAGMENT);
@@ -499,21 +519,25 @@ impl MetalRenderer {
                 && let Some(ui_material) = self.materials.get(ui_mat_handle.index())
                 && let Some(ref ui_pipeline) = ui_material.pipeline
             {
-                drawable_written = true;
-                // The scene is always written to the drawable before the UI pass
-                // (either tonemap writes directly, or the blit copies viewport_0 → drawable).
-                // Load the prior pass output so the UI composites on top of the 3D scene.
+                // When tonemap wrote viewport_0, UI is the first drawable writer
+                // and must clear the canvas. Direct-to-drawable fallbacks are loaded.
                 let ui_load_op = if drawable_written {
                     LoadOp::Load
                 } else {
                     LoadOp::Clear
                 };
+                drawable_written = true;
                 let ui_pass_info = RenderPassInfo {
                     color_attachments: vec![ColorAttachmentInfo {
                         view: drawable_view.clone(),
                         load_op: ui_load_op,
                         store_op: StoreOp::Store,
-                        clear_value: ClearValue::OPAQUE_BLACK,
+                        clear_value: ClearValue::color(
+                            CANVAS_CLEAR_COLOR.0 as f32,
+                            CANVAS_CLEAR_COLOR.1 as f32,
+                            CANVAS_CLEAR_COLOR.2 as f32,
+                            CANVAS_CLEAR_COLOR.3 as f32,
+                        ),
                     }],
                     depth_attachment: None,
                 };
@@ -612,5 +636,26 @@ impl MetalRenderer {
         cmd_buffer.submit(&self.context);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tonemap_viewport;
+
+    #[test]
+    fn offscreen_tonemap_uses_texture_local_coordinates() {
+        assert_eq!(
+            tonemap_viewport(1200.0, 240.0, 80.0, 960.0, 720.0, true),
+            (0.0, 0.0, 960.0, 720.0)
+        );
+    }
+
+    #[test]
+    fn direct_tonemap_converts_top_down_panel_origin_for_metal() {
+        assert_eq!(
+            tonemap_viewport(1200.0, 240.0, 80.0, 960.0, 720.0, false),
+            (240.0, 400.0, 960.0, 720.0)
+        );
     }
 }
