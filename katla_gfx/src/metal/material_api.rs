@@ -54,6 +54,20 @@ impl MetalRenderer {
 
         let fragment_fn = compiled.module.entry_points.get("fs_main");
 
+        // Derive the bindless argument-buffer encoder from an actual compiled
+        // shader function. This avoids the arbitrary-layout MTLDevice API that
+        // raises an Objective-C exception on AppleParavirtDevice.
+        if vertex_type != "compute" && !self.bindless_manager.is_initialized() {
+            let fragment_function = fragment_fn.ok_or_else(|| {
+                RendererError::InitializationFailed(
+                    "The first Metal graphics material has no fragment function for bindless layout reflection"
+                        .into(),
+                )
+            })?;
+            self.bindless_manager
+                .initialize_from_function(fragment_function.as_ref())?;
+        }
+
         // For UI, also compile instanced entry points for a second pipeline
         let instanced_pipeline = if is_ui {
             let instanced_entry_points = vec!["vs_instanced", "fs_instanced"];

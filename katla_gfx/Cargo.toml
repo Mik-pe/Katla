@@ -24,7 +24,7 @@ smallvec = "1"
 itertools = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.6" }
+objc2 = { version = "0.6", features = ["exception"] }
 objc2-metal = { version = "0.3", features = [
     "MTLDevice", "MTLCommandQueue", "MTLCommandBuffer",
     "MTLCommandEncoder", "MTLRenderCommandEncoder", "MTLComputeCommandEncoder", "MTLBlitCommandEncoder",
