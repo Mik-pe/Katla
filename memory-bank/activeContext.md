@@ -4,7 +4,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **Metal/render-graph hardening (#49 / PR #50)** — the Metal schedule now validates the required geometry/fullscreen/UI pipeline and the concrete `hdr_color -> viewport_0 -> backbuffer` resource contract before encoding. Retained command-buffer failures are returned as typed renderer errors with native Metal diagnostics. Remaining typed-access, buffer, synchronization, culling, aliasing, frame-lifetime, direct-path removal, diagnostics, pipeline-cache, Metal 4, residency, executable-plan, thread-affinity, upload, and documentation work is split into #30–#37 and #51–#59.
+- **Metal/render-graph boundary hardening (#49 / PR #50)** — Metal no longer requires geometry, fullscreen, UI, or the editor's `hdr_color -> viewport_0 -> backbuffer` chain. The remaining schedule checks are explicitly temporary limitations of the handwritten encoder until #56 replaces it with plan-driven execution. Retained command-buffer failures are returned as typed renderer errors with native Metal diagnostics. Application-owned graph construction and editor-preset separation are split into #60–#62.
 - **PhysicsActive(false) at builder init** — physics is now off in editing mode (the default). PlayStart action sets it to true, PlayStop sets it back to false. SceneSnapshot preserves physics components for restore on stop.
 - **State slot stability** — ConsoleView and MixerView now always call `ctx.state()` unconditionally (even when their env is not set) to prevent slot shifts that corrupt DockSpace/Toolbar state IDs when tabs become active.
 - **DockSpace global input** — DockSpace remains non-interactive for normal hit testing so panels underneath receive input, but owns tab and splitter interaction through the declarative global-input pass. There is no separate editor-side dock input path.
@@ -15,9 +15,10 @@ What is being worked on right now. **Update this file when starting or finishing
 
 - Render-graph scheduling has one source of truth: declaration-order resource versions produce the canonical RAW/WAR/WAW DAG, stable topological order, cycle diagnostics, predecessor/successor metadata, and parallel levels.
 - Graph construction is fail-fast. `backbuffer` is the only implicit resource; pass references must resolve to a declared transient resource or explicit import before compilation/allocation.
+- Graph topology belongs to the application or selected preset: pass presence, count, names, resources, and feature composition are not backend invariants.
 - Backend integration consumes compiled pass identity and access metadata. Core render-graph data must not contain Vulkan/Metal command types, and no backend should maintain an independent pass-name execution graph.
-- Metal consumes a validated semantic schedule derived from the compiled graph. Missing, duplicate, compute, unsupported, out-of-order, and resource-contract-invalid semantic passes fail before command encoding.
-- The Metal application contract is geometry writing `hdr_color`, optional outline reading/writing `hdr_color`, fullscreen reading `hdr_color` and writing `viewport_0`, and UI reading `viewport_0` and writing `backbuffer`.
+- Metal currently consumes a temporary compatibility schedule derived from compiled order. Every built-in pass is optional; duplicate/order/unsupported-kind errors describe limitations of the fixed encoder and disappear with #56.
+- The current Katla editor graph is still assembled in `katla_app`, but it must become an explicit preset with optional capabilities and public graph selection (#60–#62).
 - The Metal editor path tonemaps into graph-owned `viewport_0` using texture-local coordinates, then lets the UI composite that texture into `backbuffer`. The remaining implicit geometry-to-drawable legacy branch is not an accepted architecture and is tracked by #51.
 - Retained Metal command buffers are checked after completion. `Error` status returns the native error code, domain, localized description, and command-buffer label; any non-`Completed` status after `waitUntilCompleted` is an invariant failure.
 - Editor gizmo/debug draws are prepared before Metal object-uniform upload. The renderer validates the highest submitted instance index against object-buffer capacity before any encoder binds an offset.
@@ -58,9 +59,10 @@ What is being worked on right now. **Update this file when starting or finishing
 
 - Render-graph resource versions are defined by pass declaration order; a later writer cannot retroactively become the producer for an earlier read.
 - Stable declaration order is the deterministic tie-breaker for otherwise independent passes.
-- Metal pass routing uses compiled pass indices and semantic `PassKind`, never string-name dispatch. Depth-prepass and geometry submissions remain distinct, and geometry loads/stores depth when a prepass ran.
-- Metal semantic validation includes the required graph resource accesses; a matching `PassKind` sequence alone is not sufficient.
-- The application graph's `hdr_color -> viewport_0 -> backbuffer` chain is the editor render contract, not optional metadata alongside a separate renderer.
+- Metal pass routing uses compiled pass indices and semantic `PassKind`, never string-name dispatch. This is a temporary adapter; the compiled executable record replaces singleton-kind routing in #56.
+- No semantic pass or editor resource chain is mandatory at the engine/backend layer. An empty graph, UI-only graph, or scene graph without UI is a valid application choice when its selected backend can execute the declared records.
+- `PassKind` may identify a built-in handler, but it must not define global pass cardinality or product pipeline order.
+- The application's `hdr_color -> viewport_0 -> backbuffer` chain is the current editor preset, not the definition of a Katla render graph.
 - A completed Metal command buffer must be inspected for terminal status; asynchronous logging alone is not sufficient error handling.
 - Metal object-buffer overflow is a hard renderer error; invalid offsets are never submitted after a warning-and-continue fallback.
 - macOS CI tracks one current explicit generation. A future upgrade replaces `macos-26` directly instead of retaining an older compatibility job.
