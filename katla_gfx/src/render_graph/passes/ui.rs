@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::handle::MaterialHandle;
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
-use crate::render_graph::pass::PassType;
+use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_graph::resource::GraphResourceHandle;
 
 /// UI render pass template.
@@ -133,7 +133,7 @@ impl PassBuilder for UIPass {
             ),
             uses_depth: false,
             depth_attachment: None,
-            kind: None,
+            kind: Some(PassKind::Ui),
         }
     }
 }
