@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   cleanup:
-    runs-on: ubuntu-24.04
+    runs-on: macos-14
     steps:
       - name: Check out pull request branch
         uses: actions/checkout@v4
@@ -19,11 +19,6 @@ jobs:
 
       - name: Install Rust components
         run: rustup component add clippy rustfmt
-
-      - name: Install Linux audio development headers
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev
 
       - name: Remove obsolete asset browser data
         run: |
