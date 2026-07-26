@@ -8,11 +8,7 @@ use super::metal_renderer::MetalRenderer;
 
 const HDR_COLOR_RESOURCE: &str = "hdr_color";
 const VIEWPORT_RESOURCE: &str = "viewport_0";
-const REQUIRED_PASS_KINDS: [PassKind; 3] = [
-    PassKind::Geometry,
-    PassKind::Fullscreen,
-    PassKind::Ui,
-];
+const REQUIRED_PASS_KINDS: [PassKind; 3] = [PassKind::Geometry, PassKind::Fullscreen, PassKind::Ui];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MetalScheduledPass {
@@ -286,18 +282,18 @@ mod tests {
         vec![
             pass_with_accesses("geometry", PassKind::Geometry, Vec::new(), vec![rid(0)]),
             pass_with_accesses("outline", PassKind::Outline, vec![rid(0)], vec![rid(0)]),
-            pass_with_accesses(
-                "tonemap",
-                PassKind::Fullscreen,
-                vec![rid(0)],
-                vec![rid(1)],
-            ),
+            pass_with_accesses("tonemap", PassKind::Fullscreen, vec![rid(0)], vec![rid(1)]),
             pass_with_accesses("ui", PassKind::Ui, vec![rid(1)], vec![rid(2)]),
         ]
     }
 
     fn compile_contract(passes: &[PassDesc]) -> Result<MetalFrameSchedule, RenderGraphError> {
-        let resources = [HDR_COLOR_RESOURCE, VIEWPORT_RESOURCE, BACKBUFFER_NAME, "other"];
+        let resources = [
+            HDR_COLOR_RESOURCE,
+            VIEWPORT_RESOURCE,
+            BACKBUFFER_NAME,
+            "other",
+        ];
         let order: Vec<usize> = (0..passes.len()).collect();
         let schedule = compile(passes, &order)?;
         schedule.validate_resource_contract(

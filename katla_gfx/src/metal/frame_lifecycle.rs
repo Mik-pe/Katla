@@ -25,9 +25,7 @@ impl MetalRenderer {
         Ok(())
     }
 
-    fn command_buffer_failure(
-        cmd_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
-    ) -> RendererError {
+    fn command_buffer_failure(cmd_buffer: &ProtocolObject<dyn MTLCommandBuffer>) -> RendererError {
         let label = Self::command_buffer_label(cmd_buffer);
         let details = cmd_buffer
             .error()
@@ -41,9 +39,7 @@ impl MetalRenderer {
             })
             .unwrap_or_else(|| "Metal reported Error status without an NSError".to_string());
 
-        RendererError::InvalidOperation(format!(
-            "Metal command buffer '{label}' failed: {details}"
-        ))
+        RendererError::InvalidOperation(format!("Metal command buffer '{label}' failed: {details}"))
     }
 
     fn command_buffer_label(cmd_buffer: &ProtocolObject<dyn MTLCommandBuffer>) -> String {
