@@ -16,6 +16,11 @@ if "use objc2::Message;" not in argument_buffer:
         "use objc2::Message;\nuse objc2::rc::Retained;\n",
         "objc2 Message import",
     )
+argument_buffer = argument_buffer.replace(
+    'name.contains("AppleParavirt").then(|| {',
+    'name.to_ascii_lowercase().contains("paravirt").then(|| {',
+    1,
+)
 argument_buffer_path.write_text(argument_buffer)
 
 
