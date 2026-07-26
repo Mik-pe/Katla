@@ -1,0 +1,40 @@
+name: Format Metal agent branch
+
+on:
+  push:
+    branches:
+      - agent/harden-metal-frame-contracts
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out agent branch
+        uses: actions/checkout@v6
+        with:
+          ref: agent/harden-metal-frame-contracts
+          fetch-depth: 0
+
+      - name: Install stable Rust with rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format changed Rust sources
+        run: cargo fmt --all
+
+      - name: Commit formatting
+        shell: bash
+        run: |
+          if git diff --quiet -- katla_gfx/src/metal/frame_schedule.rs katla_gfx/src/metal/frame_lifecycle.rs; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add katla_gfx/src/metal/frame_schedule.rs katla_gfx/src/metal/frame_lifecycle.rs
+          git commit -m "Format Metal frame hardening"
+          git push origin HEAD:agent/harden-metal-frame-contracts
