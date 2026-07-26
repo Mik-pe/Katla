@@ -60,7 +60,18 @@ jobs:
         run: cargo fmt --all
 
       - name: Check application crate
-        run: cargo check -p katla_app
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo check -p katla_app 2>&1 | tee /tmp/asset-browser-check.log
+
+      - name: Export check diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asset-browser-cleanup-check
+          path: /tmp/asset-browser-check.log
+          retention-days: 1
 
       - name: Lint application source
         run: cargo clippy -p katla_app --no-deps -- -D warnings
