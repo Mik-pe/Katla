@@ -31,7 +31,8 @@ jobs:
             libasound2-dev \
             libvulkan1 \
             mesa-vulkan-drivers \
-            vulkan-tools
+            vulkan-tools \
+            vulkan-validationlayers
           vulkaninfo --summary
 
       - name: Apply portability fixes
@@ -108,6 +109,8 @@ jobs:
             katla_app/src/ui/editor_ui/mod.rs \
             katla_app/src/ui/mod.rs \
             katla_gfx/src/vulkan/bindless_texture.rs \
+            katla_gfx/src/vulkan/context/mod.rs \
+            katla_gfx/src/vulkan/context/validation.rs \
             katla_gfx/tests/particle_preset_tests.rs \
             katla_ui/src/text/mod.rs
           if git diff --cached --quiet; then
