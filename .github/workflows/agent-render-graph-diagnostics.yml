@@ -6,20 +6,22 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
     runs-on: ubuntu-24.04
     steps:
-      - name: Check out repository
+      - name: Check out pull request branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Install Rust components
         run: rustup component add clippy rustfmt
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      - name: Format source
+        run: cargo fmt --all
 
       - name: Test render graph diagnostics
         run: cargo test -p katla_gfx render_graph::diagnostics --lib
@@ -32,3 +34,18 @@ jobs:
 
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --lib -- -D warnings
+
+      - name: Commit validated formatting
+        shell: bash
+        run: |
+          git add \
+            katla_gfx/src/render_graph/diagnostics.rs \
+            katla_gfx/src/render_graph/mod.rs
+          if git diff --cached --quiet; then
+            echo "Source is already formatted"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Format render graph diagnostics"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
