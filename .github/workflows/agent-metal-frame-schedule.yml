@@ -187,7 +187,19 @@ jobs:
         run: cargo check -p katla_gfx -p katla_app
 
       - name: Lint graphics and application crates
-        run: cargo clippy -p katla_gfx -p katla_app -- -D warnings
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy -p katla_gfx -p katla_app -- -D warnings \
+            2>&1 | tee /tmp/metal-frame-schedule-clippy.log
+
+      - name: Export Clippy diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-frame-schedule-clippy
+          path: /tmp/metal-frame-schedule-clippy.log
+          retention-days: 1
 
       - name: Commit validated Metal integration
         shell: bash
