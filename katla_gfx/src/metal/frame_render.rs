@@ -303,12 +303,7 @@ impl MetalRenderer {
                         encoder.bind_storage_buffer(object_buf, 0, 1, stages);
                     }
                     if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
-                        encoder.bind_storage_buffer(
-                            buf_sizes,
-                            0,
-                            8,
-                            ShaderStages::VERTEX_FRAGMENT,
-                        );
+                        encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
                     }
                     if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
                         encoder.bind_vertex_buffer(dummy_vb, 0, 10);
@@ -583,9 +578,7 @@ impl MetalRenderer {
 
                 let mut encoder = cmd_buffer.begin_render_pass(ui_pass_info);
 
-                if tonemap_ran
-                    && let Some(ref fence) = self.tonemap_fence
-                {
+                if tonemap_ran && let Some(ref fence) = self.tonemap_fence {
                     encoder
                         .inner
                         .waitForFence_beforeStages(fence, objc2_metal::MTLRenderStages::Fragment);
