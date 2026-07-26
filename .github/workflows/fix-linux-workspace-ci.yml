@@ -24,10 +24,15 @@ jobs:
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
 
-      - name: Install Linux development packages
+      - name: Install Linux graphics and audio dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev
+          sudo apt-get install -y \
+            libasound2-dev \
+            libvulkan1 \
+            mesa-vulkan-drivers \
+            vulkan-tools
+          vulkaninfo --summary
 
       - name: Apply portability fixes
         run: python3 .github/scripts/fix_linux_workspace_ci.py
@@ -70,7 +75,22 @@ jobs:
           retention-days: 1
 
       - name: Lint workspace
-        run: cargo clippy --workspace --all-targets --locked --quiet -- -D warnings
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --workspace --all-targets --locked --quiet -- -D warnings \
+            > /tmp/portability-clippy.log 2>&1
+          status=$?
+          cat /tmp/portability-clippy.log
+          exit "$status"
+
+      - name: Upload Clippy diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-portability-clippy
+          path: /tmp/portability-clippy.log
+          retention-days: 1
 
       - name: Commit validated fixes
         run: |
@@ -85,7 +105,11 @@ jobs:
             katla_app/src/application/picking.rs \
             katla_app/src/application/renderer.rs \
             katla_app/src/application/ui_test.rs \
-            katla_app/src/ui/editor_ui/mod.rs
+            katla_app/src/ui/editor_ui/mod.rs \
+            katla_app/src/ui/mod.rs \
+            katla_gfx/src/vulkan/bindless_texture.rs \
+            katla_gfx/tests/particle_preset_tests.rs \
+            katla_ui/src/text/mod.rs
           if git diff --cached --quiet; then
             echo "Portability fixes are already committed"
             exit 0
