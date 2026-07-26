@@ -44,6 +44,7 @@ mod builder;
 mod compiler;
 pub mod descriptor_sets;
 mod error;
+mod execution_plan_diagnostics;
 mod frame_graph;
 mod handles;
 mod pass;
