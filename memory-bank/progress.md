@@ -41,6 +41,7 @@ What's been done and what's next. **Update this file when completing or starting
 - Execute Metal passes directly from the compiled graph plan instead of fixed semantic blocks (#56).
 - Encode AppKit/CAMetalLayer thread affinity instead of blanket unsafe `Send`/`Sync` (#57).
 - Replace synchronous shared-texture writes with format-aware staged uploads into private GPU storage (#58).
+- Replace the stale Metal implementation plan with a verified current architecture reference (#59).
 - Preferences theme grid: consider orange accent tint in addition to check mark for even more prominence.
 - Asset browser sizing still needs work (structural gap from vision score 7/10).
 - Empty states for panels (hierarchy, inspector with no selection).
