@@ -104,11 +104,7 @@ impl MetalBindlessTextureManager {
                     )
                 })?;
             let buffer = Self::allocate_buffer(&device, encoded_length)?;
-            Self::write_all_resource_ids(
-                &buffer,
-                &self.textures,
-                default_texture.as_ref(),
-            )?;
+            Self::write_all_resource_ids(&buffer, &self.textures, default_texture.as_ref())?;
 
             log::info!(
                 "Initialized Metal bindless argument buffer with {} direct resource IDs",
@@ -160,18 +156,14 @@ impl MetalBindlessTextureManager {
         device: &ProtocolObject<dyn MTLDevice>,
         encoded_length: usize,
     ) -> Result<Retained<ProtocolObject<dyn MTLBuffer>>, RendererError> {
-        unsafe {
-            device.newBufferWithLength_options(
-                encoded_length,
-                MTLResourceOptions::StorageModeShared,
-            )
-        }
-        .ok_or_else(|| {
-            RendererError::ResourceCreationFailed(format!(
-                "Failed to allocate {} bytes for the Metal bindless argument buffer",
-                encoded_length
-            ))
-        })
+        device
+            .newBufferWithLength_options(encoded_length, MTLResourceOptions::StorageModeShared)
+            .ok_or_else(|| {
+                RendererError::ResourceCreationFailed(format!(
+                    "Failed to allocate {} bytes for the Metal bindless argument buffer",
+                    encoded_length
+                ))
+            })
     }
 
     fn texture_resource_id(
@@ -236,7 +228,12 @@ impl MetalBindlessTextureManager {
         }
         let id = Self::texture_resource_id(texture)?;
         unsafe {
-            buffer.contents().as_ptr().cast::<u64>().add(slot as usize).write(id);
+            buffer
+                .contents()
+                .as_ptr()
+                .cast::<u64>()
+                .add(slot as usize)
+                .write(id);
         }
         Ok(())
     }
@@ -294,7 +291,7 @@ impl MetalBindlessTextureManager {
             return;
         };
 
-        let result = match encoding {
+        match encoding {
             ArgumentBufferEncoding::DirectResourceIds => {
                 for &slot in &self.dirty_slots {
                     let texture = self.textures[slot as usize].as_deref().unwrap_or(default);
@@ -303,23 +300,17 @@ impl MetalBindlessTextureManager {
                         return;
                     }
                 }
-                Ok(())
             }
-            ArgumentBufferEncoding::Encoder(encoder) => {
-                unsafe {
-                    encoder.setArgumentBuffer_offset(Some(buffer), 0);
-                    for &slot in &self.dirty_slots {
-                        let texture = self.textures[slot as usize].as_deref().unwrap_or(default);
-                        encoder.setTexture_atIndex(Some(texture), slot as usize);
-                    }
+            ArgumentBufferEncoding::Encoder(encoder) => unsafe {
+                encoder.setArgumentBuffer_offset(Some(buffer), 0);
+                for &slot in &self.dirty_slots {
+                    let texture = self.textures[slot as usize].as_deref().unwrap_or(default);
+                    encoder.setTexture_atIndex(Some(texture), slot as usize);
                 }
-                Ok(())
-            }
-        };
-
-        if result.is_ok() {
-            self.dirty_slots.clear();
+            },
         }
+
+        self.dirty_slots.clear();
     }
 
     pub(crate) fn argument_buffer(&self) -> Option<&ProtocolObject<dyn MTLBuffer>> {
