@@ -1,5 +1,6 @@
 name: Agent fix Metal Objective-C exception
 
+# Validation revision: normalized Apple paravirtual device detection.
 on:
   pull_request:
     branches:
@@ -76,7 +77,7 @@ jobs:
 
           test "$status" -ne 0
           grep -q "Unsupported GPU feature" /tmp/katla-editor.log
-          grep -q "AppleParavirtDevice" /tmp/katla-editor.log
+          grep -qi "Apple Paravirtual device" /tmp/katla-editor.log
           echo "SKIP headless editor rendering: virtual Metal device lacks the bindless shader ABI"
 
       - name: Run the graphics library suite serially
