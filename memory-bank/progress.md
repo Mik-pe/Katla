@@ -4,6 +4,7 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## Completed Recently
 
+- Fixed asset browser action safety: single clicks now select without immediately opening folders or previews, double-click activation is tracked per asset, context actions resolve the stored asset index, delete confirmation consumes the exact pending action, and deletion refuses empty paths plus the synthetic `..` entry. Added regression tests for click activation, stored confirmation actions, context target resolution, and parent-entry protection.
 - Restored complete editor docking interaction: DockSpace now owns tab activation, tab drag/drop, and splitter dragging through the declarative global-input pass; the duplicate manual editor input path was removed. Nested splitter ratios use local split bounds, and tab moves preserve the exact dragged tab. Added regression tests for nested ratios and non-first-tab moves.
 - Wired the Console toolbar: level buttons toggle their filters and Clear empties the shared log buffer through typed declarative actions.
 - Fixed declarative input state regressions: Hierarchy, Asset Browser, and Console now filter from their live text-field `StateId` values, and `UiContext` preserves input consumption across multiple passes within a frame. Added tests for consumption accumulation and frame reset.

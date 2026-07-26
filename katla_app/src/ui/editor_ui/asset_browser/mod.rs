@@ -11,3 +11,4 @@ mod types;
 
 pub use state::AssetBrowserState;
 pub use types::{AssetAction, AssetType, ThumbnailState};
+pub(crate) use types::AssetEntry;
