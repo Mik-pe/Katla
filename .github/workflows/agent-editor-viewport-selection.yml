@@ -21,7 +21,19 @@ jobs:
         run: rustup component add clippy rustfmt
 
       - name: Apply candidate fixes
-        run: python3 .github/scripts/apply_editor_viewport_selection_fix.py
+        run: |
+          python3 .github/scripts/apply_editor_viewport_selection_fix.py
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("katla_gfx/src/metal/frame_render.rs")
+          source = path.read_text().replace(
+              "use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLRenderCommandEncoder};",
+              "use objc2_metal::{MTLCommandBuffer, MTLRenderCommandEncoder};",
+              1,
+          )
+          path.write_text(source)
+          PY
 
       - name: Format source
         run: cargo fmt --all
