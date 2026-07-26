@@ -20,10 +20,9 @@ const BINDLESS_ARGUMENT_BUFFER_INDEX: usize = 9;
 
 /// How texture references are written into the argument buffer.
 enum ArgumentBufferEncoding {
-    /// Tier 2 argument buffers on macOS 13+ use the equivalent C structure
-    /// layout, so texture `MTLResourceID` values can be written directly.
+    /// The argument buffer contains one `MTLResourceID` per texture slot.
     DirectResourceIds,
-    /// Compatibility path for Tier 1 devices with a private argument-buffer ABI.
+    /// Compatibility path for devices with a private argument-buffer ABI.
     Encoder(Retained<ProtocolObject<dyn MTLArgumentEncoder>>),
 }
 
@@ -70,14 +69,12 @@ impl MetalBindlessTextureManager {
 
     /// Initialize the bindless argument buffer for the device used by `function`.
     ///
-    /// Modern Tier 2 devices are encoded directly with `MTLResourceID`. This is
-    /// both Metal's documented low-overhead path and the only compatible path on
-    /// Apple's virtualized `AppleParavirtDevice`, whose driver raises an
-    /// Objective-C exception from both argument-encoder factory APIs.
-    ///
-    /// Tier 1 keeps the shader-reflection encoder path because its layout is
-    /// private. The risky Objective-C message is scoped inside `exception::catch`
-    /// so an unsupported implementation returns a normal renderer error.
+    /// Tier 2 uses direct `MTLResourceID` encoding. Tier 1 first tries the
+    /// shader-reflection encoder because its ABI is normally private. Some
+    /// virtualized Metal devices report Tier 1 while implementing neither
+    /// argument-encoder factory; the Objective-C call is therefore scoped in an
+    /// exception boundary and a direct-resource-ID fallback is validated at
+    /// runtime instead of aborting the process.
     pub(crate) fn initialize_from_function(
         &mut self,
         function: &ProtocolObject<dyn MTLFunction>,
@@ -94,37 +91,21 @@ impl MetalBindlessTextureManager {
         let device = function.device();
 
         if device.argumentBuffersSupport() == MTLArgumentBuffersTier::Tier2 {
-            let encoded_length = self
-                .textures
-                .len()
-                .checked_mul(size_of::<MTLResourceID>())
-                .ok_or_else(|| {
-                    RendererError::InitializationFailed(
-                        "Metal bindless argument-buffer size overflow".into(),
-                    )
-                })?;
-            let buffer = Self::allocate_buffer(&device, encoded_length)?;
-            Self::write_all_resource_ids(&buffer, &self.textures, default_texture.as_ref())?;
-
-            log::info!(
-                "Initialized Metal bindless argument buffer with {} direct resource IDs",
-                self.textures.len()
-            );
-            self.encoding = Some(ArgumentBufferEncoding::DirectResourceIds);
-            self.argument_buffer = Some(buffer);
-            self.dirty_slots.clear();
-            return Ok(());
+            return self.initialize_direct_resource_ids(&device, default_texture.as_ref());
         }
 
-        let encoder = objc2::exception::catch(AssertUnwindSafe(|| unsafe {
+        let encoder = match objc2::exception::catch(AssertUnwindSafe(|| unsafe {
             function.newArgumentEncoderWithBufferIndex(BINDLESS_ARGUMENT_BUFFER_INDEX)
-        }))
-        .map_err(|exception| {
-            RendererError::InitializationFailed(format!(
-                "Metal device cannot create the bindless shader argument layout at buffer {}: {:?}",
-                BINDLESS_ARGUMENT_BUFFER_INDEX, exception
-            ))
-        })?;
+        })) {
+            Ok(encoder) => encoder,
+            Err(exception) => {
+                log::warn!(
+                    "Metal Tier 1 argument-buffer reflection is unavailable ({:?}); trying direct resource IDs",
+                    exception
+                );
+                return self.initialize_direct_resource_ids(&device, default_texture.as_ref());
+            }
+        };
 
         let encoded_length = encoder.encodedLength();
         if encoded_length == 0 {
@@ -147,6 +128,33 @@ impl MetalBindlessTextureManager {
             "Initialized Metal Tier 1 bindless argument buffer with reflected shader layout"
         );
         self.encoding = Some(ArgumentBufferEncoding::Encoder(encoder));
+        self.argument_buffer = Some(buffer);
+        self.dirty_slots.clear();
+        Ok(())
+    }
+
+    fn initialize_direct_resource_ids(
+        &mut self,
+        device: &ProtocolObject<dyn MTLDevice>,
+        default_texture: &ProtocolObject<dyn MTLTexture>,
+    ) -> Result<(), RendererError> {
+        let encoded_length = self
+            .textures
+            .len()
+            .checked_mul(size_of::<MTLResourceID>())
+            .ok_or_else(|| {
+                RendererError::InitializationFailed(
+                    "Metal bindless argument-buffer size overflow".into(),
+                )
+            })?;
+        let buffer = Self::allocate_buffer(device, encoded_length)?;
+        Self::write_all_resource_ids(&buffer, &self.textures, default_texture)?;
+
+        log::info!(
+            "Initialized Metal bindless argument buffer with {} direct resource IDs",
+            self.textures.len()
+        );
+        self.encoding = Some(ArgumentBufferEncoding::DirectResourceIds);
         self.argument_buffer = Some(buffer);
         self.dirty_slots.clear();
         Ok(())
