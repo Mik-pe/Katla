@@ -80,7 +80,7 @@ impl MetalBindlessTextureManager {
         }
 
         let name = device.name().to_string();
-        name.contains("AppleParavirt").then(|| {
+        name.to_ascii_lowercase().contains("paravirt").then(|| {
             format!(
                 "Metal device '{name}' exposes only Tier 1 argument buffers but does not implement shader argument-encoder reflection"
             )
@@ -195,9 +195,7 @@ impl MetalBindlessTextureManager {
             })
     }
 
-    fn texture_resource_id(
-        texture: &ProtocolObject<dyn MTLTexture>,
-    ) -> Result<u64, RendererError> {
+    fn texture_resource_id(texture: &ProtocolObject<dyn MTLTexture>) -> Result<u64, RendererError> {
         objc2::exception::catch(AssertUnwindSafe(|| texture.gpuResourceID().to_raw())).map_err(
             |exception| {
                 RendererError::UnsupportedFeature(format!(

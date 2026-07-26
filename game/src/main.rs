@@ -242,7 +242,7 @@ fn main() {
             Ok(mut app) => {
                 if let Err(e) = app.init() {
                     error!("Application init failed: {e}");
-                    return;
+                    std::process::exit(1);
                 }
                 if let Err(e) = app.run_headless() {
                     error!("Headless render failed: {e}");
@@ -261,7 +261,7 @@ fn main() {
             Ok((mut application, event_loop)) => {
                 if let Err(e) = application.init() {
                     error!("Application init failed: {e}");
-                    return;
+                    std::process::exit(1);
                 }
                 info!("About to enter event loop");
                 if let Err(e) = event_loop.run_app(&mut application) {
