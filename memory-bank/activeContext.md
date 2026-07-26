@@ -4,7 +4,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **Render graph next stage** — the canonical dependency DAG, platform isolation, fail-fast graph validation, deterministic diagnostics, Metal semantic scheduling, and graph-owned editor viewport output are merged. Remaining typed-access, buffer, synchronization, culling, aliasing, frame-lifetime, and renderer-test work is split into #30–#38.
+- **Render graph next stage** — the canonical dependency DAG, platform isolation, fail-fast graph validation, deterministic diagnostics, Metal semantic scheduling, graph-owned editor viewport output, and safe Metal bindless capability handling are merged. Remaining typed-access, buffer, synchronization, culling, aliasing, frame-lifetime, and diagnostics work is split into #30–#37.
 - **PhysicsActive(false) at builder init** — physics is now off in editing mode (the default). PlayStart action sets it to true, PlayStop sets it back to false. SceneSnapshot preserves physics components for restore on stop.
 - **State slot stability** — ConsoleView and MixerView now always call `ctx.state()` unconditionally (even when their env is not set) to prevent slot shifts that corrupt DockSpace/Toolbar state IDs when tabs become active.
 - **DockSpace global input** — DockSpace remains non-interactive for normal hit testing so panels underneath receive input, but owns tab and splitter interaction through the declarative global-input pass. There is no separate editor-side dock input path.
@@ -19,7 +19,9 @@ What is being worked on right now. **Update this file when starting or finishing
 - Metal consumes a validated semantic schedule derived from the compiled graph. Missing, duplicate, compute, unsupported, and out-of-order semantic passes fail before command encoding.
 - The Metal editor path tonemaps into graph-owned `viewport_0` using texture-local coordinates, then lets the UI composite that texture into `backbuffer`. Direct-to-drawable tonemapping is only a non-UI/headless fallback.
 - Editor gizmo/debug draws are prepared before Metal object-uniform upload. The renderer validates the highest submitted instance index against object-buffer capacity before any encoder binds an offset.
+- Metal bindless argument buffers are initialized from real device capabilities: Tier 2 uses direct `MTLResourceID` entries, supported Tier 1 devices use shader-reflected layouts, and unsupported virtual devices fail with a typed error before an invalid Objective-C call.
 - Compiled graphs expose deterministic human-readable, JSON, and Graphviz DOT diagnostics containing stable pass/resource metadata, execution order, parallel levels, lifetimes, and RAW/WAR/WAW hazards. Backend pointers and unstable IDs are excluded.
+- CI uses explicit runner generations: `macos-26` is the primary Apple Silicon Metal environment and `macos-15` is the compatibility environment. Mutable `macos-latest` and deprecated `macos-14` are not part of the required matrix.
 - Panel widget now reserves top padding via `header_height` (28px by default) so content renders below the DockSpace tab bar. The DockSpace draws tab bars as an overlay on top of panels, so panels must offset their content.
 - `TAB_BAR_HEIGHT` constant (28.0) defined in `editor_root.rs`, matching `DockSpace::tab_bar_height`.
 - DockSpace tab bar now uses `tab_text` (inactive, #8E8E93) and `tab_active_text` (active, #FFFFFF) from UiStyle instead of generic `text_color`.
@@ -53,6 +55,7 @@ What is being worked on right now. **Update this file when starting or finishing
 - Metal pass routing uses compiled pass indices and semantic `PassKind`, never string-name dispatch. Depth-prepass and geometry submissions remain distinct, and geometry loads/stores depth when a prepass ran.
 - The application graph's `hdr_color -> viewport_0 -> backbuffer` chain is now the actual editor render path, not metadata alongside a separate drawable path.
 - Metal object-buffer overflow is a hard renderer error; invalid offsets are never submitted after a warning-and-continue fallback.
+- macOS CI labels are pinned to supported generations and advanced intentionally; `macos-latest` is not a support-policy mechanism.
 - Asset browser activation is derived from repeated `AssetClicked` actions tracked in `AssetBrowserState`; grid cells do not emit activation on every click.
 - Asset deletion refuses empty paths and the synthetic `..` parent entry.
 - Default theme is "rcp" (Reality Composer Pro): neutral dark #1E1E1E, muted orange #D97706 accent. "default" and "catppuccin" keys still map to RCP for backward compat. Preferences dropdown lists RCP first.
