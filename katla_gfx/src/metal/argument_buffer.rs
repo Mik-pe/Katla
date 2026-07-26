@@ -1,10 +1,13 @@
 use std::collections::HashSet;
+use std::mem::size_of;
 use std::panic::AssertUnwindSafe;
 
+use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
-    MTLArgumentEncoder, MTLBuffer, MTLDevice, MTLFunction, MTLResourceOptions, MTLTexture,
+    MTLArgumentBuffersTier, MTLArgumentEncoder, MTLBuffer, MTLDevice, MTLFunction, MTLResourceID,
+    MTLResourceOptions, MTLTexture,
 };
 
 use crate::error::RendererError;
@@ -15,29 +18,26 @@ const MAX_BINDLESS_TEXTURES: u32 = 4096;
 /// Naga maps Katla's bindless texture array to `[[buffer(9)]]` in MSL.
 const BINDLESS_ARGUMENT_BUFFER_INDEX: usize = 9;
 
+/// How texture references are written into the argument buffer.
+enum ArgumentBufferEncoding {
+    /// Tier 2 argument buffers on macOS 13+ use the equivalent C structure
+    /// layout, so texture `MTLResourceID` values can be written directly.
+    DirectResourceIds,
+    /// Compatibility path for Tier 1 devices with a private argument-buffer ABI.
+    Encoder(Retained<ProtocolObject<dyn MTLArgumentEncoder>>),
+}
+
 /// Metal bindless texture manager using an argument buffer.
 ///
-/// This is the Metal equivalent of Vulkan's descriptor indexing
-/// (`binding_array<texture2d>`). Textures are stored in a Vec indexed
-/// by slot and encoded into a Metal argument buffer that is bound
-/// at buffer index 9 for both vertex and fragment stages.
-///
-/// The argument-buffer layout is created lazily from an actual compiled
-/// `MTLFunction`. Creating an arbitrary layout through
-/// `MTLDevice::newArgumentEncoderWithArguments` is not supported by every Metal
-/// implementation (notably Apple's virtualized `AppleParavirtDevice`) and may
-/// raise an Objective-C exception instead of returning an error.
+/// Texture slots may be registered before a shader is compiled. The backing
+/// argument buffer is initialized lazily from the first fragment function so
+/// the renderer can choose the encoding path supported by the actual device.
 pub(crate) struct MetalBindlessTextureManager {
     textures: Vec<Option<Retained<ProtocolObject<dyn MTLTexture>>>>,
-    /// Stack of free slot indices for O(1) allocation.
     free_slots: Vec<u32>,
-    /// Argument encoder derived from the compiled shader's buffer-9 layout.
-    encoder: Option<Retained<ProtocolObject<dyn MTLArgumentEncoder>>>,
-    /// The argument buffer containing all bindless textures.
+    encoding: Option<ArgumentBufferEncoding>,
     argument_buffer: Option<Retained<ProtocolObject<dyn MTLBuffer>>>,
-    /// Default (white 1x1) texture used for unused slots.
     default_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
-    /// Slots that have been modified since the last flush and need re-encoding.
     dirty_slots: HashSet<u32>,
 }
 
@@ -53,39 +53,31 @@ impl MetalBindlessTextureManager {
         Ok(Self {
             textures: vec![None; capacity as usize],
             free_slots: (0..capacity).rev().collect(),
-            encoder: None,
+            encoding: None,
             argument_buffer: None,
             default_texture: None,
             dirty_slots: HashSet::new(),
         })
     }
 
-    /// Set the texture used to populate unoccupied bindless slots.
-    ///
-    /// Texture registration is allowed before the shader layout is available.
-    /// Once [`Self::initialize_from_function`] succeeds, every existing slot is
-    /// encoded in one deterministic pass.
-    pub(crate) fn set_default_texture(
-        &mut self,
-        texture: &ProtocolObject<dyn MTLTexture>,
-    ) {
+    pub(crate) fn set_default_texture(&mut self, texture: &ProtocolObject<dyn MTLTexture>) {
         self.default_texture = Some(texture.retain());
     }
 
     pub(crate) fn is_initialized(&self) -> bool {
-        self.encoder.is_some() && self.argument_buffer.is_some()
+        self.encoding.is_some() && self.argument_buffer.is_some()
     }
 
-    /// Initialize the bindless argument buffer from the actual shader layout.
+    /// Initialize the bindless argument buffer for the device used by `function`.
     ///
-    /// `newArgumentEncoderWithBufferIndex` is the shader-reflection path: Metal
-    /// owns the concrete ABI for the generated argument-buffer struct and returns
-    /// an encoder with exactly the layout expected at buffer index 9.
+    /// Modern Tier 2 devices are encoded directly with `MTLResourceID`. This is
+    /// both Metal's documented low-overhead path and the only compatible path on
+    /// Apple's virtualized `AppleParavirtDevice`, whose driver raises an
+    /// Objective-C exception from both argument-encoder factory APIs.
     ///
-    /// The single risky Objective-C message is wrapped in a scoped exception
-    /// boundary. Unsupported devices therefore produce a normal `RendererError`
-    /// rather than unwinding a foreign exception through Rust and aborting the
-    /// process.
+    /// Tier 1 keeps the shader-reflection encoder path because its layout is
+    /// private. The risky Objective-C message is scoped inside `exception::catch`
+    /// so an unsupported implementation returns a normal renderer error.
     pub(crate) fn initialize_from_function(
         &mut self,
         function: &ProtocolObject<dyn MTLFunction>,
@@ -99,6 +91,34 @@ impl MetalBindlessTextureManager {
                 "Metal bindless argument buffer has no default texture".into(),
             )
         })?;
+        let device = function.device();
+
+        if device.argumentBuffersSupport() == MTLArgumentBuffersTier::Tier2 {
+            let encoded_length = self
+                .textures
+                .len()
+                .checked_mul(size_of::<MTLResourceID>())
+                .ok_or_else(|| {
+                    RendererError::InitializationFailed(
+                        "Metal bindless argument-buffer size overflow".into(),
+                    )
+                })?;
+            let buffer = Self::allocate_buffer(&device, encoded_length)?;
+            Self::write_all_resource_ids(
+                &buffer,
+                &self.textures,
+                default_texture.as_ref(),
+            )?;
+
+            log::info!(
+                "Initialized Metal bindless argument buffer with {} direct resource IDs",
+                self.textures.len()
+            );
+            self.encoding = Some(ArgumentBufferEncoding::DirectResourceIds);
+            self.argument_buffer = Some(buffer);
+            self.dirty_slots.clear();
+            return Ok(());
+        }
 
         let encoder = objc2::exception::catch(AssertUnwindSafe(|| unsafe {
             function.newArgumentEncoderWithBufferIndex(BINDLESS_ARGUMENT_BUFFER_INDEX)
@@ -118,37 +138,109 @@ impl MetalBindlessTextureManager {
             )));
         }
 
-        let device = function.device();
-        let buffer = device
-            .newBufferWithLength_options(encoded_length, MTLResourceOptions::StorageModeShared)
-            .ok_or_else(|| {
-                RendererError::ResourceCreationFailed(format!(
-                    "Failed to allocate {} bytes for the Metal bindless argument buffer",
-                    encoded_length
-                ))
-            })?;
-
+        let buffer = Self::allocate_buffer(&device, encoded_length)?;
         unsafe {
             encoder.setArgumentBuffer_offset(Some(&buffer), 0);
             for (index, slot) in self.textures.iter().enumerate() {
-                let texture = slot
-                    .as_deref()
-                    .unwrap_or(default_texture.as_ref());
+                let texture = slot.as_deref().unwrap_or(default_texture.as_ref());
                 encoder.setTexture_atIndex(Some(texture), index);
             }
         }
 
-        self.encoder = Some(encoder);
+        log::info!(
+            "Initialized Metal Tier 1 bindless argument buffer with reflected shader layout"
+        );
+        self.encoding = Some(ArgumentBufferEncoding::Encoder(encoder));
         self.argument_buffer = Some(buffer);
         self.dirty_slots.clear();
         Ok(())
     }
 
-    /// Allocate a free slot and store the texture.
-    ///
-    /// Returns the assigned slot index. Registration may happen before the
-    /// argument-buffer layout is initialized; the slot is encoded during lazy
-    /// initialization or the next flush.
+    fn allocate_buffer(
+        device: &ProtocolObject<dyn MTLDevice>,
+        encoded_length: usize,
+    ) -> Result<Retained<ProtocolObject<dyn MTLBuffer>>, RendererError> {
+        unsafe {
+            device.newBufferWithLength_options(
+                encoded_length,
+                MTLResourceOptions::StorageModeShared,
+            )
+        }
+        .ok_or_else(|| {
+            RendererError::ResourceCreationFailed(format!(
+                "Failed to allocate {} bytes for the Metal bindless argument buffer",
+                encoded_length
+            ))
+        })
+    }
+
+    fn texture_resource_id(
+        texture: &ProtocolObject<dyn MTLTexture>,
+    ) -> Result<u64, RendererError> {
+        objc2::exception::catch(AssertUnwindSafe(|| texture.gpuResourceID().to_raw())).map_err(
+            |exception| {
+                RendererError::InitializationFailed(format!(
+                    "Metal texture does not expose a GPU resource ID for direct argument-buffer encoding: {:?}",
+                    exception
+                ))
+            },
+        )
+    }
+
+    fn write_all_resource_ids(
+        buffer: &ProtocolObject<dyn MTLBuffer>,
+        textures: &[Option<Retained<ProtocolObject<dyn MTLTexture>>>],
+        default_texture: &ProtocolObject<dyn MTLTexture>,
+    ) -> Result<(), RendererError> {
+        let required_length = textures
+            .len()
+            .checked_mul(size_of::<MTLResourceID>())
+            .ok_or_else(|| {
+                RendererError::InitializationFailed(
+                    "Metal bindless argument-buffer size overflow".into(),
+                )
+            })?;
+        if buffer.length() < required_length {
+            return Err(RendererError::InitializationFailed(format!(
+                "Metal bindless argument buffer is {} bytes but requires {} bytes",
+                buffer.length(),
+                required_length
+            )));
+        }
+
+        let default_id = Self::texture_resource_id(default_texture)?;
+        let destination = buffer.contents().as_ptr().cast::<u64>();
+        for (index, texture) in textures.iter().enumerate() {
+            let id = match texture.as_deref() {
+                Some(texture) => Self::texture_resource_id(texture)?,
+                None => default_id,
+            };
+            unsafe {
+                destination.add(index).write(id);
+            }
+        }
+        Ok(())
+    }
+
+    fn write_resource_id(
+        buffer: &ProtocolObject<dyn MTLBuffer>,
+        slot: u32,
+        texture: &ProtocolObject<dyn MTLTexture>,
+    ) -> Result<(), RendererError> {
+        let offset = slot as usize * size_of::<MTLResourceID>();
+        if offset + size_of::<MTLResourceID>() > buffer.length() {
+            return Err(RendererError::InvalidOperation(format!(
+                "Bindless slot {} exceeds the Metal argument buffer",
+                slot
+            )));
+        }
+        let id = Self::texture_resource_id(texture)?;
+        unsafe {
+            buffer.contents().as_ptr().cast::<u64>().add(slot as usize).write(id);
+        }
+        Ok(())
+    }
+
     pub(crate) fn register_texture(
         &mut self,
         texture: &ProtocolObject<dyn MTLTexture>,
@@ -157,11 +249,10 @@ impl MetalBindlessTextureManager {
             RendererError::InvalidOperation("No free bindless texture slots available".into())
         })?;
         self.textures[slot as usize] = Some(texture.retain());
-        self.mark_dirty(slot);
+        self.dirty_slots.insert(slot);
         Ok(slot)
     }
 
-    /// Update an existing slot with a new texture (keeps the same slot index).
     pub(crate) fn update_texture(
         &mut self,
         slot: u32,
@@ -174,69 +265,67 @@ impl MetalBindlessTextureManager {
             )));
         }
         self.textures[slot as usize] = Some(texture.retain());
-        self.mark_dirty(slot);
+        self.dirty_slots.insert(slot);
         Ok(())
     }
 
-    /// Release a slot, making it available for reuse.
-    ///
-    /// Returns `true` if the slot was occupied and released.
     pub(crate) fn release_slot(&mut self, slot: u32) -> bool {
-        if slot as usize >= self.textures.len() {
-            return false;
-        }
-        if self.textures[slot as usize].is_none() {
+        if slot as usize >= self.textures.len() || self.textures[slot as usize].is_none() {
             return false;
         }
         self.textures[slot as usize] = None;
-        self.mark_dirty(slot);
+        self.dirty_slots.insert(slot);
         self.free_slots.push(slot);
         true
     }
 
-    /// Mark a slot as needing re-encoding in the next flush.
-    fn mark_dirty(&mut self, slot: u32) {
-        self.dirty_slots.insert(slot);
-    }
-
-    /// Re-encode only the dirty slots into the argument buffer.
-    ///
-    /// Call once per frame after the CPU-GPU sync point. Only slots that
-    /// changed since the last flush are re-encoded, avoiding O(N) work
-    /// when the texture set is stable. Before lazy initialization this is an
-    /// intentional no-op; all registered slots are encoded by
-    /// [`Self::initialize_from_function`].
+    /// Re-encode only slots changed since the previous frame.
     pub(crate) fn flush_argument_buffer(&mut self) {
         if self.dirty_slots.is_empty() {
             return;
         }
-        let Some(ref encoder) = self.encoder else {
+        let Some(encoding) = self.encoding.as_ref() else {
             return;
         };
-        let Some(ref buffer) = self.argument_buffer else {
+        let Some(buffer) = self.argument_buffer.as_deref() else {
             return;
         };
         let Some(default) = self.default_texture.as_deref() else {
             return;
         };
-        unsafe {
-            encoder.setArgumentBuffer_offset(Some(buffer), 0);
-            for &slot in &self.dirty_slots {
-                let texture = self.textures[slot as usize]
-                    .as_deref()
-                    .unwrap_or(default);
-                encoder.setTexture_atIndex(Some(texture), slot as usize);
+
+        let result = match encoding {
+            ArgumentBufferEncoding::DirectResourceIds => {
+                for &slot in &self.dirty_slots {
+                    let texture = self.textures[slot as usize].as_deref().unwrap_or(default);
+                    if let Err(error) = Self::write_resource_id(buffer, slot, texture) {
+                        log::error!("Failed to update Metal bindless slot {}: {}", slot, error);
+                        return;
+                    }
+                }
+                Ok(())
             }
+            ArgumentBufferEncoding::Encoder(encoder) => {
+                unsafe {
+                    encoder.setArgumentBuffer_offset(Some(buffer), 0);
+                    for &slot in &self.dirty_slots {
+                        let texture = self.textures[slot as usize].as_deref().unwrap_or(default);
+                        encoder.setTexture_atIndex(Some(texture), slot as usize);
+                    }
+                }
+                Ok(())
+            }
+        };
+
+        if result.is_ok() {
+            self.dirty_slots.clear();
         }
-        self.dirty_slots.clear();
     }
 
-    /// Get the argument buffer for binding at buffer index 9.
     pub(crate) fn argument_buffer(&self) -> Option<&ProtocolObject<dyn MTLBuffer>> {
         self.argument_buffer.as_deref()
     }
 
-    /// Iterate over all registered textures for `useResource` calls.
     pub(crate) fn registered_textures(
         &self,
     ) -> impl Iterator<Item = &ProtocolObject<dyn MTLTexture>> {
@@ -259,5 +348,14 @@ mod tests {
             Err(RendererError::InitializationFailed(message))
                 if message.contains("greater than zero")
         ));
+    }
+
+    #[test]
+    fn direct_layout_matches_resource_id_array_size() {
+        assert_eq!(size_of::<MTLResourceID>(), size_of::<u64>());
+        assert_eq!(
+            MAX_BINDLESS_TEXTURES as usize * size_of::<MTLResourceID>(),
+            32 * 1024
+        );
     }
 }
