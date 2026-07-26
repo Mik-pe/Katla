@@ -379,3 +379,117 @@ default_helpers = '''    /// Check if a slot is a default texture slot.
 '''
 bindless = bindless.replace(default_helpers, "", 1)
 bindless_path.write_text(bindless)
+
+
+validation_path = Path("katla_gfx/src/vulkan/context/validation.rs")
+validation = validation_path.read_text()
+validation = validation.replace(
+    "use ash::{Entry, ext::debug_utils::Instance as DebugInstance, vk};",
+    "use ash::{Entry, Instance, ext::debug_utils::Instance as DebugInstance, vk};",
+    1,
+)
+old_debug_messenger = '''pub(super) fn create_debug_messenger(
+    debug_utils_loader: &DebugInstance,
+    with_validation_layers: bool,
+    user_data: *mut std::ffi::c_void,
+) -> Option<vk::DebugUtilsMessengerEXT> {
+    if with_validation_layers {
+        let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
+            .message_severity(
+                vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
+                    | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,
+            )
+            .message_type(
+                vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
+                    | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
+            )
+            .pfn_user_callback(Some(debug_callback))
+            .user_data(user_data);
+
+        Some(
+            unsafe { debug_utils_loader.create_debug_utils_messenger(&create_info, None) }.unwrap(),
+        )
+    } else {
+        None
+    }
+}
+'''
+new_debug_messenger = '''pub(super) fn create_debug_messenger(
+    entry: &Entry,
+    instance: &Instance,
+    debug_utils_loader: &DebugInstance,
+    with_validation_layers: bool,
+    user_data: *mut std::ffi::c_void,
+) -> Option<vk::DebugUtilsMessengerEXT> {
+    if !with_validation_layers {
+        return None;
+    }
+
+    let create_name = c"vkCreateDebugUtilsMessengerEXT";
+    let destroy_name = c"vkDestroyDebugUtilsMessengerEXT";
+    let functions_available = unsafe {
+        entry
+            .get_instance_proc_addr(instance.handle(), create_name.as_ptr())
+            .is_some()
+            && entry
+                .get_instance_proc_addr(instance.handle(), destroy_name.as_ptr())
+                .is_some()
+    };
+    if !functions_available {
+        log::warn!(
+            "VK_EXT_debug_utils was enabled but its messenger functions are unavailable; continuing validation without a debug callback"
+        );
+        return None;
+    }
+
+    let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
+        .message_severity(
+            vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE
+                | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING
+                | vk::DebugUtilsMessageSeverityFlagsEXT::ERROR,
+        )
+        .message_type(
+            vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION
+                | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE,
+        )
+        .pfn_user_callback(Some(debug_callback))
+        .user_data(user_data);
+
+    match unsafe { debug_utils_loader.create_debug_utils_messenger(&create_info, None) } {
+        Ok(messenger) => Some(messenger),
+        Err(error) => {
+            log::warn!("Failed to create Vulkan debug messenger: {error:?}");
+            None
+        }
+    }
+}
+'''
+if old_debug_messenger in validation:
+    validation = validation.replace(old_debug_messenger, new_debug_messenger, 1)
+elif new_debug_messenger not in validation:
+    raise SystemExit("Vulkan debug messenger implementation did not match")
+validation_path.write_text(validation)
+
+
+context_path = Path("katla_gfx/src/vulkan/context/mod.rs")
+context = context_path.read_text()
+old_debug_call = '''        let debug_callback = validation::create_debug_messenger(
+            &debug_utils_loader,
+            validation_layers_active,
+            user_data,
+        );
+'''
+new_debug_call = '''        let debug_callback = validation::create_debug_messenger(
+            &entry,
+            &instance,
+            &debug_utils_loader,
+            validation_layers_active,
+            user_data,
+        );
+'''
+if context.count(old_debug_call) == 2:
+    context = context.replace(old_debug_call, new_debug_call, 2)
+elif context.count(new_debug_call) != 2:
+    raise SystemExit("Vulkan debug messenger call sites did not match")
+context_path.write_text(context)
