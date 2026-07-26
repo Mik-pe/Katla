@@ -424,12 +424,13 @@ impl MetalRenderer {
         let default_mr = renderer.create_texture(&mr_desc, &[255, 128, 0, 255]);
         renderer.default_mr_texture = Some(default_mr);
 
-        // Initialize the argument buffer after all default textures are registered.
-        // Slot 0 = white (albedo/AO), slot 1 = flat normal, slot 2 = MR default
+        // Texture registration is valid before a shader layout exists. The argument
+        // buffer itself is initialized lazily from the first compiled fragment
+        // function so Metal, rather than Katla, owns the concrete layout ABI.
         if let Some(entry) = renderer.textures.get(default_tex.index()) {
             renderer
                 .bindless_manager
-                .init_argument_buffer(&renderer.context.device, &entry._view.inner);
+                .set_default_texture(&entry._view.inner);
         }
 
         renderer.tonemap_fence = renderer.context.device.newFence();
@@ -1795,6 +1796,15 @@ mod tests {
             .expect("Failed to create headless context with size");
         let mut renderer = MetalRenderer::new(context).expect("Failed to create MetalRenderer");
 
+        if let Some(reason) =
+            super::super::argument_buffer::MetalBindlessTextureManager::unsupported_device_reason(
+                &renderer.context.device,
+            )
+        {
+            eprintln!("SKIP test_headless_render_not_white: {reason}");
+            return;
+        }
+
         // Resize to set up render targets (depth, HDR, depth-stencil)
         renderer.resize(W, H).expect("resize failed");
 
@@ -1822,10 +1832,14 @@ mod tests {
         // Create Shared BGRA8 texture as tonemap output (CPU-readable via getBytes)
         let readback_desc = TextureDescriptor::new(W, H, ImageFormat::B8G8R8A8Srgb)
             .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
-        let (_readback_tex, readback_view) = renderer
+        let (readback_tex, readback_view) = renderer
             .context
             .create_texture_with_data(&readback_desc)
             .expect("Failed to create readback texture");
+        // The no-UI headless schedule tonemaps directly to the current drawable.
+        // Use the CPU-readable texture as that drawable so the test reads the
+        // attachment that was actually rendered.
+        renderer.set_headless_drawable(readback_tex.inner.clone());
 
         // Create HDR texture for geometry pass, register with bindless
         let hdr_desc = TextureDescriptor::new(W, H, ImageFormat::R16G16B16A16Sfloat)
@@ -1904,7 +1918,7 @@ mod tests {
         renderer.wait_for_frame().expect("wait_for_frame failed");
 
         // Read back pixels from Shared storage texture
-        let pixels = readback_texture_bgra8(&_readback_tex.inner, W, H);
+        let pixels = readback_texture_bgra8(&readback_tex.inner, W, H);
 
         // Analyze: count pixels that are nearly white (all channels > 240)
         let total_pixels = W as usize * H as usize;

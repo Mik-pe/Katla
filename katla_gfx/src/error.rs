@@ -51,6 +51,9 @@ pub enum RendererError {
     /// Invalid operation or state.
     InvalidOperation(String),
 
+    /// A required GPU/backend feature is not available in the current environment.
+    UnsupportedFeature(String),
+
     /// Initialization failed.
     InitializationFailed(String),
 
@@ -80,6 +83,9 @@ impl fmt::Display for RendererError {
             RendererError::IoError(err) => write!(f, "IO error: {}", err),
             RendererError::NotFound(msg) => write!(f, "Not found: {}", msg),
             RendererError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
+            RendererError::UnsupportedFeature(msg) => {
+                write!(f, "Unsupported GPU feature: {}", msg)
+            }
             RendererError::InitializationFailed(msg) => {
                 write!(f, "Initialization failed: {}", msg)
             }
