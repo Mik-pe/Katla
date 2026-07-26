@@ -1,7 +1,7 @@
-//! Metal frame rendering — hardcoded pass sequence.
+//! Metal frame rendering driven by a validated semantic frame schedule.
 //!
-//! This is the legacy Metal render path that executes passes directly
-//! without going through the frame graph. Used by Metal validation tests.
+//! Encoder implementations remain backend-specific, while pass presence and order
+//! come from the compiled render graph schedule.
 
 use std::mem;
 
@@ -13,10 +13,12 @@ use crate::backend::command::{
 };
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
+use crate::render_graph::PassKind;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::renderer::types::FrameUniforms;
 use crate::texture::ImageFormat;
 
+use super::frame_schedule::MetalFrameSchedule;
 use super::metal_renderer::MetalRenderer;
 use super::texture::{MetalTexture, MetalTextureView};
 
@@ -27,7 +29,10 @@ use super::texture::{MetalTexture, MetalTextureView};
 const CANVAS_CLEAR_COLOR: (f64, f64, f64, f64) = (0.013, 0.013, 0.013, 1.0);
 
 impl MetalRenderer {
-    pub(crate) fn render_frame(&mut self) -> Result<(), RendererError> {
+    pub(crate) fn render_frame(
+        &mut self,
+        schedule: &MetalFrameSchedule,
+    ) -> Result<(), RendererError> {
         if self.depth_stencil_view.is_none() {
             log::error!("METAL render_frame: EARLY RETURN — no depth_stencil_view");
             self.current_drawable_texture = None;
@@ -66,7 +71,8 @@ impl MetalRenderer {
         // =========================================================================
         // Pass 0: Shadow cascade rendering → shadow map texture
         // =========================================================================
-        if let Some(shadow_draw_list) = self.pending_shadow_draw_list.take()
+        if schedule.contains(PassKind::Shadow)
+            && let Some(shadow_draw_list) = self.pending_shadow_draw_list.take()
             && !shadow_draw_list.draws.is_empty()
             && let (Some(shadow_pipeline), Some(shadow_map_view)) =
                 (self.shadow.pipeline(), self.shadow.shadow_map_view())
@@ -93,9 +99,58 @@ impl MetalRenderer {
         }
 
         // =========================================================================
-        // Pass 1: Geometry (sky + PBR) → HDR intermediate texture
+        // Pass 1: Depth prepass → shared scene depth
         // =========================================================================
-        let has_tonemap = self.tonemap_pipeline.is_some() && self.geometry_hdr_view.is_some();
+        let mut depth_prepass_ran = false;
+        if schedule.contains(PassKind::DepthPrepass)
+            && let Some(depth_draw_list) = self.pending_depth_prepass_draw_list.take()
+            && !depth_draw_list.draws.is_empty()
+        {
+            let depth_pipeline = self.depth_prepass.pipeline().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal depth prepass is scheduled but its pipeline is not initialized".into(),
+                )
+            })?;
+            let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal depth prepass is scheduled without a depth-stencil target".into(),
+                )
+            })?;
+            let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal depth prepass is scheduled without frame uniforms".into(),
+                )
+            })?;
+            let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal depth prepass is scheduled without object storage".into(),
+                )
+            })?;
+
+            super::depth_prepass::render_depth_prepass(
+                &mut cmd_buffer,
+                depth_pipeline,
+                self.depth_prepass.pipeline_skinned(),
+                self.depth_prepass.pipeline_billboard(),
+                depth_view,
+                vp_w as u32,
+                vp_h as u32,
+                frame_buf,
+                object_buf,
+                &self.meshes,
+                &self.materials,
+                &depth_draw_list,
+                &self.skeletons,
+            );
+            depth_prepass_ran = true;
+        }
+
+        // =========================================================================
+        // Pass 2: Geometry (sky + PBR) → HDR intermediate texture
+        // =========================================================================
+        let has_tonemap = schedule.contains(PassKind::Fullscreen)
+            && self.tonemap_pipeline.is_some()
+            && self.geometry_hdr_view.is_some();
         let draw_list = self.pending_draw_list.take();
         let picking_draw_list = draw_list.clone();
 
@@ -107,8 +162,12 @@ impl MetalRenderer {
                     .as_ref()
                     .map(|view| DepthAttachmentInfo {
                         view: view.clone(),
-                        load_op: LoadOp::Clear,
-                        store_op: StoreOp::DontCare,
+                        load_op: if depth_prepass_ran {
+                            LoadOp::Load
+                        } else {
+                            LoadOp::Clear
+                        },
+                        store_op: StoreOp::Store,
                         clear_value: ClearValue::depth_stencil(0.0, 0),
                         format: ImageFormat::D32SfloatS8Uint,
                     });
@@ -148,8 +207,12 @@ impl MetalRenderer {
                     .as_ref()
                     .map(|view| DepthAttachmentInfo {
                         view: view.clone(),
-                        load_op: LoadOp::Clear,
-                        store_op: StoreOp::DontCare,
+                        load_op: if depth_prepass_ran {
+                            LoadOp::Load
+                        } else {
+                            LoadOp::Clear
+                        },
+                        store_op: StoreOp::Store,
                         clear_value: ClearValue::depth_stencil(0.0, 0),
                         format: ImageFormat::D32SfloatS8Uint,
                     });
@@ -202,7 +265,8 @@ impl MetalRenderer {
         // =========================================================================
         // Pass 1.5: Outline (stencil mark + outline draw on HDR texture)
         // =========================================================================
-        if let Some(outline_draw_list) = self.pending_outline_draw_list.take()
+        if schedule.contains(PassKind::Outline)
+            && let Some(outline_draw_list) = self.pending_outline_draw_list.take()
             && !outline_draw_list.draws.is_empty()
             && has_tonemap
         {
@@ -422,7 +486,8 @@ impl MetalRenderer {
         // =========================================================================
         // Pass 3: UI overlay → drawable (loads previous pass output)
         // =========================================================================
-        if let Some(ui_draw_list) = self.pending_ui_draw_list.take()
+        if schedule.contains(PassKind::Ui)
+            && let Some(ui_draw_list) = self.pending_ui_draw_list.take()
             && !ui_draw_list.is_empty()
             && self
                 .ui_renderer
@@ -438,7 +503,11 @@ impl MetalRenderer {
                 // The scene is always written to the drawable before the UI pass
                 // (either tonemap writes directly, or the blit copies viewport_0 → drawable).
                 // Load the prior pass output so the UI composites on top of the 3D scene.
-                let ui_load_op = LoadOp::Load;
+                let ui_load_op = if drawable_written {
+                    LoadOp::Load
+                } else {
+                    LoadOp::Clear
+                };
                 let ui_pass_info = RenderPassInfo {
                     color_attachments: vec![ColorAttachmentInfo {
                         view: drawable_view.clone(),

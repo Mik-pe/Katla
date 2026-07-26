@@ -50,6 +50,8 @@ pub enum PassKind {
     Fullscreen,
     /// Compositing — multi-viewport compositing.
     Compositing,
+    /// UI overlay — composites UI commands over the rendered frame.
+    Ui,
 }
 
 /// Internal pass descriptor.

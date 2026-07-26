@@ -273,14 +273,13 @@ impl ApplicationBuilder {
         Ok(renderer)
     }
 
-    /// Build a minimal frame graph for the Metal backend.
+    /// Build the semantic frame graph used by the Metal backend.
     ///
-    /// Creates transient resources (hdr_color, viewport_0) without passes.
-    /// Metal uses hardcoded pass execution but benefits from frame graph
-    /// transient texture management and bindless registration.
+    /// Metal owns its encoder implementations, but pass presence and order are
+    /// validated against this compiled graph before command encoding starts.
     fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::{
-            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassType, SimplePass,
+            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
         };
         use katla_gfx::texture::ImageFormat;
 
@@ -307,16 +306,34 @@ impl ApplicationBuilder {
                 height: extent.height,
                 tracks_swapchain_size: true,
             })
-            .add_pass(SimplePass::new("geometry", PassType::Graphics).write("hdr_color"))
-            .add_pass(SimplePass::new("shadow", PassType::Graphics))
-            .add_pass(SimplePass::new("depth_prepass", PassType::Graphics))
-            .add_pass(SimplePass::new("outline", PassType::Graphics))
+            .add_pass(SimplePass::new("shadow", PassType::Graphics).with_kind(PassKind::Shadow))
+            .add_pass(
+                SimplePass::new("depth_prepass", PassType::Graphics)
+                    .with_kind(PassKind::DepthPrepass),
+            )
+            .add_pass(
+                SimplePass::new("geometry", PassType::Graphics)
+                    .write("hdr_color")
+                    .with_kind(PassKind::Geometry),
+            )
+            .add_pass(
+                SimplePass::new("outline", PassType::Graphics)
+                    .read("hdr_color")
+                    .write("hdr_color")
+                    .with_kind(PassKind::Outline),
+            )
             .add_pass(
                 SimplePass::new("tonemap", PassType::Graphics)
                     .read("hdr_color")
-                    .write("viewport_0"),
+                    .write("viewport_0")
+                    .with_kind(PassKind::Fullscreen),
             )
-            .add_pass(SimplePass::new("ui", PassType::Graphics))
+            .add_pass(
+                SimplePass::new("ui", PassType::Graphics)
+                    .read("viewport_0")
+                    .write("backbuffer")
+                    .with_kind(PassKind::Ui),
+            )
             .build::<katla_gfx::MetalRenderer>()
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
 

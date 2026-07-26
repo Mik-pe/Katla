@@ -304,6 +304,9 @@ impl<'a> Frame<'a, VulkanRenderer> {
                             log::warn!("Compositing pass '{}' has no material", pass.name);
                         }
                     }
+                    Some(super::pass::PassKind::Ui) => {
+                        self.execute_graphics_pass(&cmd, pass, data)?;
+                    }
                     Some(super::pass::PassKind::Fullscreen) => {
                         if let Some(pipeline) = pass.pipeline {
                             self.execute_fullscreen_pass(&cmd, pass, pipeline)?;

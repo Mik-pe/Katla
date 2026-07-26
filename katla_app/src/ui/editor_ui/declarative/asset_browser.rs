@@ -14,9 +14,7 @@ use katla_ui::{FontSize, ForkAwesome, TextureId};
 use crate::ui::ColorScheme;
 use crate::ui::editor_ui::EditorAction;
 use crate::ui::editor_ui::ThumbnailState;
-use crate::ui::editor_ui::asset_browser::{
-    AssetAction, AssetBrowserState, AssetEntry, AssetType,
-};
+use crate::ui::editor_ui::asset_browser::{AssetAction, AssetBrowserState, AssetEntry, AssetType};
 
 /// Environment data injected before each frame for the asset browser panel.
 #[derive(Clone)]
@@ -40,7 +38,6 @@ pub(crate) struct AssetBrowserDrawCtx {
 #[derive(Clone)]
 pub(crate) struct AssetRenderData {
     pub name: String,
-    pub path: PathBuf,
     pub asset_type: AssetType,
     pub thumbnail_state: ThumbnailState,
 }
@@ -415,13 +412,6 @@ pub(crate) fn process_asset_actions(
                     state.scan_directory(thumbnail_texture_handles);
                 }
             }
-            AssetAction::Open(path) => {
-                if path.is_dir() {
-                    state.navigate_to(&path, thumbnail_texture_handles);
-                } else {
-                    log::info!("Open file: {:?}", path);
-                }
-            }
             AssetAction::CopyPath(path) => {
                 log::info!("Copy path: {:?}", path);
             }
@@ -489,9 +479,7 @@ pub(crate) fn process_declarative_actions(
                 state.selected_index = Some(index);
                 state.selected_indices.clear();
 
-                if activate
-                    && let Some(asset) = state.assets.get(index).cloned()
-                {
+                if activate && let Some(asset) = state.assets.get(index).cloned() {
                     activate_asset(state, asset, thumbnail_texture_handles);
                 }
             }
@@ -500,7 +488,9 @@ pub(crate) fn process_declarative_actions(
                 asset_index,
             } => {
                 let resolved_index = asset_index.or(state.context_menu_asset);
-                let target = resolved_index.and_then(|index| state.assets.get(index)).cloned();
+                let target = resolved_index
+                    .and_then(|index| state.assets.get(index))
+                    .cloned();
 
                 state.context_menu_open = false;
                 state.context_menu_asset = None;
