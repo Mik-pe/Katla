@@ -53,10 +53,36 @@ impl MetalRenderer {
         &mut self,
         schedule: &MetalFrameSchedule,
     ) -> Result<(), RendererError> {
-        if self.depth_stencil_view.is_none() {
-            log::error!("METAL render_frame: EARLY RETURN — no depth_stencil_view");
-            self.current_drawable_texture = None;
-            return Ok(());
+        let geometry_scheduled = schedule.contains(PassKind::Geometry);
+        let fullscreen_scheduled = schedule.contains(PassKind::Fullscreen);
+        let ui_scheduled = schedule.contains(PassKind::Ui);
+
+        if fullscreen_scheduled && self.tonemap_pipeline.is_none() {
+            return Err(RendererError::InvalidOperation(
+                "Metal Fullscreen pass is scheduled but the fixed tonemap pipeline is not initialized"
+                    .into(),
+            ));
+        }
+        if fullscreen_scheduled && self.geometry_hdr_view.is_none() {
+            return Err(RendererError::InvalidOperation(
+                "Metal Fullscreen pass is scheduled but the fixed HDR input target is not initialized"
+                    .into(),
+            ));
+        }
+
+        // Submissions belong to scheduled passes. Discard work for absent passes so
+        // it cannot leak into a later frame if the application changes graph presets.
+        if !schedule.contains(PassKind::Shadow) {
+            self.pending_shadow_draw_list = None;
+        }
+        if !schedule.contains(PassKind::DepthPrepass) {
+            self.pending_depth_prepass_draw_list = None;
+        }
+        if !schedule.contains(PassKind::Outline) {
+            self.pending_outline_draw_list = None;
+        }
+        if !ui_scheduled {
+            self.pending_ui_draw_list = None;
         }
 
         let mut drawable_written = false;
@@ -87,7 +113,8 @@ impl MetalRenderer {
         let vp_y = vp.map_or(0.0, |r| r.min[1]);
         let vp_w = vp.map_or(width, |r| r.width());
         let vp_h = vp.map_or(height, |r| r.height());
-        let ui_will_composite_viewport = schedule.contains(PassKind::Ui)
+        let ui_will_composite_viewport = fullscreen_scheduled
+            && ui_scheduled
             && self
                 .pending_ui_draw_list
                 .as_ref()
@@ -172,120 +199,130 @@ impl MetalRenderer {
         }
 
         // =========================================================================
-        // Pass 2: Geometry (sky + PBR) → HDR intermediate texture
+        // Pass 2: Geometry (sky + PBR) → HDR intermediate or drawable
         // =========================================================================
-        let has_tonemap = schedule.contains(PassKind::Fullscreen)
-            && self.tonemap_pipeline.is_some()
-            && self.geometry_hdr_view.is_some();
+        let geometry_to_hdr = geometry_scheduled && fullscreen_scheduled;
         let draw_list = self.pending_draw_list.take();
-        let picking_draw_list = draw_list.clone();
-
-        if has_tonemap {
-            let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
-
-            let depth_attachment =
-                self.depth_stencil_view
-                    .as_ref()
-                    .map(|view| DepthAttachmentInfo {
-                        view: view.clone(),
-                        load_op: if depth_prepass_ran {
-                            LoadOp::Load
-                        } else {
-                            LoadOp::Clear
-                        },
-                        store_op: StoreOp::Store,
-                        clear_value: ClearValue::depth_stencil(0.0, 0),
-                        format: ImageFormat::D32SfloatS8Uint,
-                    });
-
-            let geometry_pass_info = RenderPassInfo {
-                color_attachments: vec![ColorAttachmentInfo {
-                    view: geometry_hdr_view.clone(),
-                    load_op: LoadOp::Clear,
-                    store_op: StoreOp::Store,
-                    clear_value: ClearValue::OPAQUE_BLACK,
-                }],
-                depth_attachment,
-            };
-
-            let mut encoder = cmd_buffer.begin_render_pass(geometry_pass_info);
-
-            Self::bind_common_resources(self, &mut encoder);
-
-            if let Some(ref sky_pipeline) = self.sky_pipeline {
-                if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
-                    encoder.bind_vertex_buffer(dummy_vb, 0, 10);
-                }
-                encoder.bind_graphics_pipeline(sky_pipeline);
-                encoder.draw(3, 1, 0, 0);
-            }
-
-            if let Some(draw_list) = &draw_list {
-                Self::draw_objects(self, &mut encoder, draw_list);
-            }
-
-            encoder.end_encoding();
+        let picking_draw_list = if geometry_scheduled {
+            draw_list.clone()
         } else {
-            // No tonemap pipeline — render geometry directly to drawable (legacy path)
-            drawable_written = true;
-            let depth_attachment =
-                self.depth_stencil_view
-                    .as_ref()
-                    .map(|view| DepthAttachmentInfo {
-                        view: view.clone(),
-                        load_op: if depth_prepass_ran {
-                            LoadOp::Load
-                        } else {
-                            LoadOp::Clear
-                        },
+            None
+        };
+
+        if geometry_scheduled {
+            if geometry_to_hdr {
+                let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
+
+                let depth_attachment =
+                    self.depth_stencil_view
+                        .as_ref()
+                        .map(|view| DepthAttachmentInfo {
+                            view: view.clone(),
+                            load_op: if depth_prepass_ran {
+                                LoadOp::Load
+                            } else {
+                                LoadOp::Clear
+                            },
+                            store_op: StoreOp::Store,
+                            clear_value: ClearValue::depth_stencil(0.0, 0),
+                            format: ImageFormat::D32SfloatS8Uint,
+                        });
+
+                let geometry_pass_info = RenderPassInfo {
+                    color_attachments: vec![ColorAttachmentInfo {
+                        view: geometry_hdr_view.clone(),
+                        load_op: LoadOp::Clear,
                         store_op: StoreOp::Store,
-                        clear_value: ClearValue::depth_stencil(0.0, 0),
-                        format: ImageFormat::D32SfloatS8Uint,
-                    });
+                        clear_value: ClearValue::OPAQUE_BLACK,
+                    }],
+                    depth_attachment,
+                };
 
-            let render_pass_info = RenderPassInfo {
-                color_attachments: vec![ColorAttachmentInfo {
-                    view: drawable_view.clone(),
-                    load_op: LoadOp::Clear,
-                    store_op: StoreOp::Store,
-                    clear_value: ClearValue::color(
-                        CANVAS_CLEAR_COLOR.0 as f32,
-                        CANVAS_CLEAR_COLOR.1 as f32,
-                        CANVAS_CLEAR_COLOR.2 as f32,
-                        CANVAS_CLEAR_COLOR.3 as f32,
-                    ),
-                }],
-                depth_attachment,
-            };
+                let mut encoder = cmd_buffer.begin_render_pass(geometry_pass_info);
 
-            let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
+                Self::bind_common_resources(self, &mut encoder);
 
-            Self::bind_common_resources(self, &mut encoder);
-
-            if let Some(ref sky_pipeline) = self.sky_pipeline {
-                if let (Some(frame_buf), Some(object_buf)) = (
-                    self.current_frame_uniform_buffer(),
-                    self.current_object_storage_buffer(),
-                ) {
-                    let stages = ShaderStages::VERTEX_FRAGMENT;
-                    encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
-                    encoder.bind_storage_buffer(object_buf, 0, 1, stages);
+                if let Some(ref sky_pipeline) = self.sky_pipeline {
+                    if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
+                        encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+                    }
+                    encoder.bind_graphics_pipeline(sky_pipeline);
+                    encoder.draw(3, 1, 0, 0);
                 }
-                if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
-                    encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
+
+                if let Some(draw_list) = &draw_list {
+                    Self::draw_objects(self, &mut encoder, draw_list);
                 }
-                if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
-                    encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+
+                encoder.end_encoding();
+            } else {
+                // Compatibility path for applications that schedule geometry without
+                // a fullscreen/post-process pass. Remove with the fixed encoder (#51/#56).
+                drawable_written = true;
+                let depth_attachment =
+                    self.depth_stencil_view
+                        .as_ref()
+                        .map(|view| DepthAttachmentInfo {
+                            view: view.clone(),
+                            load_op: if depth_prepass_ran {
+                                LoadOp::Load
+                            } else {
+                                LoadOp::Clear
+                            },
+                            store_op: StoreOp::Store,
+                            clear_value: ClearValue::depth_stencil(0.0, 0),
+                            format: ImageFormat::D32SfloatS8Uint,
+                        });
+
+                let render_pass_info = RenderPassInfo {
+                    color_attachments: vec![ColorAttachmentInfo {
+                        view: drawable_view.clone(),
+                        load_op: LoadOp::Clear,
+                        store_op: StoreOp::Store,
+                        clear_value: ClearValue::color(
+                            CANVAS_CLEAR_COLOR.0 as f32,
+                            CANVAS_CLEAR_COLOR.1 as f32,
+                            CANVAS_CLEAR_COLOR.2 as f32,
+                            CANVAS_CLEAR_COLOR.3 as f32,
+                        ),
+                    }],
+                    depth_attachment,
+                };
+
+                let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
+
+                Self::bind_common_resources(self, &mut encoder);
+
+                if let Some(ref sky_pipeline) = self.sky_pipeline {
+                    if let (Some(frame_buf), Some(object_buf)) = (
+                        self.current_frame_uniform_buffer(),
+                        self.current_object_storage_buffer(),
+                    ) {
+                        let stages = ShaderStages::VERTEX_FRAGMENT;
+                        encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
+                        encoder.bind_storage_buffer(object_buf, 0, 1, stages);
+                    }
+                    if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
+                        encoder.bind_storage_buffer(
+                            buf_sizes,
+                            0,
+                            8,
+                            ShaderStages::VERTEX_FRAGMENT,
+                        );
+                    }
+                    if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
+                        encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+                    }
+                    encoder.bind_graphics_pipeline(sky_pipeline);
+                    encoder.draw(3, 1, 0, 0);
                 }
-                encoder.bind_graphics_pipeline(sky_pipeline);
-                encoder.draw(3, 1, 0, 0);
+
+                if let Some(draw_list) = &draw_list {
+                    Self::draw_objects(self, &mut encoder, draw_list);
+                }
+
+                encoder.end_encoding();
             }
-
-            if let Some(draw_list) = &draw_list {
-                Self::draw_objects(self, &mut encoder, draw_list);
-            }
-
-            encoder.end_encoding();
         }
 
         // =========================================================================
@@ -294,7 +331,7 @@ impl MetalRenderer {
         if schedule.contains(PassKind::Outline)
             && let Some(outline_draw_list) = self.pending_outline_draw_list.take()
             && !outline_draw_list.draws.is_empty()
-            && has_tonemap
+            && geometry_to_hdr
         {
             let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
             let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
@@ -383,7 +420,8 @@ impl MetalRenderer {
         // =========================================================================
         // Pass 2: Tonemap (HDR intermediate → viewport_0 LDR texture)
         // =========================================================================
-        if has_tonemap {
+        let mut tonemap_ran = false;
+        if fullscreen_scheduled {
             let tonemap_pipeline = self.tonemap_pipeline.as_ref().unwrap();
 
             // Patch frame uniforms with HDR texture bindless index for the tonemap shader
@@ -409,12 +447,12 @@ impl MetalRenderer {
                 (
                     self.tonemap_output_view
                         .as_ref()
-                        .expect("viewport_0 view checked above")
+                        .expect("viewport output view checked above")
                         .clone(),
                     LoadOp::Clear,
                 )
             } else {
-                // Non-editor/headless fallback when there is no UI composition pass.
+                // Non-editor/headless path when there is no UI composition pass.
                 drawable_written = true;
                 (drawable_view.clone(), LoadOp::Clear)
             };
@@ -501,12 +539,13 @@ impl MetalRenderer {
             }
 
             encoder.end_encoding();
+            tonemap_ran = true;
         }
 
         // =========================================================================
         // Pass 3: UI overlay → drawable (loads previous pass output)
         // =========================================================================
-        if schedule.contains(PassKind::Ui)
+        if ui_scheduled
             && let Some(ui_draw_list) = self.pending_ui_draw_list.take()
             && !ui_draw_list.is_empty()
             && self
@@ -519,8 +558,8 @@ impl MetalRenderer {
                 && let Some(ui_material) = self.materials.get(ui_mat_handle.index())
                 && let Some(ref ui_pipeline) = ui_material.pipeline
             {
-                // When tonemap wrote viewport_0, UI is the first drawable writer
-                // and must clear the canvas. Direct-to-drawable fallbacks are loaded.
+                // When tonemap wrote the offscreen viewport, UI is the first drawable
+                // writer and clears the canvas. Direct drawable passes are loaded.
                 let ui_load_op = if drawable_written {
                     LoadOp::Load
                 } else {
@@ -544,7 +583,9 @@ impl MetalRenderer {
 
                 let mut encoder = cmd_buffer.begin_render_pass(ui_pass_info);
 
-                if let Some(ref fence) = self.tonemap_fence {
+                if tonemap_ran
+                    && let Some(ref fence) = self.tonemap_fence
+                {
                     encoder
                         .inner
                         .waitForFence_beforeStages(fence, objc2_metal::MTLRenderStages::Fragment);
@@ -610,11 +651,10 @@ impl MetalRenderer {
             }
         }
 
-        // Safety: if no render pass wrote to the drawable (e.g. tonemap went to
-        // viewport_0 and the UI pass was skipped), clear it to black before
+        // Safety: if no scheduled render pass wrote to the drawable, clear it before
         // presenting to avoid stale/undefined content from the drawable pool.
         if !drawable_written {
-            log::warn!("METAL render_frame: NO pass wrote to drawable — clearing to black!");
+            log::debug!("METAL render_frame: no scheduled pass wrote to drawable; clearing");
             let clear_pass_info = RenderPassInfo {
                 color_attachments: vec![ColorAttachmentInfo {
                     view: drawable_view,
@@ -626,8 +666,6 @@ impl MetalRenderer {
             };
             let encoder = cmd_buffer.begin_render_pass(clear_pass_info);
             encoder.end_encoding();
-        } else {
-            // drawable_written stays true, no need to clear
         }
 
         cmd_buffer.end();
