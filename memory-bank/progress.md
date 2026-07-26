@@ -28,7 +28,7 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## In Progress
 
-- PR #50 / #49 hardens Metal frame execution: requires the geometry/fullscreen/UI semantic pipeline, validates `hdr_color -> viewport_0 -> backbuffer` accesses before encoding, and propagates retained command-buffer GPU failures as typed renderer errors with native diagnostics.
+- PR #50 / #49 removes engine-level requirements for geometry/fullscreen/UI and editor resource names, keeps only explicitly temporary fixed-encoder capability checks, and propagates retained command-buffer GPU failures as typed renderer errors with native diagnostics.
 
 ## Upcoming / Blocked
 
@@ -42,6 +42,7 @@ What's been done and what's next. **Update this file when completing or starting
 - Encode AppKit/CAMetalLayer thread affinity instead of blanket unsafe `Send`/`Sync` (#57).
 - Replace synchronous shared-texture writes with format-aware staged uploads into private GPU storage (#58).
 - Replace the stale Metal implementation plan with a verified current architecture reference (#59).
+- Expose application-owned graph construction (#60), replace required/sentinel pass bindings with optional capabilities (#61), and move the current editor pipeline into an explicit preset (#62).
 - Preferences theme grid: consider orange accent tint in addition to check mark for even more prominence.
 - Asset browser sizing still needs work (structural gap from vision score 7/10).
 - Empty states for panels (hierarchy, inspector with no selection).
