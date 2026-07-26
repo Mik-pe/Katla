@@ -43,6 +43,7 @@
 mod builder;
 mod compiler;
 pub mod descriptor_sets;
+mod diagnostics;
 mod error;
 mod execution_plan_diagnostics;
 mod frame_graph;
@@ -66,6 +67,13 @@ mod vulkan_backend;
 // Public API
 pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
+pub use diagnostics::{
+    RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticDependency,
+    RenderGraphDiagnosticHazard, RenderGraphDiagnosticPass, RenderGraphDiagnosticPassType,
+    RenderGraphDiagnosticResource, RenderGraphDiagnosticResourceLifetime,
+    RenderGraphDiagnosticResourceOrigin, RenderGraphDiagnosticResourceRef,
+    RenderGraphDiagnosticSummary, RenderGraphDiagnostics, RenderGraphHazardKind,
+};
 pub use error::{GraphValidationError, RenderGraphError};
 pub use frame::Frame;
 #[cfg(target_os = "macos")]
