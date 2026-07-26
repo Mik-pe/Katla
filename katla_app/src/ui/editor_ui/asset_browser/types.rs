@@ -58,8 +58,6 @@ pub struct AssetEntry {
 /// Action from the asset browser context menu.
 #[derive(Debug, Clone)]
 pub enum AssetAction {
-    /// Open asset (double-click equivalent)
-    Open(PathBuf),
     /// Request model preview (double-click on model file)
     ModelPreviewRequested(PathBuf),
     /// Copy path to clipboard

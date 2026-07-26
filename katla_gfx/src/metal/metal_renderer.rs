@@ -169,6 +169,7 @@ pub struct MetalRenderer {
     pub(crate) ui_font_atlas: Option<TextureHandle>,
     pub(crate) last_command_buffer: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
     pub(crate) pending_draw_list: Option<DrawList>,
+    pub(crate) pending_depth_prepass_draw_list: Option<DrawList>,
     pub(crate) light_culling: Option<MetalLightCulling>,
     pub(crate) ui_renderer: MetalUIRenderer,
     pub(crate) animation_system: Option<MetalAnimationSystem>,
@@ -307,6 +308,7 @@ impl MetalRenderer {
             ui_font_atlas: None,
             last_command_buffer: None,
             pending_draw_list: None,
+            pending_depth_prepass_draw_list: None,
             light_culling: None,
             ui_renderer: MetalUIRenderer::new(),
             animation_system: None,
@@ -532,113 +534,66 @@ impl MetalRenderer {
         frame_graph: &crate::render_graph::FrameGraph<Self>,
         _frame_idx: usize,
     ) -> Result<(), RendererError> {
-        log::debug!(
-            "METAL execute_metal_passes: {} pending pass entries, \
-             geometry_hdr_view={}, tonemap_output_view={}, \
-             geometry_hdr_bindless_slot={:?}",
-            pending.len(),
-            self.geometry_hdr_view.is_some(),
-            self.tonemap_output_view.is_some(),
-            self.geometry_hdr_bindless_slot,
-        );
+        let schedule = super::frame_schedule::MetalFrameSchedule::compile(frame_graph)
+            .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
 
-        // Extract shadow draw list
-        let shadow_data = frame_graph
-            .pass_id("shadow")
-            .and_then(|id| pending.remove(&(id.0 as usize)));
-        if let Some(data) = &shadow_data {
-            let combined = Self::merge_draw_lists(&data.draw_lists);
-            log::debug!(
-                "METAL execute_metal_passes: shadow pass found, {} draws",
-                combined.draws.len()
-            );
-            if !combined.draws.is_empty() {
-                self.pending_shadow_draw_list = Some(combined);
-            }
-        } else {
-            log::debug!("METAL execute_metal_passes: shadow pass NOT found in pending data");
-        }
+        self.pending_shadow_draw_list = None;
+        self.pending_depth_prepass_draw_list = None;
+        self.pending_draw_list = None;
+        self.pending_outline_draw_list = None;
+        self.pending_ui_draw_list = None;
 
-        // Extract depth prepass draw list
-        let depth_data = frame_graph
-            .pass_id("depth_prepass")
-            .and_then(|id| pending.remove(&(id.0 as usize)));
-        if let Some(data) = &depth_data {
-            let combined = Self::merge_draw_lists(&data.draw_lists);
-            log::debug!(
-                "METAL execute_metal_passes: depth_prepass pass found, {} draws",
-                combined.draws.len()
-            );
-            if !combined.draws.is_empty() {
-                self.pending_draw_list = Some(combined);
-            }
-        } else {
-            log::debug!("METAL execute_metal_passes: depth_prepass pass NOT found in pending data");
-        }
+        for scheduled in schedule.passes() {
+            let Some(data) = pending.remove(&scheduled.pass_index) else {
+                continue;
+            };
 
-        // Extract geometry draw list
-        let geometry_data = frame_graph
-            .pass_id("geometry")
-            .and_then(|id| pending.remove(&(id.0 as usize)));
-        if let Some(data) = &geometry_data {
-            let combined = Self::merge_draw_lists(&data.draw_lists);
-            log::debug!(
-                "METAL execute_metal_passes: geometry pass found, {} draws (OVERRIDES pending_draw_list)",
-                combined.draws.len()
-            );
-            if !combined.draws.is_empty() {
-                self.pending_draw_list = Some(combined);
-            }
-        } else {
-            log::debug!("METAL execute_metal_passes: geometry pass NOT found in pending data");
-        }
-
-        // Extract outline draw list
-        let outline_data = frame_graph
-            .pass_id("outline")
-            .and_then(|id| pending.remove(&(id.0 as usize)));
-        if let Some(data) = &outline_data {
-            let combined = Self::merge_draw_lists(&data.draw_lists);
-            if !combined.draws.is_empty() {
-                self.pending_outline_draw_list = Some(combined);
+            match scheduled.kind {
+                crate::render_graph::PassKind::Shadow => {
+                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
+                    if !draw_list.draws.is_empty() {
+                        self.pending_shadow_draw_list = Some(draw_list);
+                    }
+                }
+                crate::render_graph::PassKind::DepthPrepass => {
+                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
+                    if !draw_list.draws.is_empty() {
+                        self.pending_depth_prepass_draw_list = Some(draw_list);
+                    }
+                }
+                crate::render_graph::PassKind::Geometry => {
+                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
+                    if !draw_list.draws.is_empty() {
+                        self.pending_draw_list = Some(draw_list);
+                    }
+                }
+                crate::render_graph::PassKind::Outline => {
+                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
+                    if !draw_list.draws.is_empty() {
+                        self.pending_outline_draw_list = Some(draw_list);
+                    }
+                }
+                crate::render_graph::PassKind::Ui => {
+                    if let Some(ui_list) = data.ui_draw_lists.first() {
+                        self.pending_ui_draw_list = Some(ui_list.clone());
+                    }
+                }
+                crate::render_graph::PassKind::Fullscreen => {}
+                crate::render_graph::PassKind::Particles
+                | crate::render_graph::PassKind::StencilIndicator
+                | crate::render_graph::PassKind::Compositing => unreachable!(
+                    "unsupported Metal pass kinds are rejected while compiling the schedule"
+                ),
             }
         }
 
-        // Extract UI draw list
-        let ui_data = frame_graph
-            .pass_id("ui")
-            .and_then(|id| pending.remove(&(id.0 as usize)));
-        if let Some(data) = &ui_data
-            && let Some(ui_list) = data.ui_draw_lists.first()
-        {
-            log::debug!(
-                "METAL execute_metal_passes: ui pass found, {} commands",
-                ui_list.commands.len()
-            );
-            self.pending_ui_draw_list = Some(ui_list.clone());
-        } else {
-            log::debug!("METAL execute_metal_passes: ui pass NOT found in pending data (or empty)");
+        if let Some(pass_index) = pending.keys().next().copied() {
+            return Err(RendererError::InvalidOperation(format!(
+                "Metal received submissions for unscheduled pass index {pass_index}"
+            )));
         }
 
-        log::debug!(
-            "METAL execute_metal_passes: final state — pending_draw_list={}, \
-             pending_shadow={}, pending_ui={}",
-            self.pending_draw_list
-                .as_ref()
-                .map(|dl| dl.draws.len())
-                .unwrap_or(0),
-            self.pending_shadow_draw_list
-                .as_ref()
-                .map(|dl| dl.draws.len())
-                .unwrap_or(0),
-            self.pending_ui_draw_list
-                .as_ref()
-                .map(|dl| dl.commands.len())
-                .unwrap_or(0),
-        );
-
-        self.render_frame()?;
-
+        self.render_frame(&schedule)?;
         Ok(())
     }
 
@@ -1881,7 +1836,13 @@ mod tests {
 
         // Run the frame lifecycle
         renderer.begin_frame().expect("begin_frame failed");
-        renderer.render_frame().expect("render_frame failed");
+        let schedule = crate::metal::frame_schedule::MetalFrameSchedule::for_test(&[
+            crate::render_graph::PassKind::Geometry,
+            crate::render_graph::PassKind::Fullscreen,
+        ]);
+        renderer
+            .render_frame(&schedule)
+            .expect("render_frame failed");
         renderer.end_frame().expect("end_frame failed");
 
         // Wait for GPU to finish writing to the tonemap output texture

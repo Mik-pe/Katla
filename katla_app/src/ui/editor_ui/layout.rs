@@ -198,7 +198,6 @@ impl EditorUI {
                                 .iter()
                                 .map(|a| AssetRenderData {
                                     name: a.name.clone(),
-                                    path: a.path.clone(),
                                     asset_type: a.asset_type,
                                     thumbnail_state: a.thumbnail_state.clone(),
                                 })
@@ -486,13 +485,7 @@ impl EditorUI {
                     zone,
                     tab,
                 } => {
-                    let _ = move_dock_tab(
-                        &mut self.dock_tree,
-                        &from_path,
-                        &to_path,
-                        zone,
-                        tab,
-                    );
+                    let _ = move_dock_tab(&mut self.dock_tree, &from_path, &to_path, zone, tab);
                 }
                 DockAction::TabClosed { path, tab } => {
                     let _ = self.dock_tree.remove_tab(&path, &tab);
