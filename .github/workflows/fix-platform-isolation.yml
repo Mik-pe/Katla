@@ -1,0 +1,212 @@
+name: Repair platform isolation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.head_ref == 'agent/modern-macos-ci'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out pull request branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Install stable Rust and Linux dependencies
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+
+      - name: Apply cross-platform fixes
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+              if old not in source:
+                  raise SystemExit(f"expected source fragment not found: {label}")
+              return source.replace(old, new, 1)
+
+          builder_path = Path("katla_app/src/application/builder.rs")
+          source = builder_path.read_text()
+          marker = "    fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {\n"
+          gated = "    #[cfg(target_os = \"macos\")]\n" + marker
+          if gated not in source:
+              source = replace_once(source, marker, gated, "Metal frame graph cfg")
+          builder_path.write_text(source)
+
+          renderer_path = Path("katla_app/src/application/renderer.rs")
+          source = renderer_path.read_text()
+          import_marker = "use katla_gfx::GpuRenderer;\n"
+          ui_import = "use katla_gfx::GpuRenderer;\n#[cfg(not(target_os = \"macos\"))]\nuse katla_gfx::UIDrawList;\n"
+          if "use katla_gfx::UIDrawList;" not in source:
+              source = replace_once(source, import_marker, ui_import, "Vulkan UI draw-list import")
+          source = source.replace('            info!("=== Resize complete ===");', '            log::info!("=== Resize complete ===");', 1)
+          renderer_path.write_text(source)
+
+          gizmo_path = Path("katla_app/src/application/gizmo.rs")
+          source = gizmo_path.read_text()
+          source = source.replace(
+              "use katla_gfx::GpuRenderer;\n",
+              "#[cfg(target_os = \"macos\")]\nuse katla_gfx::GpuRenderer;\n",
+              1,
+          )
+          gizmo_path.write_text(source)
+
+          editor_path = Path("katla_app/src/application/editor/mod.rs")
+          source = editor_path.read_text()
+          source = replace_once(
+              source,
+              """    if was_resized {
+        let atlas_handle = app.renderer.create_ui_font_atlas(width, height, &data);
+
+        if let Some(bindless_slot) = match &mut app.renderer {
+""",
+              """    if was_resized {
+        #[cfg(target_os = "macos")]
+        let atlas_handle = app.renderer.create_ui_font_atlas(width, height, &data);
+        #[cfg(not(target_os = "macos"))]
+        app.renderer.create_ui_font_atlas(width, height, &data);
+
+        if let Some(bindless_slot) = match &mut app.renderer {
+""",
+              "platform-specific font atlas handle",
+          )
+          source = source.replace(
+              "if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut app.renderer {",
+              "if let Some(vulkan_renderer) = app.renderer.as_vulkan() {",
+              1,
+          )
+          editor_path.write_text(source)
+
+          frame_loop_path = Path("katla_app/src/application/frame_loop.rs")
+          source = frame_loop_path.read_text()
+          source = source.replace(
+              "if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer {",
+              "if let Some(vulkan_renderer) = self.renderer.as_vulkan() {",
+              1,
+          )
+          source = source.replace(
+              "let extent = self.renderer.swapchain_extent();",
+              "let extent = vulkan_renderer.swapchain_extent();",
+              1,
+          )
+          frame_loop_path.write_text(source)
+
+          headless_path = Path("katla_app/src/application/headless.rs")
+          source = headless_path.read_text()
+          source = replace_once(
+              source,
+              """        let screenshot_path = self
+            .info
+            .screenshot_path
+            .clone()
+            .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
+""",
+              """        #[cfg(target_os = "macos")]
+        let screenshot_path = self
+            .info
+            .screenshot_path
+            .clone()
+            .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
+""",
+              "headless screenshot path cfg",
+          )
+          ui_test_marker = """        let mut ui_test = self
+            .info
+            .ui_test_path
+            .as_ref()
+            .map(|dir| crate::application::ui_test::UiTestRunner::new(dir.clone()));
+"""
+          ui_test_replacement = ui_test_marker + """
+        #[cfg(not(all(target_os = "macos", feature = "editor")))]
+        let _ = &mut ui_test;
+"""
+          if "let _ = &mut ui_test;" not in source.split("for frame in", 1)[0]:
+              source = replace_once(source, ui_test_marker, ui_test_replacement, "headless UI test mutability")
+          loop_marker = "        for frame in 0..max_frames {\n"
+          loop_replacement = """        for frame in 0..max_frames {
+            #[cfg(not(all(target_os = "macos", feature = "editor")))]
+            let _ = frame;
+"""
+          if loop_replacement not in source:
+              source = replace_once(source, loop_marker, loop_replacement, "headless frame cfg")
+          source = source.replace(
+              """
+            #[cfg(all(target_os = "macos", not(feature = "editor")))]
+            let _ = &mut ui_test;
+""",
+              "",
+              1,
+          )
+          headless_path.write_text(source)
+
+          picking_path = Path("katla_app/src/application/picking.rs")
+          source = picking_path.read_text()
+          source = replace_once(
+              source,
+              """            let physical_x = ((rel_x / panel_width) * pick_w as f32) as u32;
+            let mut physical_y = ((rel_y / panel_height) * pick_h as f32) as u32;
+
+            // Metal's viewport maps clip Y = +1 → pixel Y = 0 (top), which inverts Y
+            // compared to the tonemapped display. Flip the readback Y so that
+            // screen-top (rel_y=0) reads the pixel corresponding to what the user sees.
+            #[cfg(target_os = "macos")]
+            if matches!(self.renderer, katla_gfx::AnyRenderer::Metal(_)) {
+                physical_y = pick_h.saturating_sub(1 + physical_y);
+            }
+""",
+              """            let physical_x = ((rel_x / panel_width) * pick_w as f32) as u32;
+            let physical_y = ((rel_y / panel_height) * pick_h as f32) as u32;
+
+            // Metal's viewport maps clip Y = +1 → pixel Y = 0 (top), which inverts Y
+            // compared to the tonemapped display. Flip the readback Y so that
+            // screen-top (rel_y=0) reads the pixel corresponding to what the user sees.
+            #[cfg(target_os = "macos")]
+            let physical_y = if matches!(self.renderer, katla_gfx::AnyRenderer::Metal(_)) {
+                pick_h.saturating_sub(1 + physical_y)
+            } else {
+                physical_y
+            };
+""",
+              "platform-specific picking Y transform",
+          )
+          picking_path.write_text(source)
+          PY
+
+      - name: Format workspace
+        run: cargo fmt --all
+
+      - name: Check workspace
+        run: cargo check --workspace --locked --quiet
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets --locked --quiet -- -D warnings
+
+      - name: Commit validated source fixes
+        run: |
+          git add \
+            katla_app/src/application/builder.rs \
+            katla_app/src/application/editor/mod.rs \
+            katla_app/src/application/frame_loop.rs \
+            katla_app/src/application/gizmo.rs \
+            katla_app/src/application/headless.rs \
+            katla_app/src/application/picking.rs \
+            katla_app/src/application/renderer.rs
+          if git diff --cached --quiet; then
+            echo "Platform isolation is already repaired"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Fix cross-platform application compilation"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
