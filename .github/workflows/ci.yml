@@ -44,7 +44,21 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Check workspace
-        run: cargo check --workspace --locked --quiet
+        shell: bash
+        run: |
+          set +e
+          cargo check --workspace --locked --quiet > /tmp/linux-check.log 2>&1
+          status=$?
+          cat /tmp/linux-check.log
+          exit "$status"
+
+      - name: Upload workspace-check diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-workspace-check
+          path: /tmp/linux-check.log
+          retention-days: 1
 
       - name: Test workspace
         run: cargo test --workspace --locked --quiet
