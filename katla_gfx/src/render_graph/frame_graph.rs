@@ -606,6 +606,7 @@ impl<B: RenderGraphBackend> Default for FrameGraph<B> {
 }
 
 // --- Metal-specific methods ---
+#[cfg(target_os = "macos")]
 impl FrameGraph<crate::MetalRenderer> {
     /// Collect draw lists from the user closure without executing passes.
     ///

@@ -12,6 +12,7 @@ use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, U
 use crate::texture::TextureDescriptor;
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
+#[cfg(target_os = "macos")]
 use crate::metal::metal_renderer::MetalRenderer;
 use crate::renderer::VulkanRenderer;
 
@@ -795,16 +796,16 @@ impl AnyRenderer {
 
     pub fn queue_metal_picking_readback(
         &mut self,
-        frame: usize,
-        x: u32,
-        y: u32,
+        _frame: usize,
+        _x: u32,
+        _y: u32,
     ) -> Result<(), RendererError> {
         match self {
             AnyRenderer::Vulkan(_) => {
                 Err(RendererError::InvalidOperation("Not Metal backend".into()))
             }
             #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.queue_picking_readback(frame, x, y),
+            AnyRenderer::Metal(r) => r.queue_picking_readback(_frame, _x, _y),
         }
     }
 

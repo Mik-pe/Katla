@@ -3,6 +3,7 @@
 use super::handles::PassId;
 use crate::renderer::types::{DrawList, UIDrawList};
 
+#[cfg(target_os = "macos")]
 use crate::metal::metal_renderer::MetalRenderer;
 use crate::renderer::VulkanRenderer;
 
