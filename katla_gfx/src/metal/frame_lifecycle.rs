@@ -1,4 +1,5 @@
-use objc2_metal::MTLCommandBuffer;
+use objc2::runtime::ProtocolObject;
+use objc2_metal::{MTLCommandBuffer, MTLCommandBufferStatus};
 
 use crate::error::RendererError;
 use crate::texture::ImageFormat;
@@ -9,8 +10,48 @@ impl MetalRenderer {
     pub(crate) fn wait_for_frame_impl(&mut self) -> Result<(), RendererError> {
         if let Some(cmd_buffer) = self.last_command_buffer.take() {
             cmd_buffer.waitUntilCompleted();
+
+            let status = cmd_buffer.status();
+            if status == MTLCommandBufferStatus::Error {
+                return Err(Self::command_buffer_failure(&cmd_buffer));
+            }
+            if status != MTLCommandBufferStatus::Completed {
+                let label = Self::command_buffer_label(&cmd_buffer);
+                return Err(RendererError::InvalidOperation(format!(
+                    "Metal command buffer '{label}' returned from waitUntilCompleted with terminal status {status:?}"
+                )));
+            }
         }
         Ok(())
+    }
+
+    fn command_buffer_failure(
+        cmd_buffer: &ProtocolObject<dyn MTLCommandBuffer>,
+    ) -> RendererError {
+        let label = Self::command_buffer_label(cmd_buffer);
+        let details = cmd_buffer
+            .error()
+            .map(|error| {
+                format!(
+                    "code={} domain={} description={}",
+                    error.code(),
+                    error.domain(),
+                    error.localizedDescription()
+                )
+            })
+            .unwrap_or_else(|| "Metal reported Error status without an NSError".to_string());
+
+        RendererError::InvalidOperation(format!(
+            "Metal command buffer '{label}' failed: {details}"
+        ))
+    }
+
+    fn command_buffer_label(cmd_buffer: &ProtocolObject<dyn MTLCommandBuffer>) -> String {
+        cmd_buffer
+            .label()
+            .map(|label| label.to_string())
+            .filter(|label| !label.is_empty())
+            .unwrap_or_else(|| "<unlabeled>".to_string())
     }
 
     pub(crate) fn begin_frame_impl(&mut self) -> Result<u32, RendererError> {
