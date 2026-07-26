@@ -1,6 +1,6 @@
 name: Agent fix Metal Objective-C exception
 
-# Validation revision: normalized Apple paravirtual device detection.
+# Validation revision: explicit unsupported-device exit status.
 on:
   pull_request:
     branches:
@@ -124,6 +124,7 @@ jobs:
         run: |
           git add \
             Cargo.lock \
+            game/src/main.rs \
             katla_gfx/Cargo.toml \
             katla_gfx/src/error.rs \
             katla_gfx/src/metal/argument_buffer.rs \
