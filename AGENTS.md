@@ -61,11 +61,11 @@ cargo run -p katla_gfx --example particle_validation  # Headless GPU validation
 
 ## CI Runner Policy
 
-- Primary Metal CI uses the explicit `macos-26` Apple Silicon runner.
-- Compatibility CI uses the explicit `macos-15` Apple Silicon runner.
-- Do not use `macos-latest`; it is a mutable alias and does not currently mean macOS 26.
-- Do not add `macos-14` to required CI unless the supported-platform policy is deliberately changed.
-- When a new macOS runner becomes generally available, move the two-generation matrix forward intentionally and update `docs/ci.md` in the same change.
+- Metal CI uses exactly one explicit Apple Silicon runner: `macos-26`.
+- Do not add an older macOS compatibility job. Katla does not maintain backwards-compatible macOS CI.
+- Do not use `macos-latest`; it is a mutable alias rather than an explicit platform decision.
+- Do not add `macos-15` or `macos-14` to required CI.
+- When Katla adopts a newer macOS generation, replace `macos-26` directly and update `docs/ci.md` in the same change. Do not retain the previous generation.
 
 ## Working Conventions
 
