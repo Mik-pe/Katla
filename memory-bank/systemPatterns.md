@@ -53,17 +53,19 @@ Backend code lives in `vulkan/` and `metal/`. When adding features:
 
 The 3D scene is composed for the editor's viewport panel's aspect ratio (the camera uses `viewport_size()` = panel dims). To match, the 3D-scene render targets (HDR, depth, tonemap-output, picking) and the Forward+ light-culling grid are **panel-sized**, not swapchain-sized. `Application::recreate_panel_rt_resources()` (renderer.rs) recreates them at the panel size (logical bounds × scale_factor) each frame when it changes, calling `GpuRenderer::recreate_scene_render_targets()` + `frame_graph.recreate_transient_textures()`.
 
-`set_viewport_panel_rect()` (called each frame before render) passes the panel rect in physical pixels. The Metal renderer:
-- Clears the drawable to Catppuccin Mocha base color (24/255, 24/255, 37/255, 1.0)
-- Tonemaps the panel-sized HDR **directly into the drawable**, constrained to the panel rect via `set_viewport` + `set_scissor` (Metal viewport originY is bottom-up, so it's converted from the top-down panel rect). No separate viewport_0 intermediate or blit — rendering to a panel-sized intermediate and blitting caused a vertical duplication of the scene.
+`set_viewport_panel_rect()` (called each frame before render) passes the panel rect in physical pixels. In the editor preset, Metal tonemaps panel-sized HDR into the graph-owned `viewport_0` texture using texture-local coordinates, then the UI composites that texture into the drawable. When no UI composition pass is declared, the fullscreen output falls back to the drawable and converts the top-down panel origin to Metal's bottom-up viewport coordinates.
 
-When `viewport_panel_rect` is None, behavior is identical to full-screen rendering (panel size == swapchain extent).
+When `viewport_panel_rect` is `None`, scene passes use the full drawable extent. A UI-only or empty graph does not require scene depth, HDR targets, or a tonemap fence.
 
 3-set layout: Set 0 (per-frame uniforms + storage buffer), Set 1 (bindless texture array up to 4096), Set 2 (skeletal animation joints). Never use push constants.
 
 ### Render Graph
 
 Generic over `GpuRenderer`. `FrameGraphBuilder` provides fluent API. Passes live in `render_graph/passes/`. Automatic barrier insertion.
+
+The compiled dependency DAG and execution order are authoritative. Backends consume compiled pass identity and access metadata rather than maintaining a second name-based graph. Metal currently maps semantic `PassKind` values to fixed encoder implementations, but pass presence is optional: empty, UI-only, geometry-only, post-processed scene, and scene-without-UI topologies are valid. Any remaining singleton/order/unsupported-kind restriction must identify itself as a fixed-encoder limitation, not a core graph rule.
+
+A backend must not encode work for an absent pass. Scene-only resources such as depth/HDR targets and synchronization objects are required only when the selected schedule needs them. Submitted command buffers are checked after completion and terminal GPU failures are returned as structured `RendererError` values.
 
 ## ECS Architecture (katla_ecs)
 
