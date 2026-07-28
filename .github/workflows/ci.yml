@@ -20,21 +20,28 @@ jobs:
           ref: agent/application-owned-frame-graphs
           fetch-depth: 0
 
-      - name: Materialize reviewed patch
+      - name: Materialize reviewed patches
         run: |
           python3 - <<'PY'
           import base64
           import glob
           import zlib
 
-          encoded = ''.join(
-              open(path, encoding='utf-8').read()
-              for path in sorted(glob.glob('.agent/application-owned-patch/*'))
-          )
-          with open('/tmp/agent.patch', 'wb') as patch_file:
-              patch_file.write(zlib.decompress(base64.b64decode(encoded)))
+          def materialize(pattern: str, destination: str) -> None:
+              encoded = ''.join(
+                  open(path, encoding='utf-8').read()
+                  for path in sorted(glob.glob(pattern))
+              )
+              if not encoded:
+                  raise RuntimeError(f'No patch chunks matched {pattern}')
+              with open(destination, 'wb') as patch_file:
+                  patch_file.write(zlib.decompress(base64.b64decode(encoded)))
+
+          materialize('.agent/application-owned-patch/*', '/tmp/application-owned.patch')
+          materialize('.agent/application-owned-fix/*', '/tmp/application-owned-fix.patch')
           PY
-          git apply --index /tmp/agent.patch
+          git apply --index /tmp/application-owned.patch
+          git apply --index /tmp/application-owned-fix.patch
 
       - name: Install Rust and Linux graphics dependencies
         run: |
@@ -76,19 +83,20 @@ jobs:
 
       - name: Test application library
         id: test
-        if: steps.check.outcome == 'success'
+        if: always() && steps.check.outcome == 'success'
         continue-on-error: true
         run: |
           set -o pipefail
           cargo test -p katla_app --lib --locked 2>&1 | tee /tmp/katla-validation/cargo-test.log
 
-      - name: Lint application
+      - name: Lint application and graphics targets
         id: clippy
-        if: steps.check.outcome == 'success'
+        if: always() && steps.check.outcome == 'success'
         continue-on-error: true
         run: |
           set -o pipefail
-          cargo clippy -p katla_app --locked -- -D warnings 2>&1 | tee /tmp/katla-validation/cargo-clippy.log
+          cargo clippy -p katla_gfx -p katla_app --all-targets --locked -- -D warnings \
+            2>&1 | tee /tmp/katla-validation/cargo-clippy.log
 
       - name: Upload validation diagnostics
         if: always()
