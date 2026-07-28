@@ -50,12 +50,28 @@ jobs:
       - name: Format Rust workspace
         run: cargo fmt --all
 
+      - name: Package patched source
+        run: |
+          mkdir -p /tmp/katla-validation
+          tar \
+            --exclude=.git \
+            --exclude=.agent \
+            --exclude=target \
+            -czf /tmp/katla-validation/katla-patched-source.tar.gz .
+
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-frame-graph-source
+          path: /tmp/katla-validation/katla-patched-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Check application
         id: check
         continue-on-error: true
         run: |
           set -o pipefail
-          mkdir -p /tmp/katla-validation
           cargo check -p katla_app --locked 2>&1 | tee /tmp/katla-validation/cargo-check.log
 
       - name: Test application library
@@ -79,7 +95,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: application-frame-graph-validation
-          path: /tmp/katla-validation
+          path: |
+            /tmp/katla-validation/cargo-check.log
+            /tmp/katla-validation/cargo-test.log
+            /tmp/katla-validation/cargo-clippy.log
           if-no-files-found: error
           retention-days: 1
 
