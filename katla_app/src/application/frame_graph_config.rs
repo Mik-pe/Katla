@@ -124,7 +124,7 @@ impl FrameGraphBindings {
         Self {
             passes: FrameGraphPassBindings {
                 depth_prepass: Some("depth_prepass".into()),
-                picking: Some("geometry".into()),
+                picking: Some("object_id".into()),
                 geometry: Some("geometry".into()),
                 shadow: Some("shadow".into()),
                 outline: Some("outline".into()),
@@ -134,7 +134,7 @@ impl FrameGraphBindings {
                 wallhack_overlay: None,
             },
             resources: FrameGraphResourceBindings {
-                object_id: None,
+                object_id: Some("object_id".into()),
                 hdr_color: Some("hdr_color".into()),
                 viewport: Some("viewport_0".into()),
                 shadow_atlas: None,

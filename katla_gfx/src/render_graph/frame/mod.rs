@@ -4,6 +4,7 @@ mod depth_prepass;
 mod draw_calls;
 mod draw_helpers;
 mod graphics_pass;
+mod object_id_pass;
 mod outline_pass;
 mod parallel_geometry;
 mod parallel_shadow;
@@ -293,6 +294,9 @@ impl<'a> Frame<'a, VulkanRenderer> {
                     }
                     Some(super::pass::PassKind::Outline) => {
                         self.execute_outline_pass(&cmd, pass, data)?;
+                    }
+                    Some(super::pass::PassKind::ObjectId) => {
+                        self.execute_object_id_pass(&cmd, pass, data)?;
                     }
                     Some(super::pass::PassKind::StencilIndicator) => {
                         self.execute_stencil_indicator_pass(&cmd, pass, data)?;

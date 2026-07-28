@@ -313,6 +313,16 @@ impl ApplicationBuilder {
                 tracks_swapchain_size: true,
             })
             .create_resource(GraphResourceDesc {
+                name: "object_id".to_string(),
+                resource_type: GraphResourceType::ColorAttachment {
+                    clear_value: Some([0.0, 0.0, 0.0, 0.0]),
+                },
+                format: ImageFormat::R32Uint,
+                width: extent.width,
+                height: extent.height,
+                tracks_swapchain_size: true,
+            })
+            .create_resource(GraphResourceDesc {
                 name: "viewport_0".to_string(),
                 resource_type: GraphResourceType::ColorAttachment {
                     clear_value: Some([0.0, 0.0, 0.0, 1.0]),
@@ -337,6 +347,11 @@ impl ApplicationBuilder {
                     .read("hdr_color")
                     .write("hdr_color")
                     .with_kind(PassKind::Outline),
+            )
+            .add_pass(
+                SimplePass::new("object_id", PassType::Graphics)
+                    .write("object_id")
+                    .with_kind(PassKind::ObjectId),
             )
             .add_pass(
                 SimplePass::new("tonemap", PassType::Graphics)

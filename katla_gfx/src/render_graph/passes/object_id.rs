@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
-use crate::render_graph::pass::PassType;
+use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -77,7 +77,7 @@ impl PassBuilder for ObjectIdPass {
             }),
             uses_depth: true,
             depth_attachment: self.depth_config,
-            kind: None,
+            kind: Some(PassKind::ObjectId),
         }
     }
 }
