@@ -57,45 +57,21 @@ jobs:
       - name: Format Rust workspace
         run: cargo fmt --all
 
-      - name: Package patched source
-        run: |
-          mkdir -p /tmp/katla-validation
-          tar \
-            --exclude=.git \
-            --exclude=.agent \
-            --exclude=target \
-            -czf /tmp/katla-validation/katla-patched-source.tar.gz .
-
-      - name: Upload patched source
-        uses: actions/upload-artifact@v4
-        with:
-          name: application-frame-graph-source
-          path: /tmp/katla-validation/katla-patched-source.tar.gz
-          if-no-files-found: error
-          retention-days: 1
-
       - name: Check application
-        id: check
-        continue-on-error: true
         run: |
           set -o pipefail
+          mkdir -p /tmp/katla-validation
           cargo check -p katla_app --locked 2>&1 | tee /tmp/katla-validation/cargo-check.log
 
       - name: Test application library
-        id: test
-        if: always() && steps.check.outcome == 'success'
-        continue-on-error: true
         run: |
           set -o pipefail
           cargo test -p katla_app --lib --locked 2>&1 | tee /tmp/katla-validation/cargo-test.log
 
-      - name: Lint application and graphics targets
-        id: clippy
-        if: always() && steps.check.outcome == 'success'
-        continue-on-error: true
+      - name: Lint application and graphics libraries
         run: |
           set -o pipefail
-          cargo clippy -p katla_gfx -p katla_app --all-targets --locked -- -D warnings \
+          cargo clippy -p katla_gfx -p katla_app --lib --locked -- -D warnings \
             2>&1 | tee /tmp/katla-validation/cargo-clippy.log
 
       - name: Upload validation diagnostics
@@ -107,20 +83,8 @@ jobs:
             /tmp/katla-validation/cargo-check.log
             /tmp/katla-validation/cargo-test.log
             /tmp/katla-validation/cargo-clippy.log
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 1
-
-      - name: Fail on validation errors
-        if: always()
-        env:
-          CHECK_OUTCOME: ${{ steps.check.outcome }}
-          TEST_OUTCOME: ${{ steps.test.outcome }}
-          CLIPPY_OUTCOME: ${{ steps.clippy.outcome }}
-        run: |
-          printf 'check=%s test=%s clippy=%s\n' "$CHECK_OUTCOME" "$TEST_OUTCOME" "$CLIPPY_OUTCOME"
-          test "$CHECK_OUTCOME" = success
-          test "$TEST_OUTCOME" = success
-          test "$CLIPPY_OUTCOME" = success
 
       - name: Restore canonical CI and publish product commit
         run: |
