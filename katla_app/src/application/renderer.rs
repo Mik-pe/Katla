@@ -507,6 +507,12 @@ impl Application {
                 if let Some(pass_id) = ids.geometry {
                     frame.submit(pass_id, &draw_list);
                 }
+                if let Some(pass_id) = ids.picking
+                    && Some(pass_id) != ids.depth_prepass
+                    && Some(pass_id) != ids.geometry
+                {
+                    frame.submit(pass_id, &draw_list);
+                }
                 if let Some(pass_id) = ids.shadow {
                     frame.submit(pass_id, &shadow_draw_list);
                 }
@@ -534,11 +540,9 @@ impl Application {
                     // Defer recreation to the next frame to avoid complex re-entrancy.
                     // The next RedrawRequested will call recreate_swapchain via a flag.
                     self.needs_swapchain_recreate = true;
-                    return;
                 }
                 _ => {
                     log::error!("Frame render failed, skipping frame: {}", e);
-                    return;
                 }
             }
         }
@@ -1099,6 +1103,12 @@ impl Application {
 
             if !draw_list.is_empty() {
                 if let Some(pass_id) = ids.geometry {
+                    frame.submit(pass_id, &draw_list);
+                }
+                if let Some(pass_id) = ids.picking
+                    && Some(pass_id) != ids.depth_prepass
+                    && Some(pass_id) != ids.geometry
+                {
                     frame.submit(pass_id, &draw_list);
                 }
                 if let Some(pass_id) = ids.shadow {

@@ -40,6 +40,8 @@ pub enum PassKind {
     Shadow,
     /// Geometry — renders 3D scene geometry with material.
     Geometry,
+    /// Object-ID — renders stable object identifiers for GPU picking.
+    ObjectId,
     /// Particles — renders GPU particles with alpha blending.
     Particles,
     /// Outline — stencil-based selection highlight.

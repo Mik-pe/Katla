@@ -229,14 +229,11 @@ pub struct MetalRenderer {
     pub(crate) ui_font_atlas: Option<TextureHandle>,
     pub(crate) last_command_buffer: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
     pub(crate) pending_draw_list: Option<DrawList>,
-    pub(crate) pending_depth_prepass_draw_list: Option<DrawList>,
     pub(crate) light_culling: Option<MetalLightCulling>,
     pub(crate) ui_renderer: MetalUIRenderer,
     pub(crate) animation_system: Option<MetalAnimationSystem>,
     pub(crate) particle_system: Option<MetalParticleSubsystem>,
     pub(crate) pending_ui_draw_list: Option<crate::renderer::types::UIDrawList>,
-    pub(crate) pending_shadow_draw_list: Option<DrawList>,
-    pub(crate) pending_outline_draw_list: Option<DrawList>,
     pub(crate) shadow: MetalShadowSubsystem,
     pub(crate) depth_prepass: MetalDepthPrepass,
     pub(crate) outline: MetalOutlineSubsystem,
@@ -368,14 +365,11 @@ impl MetalRenderer {
             ui_font_atlas: None,
             last_command_buffer: None,
             pending_draw_list: None,
-            pending_depth_prepass_draw_list: None,
             light_culling: None,
             ui_renderer: MetalUIRenderer::new(),
             animation_system: None,
             particle_system: None,
             pending_ui_draw_list: None,
-            pending_shadow_draw_list: None,
-            pending_outline_draw_list: None,
             shadow: MetalShadowSubsystem::new(),
             depth_prepass: MetalDepthPrepass::new(),
             outline: MetalOutlineSubsystem::new(),
@@ -591,81 +585,14 @@ impl MetalRenderer {
 
     fn execute_metal_passes(
         &mut self,
-        mut pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
+        pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
         frame_graph: &crate::render_graph::FrameGraph<Self>,
         _frame_idx: usize,
     ) -> Result<(), RendererError> {
-        let schedule = super::frame_schedule::MetalFrameSchedule::compile(frame_graph)
+        let plan = super::execution_plan::MetalExecutionPlan::compile(frame_graph)
             .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
 
-        self.pending_shadow_draw_list = None;
-        self.pending_depth_prepass_draw_list = None;
-        self.pending_draw_list = None;
-        self.pending_outline_draw_list = None;
-        self.pending_ui_draw_list = None;
-
-        for scheduled in schedule.passes() {
-            let Some(data) = pending.remove(&scheduled.pass_index) else {
-                continue;
-            };
-
-            match scheduled.kind {
-                crate::render_graph::PassKind::Shadow => {
-                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
-                    if !draw_list.draws.is_empty() {
-                        self.pending_shadow_draw_list = Some(draw_list);
-                    }
-                }
-                crate::render_graph::PassKind::DepthPrepass => {
-                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
-                    if !draw_list.draws.is_empty() {
-                        self.pending_depth_prepass_draw_list = Some(draw_list);
-                    }
-                }
-                crate::render_graph::PassKind::Geometry => {
-                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
-                    if !draw_list.draws.is_empty() {
-                        self.pending_draw_list = Some(draw_list);
-                    }
-                }
-                crate::render_graph::PassKind::Outline => {
-                    let draw_list = Self::merge_draw_lists(&data.draw_lists);
-                    if !draw_list.draws.is_empty() {
-                        self.pending_outline_draw_list = Some(draw_list);
-                    }
-                }
-                crate::render_graph::PassKind::Ui => {
-                    if let Some(ui_list) = data.ui_draw_lists.first() {
-                        self.pending_ui_draw_list = Some(ui_list.clone());
-                    }
-                }
-                crate::render_graph::PassKind::Fullscreen => {}
-                crate::render_graph::PassKind::Particles
-                | crate::render_graph::PassKind::StencilIndicator
-                | crate::render_graph::PassKind::Compositing => unreachable!(
-                    "unsupported Metal pass kinds are rejected while compiling the schedule"
-                ),
-            }
-        }
-
-        if let Some(pass_index) = pending.keys().next().copied() {
-            return Err(RendererError::InvalidOperation(format!(
-                "Metal received submissions for unscheduled pass index {pass_index}"
-            )));
-        }
-
-        self.render_frame(&schedule)?;
-        Ok(())
-    }
-
-    fn merge_draw_lists(draw_lists: &[std::rc::Rc<DrawList>]) -> DrawList {
-        let combined: Vec<_> = draw_lists.iter().map(|rc| (**rc).clone()).collect();
-        combined.into_iter().fold(DrawList::new(), |mut acc, dl| {
-            for d in dl.draws {
-                acc.push(d);
-            }
-            acc
-        })
+        self.render_frame(&plan, pending)
     }
 
     /// Initialize the Forward+ light culling system.
@@ -1905,12 +1832,20 @@ mod tests {
 
         // Run the frame lifecycle
         renderer.begin_frame().expect("begin_frame failed");
-        let schedule = crate::metal::frame_schedule::MetalFrameSchedule::for_test(&[
+        let plan = crate::metal::execution_plan::MetalExecutionPlan::for_test(&[
             crate::render_graph::PassKind::Geometry,
             crate::render_graph::PassKind::Fullscreen,
         ]);
+        let mut pending = std::collections::HashMap::new();
+        pending.insert(
+            0,
+            crate::render_graph::PassExecutionData {
+                draw_lists: vec![std::rc::Rc::new(draw_list)],
+                ..Default::default()
+            },
+        );
         renderer
-            .render_frame(&schedule)
+            .render_frame(&plan, pending)
             .expect("render_frame failed");
         renderer.end_frame().expect("end_frame failed");
 
