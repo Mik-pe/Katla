@@ -4,6 +4,7 @@ use winit::keyboard::KeyCode;
 
 use crate::application::Application;
 use crate::gizmo::*;
+#[cfg(target_os = "macos")]
 use katla_gfx::GpuRenderer;
 use katla_gfx::primitives;
 use katla_math::Vec2;

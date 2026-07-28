@@ -20,7 +20,7 @@ impl Application {
 
         // Wait for any pending async readback to complete before destroying resources
         // This must happen BEFORE wait_for_device() to ensure readback finishes
-        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer {
+        if let Some(vulkan_renderer) = self.renderer.as_vulkan() {
             match vulkan_renderer.wait_for_pending_readback() {
                 Ok(Some((frame, image_data))) => {
                     info!("Saving final frame {} before shutdown", frame);
@@ -170,8 +170,12 @@ impl Application {
             &mut self.renderer,
         );
 
-        // Update particle emitters from ECS components
-        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
+        let uses_katla_scene = self.frame_graph_runtime.uses_katla_scene();
+
+        // Built-in scene subsystems must not run for an application-owned graph.
+        // A custom graph may own entirely different compute/animation work.
+        if uses_katla_scene
+            && let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
             && let Some(ref mut ps) = vulkan_renderer.particle_system
         {
             self.particle_system.update(&mut self.world, ps, dt);
@@ -183,7 +187,8 @@ impl Application {
         }
 
         // Update GPU animation: prepare data and upload per-frame params
-        if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
+        if uses_katla_scene
+            && let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
             && let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
                 &mut self.gpu_animation_system,
                 &mut vulkan_renderer.animation_pipeline,

@@ -4,6 +4,10 @@
 //! typically needed for building a game.
 
 pub use crate::application::ApplicationBuilder;
+pub use crate::application::frame_graph_config::{
+    ApplicationFrameGraph, FrameGraphBindings, FrameGraphPassBindings, FrameGraphResourceBindings,
+    FrameGraphRuntime, KatlaEditorFrameGraphPreset, empty_frame_graph,
+};
 pub use crate::error::{AppError, AppResult};
 pub use crate::rendering::FrameContext;
 pub use crate::spawner::Spawner;

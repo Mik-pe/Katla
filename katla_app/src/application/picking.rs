@@ -14,6 +14,12 @@ impl Application {
     ///    converting viewport-relative logical coords to full-render-target physical pixel coords
     /// 3. On subsequent frames: Check if the readback completed, resolve instance_index -> EntityId
     pub(crate) fn process_picking(&mut self) {
+        if !self.frame_graph_runtime.uses_katla_scene() || self.pass_ids.picking.is_none() {
+            self.editor.pending_pick = None;
+            return;
+        }
+
+        let object_id_resource = self.frame_graph_bindings.resources.object_id.clone();
         let picked_result = match &mut self.renderer {
             katla_gfx::AnyRenderer::Vulkan(r) => r.check_picking_readback().ok().flatten(),
             #[cfg(target_os = "macos")]
@@ -61,15 +67,17 @@ impl Application {
             let pick_w = self.panel_rt_size.width.max(1);
             let pick_h = self.panel_rt_size.height.max(1);
             let physical_x = ((rel_x / panel_width) * pick_w as f32) as u32;
-            let mut physical_y = ((rel_y / panel_height) * pick_h as f32) as u32;
+            let physical_y = ((rel_y / panel_height) * pick_h as f32) as u32;
 
             // Metal's viewport maps clip Y = +1 → pixel Y = 0 (top), which inverts Y
             // compared to the tonemapped display. Flip the readback Y so that
             // screen-top (rel_y=0) reads the pixel corresponding to what the user sees.
             #[cfg(target_os = "macos")]
-            if matches!(self.renderer, katla_gfx::AnyRenderer::Metal(_)) {
-                physical_y = pick_h.saturating_sub(1 + physical_y);
-            }
+            let physical_y = if matches!(self.renderer, katla_gfx::AnyRenderer::Metal(_)) {
+                pick_h.saturating_sub(1 + physical_y)
+            } else {
+                physical_y
+            };
 
             if physical_x >= pick_w || physical_y >= pick_h {
                 log::debug!(
@@ -84,11 +92,17 @@ impl Application {
 
             match &mut self.renderer {
                 katla_gfx::AnyRenderer::Vulkan(r) => {
+                    let Some(object_id_resource) = object_id_resource.as_deref() else {
+                        log::debug!(
+                            "Skipping Vulkan picking because no object-ID resource is bound"
+                        );
+                        return;
+                    };
                     let frame_idx = r.current_frame();
                     if let Some(transient) = self
                         .frame_graph
                         .as_vulkan()
-                        .transient_texture("object_id", frame_idx)
+                        .transient_texture(object_id_resource, frame_idx)
                     {
                         let image = transient.image;
                         let current_layout = transient.current_layout();
@@ -112,7 +126,10 @@ impl Application {
                             }
                         }
                     } else {
-                        log::warn!("Object-ID transient texture not found for picking readback");
+                        log::warn!(
+                            "Bound object-ID resource '{}' was not available for picking readback",
+                            object_id_resource
+                        );
                     }
                 }
                 #[cfg(target_os = "macos")]

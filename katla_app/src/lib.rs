@@ -29,6 +29,10 @@ pub use error::{AppError, AppResult};
 #[cfg(feature = "editor")]
 pub use gui_state::GuiState;
 
+pub use application::frame_graph_config::{
+    ApplicationFrameGraph, FrameGraphBindings, FrameGraphPassBindings, FrameGraphResourceBindings,
+    FrameGraphRuntime, KatlaEditorFrameGraphPreset, empty_frame_graph,
+};
 pub use preferences::Preferences;
 pub use renderer_type::{FrameGraph, Renderer};
 pub use rendering::FrameContext;

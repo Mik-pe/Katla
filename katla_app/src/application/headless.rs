@@ -30,17 +30,20 @@ impl Application {
     /// same render graph) but with an offscreen texture instead of a window drawable.
     pub fn run_headless(&mut self) -> AppResult<()> {
         let max_frames = self.info.max_frames.unwrap_or(10);
+        #[cfg(target_os = "macos")]
         let screenshot_path = self
             .info
             .screenshot_path
             .clone()
             .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
 
-        let mut ui_test = self
+        let ui_test = self
             .info
             .ui_test_path
             .as_ref()
             .map(|dir| crate::application::ui_test::UiTestRunner::new(dir.clone()));
+        #[cfg(all(target_os = "macos", feature = "editor"))]
+        let mut ui_test = ui_test;
 
         info!(
             "Running {} headless frames at {}x{}",
@@ -58,7 +61,7 @@ impl Application {
         #[cfg(target_os = "macos")]
         let mut last_offscreen: Option<MetalTextureRetained> = None;
 
-        for frame in 0..max_frames {
+        for _frame in 0..max_frames {
             #[cfg(target_os = "macos")]
             {
                 last_offscreen = self.run_one_headless_frame();
@@ -68,7 +71,7 @@ impl Application {
             #[cfg(all(target_os = "macos", feature = "editor"))]
             if let Some(ref mut runner) = ui_test
                 && let Some(screenshot_dest) =
-                    runner.on_frame(frame, &mut self.editor.editor_ui, &self.world)
+                    runner.on_frame(_frame, &mut self.editor.editor_ui, &self.world)
             {
                 self.save_headless_screenshot(&screenshot_dest, last_offscreen.clone())?;
             }
