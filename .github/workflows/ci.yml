@@ -24,7 +24,7 @@ env:
 jobs:
   source-export:
     name: Export source snapshot
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/source-export-temp'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -44,7 +44,7 @@ jobs:
 
   linux-graphics:
     name: Linux graphics quality
-    if: github.event_name != 'workflow_dispatch'
+    if: github.head_ref != 'agent/source-export-temp'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -81,7 +81,7 @@ jobs:
 
   macos-26:
     name: macOS 26 / Metal
-    if: github.event_name != 'workflow_dispatch'
+    if: github.head_ref != 'agent/source-export-temp'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
