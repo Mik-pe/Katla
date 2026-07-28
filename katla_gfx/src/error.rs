@@ -37,6 +37,17 @@ impl ValidationMode {
 
 use crate::vulkan::material::compiler::MaterialError;
 
+/// Native details captured when a submitted GPU command buffer fails.
+#[derive(Debug)]
+pub struct GpuExecutionFailure {
+    pub backend: &'static str,
+    pub label: String,
+    pub status: String,
+    pub code: Option<i64>,
+    pub domain: Option<String>,
+    pub description: Option<String>,
+}
+
 /// Unified error type for the renderer.
 #[derive(Debug)]
 pub enum RendererError {
@@ -70,14 +81,7 @@ pub enum RendererError {
     MaterialError(MaterialError),
 
     /// A submitted GPU command buffer reached a terminal failure state.
-    GpuExecutionFailed {
-        backend: &'static str,
-        label: String,
-        status: String,
-        code: Option<i64>,
-        domain: Option<String>,
-        description: Option<String>,
-    },
+    GpuExecutionFailed(Box<GpuExecutionFailure>),
 
     /// Exceeded maximum objects per frame limit.
     ObjectLimitExceeded {
@@ -106,14 +110,15 @@ impl fmt::Display for RendererError {
             }
             RendererError::RenderGraphError(err) => write!(f, "Render graph error: {}", err),
             RendererError::MaterialError(err) => write!(f, "Material error: {}", err),
-            RendererError::GpuExecutionFailed {
-                backend,
-                label,
-                status,
-                code,
-                domain,
-                description,
-            } => {
+            RendererError::GpuExecutionFailed(details) => {
+                let GpuExecutionFailure {
+                    backend,
+                    label,
+                    status,
+                    code,
+                    domain,
+                    description,
+                } = details.as_ref();
                 write!(
                     f,
                     "{} GPU execution failed for command buffer '{}' (status={}",

@@ -1,6 +1,6 @@
 use objc2_metal::{MTLCommandBuffer, MTLCommandBufferStatus};
 
-use crate::error::RendererError;
+use crate::error::{GpuExecutionFailure, RendererError};
 use crate::texture::ImageFormat;
 
 use super::metal_renderer::MetalRenderer;
@@ -23,14 +23,16 @@ impl MetalRenderer {
                     .as_ref()
                     .map(|value| value.localizedDescription().to_string());
 
-                return Err(RendererError::GpuExecutionFailed {
-                    backend: "Metal",
-                    label,
-                    status: format!("{status:?}"),
-                    code,
-                    domain,
-                    description,
-                });
+                return Err(RendererError::GpuExecutionFailed(Box::new(
+                    GpuExecutionFailure {
+                        backend: "Metal",
+                        label,
+                        status: format!("{status:?}"),
+                        code,
+                        domain,
+                        description,
+                    },
+                )));
             }
         }
         Ok(())
