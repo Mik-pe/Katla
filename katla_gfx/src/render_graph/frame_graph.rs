@@ -100,7 +100,7 @@ pub struct FrameGraph<B: RenderGraphBackend> {
 // --- Backend-agnostic methods ---
 impl<B: RenderGraphBackend> FrameGraph<B> {
     /// Create a new empty frame graph.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             passes: Vec::new(),
             resources: Vec::new(),

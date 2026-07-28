@@ -9,14 +9,18 @@ impl Application {
     pub fn init(&mut self) -> Result<(), AppError> {
         info!("Application::init() called");
 
-        // Register scene resources
-        self.world
-            .insert_resource(crate::resources::AmbientLight::default());
+        let uses_katla_scene = self.frame_graph_runtime.uses_katla_scene();
+        if uses_katla_scene {
+            self.world
+                .insert_resource(crate::resources::AmbientLight::default());
 
-        match &mut self.renderer {
-            katla_gfx::AnyRenderer::Vulkan(_) => self.init_vulkan()?,
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => self.init_metal()?,
+            match &mut self.renderer {
+                katla_gfx::AnyRenderer::Vulkan(_) => self.init_vulkan()?,
+                #[cfg(target_os = "macos")]
+                katla_gfx::AnyRenderer::Metal(_) => self.init_metal()?,
+            }
+        } else {
+            info!("Skipping Katla scene renderer initialization for graph-only runtime");
         }
 
         match crate::systems::AudioSystem::new() {
@@ -52,16 +56,19 @@ impl Application {
             }
         }
 
-        // Load scene from disk
-        let scene_path_str = self
-            .info
-            .scene_path
-            .clone()
-            .unwrap_or_else(|| crate::scene::default_scene_path().display().to_string());
-        let scene_path = std::path::Path::new(&scene_path_str);
-        match crate::scene::SceneManager::load_from_file(self, scene_path) {
-            Ok(()) => info!("Loaded scene from {}", scene_path_str),
-            Err(e) => error!("Failed to load scene from {}: {}", scene_path_str, e),
+        if uses_katla_scene {
+            let scene_path_str = self
+                .info
+                .scene_path
+                .clone()
+                .unwrap_or_else(|| crate::scene::default_scene_path().display().to_string());
+            let scene_path = std::path::Path::new(&scene_path_str);
+            match crate::scene::SceneManager::load_from_file(self, scene_path) {
+                Ok(()) => info!("Loaded scene from {}", scene_path_str),
+                Err(e) => error!("Failed to load scene from {}: {}", scene_path_str, e),
+            }
+        } else {
+            info!("Skipping implicit scene loading for graph-only runtime");
         }
 
         info!("Application::init() completed");
@@ -396,7 +403,8 @@ impl Application {
         }
 
         // Re-resolve pass IDs after insert_pass calls may have shifted indices
-        self.pass_ids.refresh(&self.frame_graph);
+        self.pass_ids
+            .refresh(&self.frame_graph, &self.frame_graph_bindings.passes)?;
 
         // Initialize transient textures and register with bindless system
         self.frame_graph
@@ -405,77 +413,90 @@ impl Application {
                 reason: format!("Failed to initialize transient textures: {e}"),
             })?;
 
-        // Register HDR texture with bindless system for tonemapping
-        let hdr_bindless_index = self
-            .frame_graph
-            .register_transient_texture_bindless(&mut self.renderer, "hdr_color")
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to register HDR texture with bindless system: {e}"),
-            })?;
+        let hdr_bindless_index =
+            if let Some(name) = self.frame_graph_bindings.resources.hdr_color.as_deref() {
+                let index = self
+                    .frame_graph
+                    .register_transient_texture_bindless(&mut self.renderer, name)
+                    .map_err(|e| AppError::RendererInitFailed {
+                        reason: format!(
+                            "Failed to register HDR resource '{name}' with bindless system: {e}"
+                        ),
+                    })?;
+                info!("HDR resource '{name}' registered at bindless index {index}");
+                Some(index)
+            } else {
+                None
+            };
 
-        info!(
-            "HDR texture registered with bindless system at index {}",
-            hdr_bindless_index
-        );
+        if let (Some(pass_id), Some(texture_index)) = (self.pass_ids.tonemap, hdr_bindless_index) {
+            self.frame_graph
+                .set_tonemap_texture_index(pass_id, texture_index)
+                .map_err(|e| AppError::RendererInitFailed {
+                    reason: format!("Failed to set tonemap texture index: {e}"),
+                })?;
+        }
 
-        // Set HDR texture index on tonemap pass
-        self.frame_graph
-            .set_tonemap_texture_index(self.pass_ids.tonemap, hdr_bindless_index)
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to set tonemap texture index: {e}"),
-            })?;
-
-        // Register viewport texture with bindless system for viewport rendering
-        let viewport_bindless_index = self
-            .frame_graph
-            .register_transient_texture_bindless(&mut self.renderer, "viewport_0")
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to register viewport texture with bindless system: {e}"),
-            })?;
-
-        info!(
-            "Viewport texture registered with bindless system at index {}",
-            viewport_bindless_index
-        );
-
-        // Set LDR texture base index for compositing shader to use
-        self.frame_graph
-            .as_vulkan_mut()
-            .set_ldr_texture_base_index(viewport_bindless_index);
-
-        // Set viewport bindless index in editor UI
-        #[cfg(feature = "editor")]
-        {
-            self.editor
-                .editor_ui
-                .set_viewport_bindless_index(viewport_bindless_index);
-
-            let stencil_indicator_index = self
+        let viewport_bindless_index =
+            if let Some(name) = self.frame_graph_bindings.resources.viewport.as_deref() {
+                let index = self
                 .frame_graph
-                .register_transient_texture_bindless(&mut self.renderer, "stencil_indicator")
+                .register_transient_texture_bindless(&mut self.renderer, name)
                 .map_err(|e| AppError::RendererInitFailed {
                     reason: format!(
-                        "Failed to register stencil indicator texture with bindless system: {e}"
+                        "Failed to register viewport resource '{name}' with bindless system: {e}"
                     ),
                 })?;
+                self.frame_graph
+                    .as_vulkan_mut()
+                    .set_ldr_texture_base_index(index);
+                info!("Viewport resource '{name}' registered at bindless index {index}");
+                Some(index)
+            } else {
+                None
+            };
 
-            info!(
-                "Stencil indicator texture registered with bindless at index {}",
-                stencil_indicator_index
-            );
+        #[cfg(feature = "editor")]
+        {
+            if let Some(viewport_index) = viewport_bindless_index {
+                self.editor
+                    .editor_ui
+                    .set_viewport_bindless_index(viewport_index);
+            }
 
-            self.editor.stencil_indicator_bindless_index = Some(stencil_indicator_index);
+            let stencil_indicator_index = if let Some(name) = self
+                .frame_graph_bindings
+                .resources
+                .stencil_indicator
+                .as_deref()
+            {
+                let index = self
+                    .frame_graph
+                    .register_transient_texture_bindless(&mut self.renderer, name)
+                    .map_err(|e| AppError::RendererInitFailed {
+                        reason: format!(
+                            "Failed to register stencil-indicator resource '{name}': {e}"
+                        ),
+                    })?;
+                self.editor.stencil_indicator_bindless_index = Some(index);
+                Some(index)
+            } else {
+                self.editor.stencil_indicator_bindless_index = None;
+                None
+            };
 
-            self.frame_graph
-                .as_vulkan_mut()
-                .set_overlay_texture_indices(
-                    self.pass_ids.wallhack_overlay,
-                    viewport_bindless_index,
-                    stencil_indicator_index,
-                )
-                .map_err(|e| AppError::RendererInitFailed {
-                    reason: format!("Failed to set wallhack overlay texture indices: {e}"),
-                })?;
+            if let (Some(pass_id), Some(viewport_index), Some(stencil_index)) = (
+                self.pass_ids.wallhack_overlay,
+                viewport_bindless_index,
+                stencil_indicator_index,
+            ) {
+                self.frame_graph
+                    .as_vulkan_mut()
+                    .set_overlay_texture_indices(pass_id, viewport_index, stencil_index)
+                    .map_err(|e| AppError::RendererInitFailed {
+                        reason: format!("Failed to set wallhack overlay texture indices: {e}"),
+                    })?;
+            }
         }
 
         Ok(())
@@ -688,10 +709,15 @@ impl Application {
         }
 
         // Set tonemap texture index on the tonemap pass
-        if let Some(hdr_idx) = self.renderer.geometry_hdr_bindless_index() {
+        if let (Some(pass_id), Some(hdr_idx)) = (
+            self.pass_ids.tonemap,
+            self.renderer.geometry_hdr_bindless_index(),
+        ) {
             self.frame_graph
-                .set_tonemap_texture_index(self.pass_ids.tonemap, hdr_idx)
-                .ok();
+                .set_tonemap_texture_index(pass_id, hdr_idx)
+                .map_err(|e| AppError::RendererInitFailed {
+                    reason: format!("Failed to set Metal tonemap texture index: {e}"),
+                })?;
             info!("Tonemap pass HDR texture index set to {} (Metal)", hdr_idx);
         }
 

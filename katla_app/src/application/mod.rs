@@ -21,6 +21,7 @@ pub mod editor;
 #[cfg(feature = "editor")]
 mod editor_methods;
 mod events;
+pub mod frame_graph_config;
 mod frame_loop;
 mod game_state;
 #[cfg(feature = "editor")]
@@ -277,49 +278,70 @@ impl EditorState {
     }
 }
 
-/// Cached pass IDs from the frame graph, resolved once at startup.
+/// Cached optional pass IDs resolved from the application-selected bindings.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct PassIds {
-    pub(crate) depth_prepass: katla_gfx::render_graph::PassId,
-    pub(crate) geometry: katla_gfx::render_graph::PassId,
-    pub(crate) shadow: katla_gfx::render_graph::PassId,
-    pub(crate) outline: katla_gfx::render_graph::PassId,
-    pub(crate) stencil_indicator: katla_gfx::render_graph::PassId,
-    pub(crate) ui: katla_gfx::render_graph::PassId,
-    pub(crate) tonemap: katla_gfx::render_graph::PassId,
-    pub(crate) wallhack_overlay: katla_gfx::render_graph::PassId,
-}
-
-impl Default for PassIds {
-    fn default() -> Self {
-        Self {
-            depth_prepass: katla_gfx::render_graph::PassId(0),
-            geometry: katla_gfx::render_graph::PassId(0),
-            shadow: katla_gfx::render_graph::PassId(0),
-            outline: katla_gfx::render_graph::PassId(0),
-            stencil_indicator: katla_gfx::render_graph::PassId(0),
-            ui: katla_gfx::render_graph::PassId(0),
-            tonemap: katla_gfx::render_graph::PassId(0),
-            wallhack_overlay: katla_gfx::render_graph::PassId(0),
-        }
-    }
+    pub(crate) depth_prepass: Option<katla_gfx::render_graph::PassId>,
+    pub(crate) picking: Option<katla_gfx::render_graph::PassId>,
+    pub(crate) geometry: Option<katla_gfx::render_graph::PassId>,
+    pub(crate) shadow: Option<katla_gfx::render_graph::PassId>,
+    pub(crate) outline: Option<katla_gfx::render_graph::PassId>,
+    pub(crate) stencil_indicator: Option<katla_gfx::render_graph::PassId>,
+    pub(crate) ui: Option<katla_gfx::render_graph::PassId>,
+    pub(crate) tonemap: Option<katla_gfx::render_graph::PassId>,
+    pub(crate) wallhack_overlay: Option<katla_gfx::render_graph::PassId>,
 }
 
 impl PassIds {
-    /// Re-resolve all PassIds from the frame graph by name.
-    /// Must be called after any `insert_pass` calls that shift indices.
-    pub(crate) fn refresh(&mut self, graph: &FrameGraph) {
-        self.depth_prepass = graph.pass_id("depth_prepass").unwrap_or(self.depth_prepass);
-        self.geometry = graph.pass_id("geometry").unwrap_or(self.geometry);
-        self.shadow = graph.pass_id("shadow").unwrap_or(self.shadow);
-        self.outline = graph.pass_id("outline").unwrap_or(self.outline);
-        self.stencil_indicator = graph
-            .pass_id("stencil_indicator")
-            .unwrap_or(self.stencil_indicator);
-        self.ui = graph.pass_id("ui").unwrap_or(self.ui);
-        self.tonemap = graph.pass_id("tonemap").unwrap_or(self.tonemap);
-        self.wallhack_overlay = graph
-            .pass_id("wallhack_overlay")
-            .unwrap_or(self.wallhack_overlay);
+    pub(crate) fn resolve(
+        graph: &FrameGraph,
+        bindings: &frame_graph_config::FrameGraphPassBindings,
+    ) -> crate::AppResult<Self> {
+        fn resolve_one(
+            graph: &FrameGraph,
+            role: &str,
+            name: &Option<String>,
+        ) -> crate::AppResult<Option<katla_gfx::render_graph::PassId>> {
+            let Some(name) = name.as_deref() else {
+                return Ok(None);
+            };
+
+            graph
+                .pass_id(name)
+                .map(Some)
+                .ok_or_else(|| crate::AppError::Other {
+                    message: format!(
+                        "Frame-graph binding '{role}' references missing pass '{name}'"
+                    ),
+                })
+        }
+
+        Ok(Self {
+            depth_prepass: resolve_one(graph, "depth_prepass", &bindings.depth_prepass)?,
+            picking: resolve_one(graph, "picking", &bindings.picking)?,
+            geometry: resolve_one(graph, "geometry", &bindings.geometry)?,
+            shadow: resolve_one(graph, "shadow", &bindings.shadow)?,
+            outline: resolve_one(graph, "outline", &bindings.outline)?,
+            stencil_indicator: resolve_one(
+                graph,
+                "stencil_indicator",
+                &bindings.stencil_indicator,
+            )?,
+            ui: resolve_one(graph, "ui", &bindings.ui)?,
+            tonemap: resolve_one(graph, "tonemap", &bindings.tonemap)?,
+            wallhack_overlay: resolve_one(graph, "wallhack_overlay", &bindings.wallhack_overlay)?,
+        })
+    }
+
+    /// Re-resolve every capability after graph mutation. Missing bindings become
+    /// `None`; stale pass IDs are never retained.
+    pub(crate) fn refresh(
+        &mut self,
+        graph: &FrameGraph,
+        bindings: &frame_graph_config::FrameGraphPassBindings,
+    ) -> crate::AppResult<()> {
+        *self = Self::resolve(graph, bindings)?;
+        Ok(())
     }
 }
 
@@ -330,6 +352,8 @@ pub struct Application {
     pub(crate) renderer: Renderer,
     pub(crate) frame_graph: FrameGraph,
     pub(crate) pass_ids: PassIds,
+    pub(crate) frame_graph_bindings: frame_graph_config::FrameGraphBindings,
+    pub(crate) frame_graph_runtime: frame_graph_config::FrameGraphRuntime,
     pub(crate) camera: Camera,
     pub(crate) gltf_cache: GltfCache,
     pub(crate) timer: Timer,

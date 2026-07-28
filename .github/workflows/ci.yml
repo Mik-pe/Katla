@@ -1,74 +1,88 @@
-name: Materialize application-owned frame graphs
+name: CI
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: application-frame-graph-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
-  materialize-product-commit:
-    if: github.head_ref == 'agent/application-owned-frame-graphs'
+  linux-graphics:
+    name: Linux graphics quality
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 40
     steps:
-      - name: Check out patch branch
+      - name: Check out repository
         uses: actions/checkout@v6
-        with:
-          ref: agent/application-owned-frame-graphs
-          fetch-depth: 0
 
-      - name: Materialize reviewed patches
+      - name: Install stable Rust
         run: |
-          python3 - <<'PY'
-          import base64
-          import glob
-          import hashlib
-          import zlib
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
 
-          def materialize(pattern: str, destination: str, expected_sha256: str | None = None) -> None:
-              chunks = sorted(glob.glob(pattern))
-              if not chunks:
-                  raise RuntimeError(f'No patch chunks matched {pattern}')
-              encoded = ''.join(
-                  open(path, encoding='utf-8').read().strip()
-                  for path in chunks
-              )
-              decoded = zlib.decompress(base64.b64decode(encoded, validate=True))
-              digest = hashlib.sha256(decoded).hexdigest()
-              if expected_sha256 is not None and digest != expected_sha256:
-                  raise RuntimeError(
-                      f'{pattern} digest mismatch: expected {expected_sha256}, got {digest}'
-                  )
-              with open(destination, 'wb') as patch_file:
-                  patch_file.write(decoded)
-
-          materialize('.agent/application-owned-patch/*', '/tmp/application-owned.patch')
-          materialize(
-              '.agent/application-owned-fix/*',
-              '/tmp/application-owned-fix.patch',
-              'd46191f6f23cf327f4576be8301f03602a08b46000da6aa78a958b4235ae1f89',
-          )
-          PY
-          git apply --index /tmp/application-owned.patch
-          git apply --index /tmp/application-owned-fix.patch
-
-      - name: Format Rust workspace
-        run: cargo fmt --all
-
-      - name: Publish clean product commit
+      - name: Install Linux graphics dependencies
         run: |
-          rm -rf .agent
-          git fetch origin main
-          git checkout origin/main -- .github/workflows/ci.yml
-          git add -A
-          git config user.name "OpenAI"
-          git config user.email "noreply@openai.com"
-          git commit -m "Make application frame graphs configurable"
-          git push origin HEAD:agent/application-owned-frame-graphs
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libvulkan1 \
+            mesa-vulkan-drivers \
+            vulkan-tools \
+            vulkan-validationlayers
+          vulkaninfo --summary
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check graphics library
+        run: cargo check -p katla_gfx --lib --locked --quiet
+
+      - name: Test graphics library
+        run: cargo test -p katla_gfx --lib --locked --quiet
+
+      - name: Lint graphics library
+        run: cargo clippy -p katla_gfx --lib --locked --quiet -- -D warnings
+
+  macos-26:
+    name: macOS 26 / Metal
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Report runner environment
+        run: |
+          sw_vers
+          uname -m
+          xcodebuild -version
+          system_profiler SPDisplaysDataType || true
+
+      - name: Check graphics and application crates
+        run: cargo check -p katla_gfx -p katla_app --locked --quiet
+
+      - name: Test graphics library
+        run: cargo test -p katla_gfx --lib --locked --quiet
+
+      - name: Lint graphics and application crates
+        run: cargo clippy -p katla_gfx -p katla_app --locked --quiet -- -D warnings

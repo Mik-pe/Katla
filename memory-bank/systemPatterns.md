@@ -67,6 +67,10 @@ The compiled dependency DAG and execution order are authoritative. Backends cons
 
 A backend must not encode work for an absent pass. Scene-only resources such as depth/HDR targets and synchronization objects are required only when the selected schedule needs them. Submitted command buffers are checked after completion and terminal GPU failures are returned as structured `RendererError` values.
 
+Frame-graph topology is application policy. `ApplicationBuilder::with_frame_graph` receives the initialized backend and resource paths exactly once and returns an `ApplicationFrameGraph`; construction errors propagate without fallback. `ApplicationFrameGraph::new` selects `GraphOnly`, which executes the graph without Katla injecting scene, shadow, post-processing, particle, animation, picking, or editor work. The existing scene/editor pipeline is selected through the explicit `KatlaEditorFrameGraphPreset`.
+
+Katla's optional built-in runtime resolves pass and transient-resource roles from `FrameGraphBindings`. Absence is represented by `Option`, never `PassId(0)` or another valid-ID sentinel. Bindings are validated at construction, re-resolved after graph mutation, and all submission, resize, bindless, picking, and per-frame subsystem work must check the corresponding capability.
+
 ## ECS Architecture (katla_ecs)
 
 ### EntityId
