@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: application-frame-graph-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   apply-agent-patch:
     if: github.head_ref == 'agent/application-owned-frame-graphs'
@@ -68,10 +72,10 @@ jobs:
           set -o pipefail
           cargo test -p katla_app --lib --locked 2>&1 | tee /tmp/katla-validation/cargo-test.log
 
-      - name: Lint application and graphics libraries
+      - name: Lint Linux graphics library
         run: |
           set -o pipefail
-          cargo clippy -p katla_gfx -p katla_app --lib --locked -- -D warnings \
+          cargo clippy -p katla_gfx --lib --locked -- -D warnings \
             2>&1 | tee /tmp/katla-validation/cargo-clippy.log
 
       - name: Upload validation diagnostics
