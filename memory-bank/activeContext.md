@@ -4,7 +4,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **Render graph next stage** — application-owned graph selection, optional pass/resource capabilities, and the explicit Katla editor preset are being finalized. Fully plan-driven Metal encoding remains active follow-up work alongside #30–#37.
+- **Render graph execution-plan migration** — Fully plan-driven Metal encoding remains active follow-up work in #56 alongside #30–#37; application-owned graph selection, optional pass/resource capabilities, and the explicit Katla editor preset are complete.
 - **PhysicsActive(false) at builder init** — physics is now off in editing mode (the default). PlayStart action sets it to true, PlayStop sets it back to false. SceneSnapshot preserves physics components for restore on stop.
 - **State slot stability** — ConsoleView and MixerView now always call `ctx.state()` unconditionally (even when their env is not set) to prevent slot shifts that corrupt DockSpace/Toolbar state IDs when tabs become active.
 - **DockSpace global input** — DockSpace remains non-interactive for normal hit testing so panels underneath receive input, but owns tab and splitter interaction through the declarative global-input pass. There is no separate editor-side dock input path.
