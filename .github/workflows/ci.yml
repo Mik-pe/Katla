@@ -28,21 +28,25 @@ jobs:
           ref: agent/metal-compiled-pass-stream
           fetch-depth: 0
 
-      - name: Materialize reviewed product patch
+      - name: Materialize reviewed product patches
         run: |
           python3 - <<'PY'
           import base64
           import glob
+          import subprocess
           import zlib
 
-          encoded = ''.join(
+          def apply(encoded: str) -> None:
+              patch = zlib.decompress(base64.b64decode(encoded))
+              subprocess.run(['git', 'apply', '--index', '-'], input=patch, check=True)
+
+          apply(''.join(
               open(path, encoding='utf-8').read()
               for path in sorted(glob.glob('.agent/metal-plan-patch/*'))
-          )
-          with open('/tmp/agent.patch', 'wb') as patch_file:
-              patch_file.write(zlib.decompress(base64.b64decode(encoded)))
+          ))
+          for path in sorted(glob.glob('.agent/metal-plan-fixes/*')):
+              apply(open(path, encoding='utf-8').read())
           PY
-          git apply --index /tmp/agent.patch
 
       - name: Install stable Rust and Linux graphics dependencies
         run: |
