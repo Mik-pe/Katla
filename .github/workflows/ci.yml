@@ -22,8 +22,29 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  source-export:
+    name: Export source snapshot
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Pack source snapshot
+        run: tar --exclude=.git -czf /tmp/katla-source.tar.gz .
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: katla-source
+          path: /tmp/katla-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
   linux-graphics:
     name: Linux graphics quality
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -60,6 +81,7 @@ jobs:
 
   macos-26:
     name: macOS 26 / Metal
+    if: github.event_name != 'workflow_dispatch'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
