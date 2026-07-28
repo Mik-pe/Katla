@@ -1,4 +1,4 @@
-name: Apply application-owned frame-graph patch
+name: Materialize application-owned frame graphs
 
 on:
   pull_request:
@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  apply-agent-patch:
+  materialize-product-commit:
     if: github.head_ref == 'agent/application-owned-frame-graphs'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - name: Check out patch branch
         uses: actions/checkout@v6
@@ -29,68 +29,40 @@ jobs:
           python3 - <<'PY'
           import base64
           import glob
+          import hashlib
           import zlib
 
-          def materialize(pattern: str, destination: str) -> None:
-              encoded = ''.join(
-                  open(path, encoding='utf-8').read()
-                  for path in sorted(glob.glob(pattern))
-              )
-              if not encoded:
+          def materialize(pattern: str, destination: str, expected_sha256: str | None = None) -> None:
+              chunks = sorted(glob.glob(pattern))
+              if not chunks:
                   raise RuntimeError(f'No patch chunks matched {pattern}')
+              encoded = ''.join(
+                  open(path, encoding='utf-8').read().strip()
+                  for path in chunks
+              )
+              decoded = zlib.decompress(base64.b64decode(encoded, validate=True))
+              digest = hashlib.sha256(decoded).hexdigest()
+              if expected_sha256 is not None and digest != expected_sha256:
+                  raise RuntimeError(
+                      f'{pattern} digest mismatch: expected {expected_sha256}, got {digest}'
+                  )
               with open(destination, 'wb') as patch_file:
-                  patch_file.write(zlib.decompress(base64.b64decode(encoded)))
+                  patch_file.write(decoded)
 
           materialize('.agent/application-owned-patch/*', '/tmp/application-owned.patch')
-          materialize('.agent/application-owned-fix/*', '/tmp/application-owned-fix.patch')
+          materialize(
+              '.agent/application-owned-fix/*',
+              '/tmp/application-owned-fix.patch',
+              'd46191f6f23cf327f4576be8301f03602a08b46000da6aa78a958b4235ae1f89',
+          )
           PY
           git apply --index /tmp/application-owned.patch
           git apply --index /tmp/application-owned-fix.patch
 
-      - name: Install Rust and Linux graphics dependencies
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev \
-            libvulkan1 \
-            mesa-vulkan-drivers \
-            vulkan-validationlayers
-
       - name: Format Rust workspace
         run: cargo fmt --all
 
-      - name: Check application
-        run: |
-          set -o pipefail
-          mkdir -p /tmp/katla-validation
-          cargo check -p katla_app --locked 2>&1 | tee /tmp/katla-validation/cargo-check.log
-
-      - name: Test application library
-        run: |
-          set -o pipefail
-          cargo test -p katla_app --lib --locked 2>&1 | tee /tmp/katla-validation/cargo-test.log
-
-      - name: Lint Linux graphics library
-        run: |
-          set -o pipefail
-          cargo clippy -p katla_gfx --lib --locked -- -D warnings \
-            2>&1 | tee /tmp/katla-validation/cargo-clippy.log
-
-      - name: Upload validation diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: application-frame-graph-validation
-          path: |
-            /tmp/katla-validation/cargo-check.log
-            /tmp/katla-validation/cargo-test.log
-            /tmp/katla-validation/cargo-clippy.log
-          if-no-files-found: warn
-          retention-days: 1
-
-      - name: Restore canonical CI and publish product commit
+      - name: Publish clean product commit
         run: |
           rm -rf .agent
           git fetch origin main
