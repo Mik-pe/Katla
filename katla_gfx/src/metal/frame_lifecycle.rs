@@ -1,6 +1,6 @@
-use objc2_metal::MTLCommandBuffer;
+use objc2_metal::{MTLCommandBuffer, MTLCommandBufferStatus};
 
-use crate::error::RendererError;
+use crate::error::{GpuExecutionFailure, RendererError};
 use crate::texture::ImageFormat;
 
 use super::metal_renderer::MetalRenderer;
@@ -9,6 +9,31 @@ impl MetalRenderer {
     pub(crate) fn wait_for_frame_impl(&mut self) -> Result<(), RendererError> {
         if let Some(cmd_buffer) = self.last_command_buffer.take() {
             cmd_buffer.waitUntilCompleted();
+
+            let status = cmd_buffer.status();
+            if status != MTLCommandBufferStatus::Completed {
+                let label = cmd_buffer
+                    .label()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "<unlabeled>".to_string());
+                let error = cmd_buffer.error();
+                let code = error.as_ref().map(|value| value.code() as i64);
+                let domain = error.as_ref().map(|value| value.domain().to_string());
+                let description = error
+                    .as_ref()
+                    .map(|value| value.localizedDescription().to_string());
+
+                return Err(RendererError::GpuExecutionFailed(Box::new(
+                    GpuExecutionFailure {
+                        backend: "Metal",
+                        label,
+                        status: format!("{status:?}"),
+                        code,
+                        domain,
+                        description,
+                    },
+                )));
+            }
         }
         Ok(())
     }

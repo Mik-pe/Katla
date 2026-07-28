@@ -53,14 +53,14 @@ impl MetalFrameSchedule {
             })?;
             let rank = Self::rank(kind).ok_or_else(|| {
                 RenderGraphError::BackendError(format!(
-                    "Metal frame graph pass '{}' uses unsupported semantic kind {:?}",
+                    "Metal fixed-pass encoder does not support pass '{}' with semantic kind {:?}",
                     pass.name, kind
                 ))
             })?;
 
             if seen.contains(&kind) {
                 return Err(RenderGraphError::BackendError(format!(
-                    "Metal frame graph contains duplicate singleton pass kind {:?}",
+                    "Metal fixed-pass encoder does not support duplicate semantic kind {:?}",
                     kind
                 )));
             }
@@ -69,7 +69,7 @@ impl MetalFrameSchedule {
                 && rank < *previous_rank
             {
                 return Err(RenderGraphError::BackendError(format!(
-                    "Metal frame graph order is invalid: pass '{}' ({:?}) appears after '{}' ({:?})",
+                    "Metal fixed-pass encoder order is invalid: pass '{}' ({:?}) appears after '{}' ({:?})",
                     pass.name, kind, previous_name, previous_kind
                 )));
             }
@@ -79,9 +79,24 @@ impl MetalFrameSchedule {
             passes.push(MetalScheduledPass { pass_index, kind });
         }
 
-        if !seen.contains(&PassKind::Geometry) {
+        if seen.contains(&PassKind::Outline) {
+            if !seen.contains(&PassKind::Geometry) {
+                return Err(RenderGraphError::BackendError(
+                    "Metal fixed-pass encoder cannot execute Outline without Geometry".to_string(),
+                ));
+            }
+            if !seen.contains(&PassKind::Fullscreen) {
+                return Err(RenderGraphError::BackendError(
+                    "Metal fixed-pass encoder cannot execute Outline without Fullscreen output"
+                        .to_string(),
+                ));
+            }
+        }
+
+        if seen.contains(&PassKind::Fullscreen) && !seen.contains(&PassKind::Geometry) {
             return Err(RenderGraphError::BackendError(
-                "Metal frame graph requires exactly one Geometry pass".to_string(),
+                "Metal fixed-pass encoder cannot execute Fullscreen without Geometry input"
+                    .to_string(),
             ));
         }
 
@@ -172,6 +187,56 @@ mod tests {
     }
 
     #[test]
+    fn accepts_empty_graph() {
+        let schedule = compile(&[], &[]).unwrap();
+        assert!(schedule.passes().is_empty());
+    }
+
+    #[test]
+    fn accepts_ui_only_graph() {
+        let passes = vec![pass("ui", PassType::Graphics, Some(PassKind::Ui))];
+        let schedule = compile(&passes, &[0]).unwrap();
+        assert!(schedule.contains(PassKind::Ui));
+        assert!(!schedule.contains(PassKind::Geometry));
+    }
+
+    #[test]
+    fn accepts_geometry_only_graph() {
+        let passes = vec![pass(
+            "geometry",
+            PassType::Graphics,
+            Some(PassKind::Geometry),
+        )];
+        let schedule = compile(&passes, &[0]).unwrap();
+        assert!(schedule.contains(PassKind::Geometry));
+        assert!(!schedule.contains(PassKind::Fullscreen));
+    }
+
+    #[test]
+    fn accepts_geometry_and_ui_without_post_processing() {
+        let passes = vec![
+            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("ui", PassType::Graphics, Some(PassKind::Ui)),
+        ];
+        let schedule = compile(&passes, &[0, 1]).unwrap();
+        assert!(schedule.contains(PassKind::Geometry));
+        assert!(schedule.contains(PassKind::Ui));
+        assert!(!schedule.contains(PassKind::Fullscreen));
+    }
+
+    #[test]
+    fn accepts_scene_graph_without_ui() {
+        let passes = vec![
+            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
+            pass("tonemap", PassType::Graphics, Some(PassKind::Fullscreen)),
+        ];
+        let schedule = compile(&passes, &[0, 1]).unwrap();
+        assert!(schedule.contains(PassKind::Geometry));
+        assert!(schedule.contains(PassKind::Fullscreen));
+        assert!(!schedule.contains(PassKind::Ui));
+    }
+
+    #[test]
     fn rejects_missing_semantic_kind() {
         let passes = vec![pass("geometry", PassType::Graphics, None)];
         let error = compile(&passes, &[0]).unwrap_err().to_string();
@@ -190,44 +255,53 @@ mod tests {
     }
 
     #[test]
-    fn rejects_duplicate_singleton_kinds() {
+    fn rejects_duplicate_fixed_encoder_kinds() {
         let passes = vec![
             pass("geometry_a", PassType::Graphics, Some(PassKind::Geometry)),
             pass("geometry_b", PassType::Graphics, Some(PassKind::Geometry)),
         ];
         let error = compile(&passes, &[0, 1]).unwrap_err().to_string();
-        assert!(error.contains("duplicate singleton pass kind Geometry"));
+        assert!(error.contains("fixed-pass encoder"));
+        assert!(error.contains("duplicate semantic kind Geometry"));
     }
 
     #[test]
-    fn rejects_unsupported_kinds() {
-        let passes = vec![
-            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
-            pass("particles", PassType::Graphics, Some(PassKind::Particles)),
-        ];
-        let error = compile(&passes, &[0, 1]).unwrap_err().to_string();
-        assert!(error.contains("unsupported semantic kind Particles"));
+    fn rejects_unsupported_fixed_encoder_kinds() {
+        let passes = vec![pass(
+            "particles",
+            PassType::Graphics,
+            Some(PassKind::Particles),
+        )];
+        let error = compile(&passes, &[0]).unwrap_err().to_string();
+        assert!(error.contains("fixed-pass encoder"));
+        assert!(error.contains("semantic kind Particles"));
     }
 
     #[test]
-    fn rejects_backend_order_drift() {
+    fn rejects_fixed_encoder_order_drift() {
         let passes = vec![
             pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
             pass("shadow", PassType::Graphics, Some(PassKind::Shadow)),
         ];
         let error = compile(&passes, &[0, 1]).unwrap_err().to_string();
-        assert!(error.contains("order is invalid"));
+        assert!(error.contains("fixed-pass encoder order is invalid"));
     }
 
     #[test]
-    fn accepts_optional_passes_around_required_geometry() {
-        let passes = vec![
-            pass("geometry", PassType::Graphics, Some(PassKind::Geometry)),
-            pass("ui", PassType::Graphics, Some(PassKind::Ui)),
-        ];
-        let schedule = compile(&passes, &[0, 1]).unwrap();
-        assert!(schedule.contains(PassKind::Geometry));
-        assert!(schedule.contains(PassKind::Ui));
-        assert!(!schedule.contains(PassKind::DepthPrepass));
+    fn rejects_fullscreen_without_geometry_input() {
+        let passes = vec![pass(
+            "tonemap",
+            PassType::Graphics,
+            Some(PassKind::Fullscreen),
+        )];
+        let error = compile(&passes, &[0]).unwrap_err().to_string();
+        assert!(error.contains("Fullscreen without Geometry"));
+    }
+
+    #[test]
+    fn rejects_outline_without_its_fixed_encoder_dependencies() {
+        let passes = vec![pass("outline", PassType::Graphics, Some(PassKind::Outline))];
+        let error = compile(&passes, &[0]).unwrap_err().to_string();
+        assert!(error.contains("Outline without Geometry"));
     }
 }

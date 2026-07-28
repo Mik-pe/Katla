@@ -48,15 +48,27 @@ fn tonemap_viewport(
     }
 }
 
+fn schedule_requires_scene_depth(schedule: &MetalFrameSchedule) -> bool {
+    schedule.contains(PassKind::DepthPrepass)
+        || schedule.contains(PassKind::Geometry)
+        || schedule.contains(PassKind::Outline)
+}
+
+fn should_wait_for_tonemap(tonemap_ran: bool) -> bool {
+    tonemap_ran
+}
+
 impl MetalRenderer {
     pub(crate) fn render_frame(
         &mut self,
         schedule: &MetalFrameSchedule,
     ) -> Result<(), RendererError> {
-        if self.depth_stencil_view.is_none() {
-            log::error!("METAL render_frame: EARLY RETURN — no depth_stencil_view");
+        let requires_scene_depth = schedule_requires_scene_depth(schedule);
+        if requires_scene_depth && self.depth_stencil_view.is_none() {
             self.current_drawable_texture = None;
-            return Ok(());
+            return Err(RendererError::InvalidOperation(
+                "Metal scene schedule requires a depth-stencil target".into(),
+            ));
         }
 
         let mut drawable_written = false;
@@ -87,7 +99,8 @@ impl MetalRenderer {
         let vp_y = vp.map_or(0.0, |r| r.min[1]);
         let vp_w = vp.map_or(width, |r| r.width());
         let vp_h = vp.map_or(height, |r| r.height());
-        let ui_will_composite_viewport = schedule.contains(PassKind::Ui)
+        let ui_will_composite_viewport = schedule.contains(PassKind::Fullscreen)
+            && schedule.contains(PassKind::Ui)
             && self
                 .pending_ui_draw_list
                 .as_ref()
@@ -95,33 +108,57 @@ impl MetalRenderer {
             && self.tonemap_output_view.is_some();
 
         // =========================================================================
-        // Pass 0: Shadow cascade rendering → shadow map texture
+        // Shadow cascade rendering → shadow map texture
         // =========================================================================
-        if schedule.contains(PassKind::Shadow)
-            && let Some(shadow_draw_list) = self.pending_shadow_draw_list.take()
-            && !shadow_draw_list.draws.is_empty()
-            && let (Some(shadow_pipeline), Some(shadow_map_view)) =
-                (self.shadow.pipeline(), self.shadow.shadow_map_view())
-        {
-            let shadow_res = self.shadow.shadow_resolution();
-            let frame_buf = self.current_frame_uniform_buffer().unwrap();
-            let object_buf = self.current_object_storage_buffer().unwrap();
-            let shadow_buf = self.shadow_cascade_buffer.as_ref().unwrap();
-            for cascade_idx in 0..self.shadow.cascade_count() as usize {
-                super::shadow::render_cascade(
-                    &mut cmd_buffer,
-                    shadow_pipeline,
-                    shadow_map_view,
-                    shadow_res,
-                    frame_buf,
-                    object_buf,
-                    shadow_buf,
-                    cascade_idx as u32,
-                    &self.meshes,
-                    &self.materials,
-                    &shadow_draw_list,
-                );
+        if schedule.contains(PassKind::Shadow) {
+            if let Some(shadow_draw_list) = self.pending_shadow_draw_list.take()
+                && !shadow_draw_list.draws.is_empty()
+            {
+                let shadow_pipeline = self.shadow.pipeline().ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Metal Shadow pass is scheduled but its pipeline is not initialized".into(),
+                    )
+                })?;
+                let shadow_map_view = self.shadow.shadow_map_view().ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Metal Shadow pass is scheduled without a shadow-map target".into(),
+                    )
+                })?;
+                let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Metal Shadow pass requires frame uniforms".into(),
+                    )
+                })?;
+                let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Metal Shadow pass requires object storage".into(),
+                    )
+                })?;
+                let shadow_buf = self.shadow_cascade_buffer.as_ref().ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Metal Shadow pass requires cascade data".into(),
+                    )
+                })?;
+                let shadow_res = self.shadow.shadow_resolution();
+
+                for cascade_idx in 0..self.shadow.cascade_count() as usize {
+                    super::shadow::render_cascade(
+                        &mut cmd_buffer,
+                        shadow_pipeline,
+                        shadow_map_view,
+                        shadow_res,
+                        frame_buf,
+                        object_buf,
+                        shadow_buf,
+                        cascade_idx as u32,
+                        &self.meshes,
+                        &self.materials,
+                        &shadow_draw_list,
+                    );
+                }
             }
+        } else {
+            self.pending_shadow_draw_list = None;
         }
 
         // =========================================================================
@@ -172,120 +209,130 @@ impl MetalRenderer {
         }
 
         // =========================================================================
-        // Pass 2: Geometry (sky + PBR) → HDR intermediate texture
+        // Geometry (sky + PBR) → HDR intermediate or drawable
         // =========================================================================
-        let has_tonemap = schedule.contains(PassKind::Fullscreen)
-            && self.tonemap_pipeline.is_some()
-            && self.geometry_hdr_view.is_some();
-        let draw_list = self.pending_draw_list.take();
-        let picking_draw_list = draw_list.clone();
-
-        if has_tonemap {
-            let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
-
-            let depth_attachment =
-                self.depth_stencil_view
-                    .as_ref()
-                    .map(|view| DepthAttachmentInfo {
-                        view: view.clone(),
-                        load_op: if depth_prepass_ran {
-                            LoadOp::Load
-                        } else {
-                            LoadOp::Clear
-                        },
-                        store_op: StoreOp::Store,
-                        clear_value: ClearValue::depth_stencil(0.0, 0),
-                        format: ImageFormat::D32SfloatS8Uint,
-                    });
-
-            let geometry_pass_info = RenderPassInfo {
-                color_attachments: vec![ColorAttachmentInfo {
-                    view: geometry_hdr_view.clone(),
-                    load_op: LoadOp::Clear,
-                    store_op: StoreOp::Store,
-                    clear_value: ClearValue::OPAQUE_BLACK,
-                }],
-                depth_attachment,
-            };
-
-            let mut encoder = cmd_buffer.begin_render_pass(geometry_pass_info);
-
-            Self::bind_common_resources(self, &mut encoder);
-
-            if let Some(ref sky_pipeline) = self.sky_pipeline {
-                if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
-                    encoder.bind_vertex_buffer(dummy_vb, 0, 10);
-                }
-                encoder.bind_graphics_pipeline(sky_pipeline);
-                encoder.draw(3, 1, 0, 0);
+        let fullscreen_scheduled = schedule.contains(PassKind::Fullscreen);
+        let has_tonemap = if fullscreen_scheduled {
+            if self.tonemap_pipeline.is_none() {
+                return Err(RendererError::InvalidOperation(
+                    "Metal Fullscreen pass is scheduled but the tonemap pipeline is not initialized"
+                        .into(),
+                ));
             }
-
-            if let Some(draw_list) = &draw_list {
-                Self::draw_objects(self, &mut encoder, draw_list);
+            if self.geometry_hdr_view.is_none() {
+                return Err(RendererError::InvalidOperation(
+                    "Metal Fullscreen pass is scheduled without an HDR input target".into(),
+                ));
             }
-
-            encoder.end_encoding();
+            true
         } else {
-            // No tonemap pipeline — render geometry directly to drawable (legacy path)
-            drawable_written = true;
-            let depth_attachment =
-                self.depth_stencil_view
-                    .as_ref()
-                    .map(|view| DepthAttachmentInfo {
-                        view: view.clone(),
-                        load_op: if depth_prepass_ran {
-                            LoadOp::Load
-                        } else {
-                            LoadOp::Clear
-                        },
+            false
+        };
+
+        let mut picking_draw_list = None;
+        if schedule.contains(PassKind::Geometry) {
+            let draw_list = self.pending_draw_list.take();
+            picking_draw_list = draw_list.clone();
+
+            if has_tonemap {
+                let geometry_hdr_view = self.geometry_hdr_view.as_ref().ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Metal Geometry pass is missing its HDR color target".into(),
+                    )
+                })?;
+
+                let depth_attachment =
+                    self.depth_stencil_view
+                        .as_ref()
+                        .map(|view| DepthAttachmentInfo {
+                            view: view.clone(),
+                            load_op: if depth_prepass_ran {
+                                LoadOp::Load
+                            } else {
+                                LoadOp::Clear
+                            },
+                            store_op: StoreOp::Store,
+                            clear_value: ClearValue::depth_stencil(0.0, 0),
+                            format: ImageFormat::D32SfloatS8Uint,
+                        });
+
+                let geometry_pass_info = RenderPassInfo {
+                    color_attachments: vec![ColorAttachmentInfo {
+                        view: geometry_hdr_view.clone(),
+                        load_op: LoadOp::Clear,
                         store_op: StoreOp::Store,
-                        clear_value: ClearValue::depth_stencil(0.0, 0),
-                        format: ImageFormat::D32SfloatS8Uint,
-                    });
+                        clear_value: ClearValue::OPAQUE_BLACK,
+                    }],
+                    depth_attachment,
+                };
 
-            let render_pass_info = RenderPassInfo {
-                color_attachments: vec![ColorAttachmentInfo {
-                    view: drawable_view.clone(),
-                    load_op: LoadOp::Clear,
-                    store_op: StoreOp::Store,
-                    clear_value: ClearValue::color(
-                        CANVAS_CLEAR_COLOR.0 as f32,
-                        CANVAS_CLEAR_COLOR.1 as f32,
-                        CANVAS_CLEAR_COLOR.2 as f32,
-                        CANVAS_CLEAR_COLOR.3 as f32,
-                    ),
-                }],
-                depth_attachment,
-            };
+                let mut encoder = cmd_buffer.begin_render_pass(geometry_pass_info);
+                Self::bind_common_resources(self, &mut encoder);
 
-            let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
-
-            Self::bind_common_resources(self, &mut encoder);
-
-            if let Some(ref sky_pipeline) = self.sky_pipeline {
-                if let (Some(frame_buf), Some(object_buf)) = (
-                    self.current_frame_uniform_buffer(),
-                    self.current_object_storage_buffer(),
-                ) {
-                    let stages = ShaderStages::VERTEX_FRAGMENT;
-                    encoder.bind_storage_buffer(frame_buf, 0, 0, stages);
-                    encoder.bind_storage_buffer(object_buf, 0, 1, stages);
+                if let Some(ref sky_pipeline) = self.sky_pipeline {
+                    if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
+                        encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+                    }
+                    encoder.bind_graphics_pipeline(sky_pipeline);
+                    encoder.draw(3, 1, 0, 0);
                 }
-                if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
-                    encoder.bind_storage_buffer(buf_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
+
+                if let Some(draw_list) = &draw_list {
+                    Self::draw_objects(self, &mut encoder, draw_list);
                 }
-                if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
-                    encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+
+                encoder.end_encoding();
+            } else {
+                drawable_written = true;
+                let depth_attachment =
+                    self.depth_stencil_view
+                        .as_ref()
+                        .map(|view| DepthAttachmentInfo {
+                            view: view.clone(),
+                            load_op: if depth_prepass_ran {
+                                LoadOp::Load
+                            } else {
+                                LoadOp::Clear
+                            },
+                            store_op: StoreOp::Store,
+                            clear_value: ClearValue::depth_stencil(0.0, 0),
+                            format: ImageFormat::D32SfloatS8Uint,
+                        });
+
+                let render_pass_info = RenderPassInfo {
+                    color_attachments: vec![ColorAttachmentInfo {
+                        view: drawable_view.clone(),
+                        load_op: LoadOp::Clear,
+                        store_op: StoreOp::Store,
+                        clear_value: ClearValue::color(
+                            CANVAS_CLEAR_COLOR.0 as f32,
+                            CANVAS_CLEAR_COLOR.1 as f32,
+                            CANVAS_CLEAR_COLOR.2 as f32,
+                            CANVAS_CLEAR_COLOR.3 as f32,
+                        ),
+                    }],
+                    depth_attachment,
+                };
+
+                let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
+                Self::bind_common_resources(self, &mut encoder);
+
+                if let Some(ref sky_pipeline) = self.sky_pipeline {
+                    if let Some(ref dummy_vb) = self.dummy_vertex_buffer {
+                        encoder.bind_vertex_buffer(dummy_vb, 0, 10);
+                    }
+                    encoder.bind_graphics_pipeline(sky_pipeline);
+                    encoder.draw(3, 1, 0, 0);
                 }
-                encoder.bind_graphics_pipeline(sky_pipeline);
-                encoder.draw(3, 1, 0, 0);
+
+                if let Some(draw_list) = &draw_list {
+                    Self::draw_objects(self, &mut encoder, draw_list);
+                }
+
+                encoder.end_encoding();
             }
-
-            if let Some(draw_list) = &draw_list {
-                Self::draw_objects(self, &mut encoder, draw_list);
-            }
-
-            encoder.end_encoding();
+        } else {
+            self.pending_draw_list = None;
         }
 
         // =========================================================================
@@ -294,16 +341,23 @@ impl MetalRenderer {
         if schedule.contains(PassKind::Outline)
             && let Some(outline_draw_list) = self.pending_outline_draw_list.take()
             && !outline_draw_list.draws.is_empty()
-            && has_tonemap
         {
-            let geometry_hdr_view = self.geometry_hdr_view.as_ref().unwrap();
+            let geometry_hdr_view = self.geometry_hdr_view.as_ref().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal Outline pass requires an HDR color target".into(),
+                )
+            })?;
             let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
                 RendererError::InvalidOperation(
                     "Outline pass requires D32SfloatS8Uint depth-stencil texture".into(),
                 )
             })?;
-            let frame_buf = self.current_frame_uniform_buffer().unwrap();
-            let object_buf = self.current_object_storage_buffer().unwrap();
+            let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
+                RendererError::InvalidOperation("Metal Outline pass requires frame uniforms".into())
+            })?;
+            let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
+                RendererError::InvalidOperation("Metal Outline pass requires object storage".into())
+            })?;
             // Scene render targets are panel-sized, so the outline viewport must
             // match the panel — not the drawable.
             let w = vp_w as u32;
@@ -349,7 +403,8 @@ impl MetalRenderer {
         // =========================================================================
         // Pass 1.6: Object-ID picking → R32Uint texture
         // =========================================================================
-        if let Some(ref picking_dl) = picking_draw_list
+        if schedule.contains(PassKind::Geometry)
+            && let Some(ref picking_dl) = picking_draw_list
             && !picking_dl.draws.is_empty()
             && let (Some(picking_pipeline), Some(id_view), Some(depth_view)) = (
                 self.picking.pipeline(),
@@ -357,8 +412,12 @@ impl MetalRenderer {
                 self.depth_stencil_view.as_ref(),
             )
         {
-            let frame_buf = self.current_frame_uniform_buffer().unwrap();
-            let object_buf = self.current_object_storage_buffer().unwrap();
+            let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
+                RendererError::InvalidOperation("Metal picking requires frame uniforms".into())
+            })?;
+            let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
+                RendererError::InvalidOperation("Metal picking requires object storage".into())
+            })?;
             // Picking texture is panel-sized, so use the panel dimensions.
             let w = vp_w as u32;
             let h = vp_h as u32;
@@ -381,8 +440,9 @@ impl MetalRenderer {
         }
 
         // =========================================================================
-        // Pass 2: Tonemap (HDR intermediate → viewport_0 LDR texture)
+        // Fullscreen output (HDR intermediate → viewport_0 or drawable)
         // =========================================================================
+        let mut tonemap_ran = false;
         if has_tonemap {
             let tonemap_pipeline = self.tonemap_pipeline.as_ref().unwrap();
 
@@ -501,10 +561,11 @@ impl MetalRenderer {
             }
 
             encoder.end_encoding();
+            tonemap_ran = true;
         }
 
         // =========================================================================
-        // Pass 3: UI overlay → drawable (loads previous pass output)
+        // UI overlay → drawable (loads previous pass output)
         // =========================================================================
         if schedule.contains(PassKind::Ui)
             && let Some(ui_draw_list) = self.pending_ui_draw_list.take()
@@ -544,7 +605,9 @@ impl MetalRenderer {
 
                 let mut encoder = cmd_buffer.begin_render_pass(ui_pass_info);
 
-                if let Some(ref fence) = self.tonemap_fence {
+                if should_wait_for_tonemap(tonemap_ran)
+                    && let Some(ref fence) = self.tonemap_fence
+                {
                     encoder
                         .inner
                         .waitForFence_beforeStages(fence, objc2_metal::MTLRenderStages::Fragment);
@@ -641,7 +704,28 @@ impl MetalRenderer {
 
 #[cfg(test)]
 mod tests {
-    use super::tonemap_viewport;
+    use super::{schedule_requires_scene_depth, should_wait_for_tonemap, tonemap_viewport};
+    use crate::render_graph::PassKind;
+
+    use super::MetalFrameSchedule;
+
+    #[test]
+    fn ui_only_schedule_does_not_require_scene_depth() {
+        let schedule = MetalFrameSchedule::for_test(&[PassKind::Ui]);
+        assert!(!schedule_requires_scene_depth(&schedule));
+    }
+
+    #[test]
+    fn geometry_schedule_requires_scene_depth() {
+        let schedule = MetalFrameSchedule::for_test(&[PassKind::Geometry]);
+        assert!(schedule_requires_scene_depth(&schedule));
+    }
+
+    #[test]
+    fn ui_waits_only_when_fullscreen_output_ran() {
+        assert!(!should_wait_for_tonemap(false));
+        assert!(should_wait_for_tonemap(true));
+    }
 
     #[test]
     fn offscreen_tonemap_uses_texture_local_coordinates() {
