@@ -7,9 +7,81 @@ use super::Application;
 use crate::rendering::FrameContext;
 use katla_gfx::GpuRenderer;
 use katla_gfx::renderer::FrameUniforms;
+#[cfg(not(target_os = "macos"))]
+use katla_gfx::renderer::UIDrawList;
 
 // Shared backend-agnostic helper methods used by both Vulkan and Metal paths.
 impl Application {
+    fn render_graph_only(
+        &mut self,
+        ui_draw_list: Option<katla_gfx::renderer::UIDrawList>,
+        delta_time: f32,
+        frame_count: usize,
+    ) {
+        self.frame_graph.set_delta_time(delta_time);
+        self.frame_graph.set_frame_count(frame_count);
+        let ui_pass = self.pass_ids.ui;
+
+        if let Err(error) = self.renderer.render(&mut self.frame_graph, |frame| {
+            if let (Some(pass_id), Some(ui_list)) = (ui_pass, ui_draw_list.as_ref()) {
+                frame.submit_ui(pass_id, ui_list);
+            }
+        }) {
+            if matches!(&error, katla_gfx::RendererError::SwapchainOutOfDate) {
+                self.needs_swapchain_recreate = true;
+            } else {
+                log::error!("Application-owned frame graph failed: {error}");
+            }
+        }
+    }
+
+    fn update_recreated_transient_bindings(&mut self, textures: &[(String, u32)]) {
+        let hdr_resource = self.frame_graph_bindings.resources.hdr_color.clone();
+        let viewport_resource = self.frame_graph_bindings.resources.viewport.clone();
+
+        for (name, slot) in textures {
+            if hdr_resource.as_deref() == Some(name.as_str()) {
+                if let Some(pass_id) = self.pass_ids.tonemap
+                    && let Err(error) = self.frame_graph.set_tonemap_texture_index(pass_id, *slot)
+                {
+                    log::warn!("Failed to refresh tonemap resource binding: {error}");
+                }
+            } else if viewport_resource.as_deref() == Some(name.as_str()) {
+                self.on_viewport_texture_recreated(*slot);
+                self.renderer.set_viewport_bindless_slot(*slot);
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn refresh_metal_transient_views(&mut self) {
+        if let Some(hdr_resource) = self.frame_graph_bindings.resources.hdr_color.clone()
+            && let Some(view) = self
+                .frame_graph
+                .transient_image_view_metal(&hdr_resource, 0)
+        {
+            if let Some(slot) = self
+                .frame_graph
+                .transient_texture_metal(&hdr_resource, 0)
+                .and_then(|texture| texture.bindless_slot)
+            {
+                self.renderer.set_geometry_hdr_view(view, slot);
+            } else {
+                log::error!(
+                    "Metal HDR resource '{hdr_resource}' lost its bindless slot after recreation"
+                );
+            }
+        }
+
+        if let Some(viewport_resource) = self.frame_graph_bindings.resources.viewport.clone()
+            && let Some(view) = self
+                .frame_graph
+                .transient_image_view_metal(&viewport_resource, 0)
+        {
+            self.renderer.set_tonemap_output_view(view);
+        }
+    }
+
     /// Collect drawable components from the ECS world and submit to FrameContext.
     ///
     /// This automatically allocates instance indices and builds the draw list.
@@ -170,6 +242,10 @@ impl Application {
     pub(crate) fn recreate_panel_rt_resources(&mut self) {
         #[cfg(feature = "editor")]
         {
+            if !self.frame_graph_runtime.uses_katla_scene() {
+                return;
+            }
+
             let vp = self.editor.editor_ui.last_viewport_bounds;
             let sf = self.scale_factor;
             let w = (vp.width() * sf) as u32;
@@ -200,34 +276,9 @@ impl Application {
                 self.frame_graph
                     .recreate_transient_textures(&mut self.renderer, w, h)
             {
-                for (name, slot) in &textures {
-                    if name == "hdr_color" {
-                        self.frame_graph
-                            .set_tonemap_texture_index(self.pass_ids.tonemap, *slot)
-                            .ok();
-                    } else if name == "viewport_0" {
-                        self.on_viewport_texture_recreated(*slot);
-                        self.renderer.set_viewport_bindless_slot(*slot);
-                    }
-                }
-
+                self.update_recreated_transient_bindings(&textures);
                 #[cfg(target_os = "macos")]
-                {
-                    if let Some(view) = self.frame_graph.transient_image_view_metal("hdr_color", 0)
-                    {
-                        let hdr_transient_slot = self
-                            .frame_graph
-                            .transient_texture_metal("hdr_color", 0)
-                            .and_then(|t| t.bindless_slot)
-                            .unwrap_or(0);
-                        self.renderer
-                            .set_geometry_hdr_view(view, hdr_transient_slot);
-                    }
-                    if let Some(view) = self.frame_graph.transient_image_view_metal("viewport_0", 0)
-                    {
-                        self.renderer.set_tonemap_output_view(view);
-                    }
-                }
+                self.refresh_metal_transient_views();
             }
         }
     }
@@ -251,12 +302,17 @@ impl Application {
         if self.needs_swapchain_recreate {
             self.needs_swapchain_recreate = false;
             self.recreate_swapchain_resources();
-            info!("=== Resize complete ===");
+            log::info!("=== Resize complete ===");
         }
 
         // Size the 3D-scene render targets to the viewport panel (after UI
         // layout populated the bounds). No-op when unchanged.
         self.recreate_panel_rt_resources();
+
+        if !self.frame_graph_runtime.uses_katla_scene() {
+            self.render_graph_only(ui_draw_list, delta_time, frame_count);
+            return;
+        }
 
         // Note: viewport bindless index is updated BEFORE generate_ui_draw_list()
         // in the RedrawRequested handler to ensure the UI samples from the
@@ -445,32 +501,31 @@ impl Application {
             let ids = &self.pass_ids;
 
             if !draw_list.is_empty() {
-                frame.submit(ids.depth_prepass, &draw_list);
-                frame.submit(ids.geometry, &draw_list);
-                frame.submit(ids.shadow, &shadow_draw_list);
-                log::debug!(
-                    "Submitted {} draw calls to depth_prepass + geometry, {} to shadow",
-                    draw_list.len(),
-                    shadow_draw_list.len()
-                );
-            } else {
-                log::warn!("No draw calls to submit to geometry pass!");
+                if let Some(pass_id) = ids.depth_prepass {
+                    frame.submit(pass_id, &draw_list);
+                }
+                if let Some(pass_id) = ids.geometry {
+                    frame.submit(pass_id, &draw_list);
+                }
+                if let Some(pass_id) = ids.shadow {
+                    frame.submit(pass_id, &shadow_draw_list);
+                }
             }
 
             if let Some(ref outline_dl) = outline_draw_list
                 && !outline_dl.is_empty()
             {
-                frame.submit(ids.outline, outline_dl);
-                frame.submit(ids.stencil_indicator, outline_dl);
-                log::debug!(
-                    "Submitted {} selected draw calls to outline + stencil_indicator passes",
-                    outline_dl.len()
-                );
+                if let Some(pass_id) = ids.outline {
+                    frame.submit(pass_id, outline_dl);
+                }
+                if let Some(pass_id) = ids.stencil_indicator {
+                    frame.submit(pass_id, outline_dl);
+                }
             }
 
-            if let Some(ref ui_list) = ui_draw_list {
+            if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {
                 log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
-                frame.submit_ui(ids.ui, ui_list);
+                frame.submit_ui(pass_id, ui_list);
             }
         }) {
             match &e {
@@ -536,29 +591,20 @@ impl Application {
             extent.width,
             extent.height,
         ) {
-            for (name, slot) in recreated_textures {
-                if name == "hdr_color" {
-                    if let Err(e) = self
-                        .frame_graph
-                        .set_tonemap_texture_index(self.pass_ids.tonemap, slot)
-                    {
-                        log::warn!("Failed to update tonemap texture index on resize: {e}");
-                    }
-                } else if name == "viewport_0" {
-                    self.on_viewport_texture_recreated(slot);
-                }
-            }
+            self.update_recreated_transient_bindings(&recreated_textures);
         }
 
-        for frame_idx in 0..2 {
-            if let Some(view) = self
-                .frame_graph
-                .as_vulkan()
-                .transient_texture_view_for_frame("shadow_atlas", frame_idx)
-            {
-                self.renderer
-                    .unwrap_vulkan()
-                    .set_shadow_atlas_view(frame_idx, view);
+        if let Some(shadow_atlas) = self.frame_graph_bindings.resources.shadow_atlas.clone() {
+            for frame_idx in 0..2 {
+                if let Some(view) = self
+                    .frame_graph
+                    .as_vulkan()
+                    .transient_texture_view_for_frame(&shadow_atlas, frame_idx)
+                {
+                    self.renderer
+                        .unwrap_vulkan()
+                        .set_shadow_atlas_view(frame_idx, view);
+                }
             }
         }
 
@@ -910,8 +956,6 @@ impl Application {
         delta_time: f32,
         frame_count: usize,
     ) {
-        let _ = (delta_time, frame_count);
-
         if self.needs_swapchain_recreate {
             self.needs_swapchain_recreate = false;
             if let Some(ref window) = self.window {
@@ -932,37 +976,16 @@ impl Application {
                         phys.width,
                         phys.height,
                     ) {
-                        for (name, slot) in &textures {
-                            if name == "hdr_color" {
-                                self.frame_graph
-                                    .set_tonemap_texture_index(self.pass_ids.tonemap, *slot)
-                                    .ok();
-                            } else if name == "viewport_0" {
-                                self.on_viewport_texture_recreated(*slot);
-                                self.renderer.set_viewport_bindless_slot(*slot);
-                            }
-                        }
-
-                        if let Some(view) =
-                            self.frame_graph.transient_image_view_metal("hdr_color", 0)
-                        {
-                            let hdr_transient_slot = self
-                                .frame_graph
-                                .transient_texture_metal("hdr_color", 0)
-                                .and_then(|t| t.bindless_slot)
-                                .unwrap_or(0);
-                            self.renderer
-                                .set_geometry_hdr_view(view, hdr_transient_slot);
-                        }
-
-                        if let Some(view) =
-                            self.frame_graph.transient_image_view_metal("viewport_0", 0)
-                        {
-                            self.renderer.set_tonemap_output_view(view);
-                        }
+                        self.update_recreated_transient_bindings(&textures);
+                        self.refresh_metal_transient_views();
                     }
                 }
             }
+        }
+
+        if !self.frame_graph_runtime.uses_katla_scene() {
+            self.render_graph_only(ui_draw_list, delta_time, frame_count);
+            return;
         }
 
         let (viewport_width, viewport_height) = self.viewport_size();
@@ -1075,28 +1098,27 @@ impl Application {
             let ids = &self.pass_ids;
 
             if !draw_list.is_empty() {
-                frame.submit(ids.geometry, &draw_list);
-                frame.submit(ids.shadow, &shadow_draw_list);
-                frame.submit(ids.depth_prepass, &draw_list);
-                log::debug!(
-                    "Submitted {} draw calls to geometry + shadow + depth_prepass",
-                    draw_list.len()
-                );
+                if let Some(pass_id) = ids.geometry {
+                    frame.submit(pass_id, &draw_list);
+                }
+                if let Some(pass_id) = ids.shadow {
+                    frame.submit(pass_id, &shadow_draw_list);
+                }
+                if let Some(pass_id) = ids.depth_prepass {
+                    frame.submit(pass_id, &draw_list);
+                }
             }
 
             if let Some(ref outline_dl) = outline_draw_list
                 && !outline_dl.is_empty()
+                && let Some(pass_id) = ids.outline
             {
-                frame.submit(ids.outline, outline_dl);
-                log::debug!(
-                    "Submitted {} selected draw calls to outline pass",
-                    outline_dl.len()
-                );
+                frame.submit(pass_id, outline_dl);
             }
 
-            if let Some(ref ui_list) = ui_draw_list {
+            if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {
                 log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
-                frame.submit_ui(ids.ui, ui_list);
+                frame.submit_ui(pass_id, ui_list);
             }
         }) {
             log::error!("Metal frame render failed: {}", e);

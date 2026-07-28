@@ -4,7 +4,7 @@ What is being worked on right now. **Update this file when starting or finishing
 
 ## Current Work
 
-- **Render graph next stage** — the canonical dependency DAG, platform isolation, fail-fast graph validation, deterministic diagnostics, graph-owned editor viewport output, safe Metal bindless capability handling, and optional Metal frame topologies are merged. Application-owned graph selection and fully plan-driven Metal encoding remain active follow-up work alongside #30–#37.
+- **Render graph execution-plan migration** — Fully plan-driven Metal encoding remains active follow-up work in #56 alongside #30–#37; application-owned graph selection, optional pass/resource capabilities, and the explicit Katla editor preset are complete.
 - **PhysicsActive(false) at builder init** — physics is now off in editing mode (the default). PlayStart action sets it to true, PlayStop sets it back to false. SceneSnapshot preserves physics components for restore on stop.
 - **State slot stability** — ConsoleView and MixerView now always call `ctx.state()` unconditionally (even when their env is not set) to prevent slot shifts that corrupt DockSpace/Toolbar state IDs when tabs become active.
 - **DockSpace global input** — DockSpace remains non-interactive for normal hit testing so panels underneath receive input, but owns tab and splitter interaction through the declarative global-input pass. There is no separate editor-side dock input path.
@@ -17,6 +17,7 @@ What is being worked on right now. **Update this file when starting or finishing
 - Graph construction is fail-fast. `backbuffer` is the only implicit resource; pass references must resolve to a declared transient resource or explicit import before compilation/allocation.
 - Backend integration consumes compiled pass identity and access metadata. Core render-graph data must not contain Vulkan/Metal command types, and no backend should maintain an independent pass-name execution graph.
 - Metal consumes a validated semantic schedule derived from the compiled graph. Empty, UI-only, geometry-only, and scene-without-UI schedules are valid; only declared passes encode work. Temporary fixed-encoder limitations are reported explicitly rather than masquerading as render-graph invariants.
+- Frame-graph topology belongs to the application. `ApplicationBuilder::with_frame_graph` selects an `ApplicationFrameGraph`; `GraphOnly` is the no-hidden-work default, while `KatlaEditorFrameGraphPreset` explicitly opts into Katla's scene/editor runtime. Built-in pass and transient-resource bindings are optional capabilities, never valid-ID sentinels.
 - The Metal editor path tonemaps into graph-owned `viewport_0` using texture-local coordinates, then lets the UI composite that texture into `backbuffer`. Direct-to-drawable tonemapping is only a non-UI/headless fallback.
 - Editor gizmo/debug draws are prepared before Metal object-uniform upload. The renderer validates the highest submitted instance index against object-buffer capacity before any encoder binds an offset.
 - Metal bindless argument buffers are initialized from real device capabilities: Tier 2 uses direct `MTLResourceID` entries, supported Tier 1 devices use shader-reflected layouts, and unsupported virtual devices fail with a typed error before an invalid Objective-C call.

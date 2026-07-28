@@ -3,7 +3,7 @@
 use super::backend::RenderGraphBackend;
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
-use super::handles::PassId;
+use super::handles::{PassId, ResourceId};
 use super::pass::PassDesc;
 
 #[cfg(target_os = "macos")]
@@ -52,6 +52,15 @@ impl AnyFrameGraph {
             AnyFrameGraph::Vulkan(fg) => fg.pass_id(name),
             #[cfg(target_os = "macos")]
             AnyFrameGraph::Metal(fg) => fg.pass_id(name),
+        }
+    }
+
+    /// Resolve a named graph resource without exposing backend-specific graph types.
+    pub fn resource_id(&self, name: &str) -> Option<ResourceId> {
+        match self {
+            AnyFrameGraph::Vulkan(fg) => fg.resource_id(name),
+            #[cfg(target_os = "macos")]
+            AnyFrameGraph::Metal(fg) => fg.resource_id(name),
         }
     }
 

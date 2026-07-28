@@ -39,6 +39,9 @@ use katla_gfx::GpuRenderer;
 use crate::{FrameGraph, Renderer};
 
 use super::camera::Camera;
+use super::frame_graph_config::{
+    ApplicationFrameGraph, FrameGraphFactory, FrameGraphRuntime, KatlaEditorFrameGraphPreset,
+};
 
 use crate::util::{GLTFModel, GltfCache};
 use crate::{
@@ -73,6 +76,7 @@ pub struct ApplicationBuilder {
     on_init: Option<InitHook>,
     on_update: Option<UpdateHook>,
     on_shutdown: Option<ShutdownHook>,
+    frame_graph_factory: Option<FrameGraphFactory>,
 }
 
 impl ApplicationBuilder {
@@ -122,6 +126,21 @@ impl ApplicationBuilder {
     /// If not set, the default scene (`assets/scenes/default.katla`) is loaded.
     pub fn with_scene_path(mut self, path: impl Into<String>) -> Self {
         self.scene_path = Some(path.into());
+        self
+    }
+
+    /// Replace Katla's editor graph preset with an application-owned graph.
+    ///
+    /// The factory runs exactly once after the renderer and resource paths are
+    /// available. Returning an error aborts construction; Katla never silently
+    /// falls back to its default preset. `ApplicationFrameGraph::new` selects a
+    /// graph-only runtime with no required pass names or hidden scene submissions.
+    pub fn with_frame_graph(
+        mut self,
+        factory: impl FnOnce(&mut Renderer, &ResourceManager) -> AppResult<ApplicationFrameGraph>
+        + 'static,
+    ) -> Self {
+        self.frame_graph_factory = Some(Box::new(factory));
         self
     }
 
@@ -241,7 +260,7 @@ impl ApplicationBuilder {
                 message: e.to_string(),
             })?;
 
-        let mut renderer = {
+        let renderer = {
             #[cfg(target_os = "macos")]
             {
                 Renderer::new_metal(
@@ -266,10 +285,6 @@ impl ApplicationBuilder {
             }
         };
 
-        renderer
-            .init_particle_system()
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
         Ok(renderer)
     }
 
@@ -277,6 +292,7 @@ impl ApplicationBuilder {
     ///
     /// Metal owns its encoder implementations, but pass presence and order are
     /// validated against this compiled graph before command encoding starts.
+    #[cfg(target_os = "macos")]
     fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::{
             FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
@@ -709,6 +725,79 @@ impl ApplicationBuilder {
         Ok(FrameGraph::from_vulkan(graph))
     }
 
+    fn build_selected_frame_graph(
+        factory: Option<FrameGraphFactory>,
+        renderer: &mut Renderer,
+        resources: &ResourceManager,
+    ) -> AppResult<ApplicationFrameGraph> {
+        match factory {
+            Some(factory) => factory(renderer, resources),
+            None => KatlaEditorFrameGraphPreset::build(renderer, resources),
+        }
+    }
+
+    fn prepare_frame_graph(
+        configured: ApplicationFrameGraph,
+        renderer: &mut Renderer,
+    ) -> AppResult<(
+        FrameGraph,
+        super::PassIds,
+        super::frame_graph_config::FrameGraphBindings,
+        FrameGraphRuntime,
+    )> {
+        let (mut frame_graph, bindings, runtime) = configured.into_parts();
+        bindings.validate_resources(&frame_graph)?;
+        let pass_ids = super::PassIds::resolve(&frame_graph, &bindings.passes)?;
+
+        frame_graph
+            .initialize_transient_textures(renderer)
+            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+
+        match renderer {
+            katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
+                if let Some(shadow_atlas) = bindings.resources.shadow_atlas.as_deref() {
+                    for frame_idx in 0..2 {
+                        if let Some(view) = frame_graph
+                            .as_vulkan()
+                            .transient_texture_view_for_frame(shadow_atlas, frame_idx)
+                        {
+                            vulkan_renderer.set_shadow_atlas_view(frame_idx, view);
+                        }
+                    }
+                }
+            }
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(_) => {
+                if let Some(hdr_color) = bindings.resources.hdr_color.as_deref() {
+                    let hdr_slot = frame_graph
+                        .register_transient_texture_bindless(renderer, hdr_color)
+                        .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+                    let frame_idx = GpuRenderer::current_frame(renderer);
+                    if let Some(view) = frame_graph.transient_image_view_metal(hdr_color, frame_idx)
+                    {
+                        let transient_slot = frame_graph
+                            .transient_texture_metal(hdr_color, frame_idx)
+                            .and_then(|texture| texture.bindless_slot)
+                            .unwrap_or(hdr_slot);
+                        renderer.set_geometry_hdr_view(view, transient_slot);
+                    }
+                }
+
+                if let Some(viewport) = bindings.resources.viewport.as_deref() {
+                    let viewport_slot = frame_graph
+                        .register_transient_texture_bindless(renderer, viewport)
+                        .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+                    if let Some(view) = frame_graph.transient_image_view_metal(viewport, 0) {
+                        renderer.set_tonemap_output_view(view);
+                    }
+                    renderer.set_viewport_bindless_slot(viewport_slot);
+                }
+            }
+        }
+
+        Ok((frame_graph, pass_ids, bindings, runtime))
+    }
+
     #[cfg(feature = "editor")]
     fn create_asset_watcher() -> Option<crate::util::AssetWatcher> {
         use std::path::PathBuf;
@@ -731,7 +820,7 @@ impl ApplicationBuilder {
     /// ready to run N frames and save a screenshot PNG.
     #[cfg(target_os = "macos")]
     pub fn build_headless(
-        self,
+        mut self,
         max_frames: usize,
         screenshot_path: String,
     ) -> AppResult<Application> {
@@ -743,6 +832,7 @@ impl ApplicationBuilder {
         let preferences = Preferences::load();
         #[cfg(feature = "editor")]
         let (theme, gui_state) = Self::load_editor_state_static(&preferences);
+        let frame_graph_factory = self.frame_graph_factory.take();
 
         let info = ApplicationInfo {
             name: self.app_name.clone(),
@@ -815,10 +905,6 @@ impl ApplicationBuilder {
         )
         .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
-        renderer
-            .init_particle_system()
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
         // Upload font atlas
         let (font_atlas_handle, atlas_width, atlas_height) = {
             let fonts = ui_context.fonts();
@@ -833,82 +919,10 @@ impl ApplicationBuilder {
             font_atlas_handle
         );
 
-        // Build frame graph
-        let mut frame_graph = {
-            let metal_renderer = match &mut renderer {
-                katla_gfx::AnyRenderer::Metal(r) => r,
-                _ => unreachable!(),
-            };
-            Self::build_metal_frame_graph(metal_renderer)?
-        };
-
-        frame_graph
-            .initialize_transient_textures(&mut renderer)
-            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-
-        // Wire bindless slots
-        {
-            let hdr_slot = frame_graph
-                .register_transient_texture_bindless(&mut renderer, "hdr_color")
-                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-            log::info!("HDR texture registered with bindless at index {}", hdr_slot);
-
-            let vp_slot = frame_graph
-                .register_transient_texture_bindless(&mut renderer, "viewport_0")
-                .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-            log::info!(
-                "Viewport texture registered with bindless at index {}",
-                vp_slot
-            );
-
-            let frame_idx = GpuRenderer::current_frame(&renderer);
-            if let Some(view) = frame_graph.transient_image_view_metal("hdr_color", frame_idx) {
-                let hdr_transient_slot = frame_graph
-                    .transient_texture_metal("hdr_color", frame_idx)
-                    .and_then(|t| t.bindless_slot)
-                    .unwrap_or(hdr_slot);
-                renderer.set_geometry_hdr_view(view, hdr_transient_slot);
-            }
-            if let Some(view) = frame_graph.transient_image_view_metal("viewport_0", 0) {
-                renderer.set_tonemap_output_view(view);
-            }
-            renderer.set_viewport_bindless_slot(vp_slot);
-        }
-
-        let pass_ids = super::PassIds {
-            depth_prepass: frame_graph
-                .pass_id("depth_prepass")
-                .unwrap_or(katla_gfx::render_graph::PassId(0)),
-            geometry: frame_graph
-                .pass_id("geometry")
-                .ok_or(crate::error::AppError::Other {
-                    message: "Frame graph must contain a 'geometry' pass".to_string(),
-                })?,
-            shadow: frame_graph
-                .pass_id("shadow")
-                .ok_or(crate::error::AppError::Other {
-                    message: "Frame graph must contain a 'shadow' pass".to_string(),
-                })?,
-            outline: frame_graph
-                .pass_id("outline")
-                .unwrap_or(katla_gfx::render_graph::PassId(0)),
-            stencil_indicator: frame_graph
-                .pass_id("stencil_indicator")
-                .unwrap_or(katla_gfx::render_graph::PassId(0)),
-            ui: frame_graph
-                .pass_id("ui")
-                .ok_or(crate::error::AppError::Other {
-                    message: "Frame graph must contain a 'ui' pass".to_string(),
-                })?,
-            tonemap: frame_graph
-                .pass_id("tonemap")
-                .ok_or(crate::error::AppError::Other {
-                    message: "Frame graph must contain a 'tonemap' pass".to_string(),
-                })?,
-            wallhack_overlay: frame_graph
-                .pass_id("wallhack_overlay")
-                .unwrap_or(katla_gfx::render_graph::PassId(0)),
-        };
+        let configured_frame_graph =
+            Self::build_selected_frame_graph(frame_graph_factory, &mut renderer, &resources)?;
+        let (frame_graph, pass_ids, frame_graph_bindings, frame_graph_runtime) =
+            Self::prepare_frame_graph(configured_frame_graph, &mut renderer)?;
 
         // Initialize UI renderer for Metal
         #[cfg(feature = "editor")]
@@ -948,6 +962,8 @@ impl ApplicationBuilder {
             renderer,
             frame_graph,
             pass_ids,
+            frame_graph_bindings,
+            frame_graph_runtime,
             camera,
             gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),
@@ -993,7 +1009,7 @@ impl ApplicationBuilder {
         Ok(app)
     }
 
-    pub fn build(self) -> AppResult<(Application, EventLoop<()>)> {
+    pub fn build(mut self) -> AppResult<(Application, EventLoop<()>)> {
         let event_loop = Self::build_event_loop()?;
 
         // Install console logger early so all subsequent log messages are captured.
@@ -1026,6 +1042,8 @@ impl ApplicationBuilder {
         let preferences = Preferences::load();
         #[cfg(feature = "editor")]
         let (theme, gui_state) = Self::load_editor_state_static(&preferences);
+
+        let frame_graph_factory = self.frame_graph_factory.take();
 
         let info = ApplicationInfo {
             name: self.app_name,
@@ -1176,96 +1194,10 @@ impl ApplicationBuilder {
             font_atlas_handle.index()
         );
 
-        // Build the frame graph once at startup (needs mutable renderer to compile shader)
-        let mut frame_graph = match &mut renderer {
-            katla_gfx::AnyRenderer::Vulkan(r) => Self::build_frame_graph(r, &resources)?,
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(r) => Self::build_metal_frame_graph(r)?,
-        };
-
-        let pass_ids = super::PassIds {
-            depth_prepass: frame_graph
-                .pass_id("depth_prepass")
-                .unwrap_or(katla_gfx::render_graph::PassId(0)),
-            geometry: frame_graph
-                .pass_id("geometry")
-                .ok_or(crate::error::AppError::Other {
-                    message: "Frame graph must contain a 'geometry' pass".to_string(),
-                })?,
-            shadow: frame_graph
-                .pass_id("shadow")
-                .ok_or(crate::error::AppError::Other {
-                    message: "Frame graph must contain a 'shadow' pass".to_string(),
-                })?,
-            outline: frame_graph
-                .pass_id("outline")
-                .unwrap_or(katla_gfx::render_graph::PassId(0)),
-            stencil_indicator: frame_graph
-                .pass_id("stencil_indicator")
-                .unwrap_or(katla_gfx::render_graph::PassId(0)),
-            ui: frame_graph
-                .pass_id("ui")
-                .ok_or(crate::error::AppError::Other {
-                    message: "Frame graph must contain a 'ui' pass".to_string(),
-                })?,
-            tonemap: frame_graph
-                .pass_id("tonemap")
-                .ok_or(crate::error::AppError::Other {
-                    message: "Frame graph must contain a 'tonemap' pass".to_string(),
-                })?,
-            wallhack_overlay: frame_graph
-                .pass_id("wallhack_overlay")
-                .unwrap_or(katla_gfx::render_graph::PassId(0)),
-        };
-
-        // Initialize transient textures and wire backend-specific resources
-        frame_graph
-            .initialize_transient_textures(&mut renderer)
-            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-
-        match &mut renderer {
-            katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
-                for frame_idx in 0..2 {
-                    if let Some(view) = frame_graph
-                        .as_vulkan()
-                        .transient_texture_view_for_frame("shadow_atlas", frame_idx)
-                    {
-                        vulkan_renderer.set_shadow_atlas_view(frame_idx, view);
-                    }
-                }
-                log::info!("Shadow atlas views set for all frames");
-            }
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => {
-                let hdr_slot = frame_graph
-                    .register_transient_texture_bindless(&mut renderer, "hdr_color")
-                    .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-                log::info!("HDR texture registered with bindless at index {}", hdr_slot);
-
-                let vp_slot = frame_graph
-                    .register_transient_texture_bindless(&mut renderer, "viewport_0")
-                    .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-                log::info!(
-                    "Viewport texture registered with bindless at index {}",
-                    vp_slot
-                );
-
-                let frame_idx = GpuRenderer::current_frame(&renderer);
-                if let Some(view) = frame_graph.transient_image_view_metal("hdr_color", frame_idx) {
-                    let hdr_transient_slot = frame_graph
-                        .transient_texture_metal("hdr_color", frame_idx)
-                        .and_then(|t| t.bindless_slot)
-                        .unwrap_or(hdr_slot);
-                    renderer.set_geometry_hdr_view(view, hdr_transient_slot);
-                }
-
-                if let Some(view) = frame_graph.transient_image_view_metal("viewport_0", 0) {
-                    renderer.set_tonemap_output_view(view);
-                }
-
-                renderer.set_viewport_bindless_slot(vp_slot);
-            }
-        }
+        let configured_frame_graph =
+            Self::build_selected_frame_graph(frame_graph_factory, &mut renderer, &resources)?;
+        let (frame_graph, pass_ids, frame_graph_bindings, frame_graph_runtime) =
+            Self::prepare_frame_graph(configured_frame_graph, &mut renderer)?;
 
         // Initialize UI renderer with font atlas bindless slot
         #[cfg(feature = "editor")]
@@ -1314,6 +1246,8 @@ impl ApplicationBuilder {
             renderer,
             frame_graph,
             pass_ids,
+            frame_graph_bindings,
+            frame_graph_runtime,
             camera,
             gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),
@@ -1383,6 +1317,37 @@ impl ApplicationBuilder {
                 message: e.to_string(),
             })?;
         Ok(())
+    }
+}
+
+impl KatlaEditorFrameGraphPreset {
+    /// Build Katla's explicit scene + editor graph preset for the active backend.
+    pub fn build(
+        renderer: &mut Renderer,
+        resources: &ResourceManager,
+    ) -> AppResult<ApplicationFrameGraph> {
+        // Heavy scene subsystems belong to this explicit preset, not renderer
+        // construction. A graph-only application therefore pays no particle
+        // buffer allocation or simulation setup cost.
+        renderer
+            .init_particle_system()
+            .map_err(|source| crate::error::AppError::Graphics { source })?;
+
+        let (graph, bindings) = match renderer {
+            katla_gfx::AnyRenderer::Vulkan(renderer) => (
+                ApplicationBuilder::build_frame_graph(renderer, resources)?,
+                super::frame_graph_config::FrameGraphBindings::katla_editor(),
+            ),
+            #[cfg(target_os = "macos")]
+            katla_gfx::AnyRenderer::Metal(renderer) => (
+                ApplicationBuilder::build_metal_frame_graph(renderer)?,
+                super::frame_graph_config::FrameGraphBindings::katla_editor_metal(),
+            ),
+        };
+
+        Ok(ApplicationFrameGraph::new(graph)
+            .with_bindings(bindings)
+            .with_runtime(FrameGraphRuntime::KatlaScene))
     }
 }
 
@@ -1517,5 +1482,23 @@ mod tests {
             assert!(value.is_some());
             assert_eq!(*value.unwrap(), 42);
         }
+    }
+
+    #[test]
+    fn default_builder_selects_the_explicit_editor_preset() {
+        let builder = ApplicationBuilder::new();
+        assert!(builder.frame_graph_factory.is_none());
+    }
+
+    #[test]
+    fn custom_frame_graph_factory_can_only_be_taken_once() {
+        let mut builder = ApplicationBuilder::new().with_frame_graph(|renderer, _resources| {
+            Ok(ApplicationFrameGraph::new(
+                super::super::frame_graph_config::empty_frame_graph(renderer),
+            ))
+        });
+
+        assert!(builder.frame_graph_factory.take().is_some());
+        assert!(builder.frame_graph_factory.take().is_none());
     }
 }
