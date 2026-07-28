@@ -12,7 +12,7 @@ jobs:
   apply-agent-patch:
     if: github.head_ref == 'agent/application-owned-frame-graphs'
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     steps:
       - name: Check out patch branch
         uses: actions/checkout@v6
@@ -36,23 +36,64 @@ jobs:
           PY
           git apply --index /tmp/agent.patch
 
-      - name: Format Rust workspace
+      - name: Install Rust and Linux graphics dependencies
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
-          cargo fmt --all
-
-      - name: Validate application on Linux
-        run: |
           sudo apt-get update
           sudo apt-get install -y \
             libasound2-dev \
             libvulkan1 \
             mesa-vulkan-drivers \
             vulkan-validationlayers
-          cargo check -p katla_app --locked --quiet
-          cargo test -p katla_app --lib --locked --quiet
-          cargo clippy -p katla_app --locked --quiet -- -D warnings
+
+      - name: Format Rust workspace
+        run: cargo fmt --all
+
+      - name: Check application
+        id: check
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p /tmp/katla-validation
+          cargo check -p katla_app --locked 2>&1 | tee /tmp/katla-validation/cargo-check.log
+
+      - name: Test application library
+        id: test
+        if: steps.check.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cargo test -p katla_app --lib --locked 2>&1 | tee /tmp/katla-validation/cargo-test.log
+
+      - name: Lint application
+        id: clippy
+        if: steps.check.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cargo clippy -p katla_app --locked -- -D warnings 2>&1 | tee /tmp/katla-validation/cargo-clippy.log
+
+      - name: Upload validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-frame-graph-validation
+          path: /tmp/katla-validation
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Fail on validation errors
+        if: always()
+        env:
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+          TEST_OUTCOME: ${{ steps.test.outcome }}
+          CLIPPY_OUTCOME: ${{ steps.clippy.outcome }}
+        run: |
+          printf 'check=%s test=%s clippy=%s\n' "$CHECK_OUTCOME" "$TEST_OUTCOME" "$CLIPPY_OUTCOME"
+          test "$CHECK_OUTCOME" = success
+          test "$TEST_OUTCOME" = success
+          test "$CLIPPY_OUTCOME" = success
 
       - name: Restore canonical CI and publish product commit
         run: |
