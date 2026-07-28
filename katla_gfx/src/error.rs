@@ -69,6 +69,16 @@ pub enum RendererError {
 
     MaterialError(MaterialError),
 
+    /// A submitted GPU command buffer reached a terminal failure state.
+    GpuExecutionFailed {
+        backend: &'static str,
+        label: String,
+        status: String,
+        code: Option<i64>,
+        domain: Option<String>,
+        description: Option<String>,
+    },
+
     /// Exceeded maximum objects per frame limit.
     ObjectLimitExceeded {
         index: usize,
@@ -96,6 +106,31 @@ impl fmt::Display for RendererError {
             }
             RendererError::RenderGraphError(err) => write!(f, "Render graph error: {}", err),
             RendererError::MaterialError(err) => write!(f, "Material error: {}", err),
+            RendererError::GpuExecutionFailed {
+                backend,
+                label,
+                status,
+                code,
+                domain,
+                description,
+            } => {
+                write!(
+                    f,
+                    "{} GPU execution failed for command buffer '{}' (status={}",
+                    backend, label, status
+                )?;
+                if let Some(code) = code {
+                    write!(f, ", code={code}")?;
+                }
+                if let Some(domain) = domain {
+                    write!(f, ", domain={domain}")?;
+                }
+                write!(f, ")")?;
+                if let Some(description) = description {
+                    write!(f, ": {description}")?;
+                }
+                Ok(())
+            }
             RendererError::ObjectLimitExceeded { index, limit } => {
                 write!(
                     f,
