@@ -58,7 +58,7 @@ impl MetalRenderer {
         // It will be cleaned up by take_headless_texture() or destroy().
         // Just clear the view reference so the next frame gets a fresh view.
         self.drawable_texture_view = None;
-        self.frame_index += 1;
+        self.frame_index = self.frame_index.wrapping_add(1);
         Ok(())
     }
 }

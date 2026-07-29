@@ -38,6 +38,12 @@ use super::ui_renderer::MetalUIRenderer;
 pub(crate) const OBJECT_UNIFORM_SIZE: u64 = 16 * 4 + 4 * 4 + 4 * 4 + 4 * 4;
 pub(crate) const FRAMES_IN_FLIGHT: usize = 2;
 
+/// Map the monotonically increasing frame index to the slot that owns mutable GPU data.
+#[inline]
+pub(crate) const fn frame_slot(frame_index: u32) -> usize {
+    (frame_index as usize) % FRAMES_IN_FLIGHT
+}
+
 fn validate_object_buffer_capacity(
     draw_list: &DrawList,
     buffer_size: usize,
@@ -503,7 +509,7 @@ impl MetalRenderer {
     }
 
     fn ensure_uniform_buffers(&mut self) -> Result<(), RendererError> {
-        let frame_idx = (self.frame_index as usize) % FRAMES_IN_FLIGHT;
+        let frame_idx = frame_slot(self.frame_index);
         if self.frame_uniform_buffers[frame_idx].is_none() {
             let frame_size = mem::size_of::<FrameUniforms>() as u64;
             self.frame_uniform_buffers[frame_idx] =
@@ -518,12 +524,12 @@ impl MetalRenderer {
     }
 
     pub(crate) fn current_frame_uniform_buffer(&self) -> Option<&MetalBuffer> {
-        let idx = (self.frame_index as usize) % FRAMES_IN_FLIGHT;
+        let idx = frame_slot(self.frame_index);
         self.frame_uniform_buffers[idx].as_ref()
     }
 
     pub(crate) fn current_object_storage_buffer(&self) -> Option<&MetalBuffer> {
-        let idx = (self.frame_index as usize) % FRAMES_IN_FLIGHT;
+        let idx = frame_slot(self.frame_index);
         self.object_storage_buffers[idx].as_ref()
     }
 
@@ -894,10 +900,9 @@ impl MetalRenderer {
             })
     }
 
-    /// Get the current frame index for per-frame resources.
-    /// Always 0 for Metal — transient textures are single-buffered.
+    /// Get the active ownership slot for per-frame resources.
     pub(crate) fn frame_index(&self) -> usize {
-        0
+        frame_slot(self.frame_index)
     }
 }
 
@@ -907,7 +912,7 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn current_frame(&self) -> usize {
-        0
+        self.frame_index()
     }
 
     fn num_images(&self) -> usize {
@@ -1371,6 +1376,14 @@ mod tests {
     fn create_renderer() -> MetalRenderer {
         let context = MetalContext::init_headless().expect("Failed to create headless context");
         MetalRenderer::new(context).expect("Failed to create MetalRenderer")
+    }
+
+    #[test]
+    fn frame_slots_wrap_at_the_renderer_slot_count() {
+        assert_eq!(frame_slot(0), 0);
+        assert_eq!(frame_slot(1), 1);
+        assert_eq!(frame_slot(2), 0);
+        assert_eq!(frame_slot(3), 1);
     }
 
     #[test]
