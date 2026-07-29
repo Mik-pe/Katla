@@ -128,6 +128,7 @@ impl PassBuilder for UIPass {
             pass_type: PassType::Graphics,
             reads,
             writes,
+            image_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
