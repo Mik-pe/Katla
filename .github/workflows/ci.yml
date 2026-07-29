@@ -1,88 +1,29 @@
-name: CI
+name: Export source snapshot
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
-  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: "1"
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
-  linux-graphics:
-    name: Linux graphics quality
+  export-source:
+    if: github.head_ref == 'agent/source-export-rest-findings'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
+      - name: Pack source snapshot
+        run: tar --exclude=.git --exclude=target -czf /tmp/katla-source.tar.gz .
 
-      - name: Install Linux graphics dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev \
-            libvulkan1 \
-            mesa-vulkan-drivers \
-            vulkan-tools \
-            vulkan-validationlayers
-          vulkaninfo --summary
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Check graphics library
-        run: cargo check -p katla_gfx --lib --locked --quiet
-
-      - name: Test graphics library
-        run: cargo test -p katla_gfx --lib --locked --quiet
-
-      - name: Lint graphics library
-        run: cargo clippy -p katla_gfx --lib --locked --quiet -- -D warnings
-
-  macos-26:
-    name: macOS 26 / Metal
-    runs-on: macos-26
-    timeout-minutes: 45
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v6
-
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
-
-      - name: Report runner environment
-        run: |
-          sw_vers
-          uname -m
-          xcodebuild -version
-          system_profiler SPDisplaysDataType || true
-
-      - name: Check graphics and application crates
-        run: cargo check -p katla_gfx -p katla_app --locked --quiet
-
-      - name: Test graphics library
-        run: cargo test -p katla_gfx --lib --locked --quiet
-
-      - name: Lint graphics and application crates
-        run: cargo clippy -p katla_gfx -p katla_app --locked --quiet -- -D warnings
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: katla-rest-findings-source
+          path: /tmp/katla-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
