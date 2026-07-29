@@ -4,7 +4,7 @@
 //! concrete transient texture creation, bindless management, and
 //! frame indexing using Metal GPU resources.
 
-use crate::metal::metal_renderer::MetalRenderer;
+use crate::metal::metal_renderer::{FRAMES_IN_FLIGHT, MetalRenderer};
 use crate::metal::metal_transient_texture::MetalTransientTexture;
 use crate::render_graph::backend::RenderGraphBackend;
 use crate::render_graph::error::RenderGraphError;
@@ -57,11 +57,11 @@ impl RenderGraphBackend for MetalRenderer {
     }
 
     fn current_frame(&self) -> usize {
-        0
+        (self.frame_index as usize) % FRAMES_IN_FLIGHT
     }
 
     fn transient_texture_frames() -> usize {
-        1
+        FRAMES_IN_FLIGHT
     }
 
     fn register_bindless_texture(
