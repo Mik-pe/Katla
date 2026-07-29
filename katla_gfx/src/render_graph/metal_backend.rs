@@ -57,7 +57,7 @@ impl RenderGraphBackend for MetalRenderer {
     }
 
     fn current_frame(&self) -> usize {
-        (self.frame_index as usize) % FRAMES_IN_FLIGHT
+        self.frame_index()
     }
 
     fn transient_texture_frames() -> usize {

@@ -22,6 +22,7 @@ use crate::particles::types::EmitterHandle;
 
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
+use super::metal_renderer::{frame_slot, FRAMES_IN_FLIGHT};
 use super::shader;
 
 /// Maximum particles supported by shaders (must match MAX_PARTICLES in WGSL)
@@ -94,7 +95,7 @@ struct BufferLayout {
     _dead_list_size: u64,
     _alive_offset: u64,
     _alive_list_size: u64,
-    _alive_frame_offset: [u64; 2],
+    _alive_frame_offset: [u64; FRAMES_IN_FLIGHT],
     total_size: u64,
 }
 
@@ -136,10 +137,10 @@ impl BufferLayout {
 pub(crate) struct MetalParticleSubsystem {
     // GPU buffers
     _particle_buffer: MetalBuffer,
-    _counters_buffers: [MetalBuffer; 2],
-    _indirect_draw_buffers: [MetalBuffer; 2],
-    _frame_data_buffers: [MetalBuffer; 2],
-    _emitter_config_buffers: [MetalBuffer; 2],
+    _counters_buffers: [MetalBuffer; FRAMES_IN_FLIGHT],
+    _indirect_draw_buffers: [MetalBuffer; FRAMES_IN_FLIGHT],
+    _frame_data_buffers: [MetalBuffer; FRAMES_IN_FLIGHT],
+    _emitter_config_buffers: [MetalBuffer; FRAMES_IN_FLIGHT],
 
     // Compute pipelines
     _emit_pipeline: Retained<ProtocolObject<dyn MTLComputePipelineState>>,
@@ -449,7 +450,7 @@ impl MetalParticleSubsystem {
 
         let total_this_frame = total_emit_count + total_burst_count;
 
-        let fi = (frame_index as usize) % 2;
+        let fi = frame_slot(frame_index);
 
         {
             let active_emitter_count = self
@@ -499,7 +500,7 @@ impl MetalParticleSubsystem {
         }
 
         {
-            let prev_fi = (fi + 1) % 2;
+            let prev_fi = (fi + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
             let prev_ptr = self._counters_buffers[prev_fi].map() as *const ParticleCounters;
             let prev_counters = unsafe { *prev_ptr };
             self._counters_buffers[prev_fi].unmap();
@@ -540,8 +541,8 @@ impl MetalParticleSubsystem {
         context: &MetalContext,
         frame_index: u32,
     ) -> Result<(), String> {
-        let fi = (frame_index as usize) % 2;
-        let prev_fi = (fi + 1) % 2;
+        let fi = frame_slot(frame_index);
+        let prev_fi = (fi + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
 
         let counters = {
             let ptr = self._counters_buffers[fi].map() as *const ParticleCounters;
