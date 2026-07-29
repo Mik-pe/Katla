@@ -4,17 +4,44 @@
 //! consumes this ordered record stream directly instead of rebuilding an editor
 //! pipeline from singleton semantic checks.
 
-use crate::render_graph::{FrameGraph, PassDesc, PassId, PassKind, PassType, RenderGraphError};
+use crate::render_graph::{
+    FrameGraph, PassDesc, PassId, PassKind, PassType, RenderGraphError, ResourceId,
+};
+use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use crate::texture::ImageFormat;
 
 use super::metal_renderer::MetalRenderer;
 
-/// Stable executable identity for one compiled render-graph pass.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Graph-declared color attachment copied into a Metal executable record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MetalColorAttachmentRecord {
+    pub(crate) resource: ResourceId,
+    pub(crate) format: ImageFormat,
+    pub(crate) load_op: LoadOp,
+    pub(crate) store_op: StoreOp,
+    pub(crate) clear_value: ClearValue,
+}
+
+/// Graph-declared depth behavior copied into a Metal executable record.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MetalDepthAttachmentOps {
+    pub(crate) load_op: LoadOp,
+    pub(crate) store_op: StoreOp,
+    pub(crate) clear_value: ClearValue,
+}
+
+/// Stable executable identity and resource contract for one compiled pass.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MetalPassRecord {
     pub(crate) pass_id: PassId,
     pub(crate) pass_index: usize,
     pub(crate) name: String,
     pub(crate) kind: PassKind,
+    pub(crate) reads: Vec<ResourceId>,
+    pub(crate) writes: Vec<ResourceId>,
+    pub(crate) color_attachments: Vec<MetalColorAttachmentRecord>,
+    pub(crate) uses_depth: bool,
+    pub(crate) depth_attachment: Option<MetalDepthAttachmentOps>,
 }
 
 impl MetalPassRecord {
@@ -54,12 +81,88 @@ impl MetalPassRecord {
             pass_index,
             name: pass.name.clone(),
             kind,
+            reads: pass.reads.clone(),
+            writes: pass.writes.clone(),
+            color_attachments: pass
+                .color_attachments
+                .iter()
+                .map(
+                    |&(resource, format, load_op, store_op, clear_value)| {
+                        MetalColorAttachmentRecord {
+                            resource,
+                            format,
+                            load_op,
+                            store_op,
+                            clear_value,
+                        }
+                    },
+                )
+                .collect(),
+            uses_depth: pass.uses_depth,
+            depth_attachment: pass.depth_attachment.map(
+                |(load_op, store_op, clear_value)| MetalDepthAttachmentOps {
+                    load_op,
+                    store_op,
+                    clear_value,
+                },
+            ),
         })
+    }
+
+    fn trace(&self) -> String {
+        let reads = self
+            .reads
+            .iter()
+            .map(|resource| resource.0.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let writes = self
+            .writes
+            .iter()
+            .map(|resource| resource.0.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let color_attachments = self
+            .color_attachments
+            .iter()
+            .map(|attachment| {
+                format!(
+                    "{}:{:?}:{:?}/{:?}:{:?}",
+                    attachment.resource.0,
+                    attachment.format,
+                    attachment.load_op,
+                    attachment.store_op,
+                    attachment.clear_value
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("|");
+        let depth_attachment = self
+            .depth_attachment
+            .map(|attachment| {
+                format!(
+                    "{:?}/{:?}:{:?}",
+                    attachment.load_op, attachment.store_op, attachment.clear_value
+                )
+            })
+            .unwrap_or_else(|| "none".to_string());
+
+        format!(
+            "{}:{}:{:?}:reads=[{}]:writes=[{}]:colors=[{}]:uses_depth={}:depth={}",
+            self.pass_id.0,
+            self.name,
+            self.kind,
+            reads,
+            writes,
+            color_attachments,
+            self.uses_depth,
+            depth_attachment
+        )
     }
 }
 
 /// Ordered Metal records derived from the graph compiler's canonical execution order.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MetalExecutionPlan {
     passes: Vec<MetalPassRecord>,
 }
@@ -108,6 +211,17 @@ impl MetalExecutionPlan {
                     pass_index,
                     name: format!("pass_{pass_index}"),
                     kind,
+                    reads: Vec::new(),
+                    writes: Vec::new(),
+                    color_attachments: Vec::new(),
+                    uses_depth: matches!(
+                        kind,
+                        PassKind::DepthPrepass
+                            | PassKind::Geometry
+                            | PassKind::ObjectId
+                            | PassKind::Outline
+                    ),
+                    depth_attachment: None,
                 })
                 .collect(),
         }
@@ -115,10 +229,7 @@ impl MetalExecutionPlan {
 
     /// Deterministic plan trace used by validation and regression tests.
     pub(crate) fn trace(&self) -> Vec<String> {
-        self.passes
-            .iter()
-            .map(|pass| format!("{}:{}:{:?}", pass.pass_id.0, pass.name, pass.kind))
-            .collect()
+        self.passes.iter().map(MetalPassRecord::trace).collect()
     }
 }
 
@@ -129,6 +240,15 @@ mod tests {
     fn pass(name: &str, pass_type: PassType, kind: Option<PassKind>) -> PassDesc {
         let mut pass = PassDesc::new(name, pass_type, Vec::new(), Vec::new());
         pass.kind = kind;
+        pass.uses_depth = matches!(
+            kind,
+            Some(
+                PassKind::DepthPrepass
+                    | PassKind::Geometry
+                    | PassKind::ObjectId
+                    | PassKind::Outline
+            )
+        );
         pass
     }
 
@@ -150,7 +270,11 @@ mod tests {
         let plan = compile(&passes, &[0, 1, 2]).unwrap();
         assert_eq!(
             plan.trace(),
-            vec!["0:geometry:Geometry", "1:tonemap:Fullscreen", "2:ui:Ui",]
+            vec![
+                "0:geometry:Geometry:reads=[]:writes=[]:colors=[]:uses_depth=true:depth=none",
+                "1:tonemap:Fullscreen:reads=[]:writes=[]:colors=[]:uses_depth=false:depth=none",
+                "2:ui:Ui:reads=[]:writes=[]:colors=[]:uses_depth=false:depth=none",
+            ]
         );
     }
 
@@ -203,6 +327,54 @@ mod tests {
         )];
         let plan = compile(&passes, &[0]).unwrap();
         assert_eq!(plan.passes()[0].kind, PassKind::ObjectId);
+    }
+
+    #[test]
+    fn copies_graph_resource_and_attachment_contracts() {
+        let mut geometry = pass("geometry", PassType::Graphics, Some(PassKind::Geometry));
+        geometry.reads = vec![ResourceId(4)];
+        geometry.writes = vec![ResourceId(7)];
+        geometry.color_attachments.push((
+            ResourceId(7),
+            ImageFormat::R16G16B16A16Sfloat,
+            LoadOp::Load,
+            StoreOp::Store,
+            ClearValue::OPAQUE_BLACK,
+        ));
+        geometry.depth_attachment = Some((
+            LoadOp::Load,
+            StoreOp::Store,
+            ClearValue::DepthStencil {
+                depth: 0.0,
+                stencil: 1,
+            },
+        ));
+
+        let plan = compile(&[geometry], &[0]).unwrap();
+        let record = &plan.passes()[0];
+        assert_eq!(record.reads, vec![ResourceId(4)]);
+        assert_eq!(record.writes, vec![ResourceId(7)]);
+        assert_eq!(
+            record.color_attachments,
+            vec![MetalColorAttachmentRecord {
+                resource: ResourceId(7),
+                format: ImageFormat::R16G16B16A16Sfloat,
+                load_op: LoadOp::Load,
+                store_op: StoreOp::Store,
+                clear_value: ClearValue::OPAQUE_BLACK,
+            }]
+        );
+        assert_eq!(
+            record.depth_attachment,
+            Some(MetalDepthAttachmentOps {
+                load_op: LoadOp::Load,
+                store_op: StoreOp::Store,
+                clear_value: ClearValue::DepthStencil {
+                    depth: 0.0,
+                    stencil: 1,
+                },
+            })
+        );
     }
 
     #[test]
