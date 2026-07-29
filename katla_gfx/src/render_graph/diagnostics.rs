@@ -11,7 +11,9 @@ use serde::Serialize;
 
 use super::BACKBUFFER_NAME;
 use super::backend::RenderGraphBackend;
-use super::compiler::{ExecutionPlan, ResourceLifetime};
+use super::compiler::{
+    ExecutionPlan, ResourceHazardKind, ResourceLifetime, ResourceTransition,
+};
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::ResourceId;
@@ -19,7 +21,7 @@ use super::pass::{PassDesc, PassType};
 use super::resource::{GraphResourceDesc, GraphResourceType};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 2;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 3;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -29,6 +31,7 @@ pub struct RenderGraphDiagnostics {
     pub resources: Vec<RenderGraphDiagnosticResource>,
     pub passes: Vec<RenderGraphDiagnosticPass>,
     pub dependencies: Vec<RenderGraphDiagnosticDependency>,
+    pub synchronization: Vec<RenderGraphDiagnosticTransition>,
     pub execution_order: Vec<usize>,
     pub parallel_groups: Vec<Vec<usize>>,
 }
@@ -41,6 +44,7 @@ pub struct RenderGraphDiagnosticSummary {
     pub culled_passes: usize,
     pub resources: usize,
     pub dependency_edges: usize,
+    pub synchronization_transitions: usize,
     pub parallel_levels: usize,
 }
 
@@ -136,6 +140,27 @@ pub struct RenderGraphDiagnosticDependency {
     pub to_pass: usize,
     pub to_name: String,
     pub hazards: Vec<RenderGraphDiagnosticHazard>,
+}
+
+/// Backend-neutral access mode on one side of a synchronization transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderGraphDiagnosticAccess {
+    Read,
+    Write,
+}
+
+/// One compiler-owned resource transition between live passes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticTransition {
+    pub resource: RenderGraphDiagnosticResourceRef,
+    pub from_pass: usize,
+    pub from_name: String,
+    pub to_pass: usize,
+    pub to_name: String,
+    pub source_access: RenderGraphDiagnosticAccess,
+    pub destination_access: RenderGraphDiagnosticAccess,
+    pub hazard: RenderGraphHazardKind,
 }
 
 impl<B: RenderGraphBackend> FrameGraph<B> {
@@ -236,13 +261,15 @@ impl RenderGraphDiagnostics {
             })
             .collect::<Vec<_>>();
 
-        let dependencies = dependency_diagnostics(passes, resources, plan);
+        let synchronization = transition_diagnostics(passes, resources, plan);
+        let dependencies = dependency_diagnostics(passes, &synchronization);
         let summary = RenderGraphDiagnosticSummary {
             declared_passes: passes.len(),
             live_passes: plan.live_passes.iter().filter(|&&live| live).count(),
             culled_passes: plan.culled_passes.len(),
             resources: diagnostic_resources.len(),
             dependency_edges: dependencies.len(),
+            synchronization_transitions: synchronization.len(),
             parallel_levels: plan.parallel_groups.len(),
         };
 
@@ -252,6 +279,7 @@ impl RenderGraphDiagnostics {
             resources: diagnostic_resources,
             passes: diagnostic_passes,
             dependencies,
+            synchronization,
             execution_order: plan.sorted_passes.clone(),
             parallel_groups: plan.parallel_groups.clone(),
         }
@@ -353,12 +381,13 @@ impl fmt::Display for RenderGraphDiagnostics {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "{} declared passes ({} live, {} culled), {} resources, {} dependency edges, {} parallel levels",
+            "{} declared passes ({} live, {} culled), {} resources, {} dependency edges, {} synchronization transitions, {} parallel levels",
             self.summary.declared_passes,
             self.summary.live_passes,
             self.summary.culled_passes,
             self.summary.resources,
             self.summary.dependency_edges,
+            self.summary.synchronization_transitions,
             self.summary.parallel_levels
         )?;
 
@@ -391,40 +420,69 @@ impl fmt::Display for RenderGraphDiagnostics {
     }
 }
 
-fn dependency_diagnostics(
+fn transition_diagnostics(
     passes: &[PassDesc],
     resources: &[GraphResourceDesc],
     plan: &ExecutionPlan,
+) -> Vec<RenderGraphDiagnosticTransition> {
+    plan.resource_transitions
+        .iter()
+        .copied()
+        .map(|transition| diagnostic_transition(transition, passes, resources))
+        .collect()
+}
+
+fn diagnostic_transition(
+    transition: ResourceTransition,
+    passes: &[PassDesc],
+    resources: &[GraphResourceDesc],
+) -> RenderGraphDiagnosticTransition {
+    let (source_access, destination_access) = match transition.hazard {
+        ResourceHazardKind::ReadAfterWrite => (
+            RenderGraphDiagnosticAccess::Write,
+            RenderGraphDiagnosticAccess::Read,
+        ),
+        ResourceHazardKind::WriteAfterRead => (
+            RenderGraphDiagnosticAccess::Read,
+            RenderGraphDiagnosticAccess::Write,
+        ),
+        ResourceHazardKind::WriteAfterWrite => (
+            RenderGraphDiagnosticAccess::Write,
+            RenderGraphDiagnosticAccess::Write,
+        ),
+    };
+
+    RenderGraphDiagnosticTransition {
+        resource: resource_ref(transition.resource, resources),
+        from_pass: transition.from_pass,
+        from_name: passes[transition.from_pass].name.clone(),
+        to_pass: transition.to_pass,
+        to_name: passes[transition.to_pass].name.clone(),
+        source_access,
+        destination_access,
+        hazard: transition.hazard.into(),
+    }
+}
+
+fn dependency_diagnostics(
+    passes: &[PassDesc],
+    synchronization: &[RenderGraphDiagnosticTransition],
 ) -> Vec<RenderGraphDiagnosticDependency> {
-    let mut dependencies = Vec::new();
+    let mut grouped = BTreeMap::<(usize, usize), Vec<RenderGraphDiagnosticHazard>>::new();
 
-    for node in &plan.dag {
-        for &successor in &node.successors {
-            let from = &passes[node.pass_index];
-            let to = &passes[successor];
-            let mut hazards = Vec::new();
+    for transition in synchronization {
+        grouped
+            .entry((transition.from_pass, transition.to_pass))
+            .or_default()
+            .push(RenderGraphDiagnosticHazard {
+                kind: transition.hazard,
+                resource: transition.resource.clone(),
+            });
+    }
 
-            append_hazards(
-                &mut hazards,
-                &from.writes,
-                &to.reads,
-                RenderGraphHazardKind::Raw,
-                resources,
-            );
-            append_hazards(
-                &mut hazards,
-                &from.reads,
-                &to.writes,
-                RenderGraphHazardKind::War,
-                resources,
-            );
-            append_hazards(
-                &mut hazards,
-                &from.writes,
-                &to.writes,
-                RenderGraphHazardKind::Waw,
-                resources,
-            );
+    grouped
+        .into_iter()
+        .map(|((from_pass, to_pass), mut hazards)| {
             hazards.sort_by(|left, right| {
                 left.resource
                     .id
@@ -432,38 +490,23 @@ fn dependency_diagnostics(
                     .then(left.kind.cmp(&right.kind))
             });
             hazards.dedup();
-
-            dependencies.push(RenderGraphDiagnosticDependency {
-                from_pass: node.pass_index,
-                from_name: from.name.clone(),
-                to_pass: successor,
-                to_name: to.name.clone(),
+            RenderGraphDiagnosticDependency {
+                from_pass,
+                from_name: passes[from_pass].name.clone(),
+                to_pass,
+                to_name: passes[to_pass].name.clone(),
                 hazards,
-            });
-        }
-    }
-
-    dependencies.sort_by_key(|dependency| (dependency.from_pass, dependency.to_pass));
-    dependencies
+            }
+        })
+        .collect()
 }
 
-fn append_hazards(
-    hazards: &mut Vec<RenderGraphDiagnosticHazard>,
-    left: &[ResourceId],
-    right: &[ResourceId],
-    kind: RenderGraphHazardKind,
-    resources: &[GraphResourceDesc],
-) {
-    let right = right
-        .iter()
-        .map(|resource| resource.0)
-        .collect::<BTreeSet<_>>();
-    for resource in left {
-        if right.contains(&resource.0) {
-            hazards.push(RenderGraphDiagnosticHazard {
-                kind,
-                resource: resource_ref(*resource, resources),
-            });
+impl From<ResourceHazardKind> for RenderGraphHazardKind {
+    fn from(hazard: ResourceHazardKind) -> Self {
+        match hazard {
+            ResourceHazardKind::ReadAfterWrite => Self::Raw,
+            ResourceHazardKind::WriteAfterRead => Self::War,
+            ResourceHazardKind::WriteAfterWrite => Self::Waw,
         }
     }
 }
@@ -598,9 +641,10 @@ mod tests {
         }
 
         let json: Value = serde_json::from_str(&expected_json).unwrap();
-        assert_eq!(json["schema_version"], 2);
+        assert_eq!(json["schema_version"], 3);
         assert_eq!(json["execution_order"], serde_json::json!([0, 1, 2, 3]));
         assert_eq!(json["summary"]["dependency_edges"], 4);
+        assert_eq!(json["summary"]["synchronization_transitions"], 5);
         assert_eq!(json["summary"]["parallel_levels"], 4);
     }
 
@@ -642,6 +686,26 @@ mod tests {
             geometry_to_feedback.hazards[0].kind,
             RenderGraphHazardKind::Waw
         );
+    }
+
+    #[test]
+    fn diagnostics_expose_compiler_owned_synchronization_transitions() {
+        let diagnostics = diagnostics();
+        let raw = diagnostics
+            .synchronization
+            .iter()
+            .find(|transition| {
+                transition.from_pass == 0
+                    && transition.to_pass == 1
+                    && transition.resource.id == 1
+            })
+            .unwrap();
+
+        assert_eq!(raw.hazard, RenderGraphHazardKind::Raw);
+        assert_eq!(raw.source_access, RenderGraphDiagnosticAccess::Write);
+        assert_eq!(raw.destination_access, RenderGraphDiagnosticAccess::Read);
+        assert_eq!(raw.from_name, "geometry");
+        assert_eq!(raw.to_name, "post");
     }
 
     #[test]
