@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use super::backend::RenderGraphBackend;
 use super::builder::{InternalPassBuilder, PassBuilder};
@@ -63,7 +63,13 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// Pass name -> index mapping for execution context.
     pub(super) pass_names: HashMap<String, usize>,
 
-    /// Compiled execution plan (sorted passes, barriers).
+    /// Resources whose final values are externally observable after execution.
+    pub(crate) exported_resources: BTreeSet<ResourceId>,
+
+    /// Whether pass liveness analysis is enabled for this graph.
+    pub(crate) pass_culling_enabled: bool,
+
+    /// Compiled execution plan (sorted live passes and dependency metadata).
     execution_plan: Option<ExecutionPlan>,
 
     /// Whether the graph has been compiled.
@@ -106,6 +112,8 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             resources: Vec::new(),
             resource_by_name: HashMap::new(),
             pass_names: HashMap::new(),
+            exported_resources: BTreeSet::new(),
+            pass_culling_enabled: false,
             execution_plan: None,
             compiled: false,
             barriers_dirty: true,
@@ -168,9 +176,65 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.resource_by_name.get(name).copied()
     }
 
+    /// Mark a resource's final value as externally observable.
+    ///
+    /// The first export enables pass culling. Passes that cannot contribute to
+    /// an export or an explicit side effect are omitted from execution.
+    pub fn export_resource(&mut self, name: &str) -> Result<ResourceId, RenderGraphError> {
+        let id = self
+            .resource_id(name)
+            .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
+        self.pass_culling_enabled = true;
+        if self.exported_resources.insert(id) {
+            self.compiled = false;
+            self.execution_plan = None;
+            self.barriers_dirty = true;
+        }
+        Ok(id)
+    }
+
+    /// Return the liveness of a pass in the current compiled plan.
+    pub fn is_pass_live(&self, pass_id: PassId) -> Option<bool> {
+        self.execution_plan
+            .as_ref()
+            .and_then(|plan| plan.live_passes.get(pass_id.0 as usize).copied())
+    }
+
+    pub(crate) fn is_pass_index_live(&self, pass_index: usize) -> bool {
+        self.execution_plan
+            .as_ref()
+            .and_then(|plan| plan.live_passes.get(pass_index))
+            .copied()
+            .unwrap_or(true)
+    }
+
+    pub(crate) fn configure_pass_culling(
+        &mut self,
+        exported_resources: impl IntoIterator<Item = ResourceId>,
+    ) {
+        self.exported_resources = exported_resources.into_iter().collect();
+        self.pass_culling_enabled = true;
+        self.compiled = false;
+        self.execution_plan = None;
+        self.barriers_dirty = true;
+    }
+
     /// Get the name of a resource by its ResourceId.
     pub fn resource_name(&self, id: ResourceId) -> Option<&str> {
         self.resources.get(id.0 as usize).map(|r| r.name.as_str())
+    }
+
+    /// Build the canonical execution plan without mutating frame state.
+    pub(crate) fn build_execution_plan(&self) -> Result<ExecutionPlan, RenderGraphError> {
+        if self.pass_culling_enabled {
+            GraphCompiler::from_pass_descs_with_exports(
+                &self.passes,
+                self.exported_resources.iter().copied(),
+            )
+            .compile()
+        } else {
+            GraphCompiler::from_pass_descs(&self.passes).compile()
+        }
     }
 
     /// Compile the graph for execution.
@@ -179,10 +243,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             return Ok(());
         }
 
-        let compiler = GraphCompiler::from_pass_descs(&self.passes);
-        let execution_plan = compiler.compile()?;
-
-        self.execution_plan = Some(execution_plan);
+        self.execution_plan = Some(self.build_execution_plan()?);
         self.compiled = true;
         Ok(())
     }
@@ -635,6 +696,7 @@ impl FrameGraph<crate::MetalRenderer> {
         let frame_idx = renderer.frame_index();
         let mut frame = super::frame::Frame::new(self, renderer, 0, frame_idx);
         f(&mut frame);
+        frame.validate_submissions()?;
 
         Ok(std::mem::take(&mut frame.pending))
     }
@@ -647,7 +709,8 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
         &mut self,
         renderer: &mut crate::renderer::VulkanRenderer,
     ) -> Result<(), RenderGraphError> {
-        for pass in &self.passes {
+        for pass_index in self.execution_order() {
+            let pass = &self.passes[pass_index];
             if let Some(material_handle) = pass.material {
                 let format = pass
                     .output_format
@@ -698,7 +761,8 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
             image_index
         );
 
-        for pass in &self.passes {
+        for pass_index in self.execution_order() {
+            let pass = &self.passes[pass_index];
             if let Some(ref params) = pass.tonemap_params
                 && let Some(hdr_base_index) = params.hdr_texture_index
             {
@@ -752,6 +816,7 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
 
         let mut frame = super::frame::Frame::new(self, renderer, image_index, frame_idx);
         f(&mut frame);
+        frame.validate_submissions()?;
         frame.pre_compile_materials()?;
         frame.execute_passes()?;
 
@@ -782,6 +847,7 @@ pub struct FrameGraphBuilder {
     pass_builders: Vec<InternalPassBuilder>,
     resources: Vec<(String, GraphResourceHandle)>,
     transient_resources: Vec<GraphResourceDesc>,
+    exported_resources: BTreeSet<String>,
 }
 
 impl FrameGraphBuilder {
@@ -791,12 +857,33 @@ impl FrameGraphBuilder {
             pass_builders: Vec::new(),
             resources: Vec::new(),
             transient_resources: Vec::new(),
+            exported_resources: BTreeSet::from([BACKBUFFER_NAME.to_string()]),
         }
     }
 
     /// Add a pass to the graph.
     pub fn add_pass(mut self, pass: impl PassBuilder + 'static) -> Self {
         self.pass_builders.push(pass.as_builder());
+        self
+    }
+
+    /// Add a pass whose observable effect is not represented by a resource write.
+    ///
+    /// Side effects are explicit liveness roots. Ordinary render work should expose
+    /// an output resource instead, so the compiler can remove unused branches.
+    pub fn add_side_effect_pass(mut self, pass: impl PassBuilder + 'static) -> Self {
+        let mut pass = pass.as_builder();
+        pass.side_effect = true;
+        self.pass_builders.push(pass);
+        self
+    }
+
+    /// Mark a resource's final value as externally observable.
+    ///
+    /// The swapchain backbuffer is exported by default. Offscreen outputs used for
+    /// picking, readback, streaming, or interop must be exported explicitly.
+    pub fn export_resource(mut self, name: impl Into<String>) -> Self {
+        self.exported_resources.insert(name.into());
         self
     }
 
@@ -844,6 +931,14 @@ impl FrameGraphBuilder {
             }
         }
 
+        for resource in &self.exported_resources {
+            if !resource_names.contains(resource) {
+                return Err(
+                    GraphValidationError::UndeclaredExportedResource(resource.clone()).into(),
+                );
+            }
+        }
+
         let mut pass_names = HashSet::new();
         for pass in &self.pass_builders {
             if pass.name.trim().is_empty() {
@@ -881,6 +976,7 @@ impl FrameGraphBuilder {
             pass_builders,
             resources,
             transient_resources,
+            exported_resources,
         } = self;
 
         let transient_names = transient_resources
@@ -908,6 +1004,19 @@ impl FrameGraphBuilder {
         for (name, handle) in &resources {
             global_resource_map.insert(name.clone(), *handle);
         }
+
+        let exported_resource_ids = exported_resources
+            .iter()
+            .map(|name| {
+                graph.resource_by_name.get(name).copied().ok_or_else(|| {
+                    RenderGraphError::ResourceNotFound(format!(
+                        "Exported resource '{}' was not created",
+                        name
+                    ))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        graph.configure_pass_culling(exported_resource_ids);
 
         for pass_builder in pass_builders {
             let pass_data = (pass_builder.build_fn)(&global_resource_map)?;
@@ -954,6 +1063,7 @@ impl FrameGraphBuilder {
             pass.uses_depth = pass_builder.uses_depth;
             pass.depth_attachment = pass_builder.depth_attachment;
             pass.kind = pass_builder.kind;
+            pass.side_effect = pass_builder.side_effect;
 
             if let Some(geom_data) = pass_data.downcast_ref::<GeometryPassData>() {
                 for (handle, format, load_op, store_op, clear_value) in &geom_data.colors {
@@ -1305,6 +1415,110 @@ mod tests {
             )
             .build::<MockBackend>();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn builder_culls_unobserved_branches_but_keeps_the_backbuffer_chain() {
+        let graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("dead", 64, 64))
+            .add_pass(
+                super::super::builder::SimplePass::new("dead_branch", PassType::Graphics)
+                    .write("dead"),
+            )
+            .add_pass(
+                super::super::builder::SimplePass::new("present", PassType::Graphics)
+                    .write(BACKBUFFER_NAME),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+
+        let dead = graph.pass_id("dead_branch").unwrap();
+        let present = graph.pass_id("present").unwrap();
+        assert_eq!(graph.is_pass_live(dead), Some(false));
+        assert_eq!(graph.is_pass_live(present), Some(true));
+        assert_eq!(graph.execution_order(), vec![present.0 as usize]);
+    }
+
+    #[test]
+    fn submissions_to_culled_passes_fail_with_a_structured_error() {
+        let graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("dead", 64, 64))
+            .add_pass(
+                super::super::builder::SimplePass::new("dead_branch", PassType::Graphics)
+                    .write("dead"),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let dead = graph.pass_id("dead_branch").unwrap();
+        let mut backend = MockBackend;
+        let mut frame = super::super::frame::Frame::new(&graph, &mut backend, 0, 0);
+        frame.submit(dead, &crate::renderer::types::DrawList::new());
+
+        assert!(matches!(
+            frame.validate_submissions(),
+            Err(RenderGraphError::SubmissionToCulledPass(name)) if name == "dead_branch"
+        ));
+    }
+
+    #[test]
+    fn explicit_offscreen_export_keeps_its_producer_chain() {
+        let graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("intermediate", 64, 64))
+            .create_resource(validation_resource("readback", 64, 64))
+            .export_resource("readback")
+            .add_pass(
+                super::super::builder::SimplePass::new("produce", PassType::Graphics)
+                    .write("intermediate"),
+            )
+            .add_pass(
+                super::super::builder::SimplePass::new("copy_for_readback", PassType::Graphics)
+                    .read("intermediate")
+                    .write("readback"),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+
+        assert_eq!(graph.execution_order(), vec![0, 1]);
+        assert_eq!(
+            graph.is_pass_live(graph.pass_id("produce").unwrap()),
+            Some(true)
+        );
+        assert_eq!(
+            graph.is_pass_live(graph.pass_id("copy_for_readback").unwrap()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn explicit_side_effect_keeps_data_producers_without_fake_outputs() {
+        let graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("query_input", 64, 64))
+            .add_pass(
+                super::super::builder::SimplePass::new("produce_query_data", PassType::Graphics)
+                    .write("query_input"),
+            )
+            .add_side_effect_pass(
+                super::super::builder::SimplePass::new("timestamp_readback", PassType::Graphics)
+                    .read("query_input"),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+
+        assert_eq!(graph.execution_order(), vec![0, 1]);
+        assert!(
+            graph
+                .pass(graph.pass_index("timestamp_readback").unwrap())
+                .unwrap()
+                .side_effect
+        );
+    }
+
+    #[test]
+    fn builder_rejects_undeclared_exports() {
+        assert_eq!(
+            validation_error(FrameGraphBuilder::new().export_resource("typo_output")),
+            GraphValidationError::UndeclaredExportedResource("typo_output".to_string())
+        );
     }
 
     #[test]

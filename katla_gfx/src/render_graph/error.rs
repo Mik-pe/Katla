@@ -27,6 +27,8 @@ pub enum GraphValidationError {
     EmptyPassResource { pass: String },
     /// A pass references a resource that was never declared or imported.
     UndeclaredResource { pass: String, resource: String },
+    /// An exported resource was never declared or imported.
+    UndeclaredExportedResource(String),
     /// A transient descriptor is missing from the graph resource namespace.
     MissingResourceNamespaceEntry(String),
 }
@@ -64,6 +66,11 @@ impl fmt::Display for GraphValidationError {
                 "pass '{}' references undeclared resource '{}'",
                 pass, resource
             ),
+            Self::UndeclaredExportedResource(resource) => write!(
+                f,
+                "exported resource '{}' was never declared or imported",
+                resource
+            ),
             Self::MissingResourceNamespaceEntry(resource) => write!(
                 f,
                 "transient resource '{}' is missing from the graph namespace",
@@ -82,6 +89,8 @@ pub enum RenderGraphError {
     ResourceNotFound(String),
     /// Pass not found.
     PassNotFound(String),
+    /// Work was submitted to a pass removed by liveness analysis.
+    SubmissionToCulledPass(String),
     /// Cycle detected in dependency graph.
     DependencyCycle(String),
     /// Invalid resource state transition.
@@ -116,6 +125,11 @@ impl fmt::Display for RenderGraphError {
             Self::Validation(error) => write!(f, "Invalid render graph: {}", error),
             Self::ResourceNotFound(name) => write!(f, "Resource '{}' not found", name),
             Self::PassNotFound(name) => write!(f, "Pass '{}' not found", name),
+            Self::SubmissionToCulledPass(name) => write!(
+                f,
+                "Pass '{}' was culled; remove the submission or export its output",
+                name
+            ),
             Self::DependencyCycle(msg) => write!(f, "Cycle detected in dependency graph: {}", msg),
             Self::InvalidStateTransition { from, to, resource } => {
                 write!(
@@ -185,6 +199,14 @@ mod tests {
     fn test_error_display_pass_not_found() {
         let err = RenderGraphError::PassNotFound("geometry".to_string());
         assert!(err.to_string().contains("geometry"));
+    }
+
+    #[test]
+    fn test_error_display_submission_to_culled_pass() {
+        let err = RenderGraphError::SubmissionToCulledPass("unused".to_string());
+        let message = err.to_string();
+        assert!(message.contains("unused"));
+        assert!(message.contains("culled"));
     }
 
     #[test]

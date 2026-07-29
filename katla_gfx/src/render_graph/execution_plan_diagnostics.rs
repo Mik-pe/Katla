@@ -14,8 +14,9 @@ impl fmt::Display for ExecutionPlan {
 
         write!(
             f,
-            "{} passes, {} dependency edges, {} parallel levels",
+            "{} live passes ({} culled), {} dependency edges, {} parallel levels",
             self.sorted_passes.len(),
+            self.culled_passes.len(),
             dependency_edges,
             self.parallel_groups.len()
         )

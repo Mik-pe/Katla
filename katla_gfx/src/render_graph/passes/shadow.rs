@@ -74,6 +74,7 @@ impl PassBuilder for ShadowPass {
             uses_depth: true,
             depth_attachment: None,
             kind: Some(PassKind::Shadow),
+            side_effect: false,
         }
     }
 }

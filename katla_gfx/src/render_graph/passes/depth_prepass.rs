@@ -106,6 +106,7 @@ impl PassBuilder for DepthPrepass {
             uses_depth: true,
             depth_attachment: None,
             kind: Some(PassKind::DepthPrepass),
+            side_effect: false,
         }
     }
 }

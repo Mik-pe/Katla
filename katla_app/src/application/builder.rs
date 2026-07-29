@@ -322,6 +322,7 @@ impl ApplicationBuilder {
                 height: extent.height,
                 tracks_swapchain_size: true,
             })
+            .export_resource("object_id")
             .create_resource(GraphResourceDesc {
                 name: "viewport_0".to_string(),
                 resource_type: GraphResourceType::ColorAttachment {
@@ -332,8 +333,10 @@ impl ApplicationBuilder {
                 height: extent.height,
                 tracks_swapchain_size: true,
             })
-            .add_pass(SimplePass::new("shadow", PassType::Graphics).with_kind(PassKind::Shadow))
-            .add_pass(
+            .add_side_effect_pass(
+                SimplePass::new("shadow", PassType::Graphics).with_kind(PassKind::Shadow),
+            )
+            .add_side_effect_pass(
                 SimplePass::new("depth_prepass", PassType::Graphics)
                     .with_kind(PassKind::DepthPrepass),
             )
@@ -614,6 +617,8 @@ impl ApplicationBuilder {
                 height: extent.height,
                 tracks_swapchain_size: true,
             })
+            // Picking readback is externally observable even though it is not presented.
+            .export_resource("object_id")
             // Create stencil indicator texture (R8, for wallhack overlay).
             // Written by the stencil indicator pass after the outline pass.
             // Sampled by the tonemap shader to apply orange tint over occluded selected objects.

@@ -36,11 +36,12 @@ impl ParticlePass {
 impl PassBuilder for ParticlePass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes = self.writes.clone();
+        let reads = writes.clone();
 
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
-            reads: Vec::new(),
+            reads,
             writes,
             pipeline: None,
             tonemap_params: None,
@@ -60,6 +61,21 @@ impl PassBuilder for ParticlePass {
                 },
             )),
             kind: Some(PassKind::Particles),
+            side_effect: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn particles_read_the_color_target_they_blend_into() {
+        let builder = ParticlePass::new("particles")
+            .write_color("hdr", ImageFormat::R16G16B16A16Sfloat)
+            .as_builder();
+        assert_eq!(builder.reads, vec!["hdr"]);
+        assert_eq!(builder.writes, vec!["hdr"]);
     }
 }

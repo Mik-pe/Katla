@@ -10,7 +10,7 @@
 //! minimal RAW, WAR, and WAW ordering constraints without introducing backwards
 //! dependencies from future writers.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 
 use super::error::RenderGraphError;
 use super::handles::ResourceId;
@@ -44,11 +44,16 @@ pub(crate) struct PassDagNode {
 /// - parallel groups of passes that can execute concurrently.
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
+    /// Live pass indices in stable topological order.
     pub(super) sorted_passes: Vec<usize>,
-    /// Pass dependency DAG nodes indexed by pass index.
+    /// Pass dependency DAG nodes indexed by declared pass index.
     pub(super) dag: Vec<PassDagNode>,
-    /// Groups of pass indices that can execute concurrently, ordered by level.
+    /// Groups of live pass indices that can execute concurrently, ordered by level.
     pub(super) parallel_groups: Vec<Vec<usize>>,
+    /// One liveness bit per declared pass.
+    pub(super) live_passes: Vec<bool>,
+    /// Declared pass indices removed by liveness analysis.
+    pub(super) culled_passes: Vec<usize>,
 }
 
 /// Dependency graph node.
@@ -71,6 +76,7 @@ pub struct PassInfo {
     pub name: String,
     pub reads: Vec<ResourceId>,
     pub writes: Vec<ResourceId>,
+    pub side_effect: bool,
 }
 
 impl From<&PassDesc> for PassInfo {
@@ -79,6 +85,7 @@ impl From<&PassDesc> for PassInfo {
             name: desc.name.clone(),
             reads: desc.reads.clone(),
             writes: desc.writes.clone(),
+            side_effect: desc.side_effect,
         }
     }
 }
@@ -98,18 +105,52 @@ fn add_dependency(graph: &mut [DependencyNode], predecessor: usize, successor: u
 pub struct GraphCompiler {
     passes: Vec<PassInfo>,
     dependency_graph: Vec<DependencyNode>,
+    data_predecessors: Vec<BTreeSet<usize>>,
+    final_writers: HashMap<ResourceId, usize>,
+    exported_resources: BTreeSet<ResourceId>,
+    culling_enabled: bool,
 }
 
 impl GraphCompiler {
+    /// Create a compiler that keeps every declared pass live.
+    ///
+    /// This preserves the focused low-level compiler API. Production frame graphs
+    /// use [`Self::with_exports`] so liveness roots are explicit.
     pub fn new(passes: Vec<PassInfo>) -> Self {
         Self {
             passes,
             dependency_graph: Vec::new(),
+            data_predecessors: Vec::new(),
+            final_writers: HashMap::new(),
+            exported_resources: BTreeSet::new(),
+            culling_enabled: false,
+        }
+    }
+
+    /// Create a compiler with explicit externally observable resource roots.
+    pub fn with_exports(
+        passes: Vec<PassInfo>,
+        exported_resources: impl IntoIterator<Item = ResourceId>,
+    ) -> Self {
+        Self {
+            exported_resources: exported_resources.into_iter().collect(),
+            culling_enabled: true,
+            ..Self::new(passes)
         }
     }
 
     pub fn from_pass_descs(passes: &[PassDesc]) -> Self {
         Self::new(passes.iter().map(PassInfo::from).collect())
+    }
+
+    pub fn from_pass_descs_with_exports(
+        passes: &[PassDesc],
+        exported_resources: impl IntoIterator<Item = ResourceId>,
+    ) -> Self {
+        Self::with_exports(
+            passes.iter().map(PassInfo::from).collect(),
+            exported_resources,
+        )
     }
 
     /// Build the canonical dependency graph from declaration-order accesses.
@@ -125,6 +166,7 @@ impl GraphCompiler {
     /// Future writers are never treated as producers for earlier reads.
     pub fn analyze_dependencies(&mut self) {
         let mut graph = vec![DependencyNode::default(); self.passes.len()];
+        let mut data_predecessors = vec![BTreeSet::new(); self.passes.len()];
         let mut resources: HashMap<ResourceId, ResourceAccessState> = HashMap::new();
 
         for (pass_index, pass) in self.passes.iter().enumerate() {
@@ -132,6 +174,7 @@ impl GraphCompiler {
                 let last_writer = resources.get(resource).and_then(|state| state.last_writer);
                 if let Some(writer) = last_writer {
                     add_dependency(&mut graph, writer, pass_index);
+                    data_predecessors[pass_index].insert(writer);
                 }
 
                 resources
@@ -169,30 +212,91 @@ impl GraphCompiler {
             }
         }
 
+        self.final_writers = resources
+            .into_iter()
+            .filter_map(|(resource, state)| state.last_writer.map(|writer| (resource, writer)))
+            .collect();
+        self.data_predecessors = data_predecessors;
         self.dependency_graph = graph;
     }
 
-    /// Perform a stable topological sort on the canonical dependency graph.
-    ///
-    /// Pass declaration order is used as the tie-breaker whenever several
-    /// passes are ready, keeping captures and diagnostics reproducible.
-    pub fn topological_sort(&self) -> Result<Vec<usize>, String> {
-        let mut in_degree: Vec<usize> = self
-            .dependency_graph
-            .iter()
-            .map(|node| node.incoming.len())
-            .collect();
-        let mut ready: BTreeSet<usize> = in_degree
+    fn analyze_liveness(&self) -> Vec<bool> {
+        if !self.culling_enabled {
+            return vec![true; self.passes.len()];
+        }
+
+        let mut live = vec![false; self.passes.len()];
+        let mut work = VecDeque::new();
+
+        for (pass_index, pass) in self.passes.iter().enumerate() {
+            if pass.side_effect {
+                work.push_back(pass_index);
+            }
+        }
+        for resource in &self.exported_resources {
+            if let Some(&writer) = self.final_writers.get(resource) {
+                work.push_back(writer);
+            }
+        }
+
+        while let Some(pass_index) = work.pop_front() {
+            if live[pass_index] {
+                continue;
+            }
+            live[pass_index] = true;
+            work.extend(self.data_predecessors[pass_index].iter().copied());
+        }
+
+        live
+    }
+
+    fn live_dependency_graph(&self, live: &[bool]) -> Vec<DependencyNode> {
+        self.dependency_graph
             .iter()
             .enumerate()
-            .filter_map(|(index, degree)| (*degree == 0).then_some(index))
-            .collect();
-        let mut sorted = Vec::with_capacity(self.passes.len());
+            .map(|(pass_index, node)| {
+                if !live[pass_index] {
+                    return DependencyNode::default();
+                }
+                DependencyNode {
+                    incoming: node
+                        .incoming
+                        .iter()
+                        .copied()
+                        .filter(|&index| live[index])
+                        .collect(),
+                    outgoing: node
+                        .outgoing
+                        .iter()
+                        .copied()
+                        .filter(|&index| live[index])
+                        .collect(),
+                }
+            })
+            .collect()
+    }
+
+    /// Stable Kahn topological sort over live passes only.
+    fn topological_sort_live(
+        &self,
+        graph: &[DependencyNode],
+        live: &[bool],
+    ) -> Result<Vec<usize>, String> {
+        let mut in_degree = graph
+            .iter()
+            .map(|node| node.incoming.len())
+            .collect::<Vec<_>>();
+        let mut ready = live
+            .iter()
+            .enumerate()
+            .filter_map(|(index, is_live)| (*is_live && in_degree[index] == 0).then_some(index))
+            .collect::<BTreeSet<_>>();
+        let expected = live.iter().filter(|&&is_live| is_live).count();
+        let mut sorted = Vec::with_capacity(expected);
 
         while let Some(current) = ready.pop_first() {
             sorted.push(current);
-
-            for &successor in &self.dependency_graph[current].outgoing {
+            for &successor in &graph[current].outgoing {
                 in_degree[successor] -= 1;
                 if in_degree[successor] == 0 {
                     ready.insert(successor);
@@ -200,21 +304,27 @@ impl GraphCompiler {
             }
         }
 
-        if sorted.len() == self.passes.len() {
-            return Ok(sorted);
+        if sorted.len() == expected {
+            Ok(sorted)
+        } else {
+            Err("cycle detected in live render-graph passes".to_string())
         }
+    }
 
-        let cycle = self.detect_cycle().unwrap_or_else(|| {
-            (0..self.passes.len())
-                .filter(|i| !sorted.contains(i))
-                .collect()
-        });
-        let names = cycle
-            .iter()
-            .map(|&index| self.passes[index].name.as_str())
-            .collect::<Vec<_>>()
-            .join(" -> ");
-        Err(format!("Cycle detected involving passes: {names}"))
+    /// Perform a stable topological sort over every declared pass for cycle tests.
+    #[cfg(test)]
+    fn topological_sort(&self) -> Result<Vec<usize>, String> {
+        let live = vec![true; self.passes.len()];
+        self.topological_sort_live(&self.dependency_graph, &live)
+            .map_err(|_| {
+                let cycle = self.detect_cycle().unwrap_or_default();
+                let names = cycle
+                    .iter()
+                    .map(|&index| self.passes[index].name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" -> ");
+                format!("Cycle detected involving passes: {names}")
+            })
     }
 
     /// Detect a cycle in the dependency graph and return a closed cycle path.
@@ -273,12 +383,14 @@ impl GraphCompiler {
 
     fn build_execution_metadata(
         &self,
+        dependency_graph: &[DependencyNode],
         sorted_passes: &[usize],
+        live: &[bool],
     ) -> (Vec<PassDagNode>, Vec<Vec<usize>>) {
         let mut levels = vec![0usize; self.passes.len()];
 
         for &pass_index in sorted_passes {
-            levels[pass_index] = self.dependency_graph[pass_index]
+            levels[pass_index] = dependency_graph[pass_index]
                 .incoming
                 .iter()
                 .map(|&predecessor| levels[predecessor] + 1)
@@ -294,17 +406,21 @@ impl GraphCompiler {
                 pass_index,
                 reads: pass.reads.clone(),
                 writes: pass.writes.clone(),
-                predecessors: self.dependency_graph[pass_index]
+                predecessors: dependency_graph[pass_index]
                     .incoming
                     .iter()
                     .copied()
                     .collect(),
-                successors: self.dependency_graph[pass_index]
+                successors: dependency_graph[pass_index]
                     .outgoing
                     .iter()
                     .copied()
                     .collect(),
-                level: levels[pass_index],
+                level: if live[pass_index] {
+                    levels[pass_index]
+                } else {
+                    0
+                },
             })
             .collect();
 
@@ -333,15 +449,25 @@ impl GraphCompiler {
             return Err(RenderGraphError::DependencyCycle(cycle_names));
         }
 
+        let live_passes = self.analyze_liveness();
+        let live_graph = self.live_dependency_graph(&live_passes);
         let sorted_passes = self
-            .topological_sort()
+            .topological_sort_live(&live_graph, &live_passes)
             .map_err(RenderGraphError::DependencyCycle)?;
-        let (dag, parallel_groups) = self.build_execution_metadata(&sorted_passes);
+        let (dag, parallel_groups) =
+            self.build_execution_metadata(&live_graph, &sorted_passes, &live_passes);
+        let culled_passes = live_passes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, live)| (!live).then_some(index))
+            .collect();
 
         Ok(ExecutionPlan {
             sorted_passes,
             dag,
             parallel_groups,
+            live_passes,
+            culled_passes,
         })
     }
 }
@@ -359,6 +485,7 @@ mod tests {
             name: name.to_string(),
             reads,
             writes,
+            side_effect: false,
         }
     }
 
@@ -547,5 +674,93 @@ mod tests {
         let plan = compile(vec![make_pass("Solo", vec![], vec![])]);
         assert_eq!(plan.sorted_passes, vec![0]);
         assert_eq!(plan.parallel_groups, vec![vec![0]]);
+    }
+
+    fn compile_with_exports(passes: Vec<PassInfo>, exports: &[ResourceId]) -> ExecutionPlan {
+        GraphCompiler::with_exports(passes, exports.iter().copied())
+            .compile()
+            .unwrap()
+    }
+
+    #[test]
+    fn culls_dead_branches_from_explicit_exports() {
+        let plan = compile_with_exports(
+            vec![
+                make_pass("live_source", vec![], vec![rid(0)]),
+                make_pass("live_present", vec![rid(0)], vec![rid(1)]),
+                make_pass("dead_source", vec![], vec![rid(2)]),
+                make_pass("dead_consumer", vec![rid(2)], vec![rid(3)]),
+            ],
+            &[rid(1)],
+        );
+        assert_eq!(plan.sorted_passes, vec![0, 1]);
+        assert_eq!(plan.culled_passes, vec![2, 3]);
+        assert_eq!(plan.live_passes, vec![true, true, false, false]);
+    }
+
+    #[test]
+    fn keeps_shared_producers_for_multiple_live_consumers() {
+        let plan = compile_with_exports(
+            vec![
+                make_pass("shared", vec![], vec![rid(0)]),
+                make_pass("left", vec![rid(0)], vec![rid(1)]),
+                make_pass("right", vec![rid(0)], vec![rid(2)]),
+            ],
+            &[rid(1), rid(2)],
+        );
+        assert_eq!(plan.sorted_passes, vec![0, 1, 2]);
+        assert!(plan.culled_passes.is_empty());
+    }
+
+    #[test]
+    fn side_effect_passes_are_liveness_roots() {
+        let mut side_effect = make_pass("timestamp", vec![rid(0)], vec![]);
+        side_effect.side_effect = true;
+        let plan = compile_with_exports(
+            vec![
+                make_pass("producer", vec![], vec![rid(0)]),
+                side_effect,
+                make_pass("dead", vec![], vec![rid(1)]),
+            ],
+            &[],
+        );
+        assert_eq!(plan.sorted_passes, vec![0, 1]);
+        assert_eq!(plan.culled_passes, vec![2]);
+    }
+
+    #[test]
+    fn imported_writes_are_not_implicit_side_effects() {
+        let plan =
+            compile_with_exports(vec![make_pass("write_imported", vec![], vec![rid(7)])], &[]);
+        assert!(plan.sorted_passes.is_empty());
+        assert_eq!(plan.culled_passes, vec![0]);
+    }
+
+    #[test]
+    fn fully_culled_graph_has_no_execution_or_parallel_work() {
+        let plan = compile_with_exports(
+            vec![
+                make_pass("a", vec![], vec![rid(0)]),
+                make_pass("b", vec![rid(0)], vec![rid(1)]),
+            ],
+            &[],
+        );
+        assert!(plan.sorted_passes.is_empty());
+        assert!(plan.parallel_groups.is_empty());
+        assert_eq!(plan.culled_passes, vec![0, 1]);
+    }
+
+    #[test]
+    fn replacing_an_export_does_not_keep_dead_previous_version_readers() {
+        let plan = compile_with_exports(
+            vec![
+                make_pass("old_writer", vec![], vec![rid(0)]),
+                make_pass("dead_reader", vec![rid(0)], vec![rid(1)]),
+                make_pass("final_writer", vec![], vec![rid(0)]),
+            ],
+            &[rid(0)],
+        );
+        assert_eq!(plan.sorted_passes, vec![2]);
+        assert_eq!(plan.culled_passes, vec![0, 1]);
     }
 }

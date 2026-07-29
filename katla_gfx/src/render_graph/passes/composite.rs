@@ -316,6 +316,7 @@ impl PassBuilder for CompositePass {
             uses_depth: false, // Compositing is a fullscreen pass, no depth needed
             depth_attachment: None,
             kind: Some(PassKind::Compositing),
+            side_effect: false,
         }
     }
 }

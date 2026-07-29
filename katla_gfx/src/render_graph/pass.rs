@@ -92,6 +92,9 @@ pub struct PassDesc {
     /// Semantic kind of this pass, used for dispatch routing.
     /// Set at build time by each pass template.
     pub kind: Option<PassKind>,
+    /// Whether this pass has an externally observable effect that is not represented
+    /// by a graph resource write. Side-effect passes are roots for liveness analysis.
+    pub side_effect: bool,
 }
 
 impl PassDesc {
@@ -118,6 +121,7 @@ impl PassDesc {
             compositing_viewports: None,
             compute_fn: None,
             kind: None,
+            side_effect: false,
         }
     }
 
@@ -144,6 +148,16 @@ impl PassDesc {
     #[inline]
     pub fn writes_to(&self, id: ResourceId) -> bool {
         self.writes.contains(&id)
+    }
+
+    /// Mark this pass as an externally observable side effect.
+    ///
+    /// Prefer declaring resource outputs whenever possible. Use this only for work
+    /// such as timestamps, callbacks, or backend-owned state that cannot yet be
+    /// represented as a graph resource.
+    pub fn with_side_effect(mut self) -> Self {
+        self.side_effect = true;
+        self
     }
 
     /// Check if this pass reads from a specific resource.
@@ -181,6 +195,7 @@ mod tests {
         assert!(desc.compositing_viewports.is_none());
         assert!(desc.compute_fn.is_none());
         assert!(desc.kind.is_none());
+        assert!(!desc.side_effect);
         assert!(desc.uses_depth);
     }
 

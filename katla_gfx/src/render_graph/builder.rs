@@ -105,6 +105,8 @@ pub struct InternalPassBuilder {
 
     /// Semantic kind of this pass, used for dispatch routing.
     pub kind: Option<PassKind>,
+    /// Whether the pass has an externally observable effect not represented by a resource write.
+    pub side_effect: bool,
 }
 
 pub struct SimplePass {
@@ -158,6 +160,7 @@ impl PassBuilder for SimplePass {
             uses_depth: true,
             depth_attachment: None,
             kind: self.kind,
+            side_effect: false,
         }
     }
 }
@@ -208,6 +211,7 @@ mod tests {
                 depth_attachment: None,
                 kind: None,
                 overlay_params: None,
+                side_effect: false,
             }
         }
     }

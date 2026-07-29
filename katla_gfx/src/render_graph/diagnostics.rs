@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use super::BACKBUFFER_NAME;
 use super::backend::RenderGraphBackend;
-use super::compiler::{ExecutionPlan, GraphCompiler};
+use super::compiler::ExecutionPlan;
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::ResourceId;
@@ -19,7 +19,7 @@ use super::pass::{PassDesc, PassType};
 use super::resource::{GraphResourceDesc, GraphResourceType};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 1;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 2;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -73,6 +73,7 @@ pub struct RenderGraphDiagnosticResource {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub tracks_swapchain_size: Option<bool>,
+    pub exported: bool,
     pub lifetime: Option<RenderGraphDiagnosticResourceLifetime>,
     /// Populated once transient aliasing provides stable physical allocation IDs.
     pub physical_allocation_id: Option<u32>,
@@ -104,8 +105,9 @@ pub struct RenderGraphDiagnosticPass {
     pub writes: Vec<RenderGraphDiagnosticResourceRef>,
     pub predecessors: Vec<usize>,
     pub successors: Vec<usize>,
-    pub execution_position: usize,
-    pub parallel_level: usize,
+    pub execution_position: Option<usize>,
+    pub parallel_level: Option<usize>,
+    pub side_effect: bool,
     pub live: bool,
     pub culled: bool,
 }
@@ -142,11 +144,12 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
     /// The compiler is pure, so diagnostics can be requested without allocating GPU
     /// resources or mutating frame execution state.
     pub fn diagnostics(&self) -> Result<RenderGraphDiagnostics, RenderGraphError> {
-        let plan = GraphCompiler::from_pass_descs(&self.passes).compile()?;
+        let plan = self.build_execution_plan()?;
         Ok(RenderGraphDiagnostics::from_parts(
             &self.passes,
             &self.resources,
             &self.transient_resources,
+            &self.exported_resources,
             &plan,
         ))
     }
@@ -157,6 +160,7 @@ impl RenderGraphDiagnostics {
         passes: &[PassDesc],
         resources: &[GraphResourceDesc],
         transient_resources: &[GraphResourceDesc],
+        exported_resources: &BTreeSet<ResourceId>,
         plan: &ExecutionPlan,
     ) -> Self {
         let transient_by_name = transient_resources
@@ -196,6 +200,7 @@ impl RenderGraphDiagnostics {
                     height: descriptor.map(|resource| resource.height),
                     tracks_swapchain_size: descriptor
                         .map(|resource| resource.tracks_swapchain_size),
+                    exported: exported_resources.contains(&ResourceId(index as u32)),
                     lifetime: lifetimes.get(&(index as u32)).cloned(),
                     physical_allocation_id: None,
                 }
@@ -219,10 +224,11 @@ impl RenderGraphDiagnostics {
                     writes: resource_refs(&node.writes, resources),
                     predecessors: node.predecessors.clone(),
                     successors: node.successors.clone(),
-                    execution_position: execution_positions[&node.pass_index],
-                    parallel_level: node.level,
-                    live: true,
-                    culled: false,
+                    execution_position: execution_positions.get(&node.pass_index).copied(),
+                    parallel_level: plan.live_passes[node.pass_index].then_some(node.level),
+                    side_effect: pass.side_effect,
+                    live: plan.live_passes[node.pass_index],
+                    culled: !plan.live_passes[node.pass_index],
                 }
             })
             .collect::<Vec<_>>();
@@ -230,8 +236,8 @@ impl RenderGraphDiagnostics {
         let dependencies = dependency_diagnostics(passes, resources, plan);
         let summary = RenderGraphDiagnosticSummary {
             declared_passes: passes.len(),
-            live_passes: passes.len(),
-            culled_passes: 0,
+            live_passes: plan.live_passes.iter().filter(|&&live| live).count(),
+            culled_passes: plan.culled_passes.len(),
             resources: diagnostic_resources.len(),
             dependency_edges: dependencies.len(),
             parallel_levels: plan.parallel_groups.len(),
@@ -263,38 +269,60 @@ impl RenderGraphDiagnostics {
                 RenderGraphDiagnosticResourceOrigin::Imported => "imported",
                 RenderGraphDiagnosticResourceOrigin::Transient => "transient",
             };
+            let exported = if resource.exported { "\\nexported" } else { "" };
+            let peripheries = if resource.exported { 2 } else { 1 };
             let _ = writeln!(
                 output,
-                "  r{} [shape=ellipse,label=\"{}: {}\\n{}\"];",
+                "  r{} [shape=ellipse,peripheries={},label=\"{}: {}\\n{}{}\"];",
                 resource.id,
+                peripheries,
                 resource.id,
                 escape_dot(&resource.name),
-                origin
+                origin,
+                exported
             );
         }
 
         for pass in &self.passes {
+            let mut status = match pass.parallel_level {
+                Some(level) => format!("level {level}"),
+                None => "culled".to_string(),
+            };
+            if pass.side_effect {
+                status.push_str("\\nside-effect");
+            }
+            let node_style = if pass.culled {
+                ",style=\"dashed\",color=\"gray50\",fontcolor=\"gray40\""
+            } else {
+                ""
+            };
+            let edge_style = if pass.culled {
+                ",style=\"dotted\",color=\"gray60\""
+            } else {
+                ""
+            };
             let _ = writeln!(
                 output,
-                "  p{} [shape=box,label=\"{}: {}\\nlevel {}\"];",
+                "  p{} [shape=box{},label=\"{}: {}\\n{}\"];",
                 pass.index,
+                node_style,
                 pass.index,
                 escape_dot(&pass.name),
-                pass.parallel_level
+                status
             );
 
             for resource in &pass.reads {
                 let _ = writeln!(
                     output,
-                    "  r{} -> p{} [label=\"read\"];",
-                    resource.id, pass.index
+                    "  r{} -> p{} [label=\"read\"{}];",
+                    resource.id, pass.index, edge_style
                 );
             }
             for resource in &pass.writes {
                 let _ = writeln!(
                     output,
-                    "  p{} -> r{} [label=\"write\"];",
-                    pass.index, resource.id
+                    "  p{} -> r{} [label=\"write\"{}];",
+                    pass.index, resource.id, edge_style
                 );
             }
         }
@@ -322,8 +350,10 @@ impl fmt::Display for RenderGraphDiagnostics {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "{} passes, {} resources, {} dependency edges, {} parallel levels",
+            "{} declared passes ({} live, {} culled), {} resources, {} dependency edges, {} parallel levels",
+            self.summary.declared_passes,
             self.summary.live_passes,
+            self.summary.culled_passes,
             self.summary.resources,
             self.summary.dependency_edges,
             self.summary.parallel_levels
@@ -331,15 +361,27 @@ impl fmt::Display for RenderGraphDiagnostics {
 
         for &pass_index in &self.execution_order {
             let pass = &self.passes[pass_index];
+            let level = pass
+                .parallel_level
+                .expect("live execution-order pass must have a parallel level");
             writeln!(
                 f,
-                "  [{}] {} (level {}, reads {}, writes {})",
+                "  [{}] {} (level {}, reads {}, writes {}{})",
                 pass.index,
                 pass.name,
-                pass.parallel_level,
+                level,
                 pass.reads.len(),
-                pass.writes.len()
+                pass.writes.len(),
+                if pass.side_effect {
+                    ", side-effect"
+                } else {
+                    ""
+                }
             )?;
+        }
+
+        for pass in self.passes.iter().filter(|pass| pass.culled) {
+            writeln!(f, "  [{}] {} (culled)", pass.index, pass.name)?;
         }
 
         Ok(())
@@ -511,6 +553,7 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+    use crate::render_graph::compiler::GraphCompiler;
     use crate::texture::ImageFormat;
 
     fn namespace_resource(name: &str) -> GraphResourceDesc {
@@ -552,8 +595,20 @@ mod tests {
             pass("feedback", vec![ResourceId(2)], vec![ResourceId(1)]),
             pass("present", vec![ResourceId(1)], vec![ResourceId(0)]),
         ];
-        let plan = GraphCompiler::from_pass_descs(&passes).compile().unwrap();
-        RenderGraphDiagnostics::from_parts(&passes, &resources, &transient_resources, &plan)
+        let exported_resources = BTreeSet::from([ResourceId(0)]);
+        let plan = GraphCompiler::from_pass_descs_with_exports(
+            &passes,
+            exported_resources.iter().copied(),
+        )
+        .compile()
+        .unwrap();
+        RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &transient_resources,
+            &exported_resources,
+            &plan,
+        )
     }
 
     #[test]
@@ -570,7 +625,7 @@ mod tests {
         }
 
         let json: Value = serde_json::from_str(&expected_json).unwrap();
-        assert_eq!(json["schema_version"], 1);
+        assert_eq!(json["schema_version"], 2);
         assert_eq!(json["execution_order"], serde_json::json!([0, 1, 2, 3]));
         assert_eq!(json["summary"]["dependency_edges"], 4);
         assert_eq!(json["summary"]["parallel_levels"], 4);
@@ -637,6 +692,8 @@ mod tests {
             })
         );
         assert_eq!(diagnostics.resources[1].width, Some(128));
+        assert!(diagnostics.resources[0].exported);
+        assert!(!diagnostics.resources[1].exported);
     }
 
     #[test]
@@ -649,6 +706,57 @@ mod tests {
         assert!(dot.contains("r1 -> p1 [label=\"read\"]"));
         assert!(dot.contains("Waw color"));
         assert!(dot.contains("Raw post"));
+    }
+
+    #[test]
+    fn diagnostics_expose_live_culled_exported_and_side_effect_state() {
+        let resources = vec![
+            namespace_resource(BACKBUFFER_NAME),
+            namespace_resource("dead"),
+            namespace_resource("telemetry_input"),
+        ];
+        let transient_resources = vec![
+            transient_resource("dead"),
+            transient_resource("telemetry_input"),
+        ];
+        let mut telemetry = pass("telemetry", vec![ResourceId(2)], Vec::new());
+        telemetry.side_effect = true;
+        let passes = vec![
+            pass("present", Vec::new(), vec![ResourceId(0)]),
+            pass("dead_branch", Vec::new(), vec![ResourceId(1)]),
+            pass("telemetry_source", Vec::new(), vec![ResourceId(2)]),
+            telemetry,
+        ];
+        let exported_resources = BTreeSet::from([ResourceId(0)]);
+        let plan = GraphCompiler::from_pass_descs_with_exports(
+            &passes,
+            exported_resources.iter().copied(),
+        )
+        .compile()
+        .unwrap();
+        let diagnostics = RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &transient_resources,
+            &exported_resources,
+            &plan,
+        );
+
+        assert_eq!(diagnostics.summary.declared_passes, 4);
+        assert_eq!(diagnostics.summary.live_passes, 3);
+        assert_eq!(diagnostics.summary.culled_passes, 1);
+        assert!(diagnostics.passes[0].live);
+        assert!(diagnostics.passes[1].culled);
+        assert_eq!(diagnostics.passes[1].execution_position, None);
+        assert_eq!(diagnostics.passes[1].parallel_level, None);
+        assert!(diagnostics.passes[3].side_effect);
+        assert!(diagnostics.resources[0].exported);
+
+        let dot = diagnostics.to_dot();
+        assert!(dot.contains("exported"));
+        assert!(dot.contains("culled"));
+        assert!(dot.contains("side-effect"));
+        assert!(diagnostics.to_string().contains("3 live, 1 culled"));
     }
 
     #[test]
