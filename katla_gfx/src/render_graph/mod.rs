@@ -40,6 +40,7 @@
 //! ```
 
 // Layer 1: Backend-agnostic graph structure (no GPU types)
+mod allocation_plan;
 mod builder;
 mod compiler;
 pub mod descriptor_sets;
@@ -68,11 +69,12 @@ mod vulkan_backend;
 pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
 pub use diagnostics::{
-    RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticDependency,
-    RenderGraphDiagnosticHazard, RenderGraphDiagnosticPass, RenderGraphDiagnosticPassType,
-    RenderGraphDiagnosticResource, RenderGraphDiagnosticResourceLifetime,
-    RenderGraphDiagnosticResourceOrigin, RenderGraphDiagnosticResourceRef,
-    RenderGraphDiagnosticSummary, RenderGraphDiagnostics, RenderGraphHazardKind,
+    RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAccess,
+    RenderGraphDiagnosticDependency, RenderGraphDiagnosticHazard, RenderGraphDiagnosticPass,
+    RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
+    RenderGraphDiagnosticResourceLifetime, RenderGraphDiagnosticResourceOrigin,
+    RenderGraphDiagnosticResourceRef, RenderGraphDiagnosticSummary,
+    RenderGraphDiagnosticTransition, RenderGraphDiagnostics, RenderGraphHazardKind,
 };
 pub use error::{GraphValidationError, RenderGraphError};
 pub use frame::Frame;

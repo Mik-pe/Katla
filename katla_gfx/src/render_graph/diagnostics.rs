@@ -10,6 +10,7 @@ use std::fmt::{self, Write as _};
 use serde::Serialize;
 
 use super::BACKBUFFER_NAME;
+use super::allocation_plan::TransientAllocationPlan;
 use super::backend::RenderGraphBackend;
 use super::compiler::{
     ExecutionPlan, ResourceHazardKind, ResourceLifetime, ResourceTransition,
@@ -21,7 +22,7 @@ use super::pass::{PassDesc, PassType};
 use super::resource::{GraphResourceDesc, GraphResourceType};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 3;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 4;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -45,6 +46,10 @@ pub struct RenderGraphDiagnosticSummary {
     pub resources: usize,
     pub dependency_edges: usize,
     pub synchronization_transitions: usize,
+    pub physical_transient_allocations: usize,
+    pub logical_transient_bytes: u64,
+    pub physical_transient_bytes: u64,
+    pub transient_alias_savings_bytes: u64,
     pub parallel_levels: usize,
 }
 
@@ -79,7 +84,7 @@ pub struct RenderGraphDiagnosticResource {
     pub tracks_swapchain_size: Option<bool>,
     pub exported: bool,
     pub lifetime: Option<RenderGraphDiagnosticResourceLifetime>,
-    /// Populated once transient aliasing provides stable physical allocation IDs.
+    /// Stable backend-neutral physical allocation slot assigned by the alias planner.
     pub physical_allocation_id: Option<u32>,
 }
 
@@ -198,6 +203,12 @@ impl RenderGraphDiagnostics {
             .enumerate()
             .map(|(position, &pass)| (pass, position))
             .collect::<BTreeMap<_, _>>();
+        let allocation_plan = TransientAllocationPlan::build(
+            resources,
+            transient_resources,
+            exported_resources,
+            &plan.resource_lifetimes,
+        );
 
         let diagnostic_resources = resources
             .iter()
@@ -230,7 +241,8 @@ impl RenderGraphDiagnostics {
                         .get(&ResourceId(index as u32))
                         .copied()
                         .map(RenderGraphDiagnosticResourceLifetime::from),
-                    physical_allocation_id: None,
+                    physical_allocation_id: allocation_plan
+                        .physical_allocation_id(ResourceId(index as u32)),
                 }
             })
             .collect::<Vec<_>>();
@@ -270,6 +282,10 @@ impl RenderGraphDiagnostics {
             resources: diagnostic_resources.len(),
             dependency_edges: dependencies.len(),
             synchronization_transitions: synchronization.len(),
+            physical_transient_allocations: allocation_plan.physical_allocation_count(),
+            logical_transient_bytes: allocation_plan.logical_bytes(),
+            physical_transient_bytes: allocation_plan.physical_bytes(),
+            transient_alias_savings_bytes: allocation_plan.saved_bytes(),
             parallel_levels: plan.parallel_groups.len(),
         };
 
@@ -381,13 +397,17 @@ impl fmt::Display for RenderGraphDiagnostics {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "{} declared passes ({} live, {} culled), {} resources, {} dependency edges, {} synchronization transitions, {} parallel levels",
+            "{} declared passes ({} live, {} culled), {} resources, {} dependency edges, {} synchronization transitions, {} transient allocations ({} logical bytes, {} physical bytes, {} saved), {} parallel levels",
             self.summary.declared_passes,
             self.summary.live_passes,
             self.summary.culled_passes,
             self.summary.resources,
             self.summary.dependency_edges,
             self.summary.synchronization_transitions,
+            self.summary.physical_transient_allocations,
+            self.summary.logical_transient_bytes,
+            self.summary.physical_transient_bytes,
+            self.summary.transient_alias_savings_bytes,
             self.summary.parallel_levels
         )?;
 
@@ -641,10 +661,14 @@ mod tests {
         }
 
         let json: Value = serde_json::from_str(&expected_json).unwrap();
-        assert_eq!(json["schema_version"], 3);
+        assert_eq!(json["schema_version"], 4);
         assert_eq!(json["execution_order"], serde_json::json!([0, 1, 2, 3]));
         assert_eq!(json["summary"]["dependency_edges"], 4);
         assert_eq!(json["summary"]["synchronization_transitions"], 5);
+        assert_eq!(json["summary"]["physical_transient_allocations"], 2);
+        assert_eq!(json["summary"]["logical_transient_bytes"], 65536);
+        assert_eq!(json["summary"]["physical_transient_bytes"], 65536);
+        assert_eq!(json["summary"]["transient_alias_savings_bytes"], 0);
         assert_eq!(json["summary"]["parallel_levels"], 4);
     }
 
@@ -686,6 +710,46 @@ mod tests {
             geometry_to_feedback.hazards[0].kind,
             RenderGraphHazardKind::Waw
         );
+    }
+
+    #[test]
+    fn diagnostics_expose_stable_physical_allocation_ids_and_memory_totals() {
+        let resources = vec![
+            namespace_resource(BACKBUFFER_NAME),
+            transient_resource("early"),
+            transient_resource("late"),
+        ];
+        let transient_resources = vec![
+            transient_resource("early"),
+            transient_resource("late"),
+        ];
+        let passes = vec![
+            pass("write_early", Vec::new(), vec![ResourceId(1)]),
+            pass("consume_early", vec![ResourceId(1)], vec![ResourceId(0)]),
+            pass("write_late", Vec::new(), vec![ResourceId(2)]),
+            pass("consume_late", vec![ResourceId(2)], vec![ResourceId(0)]),
+        ];
+        let exported_resources = BTreeSet::from([ResourceId(0)]);
+        let plan = GraphCompiler::from_pass_descs_with_exports(
+            &passes,
+            exported_resources.iter().copied(),
+        )
+        .compile()
+        .unwrap();
+        let diagnostics = RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &transient_resources,
+            &exported_resources,
+            &plan,
+        );
+
+        assert_eq!(diagnostics.resources[1].physical_allocation_id, Some(0));
+        assert_eq!(diagnostics.resources[2].physical_allocation_id, Some(0));
+        assert_eq!(diagnostics.summary.physical_transient_allocations, 1);
+        assert_eq!(diagnostics.summary.logical_transient_bytes, 65536);
+        assert_eq!(diagnostics.summary.physical_transient_bytes, 32768);
+        assert_eq!(diagnostics.summary.transient_alias_savings_bytes, 32768);
     }
 
     #[test]
