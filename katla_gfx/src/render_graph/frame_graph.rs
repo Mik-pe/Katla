@@ -948,7 +948,12 @@ impl FrameGraphBuilder {
                 return Err(GraphValidationError::DuplicatePassName(pass.name.clone()).into());
             }
 
-            for resource in pass.reads.iter().chain(&pass.writes) {
+            for resource in pass
+                .reads
+                .iter()
+                .chain(&pass.writes)
+                .chain(pass.image_accesses.iter().map(|access| &access.resource))
+            {
                 if resource.trim().is_empty() {
                     return Err(GraphValidationError::EmptyPassResource {
                         pass: pass.name.clone(),
@@ -1048,12 +1053,37 @@ impl FrameGraphBuilder {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
 
+            let explicit_image_accesses = pass_builder
+                .image_accesses
+                .iter()
+                .map(|access| {
+                    graph
+                        .resource_by_name
+                        .get(&access.resource)
+                        .copied()
+                        .map(|resource| access.resolve(resource))
+                        .ok_or_else(|| {
+                            RenderGraphError::Validation(
+                                GraphValidationError::UndeclaredResource {
+                                    pass: pass_name.clone(),
+                                    resource: access.resource.clone(),
+                                },
+                            )
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let has_explicit_image_accesses = !explicit_image_accesses.is_empty();
+
             let mut pass = PassDesc::new(
                 pass_builder.name,
                 pass_builder.pass_type,
                 read_ids,
                 write_ids,
             );
+
+            if has_explicit_image_accesses {
+                pass.set_image_accesses(explicit_image_accesses);
+            }
 
             pass.pipeline = pass_builder.pipeline;
             pass.tonemap_params = pass_builder.tonemap_params;
@@ -1088,6 +1118,10 @@ impl FrameGraphBuilder {
                         *clear_value,
                     ));
                 }
+            }
+
+            if !has_explicit_image_accesses {
+                pass.refine_inferred_image_accesses();
             }
 
             if let Some(comp_data) =

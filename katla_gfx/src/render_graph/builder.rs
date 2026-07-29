@@ -7,6 +7,9 @@
 use std::any::Any;
 use std::collections::HashMap;
 
+use super::access::{
+    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage, NamedImageAccess,
+};
 use super::error::RenderGraphError;
 use super::pass::{PassKind, PassType};
 use super::resource::GraphResourceHandle;
@@ -69,6 +72,9 @@ pub struct InternalPassBuilder {
     /// Resource names this pass writes to.
     pub writes: Vec<String>,
 
+    /// Explicit typed image accesses. Empty means infer compatibility accesses.
+    pub(crate) image_accesses: Vec<NamedImageAccess>,
+
     /// Optional pipeline handle (for fullscreen/compute passes).
     pub pipeline: Option<crate::handle::PipelineHandle>,
 
@@ -114,6 +120,7 @@ pub struct SimplePass {
     pass_type: PassType,
     reads: Vec<String>,
     writes: Vec<String>,
+    image_accesses: Vec<NamedImageAccess>,
     kind: Option<PassKind>,
 }
 
@@ -124,6 +131,7 @@ impl SimplePass {
             pass_type,
             reads: Vec::new(),
             writes: Vec::new(),
+            image_accesses: Vec::new(),
             kind: None,
         }
     }
@@ -135,6 +143,32 @@ impl SimplePass {
 
     pub fn write(mut self, name: impl Into<String>) -> Self {
         self.writes.push(name.into());
+        self
+    }
+
+    /// Declare a typed image access while keeping compatibility read/write sets synchronized.
+    pub fn image_access(
+        mut self,
+        name: impl Into<String>,
+        mode: ImageAccessMode,
+        usage: ImageUsage,
+        stage: ImagePipelineStage,
+        range: ImageSubresourceRange,
+    ) -> Self {
+        let name = name.into();
+        if mode.reads() && !self.reads.contains(&name) {
+            self.reads.push(name.clone());
+        }
+        if mode.writes() && !self.writes.contains(&name) {
+            self.writes.push(name.clone());
+        }
+        self.image_accesses.push(NamedImageAccess {
+            resource: name,
+            mode,
+            usage,
+            stage,
+            range,
+        });
         self
     }
 
@@ -151,6 +185,7 @@ impl PassBuilder for SimplePass {
             pass_type: self.pass_type,
             reads: self.reads,
             writes: self.writes,
+            image_accesses: self.image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -202,6 +237,7 @@ mod tests {
                 pass_type: PassType::Graphics,
                 reads: self.reads,
                 writes: self.writes,
+                image_accesses: Vec::new(),
                 pipeline: None,
                 tonemap_params: None,
                 material: None,
@@ -226,6 +262,31 @@ mod tests {
         assert_eq!(builder.pass_type, PassType::Graphics);
         assert_eq!(builder.reads, vec!["input"]);
         assert_eq!(builder.writes, vec!["output"]);
+        assert!(builder.image_accesses.is_empty());
+    }
+
+    #[test]
+    fn simple_pass_keeps_typed_accesses_and_compatibility_sets_in_sync() {
+        let builder = SimplePass::new("sample", PassType::Graphics)
+            .image_access(
+                "history",
+                ImageAccessMode::ReadWrite,
+                ImageUsage::Storage,
+                ImagePipelineStage::FragmentShader,
+                ImageSubresourceRange::new(
+                    super::super::access::ImageAspects::COLOR,
+                    2,
+                    1,
+                    0,
+                    1,
+                ),
+            )
+            .as_builder();
+
+        assert_eq!(builder.reads, vec!["history"]);
+        assert_eq!(builder.writes, vec!["history"]);
+        assert_eq!(builder.image_accesses.len(), 1);
+        assert_eq!(builder.image_accesses[0].range.base_mip_level, 2);
     }
 
     #[test]

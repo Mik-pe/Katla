@@ -63,6 +63,7 @@ impl PassBuilder for ShadowPass {
             pass_type: PassType::Graphics,
             reads: Vec::new(),
             writes,
+            image_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,

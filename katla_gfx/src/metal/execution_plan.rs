@@ -5,7 +5,7 @@
 //! pipeline from singleton semantic checks.
 
 use crate::render_graph::{
-    FrameGraph, PassDesc, PassId, PassKind, PassType, RenderGraphError, ResourceId,
+    FrameGraph, ImageAccess, PassDesc, PassId, PassKind, PassType, RenderGraphError, ResourceId,
 };
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -39,6 +39,7 @@ pub(crate) struct MetalPassRecord {
     pub(crate) kind: PassKind,
     pub(crate) reads: Vec<ResourceId>,
     pub(crate) writes: Vec<ResourceId>,
+    pub(crate) image_accesses: Vec<ImageAccess>,
     pub(crate) color_attachments: Vec<MetalColorAttachmentRecord>,
     pub(crate) uses_depth: bool,
     pub(crate) depth_attachment: Option<MetalDepthAttachmentOps>,
@@ -83,6 +84,7 @@ impl MetalPassRecord {
             kind,
             reads: pass.reads.clone(),
             writes: pass.writes.clone(),
+            image_accesses: pass.image_accesses.clone(),
             color_attachments: pass
                 .color_attachments
                 .iter()
@@ -213,6 +215,7 @@ impl MetalExecutionPlan {
                     kind,
                     reads: Vec::new(),
                     writes: Vec::new(),
+                    image_accesses: Vec::new(),
                     color_attachments: Vec::new(),
                     uses_depth: matches!(
                         kind,
@@ -236,6 +239,9 @@ impl MetalExecutionPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render_graph::{
+        ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    };
 
     fn pass(name: &str, pass_type: PassType, kind: Option<PassKind>) -> PassDesc {
         let mut pass = PassDesc::new(name, pass_type, Vec::new(), Vec::new());
@@ -332,8 +338,16 @@ mod tests {
     #[test]
     fn copies_graph_resource_and_attachment_contracts() {
         let mut geometry = pass("geometry", PassType::Graphics, Some(PassKind::Geometry));
-        geometry.reads = vec![ResourceId(4)];
-        geometry.writes = vec![ResourceId(7)];
+        geometry.set_image_accesses(vec![
+            ImageAccess::sampled_read(ResourceId(4)),
+            ImageAccess::new(
+                ResourceId(7),
+                ImageAccessMode::ReadWrite,
+                ImageUsage::ColorAttachment,
+                ImagePipelineStage::ColorAttachmentOutput,
+                ImageSubresourceRange::WHOLE_COLOR,
+            ),
+        ]);
         geometry.color_attachments.push((
             ResourceId(7),
             ImageFormat::R16G16B16A16Sfloat,
@@ -354,6 +368,19 @@ mod tests {
         let record = &plan.passes()[0];
         assert_eq!(record.reads, vec![ResourceId(4)]);
         assert_eq!(record.writes, vec![ResourceId(7)]);
+        assert_eq!(
+            record.image_accesses,
+            vec![
+                ImageAccess::sampled_read(ResourceId(4)),
+                ImageAccess::new(
+                    ResourceId(7),
+                    ImageAccessMode::ReadWrite,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                ),
+            ]
+        );
         assert_eq!(
             record.color_attachments,
             vec![MetalColorAttachmentRecord {

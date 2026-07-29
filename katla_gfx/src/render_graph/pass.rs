@@ -1,6 +1,11 @@
 //! Pass types for render graph execution.
 
+use std::collections::BTreeSet;
+
 use crate::render_graph::ViewportRect;
+use crate::render_graph::access::{
+    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use crate::render_graph::handles::ResourceId;
 use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
@@ -64,6 +69,8 @@ pub struct PassDesc {
     pub reads: Vec<ResourceId>,
     /// Resources this pass writes to.
     pub writes: Vec<ResourceId>,
+    /// Typed image accesses. These preserve usage, pipeline visibility, and subresources.
+    pub image_accesses: Vec<ImageAccess>,
     /// Pass type (graphics, compute, transfer).
     pub pass_type: PassType,
     /// Optional pipeline handle (for fullscreen/compute passes).
@@ -105,10 +112,12 @@ impl PassDesc {
         reads: Vec<ResourceId>,
         writes: Vec<ResourceId>,
     ) -> Self {
+        let image_accesses = Self::default_image_accesses(&reads, &writes);
         Self {
             name: name.into(),
             reads,
             writes,
+            image_accesses,
             pass_type,
             pipeline: None,
             tonemap_params: None,
@@ -123,6 +132,105 @@ impl PassDesc {
             kind: None,
             side_effect: false,
         }
+    }
+
+    fn default_image_accesses(
+        reads: &[ResourceId],
+        writes: &[ResourceId],
+    ) -> Vec<ImageAccess> {
+        let resources = reads
+            .iter()
+            .chain(writes)
+            .copied()
+            .collect::<BTreeSet<_>>();
+
+        resources
+            .into_iter()
+            .map(|resource| match (reads.contains(&resource), writes.contains(&resource)) {
+                (true, true) => ImageAccess::storage_read_write(resource),
+                (true, false) => ImageAccess::sampled_read(resource),
+                (false, true) => ImageAccess::storage_write(resource),
+                (false, false) => unreachable!("resource came from the read/write union"),
+            })
+            .collect()
+    }
+
+    fn synchronize_resource_sets(&mut self) {
+        self.reads = self
+            .image_accesses
+            .iter()
+            .filter(|access| access.mode.reads())
+            .map(|access| access.resource)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        self.writes = self
+            .image_accesses
+            .iter()
+            .filter(|access| access.mode.writes())
+            .map(|access| access.resource)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+    }
+
+    /// Replace the pass image-access contract and synchronize coarse compatibility sets.
+    pub fn set_image_accesses(&mut self, accesses: Vec<ImageAccess>) {
+        self.image_accesses = accesses;
+        self.synchronize_resource_sets();
+    }
+
+    /// Replace inferred accesses with an explicit typed image-access contract.
+    pub fn with_image_accesses(
+        mut self,
+        accesses: impl IntoIterator<Item = ImageAccess>,
+    ) -> Self {
+        self.set_image_accesses(accesses.into_iter().collect());
+        self
+    }
+
+    /// Refine compatibility accesses using the pass semantic and attachment operations.
+    pub(crate) fn refine_inferred_image_accesses(&mut self) {
+        for access in &mut self.image_accesses {
+            let color_attachment = self
+                .color_attachments
+                .iter()
+                .find(|(resource, ..)| *resource == access.resource);
+
+            if let Some((_, _, load_op, _, _)) = color_attachment {
+                access.mode = if *load_op == LoadOp::Load || access.mode.reads() {
+                    ImageAccessMode::ReadWrite
+                } else {
+                    ImageAccessMode::Write
+                };
+                access.usage = ImageUsage::ColorAttachment;
+                access.stage = ImagePipelineStage::ColorAttachmentOutput;
+                access.range = ImageSubresourceRange::WHOLE_COLOR;
+                continue;
+            }
+
+            if self.pass_type == PassType::Graphics && access.mode.writes() {
+                if self.kind == Some(PassKind::Shadow) {
+                    access.usage = ImageUsage::DepthStencilAttachment;
+                    access.stage = ImagePipelineStage::DepthStencil;
+                    access.range = ImageSubresourceRange::WHOLE_DEPTH;
+                } else {
+                    access.usage = ImageUsage::ColorAttachment;
+                    access.stage = ImagePipelineStage::ColorAttachmentOutput;
+                    access.range = ImageSubresourceRange::WHOLE_COLOR;
+                }
+                continue;
+            }
+
+            if self.kind == Some(PassKind::ObjectId) && access.mode.reads() {
+                access.usage = ImageUsage::DepthStencilAttachment;
+                access.stage = ImagePipelineStage::DepthStencil;
+                access.range = ImageSubresourceRange::WHOLE_DEPTH_STENCIL;
+            }
+        }
+
+        self.image_accesses.sort();
+        self.synchronize_resource_sets();
     }
 
     /// Set the pipeline for this pass.
@@ -170,6 +278,7 @@ impl PassDesc {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render_graph::access::ImageAspects;
 
     fn rid(n: u32) -> ResourceId {
         ResourceId(n)
@@ -190,6 +299,9 @@ mod tests {
         assert!(desc.tonemap_params.is_none());
         assert!(desc.material.is_none());
         assert!(desc.output_format.is_none());
+        assert_eq!(desc.image_accesses.len(), 2);
+        assert!(desc.image_accesses[0].mode.reads());
+        assert!(desc.image_accesses[1].mode.writes());
         assert!(desc.color_attachments.is_empty());
         assert!(desc.depth_attachment.is_none());
         assert!(desc.compositing_viewports.is_none());
@@ -200,10 +312,46 @@ mod tests {
     }
 
     #[test]
+    fn explicit_accesses_drive_compatibility_sets() {
+        let mut desc = PassDesc::new("test", PassType::Graphics, vec![rid(1)], vec![rid(2)]);
+        desc.set_image_accesses(vec![ImageAccess::new(
+            rid(3),
+            ImageAccessMode::ReadWrite,
+            ImageUsage::Storage,
+            ImagePipelineStage::FragmentShader,
+            ImageSubresourceRange::new(ImageAspects::COLOR, 2, 1, 0, 1),
+        )]);
+
+        assert_eq!(desc.reads, vec![rid(3)]);
+        assert_eq!(desc.writes, vec![rid(3)]);
+        assert_eq!(desc.image_accesses[0].range.base_mip_level, 2);
+    }
+
+    #[test]
+    fn loaded_color_attachment_is_a_read_write_access() {
+        let mut desc = PassDesc::new("blend", PassType::Graphics, Vec::new(), vec![rid(1)]);
+        desc.color_attachments.push((
+            rid(1),
+            ImageFormat::R8G8B8A8Unorm,
+            LoadOp::Load,
+            StoreOp::Store,
+            ClearValue::OPAQUE_BLACK,
+        ));
+        desc.refine_inferred_image_accesses();
+
+        assert_eq!(desc.image_accesses.len(), 1);
+        assert_eq!(desc.image_accesses[0].mode, ImageAccessMode::ReadWrite);
+        assert_eq!(desc.image_accesses[0].usage, ImageUsage::ColorAttachment);
+        assert!(desc.reads_from(rid(1)));
+        assert!(desc.writes_to(rid(1)));
+    }
+
+    #[test]
     fn test_pass_desc_writes_to_reads_from() {
         let desc = PassDesc::new("test", PassType::Graphics, vec![rid(1)], vec![rid(2)]);
         assert!(desc.reads_from(rid(1)));
         assert!(!desc.reads_from(rid(2)));
+        assert_eq!(desc.image_accesses.len(), 2);
         assert!(desc.writes_to(rid(2)));
         assert!(!desc.writes_to(rid(1)));
     }
