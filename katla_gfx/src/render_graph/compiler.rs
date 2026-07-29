@@ -10,7 +10,7 @@
 //! minimal RAW, WAR, and WAW ordering constraints without introducing backwards
 //! dependencies from future writers.
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use super::error::RenderGraphError;
 use super::handles::ResourceId;
@@ -36,6 +36,15 @@ pub(crate) struct PassDagNode {
     pub level: usize,
 }
 
+/// First and last live scheduled access to one logical graph resource.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResourceLifetime {
+    pub first_execution_position: usize,
+    pub first_pass: usize,
+    pub last_execution_position: usize,
+    pub last_pass: usize,
+}
+
 /// Compiled execution plan for a render graph.
 ///
 /// Contains:
@@ -54,6 +63,8 @@ pub struct ExecutionPlan {
     pub(super) live_passes: Vec<bool>,
     /// Declared pass indices removed by liveness analysis.
     pub(super) culled_passes: Vec<usize>,
+    /// Live resource intervals in canonical execution-order coordinates.
+    pub(super) resource_lifetimes: BTreeMap<ResourceId, ResourceLifetime>,
 }
 
 /// Dependency graph node.
@@ -381,6 +392,40 @@ impl GraphCompiler {
         None
     }
 
+    fn build_resource_lifetimes(
+        &self,
+        sorted_passes: &[usize],
+    ) -> BTreeMap<ResourceId, ResourceLifetime> {
+        let mut lifetimes = BTreeMap::<ResourceId, ResourceLifetime>::new();
+
+        for (execution_position, &pass_index) in sorted_passes.iter().enumerate() {
+            let pass = &self.passes[pass_index];
+            let resources = pass
+                .reads
+                .iter()
+                .chain(&pass.writes)
+                .copied()
+                .collect::<BTreeSet<_>>();
+
+            for resource in resources {
+                lifetimes
+                    .entry(resource)
+                    .and_modify(|lifetime| {
+                        lifetime.last_execution_position = execution_position;
+                        lifetime.last_pass = pass_index;
+                    })
+                    .or_insert(ResourceLifetime {
+                        first_execution_position: execution_position,
+                        first_pass: pass_index,
+                        last_execution_position: execution_position,
+                        last_pass: pass_index,
+                    });
+            }
+        }
+
+        lifetimes
+    }
+
     fn build_execution_metadata(
         &self,
         dependency_graph: &[DependencyNode],
@@ -461,6 +506,7 @@ impl GraphCompiler {
             .enumerate()
             .filter_map(|(index, live)| (!live).then_some(index))
             .collect();
+        let resource_lifetimes = self.build_resource_lifetimes(&sorted_passes);
 
         Ok(ExecutionPlan {
             sorted_passes,
@@ -468,6 +514,7 @@ impl GraphCompiler {
             parallel_groups,
             live_passes,
             culled_passes,
+            resource_lifetimes,
         })
     }
 }
@@ -748,6 +795,58 @@ mod tests {
         assert!(plan.sorted_passes.is_empty());
         assert!(plan.parallel_groups.is_empty());
         assert_eq!(plan.culled_passes, vec![0, 1]);
+    }
+
+    #[test]
+    fn compiles_live_resource_lifetimes_in_execution_coordinates() {
+        let plan = compile(vec![
+            make_pass("write", vec![], vec![rid(0)]),
+            make_pass("unrelated", vec![], vec![rid(1)]),
+            make_pass("read", vec![rid(0)], vec![]),
+        ]);
+
+        assert_eq!(
+            plan.resource_lifetimes.get(&rid(0)),
+            Some(&ResourceLifetime {
+                first_execution_position: 0,
+                first_pass: 0,
+                last_execution_position: 2,
+                last_pass: 2,
+            })
+        );
+        assert_eq!(
+            plan.resource_lifetimes.get(&rid(1)),
+            Some(&ResourceLifetime {
+                first_execution_position: 1,
+                first_pass: 1,
+                last_execution_position: 1,
+                last_pass: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn culled_resource_accesses_do_not_extend_live_lifetimes() {
+        let plan = compile_with_exports(
+            vec![
+                make_pass("live_writer", vec![], vec![rid(0)]),
+                make_pass("live_present", vec![rid(0)], vec![rid(1)]),
+                make_pass("dead_reader", vec![rid(0)], vec![rid(2)]),
+            ],
+            &[rid(1)],
+        );
+
+        assert_eq!(plan.culled_passes, vec![2]);
+        assert_eq!(
+            plan.resource_lifetimes.get(&rid(0)),
+            Some(&ResourceLifetime {
+                first_execution_position: 0,
+                first_pass: 0,
+                last_execution_position: 1,
+                last_pass: 1,
+            })
+        );
+        assert!(!plan.resource_lifetimes.contains_key(&rid(2)));
     }
 
     #[test]
