@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use super::BACKBUFFER_NAME;
 use super::backend::RenderGraphBackend;
-use super::compiler::ExecutionPlan;
+use super::compiler::{ExecutionPlan, ResourceLifetime};
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::ResourceId;
@@ -173,7 +173,6 @@ impl RenderGraphDiagnostics {
             .enumerate()
             .map(|(position, &pass)| (pass, position))
             .collect::<BTreeMap<_, _>>();
-        let lifetimes = resource_lifetimes(passes, &plan.sorted_passes);
 
         let diagnostic_resources = resources
             .iter()
@@ -201,7 +200,11 @@ impl RenderGraphDiagnostics {
                     tracks_swapchain_size: descriptor
                         .map(|resource| resource.tracks_swapchain_size),
                     exported: exported_resources.contains(&ResourceId(index as u32)),
-                    lifetime: lifetimes.get(&(index as u32)).cloned(),
+                    lifetime: plan
+                        .resource_lifetimes
+                        .get(&ResourceId(index as u32))
+                        .copied()
+                        .map(RenderGraphDiagnosticResourceLifetime::from),
                     physical_allocation_id: None,
                 }
             })
@@ -490,45 +493,15 @@ fn resource_ref(
     }
 }
 
-fn resource_lifetimes(
-    passes: &[PassDesc],
-    execution_order: &[usize],
-) -> BTreeMap<u32, RenderGraphDiagnosticResourceLifetime> {
-    let mut accesses = BTreeMap::<u32, Vec<(usize, usize)>>::new();
-
-    for (position, &pass_index) in execution_order.iter().enumerate() {
-        let pass = &passes[pass_index];
-        let resources = pass
-            .reads
-            .iter()
-            .chain(&pass.writes)
-            .map(|resource| resource.0)
-            .collect::<BTreeSet<_>>();
-
-        for resource in resources {
-            accesses
-                .entry(resource)
-                .or_default()
-                .push((position, pass_index));
+impl From<ResourceLifetime> for RenderGraphDiagnosticResourceLifetime {
+    fn from(lifetime: ResourceLifetime) -> Self {
+        Self {
+            first_execution_position: lifetime.first_execution_position,
+            first_pass: lifetime.first_pass,
+            last_execution_position: lifetime.last_execution_position,
+            last_pass: lifetime.last_pass,
         }
     }
-
-    accesses
-        .into_iter()
-        .filter_map(|(resource, accesses)| {
-            let &(first_execution_position, first_pass) = accesses.first()?;
-            let &(last_execution_position, last_pass) = accesses.last()?;
-            Some((
-                resource,
-                RenderGraphDiagnosticResourceLifetime {
-                    first_execution_position,
-                    first_pass,
-                    last_execution_position,
-                    last_pass,
-                },
-            ))
-        })
-        .collect()
 }
 
 fn resource_kind(resource_type: &GraphResourceType) -> String {
