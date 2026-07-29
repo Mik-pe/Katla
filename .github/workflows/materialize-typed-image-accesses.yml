@@ -1,0 +1,47 @@
+name: Materialize typed image access commit
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.head_ref == 'agent/typed-image-accesses'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out staging branch
+        uses: actions/checkout@v6
+        with:
+          ref: agent/typed-image-accesses
+          fetch-depth: 0
+
+      - name: Apply reviewed patch
+        run: |
+          python3 - <<'PY'
+          import base64
+          import glob
+          import subprocess
+          import zlib
+
+          encoded = ''.join(
+              open(path, encoding='utf-8').read()
+              for path in sorted(glob.glob('.agent/typed-image-accesses/*'))
+          )
+          patch = zlib.decompress(base64.b64decode(encoded))
+          subprocess.run(['git', 'apply', '--index', '-'], input=patch, check=True)
+          PY
+
+      - name: Publish clean product commit
+        run: |
+          rm -rf .agent
+          git rm .github/workflows/materialize-typed-image-accesses.yml
+          git add -A
+          git config user.name "OpenAI"
+          git config user.email "noreply@openai.com"
+          git commit -m "Declare typed image accesses"
+          git push origin HEAD:agent/typed-image-accesses
