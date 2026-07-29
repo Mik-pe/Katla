@@ -45,6 +45,23 @@ pub struct ResourceLifetime {
     pub last_pass: usize,
 }
 
+/// Backend-neutral hazard kind derived from the canonical access DAG.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ResourceHazardKind {
+    ReadAfterWrite,
+    WriteAfterRead,
+    WriteAfterWrite,
+}
+
+/// One compiled resource transition between two live passes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ResourceTransition {
+    pub resource: ResourceId,
+    pub from_pass: usize,
+    pub to_pass: usize,
+    pub hazard: ResourceHazardKind,
+}
+
 /// Compiled execution plan for a render graph.
 ///
 /// Contains:
@@ -65,6 +82,8 @@ pub struct ExecutionPlan {
     pub(super) culled_passes: Vec<usize>,
     /// Live resource intervals in canonical execution-order coordinates.
     pub(super) resource_lifetimes: BTreeMap<ResourceId, ResourceLifetime>,
+    /// Ordered resource hazards consumed by synchronization planning and diagnostics.
+    pub(super) resource_transitions: Vec<ResourceTransition>,
 }
 
 /// Dependency graph node.
@@ -426,6 +445,82 @@ impl GraphCompiler {
         lifetimes
     }
 
+    fn append_resource_transitions(
+        transitions: &mut Vec<ResourceTransition>,
+        left: &[ResourceId],
+        right: &[ResourceId],
+        from_pass: usize,
+        to_pass: usize,
+        hazard: ResourceHazardKind,
+    ) {
+        let right = right.iter().copied().collect::<BTreeSet<_>>();
+        transitions.extend(
+            left.iter()
+                .copied()
+                .filter(|resource| right.contains(resource))
+                .map(|resource| ResourceTransition {
+                    resource,
+                    from_pass,
+                    to_pass,
+                    hazard,
+                }),
+        );
+    }
+
+    fn build_resource_transitions(
+        &self,
+        dependency_graph: &[DependencyNode],
+        sorted_passes: &[usize],
+    ) -> Vec<ResourceTransition> {
+        let mut transitions = Vec::new();
+
+        for &to_pass in sorted_passes {
+            let to = &self.passes[to_pass];
+            for &from_pass in &dependency_graph[to_pass].incoming {
+                let from = &self.passes[from_pass];
+                Self::append_resource_transitions(
+                    &mut transitions,
+                    &from.writes,
+                    &to.reads,
+                    from_pass,
+                    to_pass,
+                    ResourceHazardKind::ReadAfterWrite,
+                );
+                Self::append_resource_transitions(
+                    &mut transitions,
+                    &from.reads,
+                    &to.writes,
+                    from_pass,
+                    to_pass,
+                    ResourceHazardKind::WriteAfterRead,
+                );
+                Self::append_resource_transitions(
+                    &mut transitions,
+                    &from.writes,
+                    &to.writes,
+                    from_pass,
+                    to_pass,
+                    ResourceHazardKind::WriteAfterWrite,
+                );
+            }
+        }
+
+        let mut execution_positions = vec![usize::MAX; self.passes.len()];
+        for (position, &pass_index) in sorted_passes.iter().enumerate() {
+            execution_positions[pass_index] = position;
+        }
+        transitions.sort_by_key(|transition| {
+            (
+                execution_positions[transition.to_pass],
+                execution_positions[transition.from_pass],
+                transition.resource,
+                transition.hazard,
+            )
+        });
+        transitions.dedup();
+        transitions
+    }
+
     fn build_execution_metadata(
         &self,
         dependency_graph: &[DependencyNode],
@@ -507,6 +602,8 @@ impl GraphCompiler {
             .filter_map(|(index, live)| (!live).then_some(index))
             .collect();
         let resource_lifetimes = self.build_resource_lifetimes(&sorted_passes);
+        let resource_transitions =
+            self.build_resource_transitions(&live_graph, &sorted_passes);
 
         Ok(ExecutionPlan {
             sorted_passes,
@@ -515,6 +612,7 @@ impl GraphCompiler {
             live_passes,
             culled_passes,
             resource_lifetimes,
+            resource_transitions,
         })
     }
 }
@@ -795,6 +893,61 @@ mod tests {
         assert!(plan.sorted_passes.is_empty());
         assert!(plan.parallel_groups.is_empty());
         assert_eq!(plan.culled_passes, vec![0, 1]);
+    }
+
+    #[test]
+    fn compiles_resource_hazards_from_the_live_dependency_dag() {
+        let plan = compile(vec![
+            make_pass("write", vec![], vec![rid(0)]),
+            make_pass("read", vec![rid(0)], vec![]),
+            make_pass("replace", vec![], vec![rid(0)]),
+            make_pass("read_replacement", vec![rid(0)], vec![]),
+        ]);
+
+        assert_eq!(
+            plan.resource_transitions,
+            vec![
+                ResourceTransition {
+                    resource: rid(0),
+                    from_pass: 0,
+                    to_pass: 1,
+                    hazard: ResourceHazardKind::ReadAfterWrite,
+                },
+                ResourceTransition {
+                    resource: rid(0),
+                    from_pass: 0,
+                    to_pass: 2,
+                    hazard: ResourceHazardKind::WriteAfterWrite,
+                },
+                ResourceTransition {
+                    resource: rid(0),
+                    from_pass: 1,
+                    to_pass: 2,
+                    hazard: ResourceHazardKind::WriteAfterRead,
+                },
+                ResourceTransition {
+                    resource: rid(0),
+                    from_pass: 2,
+                    to_pass: 3,
+                    hazard: ResourceHazardKind::ReadAfterWrite,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn culled_passes_emit_no_resource_transitions() {
+        let plan = compile_with_exports(
+            vec![
+                make_pass("live", vec![], vec![rid(0)]),
+                make_pass("dead_writer", vec![], vec![rid(1)]),
+                make_pass("dead_reader", vec![rid(1)], vec![rid(2)]),
+            ],
+            &[rid(0)],
+        );
+
+        assert_eq!(plan.culled_passes, vec![1, 2]);
+        assert!(plan.resource_transitions.is_empty());
     }
 
     #[test]
