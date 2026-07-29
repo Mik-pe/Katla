@@ -67,6 +67,7 @@ impl PassBuilder for ObjectIdPass {
             pass_type: PassType::Graphics,
             reads: self.reads,
             writes: self.writes,
+            image_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,

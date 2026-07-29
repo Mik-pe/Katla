@@ -40,6 +40,7 @@
 //! ```
 
 // Layer 1: Backend-agnostic graph structure (no GPU types)
+pub mod access;
 mod allocation_plan;
 mod builder;
 mod compiler;
@@ -66,11 +67,18 @@ mod transient_texture;
 mod vulkan_backend;
 
 // Public API
+pub use access::{
+    ImageAccess, ImageAccessMode, ImageAspects, ImagePipelineStage, ImageSubresourceRange,
+    ImageUsage,
+};
 pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
 pub use diagnostics::{
     RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAccess,
-    RenderGraphDiagnosticDependency, RenderGraphDiagnosticHazard, RenderGraphDiagnosticPass,
+    RenderGraphDiagnosticDependency, RenderGraphDiagnosticHazard,
+    RenderGraphDiagnosticImageAccess, RenderGraphDiagnosticImageAccessMode,
+    RenderGraphDiagnosticImageStage, RenderGraphDiagnosticImageSubresourceRange,
+    RenderGraphDiagnosticImageUsage, RenderGraphDiagnosticPass,
     RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
     RenderGraphDiagnosticResourceLifetime, RenderGraphDiagnosticResourceOrigin,
     RenderGraphDiagnosticResourceRef, RenderGraphDiagnosticSummary,

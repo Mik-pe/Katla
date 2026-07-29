@@ -10,6 +10,7 @@ use std::fmt::{self, Write as _};
 use serde::Serialize;
 
 use super::BACKBUFFER_NAME;
+use super::access::{ImageAccess, ImageAccessMode, ImagePipelineStage, ImageUsage};
 use super::allocation_plan::TransientAllocationPlan;
 use super::backend::RenderGraphBackend;
 use super::compiler::{
@@ -22,7 +23,7 @@ use super::pass::{PassDesc, PassType};
 use super::resource::{GraphResourceDesc, GraphResourceType};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 4;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 5;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -103,6 +104,62 @@ pub struct RenderGraphDiagnosticResourceRef {
     pub name: String,
 }
 
+/// Stable typed image access mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderGraphDiagnosticImageAccessMode {
+    Read,
+    Write,
+    ReadWrite,
+}
+
+/// Stable typed image usage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderGraphDiagnosticImageUsage {
+    Sampled,
+    ColorAttachment,
+    DepthStencilAttachment,
+    Storage,
+    TransferSource,
+    TransferDestination,
+    Present,
+}
+
+/// Stable typed pipeline visibility for an image access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderGraphDiagnosticImageStage {
+    VertexShader,
+    FragmentShader,
+    ComputeShader,
+    ColorAttachmentOutput,
+    DepthStencil,
+    Transfer,
+    Present,
+    AllGraphics,
+}
+
+/// Stable image subresource range.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticImageSubresourceRange {
+    pub aspects: Vec<String>,
+    pub base_mip_level: u32,
+    pub mip_level_count: u32,
+    pub base_array_layer: u32,
+    pub array_layer_count: u32,
+}
+
+/// One typed image access declared by a pass.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticImageAccess {
+    pub resource: RenderGraphDiagnosticResourceRef,
+    pub mode: RenderGraphDiagnosticImageAccessMode,
+    pub usage: RenderGraphDiagnosticImageUsage,
+    pub stage: RenderGraphDiagnosticImageStage,
+    pub range: RenderGraphDiagnosticImageSubresourceRange,
+}
+
 /// Pass information with canonical DAG metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RenderGraphDiagnosticPass {
@@ -112,6 +169,7 @@ pub struct RenderGraphDiagnosticPass {
     pub kind: Option<String>,
     pub reads: Vec<RenderGraphDiagnosticResourceRef>,
     pub writes: Vec<RenderGraphDiagnosticResourceRef>,
+    pub image_accesses: Vec<RenderGraphDiagnosticImageAccess>,
     pub predecessors: Vec<usize>,
     pub successors: Vec<usize>,
     pub execution_position: Option<usize>,
@@ -262,6 +320,12 @@ impl RenderGraphDiagnostics {
                     kind: pass.kind.map(|kind| format!("{kind:?}")),
                     reads: resource_refs(&node.reads, resources),
                     writes: resource_refs(&node.writes, resources),
+                    image_accesses: pass
+                        .image_accesses
+                        .iter()
+                        .copied()
+                        .map(|access| diagnostic_image_access(access, resources))
+                        .collect(),
                     predecessors: node.predecessors.clone(),
                     successors: node.successors.clone(),
                     execution_position: execution_positions.get(&node.pass_index).copied(),
@@ -437,6 +501,54 @@ impl fmt::Display for RenderGraphDiagnostics {
         }
 
         Ok(())
+    }
+}
+
+fn diagnostic_image_access(
+    access: ImageAccess,
+    resources: &[GraphResourceDesc],
+) -> RenderGraphDiagnosticImageAccess {
+    let mode = match access.mode {
+        ImageAccessMode::Read => RenderGraphDiagnosticImageAccessMode::Read,
+        ImageAccessMode::Write => RenderGraphDiagnosticImageAccessMode::Write,
+        ImageAccessMode::ReadWrite => RenderGraphDiagnosticImageAccessMode::ReadWrite,
+    };
+    let usage = match access.usage {
+        ImageUsage::Sampled => RenderGraphDiagnosticImageUsage::Sampled,
+        ImageUsage::ColorAttachment => RenderGraphDiagnosticImageUsage::ColorAttachment,
+        ImageUsage::DepthStencilAttachment => {
+            RenderGraphDiagnosticImageUsage::DepthStencilAttachment
+        }
+        ImageUsage::Storage => RenderGraphDiagnosticImageUsage::Storage,
+        ImageUsage::TransferSource => RenderGraphDiagnosticImageUsage::TransferSource,
+        ImageUsage::TransferDestination => RenderGraphDiagnosticImageUsage::TransferDestination,
+        ImageUsage::Present => RenderGraphDiagnosticImageUsage::Present,
+    };
+    let stage = match access.stage {
+        ImagePipelineStage::VertexShader => RenderGraphDiagnosticImageStage::VertexShader,
+        ImagePipelineStage::FragmentShader => RenderGraphDiagnosticImageStage::FragmentShader,
+        ImagePipelineStage::ComputeShader => RenderGraphDiagnosticImageStage::ComputeShader,
+        ImagePipelineStage::ColorAttachmentOutput => {
+            RenderGraphDiagnosticImageStage::ColorAttachmentOutput
+        }
+        ImagePipelineStage::DepthStencil => RenderGraphDiagnosticImageStage::DepthStencil,
+        ImagePipelineStage::Transfer => RenderGraphDiagnosticImageStage::Transfer,
+        ImagePipelineStage::Present => RenderGraphDiagnosticImageStage::Present,
+        ImagePipelineStage::AllGraphics => RenderGraphDiagnosticImageStage::AllGraphics,
+    };
+
+    RenderGraphDiagnosticImageAccess {
+        resource: resource_ref(access.resource, resources),
+        mode,
+        usage,
+        stage,
+        range: RenderGraphDiagnosticImageSubresourceRange {
+            aspects: access.range.aspects.names().map(str::to_string).collect(),
+            base_mip_level: access.range.base_mip_level,
+            mip_level_count: access.range.mip_level_count,
+            base_array_layer: access.range.base_array_layer,
+            array_layer_count: access.range.array_layer_count,
+        },
     }
 }
 
@@ -661,8 +773,10 @@ mod tests {
         }
 
         let json: Value = serde_json::from_str(&expected_json).unwrap();
-        assert_eq!(json["schema_version"], 4);
+        assert_eq!(json["schema_version"], 5);
         assert_eq!(json["execution_order"], serde_json::json!([0, 1, 2, 3]));
+        assert_eq!(json["passes"][0]["image_accesses"][0]["mode"], "write");
+        assert_eq!(json["passes"][1]["image_accesses"][0]["usage"], "sampled");
         assert_eq!(json["summary"]["dependency_edges"], 4);
         assert_eq!(json["summary"]["synchronization_transitions"], 5);
         assert_eq!(json["summary"]["physical_transient_allocations"], 2);
