@@ -5,5 +5,5 @@
 pub struct PassId(pub u32);
 
 /// Typed handle identifying a resource within the frame graph.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ResourceId(pub u32);

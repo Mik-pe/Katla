@@ -166,6 +166,7 @@ impl PassBuilder for FullscreenPass {
             uses_depth: false,
             depth_attachment: None,
             kind: Some(PassKind::Fullscreen),
+            side_effect: false,
         }
     }
 }
@@ -243,6 +244,7 @@ impl PassBuilder for OverlayPass {
             uses_depth: false,
             depth_attachment: None,
             kind: Some(PassKind::Fullscreen),
+            side_effect: false,
             overlay_params: self.overlay_params,
         }
     }

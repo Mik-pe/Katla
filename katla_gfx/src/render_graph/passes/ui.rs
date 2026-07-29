@@ -112,8 +112,13 @@ impl PassBuilder for UIPass {
         // Collect write resource names
         let writes: Vec<String> = self.color_output.iter().map(|o| o.name.clone()).collect();
 
-        // Clone reads for the builder
-        let reads = self.reads.clone();
+        // UI alpha-composites over the existing target contents.
+        let mut reads = self.reads.clone();
+        for output in &writes {
+            if !reads.contains(output) {
+                reads.push(output.clone());
+            }
+        }
 
         // Clone material handle
         let material = self.material;
@@ -134,6 +139,7 @@ impl PassBuilder for UIPass {
             uses_depth: false,
             depth_attachment: None,
             kind: Some(PassKind::Ui),
+            side_effect: false,
         }
     }
 }
@@ -154,6 +160,13 @@ mod tests {
 
         let result = (builder.build_fn)(&resource_map);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn ui_output_declares_read_dependency_for_compositing() {
+        let builder = UIPass::new("ui").write("backbuffer").as_builder();
+        assert_eq!(builder.reads, vec!["backbuffer"]);
+        assert_eq!(builder.writes, vec!["backbuffer"]);
     }
 
     #[test]

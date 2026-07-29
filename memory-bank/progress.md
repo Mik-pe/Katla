@@ -30,7 +30,7 @@ What's been done and what's next. **Update this file when completing or starting
 
 ## In Progress
 
-<!-- Move active implementation work here. -->
+- Completing explicit render-graph liveness for #34/#56: exported resource and side-effect roots, true-producer traversal, live-only execution/parallel groups, culling-aware diagnostics, structured rejection of submissions to culled passes, and correct read-before-write dependencies for loaded/blended attachments.
 
 ## Upcoming / Blocked
 
