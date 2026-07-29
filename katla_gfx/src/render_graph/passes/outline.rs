@@ -34,11 +34,12 @@ impl OutlinePass {
 impl PassBuilder for OutlinePass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes = self.writes.clone();
+        let reads = writes.clone();
 
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
-            reads: Vec::new(),
+            reads,
             writes,
             pipeline: None,
             tonemap_params: None,
@@ -58,6 +59,7 @@ impl PassBuilder for OutlinePass {
                 },
             )),
             kind: Some(PassKind::Outline),
+            side_effect: false,
         }
     }
 }
@@ -112,6 +114,21 @@ impl PassBuilder for StencilIndicatorPass {
                 },
             )),
             kind: Some(PassKind::StencilIndicator),
+            side_effect: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outline_reads_the_color_target_it_loads() {
+        let builder = OutlinePass::new("outline")
+            .write_color("hdr", ImageFormat::R16G16B16A16Sfloat)
+            .as_builder();
+        assert_eq!(builder.reads, vec!["hdr"]);
+        assert_eq!(builder.writes, vec!["hdr"]);
     }
 }

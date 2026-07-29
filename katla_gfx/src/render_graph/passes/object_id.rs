@@ -78,6 +78,7 @@ impl PassBuilder for ObjectIdPass {
             uses_depth: true,
             depth_attachment: self.depth_config,
             kind: Some(PassKind::ObjectId),
+            side_effect: false,
         }
     }
 }

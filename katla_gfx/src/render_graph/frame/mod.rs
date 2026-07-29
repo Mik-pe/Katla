@@ -69,6 +69,19 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
         }
     }
 
+    pub(super) fn validate_submissions(&self) -> Result<(), RenderGraphError> {
+        for &pass_index in self.pending.keys() {
+            let pass = self
+                .graph
+                .pass(pass_index)
+                .ok_or_else(|| RenderGraphError::PassNotFound(pass_index.to_string()))?;
+            if !self.graph.is_pass_index_live(pass_index) {
+                return Err(RenderGraphError::SubmissionToCulledPass(pass.name.clone()));
+            }
+        }
+        Ok(())
+    }
+
     /// Get the current frame index from the renderer.
     fn current_frame(&self) -> usize {
         self.renderer.current_frame()
