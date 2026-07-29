@@ -272,8 +272,11 @@ impl PassBuilder for ViewportPass {
         // Write to the transient texture (named after the pass)
         let writes = vec![self.name.clone()];
 
-        // Clone reads for the builder
-        let reads = self.reads.clone();
+        // Loading the target preserves its previous contents.
+        let mut reads = self.reads.clone();
+        if self.load_op == LoadOp::Load && !reads.contains(&self.name) {
+            reads.push(self.name.clone());
+        }
 
         // Store pass data for the build function
         let name = self.name.clone();
@@ -322,6 +325,7 @@ impl PassBuilder for ViewportPass {
             uses_depth: true, // Viewports use the global depth buffer
             depth_attachment: None,
             kind: Some(PassKind::Geometry),
+            side_effect: false,
         }
     }
 }
@@ -430,6 +434,17 @@ mod tests {
         let data = result.unwrap();
         let pass_data = data.downcast_ref::<ViewportPassData>().unwrap();
         assert_eq!(pass_data._color.1, ImageFormat::R16G16B16A16Sfloat);
+    }
+
+    #[test]
+    fn viewport_load_declares_read_dependency() {
+        let builder = ViewportPass::new("viewport_0")
+            .extent(512, 512)
+            .format(ImageFormat::R16G16B16A16Sfloat)
+            .load_store_ops(LoadOp::Load, StoreOp::Store)
+            .as_builder();
+        assert_eq!(builder.reads, vec!["viewport_0"]);
+        assert_eq!(builder.writes, vec!["viewport_0"]);
     }
 
     #[test]

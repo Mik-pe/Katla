@@ -210,11 +210,17 @@ pub(crate) struct GeometryPassData {
 
 impl PassBuilder for GeometryPass {
     fn as_builder(self) -> InternalPassBuilder {
-        // Collect write resource names (color only - depth is implicit)
+        // Collect write resource names (color only - depth is implicit).
         let writes: Vec<String> = self.color_outputs.iter().map(|o| o.name.clone()).collect();
 
-        // Clone reads for the builder
-        let reads = self.reads.clone();
+        // Loading an output preserves its previous contents and is therefore
+        // a read-before-write dependency for ordering and pass liveness.
+        let mut reads = self.reads.clone();
+        for output in &self.color_outputs {
+            if output.load_op == LoadOp::Load && !reads.contains(&output.name) {
+                reads.push(output.name.clone());
+            }
+        }
 
         // Store pass data for the build function
         let color_outputs = self.color_outputs;
@@ -267,6 +273,7 @@ impl PassBuilder for GeometryPass {
             uses_depth: true,
             depth_attachment: depth_config,
             kind: Some(PassKind::Geometry),
+            side_effect: false,
         }
     }
 }
@@ -327,6 +334,22 @@ mod tests {
         let result = (builder.build_fn)(&resource_map).unwrap();
         let pass_data = result.downcast_ref::<GeometryPassData>().unwrap();
         assert_eq!(pass_data.colors.len(), 2);
+    }
+
+    #[test]
+    fn load_color_attachment_declares_read_dependency() {
+        let builder = GeometryPass::new("geometry")
+            .write_color_with(
+                "color",
+                ImageFormat::R16G16B16A16Sfloat,
+                LoadOp::Load,
+                StoreOp::Store,
+                ClearValue::OPAQUE_BLACK,
+            )
+            .as_builder();
+
+        assert_eq!(builder.reads, vec!["color"]);
+        assert_eq!(builder.writes, vec!["color"]);
     }
 
     #[test]
