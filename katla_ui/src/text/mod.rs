@@ -1602,13 +1602,22 @@ mod tests {
 
     #[test]
     fn test_empty_text_returns_zero_dimensions() {
-        // VAL-TEXT-010: Empty text returns zero dimensions
+        // VAL-TEXT-010: Empty text has zero width and the font line height,
+        // so vertical centring maths (bounds.center().y - h/2) stay correct.
         let mut sys = create_shaped_system();
         let font_id = FontId::DEFAULT;
 
         let dims = sys.measure_text(font_id, "", 16.0, 1.0);
         assert_eq!(dims.x(), 0.0, "Empty text should have zero width");
-        assert_eq!(dims.y(), 0.0, "Empty text should have zero height");
+        assert!(
+            dims.y() > 0.0,
+            "Empty text should report the font line height"
+        );
+        let single = sys.measure_text(font_id, "A", 16.0, 1.0);
+        assert!(
+            (dims.y() - single.y()).abs() < 1.0,
+            "Empty height should match single-line height"
+        );
     }
 
     #[test]
@@ -1759,7 +1768,7 @@ mod tests {
 
         let empty = sys.measure_text(font_id, "", 16.0, 1.0);
         assert_eq!(empty.x(), 0.0);
-        assert_eq!(empty.y(), 0.0);
+        assert!(empty.y() > 0.0, "Empty text height is the font line height");
 
         let single = sys.measure_text(font_id, "A", 16.0, 1.0);
         assert!(single.x() > 0.0);
@@ -2006,10 +2015,10 @@ mod tests {
         );
 
         let size_empty = ctx.measure_text("", 14.0);
-        assert_eq!(
-            size_empty,
-            Vec2::new(0.0, 0.0),
-            "Empty text should return zero dimensions"
+        assert_eq!(size_empty.x(), 0.0, "Empty text should return zero width");
+        assert!(
+            size_empty.y() > 0.0,
+            "Empty text height should be the font line height"
         );
 
         let size_large = ctx.measure_text("Hello World", 24.0);
