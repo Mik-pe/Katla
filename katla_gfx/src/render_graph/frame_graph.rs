@@ -1063,12 +1063,10 @@ impl FrameGraphBuilder {
                         .copied()
                         .map(|resource| access.resolve(resource))
                         .ok_or_else(|| {
-                            RenderGraphError::Validation(
-                                GraphValidationError::UndeclaredResource {
-                                    pass: pass_name.clone(),
-                                    resource: access.resource.clone(),
-                                },
-                            )
+                            RenderGraphError::Validation(GraphValidationError::UndeclaredResource {
+                                pass: pass_name.clone(),
+                                resource: access.resource.clone(),
+                            })
                         })
                 })
                 .collect::<Result<Vec<_>, _>>()?;

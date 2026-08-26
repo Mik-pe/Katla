@@ -134,24 +134,19 @@ impl PassDesc {
         }
     }
 
-    fn default_image_accesses(
-        reads: &[ResourceId],
-        writes: &[ResourceId],
-    ) -> Vec<ImageAccess> {
-        let resources = reads
-            .iter()
-            .chain(writes)
-            .copied()
-            .collect::<BTreeSet<_>>();
+    fn default_image_accesses(reads: &[ResourceId], writes: &[ResourceId]) -> Vec<ImageAccess> {
+        let resources = reads.iter().chain(writes).copied().collect::<BTreeSet<_>>();
 
         resources
             .into_iter()
-            .map(|resource| match (reads.contains(&resource), writes.contains(&resource)) {
-                (true, true) => ImageAccess::storage_read_write(resource),
-                (true, false) => ImageAccess::sampled_read(resource),
-                (false, true) => ImageAccess::storage_write(resource),
-                (false, false) => unreachable!("resource came from the read/write union"),
-            })
+            .map(
+                |resource| match (reads.contains(&resource), writes.contains(&resource)) {
+                    (true, true) => ImageAccess::storage_read_write(resource),
+                    (true, false) => ImageAccess::sampled_read(resource),
+                    (false, true) => ImageAccess::storage_write(resource),
+                    (false, false) => unreachable!("resource came from the read/write union"),
+                },
+            )
             .collect()
     }
 
@@ -181,10 +176,7 @@ impl PassDesc {
     }
 
     /// Replace inferred accesses with an explicit typed image-access contract.
-    pub fn with_image_accesses(
-        mut self,
-        accesses: impl IntoIterator<Item = ImageAccess>,
-    ) -> Self {
+    pub fn with_image_accesses(mut self, accesses: impl IntoIterator<Item = ImageAccess>) -> Self {
         self.set_image_accesses(accesses.into_iter().collect());
         self
     }

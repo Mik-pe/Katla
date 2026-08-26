@@ -273,13 +273,7 @@ mod tests {
                 ImageAccessMode::ReadWrite,
                 ImageUsage::Storage,
                 ImagePipelineStage::FragmentShader,
-                ImageSubresourceRange::new(
-                    super::super::access::ImageAspects::COLOR,
-                    2,
-                    1,
-                    0,
-                    1,
-                ),
+                ImageSubresourceRange::new(super::super::access::ImageAspects::COLOR, 2, 1, 0, 1),
             )
             .as_builder();
 

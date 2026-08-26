@@ -88,26 +88,24 @@ impl MetalPassRecord {
             color_attachments: pass
                 .color_attachments
                 .iter()
-                .map(
-                    |&(resource, format, load_op, store_op, clear_value)| {
-                        MetalColorAttachmentRecord {
-                            resource,
-                            format,
-                            load_op,
-                            store_op,
-                            clear_value,
-                        }
-                    },
-                )
+                .map(|&(resource, format, load_op, store_op, clear_value)| {
+                    MetalColorAttachmentRecord {
+                        resource,
+                        format,
+                        load_op,
+                        store_op,
+                        clear_value,
+                    }
+                })
                 .collect(),
             uses_depth: pass.uses_depth,
-            depth_attachment: pass.depth_attachment.map(
-                |(load_op, store_op, clear_value)| MetalDepthAttachmentOps {
+            depth_attachment: pass
+                .depth_attachment
+                .map(|(load_op, store_op, clear_value)| MetalDepthAttachmentOps {
                     load_op,
                     store_op,
                     clear_value,
-                },
-            ),
+                }),
         })
     }
 
