@@ -56,6 +56,21 @@ Two root causes found behind "misaligned text" reports; both fixed at source:
   content off the leading edge. Added `Alignment::Middle`: cross axis centred, main
   axis untouched. Use it for every toolbar/row mixing heights.
 
+### Billboard plates root cause (fixed 2026-08-26, commit 48a66fe2)
+
+Opaque squares behind editor billboard icons were not a blending or texture bug —
+alpha, blending (SourceAlpha/OneMinus) and the icon rasteriser were all correct. The
+billboard **depth prepass pipeline was vertex-only** (`["vs_main"]`, fragment None),
+so its discard never ran: full quads wrote prepass depth, the main pass then
+discarded transparent pixels, and everything behind each quad stayed occluded
+(sky-grey plates). Fix: compile+attach the `billboard_depth.wgsl` fragment and bind
+argument buffer + shared sampler for the billboard variant in `render_depth_prepass`.
+Note for future pass pipelines: a depth-only prepass pipeline that must respect
+alpha needs a real fragment stage — "depth written by rasterizer, no fragment" is
+only valid for fully opaque geometry. Diagnostic pattern that nailed it: patch the
+colour shader to *visualise the sampled value* (alpha as red) — distinguishes
+"texture wrong" from "draw wrong" in one screenshot.
+
 - Transient resource lifetime analysis and aliasing (#35).
 - Real Metal frames in flight and synchronization cleanup (#36).
 - Further deterministic graph diagnostics and capture tooling (#37).
