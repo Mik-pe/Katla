@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use katla_math::{Color, Rect2D};
-use katla_ui::declarative::{Build, BuildContext, Padding, StateId, Widget, WidgetBox};
+use katla_ui::declarative::{Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox};
 use katla_ui::{FontSize, ScrollAreaState};
 
 use crate::ui::console::LogBuffer;
@@ -106,12 +106,16 @@ impl Build for ConsoleView {
             .boxed();
 
         let toolbar = hstack([
-            hstack(filter_toggles).spacing(4.0).boxed(),
+            hstack(filter_toggles)
+                .spacing(4.0)
+                .align(Alignment::Middle)
+                .boxed(),
             search_field,
             clear_button,
         ])
         .spacing(8.0)
         .padding(Padding::all(4.0))
+        .align(Alignment::Middle)
         .boxed();
 
         let search_lower = search_filter.to_lowercase();

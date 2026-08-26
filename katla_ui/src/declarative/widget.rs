@@ -148,11 +148,15 @@ pub trait Widget: Any + 'static {
                     Alignment::TopLeading | Alignment::Leading | Alignment::BottomLeading => 0.0,
                     Alignment::Top | Alignment::Center | Alignment::Bottom => dx * 0.5,
                     Alignment::TopTrailing | Alignment::Trailing | Alignment::BottomTrailing => dx,
+                    // Cross-axis-only centring keeps the main-axis leading.
+                    Alignment::Middle => 0.0,
                     Alignment::BottomCenter => dx * 0.5,
                 };
                 let vy = match alignment {
                     Alignment::TopLeading | Alignment::Top | Alignment::TopTrailing => 0.0,
                     Alignment::Leading | Alignment::Center | Alignment::Trailing => dy * 0.5,
+                    // Cross-axis-only centring: mirror of the Middle case in hx.
+                    Alignment::Middle => dy * 0.5,
                     Alignment::BottomLeading
                     | Alignment::Bottom
                     | Alignment::BottomTrailing

@@ -5,8 +5,8 @@ use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Build, BuildContext, Padding, StateId, Widget, WidgetBox, empty, hstack, icon, panel, scroll,
-    selectable, text, textfield, vstack,
+    Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, empty, hstack, icon,
+    panel, scroll, selectable, text, textfield, vstack,
 };
 
 use crate::ui::editor_ui::ColorScheme;
@@ -91,6 +91,7 @@ impl Build for HierarchyView {
                     .boxed(),
             ])
             .spacing(6.0)
+            .align(Alignment::Middle)
             .padding(Padding {
                 top: 9.0,
                 right: 6.0,
