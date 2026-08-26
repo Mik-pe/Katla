@@ -86,7 +86,7 @@ impl MetalRenderer {
         let compiled = shader::compile_wgsl_to_metal(
             &self.context.device,
             &wgsl_source,
-            &["vs_main"],
+            &["vs_main", "fs_main"],
             ShaderProfile::Graphics,
         )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
@@ -94,8 +94,13 @@ impl MetalRenderer {
                 "Billboard depth prepass vertex entry point not found".into(),
             )
         })?;
+        let fragment_fn = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
+            RendererError::InvalidOperation(
+                "Billboard depth prepass fragment entry point not found".into(),
+            )
+        })?;
         self.depth_prepass
-            .create_pipeline_billboard(&self.context, vertex_fn)
+            .create_pipeline_billboard(&self.context, vertex_fn, Some(fragment_fn))
     }
 
     pub fn init_outline_pipelines(
