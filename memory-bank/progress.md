@@ -44,6 +44,18 @@ tree with bounds — pinpoints layout collapses without screenshots. Normal-colo
 fs_main debug output distinguishes "which geometry survived". Run-to-run pixel diffs
 (headless captures are byte-deterministic) rule out flakiness cheaply.
 
+### UI alignment conventions (Aug 26 2026)
+
+Two root causes found behind "misaligned text" reports; both fixed at source:
+
+- Empty strings measured `(0,0)` height, so any widget centring text by
+  `center().y - h/2` drew placeholders half a line low (hierarchy filter). Empty now
+  measures width 0 × line height (`size * 1.2`, matching shape_text buffers).
+- `Alignment` had no cross-axis-only variant. Default Leading leaves mixed-height
+  children top-stuck (labels vs fields vs buttons); Center also horizontally packs
+  content off the leading edge. Added `Alignment::Middle`: cross axis centred, main
+  axis untouched. Use it for every toolbar/row mixing heights.
+
 - Transient resource lifetime analysis and aliasing (#35).
 - Real Metal frames in flight and synchronization cleanup (#36).
 - Further deterministic graph diagnostics and capture tooling (#37).
