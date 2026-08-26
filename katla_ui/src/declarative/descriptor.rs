@@ -7,6 +7,9 @@ pub enum Alignment {
     Leading,
     Trailing,
     Center,
+    /// Cross-axis centring only. In a row, children share a vertical centre
+    /// line but remain packed to the leading edge; mirrored for columns.
+    Middle,
     Top,
     Bottom,
     TopLeading,

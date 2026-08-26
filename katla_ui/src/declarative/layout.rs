@@ -274,6 +274,11 @@ pub fn apply_alignment_to_style(style: &mut Style, alignment: Alignment) {
             style.align_items = Some(taffy::AlignItems::Center);
             style.justify_content = Some(taffy::JustifyContent::Center);
         }
+        // Cross-axis centring only: rows keep their left-to-right packing
+        // while mixed-height children share one vertical centre line.
+        Alignment::Middle => {
+            style.align_items = Some(taffy::AlignItems::Center);
+        }
         Alignment::Top => {
             style.align_items = Some(taffy::AlignItems::Start);
         }

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::declarative::{
-    Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, context_entry, context_menu,
-    empty, grid, hstack, icon, image, image_button, modal, panel, scroll, selectable,
+    Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, context_entry,
+    context_menu, empty, grid, hstack, icon, image, image_button, modal, panel, scroll, selectable,
     separator_horizontal, text, textfield, vstack,
 };
 use katla_ui::{FontSize, ForkAwesome, TextureId};
@@ -143,6 +143,7 @@ impl Build for AssetBrowserView {
         ])
         .spacing(4.0)
         .padding(Padding::all(4.0))
+        .align(Alignment::Middle)
         .boxed();
 
         let item_size = 80.0;
