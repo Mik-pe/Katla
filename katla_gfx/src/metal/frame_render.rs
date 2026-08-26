@@ -391,6 +391,8 @@ impl MetalRenderer {
             &self.materials,
             &draw_list,
             &self.skeletons,
+            self.bindless_manager.argument_buffer(),
+            self.shared_sampler.as_ref(),
         );
         Ok(true)
     }

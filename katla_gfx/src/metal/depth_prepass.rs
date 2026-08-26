@@ -96,16 +96,18 @@ impl MetalDepthPrepass {
 
     /// Create the billboard depth prepass pipeline.
     ///
-    /// Uses the PBR vertex descriptor with alpha discard for camera-facing quads.
-    /// Double-sided, no culling, writes depth.
+    /// Uses the PBR vertex descriptor with an alpha-discard fragment so
+    /// transparent billboard texels never write depth. Double-sided, no
+    /// culling, writes depth.
     pub(crate) fn create_pipeline_billboard(
         &mut self,
         context: &MetalContext,
         vertex_function: &ProtocolObject<dyn MTLFunction>,
+        fragment_function: Option<&ProtocolObject<dyn MTLFunction>>,
     ) -> Result<(), RendererError> {
         let pipeline = context.create_graphics_pipeline(
             vertex_function,
-            None,
+            fragment_function,
             &[],
             Some(objc2_metal::MTLPixelFormat::Depth32Float_Stencil8),
             true,
@@ -142,6 +144,8 @@ pub(crate) fn render_depth_prepass(
     materials: &ResourceStorage<MetalMaterial>,
     draw_list: &crate::renderer::types::DrawList,
     skeleton_buffers: &ResourceStorage<MetalBuffer>,
+    bindless_argument_buffer: Option<&objc2::runtime::ProtocolObject<dyn objc2_metal::MTLBuffer>>,
+    shared_sampler: Option<&super::sampler::MetalSamplerState>,
 ) {
     let render_pass_info = RenderPassInfo {
         color_attachments: vec![],
@@ -208,6 +212,36 @@ pub(crate) fn render_depth_prepass(
             if need_rebind {
                 encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
                 encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
+                // The billboard fragment samples the bindless icon texture to
+                // discard transparent texels before depth is written.
+                if target_variant == PipelineVariant::Billboard {
+                    if let Some(argument_buffer) = bindless_argument_buffer {
+                        unsafe {
+                            encoder.inner.setVertexBuffer_offset_atIndex(
+                                Some(argument_buffer),
+                                0,
+                                9,
+                            );
+                            encoder.inner.setFragmentBuffer_offset_atIndex(
+                                Some(argument_buffer),
+                                0,
+                                9,
+                            );
+                        }
+                        encoder.use_buffer(
+                            argument_buffer,
+                            objc2_metal::MTLResourceUsage::Read,
+                            objc2_metal::MTLRenderStages::Fragment,
+                        );
+                    }
+                    if let Some(sampler) = shared_sampler {
+                        unsafe {
+                            encoder
+                                .inner
+                                .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
+                        }
+                    }
+                }
             }
             current_variant = target_variant;
         }

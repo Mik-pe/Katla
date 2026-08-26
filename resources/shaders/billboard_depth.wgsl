@@ -1,7 +1,11 @@
-// Billboard depth prepass for GPU picking.
-// Replicates the camera-facing vertex transform from billboard.wgsl
-// but outputs instance_index + 1 as vec4u for picking.
-// Fragment stage samples bindless icon texture and discards transparent pixels.
+// Billboard depth prepass.
+//
+// Replicates the camera-facing vertex transform from billboard.wgsl and
+// discards transparent texels so billboard quads do not occlude scene
+// geometry behind their empty regions.
+//
+// The depth prepass pipeline has no color attachment; the rasterizer writes
+// depth for surviving fragments only.
 
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
@@ -54,7 +58,7 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4u {
+fn fs_main(in: VertexOutput) {
     let obj = objects[in.instance_idx];
 
     let albedo_idx = u32(obj.material_params.w);
@@ -65,8 +69,4 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4u {
     if (alpha < 0.5) {
         discard;
     }
-
-    // Encode instance_index + 1 into the R channel for picking.
-    // Value 0 (cleared) means no object was hit.
-    return vec4u(in.instance_idx + 1u, 0u, 0u, 1u);
 }
