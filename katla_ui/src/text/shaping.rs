@@ -78,7 +78,10 @@ impl super::FontSystem {
         scale_factor: f32,
     ) -> Vec2 {
         if text.is_empty() {
-            return Vec2::new(0.0, 0.0);
+            // shape_text builds every buffer with Metrics(size, size * 1.2),
+            // so a shaped line reports that as its line box height. Report the
+            // same for empty text (placeholders) or centring maths diverge.
+            return Vec2::new(0.0, size * 1.2);
         }
 
         let shaped = self.shape_text(font_id, text, size, scale_factor, None);
