@@ -91,7 +91,14 @@ impl Build for ViewportGridView {
 
                 cell_content.push((Alignment::TopLeading, label_text));
 
-                let content = zstack(cell_content).boxed();
+                // Give the stack the cell's definite size. Without it the
+                // percent-height chain through Selectable/ZStack collapses to
+                // zero (auto-height parents never resolve child percentages),
+                // and the centred image is laid out half above the screen top.
+                let content = zstack(cell_content)
+                    .flex_width(cell_width)
+                    .flex_height(cell_height)
+                    .boxed();
 
                 // Use selectable for visual feedback (hover/active highlighting)
                 // The actual selection is handled in layout.rs via update_active_viewport

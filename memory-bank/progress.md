@@ -26,6 +26,24 @@
 
 ## Known Follow-Up Work
 
+### Metal headless band-collapse ROOT-CAUSED & FIXED (2026-08-26)
+
+The scene collapsed to a top strip (~441px of 993) and spheres/sky vanished. Not a
+Metal/GPU bug at all: katla_ui layout collapse from the `selectable()` wrapper added
+around the viewport cell (9f0b714f). Chain measured via layout dump:
+Selectable/ZStack resolved to height **0** (`Percent(1.0)` against auto-height parent),
+then `Alignment::Center` centred the full-cell image at y=−248 → most of the quad sat
+above screen top. What read as "sky gradient" was tonemapped ground plane squeezed
+into the surviving sliver. Fixed by giving the zstack definite dimensions
+(`flex_width/flex_height` from cell size) in
+`katla_app/src/ui/editor_ui/declarative/viewport_grid.rs`; layout dump shows Image at
+(0,0) filling the cell, headless render back to ~490KB with sphere grid visible.
+
+Diagnostics worth keeping: `--dump-layout` (game binary) prints the laid-out widget
+tree with bounds — pinpoints layout collapses without screenshots. Normal-colour
+fs_main debug output distinguishes "which geometry survived". Run-to-run pixel diffs
+(headless captures are byte-deterministic) rule out flakiness cheaply.
+
 - Transient resource lifetime analysis and aliasing (#35).
 - Real Metal frames in flight and synchronization cleanup (#36).
 - Further deterministic graph diagnostics and capture tooling (#37).
