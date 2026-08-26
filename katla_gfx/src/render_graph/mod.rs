@@ -75,11 +75,10 @@ pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
 pub use diagnostics::{
     RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAccess,
-    RenderGraphDiagnosticDependency, RenderGraphDiagnosticHazard,
-    RenderGraphDiagnosticImageAccess, RenderGraphDiagnosticImageAccessMode,
-    RenderGraphDiagnosticImageStage, RenderGraphDiagnosticImageSubresourceRange,
-    RenderGraphDiagnosticImageUsage, RenderGraphDiagnosticPass,
-    RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
+    RenderGraphDiagnosticDependency, RenderGraphDiagnosticHazard, RenderGraphDiagnosticImageAccess,
+    RenderGraphDiagnosticImageAccessMode, RenderGraphDiagnosticImageStage,
+    RenderGraphDiagnosticImageSubresourceRange, RenderGraphDiagnosticImageUsage,
+    RenderGraphDiagnosticPass, RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
     RenderGraphDiagnosticResourceLifetime, RenderGraphDiagnosticResourceOrigin,
     RenderGraphDiagnosticResourceRef, RenderGraphDiagnosticSummary,
     RenderGraphDiagnosticTransition, RenderGraphDiagnostics, RenderGraphHazardKind,

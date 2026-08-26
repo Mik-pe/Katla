@@ -31,9 +31,7 @@ struct TransientCompatibilityKey {
 impl From<&GraphResourceDesc> for TransientCompatibilityKey {
     fn from(resource: &GraphResourceDesc) -> Self {
         let kind = match &resource.resource_type {
-            GraphResourceType::ColorAttachment { .. } => {
-                TransientAllocationKind::ColorAttachment
-            }
+            GraphResourceType::ColorAttachment { .. } => TransientAllocationKind::ColorAttachment,
             GraphResourceType::DepthAttachment { sampled, .. } => {
                 TransientAllocationKind::DepthAttachment { sampled: *sampled }
             }
@@ -88,9 +86,8 @@ impl TransientAllocationPlan {
                 Some((resource_id, resource, lifetime))
             })
             .collect::<Vec<_>>();
-        candidates.sort_by_key(|(resource, _, lifetime)| {
-            (lifetime.first_execution_position, resource.0)
-        });
+        candidates
+            .sort_by_key(|(resource, _, lifetime)| (lifetime.first_execution_position, resource.0));
 
         let mut plan = Self::default();
         for (resource_id, resource, lifetime) in candidates {
@@ -188,12 +185,8 @@ mod tests {
             (ResourceId(2), lifetime(1, 2)),
         ]);
 
-        let plan = TransientAllocationPlan::build(
-            &resources,
-            &resources,
-            &BTreeSet::new(),
-            &lifetimes,
-        );
+        let plan =
+            TransientAllocationPlan::build(&resources, &resources, &BTreeSet::new(), &lifetimes);
 
         assert_eq!(plan.physical_allocation_id(ResourceId(0)), Some(0));
         assert_eq!(plan.physical_allocation_id(ResourceId(1)), Some(0));
@@ -228,12 +221,8 @@ mod tests {
         let resources = vec![resource("live"), resource("dead")];
         let lifetimes = BTreeMap::from([(ResourceId(0), lifetime(0, 0))]);
 
-        let plan = TransientAllocationPlan::build(
-            &resources,
-            &resources,
-            &BTreeSet::new(),
-            &lifetimes,
-        );
+        let plan =
+            TransientAllocationPlan::build(&resources, &resources, &BTreeSet::new(), &lifetimes);
 
         assert_eq!(plan.physical_allocation_id(ResourceId(0)), Some(0));
         assert_eq!(plan.physical_allocation_id(ResourceId(1)), None);

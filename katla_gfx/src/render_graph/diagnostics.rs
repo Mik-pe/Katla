@@ -13,9 +13,7 @@ use super::BACKBUFFER_NAME;
 use super::access::{ImageAccess, ImageAccessMode, ImagePipelineStage, ImageUsage};
 use super::allocation_plan::TransientAllocationPlan;
 use super::backend::RenderGraphBackend;
-use super::compiler::{
-    ExecutionPlan, ResourceHazardKind, ResourceLifetime, ResourceTransition,
-};
+use super::compiler::{ExecutionPlan, ResourceHazardKind, ResourceLifetime, ResourceTransition};
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::ResourceId;
@@ -833,10 +831,7 @@ mod tests {
             transient_resource("early"),
             transient_resource("late"),
         ];
-        let transient_resources = vec![
-            transient_resource("early"),
-            transient_resource("late"),
-        ];
+        let transient_resources = vec![transient_resource("early"), transient_resource("late")];
         let passes = vec![
             pass("write_early", Vec::new(), vec![ResourceId(1)]),
             pass("consume_early", vec![ResourceId(1)], vec![ResourceId(0)]),
@@ -873,9 +868,7 @@ mod tests {
             .synchronization
             .iter()
             .find(|transition| {
-                transition.from_pass == 0
-                    && transition.to_pass == 1
-                    && transition.resource.id == 1
+                transition.from_pass == 0 && transition.to_pass == 1 && transition.resource.id == 1
             })
             .unwrap();
 

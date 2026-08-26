@@ -602,8 +602,7 @@ impl GraphCompiler {
             .filter_map(|(index, live)| (!live).then_some(index))
             .collect();
         let resource_lifetimes = self.build_resource_lifetimes(&sorted_passes);
-        let resource_transitions =
-            self.build_resource_transitions(&live_graph, &sorted_passes);
+        let resource_transitions = self.build_resource_transitions(&live_graph, &sorted_passes);
 
         Ok(ExecutionPlan {
             sorted_passes,

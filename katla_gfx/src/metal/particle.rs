@@ -22,7 +22,7 @@ use crate::particles::types::EmitterHandle;
 
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
-use super::metal_renderer::{frame_slot, FRAMES_IN_FLIGHT};
+use super::metal_renderer::{FRAMES_IN_FLIGHT, frame_slot};
 use super::shader;
 
 /// Maximum particles supported by shaders (must match MAX_PARTICLES in WGSL)

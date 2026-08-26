@@ -409,8 +409,10 @@ mod tests {
 
         assert_eq!(pieces.len(), 5);
         assert!(pieces.iter().all(|piece| !piece.overlaps(center)));
-        assert!(pieces
-            .iter()
-            .any(|piece| piece.aspects == ImageAspects::STENCIL));
+        assert!(
+            pieces
+                .iter()
+                .any(|piece| piece.aspects == ImageAspects::STENCIL)
+        );
     }
 }
