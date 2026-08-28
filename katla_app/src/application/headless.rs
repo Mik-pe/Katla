@@ -209,7 +209,9 @@ impl Application {
 
         // Convert BGRA to RGBA for PNG
         let rgba_data: Vec<u8> = bgra_data
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|bgra| [bgra[2], bgra[1], bgra[0], 255])
             .collect();
 

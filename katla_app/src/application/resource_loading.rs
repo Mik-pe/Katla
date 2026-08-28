@@ -141,7 +141,9 @@ impl super::Application {
             model.vertex_data.iter().map(|v| v.position).collect()
         };
         let triangles: Vec<[u32; 3]> = indices
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|c| [c[0], c[1], c[2]])
             .collect();
         self.geometry_cache.insert(
@@ -304,7 +306,9 @@ impl super::Application {
                 .create_mesh_soa(&attributes, vertex_count, &indices);
 
         let triangles: Vec<[u32; 3]> = indices
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|c| [c[0], c[1], c[2]])
             .collect();
         self.geometry_cache.insert(

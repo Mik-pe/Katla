@@ -103,7 +103,7 @@ impl AudioEffect for BiquadFilter {
                 }
             }
             2 => {
-                for frame in input.chunks_exact_mut(2) {
+                for frame in input.as_chunks_mut::<2>().0 {
                     frame[0] = self.process_sample(0, frame[0]);
                     frame[1] = self.process_sample(1, frame[1]);
                 }

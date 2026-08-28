@@ -461,7 +461,7 @@ impl Voice {
                 fixed_pos += step_fixed * src_channels as u64;
             }
         } else if src_channels == 1 && output_channels == 2 {
-            for chunk in output.chunks_exact_mut(2) {
+            for chunk in output.as_chunks_mut::<2>().0 {
                 let int_pos = (fixed_pos >> FRAC_BITS) as usize;
                 let frac = (fixed_pos & FRAC_MASK) as f32 / FIXED_ONE as f32;
 

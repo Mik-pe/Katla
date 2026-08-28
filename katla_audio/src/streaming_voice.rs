@@ -439,7 +439,7 @@ impl StreamingVoice {
         let mut fixed_pos = self.read_fixed.load(Ordering::Relaxed);
 
         if src_channels == 2 && output_channels == 2 {
-            for chunk in output.chunks_exact_mut(2) {
+            for chunk in output.as_chunks_mut::<2>().0 {
                 let int_pos = (fixed_pos >> FRAC_BITS) as usize;
                 let frac = (fixed_pos & FRAC_MASK) as f32 / FIXED_ONE as f32;
 
@@ -472,7 +472,7 @@ impl StreamingVoice {
                 fixed_pos += step_fixed * 2;
             }
         } else if src_channels == 1 && output_channels == 2 {
-            for chunk in output.chunks_exact_mut(2) {
+            for chunk in output.as_chunks_mut::<2>().0 {
                 let int_pos = (fixed_pos >> FRAC_BITS) as usize;
                 let frac = (fixed_pos & FRAC_MASK) as f32 / FIXED_ONE as f32;
 
