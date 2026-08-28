@@ -19,6 +19,15 @@
 - Metal executes ordered pass records and consumes only submissions addressed to each record.
 - Object-ID/picking is an explicit graph pass on Metal and Vulkan.
 
+## Current Focus: Shadow Pipeline (completed this session)
+
+The end-to-end shadow chain on Metal is fixed and visually verified (cast
+shadows from sphere grid, boxes, cylinder, fox; soft PCF edges, no acne).
+Both backends share the corrected cascade code (inverse-order view_proj_inv,
+zero-to-one NDC ortho, real-extent z-pancake, raw splits, texel-size bias
+units, single-pass atlas encoding). Open: skinned-shadow entry-point map
+(fox MSL buffer-3 collision), pale strip at viewport top.
+
 ## Temporary Boundaries
 
 - Shadow and depth-prepass remain explicit side-effect roots in the editor preset while their native targets are still backend-owned.
