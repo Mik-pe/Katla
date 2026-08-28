@@ -1848,7 +1848,9 @@ mod tests {
         // Analyze: count pixels that are nearly white (all channels > 240)
         let total_pixels = W as usize * H as usize;
         let white_count = pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .filter(|p| p[0] > 240 && p[1] > 240 && p[2] > 240)
             .count();
         let white_ratio = white_count as f32 / total_pixels as f32;

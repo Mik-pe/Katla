@@ -1,30 +1,24 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
-use objc2_metal::MTLSharedEvent;
-
 use crate::backend::resource::{GpuEvent, GpuFence};
 
 pub(crate) struct MetalFence {
     signaled: AtomicBool,
 }
 
+#[cfg(test)]
 impl MetalFence {
-    #[expect(dead_code)]
-    pub(crate) fn new() -> Self {
+    fn new() -> Self {
         Self {
             signaled: AtomicBool::new(false),
         }
     }
 
-    #[expect(dead_code)]
-    pub(crate) fn signal(&self) {
+    fn signal(&self) {
         self.signaled.store(true, Ordering::Release);
     }
 
-    #[expect(dead_code)]
-    pub(crate) fn reset(&self) {
+    fn reset(&self) {
         self.signaled.store(false, Ordering::Release);
     }
 }
@@ -35,12 +29,7 @@ impl GpuFence for MetalFence {
     }
 }
 
-pub(crate) struct MetalEvent {
-    #[expect(dead_code)]
-    pub(crate) inner: Retained<ProtocolObject<dyn MTLSharedEvent>>,
-    #[expect(dead_code)]
-    pub(crate) value: u64,
-}
+pub(crate) struct MetalEvent {}
 
 impl GpuEvent for MetalEvent {}
 

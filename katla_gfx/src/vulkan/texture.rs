@@ -99,7 +99,7 @@ impl Texture {
         let pixel_count = (width * height) as usize;
         let mut rgba_data = Vec::with_capacity(pixel_count * 4);
 
-        for chunk in rgb_data.chunks_exact(3) {
+        for chunk in rgb_data.as_chunks::<3>().0 {
             rgba_data.push(chunk[0]);
             rgba_data.push(chunk[1]);
             rgba_data.push(chunk[2]);

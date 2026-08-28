@@ -181,7 +181,7 @@ impl AudioEffect for ReverbEffect {
                 }
             }
             2 => {
-                for frame in input.chunks_exact_mut(2) {
+                for frame in input.as_chunks_mut::<2>().0 {
                     let dry_l = frame[0];
                     let dry_r = frame[1];
                     let wet_l = self.left.process_sample(dry_l);

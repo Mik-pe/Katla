@@ -369,7 +369,9 @@ impl Application {
         // The swapchain uses B8G8R8A8_SRGB format, so we need to swap channels
         // IMPORTANT: Force alpha to 255 (fully opaque) since swapchain is OPAQUE
         let rgba_data: Vec<u8> = bgra_data
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .flat_map(|bgra| {
                 // BGRA -> RGBA conversion, force alpha to 255
                 [bgra[2], bgra[1], bgra[0], 255]
