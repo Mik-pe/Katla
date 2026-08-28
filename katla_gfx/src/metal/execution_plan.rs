@@ -364,7 +364,7 @@ mod tests {
 
         let plan = compile(&[geometry], &[0]).unwrap();
         let record = &plan.passes()[0];
-        assert_eq!(record.reads, vec![ResourceId(4)]);
+        assert_eq!(record.reads, vec![ResourceId(4), ResourceId(7)]);
         assert_eq!(record.writes, vec![ResourceId(7)]);
         assert_eq!(
             record.image_accesses,

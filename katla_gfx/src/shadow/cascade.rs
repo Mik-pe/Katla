@@ -86,7 +86,8 @@ impl CascadeShadowMap {
 
         let view_inv = mat4_inverse(camera_view);
         let proj_inv = mat4_inverse(camera_proj);
-        let view_proj_inv = mat4_mul(&proj_inv, &view_inv);
+        // (P*V)^-1 = V^-1 * P^-1
+        let view_proj_inv = mat4_mul(&view_inv, &proj_inv);
 
         let near = extract_near_from_reverse_z_proj(camera_proj);
         let far = self.params.max_distance;
@@ -115,7 +116,7 @@ impl CascadeShadowMap {
             let (snapped_proj, light_view_snapped) =
                 snap_to_texel(&light_view, &mins, &maxs, self.params.shadow_map_size);
 
-            let stabilized_proj = apply_pancake(&snapped_proj, &mins);
+            let stabilized_proj = apply_pancake(&snapped_proj, &mins, &maxs);
 
             cascade.view_matrix = light_view_snapped;
             cascade.proj_matrix = stabilized_proj;
@@ -173,7 +174,9 @@ impl CascadeShadowMap {
                 self.cascades.len() as f32,
             ],
             shadow_bias: [
-                self.params.depth_bias_constant,    // .x: shader constant bias
+                // Constant bias is authored in texels; the sampler compares in
+                // [0,1] depth units, so scale by texel fraction.
+                self.params.depth_bias_constant / self.params.shadow_map_size as f32, // .x: shader constant bias
                 self.params.depth_bias_slope, // .y: Vulkan pipeline depth bias (not sampled in shader)
                 0.0,                          // .z: unused
                 self.params.shadow_map_size as f32, // .w: atlas size for validator shader
@@ -344,11 +347,13 @@ fn snap_to_texel(
     (proj, snapped_view)
 }
 
-fn apply_pancake(proj: &[f32; 16], mins: &[f32; 3]) -> [f32; 16] {
+fn apply_pancake(proj: &[f32; 16], mins: &[f32; 3], maxs: &[f32; 3]) -> [f32; 16] {
     let mut p = *proj;
-    let pancake_offset = mins[2] - 1.0;
-    p[10] = -2.0 / ((mins[2] - pancake_offset) - mins[2]);
-    p[14] = -((mins[2] - pancake_offset) + mins[2]) / ((mins[2] - pancake_offset) - mins[2]);
+    // 1 unit of slack in front of the slice's near face, real far extent kept.
+    let near = mins[2] - 1.0;
+    let far = maxs[2];
+    p[10] = 1.0 / (far - near);
+    p[14] = -near / (far - near);
     p
 }
 
@@ -462,6 +467,11 @@ fn mat4_inverse(m: &[f32; 16]) -> [f32; 16] {
     inv
 }
 
+/// Orthographic projection mapping NDC z to [0, 1] (the Metal and Vulkan
+/// clip-space depth convention). Light-view z runs positive toward the
+/// light, so `near` is the farthest plane from the light (smallest view z)
+/// and `far` the nearest (largest); depth 0 is nearest to the light and
+/// depth 1 farthest, giving the standard LessEqual front-culled PSM setup.
 fn mat4_ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> [f32; 16] {
     [
         2.0 / (right - left),
@@ -474,11 +484,11 @@ fn mat4_ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32)
         0.0,
         0.0,
         0.0,
-        -2.0 / (far - near),
+        1.0 / (far - near),
         0.0,
         -(right + left) / (right - left),
         -(top + bottom) / (top - bottom),
-        -(far + near) / (far - near),
+        -near / (far - near),
         1.0,
     ]
 }
@@ -681,17 +691,16 @@ mod tests {
     fn test_pancake_modifies_projection() {
         let proj = mat4_ortho(-10.0, 10.0, -10.0, 10.0, -20.0, -5.0);
         let mins = [-10.0, -10.0, -20.0];
-        let pancaked = apply_pancake(&proj, &mins);
+        let maxs = [10.0, 10.0, 5.0];
+        let pancaked = apply_pancake(&proj, &mins, &maxs);
 
-        assert_ne!(
-            proj[10], pancaked[10],
-            "apply_pancake should modify proj[10]"
-        );
-        assert_ne!(
-            proj[14], pancaked[14],
-            "apply_pancake should modify proj[14]"
-        );
+        // 1 unit of slack in front of the near face: near = mins.z - 1.
+        let near = mins[2] - 1.0;
+        let far = maxs[2];
+        assert_eq!(pancaked[10], 1.0 / (far - near));
+        assert_eq!(pancaked[14], -near / (far - near));
 
+        // The full slice depth must survive the pancake.
         for i in 0..16 {
             assert!(
                 !pancaked[i].is_nan(),

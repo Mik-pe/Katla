@@ -71,6 +71,16 @@ only valid for fully opaque geometry. Diagnostic pattern that nailed it: patch t
 colour shader to *visualise the sampled value* (alpha as red) — distinguishes
 "texture wrong" from "draw wrong" in one screenshot.
 
+### Two render-graph contract tests born failing since 2026-07-29 (#82, open)
+
+`copies_graph_resource_and_attachment_contracts` (execution_plan.rs) and
+`diagnostics_expose_stable_physical_allocation_ids_and_memory_totals`
+(diagnostics.rs) fail deterministically on every CI run since their
+introducing/semantics-shifting PRs (#77 a932bc5a / #80 47336aa5). ReadWrite
+access now copies into both reads+writes; physical_allocation_id comes back
+None where Some(0) is asserted. Full forensics in #82. Files sit inside the
+collaborator WIP area — coordinate before touching fixtures.
+
 - Transient resource lifetime analysis and aliasing (#35).
 - Real Metal frames in flight and synchronization cleanup (#36).
 - Further deterministic graph diagnostics and capture tooling (#37).
@@ -83,3 +93,48 @@ colour shader to *visualise the sampled value* (alpha as red) — distinguishes
 - Backends own native realization and encoding.
 - Editor conventions remain presets, never universal engine laws.
 - Unsupported work must fail structurally before native command-buffer creation.
+
+### Shadow pipeline root causes (Aug 28 2026, Metal + shared)
+
+Shadows were dead on BOTH backends. Root causes found by shader-as-instrument
+debugging (num_cascades → in_bounds → stored-depth visualisation, plus unit
+probes with real captured view/proj matrices):
+
+1. **Wrong inverse order** (`shadow/cascade.rs`): `view_proj_inv = P^-1 * V^-1`
+   instead of `V^-1 * P^-1`. Frustum-slice un-projection collapsed every cascade
+   AABB to ~0.2mm around origin -> degenerate ortho -> everything out of bounds
+   -> sample_shadow returned 1.0 everywhere. ONE-LINE fix, fixed both backends.
+2. **`apply_pancake` destroyed the z extent**: `pancake_offset = mins.z - 1` made
+   the far plane `mins.z + 1` algebraically — only a 1-unit-deep slab survived;
+   cascades 1-3 clipped all scene geometry (ndc_z up to 1.7). Fixed to near =
+   mins.z - 1 (1 unit slack), far = maxs.z (real extent). Signature changed to
+   take maxs; test updated.
+3. **Metal atlas quadrant layout**: per-cascade viewport+scissor matching
+   cascade_uv_offset_scale (row = 1 - i/2, Metal y-down agrees with shader).
+4. **Metal cascade data hand-rolled**: rewired onto shared CascadeShadowMap
+   (~400 lines deleted); splits raw view-space z, texel_size populated.
+5. **Per-cascade render passes cleared the whole atlas**: each cascade began
+   its own render pass with a full-attachment clear, wiping every previously
+   rendered quadrant. All cascades now encode in ONE render pass, cycling
+   viewport/scissor/push-constants per cascade (render_cascades).
+6. **Depth convention mismatch**: mat4_ortho was GL [-1,1] NDC z while Metal/
+   Vulkan clip and store [0,1] (near half of every cascade clipped). Now a
+   zero-to-one ortho; light-view z runs positive toward the light, so depth 0
+   is nearest the light, 1 farthest (matches LessEqual + front-face culling).
+   Shader reference depth is raw proj.z (the old *0.5+0.5 remap was GL-only).
+7. **Constant bias units**: depth_bias_constant was 1.5 raw depth units on a
+   [0,1] range (compare always passed -> everything lit). Now converted to a
+   depth fraction (texels / atlas size) at upload in gpu_data().
+
+RESULT: cast shadows verified on Metal headless — sphere grid, boxes, cylinder,
+fox all shadow the ground; PCF edges soft, no acne (pixel-probed + vision
+confirmed). Vulkan inherits the same fixes via the shared code.
+
+STILL OPEN:
+- Skinned shadow pipeline MSL error "cannot reserve buffer resource location
+  at index 3": per_entry_point_map in shader.rs only covers vs_main/fs_main;
+  vs_main_skinned falls back to fake-sequential bindings that collide. Add an
+  entry-point map for the skinned variant (or map all entry points uniformly).
+- Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
+- katla_app scene/tests.rs has pre-existing clippy approximate-constant errors
+  on main (untouched by this work).

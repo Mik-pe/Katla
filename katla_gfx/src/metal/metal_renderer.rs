@@ -730,21 +730,20 @@ impl MetalRenderer {
             cmd_buffer.inner.setLabel(Some(&label));
         }
 
-        for cascade_idx in 0..self.shadow.cascade_count() as usize {
-            super::shadow::render_cascade(
-                &mut cmd_buffer,
-                pipeline,
-                shadow_map,
-                self.shadow.shadow_resolution(),
-                frame_buf,
-                object_buf,
-                shadow_buf,
-                cascade_idx as u32,
-                &self.meshes,
-                &self.materials,
-                draw_list,
-            );
-        }
+        super::shadow::render_cascades(
+            &mut cmd_buffer,
+            pipeline,
+            shadow_map,
+            self.shadow.shadow_resolution(),
+            frame_buf,
+            object_buf,
+            shadow_buf,
+            self.buffer_sizes_buffer.as_ref(),
+            self.shadow.cascade_count(),
+            &self.meshes,
+            &self.materials,
+            draw_list,
+        );
 
         cmd_buffer.end();
         cmd_buffer.submit(&self.context);
@@ -1213,35 +1212,11 @@ impl GpuRenderer for MetalRenderer {
         let Some(ref shadow_buf) = self.shadow_cascade_buffer else {
             return;
         };
-        // ShadowFrameData layout (must match WGSL):
-        //   cascades[4]: each { view_proj: mat4x4f(64B), split_distance: f32, texel_size: f32, pad: vec2f } = 80B
-        //   light_direction: vec4f(16B)
-        //   shadow_bias: vec4f(16B)
-        let cascade_stride: usize = 80;
+        let data = self.shadow.gpu_data();
+        let bytes = bytemuck::bytes_of(&data);
         let ptr = shadow_buf.map();
         unsafe {
-            std::ptr::write_bytes(ptr, 0, cascade_stride * 4 + 16 + 16);
-            for i in 0..self.shadow.cascade_count() as usize {
-                let vp = self.shadow.cascade_view_proj(i);
-                let sd = self.shadow.cascade_split_depth(i);
-                let base = ptr.add(i * cascade_stride);
-                std::ptr::copy_nonoverlapping(vp.as_ptr(), base as *mut f32, 16);
-                std::ptr::write(base.add(64) as *mut f32, sd);
-            }
-            let light_dir = self.frame_uniforms.light_direction;
-            std::ptr::copy_nonoverlapping(
-                light_dir.as_ptr(),
-                ptr.add(cascade_stride * 4) as *mut f32,
-                4,
-            );
-            // Set num_cascades in light_direction.w so sample_shadow returns early
-            *(ptr.add(cascade_stride * 4) as *mut f32).add(3) = self.shadow.cascade_count() as f32;
-            let bias: [f32; 4] = [0.005, 0.0, 0.0, 0.0];
-            std::ptr::copy_nonoverlapping(
-                bias.as_ptr(),
-                ptr.add(cascade_stride * 4 + 16) as *mut f32,
-                4,
-            );
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast(), bytes.len());
         }
         shadow_buf.unmap();
     }
