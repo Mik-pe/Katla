@@ -835,7 +835,7 @@ mod tests {
         let passes = vec![
             pass("write_early", Vec::new(), vec![ResourceId(1)]),
             pass("consume_early", vec![ResourceId(1)], vec![ResourceId(0)]),
-            pass("write_late", Vec::new(), vec![ResourceId(2)]),
+            pass("write_late", vec![ResourceId(0)], vec![ResourceId(2)]),
             pass("consume_late", vec![ResourceId(2)], vec![ResourceId(0)]),
         ];
         let exported_resources = BTreeSet::from([ResourceId(0)]);

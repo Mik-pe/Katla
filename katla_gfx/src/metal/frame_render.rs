@@ -326,21 +326,20 @@ impl MetalRenderer {
         })?;
         let shadow_resolution = self.shadow.shadow_resolution();
 
-        for cascade_index in 0..self.shadow.cascade_count() as usize {
-            super::shadow::render_cascade(
-                cmd_buffer,
-                shadow_pipeline,
-                shadow_map_view,
-                shadow_resolution,
-                frame_buf,
-                object_buf,
-                shadow_buf,
-                cascade_index as u32,
-                &self.meshes,
-                &self.materials,
-                &draw_list,
-            );
-        }
+        super::shadow::render_cascades(
+            cmd_buffer,
+            shadow_pipeline,
+            shadow_map_view,
+            shadow_resolution,
+            frame_buf,
+            object_buf,
+            shadow_buf,
+            self.buffer_sizes_buffer.as_ref(),
+            self.shadow.cascade_count(),
+            &self.meshes,
+            &self.materials,
+            &draw_list,
+        );
 
         Ok(true)
     }

@@ -96,10 +96,9 @@ fn sample_shadow_manual(world_pos: vec3f, view_z: f32) -> f32 {
     let light_space = cascade.view_proj * vec4f(world_pos, 1.0);
     let proj = light_space.xyz / light_space.w;
 
-    // Map from NDC [-1,1] to texture [0,1] (same as shadow_sampling.wgsl)
     var uv = proj.xy * 0.5 + 0.5;
-    // Map depth from NDC [-1,1] to depth buffer [0,1] for comparison
-    let depth = proj.z * 0.5 + 0.5;
+    // NDC is already [0,1] in z (Metal/Vulkan convention)
+    let depth = proj.z;
 
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
         return 1.0;
