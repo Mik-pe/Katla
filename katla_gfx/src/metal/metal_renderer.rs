@@ -1899,14 +1899,16 @@ mod tests {
 impl Drop for MetalRenderer {
     fn drop(&mut self) {
         if let Some(archive) = self.context.pipeline_archive.as_ref() {
+            let stats = archive.stats();
+            let origin = match stats.rejection {
+                None => "opened from disk".to_string(),
+                Some(rejection) => format!("rebuilt ({rejection:?})"),
+            };
             log::info!(
-                "Flushing pipeline archive ({} pipelines registered this session, {})",
-                archive.registered_pipelines.get(),
-                if archive.loaded_from_disk {
-                    "opened from disk"
-                } else {
-                    "rebuilt"
-                }
+                "Flushing pipeline cache: registered={}, origin={origin}, open_ms={}, flush_ms={:?}",
+                stats.pipelines_registered,
+                stats.open_duration.as_millis(),
+                stats.last_flush_duration.map(|d| d.as_millis()),
             );
             archive.flush();
         }

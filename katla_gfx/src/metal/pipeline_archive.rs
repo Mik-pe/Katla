@@ -45,16 +45,41 @@ impl ArchiveMetadata {
     }
 }
 
+/// Why a cached pipeline archive could not be reused as-is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ArchiveRejection {
+    /// No cached artifacts existed.
+    Absent,
+    /// Sidecar metadata described a different machine or engine build.
+    MetadataMismatch,
+    /// The archive file existed but Metal rejected it.
+    Corrupt,
+}
+
+/// Structured snapshot of pipeline-cache behaviour for diagnostics.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PipelineCacheStats {
+    /// True when the archive opened from disk with matching metadata.
+    pub opened_from_disk: bool,
+    /// Set when a fresh archive was created instead of loading the cache.
+    pub rejection: Option<ArchiveRejection>,
+    /// Pipelines registered into the archive this session.
+    pub pipelines_registered: usize,
+    /// Time spent opening or creating the archive.
+    pub open_duration: std::time::Duration,
+    /// Time spent on the most recent successful serialization.
+    pub last_flush_duration: Option<std::time::Duration>,
+}
+
 pub(crate) struct MetalPipelineArchive {
     archive: Retained<ProtocolObject<dyn MTLBinaryArchive>>,
     metadata: ArchiveMetadata,
     path: PathBuf,
     sidecar_path: PathBuf,
     pub(crate) registered_pipelines: std::cell::Cell<usize>,
-    /// True when the archive opened from disk with matching metadata;
-    /// false when artifacts were absent, stale, or corrupt and a fresh
-    /// archive was created.
-    pub(crate) loaded_from_disk: bool,
+    rejection: Option<ArchiveRejection>,
+    open_duration: std::time::Duration,
+    last_flush_duration: std::cell::Cell<Option<std::time::Duration>>,
 }
 
 impl MetalPipelineArchive {
@@ -82,6 +107,14 @@ impl MetalPipelineArchive {
             .map(|cached| cached == metadata)
             .unwrap_or(false);
 
+        let rejection = if !path.exists() && !sidecar_path.exists() {
+            Some(ArchiveRejection::Absent)
+        } else if !cached_metadata_matches {
+            Some(ArchiveRejection::MetadataMismatch)
+        } else {
+            None
+        };
+
         let descriptor = MTLBinaryArchiveDescriptor::new();
         let opening_existing = cached_metadata_matches && path.exists();
         if opening_existing {
@@ -95,6 +128,7 @@ impl MetalPipelineArchive {
             let _ = fs::remove_file(&sidecar_path);
         }
 
+        let opened_at = std::time::Instant::now();
         let archive = device.newBinaryArchiveWithDescriptor_error(&descriptor);
         match archive {
             Ok(archive) => {
@@ -109,7 +143,9 @@ impl MetalPipelineArchive {
                     path,
                     sidecar_path,
                     registered_pipelines: std::cell::Cell::new(0),
-                    loaded_from_disk: opening_existing,
+                    rejection: rejection.filter(|_| !opening_existing),
+                    open_duration: opened_at.elapsed(),
+                    last_flush_duration: std::cell::Cell::new(None),
                 })
             }
             Err(err) => {
@@ -136,9 +172,22 @@ impl MetalPipelineArchive {
                     path,
                     sidecar_path,
                     registered_pipelines: std::cell::Cell::new(0),
-                    loaded_from_disk: false,
+                    rejection: Some(ArchiveRejection::Corrupt),
+                    open_duration: opened_at.elapsed(),
+                    last_flush_duration: std::cell::Cell::new(None),
                 })
             }
+        }
+    }
+
+    /// Structured snapshot of this cache session for diagnostics.
+    pub(crate) fn stats(&self) -> PipelineCacheStats {
+        PipelineCacheStats {
+            opened_from_disk: self.rejection.is_none(),
+            rejection: self.rejection,
+            pipelines_registered: self.registered_pipelines.get(),
+            open_duration: self.open_duration,
+            last_flush_duration: self.last_flush_duration.get(),
         }
     }
 
@@ -201,6 +250,7 @@ impl MetalPipelineArchive {
         let url = NSURL::fileURLWithPath(&objc2_foundation::NSString::from_str(
             tmp.to_string_lossy().as_ref(),
         ));
+        let flush_started = std::time::Instant::now();
         if let Err(err) = self.archive.serializeToURL_error(&url) {
             log::warn!(
                 "Pipeline archive flush failed: {}",
@@ -210,6 +260,7 @@ impl MetalPipelineArchive {
             return;
         }
         if fs::rename(&tmp, &self.path).is_ok() {
+            self.last_flush_duration.set(Some(flush_started.elapsed()));
             let _ = serde_json::to_writer(
                 fs::File::create(&self.sidecar_path).expect("sidecar create"),
                 &self.metadata,
@@ -289,7 +340,7 @@ mod tests {
         let ctx = crate::metal::context::MetalContext::init_headless().unwrap();
         let archive = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
         assert!(
-            !archive.loaded_from_disk,
+            !archive.stats().opened_from_disk,
             "empty cache dir is a fresh build"
         );
         let function = trivial_compute_function(&ctx);
@@ -316,7 +367,7 @@ mod tests {
 
         let archive = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
         assert!(
-            !archive.loaded_from_disk,
+            !archive.stats().opened_from_disk,
             "corrupt archive bytes must not load"
         );
         let function = trivial_compute_function(&ctx);
@@ -337,7 +388,7 @@ mod tests {
 
         // First population: nothing on disk yet, so this is a fresh build.
         let archive = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
-        assert!(!archive.loaded_from_disk);
+        assert!(!archive.stats().opened_from_disk);
         archive.register_compute_pipeline(&function);
         archive.flush();
 
@@ -356,7 +407,7 @@ mod tests {
         // The mismatch must invalidate the cached archive and rebuild empty.
         let reopened = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
         assert!(
-            !reopened.loaded_from_disk,
+            !reopened.stats().opened_from_disk,
             "stale metadata must invalidate the archive"
         );
         assert_eq!(reopened.registered_pipelines.get(), 0);
@@ -366,7 +417,7 @@ mod tests {
         reopened.register_compute_pipeline(&function);
         reopened.flush();
         let again = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
-        assert!(again.loaded_from_disk);
+        assert!(again.stats().opened_from_disk);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -376,5 +427,42 @@ mod tests {
         assert_eq!(meta.schema_version, SCHEMA_VERSION);
         assert!(meta.gpu_registry_id > 0, "registry id must be captured");
         assert!(!meta.os_version.is_empty());
+    }
+
+    #[test]
+    fn test_pipeline_cache_stats_classifies_absent_cache() {
+        let ctx = crate::metal::context::MetalContext::init_headless().unwrap();
+        let dir = temp_cache_dir("stats-absent");
+        let archive =
+            MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).expect("archive opens");
+        let stats = archive.stats();
+        assert!(!stats.opened_from_disk);
+        assert_eq!(stats.rejection, Some(ArchiveRejection::Absent));
+        assert_eq!(stats.pipelines_registered, 0);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_pipeline_cache_stats_survive_reopen_cycle() {
+        let ctx = crate::metal::context::MetalContext::init_headless().unwrap();
+        let dir = temp_cache_dir("stats-reopen");
+        let first =
+            MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).expect("first opens");
+        let rejection = first.stats().rejection;
+        first.flush();
+        drop(first);
+
+        let second =
+            MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).expect("second opens");
+        let stats = second.stats();
+        // The rebuild is recorded; a reload (same session artifacts, matching
+        // metadata) reports no rejection.
+        if rejection == Some(ArchiveRejection::Absent) {
+            // flush of an empty archive writes nothing; second open is Absent too.
+            assert_eq!(stats.rejection, Some(ArchiveRejection::Absent));
+        } else {
+            assert!(stats.opened_from_disk);
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 }
