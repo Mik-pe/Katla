@@ -19,14 +19,26 @@
 - Metal executes ordered pass records and consumes only submissions addressed to each record.
 - Object-ID/picking is an explicit graph pass on Metal and Vulkan.
 
-## Current Focus: Shadow Pipeline (completed this session)
+## Current Focus: Shadow Pipeline (complete)
 
-The end-to-end shadow chain on Metal is fixed and visually verified (cast
-shadows from sphere grid, boxes, cylinder, fox; soft PCF edges, no acne).
+Cast shadows render on Metal for all geometry — regular meshes (commit
+6322f156) and skinned meshes (commit 24a872c2). Verified headless with pixel
+probes: soft PCF edges, no acne, fox casts a quadruped-shaped shadow.
 Both backends share the corrected cascade code (inverse-order view_proj_inv,
 zero-to-one NDC ortho, real-extent z-pancake, raw splits, texel-size bias
-units, single-pass atlas encoding). Open: skinned-shadow entry-point map
-(fox MSL buffer-3 collision), pale strip at viewport top.
+units, single-pass atlas encoding). Skinned shadows use a dedicated
+ShaderProfile::ShadowSkinned MSL binding map (joints to buffer 4, avoiding
+the buffer-3 collision with shadow_params). CI fully green.
+
+## Open Items
+
+- Pale strip at viewport top (y≈125–158 in 2560×1440 screenshots) — UI-side,
+  not a renderer artifact (present in pre-shadow screenshots; no code
+  constant matches its colours; clears are black). Investigated 2026-08-29:
+  see skill references/shadow-debugging.md "Pale strip investigation".
+  Overlaps the uncommitted collaborator WIP (Panel RT debug, viewport fix).
+  Ruled out: gizmo-row container (hstack hugs children, ~350px — band is
+  1461px); theme constants; canvas/HDR clears (both dark).
 
 ## Temporary Boundaries
 
