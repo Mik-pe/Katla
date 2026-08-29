@@ -210,6 +210,16 @@ capture to root-cause before private storage lands.
    clippy clean, CI headSha-verified green. Remaining on #51: explicit
    declared-graph-output DoD item is judgment-call territory (plan compiles
    from the graph itself); leave open or close with the evidence comment.
+15. #52 slice 1: encoder execution diagnostics (e784eef3)
+   GpuDiagnosticsMode (Release/Validation) → MTLCommandBufferDescriptor +
+   EncoderExecutionStatus error option; mode from ValidationMode at init.
+   Structured GpuCommandBufferDiagnostics (label/code/domain/description +
+   per-encoder label/state/signposts from MTLCommandBufferEncoderInfoErrorKey),
+   deterministic render(), first-faulted-encoder log. 6 tests incl. 2 GPU
+   smoke (validation + release buffers complete on device). 505/505, 8/8
+   probes vs pre-change baseline, CI SHA-verified. Still open: per-encoder
+   labels (backend trait ripple into WIP files — separate slice), frame-
+   indexed cmd-buffer labels, attach diagnostics to RendererError.
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
