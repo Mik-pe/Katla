@@ -1869,3 +1869,15 @@ mod tests {
         );
     }
 }
+
+impl Drop for MetalRenderer {
+    fn drop(&mut self) {
+        if let Some(archive) = self.context.pipeline_archive.as_ref() {
+            log::info!(
+                "Flushing pipeline archive ({} pipelines registered this session)",
+                archive.registered_pipelines.get()
+            );
+            archive.flush();
+        }
+    }
+}

@@ -284,6 +284,21 @@ pub(crate) struct MetalContext {
     pub(crate) device: Retained<ProtocolObject<dyn MTLDevice>>,
     pub(crate) command_queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
     pub(crate) surface: MetalSurface,
+    pub(crate) pipeline_archive: Option<super::pipeline_archive::MetalPipelineArchive>,
+}
+
+impl MetalContext {
+    fn open_pipeline_archive(
+        device: &ProtocolObject<dyn MTLDevice>,
+    ) -> Option<super::pipeline_archive::MetalPipelineArchive> {
+        match super::pipeline_archive::MetalPipelineArchive::open_or_create(device) {
+            Ok(archive) => Some(archive),
+            Err(err) => {
+                log::warn!("Pipeline cache disabled: {err}");
+                None
+            }
+        }
+    }
 }
 
 impl GpuContext<MetalBackend> for MetalContext {}
@@ -299,10 +314,12 @@ impl MetalContext {
             RendererError::InitializationFailed("Failed to create command queue".into())
         })?;
         let surface = MetalSurface::new(window, display, &device)?;
+        let pipeline_archive = Self::open_pipeline_archive(&device);
         Ok(Self {
             device,
             command_queue,
             surface,
+            pipeline_archive,
         })
     }
 
@@ -317,6 +334,7 @@ impl MetalContext {
             device,
             command_queue,
             surface: MetalSurface::headless(),
+            pipeline_archive: None,
         })
     }
 
@@ -327,10 +345,12 @@ impl MetalContext {
             RendererError::InitializationFailed("Failed to create command queue".into())
         })?;
         let surface = MetalSurface::headless_with_device(&device, width, height);
+        let pipeline_archive = Self::open_pipeline_archive(&device);
         Ok(Self {
             device,
             command_queue,
             surface,
+            pipeline_archive,
         })
     }
 
@@ -655,6 +675,10 @@ impl MetalContext {
         };
         descriptor.setVertexDescriptor(Some(&vd));
 
+        if let Some(archive) = self.pipeline_archive.as_ref() {
+            archive.attach_to_render_descriptor(&descriptor);
+        }
+
         let pipeline_state = self
             .device
             .newRenderPipelineStateWithDescriptor_error(&descriptor)
@@ -665,6 +689,10 @@ impl MetalContext {
                     msg
                 ))
             })?;
+
+        if let Some(archive) = self.pipeline_archive.as_ref() {
+            archive.register_render_pipeline(&descriptor);
+        }
 
         let depth_stencil_state = if depth_format.is_some() {
             Some(self.create_depth_stencil_state_with_stencil(
@@ -700,6 +728,9 @@ impl MetalContext {
                     msg
                 ))
             })?;
+        if let Some(archive) = self.pipeline_archive.as_ref() {
+            archive.register_compute_pipeline(function);
+        }
         Ok(MetalComputePipeline {
             pipeline_state,
             workgroup,

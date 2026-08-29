@@ -22,6 +22,7 @@ pub(crate) mod outline;
 pub(crate) mod particle;
 pub(crate) mod picking;
 pub(crate) mod pipeline;
+pub(crate) mod pipeline_archive;
 pub(crate) mod render_encoder;
 pub(crate) mod render_targets;
 pub(crate) mod sampler;
