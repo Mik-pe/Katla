@@ -89,6 +89,3 @@ impl GpuComputeEncoder<MetalBackend> for MetalComputeEncoder {
         );
     }
 }
-
-unsafe impl Send for MetalComputeEncoder {}
-unsafe impl Sync for MetalComputeEncoder {}

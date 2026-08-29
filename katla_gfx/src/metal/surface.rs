@@ -152,12 +152,34 @@ mod tests {
     const _: () = {
         const fn assert_not_send<T: ?Sized>() {}
         const fn assert_not_sync<T: ?Sized>() {}
+        const fn assert_send<T: Send + ?Sized>() {}
+        const fn assert_sync<T: Sync + ?Sized>() {}
         trait NegativeSend {}
         impl<T: Send + ?Sized> NegativeSend for T {}
         trait NegativeSync {}
         impl<T: Sync + ?Sized> NegativeSync for T {}
 
+        // AppKit-affine: surface must never move or be shared across threads.
         let _ = assert_not_send::<super::MetalSurface>;
         let _ = assert_not_sync::<super::MetalSurface>;
+
+        // Command encoders are single-threaded by Metal's contract (one thread
+        // appends to a command buffer); they must stay !Send/!Sync so the type
+        // system pins encoding to the owning thread.
+        let _ = assert_not_send::<crate::metal::render_encoder::MetalRenderEncoder>;
+        let _ = assert_not_sync::<crate::metal::render_encoder::MetalRenderEncoder>;
+        let _ = assert_not_send::<crate::metal::compute_encoder::MetalComputeEncoder>;
+        let _ = assert_not_sync::<crate::metal::compute_encoder::MetalComputeEncoder>;
+        let _ = assert_not_send::<crate::metal::blit_encoder::MetalBlitEncoder>;
+        let _ = assert_not_sync::<crate::metal::blit_encoder::MetalBlitEncoder>;
+
+        // Thread-safe Metal objects (Apple-documented): device/queue context and
+        // immutable pipeline state may be shared.
+        let _ = assert_send::<crate::metal::context::MetalContext>;
+        let _ = assert_sync::<crate::metal::context::MetalContext>;
+        let _ = assert_send::<crate::metal::pipeline::MetalGraphicsPipeline>;
+        let _ = assert_sync::<crate::metal::pipeline::MetalGraphicsPipeline>;
+        let _ = assert_send::<crate::metal::pipeline::MetalComputePipeline>;
+        let _ = assert_sync::<crate::metal::pipeline::MetalComputePipeline>;
     };
 }

@@ -17,6 +17,10 @@ pub(crate) struct MetalGraphicsPipeline {
 
 impl GpuGraphicsPipeline for MetalGraphicsPipeline {}
 
+// SAFETY: `MTLRenderPipelineState`, `MTLDepthStencilState` are immutable,
+// fully-resolved state objects; Apple documents them as thread-safe. `Retained`
+// adds ownership only — no interior mutability. Bounds locked by the affinity
+// contract in `surface.rs`'s test module.
 unsafe impl Send for MetalGraphicsPipeline {}
 unsafe impl Sync for MetalGraphicsPipeline {}
 
@@ -32,5 +36,7 @@ impl GpuComputePipeline for MetalComputePipeline {
     }
 }
 
+// SAFETY: `MTLComputePipelineState` is an immutable, fully-resolved state
+// object; Apple documents it as thread-safe. `Retained` adds ownership only.
 unsafe impl Send for MetalComputePipeline {}
 unsafe impl Sync for MetalComputePipeline {}
