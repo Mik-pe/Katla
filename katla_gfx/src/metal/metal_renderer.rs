@@ -1874,8 +1874,13 @@ impl Drop for MetalRenderer {
     fn drop(&mut self) {
         if let Some(archive) = self.context.pipeline_archive.as_ref() {
             log::info!(
-                "Flushing pipeline archive ({} pipelines registered this session)",
-                archive.registered_pipelines.get()
+                "Flushing pipeline archive ({} pipelines registered this session, {})",
+                archive.registered_pipelines.get(),
+                if archive.loaded_from_disk {
+                    "opened from disk"
+                } else {
+                    "rebuilt"
+                }
             );
             archive.flush();
         }

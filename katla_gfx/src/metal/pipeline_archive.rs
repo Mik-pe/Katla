@@ -51,6 +51,10 @@ pub(crate) struct MetalPipelineArchive {
     path: PathBuf,
     sidecar_path: PathBuf,
     pub(crate) registered_pipelines: std::cell::Cell<usize>,
+    /// True when the archive opened from disk with matching metadata;
+    /// false when artifacts were absent, stale, or corrupt and a fresh
+    /// archive was created.
+    pub(crate) loaded_from_disk: bool,
 }
 
 impl MetalPipelineArchive {
@@ -79,7 +83,8 @@ impl MetalPipelineArchive {
             .unwrap_or(false);
 
         let descriptor = MTLBinaryArchiveDescriptor::new();
-        if cached_metadata_matches && path.exists() {
+        let opening_existing = cached_metadata_matches && path.exists();
+        if opening_existing {
             let url = NSURL::fileURLWithPath(&objc2_foundation::NSString::from_str(
                 path.to_string_lossy().as_ref(),
             ));
@@ -92,13 +97,21 @@ impl MetalPipelineArchive {
 
         let archive = device.newBinaryArchiveWithDescriptor_error(&descriptor);
         match archive {
-            Ok(archive) => Ok(Self {
-                archive,
-                metadata,
-                path,
-                sidecar_path,
-                registered_pipelines: std::cell::Cell::new(0),
-            }),
+            Ok(archive) => {
+                if opening_existing {
+                    log::info!("Pipeline cache opened from {}", path.display());
+                } else {
+                    log::info!("Pipeline cache rebuilt empty (stale, missing, or partial)");
+                }
+                Ok(Self {
+                    archive,
+                    metadata,
+                    path,
+                    sidecar_path,
+                    registered_pipelines: std::cell::Cell::new(0),
+                    loaded_from_disk: opening_existing,
+                })
+            }
             Err(err) => {
                 // An unreadable archive must never brick startup: clear the
                 // artifacts and fall back to an empty archive.
@@ -123,6 +136,7 @@ impl MetalPipelineArchive {
                     path,
                     sidecar_path,
                     registered_pipelines: std::cell::Cell::new(0),
+                    loaded_from_disk: false,
                 })
             }
         }
@@ -274,6 +288,10 @@ mod tests {
 
         let ctx = crate::metal::context::MetalContext::init_headless().unwrap();
         let archive = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
+        assert!(
+            !archive.loaded_from_disk,
+            "empty cache dir is a fresh build"
+        );
         let function = trivial_compute_function(&ctx);
         archive.register_compute_pipeline(&function);
         archive.flush();
@@ -297,6 +315,10 @@ mod tests {
         fs::write(dir.join("katla-pipelines.meta.json"), meta).unwrap();
 
         let archive = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
+        assert!(
+            !archive.loaded_from_disk,
+            "corrupt archive bytes must not load"
+        );
         let function = trivial_compute_function(&ctx);
         archive.register_compute_pipeline(&function);
         archive.flush();
@@ -311,11 +333,13 @@ mod tests {
         let dir = temp_cache_dir("mismatch");
 
         let ctx = crate::metal::context::MetalContext::init_headless().unwrap();
-        let archive = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
         let function = trivial_compute_function(&ctx);
+
+        // First population: nothing on disk yet, so this is a fresh build.
+        let archive = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
+        assert!(!archive.loaded_from_disk);
         archive.register_compute_pipeline(&function);
         archive.flush();
-        let original = fs::read(dir.join("katla-pipelines.mtlbin")).unwrap();
 
         // Stale sidecar: schema older than the current one.
         let mut stale: serde_json::Value = serde_json::from_str(
@@ -329,22 +353,20 @@ mod tests {
         )
         .unwrap();
 
+        // The mismatch must invalidate the cached archive and rebuild empty.
         let reopened = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
-        reopened.register_compute_pipeline(&function);
-        reopened.flush();
-        let rebuilt = fs::read(dir.join("katla-pipelines.mtlbin")).unwrap();
-
-        // The mismatch must have triggered a clean rebuild: the fresh archive
-        // starts empty, so its serialized form differs from the populated one.
-        assert_ne!(
-            original, rebuilt,
+        assert!(
+            !reopened.loaded_from_disk,
             "stale metadata must invalidate the archive"
         );
-        let sidecar: serde_json::Value = serde_json::from_str(
-            &fs::read_to_string(dir.join("katla-pipelines.meta.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(sidecar["schema_version"], SCHEMA_VERSION);
+        assert_eq!(reopened.registered_pipelines.get(), 0);
+
+        // Register + flush to repopulate the cache with a current sidecar;
+        // the next open must then read from disk.
+        reopened.register_compute_pipeline(&function);
+        reopened.flush();
+        let again = MetalPipelineArchive::open_or_create_in(&ctx.device, &dir).unwrap();
+        assert!(again.loaded_from_disk);
         let _ = fs::remove_dir_all(&dir);
     }
 
