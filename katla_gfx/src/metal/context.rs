@@ -1059,6 +1059,7 @@ struct VertexOutput {
                 clear_value: crate::render_pass::ClearValue::color(0.1, 0.1, 0.1, 1.0),
             }],
             depth_attachment: None,
+            debug_label: Some("test_pass"),
         };
 
         let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);

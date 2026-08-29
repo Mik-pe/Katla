@@ -208,7 +208,7 @@ impl MetalRenderer {
         // Encode staged texture uploads before any consumer pass.
         if self.texture_uploads.has_pending() {
             use crate::backend::command::GpuBlitEncoder;
-            let mut blit = cmd_buffer.begin_blit_pass();
+            let mut blit = cmd_buffer.begin_blit_pass_with_label("texture_upload");
             self.texture_uploads.encode_into(&mut blit);
             blit.end_encoding();
         }
@@ -308,6 +308,7 @@ impl MetalRenderer {
                     clear_value: ClearValue::OPAQUE_BLACK,
                 }],
                 depth_attachment: None,
+                debug_label: Some("canvas_clear"),
             };
             let encoder = cmd_buffer.begin_render_pass(clear_pass_info);
             encoder.end_encoding();
@@ -480,6 +481,7 @@ impl MetalRenderer {
                 clear_value,
             }],
             depth_attachment,
+            debug_label: Some("geometry"),
         };
 
         let mut encoder = cmd_buffer.begin_render_pass(pass_info);
@@ -688,6 +690,7 @@ impl MetalRenderer {
                 ),
             }],
             depth_attachment: None,
+            debug_label: Some("geometry_hdr"),
         };
         let mut encoder = cmd_buffer.begin_render_pass(pass_info);
         encoder.set_viewport(x, y, width, height, 0.0, 1.0);
@@ -793,6 +796,7 @@ impl MetalRenderer {
                 ),
             }],
             depth_attachment: None,
+            debug_label: Some("present"),
         };
         let mut encoder = cmd_buffer.begin_render_pass(pass_info);
 

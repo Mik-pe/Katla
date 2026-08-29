@@ -204,6 +204,7 @@ pub(crate) fn render_cascades(
             },
             format: ImageFormat::D32Sfloat,
         }),
+        debug_label: Some("shadow_cascade"),
     };
 
     let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);

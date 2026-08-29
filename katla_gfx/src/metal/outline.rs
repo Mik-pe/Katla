@@ -262,6 +262,7 @@ pub(crate) fn render_stencil_mark(
             clear_value: ClearValue::DEFAULT_DEPTH,
             format: ImageFormat::D32SfloatS8Uint,
         }),
+        debug_label: Some("outline"),
     };
 
     let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
@@ -369,6 +370,7 @@ pub(crate) fn render_outline(
             clear_value: ClearValue::DEFAULT_DEPTH,
             format: ImageFormat::D32SfloatS8Uint,
         }),
+        debug_label: Some("outline"),
     };
 
     let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);

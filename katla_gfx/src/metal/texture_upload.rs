@@ -207,7 +207,7 @@ mod tests {
         let mut cmd_buffer = ctx.create_command_buffer();
         cmd_buffer.begin();
         {
-            let mut blit = cmd_buffer.begin_blit_pass();
+            let mut blit = cmd_buffer.begin_blit_pass_with_label("texture_upload");
             queue.encode_into(&mut blit);
             blit.end_encoding();
         }
@@ -221,7 +221,7 @@ mod tests {
         let mut copy_cmd = ctx.create_command_buffer();
         copy_cmd.begin();
         {
-            let mut blit = copy_cmd.begin_blit_pass();
+            let mut blit = copy_cmd.begin_blit_pass_with_label("texture_upload");
             blit.copy_texture_to_texture(&texture, &mirror);
             blit.end_encoding();
         }
@@ -297,7 +297,7 @@ mod tests {
         let mut cmd = ctx.create_command_buffer();
         cmd.begin();
         {
-            let mut blit = cmd.begin_blit_pass();
+            let mut blit = cmd.begin_blit_pass_with_label("texture_upload");
             queue.encode_into(&mut blit);
             blit.end_encoding();
         }
@@ -309,7 +309,7 @@ mod tests {
         let mut copy_cmd = ctx.create_command_buffer();
         copy_cmd.begin();
         {
-            let mut blit = copy_cmd.begin_blit_pass();
+            let mut blit = copy_cmd.begin_blit_pass_with_label("texture_upload");
             blit.copy_texture_to_texture(&private_tex, &mirror);
             blit.end_encoding();
         }
@@ -372,7 +372,7 @@ mod tests {
             let mut cmd = ctx.create_command_buffer();
             cmd.begin();
             {
-                let mut blit = cmd.begin_blit_pass();
+                let mut blit = cmd.begin_blit_pass_with_label("texture_upload");
                 queue.encode_into(&mut blit);
                 blit.end_encoding();
             }
@@ -396,7 +396,7 @@ mod tests {
 
             let mut cmd2 = ctx.create_command_buffer();
             cmd2.begin();
-            let mut enc = cmd2.begin_compute_pass();
+            let mut enc = cmd2.begin_compute_pass_with_label("texture_upload");
             enc.bind_compute_pipeline(&pipeline);
             enc.bind_texture(&view, 0);
             enc.bind_sampler(&sampler, 1);
@@ -506,7 +506,7 @@ mod tests {
             let mut cmd = ctx.create_command_buffer();
             cmd.begin();
             {
-                let mut blit = cmd.begin_blit_pass();
+                let mut blit = cmd.begin_blit_pass_with_label("texture_upload");
                 queue.encode_into(&mut blit);
                 blit.end_encoding();
             }
@@ -549,6 +549,7 @@ mod tests {
                         clear_value: ClearValue::Color([0.0, 0.0, 0.0, 1.0]),
                     }],
                     depth_attachment: None,
+                    debug_label: Some("texture_upload_test"),
                 });
                 enc.bind_graphics_pipeline(&pipeline);
                 unsafe {

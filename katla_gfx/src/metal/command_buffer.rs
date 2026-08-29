@@ -137,7 +137,28 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
             .inner
             .renderCommandEncoderWithDescriptor(&pass_desc)
             .expect("Failed to create render encoder");
+        if let Some(label) = desc.debug_label {
+            encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
+        }
         MetalRenderEncoder::new(encoder)
+    }
+
+    fn begin_compute_pass_with_label(&mut self, label: &'static str) -> MetalComputeEncoder {
+        let encoder = self
+            .inner
+            .computeCommandEncoder()
+            .expect("Failed to create compute encoder");
+        encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
+        MetalComputeEncoder::new(encoder)
+    }
+
+    fn begin_blit_pass_with_label(&mut self, label: &'static str) -> MetalBlitEncoder {
+        let encoder = self
+            .inner
+            .blitCommandEncoder()
+            .expect("Failed to create blit encoder");
+        encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
+        MetalBlitEncoder::new(encoder)
     }
 
     fn begin_compute_pass(&mut self) -> MetalComputeEncoder {
@@ -214,6 +235,7 @@ mod tests {
                 clear_value: ClearValue::color(1.0, 0.0, 0.0, 1.0),
             }],
             depth_attachment: None,
+            debug_label: Some("test_pass"),
         };
 
         let encoder = cmd_buffer.begin_render_pass(render_pass_info);

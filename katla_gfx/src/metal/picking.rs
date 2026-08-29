@@ -299,6 +299,7 @@ pub(crate) fn render_object_id_pass(
             clear_value: ClearValue::DEFAULT_DEPTH,
             format: ImageFormat::D32SfloatS8Uint,
         }),
+        debug_label: Some("picking"),
     };
 
     let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
@@ -512,6 +513,7 @@ struct VertexOutput {
                 clear_value: ClearValue::TRANSPARENT_BLACK,
             }],
             depth_attachment: None,
+            debug_label: Some("picking_readback"),
         };
 
         let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
@@ -655,6 +657,7 @@ struct VertexOutput {
                 clear_value: ClearValue::TRANSPARENT_BLACK,
             }],
             depth_attachment: None,
+            debug_label: Some("picking_readback"),
         };
 
         let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);

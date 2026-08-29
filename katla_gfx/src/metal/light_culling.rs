@@ -282,7 +282,7 @@ impl MetalLightCulling {
         let mut cmd_buffer = context.create_command_buffer();
         cmd_buffer.begin();
 
-        let mut encoder = cmd_buffer.begin_compute_pass();
+        let mut encoder = cmd_buffer.begin_compute_pass_with_label("light_culling");
         encoder.bind_compute_pipeline(&self.pipeline);
 
         // Binding 0: point light data (storage buffer, read)
