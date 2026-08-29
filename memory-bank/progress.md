@@ -190,8 +190,16 @@ capture to root-cause before private storage lands.
    archive (setBinaryArchives); all created render and compute pipelines
    register back. Atomic flush (temp + rename), no-op when empty. 4 tests
    (flush/corrupt/mismatch/device metadata), 494/494, clippy clean, headless
-   8/8 probes, second run reuses archive, CI green. Remaining: explicit key
+   8/8 probes, second run reuses archive. Remaining: explicit key
    layer, async warming, structured diagnostics, benchmark.
+13. #53 fix: cache staleness now an explicit loaded_from_disk flag (3f6a678f)
+   The mismatch test asserted rebuilt-bytes != original-bytes — false on a
+   same-machine recompile (identical bytes) and runner-nondeterministic;
+   CI on 97c7480a/439c0a73 was red, not green as first reported. The
+   mismatch branch also fell into the Ok arm that assumed disk load. Fix:
+   flag set from whether the open actually used the cached URL; tests
+   assert the flag; open/flush logs name cache state. CI 33233307369
+   (both jobs) green on 3f6a678f. Correction posted on #53.
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
