@@ -64,6 +64,9 @@ the buffer-3 collision with shadow_params). CI fully green.
 
 ## Next Actions
 
+0. Texture uploads: staged blit queue landed (89dc6bba, shared storage).
+   Private storage blocked on the sampling anomaly — needs an Xcode GPU
+   capture; probe test `storage_mode_sampling_probe` is the starting point.
 1. Carry graph-declared color/depth attachments and load/store/clear metadata into executable records.
 2. Resolve Metal render targets through graph resource handles per frame.
 3. Carry viewport/scissor policy into the plan instead of deriving editor-specific rectangles in the backend.
