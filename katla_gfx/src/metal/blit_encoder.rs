@@ -124,6 +124,3 @@ impl GpuBlitEncoder<MetalBackend> for MetalBlitEncoder {
         }
     }
 }
-
-unsafe impl Send for MetalBlitEncoder {}
-unsafe impl Sync for MetalBlitEncoder {}
