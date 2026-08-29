@@ -83,6 +83,23 @@ pub struct DepthAttachmentInfo<B: GpuBackend> {
 pub struct RenderPassInfo<B: GpuBackend> {
     pub color_attachments: Vec<ColorAttachmentInfo<B>>,
     pub depth_attachment: Option<DepthAttachmentInfo<B>>,
+    /// Deterministic pass name applied to the underlying Metal encoder. Must be
+    /// a compile-time constant so GPU captures are diffable across runs.
+    pub debug_label: Option<&'static str>,
+}
+
+impl<B: GpuBackend> RenderPassInfo<B> {
+    /// Unlabeled pass info with the given attachments (tests + internal call sites).
+    pub(crate) fn unlabeled(
+        color_attachments: Vec<ColorAttachmentInfo<B>>,
+        depth_attachment: Option<DepthAttachmentInfo<B>>,
+    ) -> Self {
+        Self {
+            color_attachments,
+            depth_attachment,
+            debug_label: None,
+        }
+    }
 }
 
 pub struct BufferImageCopy {
@@ -102,6 +119,12 @@ pub trait GpuCommandBuffer<B: GpuBackend>: Sized {
     fn begin_render_pass(&mut self, desc: RenderPassInfo<B>) -> B::RenderEncoder;
     fn begin_compute_pass(&mut self) -> B::ComputeEncoder;
     fn begin_blit_pass(&mut self) -> B::BlitEncoder;
+    /// Compute pass carrying a deterministic label for GPU captures and
+    /// encoder-execution diagnostics.
+    fn begin_compute_pass_with_label(&mut self, label: &'static str) -> B::ComputeEncoder;
+    /// Blit pass carrying a deterministic label for GPU captures and
+    /// encoder-execution diagnostics.
+    fn begin_blit_pass_with_label(&mut self, label: &'static str) -> B::BlitEncoder;
     fn copy_buffer_to_texture(
         &mut self,
         src: &B::Buffer,

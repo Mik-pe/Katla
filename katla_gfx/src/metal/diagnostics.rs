@@ -291,6 +291,44 @@ mod tests {
     }
 
     #[test]
+    fn test_labeled_render_pass_encodes_and_submits() {
+        use crate::backend::command::{GpuCommandBuffer, GpuRenderEncoder};
+        use crate::render_pass::LoadOp;
+        use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
+
+        let ctx =
+            crate::metal::context::MetalContext::init_headless().expect("headless Metal context");
+        let desc = TextureDescriptor::new(4, 4, ImageFormat::B8G8R8A8Srgb)
+            .with_usage(TextureUsage::COLOR_ATTACHMENT);
+        let (_texture, view) = ctx.create_texture(&desc).expect("target texture");
+
+        let mut cmd = ctx.create_command_buffer_with_diagnostics(GpuDiagnosticsMode::Validation);
+        cmd.begin();
+
+        let pass_info = crate::backend::command::RenderPassInfo {
+            color_attachments: vec![crate::backend::command::ColorAttachmentInfo {
+                view,
+                load_op: LoadOp::Clear,
+                store_op: crate::render_pass::StoreOp::Store,
+                clear_value: crate::render_pass::ClearValue::color(0.0, 0.0, 0.0, 1.0),
+            }],
+            depth_attachment: None,
+            debug_label: Some("diag_label_smoke"),
+        };
+
+        {
+            let mut encoder = cmd.begin_render_pass(pass_info);
+            encoder.end_encoding();
+        }
+
+        cmd.end();
+        cmd.submit(&ctx);
+        cmd.inner.waitUntilCompleted();
+        use objc2_metal::{MTLCommandBuffer, MTLCommandBufferStatus};
+        assert_eq!(cmd.inner.status(), MTLCommandBufferStatus::Completed);
+    }
+
+    #[test]
     fn test_release_mode_command_buffer_submits_cleanly() {
         use objc2_metal::{MTLCommandBuffer, MTLCommandBufferStatus};
 

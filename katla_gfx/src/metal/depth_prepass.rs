@@ -159,6 +159,7 @@ pub(crate) fn render_depth_prepass(
             },
             format: ImageFormat::D32SfloatS8Uint,
         }),
+        debug_label: Some("depth_prepass"),
     };
 
     let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
