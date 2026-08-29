@@ -1,3 +1,16 @@
+//! Window surface and drawable ownership.
+//!
+//! Thread-affinity model: the surface, its current drawable, and all layer
+//! mutations (acquire, present, resize, attachment) are confined to the
+//! application's main thread — the thread that owns the `NSView` backing the
+//! layer. Enforcement is structural: `MetalSurface` is `!Send`/`!Sync`
+//! (compile-time contract in this file's test module), so no code path can
+//! move or share it; the renderer methods that touch it
+//! (`wait_for_frame`/acquire, `present` during frame submit, `resize`) are
+//! `&mut self` on the renderer, which the app owns on the main thread.
+//! Background pipeline-compilation and upload work therefore never requires
+//! the surface — those paths use only `MetalContext` (Send + Sync).
+
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2_foundation::NSSize;

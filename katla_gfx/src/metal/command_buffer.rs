@@ -1,4 +1,5 @@
 use std::ptr::NonNull;
+use std::sync::OnceLock;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -72,15 +73,39 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
     fn end(&mut self) {}
 
     fn submit(&self, _context: &<MetalBackend as GpuBackend>::Context) {
+        // The completion block captures nothing, so a single process-lifetime
+        // instance is immutable and safe to register from any thread; Metal
+        // retains it per command buffer. Allocating a fresh block per submit
+        // would hand Metal one unbalanced Rc refcount per frame.
+        // Data audit (issue #57): the handler runs on an arbitrary
+        // Metal-managed thread. It receives only the ObjC-owned command-buffer
+        // reference, reads its status/error, and logs — no captured Rust state,
+        // no surface/layer mutation, nothing non-Send crosses the boundary.
+        // Readback paths (picking) use synchronous waitUntilCompleted instead
+        // of completion handlers.
+        type CompletionBlock = RcBlock<dyn Fn(NonNull<ProtocolObject<dyn MTLCommandBuffer>>)>;
         #[allow(clippy::type_complexity)]
-        let block: RcBlock<dyn Fn(NonNull<ProtocolObject<dyn MTLCommandBuffer>>)> = RcBlock::new(
-            |cmd_buffer: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
-                let cmd_buffer = unsafe { cmd_buffer.as_ref() };
-                Self::log_gpu_error(cmd_buffer);
-            },
-        );
+        type RawCompletionBlock =
+            *mut block2::DynBlock<dyn Fn(NonNull<ProtocolObject<dyn MTLCommandBuffer>>)>;
+        struct SharedBlock(RawCompletionBlock);
+        // SAFETY: the wrapped pointer owns a capture-free Block: immutable after
+        // creation, invocation thread-safe (Block ABI), never freed (leaked by
+        // design so the single instance can be registered on every submit).
+        unsafe impl Send for SharedBlock {}
+        unsafe impl Sync for SharedBlock {}
+        static COMPLETION: OnceLock<SharedBlock> = OnceLock::new();
+        let SharedBlock(block_ptr) = COMPLETION.get_or_init(|| {
+            #[allow(clippy::type_complexity)]
+            let block: CompletionBlock = RcBlock::new(
+                |cmd_buffer: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
+                    let cmd_buffer = unsafe { cmd_buffer.as_ref() };
+                    Self::log_gpu_error(cmd_buffer);
+                },
+            );
+            SharedBlock(RcBlock::into_raw(block))
+        });
         unsafe {
-            self.inner.addCompletedHandler(RcBlock::into_raw(block));
+            self.inner.addCompletedHandler(*block_ptr);
         }
         self.inner.commit();
     }
