@@ -143,5 +143,21 @@ fn attach_layer_to_nsview(
     }
 }
 
-unsafe impl Send for MetalSurface {}
-unsafe impl Sync for MetalSurface {}
+#[cfg(test)]
+mod tests {
+    // `MetalSurface` owns AppKit-affine state (a `CAMetalLayer` attached to an
+    // `NSView`), so it must never regain blanket `Send`/`Sync` markers. If these
+    // bounds fail, someone re-introduced an unsafe impl — surface moves across
+    // threads must go through explicit main-thread ownership transfer instead.
+    const _: () = {
+        const fn assert_not_send<T: ?Sized>() {}
+        const fn assert_not_sync<T: ?Sized>() {}
+        trait NegativeSend {}
+        impl<T: Send + ?Sized> NegativeSend for T {}
+        trait NegativeSync {}
+        impl<T: Sync + ?Sized> NegativeSync for T {}
+
+        let _ = assert_not_send::<super::MetalSurface>;
+        let _ = assert_not_sync::<super::MetalSurface>;
+    };
+}
