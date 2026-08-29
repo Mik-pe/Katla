@@ -762,6 +762,13 @@ impl MetalContext {
     }
 }
 
+// SAFETY: `MetalContext` owns `MTLDevice` and `MTLCommandQueue` plus immutable
+// feature/capability state. Apple's Metal documentation guarantees both
+// `MTLDevice` ("A GPU ... you can access ... from multiple threads") and
+// `MTLCommandQueue` ("MTLCommandQueue is thread-safe") for concurrent use; the
+// context holds no encoder, drawable, or layer state. Command *buffers* allocated
+// from the queue are NOT thread-safe and are confined to the encoding thread by
+// the `!Send`/`!Sync` command-buffer and encoder types in this module.
 unsafe impl Send for MetalContext {}
 unsafe impl Sync for MetalContext {}
 

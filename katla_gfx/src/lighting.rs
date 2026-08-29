@@ -103,9 +103,6 @@ pub struct LightCullingBuffers {
     destroyed: bool,
 }
 
-unsafe impl Send for LightCullingBuffers {}
-unsafe impl Sync for LightCullingBuffers {}
-
 impl LightCullingBuffers {
     pub fn new(
         context: Rc<VulkanContext>,

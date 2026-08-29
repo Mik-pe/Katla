@@ -239,6 +239,3 @@ impl GpuRenderEncoder<MetalBackend> for MetalRenderEncoder {
             .setStencilFrontReferenceValue_backReferenceValue(reference, reference);
     }
 }
-
-unsafe impl Send for MetalRenderEncoder {}
-unsafe impl Sync for MetalRenderEncoder {}

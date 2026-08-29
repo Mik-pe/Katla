@@ -33,9 +33,6 @@ pub(crate) struct MetalEvent {}
 
 impl GpuEvent for MetalEvent {}
 
-unsafe impl Send for MetalEvent {}
-unsafe impl Sync for MetalEvent {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
