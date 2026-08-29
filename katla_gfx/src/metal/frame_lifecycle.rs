@@ -9,6 +9,7 @@ impl MetalRenderer {
     pub(crate) fn wait_for_frame_impl(&mut self) -> Result<(), RendererError> {
         if let Some(cmd_buffer) = self.last_command_buffer.take() {
             cmd_buffer.waitUntilCompleted();
+            self.texture_uploads.retire_completed();
 
             let status = cmd_buffer.status();
             if status != MTLCommandBufferStatus::Completed {

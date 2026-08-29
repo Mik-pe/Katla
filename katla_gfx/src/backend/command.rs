@@ -180,4 +180,6 @@ pub trait GpuBlitEncoder<B: GpuBackend>: Sized {
         dst: &B::Image,
         regions: &[BufferImageCopy],
     );
+    /// Copy the full base-mip surface of `src` into `dst` (same format and extent).
+    fn copy_texture_to_texture(&mut self, src: &B::Image, dst: &B::Image);
 }

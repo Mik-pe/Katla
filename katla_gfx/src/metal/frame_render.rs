@@ -184,6 +184,14 @@ impl MetalRenderer {
             cmd_buffer.inner.setLabel(Some(&label));
         }
 
+        // Encode staged texture uploads before any consumer pass.
+        if self.texture_uploads.has_pending() {
+            use crate::backend::command::GpuBlitEncoder;
+            let mut blit = cmd_buffer.begin_blit_pass();
+            self.texture_uploads.encode_into(&mut blit);
+            blit.end_encoding();
+        }
+
         let drawable_width = self.drawable_size.width as f32;
         let drawable_height = self.drawable_size.height as f32;
         let panel = self.viewport_panel_rect;

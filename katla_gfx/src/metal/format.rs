@@ -75,6 +75,9 @@ pub(crate) fn to_mtl_texture_usage(usage: crate::texture::TextureUsage) -> MTLTe
     if usage.contains(crate::texture::TextureUsage::DEPTH_STENCIL_ATTACHMENT) {
         result |= MTLTextureUsage::RenderTarget;
     }
+    if usage.contains(crate::texture::TextureUsage::COPY_DST) {
+        result |= MTLTextureUsage::ShaderWrite;
+    }
     result
 }
 

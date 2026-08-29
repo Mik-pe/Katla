@@ -1,5 +1,6 @@
 use objc2_metal::MTLTexture;
 
+use crate::backend::resource::GpuImage;
 use crate::handle::TextureHandle;
 use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::texture::{ImageFormat, TextureDescriptor};
@@ -40,28 +41,24 @@ impl MetalRenderer {
     pub(crate) fn update_ui_font_atlas_impl(&mut self, width: u32, height: u32, data: &[u8]) {
         if let Some(atlas_handle) = self.ui_font_atlas {
             if let Some(entry) = self.textures.get(atlas_handle.index()) {
-                let tex = &entry._view;
-                let tex_w = tex.inner.width() as u32;
-                let tex_h = tex.inner.height() as u32;
+                let view = &entry._view;
+                let atlas_texture = entry.texture.clone();
+                let atlas_format = atlas_texture.format();
+                let tex_w = view.inner.width() as u32;
+                let tex_h = view.inner.height() as u32;
                 if tex_w == width && tex_h == height {
-                    let region = objc2_metal::MTLRegion {
-                        origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                        size: objc2_metal::MTLSize {
-                            width: width as usize,
-                            height: height as usize,
-                            depth: 1,
-                        },
-                    };
-                    let bytes_per_row = width as usize * 4;
-                    unsafe {
-                        tex.inner.replaceRegion_mipmapLevel_withBytes_bytesPerRow(
-                            region,
-                            0,
-                            std::ptr::NonNull::new(data.as_ptr() as *mut std::ffi::c_void).unwrap(),
-                            bytes_per_row,
-                        );
+                    if let Err(error) = self.texture_uploads.stage(
+                        &self.context,
+                        atlas_texture,
+                        atlas_format,
+                        width,
+                        height,
+                        data,
+                    ) {
+                        log::warn!("font atlas re-upload rejected ({error}); recreating atlas");
+                    } else {
+                        return;
                     }
-                    return;
                 }
             }
             GpuRenderer::destroy_texture(self, atlas_handle);

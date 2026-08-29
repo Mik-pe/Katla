@@ -1,5 +1,6 @@
 use objc2_metal::MTLTexture;
 
+use crate::backend::resource::GpuImage;
 use crate::error::RendererError;
 use crate::handle::TextureHandle;
 use crate::texture::{ImageFormat, TextureDescriptor};
@@ -12,46 +13,54 @@ impl MetalRenderer {
         desc: &TextureDescriptor,
         data: &[u8],
     ) -> TextureHandle {
-        let result = if data.is_empty() {
-            self.context.create_texture(desc)
-        } else {
-            self.context.create_texture_with_data(desc)
-        };
+        // Initial data goes through the staged upload queue and is blitted at
+        // the start of the frame. Textures keep Shared storage until the
+        // private-storage sampling anomaly is root-caused (see issue #58).
+        let result = self.context.create_texture(desc);
         match result {
             Ok((texture, view)) => {
-                if !data.is_empty() {
-                    let region = objc2_metal::MTLRegion {
-                        origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                        size: objc2_metal::MTLSize {
-                            width: desc.width as usize,
-                            height: desc.height as usize,
-                            depth: 1,
-                        },
-                    };
-                    let bytes_per_row = desc.width as usize * 4;
-                    unsafe {
-                        texture
-                            .inner
-                            .replaceRegion_mipmapLevel_withBytes_bytesPerRow(
-                                region,
-                                0,
-                                std::ptr::NonNull::new(data.as_ptr() as *mut std::ffi::c_void)
-                                    .unwrap(),
-                                bytes_per_row,
-                            );
-                    }
+                if !data.is_empty()
+                    && let Err(error) = self.texture_uploads.stage(
+                        &self.context,
+                        texture.clone(),
+                        desc.format,
+                        desc.width,
+                        desc.height,
+                        data,
+                    )
+                {
+                    log::error!(
+                        "texture upload rejected for {:?} ({}x{}, {:?}): {} — substituting placeholder per asset policy",
+                        desc.label,
+                        desc.width,
+                        desc.height,
+                        desc.format,
+                        error
+                    );
+                    return self.default_texture_impl();
                 }
 
                 let bindless_slot = self.bindless_manager.register_texture(&texture.inner).ok();
 
                 let entry = MetalTextureEntry {
+                    texture: texture.clone(),
                     _view: view,
                     bindless_slot,
                 };
                 let id = self.textures.insert(entry);
                 TextureHandle::new(id)
             }
-            Err(_) => self.default_texture_impl(),
+            Err(error) => {
+                log::error!(
+                    "Metal texture creation failed for {:?} ({}x{}, {:?}): {} — substituting placeholder per asset policy",
+                    desc.label,
+                    desc.width,
+                    desc.height,
+                    desc.format,
+                    error
+                );
+                self.default_texture_impl()
+            }
         }
     }
 
@@ -92,37 +101,19 @@ impl MetalRenderer {
         handle: TextureHandle,
         data: &[u8],
     ) -> Result<(), RendererError> {
-        let entry = self.textures.get(handle.index()).ok_or_else(|| {
-            RendererError::InvalidOperation(format!("Invalid texture handle {:?}", handle))
-        })?;
-        let tex = &entry._view;
-        let width = tex.inner.width() as u32;
-        let height = tex.inner.height() as u32;
-        let bytes_per_row = width as usize * 4;
-        let expected_size = (width * height * 4) as usize;
-        if data.len() != expected_size {
-            return Err(RendererError::InvalidOperation(format!(
-                "Texture data size mismatch: expected {} bytes, got {}",
-                expected_size,
-                data.len()
-            )));
-        }
-        let region = objc2_metal::MTLRegion {
-            origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
-            size: objc2_metal::MTLSize {
-                width: width as usize,
-                height: height as usize,
-                depth: 1,
-            },
+        let (format, width, height, texture) = {
+            let entry = self.textures.get(handle.index()).ok_or_else(|| {
+                RendererError::InvalidOperation(format!("Invalid texture handle {:?}", handle))
+            })?;
+            let view = &entry._view;
+            let texture = entry.texture.clone();
+            let format = texture.format();
+            let width = view.inner.width() as u32;
+            let height = view.inner.height() as u32;
+            (format, width, height, texture)
         };
-        unsafe {
-            tex.inner.replaceRegion_mipmapLevel_withBytes_bytesPerRow(
-                region,
-                0,
-                std::ptr::NonNull::new(data.as_ptr() as *mut std::ffi::c_void).unwrap(),
-                bytes_per_row,
-            );
-        }
+        self.texture_uploads
+            .stage(&self.context, texture, format, width, height, data)?;
         Ok(())
     }
 }

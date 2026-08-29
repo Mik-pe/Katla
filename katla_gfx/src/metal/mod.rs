@@ -32,6 +32,7 @@ pub(crate) mod surface;
 pub(crate) mod sync;
 pub(crate) mod texture;
 pub(crate) mod texture_api;
+pub(crate) mod texture_upload;
 pub(crate) mod timestamp_queries;
 pub(crate) mod ui_renderer;
 pub(crate) mod viewport_api;

@@ -121,6 +121,7 @@ pub(crate) struct MetalMaterial {
 
 /// A texture stored with its bindless slot.
 pub(crate) struct MetalTextureEntry {
+    pub(crate) texture: super::texture::MetalTexture,
     pub(crate) _view: MetalTextureView,
     pub(crate) bindless_slot: Option<u32>,
 }
@@ -234,6 +235,7 @@ pub struct MetalRenderer {
     pub(crate) drawable_size: Size2D,
     pub(crate) ui_font_atlas: Option<TextureHandle>,
     pub(crate) last_command_buffer: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
+    pub(crate) texture_uploads: super::texture_upload::TextureUploadQueue,
     pub(crate) pending_draw_list: Option<DrawList>,
     pub(crate) light_culling: Option<MetalLightCulling>,
     pub(crate) ui_renderer: MetalUIRenderer,
@@ -370,6 +372,7 @@ impl MetalRenderer {
             drawable_size: Size2D::default(),
             ui_font_atlas: None,
             last_command_buffer: None,
+            texture_uploads: super::texture_upload::TextureUploadQueue::default(),
             pending_draw_list: None,
             light_culling: None,
             ui_renderer: MetalUIRenderer::new(),
@@ -1753,7 +1756,7 @@ mod tests {
             .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
         let (readback_tex, readback_view) = renderer
             .context
-            .create_texture_with_data(&readback_desc)
+            .create_texture_shared(&readback_desc)
             .expect("Failed to create readback texture");
         // The no-UI headless schedule tonemaps directly to the current drawable.
         // Use the CPU-readable texture as that drawable so the test reads the
