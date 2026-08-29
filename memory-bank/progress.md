@@ -130,11 +130,37 @@ RESULT: cast shadows verified on Metal headless — sphere grid, boxes, cylinder
 fox all shadow the ground; PCF edges soft, no acne (pixel-probed + vision
 confirmed). Vulkan inherits the same fixes via the shared code.
 
+8. **Skinned shadow MSL collision (fixed, commit 24a872c2)**: shadow_depth_
+   skinned.wgsl declares joint_matrices at group3:0, which the shared graphics
+   binding map sends to buffer 3 — colliding with shadow_params (Vulkan works
+   because it binds the skeleton descriptor set at set 3). Added
+   ShaderProfile::ShadowSkinned with its own naga MSL binding map (joints to
+   buffer 4, free in the depth-only shader). render_cascades now takes the
+   skinned pipeline + skeleton storage, binds skeleton buffer 4 per skinned
+   draw, and restores the regular pipeline per cascade. Note: the skinned
+   pipeline previously overwrote the regular shadow pipeline slot; it now has
+   its own slot (shadow_pipeline_skinned).
+
+RESULT 2: fox casts a quadruped-shaped shadow on Metal (pixel-probed +
+screenshot-verified). CI fully green (tests + lint + fmt both platforms).
+
+9. **Batched Metal texture uploads (commit 89dc6bba)**: initial texture data no
+   longer lives in shared textures written at creation time. TextureUploadQueue
+   copies bytes into pooled shared staging buffers, one blit pass at frame start
+   feeds all pending uploads, slots recycle after the consuming submission
+   completes. copy_buffer_to_texture now derives bytesPerRow/BytesPerImage from
+   the format (was hardcoded 0 — invalid for anything taller than one pixel).
+   Uploads validate format/extents/pitch with typed errors naming the row pitch.
+   COPY_DST now maps to MTLTextureUsage::ShaderWrite.
+
+RESULT 3: headless render is pixel-identical on every static probe; the only
+cross-binary diffs are the wall-clock fire flicker phase. Known follow-up:
+flipping data textures to MTLStorageMode::Private changes rendered output
+(midtones/penumbra shift) despite byte-identical texture content — needs a GPU
+capture to root-cause before private storage lands.
+
 STILL OPEN:
-- Skinned shadow pipeline MSL error "cannot reserve buffer resource location
-  at index 3": per_entry_point_map in shader.rs only covers vs_main/fs_main;
-  vs_main_skinned falls back to fake-sequential bindings that collide. Add an
-  entry-point map for the skinned variant (or map all entry points uniformly).
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
 - katla_app scene/tests.rs has pre-existing clippy approximate-constant errors
   on main (untouched by this work).
+- Private storage for uploaded textures (see RESULT 3 follow-up).
