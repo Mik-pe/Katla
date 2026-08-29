@@ -239,6 +239,16 @@ capture to root-cause before private storage lands.
    NOTE: two silent lost-edit incidents this round (diagnostics.rs struct/
    impl derive ordering mangled, test append reverted) — always re-grep the
    FILE ON DISK after multi-edit scripts, don't trust script stdout.
+18. #57 slice 2 (2a505a86 + 44f5f74e): deleted unsound/needless Send/
+   Sync markers (LightCullingBuffers held Rc — markers were a lie;
+   encoders honestly !Send now; MetalEvent empty), documented MetalContext +
+   pipeline SAFETY invariants, removed orphan depth_stencil.rs (never a
+   module), 14-assert const affinity contract in surface.rs tests. Both
+   commits CI green (2a505a86 run 33237746522; 44f5f74e run was CANCELLED by
+   concurrency group — gh run rerun 33237633701 then green). LESSON: check
+   `git status` count after commit — blit_encoder.rs missed its `git add`
+   and silently stayed unstaged. Remaining #57 DoD: executor/token model,
+   completion-handler audit, stress test.
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
