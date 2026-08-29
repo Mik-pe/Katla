@@ -31,6 +31,18 @@ impl MetalRenderer {
                         .setFragmentBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
                 }
             }
+            encoder.use_buffer(
+                arg_buffer,
+                objc2_metal::MTLResourceUsage::Read,
+                objc2_metal::MTLRenderStages::Vertex | objc2_metal::MTLRenderStages::Fragment,
+            );
+            for texture in self.bindless_manager.registered_textures() {
+                encoder.use_texture(
+                    texture,
+                    objc2_metal::MTLResourceUsage::Read,
+                    objc2_metal::MTLRenderStages::Vertex | objc2_metal::MTLRenderStages::Fragment,
+                );
+            }
         }
 
         if let Some(ref sampler) = self.shared_sampler {
