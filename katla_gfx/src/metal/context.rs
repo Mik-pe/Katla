@@ -292,7 +292,16 @@ impl MetalContext {
         device: &ProtocolObject<dyn MTLDevice>,
     ) -> Option<super::pipeline_archive::MetalPipelineArchive> {
         match super::pipeline_archive::MetalPipelineArchive::open_or_create(device) {
-            Ok(archive) => Some(archive),
+            Ok(archive) => {
+                let stats = archive.stats();
+                log::info!(
+                    "Pipeline cache ready: opened_from_disk={}, rejection={:?}, open_ms={}",
+                    stats.opened_from_disk,
+                    stats.rejection,
+                    stats.open_duration.as_millis(),
+                );
+                Some(archive)
+            }
             Err(err) => {
                 log::warn!("Pipeline cache disabled: {err}");
                 None
