@@ -249,6 +249,13 @@ capture to root-cause before private storage lands.
    `git status` count after commit — blit_encoder.rs missed its `git add`
    and silently stayed unstaged. Remaining #57 DoD: executor/token model,
    completion-handler audit, stress test.
+19. #57 slice 3 (8e7cec9e, CI green): completion-handler audit done — the
+   only handler is the failure logger; captures nothing, logs only, no
+   non-Send transfer; picking readback is synchronous. FIXED per-frame
+   RcBlock leak: submit now registers ONE process-lifetime capture-free
+   block via OnceLock<SharedBlock> (Send/Sync documented on Block ABI).
+   Surface thread-affinity model documented in surface.rs module docs.
+   Remaining #57 DoD: executor/token type, TSan stress test.
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
