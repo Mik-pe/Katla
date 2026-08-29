@@ -229,6 +229,16 @@ capture to root-cause before private storage lands.
    blit. Labeled-encoder smoke test; 506/506; 8/8 probes unchanged; CI
    SHA-verified. Remaining on #52: frame-indexed cmd-buffer labels, attach
    diagnostics to RendererError.
+17. #52 CLOSED (b589b79b): diagnostics attached to RendererError +
+   frame-indexed labels. GpuExecutionFailure.encoders
+   (Vec<GpuEncoderDiagnostic>) populated in wait_for_frame from
+   EncoderInfoErrorKey; Display lists encoders in order + signposts;
+   is_faulted() predicate. Labels: render_graph_frame.<frame>,
+   shadow_pass.<frame>, depth_prepass.<frame> (picking readback stays base —
+   no frame index in free fn). 509/509 (+3); 8/8 probes; CI SHA-verified.
+   NOTE: two silent lost-edit incidents this round (diagnostics.rs struct/
+   impl derive ordering mangled, test append reverted) — always re-grep the
+   FILE ON DISK after multi-edit scripts, don't trust script stdout.
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
