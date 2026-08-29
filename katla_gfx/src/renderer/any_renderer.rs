@@ -843,7 +843,7 @@ impl AnyRenderer {
                     .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
                 let (tex, _view) = r
                     .context
-                    .create_texture_with_data(&desc)
+                    .create_texture_shared(&desc)
                     .expect("Failed to create offscreen texture");
                 tex.inner
             }

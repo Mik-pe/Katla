@@ -5,6 +5,7 @@ use objc2_metal::{MTLBuffer, MTLResource, MTLStorageMode};
 
 use crate::backend::resource::GpuBuffer;
 
+#[derive(Clone)]
 pub(crate) struct MetalBuffer {
     pub(crate) inner: Retained<ProtocolObject<dyn MTLBuffer>>,
     size: u64,

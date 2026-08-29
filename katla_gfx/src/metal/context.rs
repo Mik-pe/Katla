@@ -353,32 +353,9 @@ impl MetalContext {
         Ok(MetalBuffer::new(buffer, size))
     }
 
-    pub(crate) fn create_texture(
-        &self,
-        descriptor: &TextureDescriptor,
-    ) -> Result<(MetalTexture, MetalTextureView), RendererError> {
-        let tex_desc = unsafe {
-            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
-                to_mtl_pixel_format(descriptor.format),
-                descriptor.width as usize,
-                descriptor.height as usize,
-                false,
-            )
-        };
-        tex_desc.setUsage(to_mtl_texture_usage(descriptor.usage));
-        tex_desc.setStorageMode(MTLStorageMode::Private);
-        let texture = self
-            .device
-            .newTextureWithDescriptor(&tex_desc)
-            .ok_or_else(|| {
-                RendererError::InvalidOperation("Failed to create Metal texture".into())
-            })?;
-        let metal_texture = MetalTexture::new(texture.clone(), descriptor.format);
-        let view = MetalTextureView::new(texture, metal_texture.clone());
-        Ok((metal_texture, view))
-    }
-
-    pub(crate) fn create_texture_with_data(
+    /// Shared-storage texture for the documented CPU-readback contract
+    /// (headless screenshot and offscreen readback paths).
+    pub(crate) fn create_texture_shared(
         &self,
         descriptor: &TextureDescriptor,
     ) -> Result<(MetalTexture, MetalTextureView), RendererError> {
@@ -392,6 +369,32 @@ impl MetalContext {
         };
         tex_desc.setUsage(to_mtl_texture_usage(descriptor.usage));
         tex_desc.setStorageMode(MTLStorageMode::Shared);
+        let texture = self
+            .device
+            .newTextureWithDescriptor(&tex_desc)
+            .ok_or_else(|| {
+                RendererError::InvalidOperation("Failed to create Metal texture".into())
+            })?;
+        let metal_texture = MetalTexture::new(texture.clone(), descriptor.format);
+        let view = MetalTextureView::new(texture, metal_texture.clone());
+        Ok((metal_texture, view))
+    }
+
+    pub(crate) fn create_texture(
+        &self,
+        descriptor: &TextureDescriptor,
+    ) -> Result<(MetalTexture, MetalTextureView), RendererError> {
+        let tex_desc = unsafe {
+            MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
+                to_mtl_pixel_format(descriptor.format),
+                descriptor.width as usize,
+                descriptor.height as usize,
+                false,
+            )
+        };
+        tex_desc.setUsage(to_mtl_texture_usage(descriptor.usage));
+        tex_desc.setStorageMode(MTLStorageMode::Shared);
+
         let texture = self
             .device
             .newTextureWithDescriptor(&tex_desc)
