@@ -181,6 +181,18 @@ capture to root-cause before private storage lands.
    impls (context/command buffer/buffers/encoders) remain, each needing its
    own documented-invariant pass.
 
+12. #53 core: persistent Metal pipeline archive (97c7480a)
+   MetalPipelineArchive owns an MTLBinaryArchive + JSON metadata sidecar at
+   ~/Library/Caches/dev.ravboet.katla/pipelines/ (KATLA_PIPELINE_CACHE_DIR
+   overrides). Sidecar key = schema version, OS version, GPU registry ID,
+   Apple7 family, engine version; any mismatch deletes and rebuilds. Corrupt
+   archives rejected + rebuilt, never fatal. Render descriptors consult the
+   archive (setBinaryArchives); all created render and compute pipelines
+   register back. Atomic flush (temp + rename), no-op when empty. 4 tests
+   (flush/corrupt/mismatch/device metadata), 494/494, clippy clean, headless
+   8/8 probes, second run reuses archive, CI green. Remaining: explicit key
+   layer, async warming, structured diagnostics, benchmark.
+
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
 - katla_app scene/tests.rs has pre-existing clippy approximate-constant errors
