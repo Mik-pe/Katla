@@ -22,6 +22,9 @@ pub(crate) enum ShaderProfile {
     Outline,
     /// Skinned outline draw shaders (joints + outline_params, no bindless).
     OutlineSkinned,
+    /// Skinned shadow depth shaders (cascades + params + joints; joints at
+    /// [[buffer(4)]] to avoid colliding with shadow_params at buffer 3).
+    ShadowSkinned,
 }
 
 /// Create naga MSL options configured for Katla's binding layout.
@@ -411,6 +414,76 @@ fn create_outline_skinned_binding_map() -> msl::EntryPointResources {
     resources
 }
 
+/// Binding map for the skinned shadow depth shader (shadow_depth_skinned.wgsl):
+/// frame(0:0)→b0, objects(0:1)→b1, cascades(2:0)→b2, params(2:1)→b3, joints(3:0)→b4.
+/// Buffer 4 avoids the collision with shadow_params at buffer 3 that the shared
+/// graphics map would produce (light buffers 4-6 are unused in the depth-only shader).
+fn create_shadow_skinned_binding_map() -> msl::EntryPointResources {
+    let mut resources = msl::EntryPointResources::default();
+
+    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(0),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 1,
+            },
+            msl::BindTarget {
+                buffer: Some(1),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 2,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(2),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 2,
+                binding: 1,
+            },
+            msl::BindTarget {
+                buffer: Some(3),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 3,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(4),
+                ..Default::default()
+            },
+        ),
+    ];
+
+    for (binding, target) in bindings {
+        resources.resources.insert(*binding, target.clone());
+    }
+
+    // Runtime arrays (objects, joint_matrices) need bounds-check sizes in the VS.
+    resources.sizes_buffer = Some(8);
+
+    resources
+}
+
 pub(crate) struct MetalShaderModule {
     pub(crate) entry_points: HashMap<String, Retained<ProtocolObject<dyn MTLFunction>>>,
 }
@@ -464,6 +537,18 @@ pub(crate) fn compile_wgsl_to_metal(
             options
                 .per_entry_point_map
                 .insert("fs_main".to_string(), bindings);
+            options
+        }
+        ShaderProfile::ShadowSkinned => {
+            let mut options = msl::Options {
+                lang_version: (2, 0),
+                fake_missing_bindings: true,
+                ..msl::Options::default()
+            };
+            let bindings = create_shadow_skinned_binding_map();
+            options
+                .per_entry_point_map
+                .insert("vs_main".to_string(), bindings);
             options
         }
     };

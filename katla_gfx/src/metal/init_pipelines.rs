@@ -32,7 +32,7 @@ impl MetalRenderer {
             &self.context.device,
             &wgsl_source,
             &["vs_main"],
-            ShaderProfile::Graphics,
+            ShaderProfile::ShadowSkinned,
         )?;
         let vertex_fn = compiled.module.entry_points.get("vs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Skinned shadow vertex entry point not found".into())

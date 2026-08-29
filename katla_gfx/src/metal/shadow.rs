@@ -32,6 +32,7 @@ const DEFAULT_SHADOW_RESOLUTION: u32 = 2048;
 pub(crate) struct MetalShadowSubsystem {
     shadow_map_texture: Option<MetalTextureView>,
     shadow_pipeline: Option<MetalGraphicsPipeline>,
+    shadow_pipeline_skinned: Option<MetalGraphicsPipeline>,
     cascades: CascadeShadowMap,
     shadow_resolution: u32,
 }
@@ -41,6 +42,7 @@ impl MetalShadowSubsystem {
         Self {
             shadow_map_texture: None,
             shadow_pipeline: None,
+            shadow_pipeline_skinned: None,
             cascades: CascadeShadowMap::new(CascadeParams {
                 shadow_map_size: DEFAULT_SHADOW_RESOLUTION,
                 ..CascadeParams::default()
@@ -55,6 +57,10 @@ impl MetalShadowSubsystem {
 
     pub(crate) fn pipeline(&self) -> Option<&MetalGraphicsPipeline> {
         self.shadow_pipeline.as_ref()
+    }
+
+    pub(crate) fn pipeline_skinned(&self) -> Option<&MetalGraphicsPipeline> {
+        self.shadow_pipeline_skinned.as_ref()
     }
 
     pub(crate) fn cascade_count(&self) -> u32 {
@@ -144,7 +150,7 @@ impl MetalShadowSubsystem {
             false,
         )?;
 
-        self.shadow_pipeline = Some(pipeline);
+        self.shadow_pipeline_skinned = Some(pipeline);
         Ok(())
     }
 
@@ -173,6 +179,8 @@ impl MetalShadowSubsystem {
 pub(crate) fn render_cascades(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     shadow_pipeline: &MetalGraphicsPipeline,
+    shadow_pipeline_skinned: Option<&MetalGraphicsPipeline>,
+    skeleton_buffers: Option<&ResourceStorage<MetalBuffer>>,
     shadow_map_view: &MetalTextureView,
     shadow_resolution: u32,
     frame_uniform_buffer: &MetalBuffer,
@@ -237,11 +245,17 @@ pub(crate) fn render_cascades(
 
         encode_cascade_draws(
             &mut encoder,
+            shadow_pipeline_skinned,
+            skeleton_buffers,
             object_storage_buffer,
             meshes,
             materials,
             draw_list,
         );
+
+        // Restore the regular pipeline for the next cascade (skinned draws
+        // inside encode_cascade_draws may have switched it).
+        encoder.bind_graphics_pipeline(shadow_pipeline);
     }
 
     encoder.end_encoding();
@@ -249,6 +263,8 @@ pub(crate) fn render_cascades(
 
 fn encode_cascade_draws(
     encoder: &mut super::render_encoder::MetalRenderEncoder,
+    shadow_pipeline_skinned: Option<&MetalGraphicsPipeline>,
+    skeleton_buffers: Option<&ResourceStorage<MetalBuffer>>,
     object_storage_buffer: &MetalBuffer,
     meshes: &ResourceStorage<super::metal_renderer::MetalMesh>,
     materials: &ResourceStorage<super::metal_renderer::MetalMaterial>,
@@ -264,6 +280,17 @@ fn encode_cascade_draws(
         let Some(ref _pipeline) = material.pipeline else {
             continue;
         };
+
+        let is_skinned = !draw.skeleton.is_none() && shadow_pipeline_skinned.is_some();
+        if is_skinned {
+            let skinned = shadow_pipeline_skinned.expect("checked is_skinned above");
+            encoder.bind_graphics_pipeline(skinned);
+            if let Some(skeleton_buf) = skeleton_buffers.and_then(|s| s.get(draw.skeleton.index()))
+            {
+                // shadow_depth_skinned maps joint_matrices to [[buffer(4)]].
+                encoder.bind_storage_buffer(skeleton_buf, 0, 4, ShaderStages::VERTEX);
+            }
+        }
 
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
