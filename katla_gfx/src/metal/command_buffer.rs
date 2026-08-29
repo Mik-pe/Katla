@@ -35,43 +35,34 @@ impl MetalCommandBuffer {
             .map(|l| l.to_string())
             .unwrap_or_default();
 
-        let error = match cmd_buffer.error() {
-            Some(e) => e,
-            None => {
-                log::error!(
-                    "Metal command buffer '{}' failed with Error status but no NSError",
-                    label
-                );
-                return;
+        let Some(error) = cmd_buffer.error() else {
+            log::error!(
+                "Metal command buffer '{}' failed with Error status but no NSError",
+                label
+            );
+            return;
+        };
+
+        match super::diagnostics::GpuCommandBufferDiagnostics::from_error(&label, &error) {
+            Some(diagnostics) => {
+                log::error!("Metal GPU failure: {}", diagnostics.render());
+                if let Some(faulted) = diagnostics.faulted_encoder() {
+                    log::error!(
+                        "First faulted encoder: '{}' (signposts: {})",
+                        faulted.label,
+                        if faulted.debug_signposts.is_empty() {
+                            "none".to_owned()
+                        } else {
+                            faulted.debug_signposts.join(",")
+                        }
+                    );
+                }
             }
-        };
-
-        let code = error.code() as u64;
-        let domain = error.domain().to_string();
-        let description = error.localizedDescription().to_string();
-
-        let error_kind = match code {
-            1 => "Internal",
-            2 => "Timeout",
-            3 => "PageFault",
-            4 => "AccessRevoked",
-            7 => "NotPermitted",
-            8 => "OutOfMemory",
-            9 => "InvalidResource",
-            10 => "Memoryless",
-            11 => "DeviceRemoved",
-            12 => "StackOverflow",
-            _ => "Unknown",
-        };
-
-        log::error!(
-            "Metal GPU error [{}]: {} (code={} domain={}):\n  {}",
-            label,
-            error_kind,
-            code,
-            domain,
-            description,
-        );
+            None => log::error!(
+                "Metal command buffer '{}' failed without diagnostics",
+                label
+            ),
+        }
     }
 }
 

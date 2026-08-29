@@ -463,6 +463,20 @@ impl MetalContext {
         MetalCommandBuffer { inner: cmd_buffer }
     }
 
+    /// Create a command buffer through `MTLCommandBufferDescriptor`, enabling
+    /// per-encoder execution status when diagnostics are on.
+    pub(crate) fn create_command_buffer_with_diagnostics(
+        &self,
+        mode: super::diagnostics::GpuDiagnosticsMode,
+    ) -> MetalCommandBuffer {
+        let descriptor = super::diagnostics::command_buffer_descriptor(mode);
+        let cmd_buffer = self
+            .command_queue
+            .commandBufferWithDescriptor(&descriptor)
+            .expect("Failed to allocate command buffer");
+        MetalCommandBuffer { inner: cmd_buffer }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_graphics_pipeline(
         &self,

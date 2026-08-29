@@ -266,6 +266,19 @@ pub struct MetalRenderer {
     pub(crate) capabilities: crate::renderer::types::GpuCapabilities,
     pub(crate) timestamp_queries: Option<super::timestamp_queries::MetalTimestampQueries>,
     pub(crate) viewport_panel_rect: Option<crate::rect::Rect>,
+    pub(crate) gpu_diagnostics_mode: super::diagnostics::GpuDiagnosticsMode,
+}
+
+/// Validation runs record per-encoder execution status; release keeps the
+/// default low-overhead configuration.
+fn gpu_diagnostics_mode(
+    validation: crate::error::ValidationMode,
+) -> super::diagnostics::GpuDiagnosticsMode {
+    if validation.is_enabled() {
+        super::diagnostics::GpuDiagnosticsMode::Validation
+    } else {
+        super::diagnostics::GpuDiagnosticsMode::Release
+    }
 }
 
 impl MetalRenderer {
@@ -290,6 +303,7 @@ impl MetalRenderer {
 
         let context = MetalContext::init(window, display)?;
         let mut renderer = Self::new(context)?;
+        renderer.gpu_diagnostics_mode = gpu_diagnostics_mode(validation_mode);
 
         let ds = renderer.context.surface.layer.drawableSize();
         let dw = ds.width as u32;
@@ -317,6 +331,7 @@ impl MetalRenderer {
     ) -> Result<Self, RendererError> {
         let context = MetalContext::init_headless_with_size(width, height)?;
         let mut renderer = Self::new(context)?;
+        renderer.gpu_diagnostics_mode = gpu_diagnostics_mode(_validation_mode);
 
         renderer.drawable_size = Size2D::new(width, height);
         renderer.size = Size2D::new(width, height);
@@ -412,6 +427,7 @@ impl MetalRenderer {
             },
             timestamp_queries: None,
             viewport_panel_rect: None,
+            gpu_diagnostics_mode: super::diagnostics::GpuDiagnosticsMode::Release,
         };
 
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
@@ -726,7 +742,9 @@ impl MetalRenderer {
             return Ok(());
         };
 
-        let mut cmd_buffer = self.context.create_command_buffer();
+        let mut cmd_buffer = self
+            .context
+            .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
         cmd_buffer.begin();
         {
             let label = objc2_foundation::NSString::from_str("shadow_pass");
@@ -777,7 +795,9 @@ impl MetalRenderer {
         let width = self.size.width;
         let height = self.size.height;
 
-        let mut cmd_buffer = self.context.create_command_buffer();
+        let mut cmd_buffer = self
+            .context
+            .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
         cmd_buffer.begin();
         {
             let label = objc2_foundation::NSString::from_str("depth_prepass");
@@ -835,7 +855,9 @@ impl MetalRenderer {
         let width = self.size.width;
         let height = self.size.height;
 
-        let mut cmd_buffer = self.context.create_command_buffer();
+        let mut cmd_buffer = self
+            .context
+            .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
         cmd_buffer.begin();
 
         super::outline::render_stencil_mark(

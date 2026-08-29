@@ -196,7 +196,9 @@ impl MetalRenderer {
             MetalTexture::new(drawable_texture, ImageFormat::B8G8R8A8Srgb),
         );
 
-        let mut cmd_buffer = self.context.create_command_buffer();
+        let mut cmd_buffer = self
+            .context
+            .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
         cmd_buffer.begin();
         {
             let label = objc2_foundation::NSString::from_str("render_graph_frame");

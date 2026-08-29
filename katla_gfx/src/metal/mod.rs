@@ -6,6 +6,7 @@ pub(crate) mod command_buffer;
 pub(crate) mod compute_encoder;
 pub(crate) mod context;
 pub(crate) mod depth_prepass;
+pub(crate) mod diagnostics;
 pub(crate) mod draw_helpers;
 pub(crate) mod execution_plan;
 pub(crate) mod font_atlas;
