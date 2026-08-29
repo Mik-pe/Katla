@@ -23,6 +23,15 @@ impl MetalRenderer {
                 let description = error
                     .as_ref()
                     .map(|value| value.localizedDescription().to_string());
+                let encoders = error
+                    .as_ref()
+                    .map(|value| {
+                        super::diagnostics::extract_encoder_diagnostics(value)
+                            .into_iter()
+                            .map(super::diagnostics::GpuEncoderDiagnostics::into_error_payload)
+                            .collect()
+                    })
+                    .unwrap_or_default();
 
                 return Err(RendererError::GpuExecutionFailed(Box::new(
                     GpuExecutionFailure {
@@ -32,6 +41,7 @@ impl MetalRenderer {
                         code,
                         domain,
                         description,
+                        encoders,
                     },
                 )));
             }

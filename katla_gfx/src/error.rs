@@ -46,6 +46,25 @@ pub struct GpuExecutionFailure {
     pub code: Option<i64>,
     pub domain: Option<String>,
     pub description: Option<String>,
+    /// Per-encoder execution status recorded by Metal when the command buffer
+    /// was created with encoder-execution diagnostics. Empty when the feature
+    /// was off or Metal recorded no encoder info.
+    pub encoders: Vec<GpuEncoderDiagnostic>,
+}
+
+/// Snapshot of one encoder's terminal state inside a failed command buffer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpuEncoderDiagnostic {
+    pub label: String,
+    pub error_state: String,
+    pub debug_signposts: Vec<String>,
+}
+
+impl GpuEncoderDiagnostic {
+    /// True when Metal marked this encoder as faulted.
+    pub fn is_faulted(&self) -> bool {
+        self.error_state == "Faulted"
+    }
 }
 
 /// Unified error type for the renderer.
@@ -118,6 +137,7 @@ impl fmt::Display for RendererError {
                     code,
                     domain,
                     description,
+                    encoders,
                 } = details.as_ref();
                 write!(
                     f,
@@ -133,6 +153,16 @@ impl fmt::Display for RendererError {
                 write!(f, ")")?;
                 if let Some(description) = description {
                     write!(f, ": {description}")?;
+                }
+                for encoder in encoders {
+                    write!(
+                        f,
+                        "\n  encoder '{}' (state={})",
+                        encoder.label, encoder.error_state
+                    )?;
+                    for signpost in &encoder.debug_signposts {
+                        write!(f, "\n    signpost: {signpost}")?;
+                    }
                 }
                 Ok(())
             }

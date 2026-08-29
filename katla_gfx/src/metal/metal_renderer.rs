@@ -747,7 +747,8 @@ impl MetalRenderer {
             .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
         cmd_buffer.begin();
         {
-            let label = objc2_foundation::NSString::from_str("shadow_pass");
+            let label =
+                objc2_foundation::NSString::from_str(&format!("shadow_pass.{}", self.frame_index));
             cmd_buffer.inner.setLabel(Some(&label));
         }
 
@@ -800,7 +801,10 @@ impl MetalRenderer {
             .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
         cmd_buffer.begin();
         {
-            let label = objc2_foundation::NSString::from_str("depth_prepass");
+            let label = objc2_foundation::NSString::from_str(&format!(
+                "depth_prepass.{}",
+                self.frame_index
+            ));
             cmd_buffer.inner.setLabel(Some(&label));
         }
 
