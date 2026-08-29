@@ -159,8 +159,32 @@ flipping data textures to MTLStorageMode::Private changes rendered output
 (midtones/penumbra shift) despite byte-identical texture content — needs a GPU
 capture to root-cause before private storage lands.
 
+10. Private-storage anomaly elimination sweep (f35f6971, 7fa79fbd)
+   Extended probes to the bindless argument-buffer path:
+   test_bindless_argument_buffer_storage_probe renders through the real
+   MetalBindlessTextureManager arg buffer (slot 9, ShaderProfile::Graphics)
+   for SHARED vs PRIVATE staged-blit textures — byte-identical AND
+   non-vacuous (vacuity guard asserts real sampled content).
+   Also declared bindless texture residency in the geometry pass (7fa79fbd)
+   — correct Metal practice; zero pixel change (Apple Silicon implicit
+   residency). Eliminated: content, timing, usage, residency, direct
+   sampling, argument-buffer sampling, mipmaps (mipLevelCount 1). The
+   darkening only manifests in the full app render — remaining suspects are
+   app-scale (descriptor state, HDR targets, MSAA, tonemap chain). Needs an
+   Xcode GPU capture; probe chain documented in the skill corpus.
+
+11. #82 closed; #57 first slice (c2e2f7ab)
+   #82 (red CI since Jul 29) was fixed by 6322f156's test-fixture updates;
+   closed with evidence. #57: MetalSurface lost its blanket unsafe
+   Send/Sync (AppKit-affine layer state; nothing moved it across threads);
+   const compile-time guard fails the build if re-added. Other four blanket
+   impls (context/command buffer/buffers/encoders) remain, each needing its
+   own documented-invariant pass.
+
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
 - katla_app scene/tests.rs has pre-existing clippy approximate-constant errors
   on main (untouched by this work).
-- Private storage for uploaded textures (see RESULT 3 follow-up).
+- Private storage for uploaded textures (see item 10; GPU capture needed).
+- #57 remainder: documented invariants for remaining Metal types, executor
+  model, TSan stress test.
