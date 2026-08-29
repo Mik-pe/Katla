@@ -256,6 +256,16 @@ capture to root-cause before private storage lands.
    block via OnceLock<SharedBlock> (Send/Sync documented on Block ABI).
    Surface thread-affinity model documented in surface.rs module docs.
    Remaining #57 DoD: executor/token type, TSan stress test.
+20. #53 observability slice (82375a02, CI green): ArchiveRejection enum
+   (Absent/MetadataMismatch/Corrupt) + PipelineCacheStats snapshot
+   (opened_from_disk, rejection, pipelines_registered, open/flush durations)
+   in pipeline_archive.rs; structured log lines at context startup + renderer
+   Drop flush; loaded_from_disk bool removed (tests migrated); +2 tests =
+   511/511. Verified live: "opened_from_disk=true, rejection=None,
+   open_ms=1". #53 remaining: async warming, off-thread hot reload,
+   cold/warm/hot-reload benchmark. #55 is GATED on #54 (Metal 4 rewrite —
+   needs Micke's sequencing call; objc2-metal 0.3.2 has MTL4 headers but
+   device support unverified).
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
