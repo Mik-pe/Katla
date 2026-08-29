@@ -200,6 +200,16 @@ capture to root-cause before private storage lands.
    flag set from whether the open actually used the cached URL; tests
    assert the flag; open/flush logs name cache state. CI 33233307369
    (both jobs) green on 3f6a678f. Correction posted on #53.
+14. #51: error-path test coverage landed (6df122af)
+   validate_frame_submissions extracted as a pure fn (plan/pending/has_depth)
+   from render_frame; 5 contract tests (unknown pass index, UI multi-list,
+   single list accepted, depth required, UI-only exempt). render_frame drops
+   the drawable on validation failure (no partial-frame present). Filtered
+   staging on shared frame_render.rs (hunks 1/2/4 are collaborator's:
+   MTLTexture import, CANVAS_CLEAR_COLOR, HDR viewport). 499/499, staged-tree
+   clippy clean, CI headSha-verified green. Remaining on #51: explicit
+   declared-graph-output DoD item is judgment-call territory (plan compiles
+   from the graph itself); leave open or close with the evidence comment.
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
