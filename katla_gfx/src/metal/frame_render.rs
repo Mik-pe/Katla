@@ -124,48 +124,67 @@ fn single_ui_draw_list(
     }
 }
 
+/// Validate frame submissions against the compiled plan before any GPU
+/// encoding begins. Pure plan/data checks so the failure contracts hold
+/// without a renderer instance.
+fn validate_frame_submissions(
+    plan: &MetalExecutionPlan,
+    pending: &HashMap<usize, PassExecutionData>,
+    has_scene_depth: bool,
+) -> Result<(), RendererError> {
+    let scheduled_passes = plan
+        .passes()
+        .iter()
+        .map(|record| record.pass_index)
+        .collect::<HashSet<_>>();
+    if let Some(pass_index) = pending
+        .keys()
+        .copied()
+        .find(|pass_index| !scheduled_passes.contains(pass_index))
+    {
+        return Err(RendererError::InvalidOperation(format!(
+            "Metal received submissions for pass index {pass_index}, which is absent from the compiled execution plan"
+        )));
+    }
+    for record in plan
+        .passes()
+        .iter()
+        .filter(|record| record.kind == PassKind::Ui)
+    {
+        if let Some(data) = pending.get(&record.pass_index)
+            && data.ui_draw_lists.len() > 1
+        {
+            return Err(RendererError::InvalidOperation(format!(
+                "Metal UI pass '{}' ({:?}) received {} UI draw lists; submit one composed list per PassId",
+                record.name,
+                record.pass_id,
+                data.ui_draw_lists.len()
+            )));
+        }
+    }
+
+    if plan_requires_scene_depth(plan) && !has_scene_depth {
+        return Err(RendererError::InvalidOperation(
+            "Metal execution plan requires a depth-stencil target".into(),
+        ));
+    }
+    Ok(())
+}
+
 impl MetalRenderer {
     pub(crate) fn render_frame(
         &mut self,
         plan: &MetalExecutionPlan,
         mut pending: HashMap<usize, PassExecutionData>,
     ) -> Result<(), RendererError> {
-        let scheduled_passes = plan
-            .passes()
-            .iter()
-            .map(|record| record.pass_index)
-            .collect::<HashSet<_>>();
-        if let Some(pass_index) = pending
-            .keys()
-            .copied()
-            .find(|pass_index| !scheduled_passes.contains(pass_index))
+        if let Err(err) =
+            validate_frame_submissions(plan, &pending, self.depth_stencil_view.is_some())
         {
-            return Err(RendererError::InvalidOperation(format!(
-                "Metal received submissions for pass index {pass_index}, which is absent from the compiled execution plan"
-            )));
-        }
-        for record in plan
-            .passes()
-            .iter()
-            .filter(|record| record.kind == PassKind::Ui)
-        {
-            if let Some(data) = pending.get(&record.pass_index)
-                && data.ui_draw_lists.len() > 1
-            {
-                return Err(RendererError::InvalidOperation(format!(
-                    "Metal UI pass '{}' ({:?}) received {} UI draw lists; submit one composed list per PassId",
-                    record.name,
-                    record.pass_id,
-                    data.ui_draw_lists.len()
-                )));
+            if plan_requires_scene_depth(plan) {
+                // Drop the drawable so a retry cannot present a partial frame.
+                self.current_drawable_texture = None;
             }
-        }
-
-        if plan_requires_scene_depth(plan) && self.depth_stencil_view.is_none() {
-            self.current_drawable_texture = None;
-            return Err(RendererError::InvalidOperation(
-                "Metal execution plan requires a depth-stencil target".into(),
-            ));
+            return Err(err);
         }
 
         let drawable_texture = self
@@ -844,9 +863,95 @@ impl MetalRenderer {
 
 #[cfg(test)]
 mod tests {
-    use super::{has_later_kind, plan_requires_scene_depth, tonemap_viewport};
+    use super::{
+        has_later_kind, plan_requires_scene_depth, tonemap_viewport, validate_frame_submissions,
+    };
     use crate::metal::execution_plan::MetalExecutionPlan;
+    use crate::render_graph::PassExecutionData;
     use crate::render_graph::PassKind;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_submission_to_unknown_pass_index_is_rejected() {
+        let plan = MetalExecutionPlan::for_test(&[PassKind::Ui]);
+        let mut pending = HashMap::new();
+        pending.insert(7usize, PassExecutionData::default());
+
+        let err = validate_frame_submissions(&plan, &pending, true)
+            .expect_err("unknown pass index must fail");
+        let message = err.to_string();
+        assert!(
+            message.contains("pass index 7"),
+            "error must name the offending index: {message}"
+        );
+        assert!(
+            message.contains("absent from the compiled execution plan"),
+            "error must explain the contract: {message}"
+        );
+    }
+
+    #[test]
+    fn test_ui_pass_rejects_multiple_draw_lists() {
+        let plan = MetalExecutionPlan::for_test(&[PassKind::Ui]);
+        let mut pending = HashMap::new();
+        pending.insert(
+            0usize,
+            PassExecutionData {
+                ui_draw_lists: vec![
+                    crate::renderer::types::UIDrawList::default(),
+                    crate::renderer::types::UIDrawList::default(),
+                ],
+                ..Default::default()
+            },
+        );
+
+        let err = validate_frame_submissions(&plan, &pending, true)
+            .expect_err("two UI draw lists must fail");
+        let message = err.to_string();
+        assert!(
+            message.contains("received 2 UI draw lists"),
+            "error must name the count: {message}"
+        );
+        assert!(
+            message.contains("'pass_0'") && message.contains("UI pass"),
+            "error must name the failing pass: {message}"
+        );
+    }
+
+    #[test]
+    fn test_single_ui_draw_list_is_accepted() {
+        let plan = MetalExecutionPlan::for_test(&[PassKind::Ui]);
+        let mut pending = HashMap::new();
+        pending.insert(
+            0usize,
+            PassExecutionData {
+                ui_draw_lists: vec![crate::renderer::types::UIDrawList::default()],
+                ..Default::default()
+            },
+        );
+
+        validate_frame_submissions(&plan, &pending, true)
+            .expect("one composed UI draw list is the contract");
+    }
+
+    #[test]
+    fn test_scene_depth_plan_requires_depth_target() {
+        let plan = MetalExecutionPlan::for_test(&[PassKind::Geometry]);
+        let err = validate_frame_submissions(&plan, &HashMap::new(), false)
+            .expect_err("depth-requiring plan without depth target must fail");
+        let message = err.to_string();
+        assert!(
+            message.contains("depth-stencil target"),
+            "error must name the missing resource: {message}"
+        );
+    }
+
+    #[test]
+    fn test_ui_only_plan_does_not_require_depth_target() {
+        let plan = MetalExecutionPlan::for_test(&[PassKind::Ui]);
+        validate_frame_submissions(&plan, &HashMap::new(), false)
+            .expect("UI-only plan needs no scene depth");
+    }
 
     #[test]
     fn ui_only_plan_does_not_require_scene_depth() {
