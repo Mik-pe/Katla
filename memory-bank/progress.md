@@ -220,6 +220,15 @@ capture to root-cause before private storage lands.
    probes vs pre-change baseline, CI SHA-verified. Still open: per-encoder
    labels (backend trait ripple into WIP files — separate slice), frame-
    indexed cmd-buffer labels, attach diagnostics to RendererError.
+16. #52 slice 2: deterministic encoder labels (3d3139b9)
+   RenderPassInfo.debug_label (const &'static str); all production render
+   passes labeled (depth_prepass, shadow_cascade, canvas_clear, geometry,
+   geometry_hdr, present, picking, picking_readback, outline). New trait
+   methods begin_compute_pass_with_label / begin_blit_pass_with_label;
+   migrated texture_upload (7 sites), light_culling, skinning, frame-prepass
+   blit. Labeled-encoder smoke test; 506/506; 8/8 probes unchanged; CI
+   SHA-verified. Remaining on #52: frame-indexed cmd-buffer labels, attach
+   diagnostics to RendererError.
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
