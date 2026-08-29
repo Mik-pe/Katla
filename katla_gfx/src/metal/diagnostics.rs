@@ -51,6 +51,18 @@ pub(crate) struct GpuEncoderDiagnostics {
     pub error_state: GpuEncoderErrorState,
 }
 
+impl GpuEncoderDiagnostics {
+    /// Convert into the backend-agnostic error payload carried by
+    /// [`crate::error::RendererError::GpuExecutionFailed`].
+    pub(crate) fn into_error_payload(self) -> crate::error::GpuEncoderDiagnostic {
+        crate::error::GpuEncoderDiagnostic {
+            label: self.label,
+            error_state: self.error_state.as_str().to_owned(),
+            debug_signposts: self.debug_signposts,
+        }
+    }
+}
+
 /// Rust mirror of `MTLCommandEncoderErrorState` (stable, printable).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GpuEncoderErrorState {
@@ -62,6 +74,17 @@ pub(crate) enum GpuEncoderErrorState {
 }
 
 impl GpuEncoderErrorState {
+    /// Stable string form used in error payloads and logs.
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Completed => "Completed",
+            Self::Affected => "Affected",
+            Self::Pending => "Pending",
+            Self::Faulted => "Faulted",
+            Self::Unknown => "Unknown",
+        }
+    }
+
     fn from_mtl(state: MTLCommandEncoderErrorState) -> Self {
         match state {
             MTLCommandEncoderErrorState::Completed => Self::Completed,
@@ -155,7 +178,9 @@ impl GpuCommandBufferDiagnostics {
 
 /// Read the `MTLCommandBufferEncoderInfoErrorKey` array out of the error's
 /// user info. Absent when encoder status was not enabled at creation.
-fn extract_encoder_diagnostics(error: &objc2_foundation::NSError) -> Vec<GpuEncoderDiagnostics> {
+pub(crate) fn extract_encoder_diagnostics(
+    error: &objc2_foundation::NSError,
+) -> Vec<GpuEncoderDiagnostics> {
     use objc2::rc::Retained;
     use objc2::runtime::ProtocolObject;
     use objc2_foundation::NSArray;
@@ -338,5 +363,64 @@ mod tests {
         cmd.inner.commit();
         cmd.inner.waitUntilCompleted();
         assert_eq!(cmd.inner.status(), MTLCommandBufferStatus::Completed);
+    }
+
+    #[test]
+    fn test_encoder_diagnostics_convert_to_error_payload() {
+        let diagnostics = GpuEncoderDiagnostics {
+            label: "geometry".to_owned(),
+            debug_signposts: vec!["draw_batch_7".to_owned()],
+            error_state: GpuEncoderErrorState::Faulted,
+        };
+
+        let payload = diagnostics.clone().into_error_payload();
+        assert_eq!(payload.label, "geometry");
+        assert_eq!(payload.error_state, "Faulted");
+        assert!(payload.is_faulted());
+        assert_eq!(payload.debug_signposts, vec!["draw_batch_7".to_owned()]);
+    }
+
+    #[test]
+    fn test_gpu_execution_failure_display_lists_encoders() {
+        use crate::error::{GpuExecutionFailure, RendererError};
+
+        let failure = GpuExecutionFailure {
+            backend: "Metal",
+            label: "render_graph_frame.12".to_owned(),
+            status: "Error".to_owned(),
+            code: None,
+            domain: None,
+            description: Some("GPU hang".to_owned()),
+            encoders: vec![
+                crate::error::GpuEncoderDiagnostic {
+                    label: "geometry".to_owned(),
+                    error_state: "Faulted".to_owned(),
+                    debug_signposts: vec!["draw_batch_7".to_owned()],
+                },
+                crate::error::GpuEncoderDiagnostic {
+                    label: "post_process".to_owned(),
+                    error_state: "Pending".to_owned(),
+                    debug_signposts: vec![],
+                },
+            ],
+        };
+
+        let message = RendererError::GpuExecutionFailed(Box::new(failure)).to_string();
+        assert!(message.contains("render_graph_frame.12"));
+        assert!(message.contains("GPU hang"));
+        assert!(message.contains("encoder 'geometry' (state=Faulted)"));
+        assert!(message.contains("signpost: draw_batch_7"));
+        assert!(message.contains("encoder 'post_process' (state=Pending)"));
+        let geo = message.find("encoder 'geometry'").unwrap();
+        let post = message.find("encoder 'post_process'").unwrap();
+        assert!(geo < post);
+    }
+
+    #[test]
+    fn test_frame_indexed_command_buffer_labels_format() {
+        let label = format!("render_graph_frame.{}", 12u32);
+        assert_eq!(label, "render_graph_frame.12");
+        let label = format!("shadow_pass.{}", u32::MAX);
+        assert_eq!(label, "shadow_pass.4294967295");
     }
 }

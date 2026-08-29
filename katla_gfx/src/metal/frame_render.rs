@@ -201,7 +201,10 @@ impl MetalRenderer {
             .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
         cmd_buffer.begin();
         {
-            let label = objc2_foundation::NSString::from_str("render_graph_frame");
+            let label = objc2_foundation::NSString::from_str(&format!(
+                "render_graph_frame.{}",
+                self.frame_index
+            ));
             cmd_buffer.inner.setLabel(Some(&label));
         }
 
