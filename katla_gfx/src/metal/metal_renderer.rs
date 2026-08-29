@@ -733,6 +733,8 @@ impl MetalRenderer {
         super::shadow::render_cascades(
             &mut cmd_buffer,
             pipeline,
+            self.shadow.pipeline_skinned(),
+            Some(&self.skeletons),
             shadow_map,
             self.shadow.shadow_resolution(),
             frame_buf,
