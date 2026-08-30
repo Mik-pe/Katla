@@ -30,10 +30,10 @@ use super::viewport_grid::ViewportGridView;
 
 use super::super::types::EditorPanel;
 
-pub(crate) const STATUS_BAR_HEIGHT: f32 = 22.0;
+pub(crate) const STATUS_BAR_HEIGHT: f32 = katla_ui::tokens::STATUS_BAR_HEIGHT;
 
 /// Height of the DockSpace tab bars, matching DockSpace::tab_bar_height.
-pub(crate) const TAB_BAR_HEIGHT: f32 = 28.0;
+pub(crate) const TAB_BAR_HEIGHT: f32 = katla_ui::tokens::TAB_BAR_HEIGHT;
 
 /// Panel labels for the DockSpace tab bars.
 fn panel_labels() -> Vec<(u64, String)> {

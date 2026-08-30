@@ -165,6 +165,7 @@ fn test_hierarchy_entity_selection_works() {
         let actions: Vec<HierarchyAction> = view_tree.actions_mut().drain();
         if let Some(id) = actions.into_iter().find_map(|a| match a {
             HierarchyAction::SelectEntity(id) => Some(id),
+            HierarchyAction::ToggleExpanded(_) => None,
         }) {
             found_entity = Some((test_y, id));
             break;
@@ -256,12 +257,11 @@ fn test_editor_overlay_produces_dockspace_in_zstack() {
             height: 22.0,
             fps: 60.0,
             frame_time_ms: 16.6,
-            frame_count: 1,
             entity_count: 0,
             draw_call_count: 0,
-            selected_count: 0,
             total_assets: 0,
             is_playing: false,
+            is_paused: false,
             theme: ColorScheme::by_name("rcp").unwrap_or_default(),
             save_confirmation_timer: 0.0,
         });

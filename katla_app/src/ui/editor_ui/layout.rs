@@ -94,16 +94,6 @@ impl EditorUI {
         }
 
         // ── Set ALL env contexts ──
-        let selected_count = if self.asset_browser.selected_indices.is_empty() {
-            if self.asset_browser.selected_index.is_some() {
-                1
-            } else {
-                0
-            }
-        } else {
-            self.asset_browser.selected_indices.len()
-        };
-
         // DockTree (for DockSpace widget to read from Environment for initial value)
         self.view_tree.env_mut().set(self.dock_tree.clone());
 
@@ -112,12 +102,11 @@ impl EditorUI {
             height: STATUS_BAR_HEIGHT,
             fps: params.fps,
             frame_time_ms: params.frame_time_ms,
-            frame_count: params.frame_count,
             entity_count: params.entities.len(),
             draw_call_count: self.last_draw_call_count,
-            selected_count,
             total_assets: self.asset_browser.assets.len(),
             is_playing: self.is_playing,
+            is_paused: self.is_paused,
             theme: self.theme.clone(),
             save_confirmation_timer: self.save_confirmation_timer,
         });
@@ -332,6 +321,11 @@ impl EditorUI {
                 HierarchyAction::SelectEntity(id) => {
                     self.selected_entity = Some(id);
                     self.pending_actions.push(EditorAction::SelectEntity(id));
+                }
+                HierarchyAction::ToggleExpanded(id) => {
+                    if !self.hierarchy_state.expanded_entities.remove(&id) {
+                        self.hierarchy_state.expanded_entities.insert(id);
+                    }
                 }
             }
         }

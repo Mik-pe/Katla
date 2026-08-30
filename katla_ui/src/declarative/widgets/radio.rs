@@ -104,10 +104,12 @@ impl Widget for RadioButton {
             bounds.min.x() + indicator_radius * 4.0,
             bounds.center().y() - text_size.y() * 0.5,
         );
+        // Inactive radio labels are secondary, NOT disabled: inactive tools
+        // must stay distinguishable from unavailable ones.
         let text_color = if is_selected {
             ctx.style().text_color
         } else {
-            ctx.style().text_disabled
+            ctx.style().text_secondary
         };
         ctx.draw_text(
             &self.label,

@@ -136,12 +136,12 @@ impl Build for MixerView {
                 .boxed(),
         ])
         .spacing(16.0)
-        .padding_all(8.0)
+        .padding_all(12.0)
         .align(Alignment::Center);
 
         vstack([voice_status, bus_row.boxed()])
             .spacing(4.0)
-            .padding_all(4.0)
+            .padding_all(8.0)
             .align(Alignment::Leading)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())

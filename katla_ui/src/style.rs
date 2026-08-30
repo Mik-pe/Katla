@@ -254,6 +254,8 @@ pub struct UiStyle {
     pub text_disabled: Color,
     /// Hint text color (for placeholders).
     pub text_hint: Color,
+    /// Secondary text: de-emphasized but fully legible (labels, inactive tool names).
+    pub text_secondary: Color,
     /// Default font size in pixels.
     pub font_size: f32,
 
@@ -1250,65 +1252,66 @@ impl Default for ColorScheme {
 
 impl UiStyle {
     fn default_dimensions() -> Self {
+        use crate::tokens::*;
         Self {
-            window_rounding: 10.0,
-            window_padding: 10.0,
-            button_rounding: 8.0,
-            input_rounding: 6.0,
+            window_rounding: RADIUS_SURFACE,
+            window_padding: SPACING_12,
+            button_rounding: RADIUS_CONTROL,
+            input_rounding: RADIUS_CONTROL,
             font_size: FontSize::Medium.to_pixels(),
 
             text_input_max_length: 256,
             text_area_max_length: 4096,
 
-            menu_rounding: 8.0,
+            menu_rounding: RADIUS_SURFACE,
             menu_item_height: 24.0,
-            menu_padding: 4.0,
+            menu_padding: SPACING_4,
             menu_min_width: 120.0,
 
-            popup_rounding: 8.0,
+            popup_rounding: RADIUS_SURFACE,
 
-            item_spacing: 8.0,
-            item_inner_spacing: 4.0,
-            indent_spacing: 20.0,
+            item_spacing: SPACING_8,
+            item_inner_spacing: SPACING_4,
+            indent_spacing: TREE_INDENT,
             scrollbar_width: 10.0,
 
             slider_track_height: 3.0,
             slider_grab_size: 12.0,
-            checkbox_size: 20.0,
+            checkbox_size: 18.0,
             text_input_cursor_width: 2.0,
-            text_input_padding: 4.0,
-            panel_padding: 12.0,
-            title_bar_height: 25.0,
+            text_input_padding: SPACING_4,
+            panel_padding: SPACING_12,
+            title_bar_height: TAB_BAR_HEIGHT,
             graph_label_height: 18.0,
             graph_padding: 3.0,
-            separator_height: 4.0,
-            tooltip_padding: 4.0,
+            separator_height: DIVIDER_THICKNESS,
+            tooltip_padding: SPACING_4,
             property_label_width: 70.0,
 
             button_default_width: 100.0,
-            button_default_height: 30.0,
-            icon_button_size: 30.0,
+            button_default_height: CONTROL_HEIGHT,
+            icon_button_size: CONTROL_HEIGHT,
             checkbox_default_width: 150.0,
-            checkbox_default_height: 24.0,
+            checkbox_default_height: COMPACT_CONTROL_HEIGHT,
             slider_default_width: 150.0,
             slider_default_height: 20.0,
             text_input_default_width: 200.0,
-            text_input_default_height: 24.0,
+            text_input_default_height: COMPACT_CONTROL_HEIGHT,
             label_default_width: 100.0,
             label_default_height: 20.0,
             radio_button_default_width: 150.0,
-            radio_button_default_height: 20.0,
+            radio_button_default_height: COMPACT_CONTROL_HEIGHT,
             progress_bar_default_width: 200.0,
             progress_bar_default_height: 20.0,
             collapsible_default_width: 200.0,
-            collapsible_default_height: 24.0,
+            collapsible_default_height: COMPACT_CONTROL_HEIGHT,
             badge_default_width: 60.0,
             badge_default_height: 20.0,
             combo_default_width: 150.0,
-            combo_default_height: 24.0,
+            combo_default_height: COMPACT_CONTROL_HEIGHT,
 
-            icon_size_small: 12.0,
-            icon_size_medium: 16.0,
+            icon_size_small: ICON_SIZE,
+            icon_size_medium: ICON_SIZE_MEDIUM,
             icon_size_large: 28.0,
 
             thumbnail_size: 64.0,
@@ -1331,6 +1334,7 @@ impl UiStyle {
             text_color: Color::BLACK,
             text_disabled: Color::BLACK,
             text_hint: Color::BLACK,
+            text_secondary: Color::BLACK,
             checkbox_bg: Color::BLACK,
             checkbox_check: Color::BLACK,
             checkbox_border: Color::BLACK,
@@ -1364,7 +1368,7 @@ impl UiStyle {
             menu_item_hover_bg: Color::from_rgb_hex(0xF79545),
             check_mark_color: Color::from_rgb_hex(0xF79545),
 
-            tab_bar_height: 28.0,
+            tab_bar_height: crate::tokens::TAB_BAR_HEIGHT,
             tab_inactive_bg: Color::from_rgb_hex(0x1E1E1E),
             tab_active_bg: Color::from_rgb_hex(0x2A2A2E),
             tab_hover_bg: Color::from_rgb_hex(0x38383A),
@@ -1409,6 +1413,7 @@ impl UiStyle {
         self.text_color = c.text_color;
         self.text_disabled = c.text_disabled;
         self.text_hint = c.text_hint;
+        self.text_secondary = c.text_secondary;
 
         self.checkbox_bg = c.checkbox_bg;
         self.checkbox_check = c.checkbox_check;
@@ -1455,11 +1460,15 @@ impl UiStyle {
         self.check_mark_color = c.checkbox_check;
 
         self.tab_inactive_bg = c.panel_bg;
-        self.tab_active_bg = c.panel_bg;
+        self.tab_active_bg = c.background_light;
         self.tab_hover_bg = c.background_light;
         self.tab_text = c.text_secondary;
         self.tab_active_text = c.text_primary;
-        self.tab_border = c.border;
+        self.tab_border = if c.separator.a > 0.0 {
+            c.separator
+        } else {
+            c.panel_border
+        };
     }
 
     /// Create a dark theme style.
@@ -1518,26 +1527,26 @@ impl Default for UiStyle {
 /// When a `UiContext` is available, prefer reading from `ui.style` instead.
 pub const DEFAULTS: WidgetDefaults = WidgetDefaults {
     button_default_width: 100.0,
-    button_default_height: 30.0,
-    icon_button_size: 30.0,
+    button_default_height: crate::tokens::CONTROL_HEIGHT,
+    icon_button_size: crate::tokens::CONTROL_HEIGHT,
     checkbox_default_width: 150.0,
-    checkbox_default_height: 24.0,
+    checkbox_default_height: crate::tokens::COMPACT_CONTROL_HEIGHT,
     slider_default_width: 150.0,
     slider_default_height: 20.0,
     text_input_default_width: 200.0,
-    text_input_default_height: 24.0,
+    text_input_default_height: crate::tokens::COMPACT_CONTROL_HEIGHT,
     label_default_width: 100.0,
     label_default_height: 20.0,
     radio_button_default_width: 150.0,
-    radio_button_default_height: 20.0,
+    radio_button_default_height: crate::tokens::COMPACT_CONTROL_HEIGHT,
     progress_bar_default_width: 200.0,
     progress_bar_default_height: 20.0,
     collapsible_default_width: 200.0,
-    collapsible_default_height: 24.0,
+    collapsible_default_height: crate::tokens::COMPACT_CONTROL_HEIGHT,
     badge_default_width: 60.0,
     badge_default_height: 20.0,
     combo_default_width: 150.0,
-    combo_default_height: 24.0,
+    combo_default_height: crate::tokens::COMPACT_CONTROL_HEIGHT,
 };
 
 /// Widget default dimensions.

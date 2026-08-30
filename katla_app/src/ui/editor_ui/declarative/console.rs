@@ -81,13 +81,18 @@ impl Build for ConsoleView {
         let mut filter_toggles = Vec::new();
         for (i, label) in LEVEL_LABELS.iter().enumerate() {
             let is_active = draw_ctx.filter_levels[i];
+            // Active filters: filled; inactive filters: quiet but legible.
             let toggle = button(*label)
                 .fill(if is_active {
                     draw_ctx.theme.selection
                 } else {
                     Color::TRANSPARENT
                 })
-                .border(Color::TRANSPARENT)
+                .border(if is_active {
+                    Color::TRANSPARENT
+                } else {
+                    draw_ctx.theme.border
+                })
                 .on_click(ctx.on_click(move |actions| {
                     actions.emit(ConsoleAction::ToggleLevel(i));
                 }))
@@ -98,7 +103,7 @@ impl Build for ConsoleView {
         let search_field = textfield("Filter...", search_id).boxed();
 
         let clear_button = button("Clear")
-            .fill(draw_ctx.theme.button_bg)
+            .fill(Color::TRANSPARENT)
             .border(Color::TRANSPARENT)
             .on_click(ctx.on_click(|actions| {
                 actions.emit(ConsoleAction::Clear);

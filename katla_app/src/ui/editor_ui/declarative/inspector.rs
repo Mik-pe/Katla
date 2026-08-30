@@ -5,8 +5,8 @@ use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, empty, panel, property_row,
-    scroll, section, text, vstack,
+    Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, empty, icon,
+    panel, property_row, scroll, section, text, vstack,
 };
 
 use crate::ui::editor_ui::ColorScheme;
@@ -167,11 +167,25 @@ impl Build for InspectorView {
                 .padding(Padding::all(12.0))
                 .boxed()
         } else {
-            vstack([text("Select an object to inspect")
-                .color(draw_ctx.theme.text_muted)
-                .font_size(FontSize::Small)
-                .boxed()])
-            .padding(Padding::all(12.0))
+            // Intentional, quiet empty state — not an onboarding poster.
+            let icon_color = draw_ctx.theme.text_muted;
+            vstack([
+                icon(katla_ui::ForkAwesome::CUBE)
+                    .icon_size(FontSize::XLarge)
+                    .color(icon_color)
+                    .boxed(),
+                text("No entity selected")
+                    .color(draw_ctx.theme.text_secondary)
+                    .font_size(FontSize::Medium)
+                    .boxed(),
+                text("Select an entity to inspect it.")
+                    .color(draw_ctx.theme.text_muted)
+                    .font_size(FontSize::Small)
+                    .boxed(),
+            ])
+            .spacing(8.0)
+            .align(Alignment::Center)
+            .padding(Padding::all(24.0))
             .boxed()
         };
 

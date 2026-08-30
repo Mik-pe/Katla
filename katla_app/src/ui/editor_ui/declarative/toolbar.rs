@@ -49,7 +49,7 @@ pub(crate) enum ToolbarAction {
 
 pub(crate) struct ToolbarView;
 
-pub(crate) const TOOLBAR_HEIGHT: f32 = 36.0;
+pub(crate) const TOOLBAR_HEIGHT: f32 = katla_ui::tokens::APP_BAR_HEIGHT;
 
 impl Build for ToolbarView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
@@ -195,9 +195,9 @@ fn build_create_menu(ctx: &mut BuildContext) -> Vec<katla_ui::declarative::MenuE
 
 fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
     let title = if draw_ctx.is_playing && !draw_ctx.is_paused {
-        "Katla Engine [PLAYING]"
+        "Katla Engine — Playing"
     } else if draw_ctx.is_paused {
-        "Katla Engine [PAUSED]"
+        "Katla Engine — Paused"
     } else {
         "Katla Engine"
     };
@@ -212,45 +212,54 @@ fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
         .boxed()
 }
 
+/// Run controls form one cluster: [Play/Pause] [Stop]. Stop only appears
+/// while a session is running or paused; idle state shows Play alone.
 fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
-    let stop_color = draw_ctx.error;
+    let running = draw_ctx.is_playing || draw_ctx.is_paused;
 
-    if !draw_ctx.is_playing && !draw_ctx.is_paused {
-        let play = image_button(ForkAwesome::PLAY)
-            .fill(draw_ctx.accent)
-            .on_click(ctx.on_click(|actions| {
-                actions.emit(ToolbarAction::PlayStart);
-            }));
-        hstack([play.boxed()]).spacing(4.0).padding_all(6.0).boxed()
-    } else if draw_ctx.is_playing && !draw_ctx.is_paused {
-        let pause = image_button(ForkAwesome::PAUSE)
-            .fill(draw_ctx.warning)
-            .on_click(ctx.on_click(|actions| {
-                actions.emit(ToolbarAction::PlayPause);
-            }));
-        let stop = image_button(ForkAwesome::STOP)
-            .fill(stop_color)
-            .on_click(ctx.on_click(|actions| {
-                actions.emit(ToolbarAction::PlayStop);
-            }));
-        hstack([pause.boxed(), stop.boxed()])
-            .spacing(4.0)
-            .padding_all(6.0)
-            .boxed()
+    let (primary_icon, primary_fill, primary_action): (
+        char,
+        katla_math::Color,
+        fn() -> ToolbarAction,
+    ) = if running && !draw_ctx.is_paused {
+        (ForkAwesome::PAUSE, draw_ctx.warning, || {
+            ToolbarAction::PlayPause
+        })
+    } else if running {
+        (ForkAwesome::PLAY, draw_ctx.accent, || {
+            ToolbarAction::PlayPause
+        })
     } else {
-        let play = image_button(ForkAwesome::PLAY)
-            .fill(draw_ctx.accent)
-            .on_click(ctx.on_click(|actions| {
-                actions.emit(ToolbarAction::PlayPause);
-            }));
+        (ForkAwesome::PLAY, draw_ctx.accent, || {
+            ToolbarAction::PlayStart
+        })
+    };
+
+    let primary = image_button(primary_icon)
+        .fill(primary_fill)
+        .on_click(ctx.on_click(move |actions| {
+            actions.emit(primary_action());
+        }));
+
+    let mut children: Vec<Box<dyn Widget>> = vec![primary.boxed()];
+    if running {
         let stop = image_button(ForkAwesome::STOP)
-            .fill(stop_color)
+            .fill(draw_ctx.error)
             .on_click(ctx.on_click(|actions| {
                 actions.emit(ToolbarAction::PlayStop);
             }));
-        hstack([play.boxed(), stop.boxed()])
-            .spacing(4.0)
-            .padding_all(6.0)
-            .boxed()
+        children.push(stop.boxed());
+    }
+
+    hstack(children).spacing(4.0).padding_all(4.0).boxed()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_toolbar_height_matches_app_bar_token() {
+        assert_eq!(TOOLBAR_HEIGHT, katla_ui::tokens::APP_BAR_HEIGHT);
     }
 }

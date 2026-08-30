@@ -394,7 +394,6 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
                     entities: &entity_info,
                     fps,
                     frame_time_ms: dt * 1000.0,
-                    frame_count: app.frame_count,
                     loader: &mut app.editor.background_loader,
                     thumbnail_texture_handles: &app.editor.thumbnail_texture_handles,
                     llm_config: &app.editor.llm_config,
