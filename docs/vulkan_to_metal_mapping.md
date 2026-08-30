@@ -1,5 +1,11 @@
 # Vulkan-to-Metal API Mapping Reference
 
+> **Scope (August 2026):** this maps the *Vulkan* API surface (`ash` backend) to
+> Metal equivalents. The native Metal backend does not pass through
+> MoltenVK/SPIR-V — it compiles WGSL directly to MSL via naga. For the current
+> Metal architecture see [`metal_backend.md`](metal_backend.md); this document is
+> a historical migration aid.
+
 Comprehensive mapping of Vulkan API calls used in the Katla engine to their Metal equivalents.
 Based on actual usage patterns found in the `katla_gfx` crate via the `ash` Rust bindings.
 

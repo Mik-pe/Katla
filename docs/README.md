@@ -18,8 +18,9 @@ Active design documents and API references:
 
 | File | Description |
 |------|-------------|
-| `vulkan_to_metal_mapping.md` | Vulkan API → Metal equivalents used in the engine |
-| `metal_backend_implementation.md` | Native Metal backend implementation plan |
+| `vulkan_to_metal_mapping.md` | Vulkan API → Metal equivalents (historical `ash`-era mapping; native Metal compiles WGSL→MSL directly) |
+| `metal_backend.md` | Native Metal backend architecture reference |
+| `archive/metal_backend_implementation.md` | Superseded pre-implementation Metal plan (historical) |
 | `backend_agnostic_render_graph.md` | Backend-agnostic render graph design |
 | `declarative_ui_design.md` | Declarative UI system architecture |
 | `katla_script_architecture.md` | Luau scripting system design |
