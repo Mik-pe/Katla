@@ -16,6 +16,9 @@ pub struct Grid {
     pub spacing: f32,
     pub flex: FlexProps,
     pub child_widgets: Vec<super::super::constructors::KeyedChild>,
+    /// Child count captured at construction: `child_widgets` is drained when
+    /// the tree syncs, but layout still needs the count to size the grid.
+    child_count: usize,
     children: Vec<ViewId>,
 }
 
@@ -27,12 +30,14 @@ impl Grid {
         flex: FlexProps,
         child_widgets: Vec<super::super::constructors::KeyedChild>,
     ) -> Self {
+        let child_count = child_widgets.len();
         Self {
             columns,
             cell_size,
             spacing,
             flex,
             child_widgets,
+            child_count,
             children: Vec::new(),
         }
     }
@@ -58,7 +63,7 @@ impl Widget for Grid {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let col_width = self.cell_size.x();
         let row_height = self.cell_size.y();
-        let rows = (self.child_widgets.len().max(1) + self.columns - 1) / self.columns.max(1);
+        let rows = (self.child_count.max(1) + self.columns - 1) / self.columns.max(1);
         let mut style = Style {
             size: Size {
                 width: Dimension::Length(

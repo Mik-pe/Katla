@@ -184,6 +184,14 @@ pub trait Widget: Any + 'static {
         0.0
     }
 
+    /// Per-frame state adjustment after layout has resolved final bounds.
+    ///
+    /// Called once per frame with the node's resolved bounds and its children's
+    /// resolved bounds, before input processing. Widgets that must reconcile
+    /// persistent state with laid-out geometry (e.g. ScrollView clamping or
+    /// pinning its scroll offset) override this.
+    fn post_layout(&self, _state: &mut StateArena, _bounds: Rect2D, _children_bounds: &[Rect2D]) {}
+
     /// Whether this widget participates in hit testing for input.
     fn interactive(&self) -> bool {
         false
@@ -331,6 +339,10 @@ impl Widget for Box<dyn Widget> {
 
     fn scroll_offset(&self, state: &StateArena) -> f32 {
         (**self).scroll_offset(state)
+    }
+
+    fn post_layout(&self, state: &mut StateArena, bounds: Rect2D, children_bounds: &[Rect2D]) {
+        (**self).post_layout(state, bounds, children_bounds)
     }
 
     fn interactive(&self) -> bool {
@@ -545,6 +557,7 @@ mod tests {
             label: "Click".into(),
             fill_color: None,
             border_color: None,
+            tooltip: None,
             on_click: None,
         });
         assert!(

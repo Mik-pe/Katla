@@ -12,6 +12,9 @@ use crate::context::UiContext;
 
 pub struct ScrollView {
     pub scroll_state_id: StateId,
+    /// When set, this state slot (bool) tracks whether the view follows
+    /// content growth: scrolling up detaches, scrolling down re-engages.
+    pub auto_scroll_pin_id: Option<StateId>,
     pub flex: FlexProps,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     children: Vec<ViewId>,
@@ -25,6 +28,7 @@ impl ScrollView {
     ) -> Self {
         Self {
             scroll_state_id,
+            auto_scroll_pin_id: None,
             flex,
             child_widget,
             children: Vec::new(),
@@ -73,6 +77,15 @@ impl Widget for ScrollView {
             offset -= ctx.input.scroll_delta.y() * 30.0;
             offset = offset.max(0.0);
             state.set(self.scroll_state_id, offset);
+
+            // Wheel up detaches from the bottom; wheel down re-engages follow.
+            if let Some(pin_id) = self.auto_scroll_pin_id {
+                let pinned: bool = state.get(pin_id).unwrap_or(true);
+                let scrolling_up = ctx.input.scroll_delta.y() > 0.0;
+                if scrolling_up != pinned {
+                    state.set(pin_id, !scrolling_up);
+                }
+            }
             return InputResult::Consumed;
         }
         InputResult::Ignore
@@ -119,6 +132,30 @@ impl Widget for ScrollView {
         state.get(self.scroll_state_id).unwrap_or_default()
     }
 
+    fn post_layout(&self, state: &mut StateArena, bounds: Rect2D, children_bounds: &[Rect2D]) {
+        let content_height = children_bounds
+            .iter()
+            .map(|b| b.height())
+            .fold(0.0f32, f32::max);
+        let max_offset = (content_height - bounds.height()).max(0.0);
+
+        let offset: f32 = state.get(self.scroll_state_id).unwrap_or_default();
+
+        if let Some(pin_id) = self.auto_scroll_pin_id {
+            let pinned: bool = state.get(pin_id).unwrap_or(true);
+            if pinned {
+                state.set(self.scroll_state_id, max_offset);
+                return;
+            }
+        }
+
+        // Detached or not: never rest outside the scrollable range (e.g. after
+        // the content shrinks).
+        if offset > max_offset {
+            state.set(self.scroll_state_id, max_offset);
+        }
+    }
+
     fn interactive(&self) -> bool {
         true
     }
@@ -135,6 +172,13 @@ impl ScrollView {
     }
     pub fn flex_grow(mut self, grow: f32) -> Self {
         self.flex.flex_grow = grow;
+        self
+    }
+    /// Follow content growth: the view stays pinned to the bottom as content
+    /// grows. `pin_id` tracks the follow state; scrolling up detaches and
+    /// scrolling down re-engages.
+    pub fn auto_scroll(mut self, pin_id: StateId) -> Self {
+        self.auto_scroll_pin_id = Some(pin_id);
         self
     }
 }

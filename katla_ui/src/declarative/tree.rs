@@ -241,6 +241,7 @@ impl ViewTree {
         self.tick_animations(ui.time);
 
         self.resolve_positions();
+        self.apply_post_layout();
 
         let (chain, traps) = focus::collect_focus_chain(self, &self.state);
         self.focus.set_focus_chain(chain, traps);
@@ -481,6 +482,31 @@ impl ViewTree {
 
             resolved.insert(node_id, bounds);
             translations.insert(node_id, accumulated_translation + delta);
+        }
+    }
+
+    /// Give widgets a chance to reconcile persistent state with the frame's
+    /// resolved bounds (e.g. scroll offset clamping/pinning), before input
+    /// processing reads that state.
+    fn apply_post_layout(&mut self) {
+        let ids: Vec<ViewId> = self.resolved_bounds.keys().copied().collect();
+        for id in ids {
+            let Some(bounds) = self.resolved_bounds.get(&id).copied() else {
+                continue;
+            };
+            let children: Vec<ViewId> = self
+                .nodes
+                .get(id)
+                .map(|n| n.children.clone())
+                .unwrap_or_default();
+            let children_bounds: Vec<Rect2D> = children
+                .iter()
+                .filter_map(|&c| self.resolved_bounds.get(&c).copied())
+                .collect();
+            if let Some(node) = self.nodes.get(id) {
+                node.widget
+                    .post_layout(&mut self.state, bounds, &children_bounds);
+            }
         }
     }
 

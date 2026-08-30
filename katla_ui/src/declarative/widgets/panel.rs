@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use katla_math::Rect2D;
+use katla_math::{Rect2D, Vec2};
 use taffy::{FlexDirection, LengthPercentage, Style};
 
 use super::super::animation::AnimationState;
@@ -87,6 +87,46 @@ impl Widget for Panel {
         _info: &DrawInfo,
     ) {
         ctx.draw_rect(bounds, ctx.style().window_bg);
+
+        // Header chrome: left-aligned title vertically centred in the header
+        // strip, closed by a 1px divider. A zero-height header (docked panels
+        // whose tab strip is their header) skips both.
+        if self.header_height > 0.0 && !self.title.is_empty() {
+            let header_rect = Rect2D::new(
+                bounds.min,
+                Vec2::new(bounds.max.x(), bounds.min.y() + self.header_height),
+            );
+
+            let font_size = ctx.style().font_size;
+            let title_size = ctx.measure_text(&self.title, font_size);
+            ctx.draw_text(
+                &self.title,
+                Vec2::new(
+                    header_rect.min.x() + crate::tokens::TAB_LABEL_LEADING,
+                    header_rect.center().y() - title_size.y() * 0.5,
+                ),
+                ctx.style().text_color,
+                font_size,
+            );
+
+            let divider_color = if ctx.style().tab_border.a > 0.0 {
+                ctx.style().tab_border
+            } else {
+                ctx.style().separator
+            };
+            if divider_color.a > 0.0 {
+                ctx.draw_rect(
+                    Rect2D::new(
+                        Vec2::new(
+                            header_rect.min.x(),
+                            header_rect.max.y() - crate::tokens::DIVIDER_THICKNESS,
+                        ),
+                        Vec2::new(header_rect.max.x(), header_rect.max.y()),
+                    ),
+                    divider_color,
+                );
+            }
+        }
     }
 
     fn focusable(&self) -> bool {

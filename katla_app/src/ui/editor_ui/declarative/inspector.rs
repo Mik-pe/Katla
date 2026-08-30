@@ -6,7 +6,7 @@ use katla_math::Rect2D;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, empty, icon,
-    panel, property_row, scroll, section, text, vstack,
+    panel_body, property_row, scroll, section, text, vstack,
 };
 
 use crate::ui::editor_ui::ColorScheme;
@@ -43,11 +43,15 @@ impl Build for InspectorView {
 
         let scroll_id: StateId = ctx.state(0.0f32);
 
-        let header_text = if let Some(entity_id) = draw_ctx.selected_entity {
-            format!("Inspector: Entity {}", entity_id.id())
-        } else {
-            "Inspector".to_string()
-        };
+        // Section expansion slots are reserved unconditionally, in a stable
+        // order: every sibling view shares this view's positional state-slot
+        // counter, so a slot that appears only while an entity is selected
+        // would shift every later view's slots frame-to-frame (type confusion
+        // and panics downstream).
+        let transform_expanded_id: StateId = ctx.state(true);
+        let type_expanded_id: StateId = ctx.state(true);
+        let audio_expanded_id: StateId = ctx.state(true);
+        let listener_expanded_id: StateId = ctx.state(true);
 
         let content = if let Some(entity) = draw_ctx
             .entities
@@ -56,8 +60,24 @@ impl Build for InspectorView {
         {
             let mut sections: Vec<Box<dyn Widget>> = Vec::new();
 
+            // Entity identity header: name carries the hierarchy's display
+            // numbering, the type sits underneath as secondary metadata.
+            sections.push(
+                vstack([
+                    text(&entity.name)
+                        .color(draw_ctx.theme.text_primary)
+                        .font_size(FontSize::Medium)
+                        .boxed(),
+                    text(&entity.entity_type)
+                        .color(draw_ctx.theme.text_secondary)
+                        .font_size(FontSize::Small)
+                        .boxed(),
+                ])
+                .spacing(2.0)
+                .boxed(),
+            );
+
             // Transform section (collapsible)
-            let transform_expanded_id: StateId = ctx.state(true);
             let transform_content = vstack([
                 property_row(
                     "Position",
@@ -95,7 +115,6 @@ impl Build for InspectorView {
             sections.push(section("Transform", transform_content, transform_expanded_id).boxed());
 
             // Type section (collapsible)
-            let type_expanded_id: StateId = ctx.state(true);
             let type_content = vstack([property_row("Type", &entity.entity_type).boxed()])
                 .spacing(4.0)
                 .boxed();
@@ -103,7 +122,6 @@ impl Build for InspectorView {
 
             // AudioSource section (collapsible)
             if let Some(ref src) = entity.audio_source {
-                let audio_expanded_id: StateId = ctx.state(true);
                 let mut audio_children: Vec<Box<dyn Widget>> = Vec::new();
                 audio_children.push(property_row("Path", &src.path).boxed());
                 if let Some(sr) = src.sample_rate {
@@ -139,7 +157,6 @@ impl Build for InspectorView {
 
             // AudioListener section (collapsible)
             if entity.has_audio_listener {
-                let listener_expanded_id: StateId = ctx.state(true);
                 let mut listener_children: Vec<Box<dyn Widget>> = Vec::new();
                 listener_children.push(text("Active listener").boxed());
                 if draw_ctx.audio_listener_count > 1 {
@@ -163,7 +180,7 @@ impl Build for InspectorView {
             }
 
             vstack(sections)
-                .spacing(2.0)
+                .spacing(12.0)
                 .padding(Padding::all(12.0))
                 .boxed()
         } else {
@@ -191,7 +208,7 @@ impl Build for InspectorView {
 
         let panel_content = scroll(content, scroll_id).flex_grow(1.0).boxed();
 
-        panel(header_text, panel_content)
+        panel_body(panel_content)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
             .boxed()

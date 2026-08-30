@@ -38,8 +38,17 @@ impl Widget for Section {
     }
 
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        // Reserve the header strip so the first content row doesn't sit under
+        // the drawn header. Must match the header height used in draw().
+        let header_height = crate::style::FontSize::Medium.to_pixels() + 8.0;
         Style {
             flex_direction: FlexDirection::Column,
+            padding: taffy::Rect {
+                top: taffy::LengthPercentage::Length(header_height),
+                right: taffy::LengthPercentage::Length(0.0),
+                bottom: taffy::LengthPercentage::Length(0.0),
+                left: taffy::LengthPercentage::Length(0.0),
+            },
             ..Style::default()
         }
     }

@@ -9,6 +9,7 @@ use crate::input::mouse_button;
 
 use super::super::animation::AnimationState;
 use super::super::descriptor::Callback;
+use super::super::descriptor::FlexProps;
 use super::super::diff::DiffAction;
 use super::super::state::{StateArena, StateId, ViewId};
 use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widget};
@@ -17,6 +18,7 @@ pub struct TextField {
     pub placeholder: String,
     pub value_id: StateId,
     pub on_submit: Option<Callback>,
+    pub flex: FlexProps,
 }
 
 impl Widget for TextField {
@@ -38,13 +40,15 @@ impl Widget for TextField {
 
     fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
         let text_size = measure(&self.placeholder, None);
-        Style {
+        let mut style = Style {
             size: Size {
                 width: Dimension::Length(text_size.x() + 16.0),
-                height: Dimension::Length(text_size.y() + 12.0),
+                height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
             },
             ..Style::default()
-        }
+        };
+        crate::declarative::layout::apply_flex_props(&mut style, &self.flex);
+        style
     }
 
     fn handle_input(
@@ -162,6 +166,14 @@ impl TextField {
         self.on_submit = Some(cb);
         self
     }
+    pub fn flex_grow(mut self, grow: f32) -> Self {
+        self.flex.flex_grow = grow;
+        self
+    }
+    pub fn flex_width(mut self, width: f32) -> Self {
+        self.flex.width = Some(width);
+        self
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -176,6 +188,7 @@ mod tests {
             placeholder: "Enter text...".into(),
             value_id: StateId::test_id(),
             on_submit: None,
+            flex: FlexProps::default(),
         }
     }
 
@@ -216,6 +229,7 @@ mod tests {
             placeholder: "Enter text...".into(),
             value_id,
             on_submit: None,
+            flex: FlexProps::default(),
         };
 
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
@@ -279,6 +293,7 @@ mod tests {
             placeholder: "Enter text...".into(),
             value_id,
             on_submit: None,
+            flex: FlexProps::default(),
         };
 
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));
@@ -313,6 +328,7 @@ mod tests {
             placeholder: "Enter text...".into(),
             value_id,
             on_submit: None,
+            flex: FlexProps::default(),
         };
 
         let view_id = ViewId::from(slotmap::KeyData::from_ffi(0));

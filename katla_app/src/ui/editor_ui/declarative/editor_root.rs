@@ -135,8 +135,8 @@ impl Build for EditorOverlayView {
             .env::<ViewportGridDrawCtx>()
             .map(|c| {
                 Vec2::new(
-                    c.bounds.min.x() + 8.0,
-                    c.bounds.min.y() + TAB_BAR_HEIGHT + 8.0,
+                    c.bounds.min.x() + katla_ui::tokens::VIEWPORT_OVERLAY_MARGIN,
+                    c.bounds.min.y() + katla_ui::tokens::VIEWPORT_OVERLAY_MARGIN,
                 )
             })
             .unwrap_or(Vec2::new(0.0, TOOLBAR_HEIGHT));

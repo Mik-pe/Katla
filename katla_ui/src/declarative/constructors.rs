@@ -49,6 +49,7 @@ pub fn button(label: impl Into<String>) -> widgets::button::Button {
         label: label.into(),
         fill_color: None,
         border_color: None,
+        tooltip: None,
         on_click: None,
     }
 }
@@ -58,6 +59,8 @@ pub fn image_button(icon: char) -> widgets::image_button::ImageButton {
         icon,
         enabled: true,
         fill_color: None,
+        icon_color: None,
+        tooltip: None,
         on_click: None,
     }
 }
@@ -68,6 +71,7 @@ pub fn tool_button(icon: char) -> widgets::tool_button::ToolButton {
         icon,
         enabled: true,
         selected: false,
+        tooltip: None,
         on_click: None,
     }
 }
@@ -82,6 +86,7 @@ pub fn tool_label_button(
         label: label.into(),
         enabled: true,
         selected: false,
+        tooltip: None,
         on_click: None,
     }
 }
@@ -123,6 +128,7 @@ pub fn textfield(
         placeholder: placeholder.into(),
         value_id,
         on_submit: None,
+        flex: FlexProps::default(),
     }
 }
 
@@ -371,6 +377,17 @@ pub fn zstack(
 pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> widgets::panel::Panel {
     widgets::panel::Panel::new(
         title.into(),
+        crate::tokens::TAB_BAR_HEIGHT,
+        FlexProps::default(),
+        Some(content),
+    )
+}
+
+/// Panel surface for docked views. The header strip is reserved as spacing
+/// (the dock tab strip renders over it) but no duplicate title is drawn.
+pub fn panel_body(content: Box<dyn Widget>) -> widgets::panel::Panel {
+    widgets::panel::Panel::new(
+        String::new(),
         crate::tokens::TAB_BAR_HEIGHT,
         FlexProps::default(),
         Some(content),

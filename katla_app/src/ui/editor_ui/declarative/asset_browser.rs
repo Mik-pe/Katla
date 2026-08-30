@@ -6,8 +6,8 @@ use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, context_entry,
-    context_menu, empty, grid, hstack, icon, image, image_button, modal, panel, scroll, selectable,
-    separator_horizontal, text, textfield, vstack,
+    context_menu, empty, grid, hstack, icon, image, image_button, modal, panel_body, scroll,
+    selectable, separator_horizontal, text, textfield, vstack,
 };
 use katla_ui::{FontSize, ForkAwesome, TextureId};
 
@@ -26,6 +26,7 @@ pub(crate) struct AssetBrowserDrawCtx {
     pub path_segments: Vec<String>,
     pub can_go_back: bool,
     pub can_go_forward: bool,
+    pub can_go_up: bool,
     pub search_filter: String,
     pub context_menu_open: bool,
     pub context_menu_is_asset: bool,
@@ -48,6 +49,7 @@ pub(crate) enum AssetBrowserAction {
     NavigateToSegment(usize),
     NavigateBack,
     NavigateForward,
+    NavigateUp,
     Refresh,
     AssetClicked(usize),
     ContextMenuAction {
@@ -122,6 +124,9 @@ impl Build for AssetBrowserView {
         let forward_cb = ctx.on_click(|actions| {
             actions.emit(AssetBrowserAction::NavigateForward);
         });
+        let up_cb = ctx.on_click(|actions| {
+            actions.emit(AssetBrowserAction::NavigateUp);
+        });
         let refresh_cb = ctx.on_click(|actions| {
             actions.emit(AssetBrowserAction::Refresh);
         });
@@ -130,30 +135,48 @@ impl Build for AssetBrowserView {
             hstack([
                 image_button(ForkAwesome::ARROW_LEFT)
                     .enabled(draw_ctx.can_go_back)
+                    .tooltip("Back")
                     .on_click(back_cb)
                     .boxed(),
                 image_button(ForkAwesome::ARROW_RIGHT)
                     .enabled(draw_ctx.can_go_forward)
+                    .tooltip("Forward")
                     .on_click(forward_cb)
+                    .boxed(),
+                image_button(ForkAwesome::ARROW_UP)
+                    .enabled(draw_ctx.can_go_up)
+                    .tooltip("Up one level")
+                    .on_click(up_cb)
                     .boxed(),
             ])
             .spacing(2.0)
             .boxed(),
             hstack(breadcrumb_items).spacing(2.0).boxed(),
-            textfield("Filter...", search_id).boxed(),
+            textfield("Search assets...", search_id)
+                .flex_grow(1.0)
+                .boxed(),
+            // Refresh is a maintenance action: quiet icon, not a nav peer.
             image_button(ForkAwesome::REFRESH)
+                .icon_color(draw_ctx.theme.text_muted)
+                .tooltip("Refresh")
                 .on_click(refresh_cb)
                 .boxed(),
         ])
         .spacing(8.0)
-        .padding(Padding::all(4.0))
+        .padding(Padding {
+            top: 4.0,
+            right: 8.0,
+            bottom: 4.0,
+            left: 8.0,
+        })
         .align(Alignment::Middle)
         .boxed();
 
         let item_size = 80.0;
         let cell_size = Vec2::new(item_size + 16.0, item_size + 32.0);
         let col_count = if draw_ctx.bounds.width() > 0.0 {
-            ((draw_ctx.bounds.width() - 8.0) / (item_size + 16.0)).max(1.0) as usize
+            // Content insets 8 px on each side (see the content vstack).
+            ((draw_ctx.bounds.width() - 16.0) / (item_size + 16.0)).max(1.0) as usize
         } else {
             8
         };
@@ -228,6 +251,12 @@ impl Build for AssetBrowserView {
             separator_horizontal().boxed(),
             scroll(grid_content, scroll_id).flex_grow(1.0).boxed(),
         ])
+        .padding(Padding {
+            top: 4.0,
+            right: 8.0,
+            bottom: 8.0,
+            left: 8.0,
+        })
         .flex_grow(1.0)
         .boxed();
 
@@ -323,8 +352,7 @@ impl Build for AssetBrowserView {
             }),
         );
 
-        panel(
-            "Asset Browser",
+        panel_body(
             vstack([content, context_menu, confirm_modal.boxed()])
                 .flex_grow(1.0)
                 .boxed(),
@@ -475,6 +503,9 @@ pub(crate) fn process_declarative_actions(
             }
             AssetBrowserAction::NavigateForward => {
                 state.navigate_forward(thumbnail_texture_handles);
+            }
+            AssetBrowserAction::NavigateUp => {
+                state.navigate_up(thumbnail_texture_handles);
             }
             AssetBrowserAction::Refresh => {
                 state.refresh(thumbnail_texture_handles);
