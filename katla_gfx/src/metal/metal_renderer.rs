@@ -9,7 +9,7 @@ use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLTexture};
 
-use crate::backend::command::GpuCommandBuffer;
+use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, ResourceStorage, SkeletonHandle, TextureHandle};
@@ -241,6 +241,9 @@ pub struct MetalRenderer {
     pub(crate) ui_renderer: MetalUIRenderer,
     pub(crate) animation_system: Option<MetalAnimationSystem>,
     pub(crate) particle_system: Option<MetalParticleSubsystem>,
+    /// Per-frame-slot (emit, simulate) workgroup counts staged by
+    /// step_particle_system and consumed by render().
+    pending_particle_workgroups: [(u32, u32); FRAMES_IN_FLIGHT],
     pub(crate) pending_ui_draw_list: Option<crate::renderer::types::UIDrawList>,
     pub(crate) shadow: MetalShadowSubsystem,
     pub(crate) depth_prepass: MetalDepthPrepass,
@@ -393,6 +396,7 @@ impl MetalRenderer {
             ui_renderer: MetalUIRenderer::new(),
             animation_system: None,
             particle_system: None,
+            pending_particle_workgroups: [(0, 1); FRAMES_IN_FLIGHT],
             pending_ui_draw_list: None,
             shadow: MetalShadowSubsystem::new(),
             depth_prepass: MetalDepthPrepass::new(),
@@ -547,6 +551,49 @@ impl MetalRenderer {
         self.frame_uniform_buffers[idx].as_ref()
     }
 
+    /// Frame driver access to the particle subsystem (None when uninitialized).
+    pub fn particle_emitter_driver_mut(
+        &mut self,
+    ) -> Option<&mut dyn super::super::particles::particle_drive::ParticleEmitterDriver> {
+        self.particle_system
+            .as_mut()
+            .map(|ps| ps as &mut dyn super::super::particles::particle_drive::ParticleEmitterDriver)
+    }
+
+    /// Per-frame simulation step: uploads frame data + emitter configs, rolls
+    /// the counters over, and computes this frame's dispatch sizes.
+    ///
+    /// Mirrors the Vulkan path's `GlobalParticleSystem::update` usage; returns
+    /// `(emit_workgroups, simulate_workgroups)`.
+    pub fn step_particle_system(&mut self, delta_time: f32) -> Result<(u32, u32), RendererError> {
+        let frame_index = self.frame_index;
+        let frame_slot_index = super::metal_renderer::frame_slot(frame_index);
+
+        let Some(ps) = self.particle_system.as_mut() else {
+            return Ok((0, 1));
+        };
+
+        let (max_alive, emit_count) = ps.update(delta_time, frame_index)?;
+        let emit_workgroups = if emit_count > 0 {
+            emit_count.div_ceil(super::particle::PARTICLE_EMIT_WORKGROUP_SIZE)
+        } else {
+            0
+        };
+        let total_to_simulate = max_alive + emit_count;
+        let simulate_workgroups = if total_to_simulate > 0 {
+            total_to_simulate.div_ceil(super::particle::PARTICLE_SIMULATE_WORKGROUP_SIZE)
+        } else {
+            1
+        };
+
+        // Stash for render(); the compute pass runs inline at the top of the
+        // frame's command buffer so the indirect draw command is fresh before
+        // any render pass encodes.
+        self.pending_particle_workgroups[frame_slot_index] = (emit_workgroups, simulate_workgroups);
+
+        Ok((emit_workgroups, simulate_workgroups))
+    }
+
     pub(crate) fn current_object_storage_buffer(&self) -> Option<&MetalBuffer> {
         let idx = frame_slot(self.frame_index);
         self.object_storage_buffers[idx].as_ref()
@@ -599,6 +646,24 @@ impl MetalRenderer {
             && lc.light_count() > 0
         {
             self.dispatch_light_culling(&(), &view_matrix, &proj_matrix);
+        }
+
+        // Particle simulation (emit / simulate / draw-command) runs inline
+        // before the render passes so the indirect draw command the particle
+        // render record consumes is written this frame.
+        {
+            let fi = frame_slot(self.frame_index);
+            let (emit_wg, simulate_wg) = self.pending_particle_workgroups[fi];
+            if let Some(ref ps) = self.particle_system {
+                let frame_index = self.frame_index;
+                let mut cmd_buffer = self.context.create_command_buffer();
+                cmd_buffer.begin();
+                let mut encoder = cmd_buffer.begin_compute_pass_with_label("particle_simulate");
+                ps.encode_compute(&mut encoder, frame_index, emit_wg, simulate_wg);
+                encoder.end_encoding();
+                cmd_buffer.end();
+                cmd_buffer.submit(&self.context);
+            }
         }
 
         self.execute_metal_passes(pending, frame_graph, frame_idx)?;
@@ -1210,7 +1275,8 @@ impl GpuRenderer for MetalRenderer {
 
     fn init_particle_system(&mut self) -> Result<(), RendererError> {
         const MAX_PARTICLES: u32 = 1_048_576; // Must match WGSL MAX_PARTICLES
-        let subsystem = MetalParticleSubsystem::new(&self.context, MAX_PARTICLES)?;
+        let mut subsystem = MetalParticleSubsystem::new(&self.context, MAX_PARTICLES)?;
+        subsystem.create_render_pipeline(&self.context, "particles/particle_render.wgsl")?;
         self.particle_system = Some(subsystem);
         Ok(())
     }

@@ -16,6 +16,14 @@ use crate::error::RendererError;
 pub(crate) enum ShaderProfile {
     /// Standard graphics pipeline (bindless textures at buffer 9).
     Graphics,
+    /// Particle billboard render shader (storage at [[buffer(0..4)]], frame
+    /// uniforms at [[buffer(5)]]; no bindless textures).
+    ParticleRender,
+    /// Particle compute shaders (emit / simulate / draw-command): storage
+    /// 0..4, frame_data 5, emitters 6. Explicit because naga's auto-assignment
+    /// skips entry-point-unused resources and would collide counters(4) with
+    /// frame_data(4) in the emit shader.
+    ParticleCompute,
     /// UI shaders (different binding layout).
     Ui,
     /// Outline draw shaders (outline_params instead of bindless textures).
@@ -231,6 +239,173 @@ fn create_graphics_binding_map() -> msl::EntryPointResources {
 
     // Buffer slot for runtime array size information
     resources.sizes_buffer = Some(8);
+
+    resources
+}
+
+/// Particle compute shader binding map (emit / simulate / draw-command).
+///
+/// Fixed contract matching the encoder: particles/dead/alive/alive_next/
+/// counters at [[buffer(0..4)]], frame_data at 5, emitters at 6. Entries for
+/// resources a given shader doesn't declare are harmless lookups that never
+/// fire, and keep the mapping identical across all three shaders.
+fn create_particle_compute_binding_map() -> msl::EntryPointResources {
+    let mut resources = msl::EntryPointResources::default();
+
+    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(0),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 1,
+            },
+            msl::BindTarget {
+                buffer: Some(1),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 2,
+            },
+            msl::BindTarget {
+                buffer: Some(2),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 3,
+            },
+            msl::BindTarget {
+                buffer: Some(3),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 4,
+            },
+            msl::BindTarget {
+                buffer: Some(4),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 1,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(5),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 1,
+                binding: 1,
+            },
+            msl::BindTarget {
+                buffer: Some(6),
+                ..Default::default()
+            },
+        ),
+    ];
+
+    for (binding, target) in bindings {
+        resources.resources.insert(*binding, target.clone());
+    }
+
+    resources
+}
+
+/// Particle render shader binding map.
+///
+/// Storage bindings keep their WGSL binding numbers as flat MSL buffer
+/// indices (0..4); frame uniforms land at [[buffer(1)]]. The vertex stage
+/// reads no vertex buffers (billboards are generated from vertex_index).
+fn create_particle_render_binding_map() -> msl::EntryPointResources {
+    let mut resources = msl::EntryPointResources::default();
+
+    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(0),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 1,
+            },
+            msl::BindTarget {
+                buffer: Some(1),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 2,
+            },
+            msl::BindTarget {
+                buffer: Some(2),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 3,
+            },
+            msl::BindTarget {
+                buffer: Some(3),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 0,
+                binding: 4,
+            },
+            msl::BindTarget {
+                buffer: Some(4),
+                ..Default::default()
+            },
+        ),
+        (
+            naga::ResourceBinding {
+                group: 1,
+                binding: 0,
+            },
+            msl::BindTarget {
+                buffer: Some(5),
+                ..Default::default()
+            },
+        ),
+    ];
+
+    for (binding, target) in bindings {
+        resources.resources.insert(*binding, target.clone());
+    }
 
     resources
 }
@@ -531,6 +706,33 @@ pub(crate) fn compile_wgsl_to_metal(
                 ..msl::Options::default()
             };
             let bindings = create_outline_skinned_binding_map();
+            options
+                .per_entry_point_map
+                .insert("vs_main".to_string(), bindings.clone());
+            options
+                .per_entry_point_map
+                .insert("fs_main".to_string(), bindings);
+            options
+        }
+        ShaderProfile::ParticleCompute => {
+            let mut options = msl::Options {
+                lang_version: (2, 0),
+                fake_missing_bindings: true,
+                ..msl::Options::default()
+            };
+            let bindings = create_particle_compute_binding_map();
+            options
+                .per_entry_point_map
+                .insert("cs_main".to_string(), bindings);
+            options
+        }
+        ShaderProfile::ParticleRender => {
+            let mut options = msl::Options {
+                lang_version: (2, 0),
+                fake_missing_bindings: true,
+                ..msl::Options::default()
+            };
+            let bindings = create_particle_render_binding_map();
             options
                 .per_entry_point_map
                 .insert("vs_main".to_string(), bindings.clone());

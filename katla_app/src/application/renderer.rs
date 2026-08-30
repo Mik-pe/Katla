@@ -1098,6 +1098,11 @@ impl Application {
             draw_list.len()
         );
 
+        // Particle simulation drive: CPU state update + per-frame workgroup
+        // counts. The renderer dispatches the compute work inline at the top
+        // of its own render() (light-culling pattern).
+        self.step_particle_simulation(delta_time);
+
         if let Err(e) = self.renderer.render(&mut self.frame_graph, |frame| {
             let ids = &self.pass_ids;
 

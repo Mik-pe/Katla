@@ -2,7 +2,9 @@ use core::ffi::c_void;
 use core::ptr::NonNull;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLCommandEncoder, MTLComputeCommandEncoder, MTLSize};
+use objc2_metal::{
+    MTLBarrierScope, MTLCommandEncoder, MTLComputeCommandEncoder, MTLComputePipelineState, MTLSize,
+};
 
 use crate::backend::command::*;
 
@@ -26,6 +28,66 @@ impl MetalComputeEncoder {
                 depth: 1,
             },
         }
+    }
+    /// Bind an already-built compute pipeline state directly (no registry
+    /// handle). Used by the particle subsystem, which owns its pipelines.
+    pub(crate) fn bind_compute_pipeline_raw(
+        &mut self,
+        pipeline_state: &Retained<ProtocolObject<dyn MTLComputePipelineState>>,
+    ) {
+        self.inner.setComputePipelineState(pipeline_state);
+        self.workgroup_size = MTLSize {
+            width: pipeline_state.threadExecutionWidth(),
+            height: 1,
+            depth: 1,
+        };
+    }
+
+    /// Bind a storage buffer at a byte offset (sub-allocated region binding).
+    pub(crate) fn bind_storage_buffer_at_offset(
+        &mut self,
+        buffer: &MetalBuffer,
+        offset: u64,
+        group: u32,
+        index: u32,
+    ) {
+        let _ = group;
+        unsafe {
+            self.inner.setBuffer_offset_atIndex(
+                Some(&buffer.inner),
+                offset as usize,
+                index as usize,
+            );
+        }
+    }
+
+    /// Dispatch with an explicit threadgroup width (raw pipelines don't carry
+    /// the WGSL @workgroup_size through naga's metadata the way the trait
+    /// pipeline wrapper does).
+    pub(crate) fn dispatch_raw(
+        &mut self,
+        groups_x: u32,
+        groups_y: u32,
+        groups_z: u32,
+        tg_width: u32,
+    ) {
+        self.inner.dispatchThreadgroups_threadsPerThreadgroup(
+            MTLSize {
+                width: groups_x as usize,
+                height: groups_y as usize,
+                depth: groups_z as usize,
+            },
+            MTLSize {
+                width: tg_width as usize,
+                height: 1,
+                depth: 1,
+            },
+        );
+    }
+
+    /// Full buffer-to-buffer memory barrier (compute write visibility).
+    pub(crate) fn memory_barrier_buffers(&self) {
+        self.inner.memoryBarrierWithScope(MTLBarrierScope::Buffers);
     }
 }
 

@@ -174,11 +174,16 @@ impl Application {
 
         // Built-in scene subsystems must not run for an application-owned graph.
         // A custom graph may own entirely different compute/animation work.
+        // (Metal syncs emitters in step_particle_simulation instead.)
         if uses_katla_scene
             && let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
             && let Some(ref mut ps) = vulkan_renderer.particle_system
         {
-            self.particle_system.update(&mut self.world, ps, dt);
+            self.particle_system.update(
+                &mut self.world,
+                ps as &mut dyn katla_gfx::ParticleEmitterDriver,
+                dt,
+            );
         }
 
         // Update audio system — process AudioEmitter components

@@ -14,6 +14,8 @@ pub(crate) mod stats;
 pub(crate) mod types;
 pub(crate) mod validation;
 
+pub mod particle_drive;
+
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData};
 pub use debug_readback::{IndirectDrawCommandData, ParticleDebugData, ParticleDebugReadback};
 pub use presets::EmitterPreset;

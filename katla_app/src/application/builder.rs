@@ -346,6 +346,12 @@ impl ApplicationBuilder {
                     .with_kind(PassKind::Geometry),
             )
             .add_pass(
+                SimplePass::new("particles", PassType::Graphics)
+                    .read("hdr_color")
+                    .write("hdr_color")
+                    .with_kind(PassKind::Particles),
+            )
+            .add_pass(
                 SimplePass::new("outline", PassType::Graphics)
                     .read("hdr_color")
                     .write("hdr_color")

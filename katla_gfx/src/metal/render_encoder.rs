@@ -51,6 +51,50 @@ impl MetalRenderEncoder {
         let resource: &ProtocolObject<dyn MTLResource> = texture.as_ref();
         self.inner.useResource_usage_stages(resource, usage, stages);
     }
+
+    /// Bind a storage buffer at a byte offset (sub-allocated region binding).
+    pub(crate) fn bind_storage_buffer_at_offset_render(
+        &self,
+        buffer: &MetalBuffer,
+        offset: u64,
+        group: u32,
+        index: u32,
+        stages: ShaderStages,
+    ) {
+        let _ = group;
+        if stages.vertex {
+            unsafe {
+                self.inner.setVertexBuffer_offset_atIndex(
+                    Some(&buffer.inner),
+                    offset as usize,
+                    index as usize,
+                );
+            }
+        }
+        if stages.fragment {
+            unsafe {
+                self.inner.setFragmentBuffer_offset_atIndex(
+                    Some(&buffer.inner),
+                    offset as usize,
+                    index as usize,
+                );
+            }
+        }
+    }
+
+    /// Issue an indirect draw: vertex_count/instance_count/first_vertex/
+    /// first_instance read from a MTLBuffer written by a compute pass
+    /// earlier in the same command buffer.
+    pub(crate) fn draw_indirect(&self, indirect_buffer: &MetalBuffer, offset: u64) {
+        unsafe {
+            self.inner
+                .drawPrimitives_indirectBuffer_indirectBufferOffset(
+                    objc2_metal::MTLPrimitiveType::Triangle,
+                    &indirect_buffer.inner,
+                    offset as usize,
+                );
+        }
+    }
 }
 
 impl GpuRenderEncoder<MetalBackend> for MetalRenderEncoder {

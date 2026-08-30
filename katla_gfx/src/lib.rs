@@ -323,6 +323,7 @@ pub use render_graph::any_frame_graph::AnyFrameGraph;
 // Modern particle system — shared config types always available
 pub use particles::EmitterConfig;
 pub use particles::GlobalParticleSystem;
+pub use particles::particle_drive::ParticleEmitterDriver;
 
 // Render graph system — pass types and descriptors are backend-agnostic
 pub use render_graph::Frame;
