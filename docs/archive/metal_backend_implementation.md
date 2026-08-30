@@ -1,3 +1,16 @@
+# [SUPERSEDED]
+
+> **This document is the pre-implementation plan for the native Metal backend.**
+> It was written before the backend existed and describes a target state,
+> hypothetical traits, and dependency additions that are now landed, changed, or
+> obsolete (including MoltenVK-era assumptions).
+>
+> **The current architecture reference is [`docs/metal_backend.md`](../metal_backend.md).**
+> Open work is tracked in issues #30-#37 and #51-#59. Kept for historical
+> context only — do not implement from this document.
+
+---
+
 # Metal Backend Implementation Plan
 
 Native Metal backend for the `katla_gfx` crate, targeting macOS via `objc2-metal`.
