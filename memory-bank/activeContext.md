@@ -31,7 +31,12 @@ ShaderProfile::ShadowSkinned MSL binding map (joints to buffer 4, avoiding
 the buffer-3 collision with shadow_params). CI fully green.
 
 ## Open Items
+## Open Items
 
+- Docs: `docs/metal_backend.md` is now the Metal architecture reference
+  (2026-08-30, commit 4bcb207a); the pre-implementation plan is archived with a
+  superseded banner. Issues #51 and #57 closed after tip verification
+  (CI 33239691228 at 59e0a50c); #53 and #58 carry state-of-play comments.
 - Pale strip at viewport top (y≈125–158 in 2560×1440 screenshots) — UI-side,
   not a renderer artifact (present in pre-shadow screenshots; no code
   constant matches its colours; clears are black). Investigated 2026-08-29:
