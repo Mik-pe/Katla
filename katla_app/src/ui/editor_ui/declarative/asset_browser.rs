@@ -127,21 +127,25 @@ impl Build for AssetBrowserView {
         });
 
         let toolbar = hstack([
+            hstack([
+                image_button(ForkAwesome::ARROW_LEFT)
+                    .enabled(draw_ctx.can_go_back)
+                    .on_click(back_cb)
+                    .boxed(),
+                image_button(ForkAwesome::ARROW_RIGHT)
+                    .enabled(draw_ctx.can_go_forward)
+                    .on_click(forward_cb)
+                    .boxed(),
+            ])
+            .spacing(2.0)
+            .boxed(),
             hstack(breadcrumb_items).spacing(2.0).boxed(),
             textfield("Filter...", search_id).boxed(),
-            image_button(ForkAwesome::ARROW_LEFT)
-                .enabled(draw_ctx.can_go_back)
-                .on_click(back_cb)
-                .boxed(),
-            image_button(ForkAwesome::ARROW_RIGHT)
-                .enabled(draw_ctx.can_go_forward)
-                .on_click(forward_cb)
-                .boxed(),
             image_button(ForkAwesome::REFRESH)
                 .on_click(refresh_cb)
                 .boxed(),
         ])
-        .spacing(4.0)
+        .spacing(8.0)
         .padding(Padding::all(4.0))
         .align(Alignment::Middle)
         .boxed();
@@ -215,7 +219,7 @@ impl Build for AssetBrowserView {
                 .boxed()
         } else {
             grid(col_count, cell_size, grid_children)
-                .grid_spacing(16.0)
+                .grid_spacing(8.0)
                 .boxed()
         };
 

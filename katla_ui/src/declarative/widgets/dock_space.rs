@@ -82,6 +82,8 @@ pub struct SplitInfo {
     pub direction: SplitDirection,
     pub node_bounds: Rect2D,
     pub handle_rect: Rect2D,
+    /// The 1 px visual line centered inside [`Self::handle_rect`].
+    pub line_rect: Rect2D,
 }
 
 /// Determine which DockZone a position falls within, relative to a leaf area.
@@ -215,12 +217,15 @@ fn compute_split_info_recursive<T: Clone + PartialEq>(
             let clamped = ratio.clamp(0.0, 1.0);
             let handle_rect = split_handle_rect(area, *direction, clamped, splitter_width);
             let (area0, area1) = split_area(area, *direction, clamped);
+            let line_rect =
+                split_line_rect(handle_rect, *direction, crate::tokens::SPLITTER_LINE_WIDTH);
 
             let mut result = vec![SplitInfo {
                 path: path.clone(),
                 direction: *direction,
                 node_bounds: area,
                 handle_rect,
+                line_rect,
             }];
 
             path.push(0);
@@ -289,6 +294,22 @@ fn split_handle_rect(
     }
 }
 
+/// The thin visual line drawn inside a splitter's (wider) hit rect.
+fn split_line_rect(handle_rect: Rect2D, direction: SplitDirection, line_width: f32) -> Rect2D {
+    let half = line_width * 0.5;
+    let center = handle_rect.center();
+    match direction {
+        SplitDirection::Horizontal => Rect2D::new(
+            Vec2::new(center.x() - half, handle_rect.min.y()),
+            Vec2::new(center.x() + half, handle_rect.max.y()),
+        ),
+        SplitDirection::Vertical => Rect2D::new(
+            Vec2::new(handle_rect.min.x(), center.y() - half),
+            Vec2::new(handle_rect.max.x(), center.y() + half),
+        ),
+    }
+}
+
 fn splitter_ratio_from_pos(split: &SplitInfo, pos: Vec2) -> f32 {
     match split.direction {
         SplitDirection::Horizontal => {
@@ -336,8 +357,8 @@ impl<T: Clone + PartialEq + std::fmt::Debug + 'static> DockSpace<T> {
             dock_state_id,
             drag_state_id,
             panel_labels,
-            tab_bar_height: 28.0,
-            splitter_width: 4.0,
+            tab_bar_height: crate::tokens::TAB_BAR_HEIGHT,
+            splitter_width: crate::tokens::SPLITTER_HIT_WIDTH,
             content_inset_top: 0.0,
             content_inset_bottom: 0.0,
             flex,
@@ -548,6 +569,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
 
             let tab_count = leaf.tabs.len();
             let tab_width = tab_bar_bounds.width() / tab_count as f32;
+            let font_size = ctx.style().font_size;
 
             for (i, tab_val) in leaf.tabs.iter().enumerate() {
                 let tab_bounds = Rect2D::from_origin_size(
@@ -571,10 +593,9 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
                 ctx.draw_rect(tab_bounds, bg);
 
                 let label = self.get_label(tab_val);
-                let font_size = ctx.style().font_size;
                 let label_size = ctx.measure_text(&label, font_size);
                 let text_pos = Vec2::new(
-                    tab_bounds.center().x() - label_size.x() * 0.5,
+                    tab_bounds.min.x() + crate::tokens::TAB_LABEL_LEADING,
                     tab_bounds.center().y() - label_size.y() * 0.5,
                 );
                 let text_color = if is_active {
@@ -584,17 +605,56 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
                 };
                 ctx.draw_text(&label, text_pos, text_color, font_size);
             }
+
+            // Hairline closing the tab strip; under the active tab it picks
+            // up the tab surface so the tab reads as connected to its panel.
+            let divider_color = if ctx.style().tab_border.a > 0.0 {
+                ctx.style().tab_border
+            } else {
+                ctx.style().separator
+            };
+            if divider_color.a > 0.0 {
+                let divider_rect = Rect2D::new(
+                    Vec2::new(
+                        tab_bar_bounds.min.x(),
+                        tab_bar_bounds.max.y() - crate::tokens::DIVIDER_THICKNESS,
+                    ),
+                    Vec2::new(tab_bar_bounds.max.x(), tab_bar_bounds.max.y()),
+                );
+                ctx.draw_rect(divider_rect, divider_color);
+                if let Some(active) = leaf.tabs.get(leaf.active) {
+                    let label = self.get_label(active);
+                    let label_size = ctx.measure_text(&label, font_size);
+                    let label_width = label_size.x() + crate::tokens::TAB_LABEL_LEADING * 2.0;
+                    let active_rect = Rect2D::new(
+                        Vec2::new(
+                            tab_bar_bounds.min.x() + leaf.active as f32 * tab_width,
+                            tab_bar_bounds.max.y() - crate::tokens::DIVIDER_THICKNESS,
+                        ),
+                        Vec2::new(
+                            (tab_bar_bounds.min.x() + leaf.active as f32 * tab_width + label_width)
+                                .min(tab_bar_bounds.max.x()),
+                            tab_bar_bounds.max.y(),
+                        ),
+                    );
+                    ctx.draw_rect(active_rect, ctx.style().tab_active_bg);
+                }
+            }
         }
 
         for split in &splits {
             let is_hovered = split.handle_rect.contains(ctx.mouse_pos());
-            let color = if is_hovered {
-                ctx.style().selectable_selected
+            if is_hovered {
+                ctx.draw_rect(split.handle_rect, ctx.style().selectable_selected);
             } else {
-                ctx.style().separator
-            };
-            if color.a > 0.0 {
-                ctx.draw_rect(split.handle_rect, color);
+                let color = if ctx.style().tab_border.a > 0.0 {
+                    ctx.style().tab_border
+                } else {
+                    ctx.style().separator
+                };
+                if color.a > 0.0 {
+                    ctx.draw_rect(split.line_rect, color);
+                }
             }
         }
 
@@ -1051,6 +1111,7 @@ mod tests {
             direction: SplitDirection::Horizontal,
             node_bounds: Rect2D::new(Vec2::new(960.0, 0.0), Vec2::new(1920.0, 1080.0)),
             handle_rect: Rect2D::default(),
+            line_rect: Rect2D::default(),
         };
         assert!((splitter_ratio_from_pos(&split, Vec2::new(1440.0, 540.0)) - 0.5).abs() < 1e-4);
     }

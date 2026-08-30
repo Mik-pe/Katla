@@ -2,7 +2,8 @@ use std::boxed::Box;
 
 use katla_math::{Color, Rect2D, Vec2};
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Widget, WidgetBox, empty, grid, image, text, zstack,
+    Alignment, Anchor, Build, BuildContext, Widget, WidgetBox, empty, grid, image, overlay, text,
+    zstack,
 };
 use katla_ui::{FontSize, TextureId};
 
@@ -85,11 +86,24 @@ impl Build for ViewportGridView {
                 }
 
                 let label_text = text(label)
-                    .color(Color::WHITE.with_alpha(0.6))
+                    .color(Color::WHITE.with_alpha(0.75))
                     .font_size(FontSize::Small)
                     .boxed();
 
-                cell_content.push((Alignment::TopLeading, label_text));
+                // Inside the viewport safe margin so the label never clips
+                // against the cell edge.
+                cell_content.push((
+                    Alignment::TopLeading,
+                    overlay(
+                        Anchor::TopLeft,
+                        Vec2::new(
+                            katla_ui::tokens::VIEWPORT_OVERLAY_MARGIN,
+                            katla_ui::tokens::VIEWPORT_OVERLAY_MARGIN,
+                        ),
+                        label_text,
+                    )
+                    .boxed(),
+                ));
 
                 // Give the stack the cell's definite size. Without it the
                 // percent-height chain through Selectable/ZStack collapses to

@@ -29,6 +29,7 @@ pub mod tab_bar;
 pub mod text;
 pub mod textfield;
 pub mod toggle;
+pub mod tool_button;
 pub mod transition;
 pub mod tree_view;
 pub mod vec3_slider;

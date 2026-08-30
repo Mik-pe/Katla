@@ -4,9 +4,10 @@ use std::collections::HashMap;
 use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
+use katla_ui::declarative::Padding as Pad;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, empty, hstack, icon,
-    panel, scroll, selectable, text, textfield, vstack,
+    panel, scroll, selectable, text, textfield, vstack, zstack,
 };
 
 use crate::ui::editor_ui::ColorScheme;
@@ -27,9 +28,14 @@ pub(crate) struct HierarchyDrawCtx {
 #[derive(Clone, Debug)]
 pub(crate) enum HierarchyAction {
     SelectEntity(EntityId),
+    ToggleExpanded(EntityId),
 }
 
 pub(crate) struct HierarchyView;
+
+/// Chevron/indent column width per nesting level.
+const LEVEL_INDENT: f32 = katla_ui::tokens::TREE_INDENT;
+const CHEVRON_SLOT: f32 = 12.0;
 
 impl Build for HierarchyView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
@@ -70,39 +76,66 @@ impl Build for HierarchyView {
 
         let header_text = format!("Hierarchy ({} entities)", visible_count);
 
-        let search_field = textfield("Filter entities...", search_id).boxed();
+        let search_field = textfield("Search entities...", search_id).boxed();
 
         let display_names = build_display_names(&filtered_entities);
 
         let mut tree_children = Vec::new();
         for (i, entity) in filtered_entities.iter().enumerate() {
             let is_selected = draw_ctx.selected_entity == Some(entity.id);
+            let is_expanded = draw_ctx
+                .hierarchy_state
+                .expanded_entities
+                .contains(&entity.id);
+            let depth = ancestry_depth(entity.id, &parent_map);
+            let has_children = filtered_entities
+                .iter()
+                .any(|e| e.parent_id == Some(entity.id));
 
             let (entity_icon, icon_color) =
                 entity_icon_for_name(&entity.name, &entity.entity_type, &draw_ctx.theme);
 
             let entity_id = entity.id;
             let display_name = &display_names[i];
+            let name_color = if is_selected {
+                draw_ctx.theme.text_primary
+            } else {
+                draw_ctx.theme.text_secondary
+            };
+
             let row = hstack([
+                // Indent rail: one fixed slot per nesting level.
+                spacer(LEVEL_INDENT * depth as f32),
+                // Disclosure chevron (empty slot keeps icon column aligned).
+                if has_children {
+                    chevron(is_expanded, draw_ctx.theme.text_muted)
+                } else {
+                    spacer(CHEVRON_SLOT)
+                },
                 icon(entity_icon).color(icon_color).boxed(),
                 text(display_name)
-                    .color(draw_ctx.theme.text_secondary)
+                    .color(name_color)
                     .font_size(FontSize::Small)
                     .boxed(),
             ])
             .spacing(6.0)
             .align(Alignment::Middle)
-            .padding(Padding {
-                top: 9.0,
-                right: 6.0,
-                bottom: 9.0,
-                left: 6.0,
+            .padding(Pad {
+                top: 6.0,
+                right: 8.0,
+                bottom: 6.0,
+                left: 8.0,
             });
 
             tree_children.push(
                 selectable(row.boxed())
                     .selected(is_selected)
                     .on_click(ctx.on_click(move |actions| {
+                        // Expand/select are one gesture; the engine keeps a
+                        // flat ordered list so children follow on reveal.
+                        if has_children {
+                            actions.emit(HierarchyAction::ToggleExpanded(entity_id));
+                        }
                         actions.emit(HierarchyAction::SelectEntity(entity_id));
                     }))
                     .boxed(),
@@ -115,7 +148,7 @@ impl Build for HierarchyView {
                 .font_size(FontSize::Small)
                 .boxed()
         } else {
-            vstack(tree_children).spacing(4.0).boxed()
+            vstack(tree_children).spacing(2.0).boxed()
         };
 
         let content = vstack([
@@ -132,6 +165,32 @@ impl Build for HierarchyView {
             .flex_height(draw_ctx.bounds.height())
             .boxed()
     }
+}
+
+fn spacer(width: f32) -> Box<dyn Widget> {
+    // Width-only: a zero-height spacer is harmless inside a Middle-aligned
+    // row, whereas a fixed height would inflate every row that contains one.
+    zstack(Vec::new()).flex_width(width).boxed()
+}
+
+fn chevron(expanded: bool, color: katla_math::Color) -> Box<dyn Widget> {
+    let glyph = if expanded {
+        katla_ui::ForkAwesome::ANGLE_DOWN
+    } else {
+        katla_ui::ForkAwesome::ANGLE_RIGHT
+    };
+    icon(glyph).color(color).icon_size(FontSize::XSmall).boxed()
+}
+
+/// Number of ancestors above `id` (0 = root level).
+fn ancestry_depth(id: EntityId, parent_map: &HashMap<EntityId, Option<EntityId>>) -> usize {
+    let mut depth = 0;
+    let mut current = parent_map.get(&id).copied().flatten();
+    while let Some(parent) = current {
+        depth += 1;
+        current = parent_map.get(&parent).copied().flatten();
+    }
+    depth
 }
 
 /// Build display names with auto-numbering for duplicates (e.g. "Sphere.001", "Sphere.002").

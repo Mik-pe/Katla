@@ -62,6 +62,30 @@ pub fn image_button(icon: char) -> widgets::image_button::ImageButton {
     }
 }
 
+/// Icon-only tool button for editor toolbars (28 px square, selected state).
+pub fn tool_button(icon: char) -> widgets::tool_button::ToolButton {
+    widgets::tool_button::ToolButton {
+        icon,
+        enabled: true,
+        selected: false,
+        on_click: None,
+    }
+}
+
+/// Icon + label tool button for segmented tool groups (28 px tall).
+pub fn tool_label_button(
+    icon: char,
+    label: impl Into<String>,
+) -> widgets::tool_button::ToolLabelButton {
+    widgets::tool_button::ToolLabelButton {
+        icon,
+        label: label.into(),
+        enabled: true,
+        selected: false,
+        on_click: None,
+    }
+}
+
 pub fn slider(
     label: impl Into<String>,
     value_id: StateId,
@@ -345,7 +369,12 @@ pub fn zstack(
 }
 
 pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> widgets::panel::Panel {
-    widgets::panel::Panel::new(title.into(), 28.0, FlexProps::default(), Some(content))
+    widgets::panel::Panel::new(
+        title.into(),
+        crate::tokens::TAB_BAR_HEIGHT,
+        FlexProps::default(),
+        Some(content),
+    )
 }
 
 pub fn scroll(content: Box<dyn Widget>, scroll_state_id: StateId) -> widgets::scroll::ScrollView {
@@ -827,7 +856,7 @@ mod tests {
     fn test_panel_defaults() {
         let w = panel("title", text("body").boxed());
         assert_eq!(w.title, "title");
-        assert_eq!(w.header_height, 28.0);
+        assert_eq!(w.header_height, crate::tokens::TAB_BAR_HEIGHT);
     }
 
     #[test]

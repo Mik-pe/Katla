@@ -50,7 +50,6 @@ pub struct EditorRenderParams<'a> {
     pub entities: &'a [EntityInfo],
     pub fps: f32,
     pub frame_time_ms: f32,
-    pub frame_count: usize,
     pub loader: &'a mut BackgroundLoader,
     pub thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
     pub llm_config: &'a katla_agent::LlmConfig,
@@ -647,17 +646,17 @@ impl EditorUI {
 
         let right = DockNode::Split {
             direction: SplitDirection::Horizontal,
-            ratio: 0.7,
+            ratio: 0.78125,
             children: [Box::new(viewport), Box::new(inspector)],
         };
         let main = DockNode::Split {
             direction: SplitDirection::Horizontal,
-            ratio: 0.18,
+            ratio: 0.1823,
             children: [Box::new(hierarchy), Box::new(right)],
         };
         let root = DockNode::Split {
             direction: SplitDirection::Vertical,
-            ratio: 0.75,
+            ratio: 0.64,
             children: [Box::new(main), Box::new(bottom_tabs)],
         };
 
