@@ -195,6 +195,7 @@ impl EditorUI {
                             path_segments: ab.path_segments(),
                             can_go_back: ab.can_go_back(),
                             can_go_forward: ab.can_go_forward(),
+                            can_go_up: ab.can_go_up(),
                             search_filter: ab.search_filter.clone(),
                             context_menu_open: ab.context_menu_open,
                             context_menu_is_asset: ab.context_menu_asset.is_some(),

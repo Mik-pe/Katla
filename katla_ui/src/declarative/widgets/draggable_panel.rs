@@ -22,6 +22,9 @@ pub struct DraggablePanel {
 }
 
 impl DraggablePanel {
+    /// Height of the draggable title bar strip.
+    pub const TITLE_BAR_HEIGHT: f32 = 25.0;
+
     pub fn new(
         title: String,
         width: f32,
@@ -66,6 +69,13 @@ impl Widget for DraggablePanel {
                 width: Dimension::Length(self.width),
                 height: Dimension::Length(self.height),
             },
+            // Reserve the title bar strip so content starts below it.
+            padding: taffy::Rect {
+                top: taffy::LengthPercentage::Length(Self::TITLE_BAR_HEIGHT),
+                right: taffy::LengthPercentage::Length(0.0),
+                bottom: taffy::LengthPercentage::Length(0.0),
+                left: taffy::LengthPercentage::Length(0.0),
+            },
             ..Style::default()
         }
     }
@@ -83,7 +93,7 @@ impl Widget for DraggablePanel {
             return InputResult::Ignore;
         }
 
-        let title_bar_height = 25.0_f32;
+        let title_bar_height = Self::TITLE_BAR_HEIGHT;
         let close_size = 24.0;
         let close_bounds = Rect2D::from_origin_size(
             Vec2::new(bounds.max.x() - close_size - 6.0, bounds.min.y() + 4.0),
@@ -143,7 +153,7 @@ impl Widget for DraggablePanel {
             return;
         }
 
-        let title_bar_height = 25.0_f32;
+        let title_bar_height = Self::TITLE_BAR_HEIGHT;
 
         let shadow_bounds = bounds.translate(Vec2::new(2.0, 2.0)).inflate(4.0);
         ctx.draw_rounded_rect(shadow_bounds, ctx.style().popup_shadow, 12.0);

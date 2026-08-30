@@ -17,6 +17,7 @@ pub struct ToolButton {
     pub icon: char,
     pub enabled: bool,
     pub selected: bool,
+    pub tooltip: Option<String>,
     pub on_click: Option<Callback>,
 }
 
@@ -26,6 +27,7 @@ pub struct ToolLabelButton {
     pub label: String,
     pub enabled: bool,
     pub selected: bool,
+    pub tooltip: Option<String>,
     pub on_click: Option<Callback>,
 }
 
@@ -114,7 +116,10 @@ impl Widget for ToolButton {
         _children: &[ViewId],
         _info: &DrawInfo,
     ) {
-        let hovered = bounds.contains(ctx.mouse_pos());
+        let hovered = self.enabled && bounds.contains(ctx.mouse_pos());
+        if hovered && let Some(ref tooltip) = self.tooltip {
+            ctx.defer_tooltip(tooltip);
+        }
         let bg = animation.apply_to_color(self.background(ctx, hovered));
         let radius = animation.apply_to_corner_radius(ctx.style().input_rounding);
         ctx.draw_rounded_rect(bounds, bg, radius);
@@ -143,6 +148,10 @@ impl Widget for ToolButton {
 }
 
 impl ToolButton {
+    pub fn tooltip(mut self, text: impl Into<String>) -> Self {
+        self.tooltip = Some(text.into());
+        self
+    }
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
         self
@@ -216,7 +225,10 @@ impl Widget for ToolLabelButton {
         _children: &[ViewId],
         _info: &DrawInfo,
     ) {
-        let hovered = bounds.contains(ctx.mouse_pos());
+        let hovered = self.enabled && bounds.contains(ctx.mouse_pos());
+        if hovered && let Some(ref tooltip) = self.tooltip {
+            ctx.defer_tooltip(tooltip);
+        }
         let bg = if !self.enabled {
             Color::TRANSPARENT
         } else if self.selected {
@@ -264,6 +276,10 @@ impl Widget for ToolLabelButton {
 }
 
 impl ToolLabelButton {
+    pub fn tooltip(mut self, text: impl Into<String>) -> Self {
+        self.tooltip = Some(text.into());
+        self
+    }
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = selected;
         self
@@ -289,6 +305,7 @@ mod tests {
             icon: 'X',
             enabled: true,
             selected: false,
+            tooltip: None,
             on_click: None,
         };
         let style = button.layout_style(&crate::declarative::layout::measure_text_descriptor);
@@ -308,12 +325,14 @@ mod tests {
             icon: 'X',
             enabled: true,
             selected: false,
+            tooltip: None,
             on_click: None,
         };
         let b = ToolButton {
             icon: 'X',
             enabled: true,
             selected: true,
+            tooltip: None,
             on_click: None,
         };
         assert_eq!(b.diff_against(&a), DiffAction::Update);
@@ -326,6 +345,7 @@ mod tests {
             label: "Move".to_string(),
             enabled: true,
             selected: false,
+            tooltip: None,
             on_click: None,
         };
         let style = button.layout_style(&crate::declarative::layout::measure_text_descriptor);

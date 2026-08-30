@@ -214,10 +214,18 @@ impl AssetBrowserState {
     ) {
         if let Some(parent) = self.current_path.parent() {
             let parent_path = parent.to_path_buf();
-            if parent_path != self.current_path {
+            if !parent_path.as_os_str().is_empty() && parent_path != self.current_path {
                 self.navigate_to(&parent_path, thumbnail_texture_handles);
             }
         }
+    }
+
+    /// Whether the current directory has a parent above the assets root.
+    pub fn can_go_up(&self) -> bool {
+        self.current_path
+            .parent()
+            .map(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or(false)
     }
 
     /// Navigate back in history.

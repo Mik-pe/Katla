@@ -16,6 +16,8 @@ pub struct ImageButton {
     pub icon: char,
     pub enabled: bool,
     pub fill_color: Option<Color>,
+    pub icon_color: Option<Color>,
+    pub tooltip: Option<String>,
     pub on_click: Option<Callback>,
 }
 
@@ -37,10 +39,11 @@ impl Widget for ImageButton {
     }
 
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
+        let side = crate::tokens::CONTROL_HEIGHT;
         Style {
             size: Size {
-                width: Dimension::Length(28.0),
-                height: Dimension::Length(28.0),
+                width: Dimension::Length(side),
+                height: Dimension::Length(side),
             },
             ..Style::default()
         }
@@ -76,21 +79,30 @@ impl Widget for ImageButton {
         _children: &[ViewId],
         _info: &DrawInfo,
     ) {
-        let bg = self.fill_color.unwrap_or(ctx.style().button_normal);
+        let hovered = self.enabled && bounds.contains(ctx.mouse_pos());
+        if hovered && let Some(ref tooltip) = self.tooltip {
+            ctx.defer_tooltip(tooltip);
+        }
+        let bg = if hovered {
+            ctx.style().button_hovered
+        } else {
+            ctx.style().button_normal
+        };
+        let bg = self.fill_color.unwrap_or(bg);
         let bg = animation.apply_to_color(bg);
         let radius = animation.apply_to_corner_radius(ctx.style().input_rounding);
         ctx.draw_rounded_rect(bounds, bg, radius);
 
-        let font_size = 14.0;
+        let font_size = crate::tokens::ICON_SIZE;
         let text_size = ctx.measure_icon(self.icon, font_size);
         let text_pos = Vec2::new(
             bounds.center().x() - text_size.x() * 0.5,
             bounds.center().y() - text_size.y() * 0.5,
         );
-        let icon_color = if self.enabled {
-            ctx.style().button_text
-        } else {
+        let icon_color = if !self.enabled {
             ctx.style().text_hint
+        } else {
+            self.icon_color.unwrap_or(ctx.style().button_text)
         };
         ctx.draw_icon(
             self.icon,
@@ -111,6 +123,14 @@ impl Widget for ImageButton {
 impl ImageButton {
     pub fn fill(mut self, color: impl Into<katla_math::Color>) -> Self {
         self.fill_color = Some(color.into());
+        self
+    }
+    pub fn icon_color(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.icon_color = Some(color.into());
+        self
+    }
+    pub fn tooltip(mut self, text: impl Into<String>) -> Self {
+        self.tooltip = Some(text.into());
         self
     }
     pub fn on_click(mut self, cb: super::super::descriptor::Callback) -> Self {
@@ -135,6 +155,8 @@ mod tests {
             icon: '+',
             enabled: true,
             fill_color: None,
+            icon_color: None,
+            tooltip: None,
             on_click,
         }
     }
@@ -158,6 +180,8 @@ mod tests {
             icon: '+',
             enabled: true,
             fill_color: None,
+            icon_color: None,
+            tooltip: None,
             on_click: Some(callback),
         };
 
@@ -184,6 +208,8 @@ mod tests {
             icon: '+',
             enabled: false,
             fill_color: None,
+            icon_color: None,
+            tooltip: None,
             on_click: Some(callback),
         };
         let mut state = StateArena::new();
@@ -232,6 +258,8 @@ mod tests {
             icon: '+',
             enabled: true,
             fill_color: None,
+            icon_color: None,
+            tooltip: None,
             on_click: Some(callback),
         };
         assert!(btn.focusable());
@@ -251,6 +279,8 @@ mod tests {
             icon: '+',
             enabled: false,
             fill_color: None,
+            icon_color: None,
+            tooltip: None,
             on_click: Some(callback),
         };
         assert!(!btn.focusable());
@@ -264,6 +294,8 @@ mod tests {
             icon: '+',
             enabled: true,
             fill_color: None,
+            icon_color: None,
+            tooltip: None,
             on_click: Some(callback),
         };
         let mut state = StateArena::new();

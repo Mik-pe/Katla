@@ -4,10 +4,9 @@ use std::collections::HashMap;
 use katla_ecs::EntityId;
 use katla_math::Rect2D;
 use katla_ui::FontSize;
-use katla_ui::declarative::Padding as Pad;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, empty, hstack, icon,
-    panel, scroll, selectable, text, textfield, vstack, zstack,
+    panel_body, scroll, selectable, text, textfield, vstack, zstack,
 };
 
 use crate::ui::editor_ui::ColorScheme;
@@ -74,9 +73,9 @@ impl Build for HierarchyView {
             })
             .count();
 
-        let header_text = format!("Hierarchy ({} entities)", visible_count);
-
-        let search_field = textfield("Search entities...", search_id).boxed();
+        let search_field = textfield("Search entities...", search_id)
+            .flex_width((draw_ctx.bounds.width() - 16.0).max(0.0))
+            .boxed();
 
         let display_names = build_display_names(&filtered_entities);
 
@@ -120,12 +119,7 @@ impl Build for HierarchyView {
             ])
             .spacing(6.0)
             .align(Alignment::Middle)
-            .padding(Pad {
-                top: 6.0,
-                right: 8.0,
-                bottom: 6.0,
-                left: 8.0,
-            });
+            .flex_height(katla_ui::tokens::TREE_ROW_HEIGHT);
 
             tree_children.push(
                 selectable(row.boxed())
@@ -143,10 +137,14 @@ impl Build for HierarchyView {
         }
 
         let tree_content = if tree_children.is_empty() {
-            text("No entities in scene")
-                .color(draw_ctx.theme.text_muted)
-                .font_size(FontSize::Small)
-                .boxed()
+            text(if visible_count == 0 && !search_filter.is_empty() {
+                "No matching entities"
+            } else {
+                "No entities in scene"
+            })
+            .color(draw_ctx.theme.text_muted)
+            .font_size(FontSize::Small)
+            .boxed()
         } else {
             vstack(tree_children).spacing(2.0).boxed()
         };
@@ -155,12 +153,12 @@ impl Build for HierarchyView {
             search_field,
             scroll(tree_content, scroll_id).flex_grow(1.0).boxed(),
         ])
-        .spacing(6.0)
+        .spacing(8.0)
         .padding(Padding::all(8.0))
         .flex_grow(1.0)
         .boxed();
 
-        panel(header_text, content)
+        panel_body(content)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
             .boxed()

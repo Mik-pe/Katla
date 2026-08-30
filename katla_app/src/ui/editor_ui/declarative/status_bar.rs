@@ -58,7 +58,7 @@ impl Build for StatusBarView {
                 .boxed(),
         ];
 
-        // Right cluster: EDITING is quiet, PLAYING/PAUSED is the one loud item.
+        // Right cluster: the mode is the one loud item on the bar.
         let (mode_text, mode_color) = if data.is_playing && !data.is_paused {
             ("PLAYING", theme.success)
         } else if data.is_paused {
@@ -69,11 +69,6 @@ impl Build for StatusBarView {
         let right_items = vec![
             text(mode_text)
                 .color(mode_color)
-                .font_size(FontSize::Small)
-                .boxed(),
-            text("|").color(theme.text_muted).boxed(),
-            text("Katla")
-                .color(theme.text_muted)
                 .font_size(FontSize::Small)
                 .boxed(),
         ];

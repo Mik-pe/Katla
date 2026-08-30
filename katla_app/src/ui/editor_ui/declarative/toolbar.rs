@@ -217,26 +217,37 @@ fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
 fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
     let running = draw_ctx.is_playing || draw_ctx.is_paused;
 
-    let (primary_icon, primary_fill, primary_action): (
+    let (primary_icon, primary_fill, primary_action, primary_tip): (
         char,
         katla_math::Color,
         fn() -> ToolbarAction,
+        &str,
     ) = if running && !draw_ctx.is_paused {
-        (ForkAwesome::PAUSE, draw_ctx.warning, || {
-            ToolbarAction::PlayPause
-        })
+        (
+            ForkAwesome::PAUSE,
+            draw_ctx.warning,
+            || ToolbarAction::PlayPause,
+            "Pause",
+        )
     } else if running {
-        (ForkAwesome::PLAY, draw_ctx.accent, || {
-            ToolbarAction::PlayPause
-        })
+        (
+            ForkAwesome::PLAY,
+            draw_ctx.accent,
+            || ToolbarAction::PlayPause,
+            "Resume",
+        )
     } else {
-        (ForkAwesome::PLAY, draw_ctx.accent, || {
-            ToolbarAction::PlayStart
-        })
+        (
+            ForkAwesome::PLAY,
+            draw_ctx.accent,
+            || ToolbarAction::PlayStart,
+            "Play",
+        )
     };
 
     let primary = image_button(primary_icon)
         .fill(primary_fill)
+        .tooltip(primary_tip)
         .on_click(ctx.on_click(move |actions| {
             actions.emit(primary_action());
         }));
@@ -245,6 +256,7 @@ fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn 
     if running {
         let stop = image_button(ForkAwesome::STOP)
             .fill(draw_ctx.error)
+            .tooltip("Stop")
             .on_click(ctx.on_click(|actions| {
                 actions.emit(ToolbarAction::PlayStop);
             }));

@@ -16,6 +16,7 @@ pub struct Button {
     pub label: String,
     pub fill_color: Option<Color>,
     pub border_color: Option<Color>,
+    pub tooltip: Option<String>,
     pub on_click: Option<Callback>,
 }
 
@@ -39,11 +40,10 @@ impl Widget for Button {
     fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
         let text_size = measure(&self.label, None);
         let h_padding = 16.0;
-        let v_padding = 8.0;
         Style {
             size: Size {
                 width: Dimension::Length(text_size.x() + h_padding),
-                height: Dimension::Length(text_size.y() + v_padding),
+                height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
             },
             ..Style::default()
         }
@@ -74,7 +74,16 @@ impl Widget for Button {
         _children: &[ViewId],
         info: &DrawInfo,
     ) {
-        let bg = self.fill_color.unwrap_or(ctx.style().button_normal);
+        let hovered = bounds.contains(ctx.mouse_pos());
+        if hovered && let Some(ref tooltip) = self.tooltip {
+            ctx.defer_tooltip(tooltip);
+        }
+        let bg = if hovered {
+            ctx.style().button_hovered
+        } else {
+            ctx.style().button_normal
+        };
+        let bg = self.fill_color.unwrap_or(bg);
         let bg = animation.apply_to_color(bg);
         let radius = animation.apply_to_corner_radius(ctx.style().button_rounding);
         ctx.draw_rounded_rect(bounds, bg, radius);
@@ -119,6 +128,10 @@ impl Button {
         self.border_color = Some(color.into());
         self
     }
+    pub fn tooltip(mut self, text: impl Into<String>) -> Self {
+        self.tooltip = Some(text.into());
+        self
+    }
     pub fn on_click(mut self, cb: super::super::descriptor::Callback) -> Self {
         self.on_click = Some(cb);
         self
@@ -141,6 +154,7 @@ mod tests {
             label: "click".into(),
             fill_color: None,
             border_color: None,
+            tooltip: None,
             on_click: Some(cb),
         };
 
@@ -172,12 +186,14 @@ mod tests {
             label: "ok".into(),
             fill_color: None,
             border_color: None,
+            tooltip: None,
             on_click: None,
         };
         let b = Button {
             label: "cancel".into(),
             fill_color: None,
             border_color: None,
+            tooltip: None,
             on_click: None,
         };
         assert_eq!(b.diff_against(&a), DiffAction::Update);
@@ -194,6 +210,7 @@ mod tests {
             label: "click".into(),
             fill_color: None,
             border_color: None,
+            tooltip: None,
             on_click: Some(cb),
         };
         assert!(with_cb.focusable());
@@ -202,6 +219,7 @@ mod tests {
             label: "label".into(),
             fill_color: None,
             border_color: None,
+            tooltip: None,
             on_click: None,
         };
         assert!(!without_cb.focusable());

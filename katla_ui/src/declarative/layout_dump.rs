@@ -625,6 +625,7 @@ mod tests {
             label: "Click".into(),
             fill_color: None,
             border_color: None,
+            tooltip: None,
             on_click: None,
         };
         let info = identify_widget(&widget);

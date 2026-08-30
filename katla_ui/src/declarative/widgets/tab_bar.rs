@@ -51,13 +51,20 @@ impl Widget for TabBar {
     }
 
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
-        let tab_height = 28.0_f32;
+        // Column: the drawn tab strip is chrome in the top padding band; the
+        // content child lays out below it.
         Style {
             size: Size {
                 width: Dimension::Percent(1.0),
-                height: Dimension::Length(tab_height),
+                height: Dimension::Auto,
             },
-            flex_direction: FlexDirection::Row,
+            flex_direction: FlexDirection::Column,
+            padding: taffy::Rect {
+                top: LengthPercentage::Length(crate::tokens::TAB_BAR_HEIGHT),
+                right: LengthPercentage::Length(0.0),
+                bottom: LengthPercentage::Length(0.0),
+                left: LengthPercentage::Length(0.0),
+            },
             gap: Size {
                 width: LengthPercentage::Length(0.0),
                 height: LengthPercentage::Length(0.0),
@@ -73,11 +80,21 @@ impl Widget for TabBar {
         bounds: Rect2D,
         _children: &[ViewId],
     ) -> InputResult {
-        let tab_count = self.tabs.len().max(1);
-        let tab_width = bounds.width() / tab_count as f32;
+        // Only clicks inside the drawn tab strip switch tabs; clicks on the
+        // content below belong to the content.
+        let strip = Rect2D::new(
+            bounds.min,
+            Vec2::new(
+                bounds.max.x(),
+                bounds.min.y() + crate::tokens::TAB_BAR_HEIGHT,
+            ),
+        );
 
-        if bounds.contains(ctx.mouse_pos) && ctx.input.mouse_clicked(mouse_button::LEFT) {
-            let tab_index = ((ctx.mouse_pos.x() - bounds.min.x()) / tab_width)
+        let tab_count = self.tabs.len().max(1);
+        let tab_width = strip.width() / tab_count as f32;
+
+        if strip.contains(ctx.mouse_pos) && ctx.input.mouse_clicked(mouse_button::LEFT) {
+            let tab_index = ((ctx.mouse_pos.x() - strip.min.x()) / tab_width)
                 .clamp(0.0, tab_count as f32 - 0.01) as usize;
             if tab_index < self.tabs.len() {
                 state.set(self.selected_id, tab_index);
@@ -99,12 +116,13 @@ impl Widget for TabBar {
         let font_size = ctx.style().font_size;
         let selected: usize = state.get(self.selected_id).unwrap_or_default();
         let tab_count = self.tabs.len().max(1);
+        let tab_height = crate::tokens::TAB_BAR_HEIGHT;
         let tab_width = bounds.width() / tab_count as f32;
 
         for (i, tab) in self.tabs.iter().enumerate() {
             let tab_bounds = Rect2D::from_origin_size(
                 Vec2::new(bounds.min.x() + i as f32 * tab_width, bounds.min.y()),
-                Vec2::new(tab_width, bounds.height()),
+                Vec2::new(tab_width, tab_height),
             );
             let is_selected = i == selected;
             let is_tab_hovered = tab_bounds.contains(ctx.mouse_pos());

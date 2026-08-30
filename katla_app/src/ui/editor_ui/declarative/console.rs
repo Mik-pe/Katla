@@ -55,7 +55,7 @@ pub(crate) struct ConsoleView;
 impl Build for ConsoleView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         use katla_ui::declarative::{
-            button, empty, hstack, panel, scroll, text, textfield, vstack,
+            button, empty, hstack, panel_body, scroll, text, textfield, vstack,
         };
 
         let draw_ctx = ctx.env::<ConsoleDrawCtx>().cloned();
@@ -69,6 +69,7 @@ impl Build for ConsoleView {
         // StateId slots shifted when this view becomes active/inactive.
         let search_id: StateId = ctx.state(initial_search);
         let scroll_id: StateId = ctx.state(0.0f32);
+        let autoscroll_id: StateId = ctx.state(true);
 
         let Some(draw_ctx) = draw_ctx else {
             return empty().boxed();
@@ -100,7 +101,7 @@ impl Build for ConsoleView {
             filter_toggles.push(toggle);
         }
 
-        let search_field = textfield("Filter...", search_id).boxed();
+        let search_field = textfield("Filter...", search_id).flex_grow(1.0).boxed();
 
         let clear_button = button("Clear")
             .fill(Color::TRANSPARENT)
@@ -119,7 +120,12 @@ impl Build for ConsoleView {
             clear_button,
         ])
         .spacing(8.0)
-        .padding(Padding::all(4.0))
+        .padding(Padding {
+            top: 4.0,
+            right: 8.0,
+            bottom: 4.0,
+            left: 8.0,
+        })
         .align(Alignment::Middle)
         .boxed();
 
@@ -161,7 +167,12 @@ impl Build for ConsoleView {
                     entries.push(
                         hstack([level_badge, message])
                             .spacing(8.0)
-                            .padding_all(2.0)
+                            .padding(Padding {
+                                top: 2.0,
+                                right: 8.0,
+                                bottom: 2.0,
+                                left: 8.0,
+                            })
                             .boxed(),
                     );
                 }
@@ -179,14 +190,16 @@ impl Build for ConsoleView {
 
         let content = vstack([
             toolbar,
-            scroll(log_content, scroll_id).flex_grow(1.0).boxed(),
+            scroll(log_content, scroll_id)
+                .auto_scroll(autoscroll_id)
+                .flex_grow(1.0)
+                .boxed(),
         ])
         .spacing(4.0)
-        .padding(Padding::all(4.0))
         .flex_grow(1.0)
         .boxed();
 
-        panel("Console".to_string(), content)
+        panel_body(content)
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
             .boxed()
