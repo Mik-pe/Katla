@@ -23,6 +23,7 @@ use crate::texture::ImageFormat;
 use super::command_buffer::MetalCommandBuffer;
 use super::execution_plan::{MetalExecutionPlan, MetalPassRecord};
 use super::metal_renderer::MetalRenderer;
+use super::particle::render_particles;
 use super::texture::{MetalTexture, MetalTextureView};
 
 /// Canvas clear color that appears as #1E1E1E on an sRGB framebuffer.
@@ -285,7 +286,8 @@ impl MetalRenderer {
                     let ui_draw_list = single_ui_draw_list(record, &data)?;
                     self.encode_ui_record(&mut cmd_buffer, &mut state, ui_draw_list.as_ref())?
                 }
-                PassKind::Particles | PassKind::StencilIndicator | PassKind::Compositing => {
+                PassKind::Particles => self.encode_particle_record(&mut cmd_buffer, &state)?,
+                PassKind::StencilIndicator | PassKind::Compositing => {
                     unreachable!("unsupported records are rejected while compiling the Metal plan")
                 }
             };
@@ -501,6 +503,52 @@ impl MetalRenderer {
             Self::draw_objects(self, &mut encoder, &draw_list);
         }
         encoder.end_encoding();
+
+        Ok(true)
+    }
+
+    fn encode_particle_record(
+        &self,
+        cmd_buffer: &mut MetalCommandBuffer,
+        state: &FrameEncodingState,
+    ) -> Result<bool, RendererError> {
+        let particle_system = match self.particle_system.as_ref() {
+            Some(ps) if ps.render_pipeline().is_some() => ps,
+            _ => return Ok(false),
+        };
+
+        let color_view = self.geometry_hdr_view.as_ref().ok_or_else(|| {
+            RendererError::InvalidOperation(
+                "Metal Particles record requires an HDR color target".into(),
+            )
+        })?;
+        let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+            RendererError::InvalidOperation(
+                "Metal Particles record requires a depth-stencil target".into(),
+            )
+        })?;
+        let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
+            RendererError::InvalidOperation("Metal Particles record requires frame uniforms".into())
+        })?;
+
+        // The render pipeline is always Some() when the system exists (created
+        // in init_particle_system); the guard above keeps the type checker
+        // happy and encodes nothing if pipeline creation ever fails soft.
+        let pipeline = particle_system.render_pipeline().ok_or_else(|| {
+            RendererError::InvalidOperation("Metal Particles pipeline missing".into())
+        })?;
+
+        render_particles(
+            cmd_buffer,
+            pipeline,
+            color_view,
+            depth_view,
+            state.viewport_width as u32,
+            state.viewport_height as u32,
+            frame_buf,
+            particle_system,
+            self.frame_index,
+        );
 
         Ok(true)
     }

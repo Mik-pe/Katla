@@ -68,8 +68,9 @@ impl MetalPassRecord {
             | PassKind::ObjectId
             | PassKind::Outline
             | PassKind::Fullscreen
-            | PassKind::Ui => {}
-            PassKind::Particles | PassKind::StencilIndicator | PassKind::Compositing => {
+            | PassKind::Ui
+            | PassKind::Particles => {}
+            PassKind::StencilIndicator | PassKind::Compositing => {
                 return Err(RenderGraphError::BackendError(format!(
                     "Metal has no executable handler for pass '{}' ({kind:?})",
                     pass.name
@@ -421,13 +422,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unimplemented_handler_during_plan_compilation() {
+    fn accepts_particles_handler_during_plan_compilation() {
         let passes = vec![pass(
             "particles",
             PassType::Graphics,
             Some(PassKind::Particles),
         )];
-        let error = compile(&passes, &[0]).unwrap_err().to_string();
-        assert!(error.contains("no executable handler"));
+        assert!(compile(&passes, &[0]).is_ok());
     }
 }

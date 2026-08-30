@@ -45,14 +45,16 @@ impl ParticleSystem {
     /// This should be called each frame after the global particle system
     /// has been initialized.
     ///
-    /// # Arguments
-    /// * `world` - The ECS world
-    /// * `particle_system` - The global particle system (mutably borrowed)
+    /// Update particle emitters from ECS components.
+    ///
+    /// Backend-agnostic: `particle_system` is any `ParticleEmitterDriver`
+    /// (Vulkan's `GlobalParticleSystem` or Metal's `MetalParticleSubsystem`).
+    ///
     /// * `delta_time` - Frame time in seconds (for timed emission)
     pub fn update(
         &mut self,
         world: &mut World,
-        particle_system: &mut katla_gfx::particles::GlobalParticleSystem,
+        particle_system: &mut dyn katla_gfx::ParticleEmitterDriver,
         delta_time: f32,
     ) {
         // Clean up GPU emitters for entities that no longer exist

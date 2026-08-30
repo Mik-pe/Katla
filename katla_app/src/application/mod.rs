@@ -30,6 +30,7 @@ mod headless;
 mod init;
 #[cfg(not(feature = "editor"))]
 mod no_editor_methods;
+mod particle_drive;
 mod picking;
 mod renderer;
 mod resource_loading;
