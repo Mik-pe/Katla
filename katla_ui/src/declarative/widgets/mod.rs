@@ -28,6 +28,7 @@ pub mod statusbar;
 pub mod tab_bar;
 pub mod text;
 pub mod textfield;
+pub mod theme_preview;
 pub mod toggle;
 pub mod tool_button;
 pub mod transition;

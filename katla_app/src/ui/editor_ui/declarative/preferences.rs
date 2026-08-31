@@ -1,9 +1,8 @@
-use katla_icons::ForkAwesome;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, Padding,
-    StateId, Widget, WidgetBox, draggable_panel, grid, hstack, icon, labeled_slider, selectable,
-    tab_bar, tab_item, text, textfield, toggle, vstack,
+    StateId, Widget, WidgetBox, draggable_panel, grid, labeled_slider, selectable, tab_bar,
+    tab_item, text, textfield, theme_preview, toggle, vstack,
 };
 
 use crate::Preferences;
@@ -172,30 +171,23 @@ fn build_general_tab(
         .map(|(key, display_name)| {
             let is_selected = *key == draw_ctx.theme_key;
             let key_owned = key.to_string();
-            let label: Box<dyn Widget> = if is_selected {
-                hstack([
-                    icon(ForkAwesome::CHECK).boxed(),
-                    text(*display_name).boxed(),
-                ])
-                .spacing(4.0)
-                .padding(Padding {
-                    top: 4.0,
-                    right: 6.0,
-                    bottom: 4.0,
-                    left: 6.0,
-                })
-                .boxed()
-            } else {
-                hstack([text(*display_name).boxed()])
-                    .padding(Padding {
-                        top: 4.0,
-                        right: 6.0,
-                        bottom: 4.0,
-                        left: 6.0,
+            let scheme =
+                katla_ui::ColorScheme::by_name(key).unwrap_or_else(|| draw_ctx.theme.clone());
+            let cell = vstack([
+                theme_preview(scheme).boxed(),
+                text(*display_name)
+                    .color(if is_selected {
+                        theme.text_primary
+                    } else {
+                        theme.text_secondary
                     })
-                    .boxed()
-            };
-            selectable(label)
+                    .font_size(FontSize::Small)
+                    .boxed(),
+            ])
+            .spacing(4.0)
+            .padding_all(2.0)
+            .align(Alignment::Center);
+            selectable(cell.boxed())
                 .selected(is_selected)
                 .on_click(ctx.on_click(move |actions| {
                     actions.emit(PreferencesAction::SetTheme(key_owned.clone()));
@@ -205,8 +197,8 @@ fn build_general_tab(
         .collect();
 
     children.push(
-        grid(3, katla_math::Vec2::new(138.0, 30.0), theme_buttons)
-            .grid_spacing(6.0)
+        grid(3, katla_math::Vec2::new(142.0, 70.0), theme_buttons)
+            .grid_spacing(4.0)
             .boxed(),
     );
 
