@@ -181,18 +181,22 @@ impl MetalRenderer {
                     true,
                 )?
         } else {
-            self.context.create_graphics_pipeline(
-                vertex_fn,
-                fragment_fn
-                    .as_ref()
-                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                color_formats,
-                depth_format,
-                true,
-                crate::pipeline::CompareOp::GreaterOrEqual,
-                objc2_metal::MTLCullMode::Back,
-                objc2_metal::MTLWinding::Clockwise,
-            )?
+            let vd = super::context::default_pbr_vertex_descriptor();
+            self.context
+                .create_graphics_pipeline_with_vertex_descriptor(
+                    vertex_fn,
+                    fragment_fn
+                        .as_ref()
+                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                    color_formats,
+                    depth_format,
+                    true,
+                    crate::pipeline::CompareOp::GreaterOrEqual,
+                    objc2_metal::MTLCullMode::Back,
+                    objc2_metal::MTLWinding::Clockwise,
+                    Some(&vd),
+                    false,
+                )?
         };
 
         let material = MetalMaterial {
