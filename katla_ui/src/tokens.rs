@@ -45,6 +45,12 @@ pub const ICON_SIZE_MEDIUM: f32 = 16.0;
 pub const RADIUS_CONTROL: f32 = 4.0;
 /// Corner radius for menus/popups (6 px).
 pub const RADIUS_SURFACE: f32 = 6.0;
+/// Corner radius for modal windows (10 px).
+pub const RADIUS_WINDOW: f32 = 10.0;
+/// Modal title bar height (40 px) — larger than dock tabs; modals float.
+pub const MODAL_TITLE_HEIGHT: f32 = 40.0;
+/// Modal close-button side (28 px) — a real hit target, not a tiny ×.
+pub const MODAL_CLOSE_SIZE: f32 = 28.0;
 
 /// Visual thickness of a divider (1 px).
 pub const DIVIDER_THICKNESS: f32 = 1.0;

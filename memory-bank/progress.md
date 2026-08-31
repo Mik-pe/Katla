@@ -2,6 +2,49 @@
 
 ## Completed Recently
 
+- **Preferences modal redesign + UI primitives pass (2026-08-31, uncommitted)**
+  — Preferences is now a centered `Modal` (560×520, scrim 0.6, Escape /
+  outside-click / 28px close button, focus-trapped) instead of a draggable
+  panel; categories moved to an icon sidebar (Appearance/Viewport/Audio/AI —
+  General deleted, category index lives in
+  `EditorUI.preferences_category` via `PreferencesAction::SetCategory`); the
+  15-miniature-editor-preview theme grid became a compact two-column list
+  with color-swatch rows (`theme_preview.rs` → `theme_swatch.rs`); font scale
+  became discrete 80–130% segmented options over the same persisted f32.
+  Primitives: `Widget::press_action` gives Enter/Space activation to
+  Button/Selectable/ImageButton/ToolButton (text inputs return None);
+  `Modal::wants_global_input` when open so Escape works wherever the mouse
+  is; Modal draws its own title bar/scrim/two-layer shadow (tokens
+  `MODAL_TITLE_HEIGHT`, `RADIUS_WINDOW`, `MODAL_CLOSE_SIZE`); `LabeledSlider`
+  gained `value_display(multiplier, suffix)` (volumes now show %) plus hover
+  emphasis and a focus ring; status-bar telemetry is all-muted Small with no
+  pipe separators. Deleted the orphaned `TabBar` widget end-to-end. All
+  preferences state slots are reserved unconditionally in a fixed order at
+  the top of `PreferencesView::build` (cross-tab type-confusion guard).
+  Verified: workspace tests green (254 app / 635 ui), clippy clean,
+  headless ui-test 5 states re-rendered and judge-passed.
+
+- **Particles render on Metal (2026-08-30, commit 970e07d9)** — the Metal
+  particle subsystem was fully built but orphaned: every API `#[cfg(test)]`,
+  the plan compiler rejected `PassKind::Particles`, nothing drove it. Now:
+  subsystem un-gated (render pipeline created in `init_particle_system` via
+  the `alpha_blended` variant — empty vertex descriptor, the default PBR one
+  makes validation demand buffer 10); two new shader profiles (`ParticleRender`,
+  `ParticleCompute`) with explicit naga binding maps; `encode_compute` runs
+  emit/simulate/draw-command inline in `MetalRenderer::render()` before passes
+  (light-culling pattern); `encode_particle_record` renders indirect
+  camera-facing billboards onto hdr_color (Load) with depth test/no-write;
+  `ParticleEmitterDriver` trait unifies VK/Metal emitter sync (ECS
+  `ParticleSystem::update` now takes the trait object; headless path covered
+  because `step_particle_simulation` syncs emitters before stepping — headless
+  never runs frame_loop). Deleted the test-gated `dispatch_compute`: it sized
+  the emit dispatch from a pre-emit GPU readback, which reads the PREVIOUS
+  frame's alive count and silently drops emissions. Verified: 511/251 tests,
+  clippy clean, Metal validation clean, orange fountain + white sparks visible
+  headless, static probes 8/8 byte-identical vs pre-change capture.
+
+## Completed Recently (prior)
+
 - **Application-owned frame graphs (#60, #61, #62)** — applications can provide a one-shot graph factory and runtime policy; Katla's editor renderer is an explicit preset rather than an engine invariant. Empty, UI-only, geometry-only, and custom graphs are supported.
 - **Optional Metal topology (#49)** — removed the requirement that every Metal frame contain scene depth, geometry, tonemapping, and UI. Absent passes no longer encode hidden work or wait on unsignaled fences.
 - **Structured Metal execution failures** — terminal command-buffer failures now surface backend, label, status, native code/domain, and localized description through `RendererError`.
@@ -266,6 +309,21 @@ capture to root-cause before private storage lands.
    cold/warm/hot-reload benchmark. #55 is GATED on #54 (Metal 4 rewrite —
    needs Micke's sequencing call; objc2-metal 0.3.2 has MTL4 headers but
    device support unverified).
+21. Headless artifact hunt (UNCOMMITTED, verified logic-level only):
+   (a) shadow-map billboard slivers — root cause: encode_cascade_draws drew
+   billboard gizmos flat via the non-billboard shadow VS; fix = is_billboard
+   skip in metal/shadow.rs + exclude_billboards:DrawParams field (true in
+   vulkan shadow_pass, false elsewhere). (b) pale band at viewport top —
+   root cause: last_viewport_bounds includes the tab-bar strip while the UI
+   image cell excludes it → texture squeezed, sun-washed sub-tab rows
+   exposed; fix = layout.rs subtracts TAB_BAR_HEIGHT for viewport bounds.
+   511/511, staged clippy clean. PIXEL VERIFY BLOCKED: collaborator WIP
+   (tonemap params refactor) breaks rendering — init fails "PassId(5) is not
+   a tonemap pass" on HEAD+mine, black viewport on combined tree. Do NOT
+   commit these until a rendered screenshot proves all artifacts gone.
+   GOTCHA: ~/.cargo/bin/rustup shim BROKEN since ~12:00 Aug 29 — cargo
+   silently no-ops; use ~/.rustup/toolchains/stable-aarch64-apple-darwin/bin
+   on PATH (stale-binary trap hit twice).
 
 STILL OPEN:
 - Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
@@ -274,3 +332,21 @@ STILL OPEN:
 - Private storage for uploaded textures (see item 10; GPU capture needed).
 - #57 remainder: documented invariants for remaining Metal types, executor
   model, TSan stress test.
+
+## 2026-08-30 — Editor UI polish + layout-overlap widget fixes (93a80165)
+
+- Fixed pre-existing co_creator panic on entity selection: all editor views
+  share one positional StateArena slot counter; inspector's conditional
+  section slots shifted later views. Slots now reserved unconditionally.
+- Fixed chrome-overprint class bugs: Section, TabBar, DraggablePanel now
+  reserve their header/strip in layout_style; Grid captures child count at
+  construction (child_widgets drains before taffy styles).
+- Docked panels use `panel_body()` (tab strip = header, no duplicate title);
+  standalone Panel draws title + divider. Control primitives token-sized
+  with hover + tooltips; console autoscroll via ScrollView `.auto_scroll` +
+  new `post_layout` widget hook; asset browser up button; hierarchy
+  fixed-height rows; status bar brand filler removed.
+- Verified: `--headless --ui-test` 5 states judge-passed at 1280x720
+  logical; katla_ui 640 + katla_app 252 tests green; clippy clean (my
+  crates). Only my files committed; collaborator WIP (gfx bridge, RCP
+  palette, layout.rs viewport hunk) remains uncommitted and required.

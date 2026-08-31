@@ -102,13 +102,8 @@ pub enum SeparatorDirection {
     Vertical,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Callback(pub u32);
-
-#[derive(Clone, Debug)]
-pub struct TabItem {
-    pub label: String,
-}
 
 #[derive(Clone, Debug)]
 pub struct TreeItem {

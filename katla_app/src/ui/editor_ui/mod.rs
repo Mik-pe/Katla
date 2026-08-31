@@ -69,6 +69,8 @@ pub struct EditorUI {
     pub selected_entity: Option<EntityId>,
     /// Preferences panel state (visibility).
     preferences_panel: DraggablePanelState,
+    /// Selected preferences category (sidebar index).
+    preferences_category: usize,
     /// Session-only editor settings (not persisted).
     editor_settings: EditorSettings,
     /// Hierarchy panel state (scroll, expanded entities, context menu).
@@ -169,6 +171,7 @@ impl EditorUI {
         Self {
             selected_entity: None,
             preferences_panel: DraggablePanelState::default(),
+            preferences_category: 0,
             editor_settings: EditorSettings::default(),
             hierarchy_state: HierarchyState::default(),
             left_panel_width: 220.0,
@@ -429,6 +432,9 @@ impl EditorUI {
             PreferencesAction::SetTheme(name) => {
                 self.pending_actions.push(EditorAction::SetTheme(name));
             }
+            PreferencesAction::SetCategory(index) => {
+                self.preferences_category = index.min(3);
+            }
             PreferencesAction::ToggleGrid => {
                 self.pending_actions.push(EditorAction::ToggleGrid);
             }
@@ -516,8 +522,19 @@ impl EditorUI {
     fn is_click_on_floating_panel(&self, pos: Vec2) -> bool {
         let screen = self.last_screen_size;
 
-        if let Some(bounds) = self.preferences_panel.bounds(450.0, 500.0, screen)
-            && bounds.contains(pos)
+        // Preferences is a centered modal (not draggable).
+        let modal_min = Vec2::new(
+            (screen.x() - declarative::preferences::PREFERENCES_WIDTH) * 0.5,
+            (screen.y() - declarative::preferences::PREFERENCES_HEIGHT) * 0.5,
+        );
+        if Rect2D::from_origin_size(
+            modal_min,
+            Vec2::new(
+                declarative::preferences::PREFERENCES_WIDTH,
+                declarative::preferences::PREFERENCES_HEIGHT,
+            ),
+        )
+        .contains(pos)
         {
             return true;
         }

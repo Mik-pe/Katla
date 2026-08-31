@@ -8,62 +8,147 @@ use crate::ui::editor_ui::declarative::{
     EditorOverlayView, HierarchyAction, HierarchyDrawCtx, PreferencesDrawCtx, PreferencesPanelSync,
 };
 
-/// Test that clicking a tab in the preferences panel doesn't dismiss the window.
+/// Preferences is a centered modal (560x520 in an 800x600 window).
+fn modal_bounds() -> Rect2D {
+    let size = Vec2::new(
+        declarative::preferences::PREFERENCES_WIDTH,
+        declarative::preferences::PREFERENCES_HEIGHT,
+    );
+    let screen = Vec2::new(800.0, 600.0);
+    let min = Vec2::new((screen.x() - size.x()) * 0.5, (screen.y() - size.y()) * 0.5);
+    Rect2D::new(min, min + size)
+}
+
+fn preferences_env(
+    view_tree: &mut ViewTree,
+    preferences: &Preferences,
+    editor_settings: &EditorSettings,
+    theme: &ColorScheme,
+) {
+    view_tree.env_mut().set(PreferencesDrawCtx {
+        is_open: true,
+        category: 0,
+        preferences: preferences.clone(),
+        editor_settings: editor_settings.clone(),
+        theme: theme.clone(),
+        theme_key: "rcp".to_string(),
+        llm_config: katla_agent::LlmConfig::default(),
+    });
+}
+
+fn last_sync_open(view_tree: &mut ViewTree) -> Option<bool> {
+    let syncs: Vec<PreferencesPanelSync> = view_tree.actions_mut().drain();
+    syncs.into_iter().last().map(|sync| sync.open)
+}
+
+/// Clicking inside the preferences modal must not close it.
 #[test]
-fn test_preferences_tab_click_does_not_close_panel() {
+fn test_preferences_click_inside_does_not_close() {
     let mut ui = UiContext::new();
     ui.begin(Vec2::new(800.0, 600.0), 1.0);
 
     let preferences = crate::Preferences::default();
     let editor_settings = EditorSettings::default();
     let theme = ColorScheme::default();
-    let theme_key = "rcp";
 
-    let tab_x = 100.0 + 450.0 / 3.0;
-    let tab_y = 100.0 + 32.0;
+    let bounds = modal_bounds();
+    let inside = bounds.center();
 
-    ui.input_mut().mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
+    ui.input_mut().mouse_pos = inside;
     ui.input_mut().mouse_pressed[mouse_button::LEFT] = true;
     ui.input_mut().mouse_down[mouse_button::LEFT] = true;
 
     let mut view_tree = ViewTree::default();
-    view_tree.env_mut().set(PreferencesDrawCtx {
-        is_open: true,
-        preferences: preferences.clone(),
-        editor_settings: editor_settings.clone(),
-        theme: theme.clone(),
-        theme_key: theme_key.to_string(),
-        llm_config: katla_agent::LlmConfig::default(),
-    });
-
+    preferences_env(&mut view_tree, &preferences, &editor_settings, &theme);
     let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
-
     ui.end();
 
     ui.input_mut().clear_frame_state();
     ui.begin(Vec2::new(800.0, 600.0), 1.0);
-    ui.input_mut().mouse_pos = Vec2::new(tab_x + 10.0, tab_y + 10.0);
+    ui.input_mut().mouse_pos = inside;
     ui.input_mut().mouse_down[mouse_button::LEFT] = false;
     ui.input_mut().mouse_released[mouse_button::LEFT] = true;
 
-    view_tree.env_mut().set(PreferencesDrawCtx {
-        is_open: true,
-        preferences,
-        editor_settings,
-        theme,
-        theme_key: theme_key.to_string(),
-        llm_config: katla_agent::LlmConfig::default(),
-    });
-
+    preferences_env(&mut view_tree, &preferences, &editor_settings, &theme);
     let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
 
-    let syncs: Vec<PreferencesPanelSync> = view_tree.actions_mut().drain();
-    if let Some(sync) = syncs.into_iter().next() {
-        assert!(
-            sync.visibility.is_visible(),
-            "preferences panel should stay open after clicking tab"
-        );
-    }
+    let open = last_sync_open(&mut view_tree);
+    assert_eq!(
+        open,
+        Some(true),
+        "modal should stay open after inside click"
+    );
+}
+
+/// Escape must close the preferences modal.
+#[test]
+fn test_preferences_escape_closes() {
+    use katla_ui::KeyCode;
+
+    let mut ui = UiContext::new();
+    ui.begin(Vec2::new(800.0, 600.0), 1.0);
+
+    let preferences = crate::Preferences::default();
+    let editor_settings = EditorSettings::default();
+    let theme = ColorScheme::default();
+
+    ui.input_mut().mouse_pos = modal_bounds().center();
+
+    let mut view_tree = ViewTree::default();
+    preferences_env(&mut view_tree, &preferences, &editor_settings, &theme);
+    let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
+    ui.end();
+
+    ui.input_mut().clear_frame_state();
+    ui.begin(Vec2::new(800.0, 600.0), 1.0);
+    ui.input_mut().mouse_pos = modal_bounds().center();
+    ui.input_mut().keys_pressed.push(KeyCode::Escape);
+
+    preferences_env(&mut view_tree, &preferences, &editor_settings, &theme);
+    let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
+
+    let open = last_sync_open(&mut view_tree);
+    assert_eq!(
+        open,
+        Some(false),
+        "Escape should close the preferences modal"
+    );
+}
+
+/// Clicking outside the preferences modal must close it.
+#[test]
+fn test_preferences_click_outside_closes() {
+    let mut ui = UiContext::new();
+    ui.begin(Vec2::new(800.0, 600.0), 1.0);
+
+    let preferences = crate::Preferences::default();
+    let editor_settings = EditorSettings::default();
+    let theme = ColorScheme::default();
+
+    let outside = Vec2::new(40.0, 300.0);
+
+    ui.input_mut().mouse_pos = modal_bounds().center();
+
+    let mut view_tree = ViewTree::default();
+    preferences_env(&mut view_tree, &preferences, &editor_settings, &theme);
+    let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
+    ui.end();
+
+    ui.input_mut().clear_frame_state();
+    ui.begin(Vec2::new(800.0, 600.0), 1.0);
+    ui.input_mut().mouse_pos = outside;
+    ui.input_mut().mouse_pressed[mouse_button::LEFT] = true;
+    ui.input_mut().mouse_down[mouse_button::LEFT] = true;
+
+    preferences_env(&mut view_tree, &preferences, &editor_settings, &theme);
+    let _ = view_tree.frame(&mut ui, &EditorOverlayView, Vec2::new(800.0, 600.0));
+
+    let open = last_sync_open(&mut view_tree);
+    assert_eq!(
+        open,
+        Some(false),
+        "clicking outside should close the preferences modal"
+    );
 }
 
 /// Test that clicking an entity in the hierarchy panel selects it.

@@ -496,11 +496,11 @@ pub struct HierarchyState {
     pub expanded_entities: HashSet<EntityId>,
 }
 
-/// Preferences panel tabs.
+/// Preferences modal categories (sidebar order).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PreferencesTab {
     #[default]
-    General,
+    Appearance,
     Viewport,
     Audio,
     Ai,
@@ -528,6 +528,8 @@ impl Default for EditorSettings {
 #[derive(Debug, Clone)]
 pub enum PreferencesAction {
     SetTheme(String),
+    /// Select the visible preferences category (sidebar index).
+    SetCategory(usize),
     ToggleGrid,
     ToggleStats,
     SetFontScale(f32),

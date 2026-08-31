@@ -29,13 +29,13 @@ pub use constructors::{
     draggable_panel, empty, grid, grid_keyed, hstack, hstack_keyed, icon, image, image_button,
     keyed, labeled_slider, memoize, menu_entry, menu_entry_disabled, menu_group, menubar, modal,
     overlay, panel, panel_body, progress, property_row, radio, scroll, section, selectable,
-    separator, separator_horizontal, separator_vertical, slider, statusbar, tab_bar, tab_item,
-    text, textfield, theme_preview, toggle, tool_button, tool_label_button, tree_view, vec3_slider,
-    vstack, vstack_keyed, vu_meter, zstack, zstack_keyed,
+    separator, separator_horizontal, separator_vertical, slider, statusbar, text, textfield,
+    theme_swatch, toggle, tool_button, tool_label_button, tree_view, vec3_slider, vstack,
+    vstack_keyed, vu_meter, zstack, zstack_keyed,
 };
 pub use descriptor::{
     Alignment, Anchor, Callback, ContextMenuEntry, DraggablePanelState, DraggablePanelVisibility,
-    FlexProps, MenuEntry, MenuGroup, Padding, SeparatorDirection, TabItem, TreeItem,
+    FlexProps, MenuEntry, MenuGroup, Padding, SeparatorDirection, TreeItem,
 };
 pub use diff::{DiffAction, Patch};
 pub use focus::{Direction, FocusManager, GamepadNavigator};
