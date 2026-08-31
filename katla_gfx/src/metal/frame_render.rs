@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 use std::mem;
 
-use objc2_metal::{MTLCommandBuffer, MTLRenderCommandEncoder};
+use objc2_metal::{MTLCommandBuffer, MTLRenderCommandEncoder, MTLTexture};
 
 use crate::backend::command::{
     ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
@@ -17,6 +17,7 @@ use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::render_graph::{PassExecutionData, PassId, PassKind};
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::types::{DrawList, FrameUniforms, UIDrawList};
 use crate::texture::ImageFormat;
 
@@ -27,7 +28,7 @@ use super::particle::render_particles;
 use super::texture::{MetalTexture, MetalTextureView};
 
 /// Canvas clear color that appears as #1E1E1E on an sRGB framebuffer.
-const CANVAS_CLEAR_COLOR: (f64, f64, f64, f64) = (0.013, 0.013, 0.013, 1.0);
+const CANVAS_CLEAR_COLOR: (f64, f64, f64, f64) = (0.022, 0.022, 0.022, 1.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MetalPassOutcome {
@@ -196,6 +197,19 @@ impl MetalRenderer {
             drawable_texture.clone(),
             MetalTexture::new(drawable_texture, ImageFormat::B8G8R8A8Srgb),
         );
+
+        // Per-slot uniform data must exist before the first record encodes:
+        // frame uniforms feed every pass, and object storage is bound by draw
+        // at instance-index offsets.
+        let mut upload_list = DrawList::new();
+        for data in pending.values() {
+            for list in &data.draw_lists {
+                for draw in &list.draws {
+                    upload_list.push(draw.clone());
+                }
+            }
+        }
+        GpuRenderer::execute_draw_calls(self, &upload_list)?;
 
         let mut cmd_buffer = self
             .context
@@ -490,6 +504,16 @@ impl MetalRenderer {
         };
 
         let mut encoder = cmd_buffer.begin_render_pass(pass_info);
+
+        // Set viewport to match the HDR render target (panel-sized).
+        // Metal has no guaranteed default viewport for a new render encoder.
+        if post_process_later && let Some(ref hdr_view) = self.geometry_hdr_view {
+            let w = hdr_view.inner.width() as f32;
+            let h = hdr_view.inner.height() as f32;
+            encoder.set_viewport(0.0, 0.0, w, h, 0.0, 1.0);
+            encoder.set_scissor(0, 0, w as u32, h as u32);
+        }
+
         Self::bind_common_resources(self, &mut encoder);
 
         if let Some(ref sky_pipeline) = self.sky_pipeline {
@@ -746,13 +770,6 @@ impl MetalRenderer {
         let mut encoder = cmd_buffer.begin_render_pass(pass_info);
         encoder.set_viewport(x, y, width, height, 0.0, 1.0);
         encoder.set_scissor(x as u32, y as u32, width as u32, height as u32);
-
-        if let Some(frame_buf) = self.current_frame_uniform_buffer() {
-            encoder.bind_storage_buffer(frame_buf, 0, 0, ShaderStages::VERTEX_FRAGMENT);
-        }
-        if let Some(object_buf) = self.current_object_storage_buffer() {
-            encoder.bind_storage_buffer(object_buf, 0, 1, ShaderStages::VERTEX_FRAGMENT);
-        }
         if let Some(argument_buffer) = self.bindless_manager.argument_buffer() {
             unsafe {
                 encoder
@@ -780,6 +797,9 @@ impl MetalRenderer {
         }
         if let Some(ref dummy_vertex_buffer) = self.dummy_vertex_buffer {
             encoder.bind_vertex_buffer(dummy_vertex_buffer, 0, 10);
+        }
+        if let Some(frame_buf) = self.current_frame_uniform_buffer() {
+            encoder.bind_storage_buffer(frame_buf, 0, 0, ShaderStages::VERTEX_FRAGMENT);
         }
         encoder.use_texture(
             &hdr_view.inner,
