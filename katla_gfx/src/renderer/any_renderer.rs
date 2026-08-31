@@ -612,6 +612,14 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => <VulkanRenderer as GpuRenderer>::init_shadow_resources(r),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => <MetalRenderer as GpuRenderer>::init_shadow_resources(r),
+        }
+    }
+
     fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
         match self {
             AnyRenderer::Vulkan(r) => r.create_ui_font_atlas(width, height, data),
