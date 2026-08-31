@@ -76,21 +76,6 @@ pub fn tool_button(icon: char) -> widgets::tool_button::ToolButton {
     }
 }
 
-/// Icon + label tool button for segmented tool groups (28 px tall).
-pub fn tool_label_button(
-    icon: char,
-    label: impl Into<String>,
-) -> widgets::tool_button::ToolLabelButton {
-    widgets::tool_button::ToolLabelButton {
-        icon,
-        label: label.into(),
-        enabled: true,
-        selected: false,
-        tooltip: None,
-        on_click: None,
-    }
-}
-
 pub fn slider(
     label: impl Into<String>,
     value_id: StateId,

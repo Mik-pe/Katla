@@ -170,6 +170,10 @@ impl TextField {
         self.flex.flex_grow = grow;
         self
     }
+    pub fn flex_shrink(mut self, shrink: f32) -> Self {
+        self.flex.flex_shrink = shrink;
+        self
+    }
     pub fn flex_width(mut self, width: f32) -> Self {
         self.flex.width = Some(width);
         self

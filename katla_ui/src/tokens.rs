@@ -60,6 +60,9 @@ pub const SPLITTER_HIT_WIDTH: f32 = 6.0;
 pub const SPLITTER_LINE_WIDTH: f32 = 1.0;
 /// Left padding shared by tab labels and panel headers.
 pub const TAB_LABEL_LEADING: f32 = 12.0;
+/// Maximum width of a dock tab in a multi-tab strip (160 px). Tabs stack
+/// from the left; the rest of the strip stays background.
+pub const TAB_MAX_WIDTH: f32 = 160.0;
 /// Safe margin for viewport overlays (10 px).
 pub const VIEWPORT_OVERLAY_MARGIN: f32 = 10.0;
 /// Per-level indentation increment in the hierarchy tree (16 px).

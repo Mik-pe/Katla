@@ -444,6 +444,8 @@ pub struct UiStyle {
     pub menu_item_hover_bg: Color,
     /// Color for check marks in checkboxes and menus.
     pub check_mark_color: Color,
+    /// Accent color for emphasized elements (active tool states, CTAs).
+    pub accent: Color,
 
     // Tab bar colors
     /// Height of the tab bar.
@@ -1370,6 +1372,7 @@ impl UiStyle {
 
             menu_item_hover_bg: Color::from_rgb_hex(0xF79545),
             check_mark_color: Color::from_rgb_hex(0xF79545),
+            accent: Color::from_rgb_hex(0xF79545),
 
             tab_bar_height: crate::tokens::TAB_BAR_HEIGHT,
             tab_inactive_bg: Color::from_rgb_hex(0x1E1E1E),
@@ -1446,8 +1449,11 @@ impl UiStyle {
         self.combo_hovered = c.combo_hovered;
 
         self.scrollbar_track = c.scrollbar_track;
-        self.scrollbar_handle = c.scrollbar_handle;
-        self.scrollbar_handle_hovered = c.scrollbar_handle_hovered;
+        // Macro-defined themes default the handle to opaque black, which is
+        // invisible on their dark panels; derive a subtle, theme-coherent
+        // handle from the muted text color instead.
+        self.scrollbar_handle = c.text_muted.with_alpha(0.35);
+        self.scrollbar_handle_hovered = c.text_muted.with_alpha(0.55);
         self.focus_ring_color = c.focus_ring_color;
 
         self.success = c.success;
@@ -1461,6 +1467,7 @@ impl UiStyle {
 
         self.menu_item_hover_bg = c.selectable_hovered;
         self.check_mark_color = c.checkbox_check;
+        self.accent = c.accent;
 
         self.tab_inactive_bg = c.panel_bg;
         self.tab_active_bg = c.background_light;

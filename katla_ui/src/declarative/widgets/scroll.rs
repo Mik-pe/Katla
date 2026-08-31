@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use katla_math::Rect2D;
+use katla_math::{Rect2D, Vec2};
 use taffy::Style;
 
 use super::super::animation::AnimationState;
@@ -61,6 +61,10 @@ impl Widget for ScrollView {
             },
             ..Style::default()
         };
+        // Taffy's automatic minimum size would clamp this flex item to its
+        // content height, letting the scroll view overflow its parent panel
+        // instead of scrolling within it.
+        style.min_size.height = taffy::Dimension::Length(0.0);
         crate::declarative::layout::apply_flex_props(&mut style, &self.flex);
         style
     }
@@ -102,6 +106,36 @@ impl Widget for ScrollView {
     ) {
         let bg = ctx.style().window_bg;
         ctx.draw_rect(bounds, bg);
+    }
+
+    fn draw_after_children(
+        &self,
+        ctx: &mut UiContext,
+        state: &StateArena,
+        bounds: Rect2D,
+        _children: &[ViewId],
+        children_bounds: &[Rect2D],
+    ) {
+        // Thin scrollbar affordance: a 3 px thumb on the right edge, shown
+        // only when the content actually overflows.
+        let content_height = children_bounds
+            .iter()
+            .map(|b| b.height())
+            .fold(0.0f32, f32::max);
+        let max_offset = (content_height - bounds.height()).max(0.0);
+        if max_offset <= 0.0 {
+            return;
+        }
+        let offset: f32 = state.get(self.scroll_state_id).unwrap_or_default();
+        let track_height = bounds.height();
+        let thumb_height = (track_height * track_height / content_height).max(24.0);
+        let thumb_y =
+            bounds.min.y() + (track_height - thumb_height) * (offset / max_offset).clamp(0.0, 1.0);
+        let thumb = Rect2D::from_origin_size(
+            Vec2::new(bounds.max.x() - 4.0, thumb_y),
+            Vec2::new(3.0, thumb_height),
+        );
+        ctx.draw_rounded_rect(thumb, ctx.style().scrollbar_handle, 1.5);
     }
 
     fn focusable(&self) -> bool {

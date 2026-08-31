@@ -48,6 +48,7 @@ pub struct ViewTree {
     taffy: TaffyNodeMap,
     bounds_map: HashMap<ViewId, Rect2D>,
     resolved_bounds: HashMap<ViewId, Rect2D>,
+    content_sizes: HashMap<ViewId, Vec2>,
     interaction: InteractionState,
     current_time: f64,
 }
@@ -67,6 +68,7 @@ impl Default for ViewTree {
             taffy: TaffyNodeMap::new(),
             bounds_map: HashMap::new(),
             resolved_bounds: HashMap::new(),
+            content_sizes: HashMap::new(),
             interaction: InteractionState::default(),
             current_time: 0.0,
         }
@@ -229,6 +231,7 @@ impl ViewTree {
             taffy.sync(self, &measure); // &mut ViewTree for taffy_id writeback
         }
         let bounds = taffy.compute(root_id, screen_size, self);
+        self.content_sizes = taffy.content_sizes().clone();
         self.taffy = taffy;
         self.bounds_map = bounds;
 
@@ -501,7 +504,24 @@ impl ViewTree {
                 .unwrap_or_default();
             let children_bounds: Vec<Rect2D> = children
                 .iter()
-                .filter_map(|&c| self.resolved_bounds.get(&c).copied())
+                .filter_map(|&c| {
+                    let b = self.resolved_bounds.get(&c).copied()?;
+                    // Post-layout clamping (scroll range, autoscroll pins)
+                    // must see the unclamped content extent, not the visible
+                    // clip of a scroll container.
+                    Some(
+                        self.content_sizes
+                            .get(&c)
+                            .map(|&sz| {
+                                Rect2D::new(
+                                    b.min,
+                                    b.min
+                                        + Vec2::new(sz.x().max(b.width()), sz.y().max(b.height())),
+                                )
+                            })
+                            .unwrap_or(b),
+                    )
+                })
                 .collect();
             if let Some(node) = self.nodes.get(id) {
                 node.widget
@@ -636,8 +656,29 @@ impl ViewTree {
             }
         }
 
+        let content_bounds: Vec<Rect2D> = children
+            .iter()
+            .filter_map(|&id| {
+                let b = self.resolved_bounds.get(&id).copied()?;
+                // Scroll containers clip their child to the visible area; the
+                // unclamped content size tells chrome (e.g. scrollbars) how
+                // much content there really is.
+                Some(
+                    self.content_sizes
+                        .get(&id)
+                        .map(|&c| {
+                            Rect2D::new(
+                                b.min,
+                                b.min + Vec2::new(c.x().max(b.width()), c.y().max(b.height())),
+                            )
+                        })
+                        .unwrap_or(b),
+                )
+            })
+            .collect();
+
         node.widget
-            .draw_after_children(ui, &self.state, bounds, &children, &children_bounds);
+            .draw_after_children(ui, &self.state, bounds, &children, &content_bounds);
 
         if needs_clip {
             ui.pop_clip();
@@ -710,12 +751,30 @@ impl ViewTree {
             }
         }
 
+        let content_bounds: Vec<Rect2D> = grandchildren
+            .iter()
+            .filter_map(|&id| {
+                let b = self.resolved_bounds.get(&id).copied()?;
+                Some(
+                    self.content_sizes
+                        .get(&id)
+                        .map(|&c| {
+                            Rect2D::new(
+                                b.min,
+                                b.min + Vec2::new(c.x().max(b.width()), c.y().max(b.height())),
+                            )
+                        })
+                        .unwrap_or(b),
+                )
+            })
+            .collect();
+
         child_node.widget.draw_after_children(
             ui,
             &self.state,
             draw_bounds,
             &grandchildren,
-            &grandchildren_bounds,
+            &content_bounds,
         );
 
         if child_needs_clip {

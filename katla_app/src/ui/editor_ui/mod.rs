@@ -673,7 +673,7 @@ impl EditorUI {
         };
         let root = DockNode::Split {
             direction: SplitDirection::Vertical,
-            ratio: 0.64,
+            ratio: 0.74,
             children: [Box::new(main), Box::new(bottom_tabs)],
         };
 

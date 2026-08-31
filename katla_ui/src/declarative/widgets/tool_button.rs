@@ -21,26 +21,13 @@ pub struct ToolButton {
     pub on_click: Option<Callback>,
 }
 
-/// Tool button with a leading icon and a text label (segmented tools).
-pub struct ToolLabelButton {
-    pub icon: char,
-    pub label: String,
-    pub enabled: bool,
-    pub selected: bool,
-    pub tooltip: Option<String>,
-    pub on_click: Option<Callback>,
-}
-
-const ICON_SLOT: f32 = 16.0;
-const LABEL_GAP: f32 = 4.0;
-const H_PADDING: f32 = 8.0;
 
 impl ToolButton {
     fn background(&self, ctx: &UiContext, hovered: bool) -> Color {
         if !self.enabled {
             Color::TRANSPARENT
         } else if self.selected {
-            ctx.style().check_mark_color
+            ctx.style().accent
         } else if hovered {
             ctx.style().button_hovered
         } else {
@@ -52,7 +39,9 @@ impl ToolButton {
         if !self.enabled {
             ctx.style().text_hint
         } else if self.selected {
-            ctx.style().text_color
+            // Accent fills need a dark foreground to stay legible across
+            // themes whose accent is light (amber, green).
+            Color::BLACK
         } else {
             ctx.style().button_text
         }
@@ -174,142 +163,6 @@ impl ToolButton {
     }
 }
 
-impl Widget for ToolLabelButton {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-
-    fn diff_against(&self, prev: &dyn Widget) -> DiffAction {
-        if prev.as_any().downcast_ref::<Self>().is_some() {
-            DiffAction::Update
-        } else {
-            DiffAction::Replace
-        }
-    }
-
-    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
-        let text_size = measure(&self.label, None);
-        let width = H_PADDING + ICON_SLOT + LABEL_GAP + text_size.x() + H_PADDING;
-        Style {
-            size: Size {
-                width: Dimension::Length(width),
-                height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
-            },
-            ..Style::default()
-        }
-    }
-
-    fn handle_input(
-        &self,
-        ctx: &mut InputContext<'_>,
-        _state: &mut StateArena,
-        bounds: Rect2D,
-        _children: &[ViewId],
-    ) -> InputResult {
-        if !self.enabled {
-            return InputResult::Ignore;
-        }
-
-        if bounds.contains(ctx.mouse_pos) && ctx.input.mouse_clicked(mouse_button::LEFT) {
-            if let Some(ref callback) = self.on_click {
-                ctx.callbacks.invoke(callback, ctx.actions);
-            }
-            return InputResult::Consumed;
-        }
-
-        InputResult::Ignore
-    }
-
-    fn draw(
-        &self,
-        ctx: &mut UiContext,
-        _state: &StateArena,
-        bounds: Rect2D,
-        animation: &AnimationState,
-        _children: &[ViewId],
-        info: &DrawInfo,
-    ) {
-        let hovered = self.enabled && bounds.contains(ctx.mouse_pos());
-        if hovered && let Some(ref tooltip) = self.tooltip {
-            ctx.defer_tooltip(tooltip);
-        }
-        let bg = if !self.enabled {
-            Color::TRANSPARENT
-        } else if self.selected {
-            ctx.style().check_mark_color
-        } else if hovered {
-            ctx.style().button_hovered
-        } else {
-            ctx.style().button_normal
-        };
-        let bg = animation.apply_to_color(bg);
-        let radius = animation.apply_to_corner_radius(ctx.style().input_rounding);
-        ctx.draw_rounded_rect(bounds, bg, radius);
-
-        if info.interaction.is_focused(info.view_id) {
-            ctx.draw_rounded_selection_border(bounds, ctx.style().focus_ring_color, 2.0, radius);
-        }
-
-        let fg = if !self.enabled {
-            ctx.style().text_hint
-        } else if self.selected {
-            ctx.style().text_color
-        } else {
-            ctx.style().button_text
-        };
-        let fg = animation.apply_to_color(fg);
-
-        let icon_size = ctx.measure_icon(self.icon, crate::tokens::ICON_SIZE);
-        let icon_pos = Vec2::new(
-            bounds.min.x() + H_PADDING + (ICON_SLOT - icon_size.x()) * 0.5,
-            bounds.center().y() - icon_size.y() * 0.5,
-        );
-        ctx.draw_icon(self.icon, icon_pos, crate::tokens::ICON_SIZE, fg);
-
-        let label_size = ctx.measure_text(&self.label, ctx.style().font_size);
-        let label_pos = Vec2::new(
-            bounds.min.x() + H_PADDING + ICON_SLOT + LABEL_GAP,
-            bounds.center().y() - label_size.y() * 0.5,
-        );
-        ctx.draw_text(&self.label, label_pos, fg, ctx.style().font_size);
-    }
-
-    fn focusable(&self) -> bool {
-        self.on_click.is_some() && self.enabled
-    }
-
-    fn press_action(&self) -> Option<Callback> {
-        if self.enabled { self.on_click } else { None }
-    }
-
-    fn interactive(&self) -> bool {
-        true
-    }
-}
-
-impl ToolLabelButton {
-    pub fn tooltip(mut self, text: impl Into<String>) -> Self {
-        self.tooltip = Some(text.into());
-        self
-    }
-    pub fn selected(mut self, selected: bool) -> Self {
-        self.selected = selected;
-        self
-    }
-    pub fn enabled(mut self, enabled: bool) -> Self {
-        self.enabled = enabled;
-        self
-    }
-    pub fn on_click(mut self, cb: Callback) -> Self {
-        self.on_click = Some(cb);
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,23 +205,5 @@ mod tests {
             on_click: None,
         };
         assert_eq!(b.diff_against(&a), DiffAction::Update);
-    }
-
-    #[test]
-    fn test_tool_label_button_layout_width_covers_label() {
-        let button = ToolLabelButton {
-            icon: 'X',
-            label: "Move".to_string(),
-            enabled: true,
-            selected: false,
-            tooltip: None,
-            on_click: None,
-        };
-        let style = button.layout_style(&crate::declarative::layout::measure_text_descriptor);
-        if let Dimension::Length(w) = style.size.width {
-            assert!(w > H_PADDING + ICON_SLOT + LABEL_GAP + H_PADDING);
-        } else {
-            panic!("expected fixed width");
-        }
     }
 }

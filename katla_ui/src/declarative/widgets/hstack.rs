@@ -143,6 +143,18 @@ impl HStack {
         self.flex.flex_grow = grow;
         self
     }
+    /// Disable taffy's automatic minimum size on the main axis. A stack that
+    /// directly wraps a scroll view needs this, or the stack refuses to
+    /// shrink below its content height and the scroll view overflows the
+    /// panel instead of scrolling.
+    pub fn flex_min_height(mut self, h: f32) -> Self {
+        self.flex.min_height = Some(h);
+        self
+    }
+    pub fn flex_shrink(mut self, shrink: f32) -> Self {
+        self.flex.flex_shrink = shrink;
+        self
+    }
 }
 
 #[cfg(test)]
