@@ -386,7 +386,7 @@ impl Application {
             light_direction: [0.3, 1.0, 0.2, 0.0],
             light_color: [1.0, 0.98, 0.95, 0.0],
             light_intensity: [
-                1.0,
+                4.0,
                 self.renderer
                     .depth_texture_base_index()
                     .map(|base| base + self.renderer.current_frame() as u32)
@@ -1049,7 +1049,7 @@ impl Application {
             light_direction: [0.3, 1.0, 0.2, 0.0],
             light_color: [1.0, 0.98, 0.95, 0.0],
             light_intensity: [
-                1.0,
+                4.0,
                 self.renderer
                     .depth_texture_base_index()
                     .map(|base| base + self.renderer.current_frame() as u32)
