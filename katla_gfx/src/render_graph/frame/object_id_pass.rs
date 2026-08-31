@@ -211,6 +211,7 @@ impl Frame<'_, VulkanRenderer> {
             },
             billboard_pipeline,
             billboard_layout,
+            exclude_billboards: false,
         })?;
 
         cmd.end_rendering();

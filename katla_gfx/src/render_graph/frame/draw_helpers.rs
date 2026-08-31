@@ -43,6 +43,9 @@ pub(super) struct DrawParams<'a> {
     /// When a draw call's mesh has TexCoord0, this pipeline is used instead of the base pipeline.
     pub billboard_pipeline: Option<vk::Pipeline>,
     pub billboard_layout: Option<vk::PipelineLayout>,
+    /// Skip billboard draws entirely (shadow passes: gizmo icons must not
+    /// cast shadows, and the shadow vertex shader has no billboarding math).
+    pub exclude_billboards: bool,
 }
 
 /// Execute the common skinned/non-skinned/billboard draw loop.
@@ -64,6 +67,7 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
         descriptors,
         billboard_pipeline,
         billboard_layout,
+        exclude_billboards,
     } = params;
 
     // Bind the base (non-skinned) pipeline
@@ -112,6 +116,9 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
                 .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
             // Billboard draws are identified by the is_billboard flag on the draw call
+            if exclude_billboards && draw_call.is_billboard {
+                continue;
+            }
             let is_billboard = draw_call.is_billboard && billboard_pipeline.is_some();
 
             let target_variant = if is_skinned {
