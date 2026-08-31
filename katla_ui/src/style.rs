@@ -1067,31 +1067,34 @@ impl ColorScheme {
     pub fn rcp() -> Self {
         let mut scheme = color_scheme!(
             name: "Reality Composer Pro",
-            bg: 0x1E1E1E, 0x2A2A2E, 0x141414,
-            panel: 0x1E1E1E, 0x2A2A2E, 0x38383A,
-            text: 0xFFFFFF, 0x8E8E93, 0x6E6E72, 0xF79545,
-            button: 0x3A3A3C, 0x48484A, 0x3D3D52, 0xFFFFFF,
-            selection: 0xF79545, 0xF79545, 0xB45309,
-            misc: 0x2A2A2E, 0x38383A,
-            entity: 0x8E8E93, 0xF79545, 0xFFD60A, 0x6E6E72,
+            bg: 0x292929, 0x323232, 0x171717,
+            panel: 0x292929, 0x323232, 0x2E2E2E,
+            text: 0xE4E4E4, 0xA0A0A0, 0x858585, 0xE9A900,
+            button: 0x3A3A3A, 0x454545, 0x6A5738, 0xE4E4E4,
+            selection: 0x595959, 0x6A5738, 0x454545,
+            misc: 0x171717, 0x2E2E2E,
+            entity: 0xA0A0A0, 0xE9A900, 0xFFD60A, 0x858585,
             status: 0x30D158, 0xFF9F0A, 0xFF453A, 0x64D2FF,
-            viewport: 0x38383A,
-            popup: 0x2C2C2E, 0x38383A,
+            viewport: 0x2B2B2B,
+            popup: 0x2C2C2E, 0x2E2E2E,
         );
 
-        scheme.window_bg = Color::from_rgb_hex(0x2C2C2E);
-        scheme.panel_bg = Color::from_rgb_hex(0x2C2C2E);
+        scheme.window_bg = Color::from_rgb_hex(0x292929);
+        scheme.panel_bg = Color::from_rgb_hex(0x292929);
+        scheme.window_title_bg = Color::from_rgb_hex(0x323232);
+        scheme.window_title_bg_active = Color::from_rgb_hex(0x323232);
         scheme.window_border = Color::TRANSPARENT;
-        scheme.input_border = Color::TRANSPARENT;
-        scheme.checkbox_border = Color::TRANSPARENT;
-        scheme.combo_border = Color::TRANSPARENT;
-        scheme.popup_border = Color::TRANSPARENT;
-        scheme.panel_border = Color::TRANSPARENT;
-        scheme.separator = Color::TRANSPARENT;
-        scheme.border = Color::TRANSPARENT;
 
-        scheme.selectable_selected = Color::from_rgb_hex(0x3A3A3C);
-        scheme.selectable_hovered = Color::from_rgb_hex(0x484848);
+        scheme.input_border = Color::from_rgb_hex(0x454545);
+        scheme.checkbox_border = Color::TRANSPARENT;
+        scheme.combo_border = Color::from_rgb_hex(0x454545);
+        scheme.popup_border = Color::from_rgb_hex(0x454545);
+        scheme.panel_border = Color::from_rgb_hex(0x171717);
+        scheme.separator = Color::from_rgb_hex(0x171717);
+        scheme.border = Color::from_rgb_hex(0x454545);
+
+        scheme.selectable_selected = Color::from_rgb_hex(0x595959);
+        scheme.selectable_hovered = Color::from_rgb_hex(0x3A3A3A);
 
         scheme
     }
