@@ -122,6 +122,7 @@ pub struct SimplePass {
     writes: Vec<String>,
     image_accesses: Vec<NamedImageAccess>,
     kind: Option<PassKind>,
+    tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
 }
 
 impl SimplePass {
@@ -133,6 +134,7 @@ impl SimplePass {
             writes: Vec::new(),
             image_accesses: Vec::new(),
             kind: None,
+            tonemap_params: None,
         }
     }
 
@@ -176,6 +178,11 @@ impl SimplePass {
         self.kind = Some(kind);
         self
     }
+
+    pub fn tonemap(mut self, params: crate::render_graph::passes::TonemapParams) -> Self {
+        self.tonemap_params = Some(params);
+        self
+    }
 }
 
 impl PassBuilder for SimplePass {
@@ -187,7 +194,7 @@ impl PassBuilder for SimplePass {
             writes: self.writes,
             image_accesses: self.image_accesses,
             pipeline: None,
-            tonemap_params: None,
+            tonemap_params: self.tonemap_params,
             overlay_params: None,
             material: None,
             output_format: None,

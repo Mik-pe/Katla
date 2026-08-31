@@ -366,7 +366,13 @@ impl ApplicationBuilder {
                 SimplePass::new("tonemap", PassType::Graphics)
                     .read("hdr_color")
                     .write("viewport_0")
-                    .with_kind(PassKind::Fullscreen),
+                    .with_kind(PassKind::Fullscreen)
+                    .tonemap(katla_gfx::TonemapParams {
+                        exposure: 1.0,
+                        gamma: 2.2,
+                        mode: katla_gfx::TonemapOperator::Aces,
+                        hdr_texture_index: None,
+                    }),
             )
             .add_pass(
                 SimplePass::new("ui", PassType::Graphics)
