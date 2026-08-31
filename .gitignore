@@ -8,6 +8,15 @@ imgui.ini
 .claude/cache/
 .claude/settings.local.json
 !.claude/skills/
+
+# ZCode - session plans and screenshots
+.zcode/
+
+# Agent skills (track)
+!.agents/skills/
+
+# macOS
+.DS_Store
 frames/
 debug_output.txt
 
