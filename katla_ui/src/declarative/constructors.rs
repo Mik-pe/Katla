@@ -117,6 +117,8 @@ pub fn labeled_slider(
         label_width: 0.0,
         show_value: false,
         precision: 2,
+        value_multiplier: 1.0,
+        value_suffix: String::new(),
     }
 }
 
@@ -264,25 +266,6 @@ pub fn section(
     }
 }
 
-pub fn tab_bar(
-    tabs: Vec<super::descriptor::TabItem>,
-    selected_id: StateId,
-    content: Box<dyn Widget>,
-) -> widgets::tab_bar::TabBar {
-    widgets::tab_bar::TabBar {
-        tabs,
-        selected_id,
-        child_widget: Some(content),
-        children: Vec::new(),
-    }
-}
-
-pub fn tab_item(label: impl Into<String>) -> super::descriptor::TabItem {
-    super::descriptor::TabItem {
-        label: label.into(),
-    }
-}
-
 pub fn grid(
     columns: usize,
     cell_size: katla_math::Vec2,
@@ -384,8 +367,8 @@ pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> widgets::pan
 }
 
 /// Mocked-editor thumbnail previewing a color scheme.
-pub fn theme_preview(scheme: crate::style::ColorScheme) -> widgets::theme_preview::ThemePreview {
-    widgets::theme_preview::ThemePreview::new(scheme)
+pub fn theme_swatch(scheme: crate::style::ColorScheme) -> widgets::theme_swatch::ThemeSwatch {
+    widgets::theme_swatch::ThemeSwatch::new(scheme)
 }
 
 /// Panel surface for docked views. The header strip is reserved as spacing
@@ -1029,20 +1012,6 @@ mod tests {
         let id = dummy_state_id();
         let w = section("s", text("c").boxed(), id).on_remove(Callback(99));
         assert!(w.on_remove.is_some());
-    }
-
-    // -- TabBar tests --
-
-    #[test]
-    fn test_tab_bar_defaults() {
-        let id = dummy_state_id();
-        let w = tab_bar(
-            vec![tab_item("A"), tab_item("B")],
-            id,
-            text("content").boxed(),
-        );
-        assert_eq!(w.tabs.len(), 2);
-        assert_eq!(w.tabs[0].label, "A");
     }
 
     // -- Grid tests --

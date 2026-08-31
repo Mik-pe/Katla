@@ -77,7 +77,7 @@ impl Widget for ImageButton {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _info: &DrawInfo,
+        info: &DrawInfo,
     ) {
         let hovered = self.enabled && bounds.contains(ctx.mouse_pos());
         if hovered && let Some(ref tooltip) = self.tooltip {
@@ -92,6 +92,10 @@ impl Widget for ImageButton {
         let bg = animation.apply_to_color(bg);
         let radius = animation.apply_to_corner_radius(ctx.style().input_rounding);
         ctx.draw_rounded_rect(bounds, bg, radius);
+
+        if info.interaction.is_focused(info.view_id) {
+            ctx.draw_rounded_selection_border(bounds, ctx.style().focus_ring_color, 2.0, radius);
+        }
 
         let font_size = crate::tokens::ICON_SIZE;
         let text_size = ctx.measure_icon(self.icon, font_size);
@@ -114,6 +118,10 @@ impl Widget for ImageButton {
 
     fn focusable(&self) -> bool {
         self.on_click.is_some() && self.enabled
+    }
+
+    fn press_action(&self) -> Option<Callback> {
+        if self.enabled { self.on_click } else { None }
     }
 
     fn interactive(&self) -> bool {

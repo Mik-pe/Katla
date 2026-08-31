@@ -39,7 +39,6 @@ use super::widgets::selectable::Selectable;
 use super::widgets::separator::Separator;
 use super::widgets::slider::Slider;
 use super::widgets::statusbar::StatusBar;
-use super::widgets::tab_bar::TabBar;
 use super::widgets::text::Text;
 use super::widgets::textfield::TextField;
 use super::widgets::toggle::Toggle;
@@ -269,15 +268,6 @@ fn identify_widget(widget: &dyn Widget) -> WidgetInfo {
             type_name: "StatusBar".into(),
             label: None,
             details: vec![format!("height={}", w.height)],
-        };
-    }
-
-    if let Some(w) = any.downcast_ref::<TabBar>() {
-        let tab_names: Vec<&str> = w.tabs.iter().map(|t| t.label.as_str()).collect();
-        return WidgetInfo {
-            type_name: "TabBar".into(),
-            label: None,
-            details: vec![format!("tabs=[{}]", tab_names.join(", "))],
         };
     }
 

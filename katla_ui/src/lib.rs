@@ -23,7 +23,7 @@
 //! PropertyRow, VuMeter, Separator, Icon, Selectable, Section
 //!
 //! **Layout containers:** HStack, VStack, ZStack, ScrollView, Panel, Overlay,
-//! StatusBar, DraggablePanel, MenuBar, TreeView, Modal, ContextMenu, TabBar, Grid,
+//! StatusBar, DraggablePanel, MenuBar, TreeView, Modal, ContextMenu, Grid,
 //! DockSpace, Memoize, TransitionContainer
 //!
 //! ## State management

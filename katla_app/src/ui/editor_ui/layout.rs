@@ -19,6 +19,7 @@ use super::{
     types::{self as editor_types, EditorPanel, PreferencesAction},
 };
 
+use super::declarative::editor_root::TAB_BAR_HEIGHT;
 use super::declarative::toolbar::TOOLBAR_HEIGHT;
 
 use super::declarative::STATUS_BAR_HEIGHT;
@@ -75,12 +76,24 @@ impl EditorUI {
                 && let Some(&panel_id) = tabs.get(*active)
                 && EditorPanel::from_id(panel_id) == Some(EditorPanel::Viewport)
             {
-                dock_viewport_bounds = Some(*content_bounds);
+                // The dock leaf area includes the tab-bar strip, but the 3D
+                // scene must fill only the content BELOW the tab bar — the
+                // same rect the viewport grid's image cell occupies. Rendering
+                // against the full leaf would squeeze the texture and expose
+                // rows that are normally covered by the tab bar.
+                let content_bounds = Rect2D::new(
+                    Vec2::new(
+                        content_bounds.min.x(),
+                        content_bounds.min.y() + TAB_BAR_HEIGHT,
+                    ),
+                    content_bounds.max,
+                );
+                dock_viewport_bounds = Some(content_bounds);
                 self.last_viewport_size = (
                     content_bounds.width().max(1.0) as u32,
                     content_bounds.height().max(1.0) as u32,
                 );
-                self.last_viewport_bounds = *content_bounds;
+                self.last_viewport_bounds = content_bounds;
 
                 if content_bounds.contains(mouse_pos) {
                     crate::input::update_active_viewport(
@@ -232,6 +245,7 @@ impl EditorUI {
         let theme_key = self.theme_key().to_string();
         self.view_tree.env_mut().set(PreferencesDrawCtx {
             is_open: self.preferences_panel.is_visible(),
+            category: self.preferences_category,
             preferences: params.preferences.clone(),
             editor_settings: self.editor_settings.clone(),
             theme: self.theme.clone(),
@@ -389,7 +403,11 @@ impl EditorUI {
         }
 
         for sync in self.view_tree.actions_mut().drain::<PreferencesPanelSync>() {
-            self.preferences_panel.visibility = sync.visibility;
+            self.preferences_panel.visibility = if sync.open {
+                katla_ui::declarative::DraggablePanelVisibility::Visible
+            } else {
+                katla_ui::declarative::DraggablePanelVisibility::Hidden
+            };
         }
         for action in self.view_tree.actions_mut().drain::<PreferencesAction>() {
             self.apply_preferences_action(action);

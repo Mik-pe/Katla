@@ -8,7 +8,7 @@ use crate::style::FontSize;
 
 use super::actions::ActionStream;
 use super::animation::AnimationState;
-use super::descriptor::Alignment;
+use super::descriptor::{Alignment, Callback};
 use super::diff::DiffAction;
 use super::state::{StateArena, ViewId};
 
@@ -103,6 +103,14 @@ pub trait Widget: Any + 'static {
     /// Whether this widget can receive keyboard focus.
     fn focusable(&self) -> bool {
         false
+    }
+
+    /// Callback invoked when this widget holds keyboard focus and the user
+    /// presses Enter or Space. Return `Some` only for widgets whose whole
+    /// bounds act like a button; text inputs must return `None` so those
+    /// keys keep editing.
+    fn press_action(&self) -> Option<Callback> {
+        None
     }
 
     /// Access this widget's child view IDs.

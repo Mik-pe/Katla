@@ -122,6 +122,24 @@ pub(crate) fn process_input(
     // --- Hit test for new interactions ---
     let hit = hit_test(tree, input.mouse_pos, bounds_map);
 
+    // --- Keyboard activation: Enter/Space presses the focused widget ---
+    // Only fires when the focused widget exposes a press action (buttons,
+    // selectables); text inputs return None so those keys keep editing.
+    if !input.key_pressed(crate::input::KeyCode::Tab)
+        && (input.key_pressed(crate::input::KeyCode::Enter)
+            || input.key_pressed(crate::input::KeyCode::Space))
+        && let Some(focused_id) = tree.interaction().focused_id
+        && let Some(node) = tree.get(focused_id)
+        && let Some(callback) = node.widget.press_action()
+    {
+        let mut actions = std::mem::take(tree.actions_mut());
+        callbacks.invoke(&callback, &mut actions);
+        *tree.actions_mut() = actions;
+        result.input_consumed = true;
+        result.clicked_id = Some(focused_id);
+        return result;
+    }
+
     if hit.is_none() && input.mouse_clicked(mouse_button::LEFT) {
         close_outside_draggable_panels(tree, bounds_map, input.mouse_pos);
     }

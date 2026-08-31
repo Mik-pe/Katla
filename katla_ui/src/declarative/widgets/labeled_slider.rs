@@ -19,6 +19,20 @@ pub struct LabeledSlider {
     pub label_width: f32,
     pub show_value: bool,
     pub precision: usize,
+    /// Multiplier applied to the raw value for display (100 → percent).
+    pub value_multiplier: f32,
+    /// Suffix appended to the displayed value ("%", " m/s", …).
+    pub value_suffix: String,
+}
+
+/// Format the value for display using multiplier/precision/suffix.
+fn display_value(slider: &LabeledSlider, value: f32) -> String {
+    format!(
+        "{:.*}{}",
+        slider.precision,
+        value * slider.value_multiplier,
+        slider.value_suffix
+    )
 }
 
 impl Widget for LabeledSlider {
@@ -43,7 +57,7 @@ impl Widget for LabeledSlider {
         Style {
             size: Size {
                 width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
-                height: Dimension::Length(text_size.y() + 12.0),
+                height: Dimension::Length((text_size.y() + 12.0).max(24.0)),
             },
             ..Style::default()
         }
@@ -85,7 +99,7 @@ impl Widget for LabeledSlider {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _info: &DrawInfo,
+        info: &DrawInfo,
     ) {
         let value: f32 = state.get(self.value_id).unwrap_or_default();
         let t = if *self.range.end() > *self.range.start() {
@@ -110,7 +124,7 @@ impl Widget for LabeledSlider {
         let track_x = bounds.min.x() + self.label_width;
 
         let value_text_width = if self.show_value {
-            let value_text = format!("{:.1$}", value, self.precision);
+            let value_text = display_value(self, value);
             let size = ctx.measure_text(&value_text, font_size);
             size.x() + 8.0
         } else {
@@ -139,19 +153,29 @@ impl Widget for LabeledSlider {
             );
         }
 
-        let grab_color = ctx.style().slider_grab;
+        // The grab grows slightly while hovered for a clearer affordance.
+        let hovered = bounds.contains(ctx.mouse_pos());
+        let grab_color = if hovered {
+            ctx.style().slider_grab_hovered
+        } else {
+            ctx.style().slider_grab
+        };
         let grab_center_x = track_x + t * track_width;
         let grab_center = Vec2::new(grab_center_x, track_center_y);
-        let grab_radius = ctx.style().slider_grab_size * 0.5;
+        let grab_radius = ctx.style().slider_grab_size * 0.5 + if hovered { 1.0 } else { 0.0 };
         ctx.draw_circle(
             Vec2::new(grab_center.x(), grab_center.y() + 1.0),
             grab_radius,
             katla_math::Color::new(0.0, 0.0, 0.0, 0.3),
         );
-        ctx.draw_circle(grab_center, grab_radius, grab_color);
+        ctx.draw_circle(
+            grab_center,
+            grab_radius,
+            animation.apply_to_color(grab_color),
+        );
 
         if self.show_value {
-            let value_text = format!("{:.1$}", value, self.precision);
+            let value_text = display_value(self, value);
             let text_size = ctx.measure_text(&value_text, font_size);
             let value_x = bounds.max.x() - text_size.x();
             let value_y = bounds.center().y() - text_size.y() * 0.5;
@@ -160,6 +184,15 @@ impl Widget for LabeledSlider {
                 Vec2::new(value_x, value_y),
                 text_color,
                 font_size,
+            );
+        }
+
+        if info.interaction.is_focused(info.view_id) {
+            ctx.draw_rounded_selection_border(
+                bounds,
+                ctx.style().focus_ring_color,
+                2.0,
+                ctx.style().button_rounding,
             );
         }
     }
@@ -185,6 +218,13 @@ impl LabeledSlider {
         self.label_width = w;
         self
     }
+    /// Display the value as `value * multiplier` followed by `suffix`
+    /// (e.g. multiplier 100 + suffix "%" renders 0.25 as "25%").
+    pub fn value_display(mut self, multiplier: f32, suffix: impl Into<String>) -> Self {
+        self.value_multiplier = multiplier;
+        self.value_suffix = suffix.into();
+        self
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -204,6 +244,8 @@ mod tests {
             label_width: 80.0,
             show_value: true,
             precision: 2,
+            value_multiplier: 1.0,
+            value_suffix: String::new(),
         }
     }
 
@@ -255,6 +297,8 @@ mod tests {
             label_width: 80.0,
             show_value: true,
             precision: 2,
+            value_multiplier: 1.0,
+            value_suffix: String::new(),
         };
 
         let mut input = UiInputState::new();

@@ -335,22 +335,22 @@ impl Build for AssetBrowserView {
             .boxed();
 
         let modal_content = vstack([
-            text("Confirm Delete")
-                .color(draw_ctx.theme.text_primary)
-                .boxed(),
             text(&draw_ctx.confirm_dialog_message)
                 .color(draw_ctx.theme.text_secondary)
                 .boxed(),
-            hstack([no_button, yes_button]).spacing(8.0).boxed(),
+            hstack([no_button, yes_button])
+                .spacing(8.0)
+                .align(Alignment::Trailing)
+                .boxed(),
         ])
-        .spacing(8.0)
-        .padding_all(8.0);
+        .spacing(12.0)
+        .padding_all(12.0);
 
-        let confirm_modal = modal(320.0, 120.0, confirm_open_id, modal_content.boxed()).on_close(
-            ctx.on_click(|actions| {
+        let confirm_modal = modal(340.0, 170.0, confirm_open_id, modal_content.boxed())
+            .title("Confirm Delete")
+            .on_close(ctx.on_click(|actions| {
                 actions.emit(AssetBrowserAction::CancelDelete);
-            }),
-        );
+            }));
 
         panel_body(
             vstack([content, context_menu, confirm_modal.boxed()])

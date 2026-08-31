@@ -588,32 +588,6 @@ mod tests {
     }
 
     #[test]
-    fn test_tab_bar_layout() {
-        use crate::declarative::state::{StateArena, ViewId};
-
-        let mut tree = ViewTree::new();
-        let mut arena = StateArena::default();
-        let state_id = arena.get_or_create(ViewId::default(), 0usize);
-        let tabs = vec![tab_item("Tab 1"), tab_item("Tab 2")];
-        let descriptor = tab_bar(tabs, state_id, text("content").boxed());
-
-        build_tree(&mut tree, descriptor.boxed());
-
-        let mut layout = TaffyNodeMap::new();
-        layout.sync(&mut tree, &measure_text_descriptor);
-
-        let bounds = layout.compute(tree.root().unwrap(), Vec2::new(800.0, 600.0), &tree);
-
-        let root_bounds = bounds
-            .get(&tree.root().unwrap())
-            .copied()
-            .unwrap_or_default();
-
-        assert!(root_bounds.width() > 0.0);
-        assert!(root_bounds.height() > 0.0);
-    }
-
-    #[test]
     fn test_grid_layout() {
         let mut tree = ViewTree::new();
         let descriptor = grid(

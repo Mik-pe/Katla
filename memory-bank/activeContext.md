@@ -2,6 +2,32 @@
 
 ## Current Focus
 
+- **Editor UI: preferences modal redesign (2026-08-31, uncommitted in tree)**
+  — Preferences is a focused `Modal` with icon sidebar (Appearance / Viewport
+  / Audio / AI; General removed) over a 0.6-alpha scrim; theme picker is a
+  compact swatch list; UI scale is discrete 80–130% segments. Widget-layer
+  additions: `Widget::press_action` (Enter/Space activates focused buttons —
+  text inputs must keep returning None), `Modal::wants_global_input` +
+  self-drawn title bar/scrim/shadow, `theme_swatch` replaces the deleted
+  `theme_preview`, `LabeledSlider::value_display(multiplier, suffix)`, tokens
+  `MODAL_TITLE_HEIGHT`/`RADIUS_WINDOW`/`MODAL_CLOSE_SIZE`; orphaned `TabBar`
+  widget deleted. CRITICAL convention reaffirmed: every state slot used by any
+  preferences category is allocated unconditionally in fixed order at the top
+  of `PreferencesView::build` — conditional `ctx.state()` cross-assigns types
+  between tabs. Hit-testing for the centered modal lives in
+  `EditorUI::is_click_on_floating_panel` using `PREFERENCES_WIDTH/HEIGHT`
+  (not `DraggablePanelState::bounds`). Verified: workspace tests, clippy,
+  headless ui-test 5 states, judge-passed screenshots in
+  `.zcode/ui-screenshots/`.
+- **Particles render on Metal (landed 970e07d9, 2026-08-30)** — subsystem
+  un-gated, compute dispatched inline pre-pass, `PassKind::Particles` record
+  encoded onto hdr_color, emitter sync backend-agnostic via
+  `ParticleEmitterDriver`. Known gaps: the editor `ResetParticleSystem` action
+  and `game_state.rs`/editor entity-destruction cleanup still target the
+  Vulkan system only (Metal emitters survive those actions until someone
+  routes them through the driver trait); `MetalParticleSubsystem::reset_all`
+  was deleted rather than wired — restore from git history if the editor
+  action goes cross-backend.
 - **Complete render-graph execution plans (#56)** — application-owned topology, exact pass identity, pass-local submissions, explicit object-ID work, and dead-pass culling are complete. The remaining work moves graph-declared attachments, load/store/clear state, viewport/scissor, and generic executable payloads into backend records.
 - **Preserve the engine/application boundary** — Katla's editor pipeline is an explicit preset. The engine must continue to support empty, UI-only, geometry-only, reordered, repeated, and fully custom pass graphs without hidden scene work.
 - **Keep Metal honest** — Metal consumes the compiler's canonical live pass order. It may reject unsupported executable payloads before command-buffer creation, but it must not invent topology or silently add editor passes.
@@ -46,7 +72,28 @@ the buffer-3 collision with shadow_params). CI fully green.
   1461px); theme constants; canvas/HDR clears (both dark).
 
 ## Temporary Boundaries
+## Temporary Boundaries
 
+- **Handoff note (2026-08-30, headless-verify session):** the frame-slot refactor
+  dropped the per-slot uniform preparation from the graph-driven render_frame —
+  no ensure_uniform_buffers, no frame/object uploads, and fullscreen lost its
+  slot-0 frame_data bind. Metal validation killed fs_main ("missing Buffer
+  binding at index 0"). Bridged in katla_gfx/src/metal/frame_render.rs
+  (uncommitted, in the WIP tree): render_frame now merges all draw_lists and
+  calls GpuRenderer::execute_draw_calls before encoding, and
+  encode_fullscreen_record re-binds slot 0. Headless renders verified: scene
+  visible, validation clean, run-vs-run diff confined to the FPS counter.
+  Proper owner: fold these into the slot-ownership design (#36) and replace the
+  bridge with graph-declared buffer resources (#31) when landing.
+- **Shadow fix (same session):** graph-driven shadow passes run all cascades
+  inside ONE encode_cascade_draws call, so a skinned draw (fox) leaked the
+  skinned pipeline into subsequent non-skinned draws — giant distorted shadow
+  triangles from the gizmo meshes after the fox. Fix in
+  katla_gfx/src/metal/shadow.rs: encode_cascade_draws now takes shadow_pipeline
+  and restores it for every non-skinned draw; removed the now-redundant
+  per-cascade restore. Verified: spike gone (pixel-line probes), static probes
+  byte-identical across binaries, validation clean. The in-tree comment about
+  pipeline leakage "between cascades" described the old per-cascade structure.
 - Shadow and depth-prepass remain explicit side-effect roots in the editor preset while their native targets are still backend-owned.
 - Some Metal semantic handlers still resolve backend-owned textures rather than graph resource handles.
 - Generic/custom executable payloads and backend-neutral compute commands are not complete.
@@ -83,3 +130,55 @@ pipeline paths).
 4. Define a generic executable payload/handler contract for custom graphics and compute passes.
 5. Remove temporary shadow/depth side-effect roots once their outputs are graph-owned.
 6. Close #56 only when the backend no longer reconstructs pass semantics outside the compiled plan.
+
+## Editor UI Redesign (landed e4ff955a, 2026-08-30)
+
+- Design tokens now live in `katla_ui::tokens` — ALL chrome heights (app bar
+  38, tab bar 30, status 24, control 28, tree row 26, compact 24), 4px
+  spacing scale, radii, divider/splitter metrics. UiStyle::default_dimensions
+  and WidgetDefaults::DEFAULTS seed from it; do not reintroduce raw magic
+  numbers for chrome geometry.
+- Dock tab strip colors derive in UiStyle::apply_colors from scheme fields
+  (tab_active_bg = background_light, tab_border = separator fallback
+  panel_border) — theme authors get coherent tabs for free; per-theme tab
+  overrides are unnecessary.
+- New primitives: `tool_button`/`tool_label_button` (segmented editor tools,
+  accent selected state). Inactive tool labels use text_secondary, never
+  text_disabled — inactive must stay distinguishable from unavailable.
+- `HierarchyAction::ToggleExpanded` exists; hierarchy click expands AND
+  selects. Expand state remains `HierarchyState.expanded_entities`.
+- StatusBarData dropped frame_count/selected_count (status bar no longer
+  shows Frame counter / asset selection; ColorScheme label removed — it was
+  a setting, not runtime status).
+- Splitter visuals are 1px lines inside 6px hit targets (SplitInfo.line_rect);
+  active-tab hairline gap painted by DockSpace::draw_after_children.
+- Uncommitted collaborator WIP untouched: their style.rs (RCP palette) and
+  layout.rs (viewport tab-bar offset) hunks remain in the working tree only.
+
+## Editor UI Polish (landed 93a80165, 2026-08-30)
+
+- Control primitives (Button/ImageButton/TextField/ToolButton) now size from
+  `katla_ui::tokens` (28px), have hover feedback, and carry `.tooltip()` —
+  `UiContext::defer_tooltip` renders them at frame end. Icon-only actions
+  (play cluster, asset browser nav) must keep tooltips.
+- `panel_body()` = docked panel surface: reserves the dock tab strip as header
+  spacing, draws NO title (dock tab bar is the header). `panel()` draws its
+  title + 1px divider for standalone use. Docked views must use panel_body.
+- CRITICAL builder convention: ALL editor views share ONE positional
+  StateArena slot counter (per node). Any conditional `ctx.state()` shifts
+  every later view's slots frame-to-frame → type-confusion panics (was: crash
+  on entity selection via inspector section slots). Reserve all slots
+  unconditionally in a fixed order at the top of each Build::build.
+- Chrome-reservation rule: a widget that draws chrome (Section header,
+  TabBar strip, DraggablePanel title, Grid implied by child count) MUST
+  reserve that space in `layout_style`. Grid must capture child count at
+  construction (child_widgets drains before taffy styles the node).
+- ScrollView autoscroll: `.auto_scroll(pin_id)` — pins to bottom as content
+  grows; wheel up detaches, wheel down re-engages; `post_layout` widget hook
+  (tree.rs `apply_post_layout`) clamps offsets after layout.
+- Inspector shows entity name/type header; console follows logs; asset
+  browser has an up button (`AssetBrowserState::can_go_up` guards empty
+  parent at the resources root).
+- Verified via `cargo run -p game -- --headless --ui-test <dir>` (5 states,
+  judge-passed at 1280x720 logical). Collaborator WIP (gfx frame-slot bridge,
+  RCP palette) still uncommitted in the tree and REQUIRED to run on macOS.

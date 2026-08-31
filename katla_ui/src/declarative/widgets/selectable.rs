@@ -67,7 +67,7 @@ impl Widget for Selectable {
         bounds: Rect2D,
         animation: &AnimationState,
         _children: &[ViewId],
-        _info: &DrawInfo,
+        info: &DrawInfo,
     ) {
         let radius = bounds.height().min(bounds.width()) * 0.15;
         let is_hovered = bounds.contains(ctx.mouse_pos());
@@ -84,10 +84,18 @@ impl Widget for Selectable {
                 radius,
             );
         }
+
+        if info.interaction.is_focused(info.view_id) {
+            ctx.draw_rounded_selection_border(bounds, ctx.style().focus_ring_color, 2.0, radius);
+        }
     }
 
     fn focusable(&self) -> bool {
         self.on_click.is_some()
+    }
+
+    fn press_action(&self) -> Option<Callback> {
+        self.on_click
     }
 
     fn children(&self) -> &[ViewId] {
