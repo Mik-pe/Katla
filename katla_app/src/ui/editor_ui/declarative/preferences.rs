@@ -1,9 +1,9 @@
 use katla_icons::ForkAwesome;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
-    WidgetBox, draggable_panel, grid, hstack, icon, labeled_slider, selectable, tab_bar, tab_item,
-    text, textfield, toggle, vstack,
+    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, Padding,
+    StateId, Widget, WidgetBox, draggable_panel, grid, hstack, icon, labeled_slider, selectable,
+    tab_bar, tab_item, text, textfield, toggle, vstack,
 };
 
 use crate::Preferences;
@@ -118,11 +118,17 @@ impl Build for PreferencesView {
             )
             .boxed()])
             .spacing(4.0)
-            .padding_all(8.0)
+            .padding(Padding {
+                top: 4.0,
+                right: 8.0,
+                bottom: 12.0,
+                left: 8.0,
+            })
             .align(Alignment::Leading)
             .boxed(),
             panel_id,
         )
+        .auto_height()
         .close_on_outside(false)
         .boxed()
     }
@@ -172,9 +178,22 @@ fn build_general_tab(
                     text(*display_name).boxed(),
                 ])
                 .spacing(4.0)
+                .padding(Padding {
+                    top: 4.0,
+                    right: 6.0,
+                    bottom: 4.0,
+                    left: 6.0,
+                })
                 .boxed()
             } else {
-                text(*display_name).boxed()
+                hstack([text(*display_name).boxed()])
+                    .padding(Padding {
+                        top: 4.0,
+                        right: 6.0,
+                        bottom: 4.0,
+                        left: 6.0,
+                    })
+                    .boxed()
             };
             selectable(label)
                 .selected(is_selected)
@@ -186,8 +205,8 @@ fn build_general_tab(
         .collect();
 
     children.push(
-        grid(3, katla_math::Vec2::new(130.0, 40.0), theme_buttons)
-            .grid_spacing(8.0)
+        grid(3, katla_math::Vec2::new(138.0, 30.0), theme_buttons)
+            .grid_spacing(6.0)
             .boxed(),
     );
 
@@ -411,8 +430,8 @@ fn build_ai_tab(
         })
         .collect();
     children.push(
-        grid(3, katla_math::Vec2::new(130.0, 40.0), provider_buttons)
-            .grid_spacing(8.0)
+        grid(3, katla_math::Vec2::new(138.0, 30.0), provider_buttons)
+            .grid_spacing(6.0)
             .boxed(),
     );
 

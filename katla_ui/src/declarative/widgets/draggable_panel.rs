@@ -14,7 +14,8 @@ use crate::input::mouse_button;
 pub struct DraggablePanel {
     pub title: String,
     pub width: f32,
-    pub height: f32,
+    /// Fixed panel height, or `None` to hug the content's height.
+    pub height: Option<f32>,
     pub state_id: StateId,
     pub close_on_outside_click: bool,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
@@ -24,6 +25,8 @@ pub struct DraggablePanel {
 impl DraggablePanel {
     /// Height of the draggable title bar strip.
     pub const TITLE_BAR_HEIGHT: f32 = 25.0;
+    /// Floor for content-hugging panels so sparse tabs still read as panels.
+    pub const MIN_AUTO_HEIGHT: f32 = 320.0;
 
     pub fn new(
         title: String,
@@ -36,7 +39,7 @@ impl DraggablePanel {
         Self {
             title,
             width,
-            height,
+            height: Some(height),
             state_id,
             close_on_outside_click,
             child_widget,
@@ -63,11 +66,14 @@ impl Widget for DraggablePanel {
     }
 
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
-        Style {
+        let mut style = Style {
             position: Position::Absolute,
             size: taffy::Size {
                 width: Dimension::Length(self.width),
-                height: Dimension::Length(self.height),
+                height: self
+                    .height
+                    .map(Dimension::Length)
+                    .unwrap_or(Dimension::Auto),
             },
             // Reserve the title bar strip so content starts below it.
             padding: taffy::Rect {
@@ -77,7 +83,12 @@ impl Widget for DraggablePanel {
                 left: taffy::LengthPercentage::Length(0.0),
             },
             ..Style::default()
+        };
+        if self.height.is_none() {
+            // Keep content-only tabs from collapsing the panel to a sliver.
+            style.min_size.height = Dimension::Length(Self::MIN_AUTO_HEIGHT);
         }
+        style
     }
 
     fn handle_input(
@@ -248,6 +259,12 @@ impl Widget for DraggablePanel {
 }
 
 impl DraggablePanel {
+    /// Let the panel hug its content's height instead of using the
+    /// constructor's fixed height.
+    pub fn auto_height(mut self) -> Self {
+        self.height = None;
+        self
+    }
     pub fn close_on_outside(mut self, close: bool) -> Self {
         self.close_on_outside_click = close;
         self
