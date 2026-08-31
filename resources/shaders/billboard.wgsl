@@ -40,13 +40,18 @@ fn vs_main(
     // Billboard center from model matrix translation
     let center = obj.model[3].xyz;
 
+    // The model matrix carries the desired world size in its axes
+    // (translation * scale); the right/up extents scale with it.
+    let scale_x = length(obj.model[0].xyz);
+    let scale_y = length(obj.model[1].xyz);
+
     // Extract camera right and up from view matrix (rows = columns of inverse).
     // Column-major: row i = vec3f(V[0][i], V[1][i], V[2][i]).
     let right = vec3f(frame_data.view[0][0], frame_data.view[1][0], frame_data.view[2][0]);
     let up = vec3f(frame_data.view[0][1], frame_data.view[1][1], frame_data.view[2][1]);
 
     // Offset quad vertices using input position.xy (unit quad in [-0.5, 0.5])
-    let world_pos = center + right * in.position.x + up * in.position.y;
+    let world_pos = center + right * (in.position.x * scale_x) + up * (in.position.y * scale_y);
 
     out.clip_position = frame_data.proj * frame_data.view * vec4f(world_pos, 1.0);
     out.tex_coords = in.vert_texcoord0;

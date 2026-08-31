@@ -631,10 +631,19 @@ impl Application {
         self.collect_physics_debug_draw_calls(draw_list);
         self.collect_reverb_debug_draw_calls(draw_list);
 
+        // Editor overlays (billboard icons, move/rotate/scale gizmos, debug
+        // wireframes) must not cast shadows: their materials are unlit
+        // overlay-only materials, and the shadow vertex shaders have no
+        // billboarding math anyway.
+        let overlay_materials = [
+            self.editor.billboard_resources.material,
+            self.editor.gizmo_resources.material,
+            self.editor.physics_debug_resources.material,
+        ];
         let shadow_draw_list = {
             let draws = draw_list
                 .iter()
-                .filter(|dc| dc.material != self.editor.billboard_resources.material)
+                .filter(|dc| !overlay_materials.contains(&dc.material))
                 .cloned()
                 .collect::<Vec<_>>();
             katla_gfx::renderer::DrawList { draws }
