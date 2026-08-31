@@ -309,7 +309,11 @@ fn identify_widget(widget: &dyn Widget) -> WidgetInfo {
         return WidgetInfo {
             type_name: "DraggablePanel".into(),
             label: Some(truncate_text(&w.title)),
-            details: vec![format!("size={}×{}", w.width, w.height)],
+            details: vec![format!(
+                "size={}×{}",
+                w.width,
+                w.height.map_or("auto".into(), |h| h.to_string())
+            )],
         };
     }
 
