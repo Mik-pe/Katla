@@ -218,6 +218,7 @@ impl Frame<'_, VulkanRenderer> {
                     },
                     billboard_pipeline: None,
                     billboard_layout: None,
+                    exclude_billboards: true,
                 })?;
             }
 

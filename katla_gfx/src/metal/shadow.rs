@@ -246,6 +246,7 @@ pub(crate) fn render_cascades(
 
         encode_cascade_draws(
             &mut encoder,
+            shadow_pipeline,
             shadow_pipeline_skinned,
             skeleton_buffers,
             object_storage_buffer,
@@ -253,10 +254,6 @@ pub(crate) fn render_cascades(
             materials,
             draw_list,
         );
-
-        // Restore the regular pipeline for the next cascade (skinned draws
-        // inside encode_cascade_draws may have switched it).
-        encoder.bind_graphics_pipeline(shadow_pipeline);
     }
 
     encoder.end_encoding();
@@ -264,6 +261,7 @@ pub(crate) fn render_cascades(
 
 fn encode_cascade_draws(
     encoder: &mut super::render_encoder::MetalRenderEncoder,
+    shadow_pipeline: &MetalGraphicsPipeline,
     shadow_pipeline_skinned: Option<&MetalGraphicsPipeline>,
     skeleton_buffers: Option<&ResourceStorage<MetalBuffer>>,
     object_storage_buffer: &MetalBuffer,
@@ -272,6 +270,13 @@ fn encode_cascade_draws(
     draw_list: &crate::renderer::types::DrawList,
 ) {
     for draw in &draw_list.draws {
+        // Billboard icons are camera-facing editor gizmos: the regular shadow
+        // vertex shader has no billboarding math, so drawing them here would
+        // rasterize the quads flat in world space (thin dark slivers in
+        // shadowed light). Gizmos must not cast shadows anyway.
+        if draw.is_billboard {
+            continue;
+        }
         let Some(mesh) = meshes.get(draw.mesh.index()) else {
             continue;
         };
@@ -291,6 +296,11 @@ fn encode_cascade_draws(
                 // shadow_depth_skinned maps joint_matrices to [[buffer(4)]].
                 encoder.bind_storage_buffer(skeleton_buf, 0, 4, ShaderStages::VERTEX);
             }
+        } else {
+            // A previous skinned draw switched the encoder to the skinned
+            // pipeline; non-skinned draws must restore the regular shadow
+            // pipeline before drawing.
+            encoder.bind_graphics_pipeline(shadow_pipeline);
         }
 
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
