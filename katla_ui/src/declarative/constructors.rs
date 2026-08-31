@@ -383,6 +383,11 @@ pub fn panel(title: impl Into<String>, content: Box<dyn Widget>) -> widgets::pan
     )
 }
 
+/// Mocked-editor thumbnail previewing a color scheme.
+pub fn theme_preview(scheme: crate::style::ColorScheme) -> widgets::theme_preview::ThemePreview {
+    widgets::theme_preview::ThemePreview::new(scheme)
+}
+
 /// Panel surface for docked views. The header strip is reserved as spacing
 /// (the dock tab strip renders over it) but no duplicate title is drawn.
 pub fn panel_body(content: Box<dyn Widget>) -> widgets::panel::Panel {
