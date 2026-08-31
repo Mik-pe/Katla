@@ -72,28 +72,17 @@ the buffer-3 collision with shadow_params). CI fully green.
   1461px); theme constants; canvas/HDR clears (both dark).
 
 ## Temporary Boundaries
-## Temporary Boundaries
 
-- **Handoff note (2026-08-30, headless-verify session):** the frame-slot refactor
-  dropped the per-slot uniform preparation from the graph-driven render_frame —
-  no ensure_uniform_buffers, no frame/object uploads, and fullscreen lost its
-  slot-0 frame_data bind. Metal validation killed fs_main ("missing Buffer
-  binding at index 0"). Bridged in katla_gfx/src/metal/frame_render.rs
-  (uncommitted, in the WIP tree): render_frame now merges all draw_lists and
-  calls GpuRenderer::execute_draw_calls before encoding, and
-  encode_fullscreen_record re-binds slot 0. Headless renders verified: scene
-  visible, validation clean, run-vs-run diff confined to the FPS counter.
-  Proper owner: fold these into the slot-ownership design (#36) and replace the
-  bridge with graph-declared buffer resources (#31) when landing.
-- **Shadow fix (same session):** graph-driven shadow passes run all cascades
-  inside ONE encode_cascade_draws call, so a skinned draw (fox) leaked the
-  skinned pipeline into subsequent non-skinned draws — giant distorted shadow
-  triangles from the gizmo meshes after the fox. Fix in
-  katla_gfx/src/metal/shadow.rs: encode_cascade_draws now takes shadow_pipeline
-  and restores it for every non-skinned draw; removed the now-redundant
-  per-cascade restore. Verified: spike gone (pixel-line probes), static probes
-  byte-identical across binaries, validation clean. The in-tree comment about
-  pipeline leakage "between cascades" described the old per-cascade structure.
+- **Metal frame-render bridge (committed 0fb87573, 2026-08-31):** the
+  frame-slot refactor had dropped the per-slot uniform preparation from the
+  graph-driven render_frame (Metal validation killed fs_main, "missing Buffer
+  binding at index 0"). render_frame now merges all draw_lists and calls
+  GpuRenderer::execute_draw_calls before encoding, and the fullscreen record
+  re-binds slot 0. Proper owner: fold these into the slot-ownership design
+  (#36) and replace the bridge with graph-declared buffer resources (#31).
+- Billboard gizmos are excluded from shadow and outline passes on both
+  backends (committed 59cce2a3); gizmos must not cast shadows or receive
+  outlines because the shadow/outline vertex paths have no billboarding math.
 - Shadow and depth-prepass remain explicit side-effect roots in the editor preset while their native targets are still backend-owned.
 - Some Metal semantic handlers still resolve backend-owned textures rather than graph resource handles.
 - Generic/custom executable payloads and backend-neutral compute commands are not complete.
@@ -180,5 +169,6 @@ pipeline paths).
   browser has an up button (`AssetBrowserState::can_go_up` guards empty
   parent at the resources root).
 - Verified via `cargo run -p game -- --headless --ui-test <dir>` (5 states,
-  judge-passed at 1280x720 logical). Collaborator WIP (gfx frame-slot bridge,
-  RCP palette) still uncommitted in the tree and REQUIRED to run on macOS.
+  judge-passed at 1280x720 logical). The formerly-uncommitted collaborator WIP
+  (gfx frame-slot bridge, RCP palette, shadow/billboard fixes) landed
+  2026-08-31 as commits 59cce2a3..4519a06d.
