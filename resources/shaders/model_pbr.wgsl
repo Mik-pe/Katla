@@ -196,7 +196,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let Lo = Lo_sun * shadow_visibility + Lo_point;
 
     // Ambient (SSAO and contact shadows disabled - require separate pass for correct depth buffer layout)
-    let ambient = vec3f(0.03) * albedo * ao;
+    let ambient = vec3f(0.15) * albedo * ao;
 
     var emission = vec3f(0.0);
     if (emission_idx > 0u) {
