@@ -121,6 +121,18 @@ pub fn zone_from_pos(leaf_area: Rect2D, pos: Vec2) -> DockZone {
     }
 }
 
+/// Hit/draw width of one dock tab. Multi-tab strips stack capped-width tabs
+/// from the left so they read as one tab group; a single-tab leaf fills the
+/// strip and doubles as the panel header. Draw and hit-testing MUST share
+/// this function so the visible tabs are exactly the clickable tabs.
+fn tab_hit_width(bar_width: f32, tab_count: usize) -> f32 {
+    if tab_count <= 1 {
+        bar_width
+    } else {
+        (bar_width / tab_count as f32).min(crate::tokens::TAB_MAX_WIDTH)
+    }
+}
+
 /// Compute leaf information for a DockNode tree within the given area.
 pub fn compute_leaf_info<T: Clone + PartialEq>(
     node: &DockNode<T>,
@@ -490,7 +502,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             }
 
             let tab_count = leaf.tabs.len();
-            let tab_width = tab_bar_bounds.width() / tab_count as f32;
+            let tab_width = tab_hit_width(tab_bar_bounds.width(), tab_count);
             let tab_index = ((ctx.mouse_pos.x() - tab_bar_bounds.min.x()) / tab_width)
                 .clamp(0.0, tab_count as f32 - 0.01) as usize;
 
@@ -568,7 +580,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
             );
 
             let tab_count = leaf.tabs.len();
-            let tab_width = tab_bar_bounds.width() / tab_count as f32;
+            let tab_width = tab_hit_width(tab_bar_bounds.width(), tab_count);
             let font_size = ctx.style().font_size;
 
             for (i, tab_val) in leaf.tabs.iter().enumerate() {
@@ -1010,7 +1022,7 @@ mod tests {
         let (mut arena, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
         let mut input = crate::input::UiInputState::default();
-        input.set_mouse_pos(Vec2::new(240.0, 14.0));
+        input.set_mouse_pos(Vec2::new(80.0, 14.0));
         input.set_mouse_button(mouse_button::LEFT, true);
         input.mouse_delta = Vec2::new(5.0, 0.0);
         let mut callbacks = crate::declarative::build::CallbackTable::new();
@@ -1018,7 +1030,7 @@ mod tests {
         let view_id = make_view_id(1);
         let mut ctx = InputContext {
             input: &input,
-            mouse_pos: Vec2::new(240.0, 14.0),
+            mouse_pos: Vec2::new(80.0, 14.0),
             callbacks: &mut callbacks,
             actions: &mut actions,
             view_id,

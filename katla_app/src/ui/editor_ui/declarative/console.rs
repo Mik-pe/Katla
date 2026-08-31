@@ -127,6 +127,7 @@ impl Build for ConsoleView {
             left: 8.0,
         })
         .align(Alignment::Middle)
+        .flex_shrink(0.0)
         .boxed();
 
         let search_lower = search_filter.to_lowercase();
@@ -197,6 +198,7 @@ impl Build for ConsoleView {
         ])
         .spacing(4.0)
         .flex_grow(1.0)
+        .flex_min_height(0.0)
         .boxed();
 
         panel_body(content)

@@ -2,6 +2,53 @@
 
 ## Current Focus
 
+- **Editor UI/UX polish pass (2026-08-31, uncommitted)** — judged screenshot
+  pass over 5 ui-test states drove these fixes (all widget-layer unless noted):
+  (1) Dock tab strip now caps multi-tab leaves at `tokens::TAB_MAX_WIDTH`
+  (160px) stacked from the left — draw and hit-testing share
+  `dock_space::tab_hit_width` so visible tabs are exactly the clickable tabs;
+  single-tab leaves still fill the strip as panel headers. (2) ScrollView
+  finally scrolls: taffy's automatic minimum size made scroll views
+  overflow their panels instead of shrinking (`min_size.height = 0` on
+  ScrollView, `flex_min_height(0.0)` builder on stacks that wrap one, and
+  `flex_shrink` builders on TextField/HStack/VStack for fixed-height rows);
+  the visible scroll range and the new 3px scrollbar thumb (drawn in
+  ScrollView::draw_after_children) read taffy `content_size`, now surfaced as
+  `TaffyNodeMap::content_sizes` and passed to `draw_after_children`/`post_layout`
+  as UNCLAMPED child bounds — before this, wheel offsets were always reset to
+  0 (scrolling silently never worked). `apply_colors` derives
+  `scrollbar_handle(_hovered)` from `text_muted` at 0.35/0.55 alpha because
+  the color_scheme! macro defaulted them to opaque black (invisible).
+  (3) UiStyle gained `accent` (from ColorScheme.accent); tool buttons'
+  selected state = accent bg + black fg (was check_mark_color bg — illegible
+  per-theme). `ToolLabelButton` deleted (unused after gizmo toolbar went
+  icon-only: `tool_button` + tooltips "Move (W)/Rotate (E)/Scale (R)",
+  overlaid below the viewport label in editor_root). (4) Inspector: redundant
+  Type section removed; "+ Add Component" expander lists
+  `available_components` and emits new `EditorAction::AddComponent` →
+  `SceneToolExecutor::execute(SceneOp::AddComponent)` with
+  `agent::check_protected_entity` guard (now pub(crate)), undo-group recorded.
+  (5) Default bottom dock ratio 0.64 → 0.74 (viewport dominates).
+  Verified: workspace tests/clippy/fmt green, judge-passed screenshots.
+
+- **Headless render visual audit (2026-08-31, uncommitted)** — screenshot pass
+  over default/playground/UI states surfaced and fixed three renderer bugs:
+  (1) billboard shaders ignored the model-matrix scale, so every gizmo
+  rendered as a fixed 1×1 world-unit quad (`compute_gizmo_scale` was dead) —
+  billboards now scale from the matrix in `billboard.wgsl` and
+  `billboard_depth.wgsl`; (2) ForkAwesome fire glyph overflowed the 64px icon
+  canvas, bleeding a bright row onto billboard bottoms — the rasterizer now
+  scales glyphs to fit (`billboard_icons.rs`, regression test
+  `test_icons_fit_canvas_without_clipping`); (3) the long-standing "pale strip
+  at viewport top" was the sky pass rendering Y-flipped relative to stored
+  geometry (sky bypasses the projection, so the display flip that geometry
+  incorporates hit only the sky; the below-horizon gradient landed at the
+  viewport top) — fixed by flipping the sky's clip-space Y in `sky.wgsl`.
+  Also: gizmo/debug-overlay draws now excluded from the shadow draw list
+  (arrow-shaped shadow slivers appeared whenever a gizmo was visible);
+  `compute_gizmo_scale`'s viewport_height input is the logical panel height
+  and is CORRECT — don't re-investigate it. Verified via headless renders:
+  uniform 40px gizmos, no band, clean shadows; workspace tests green.
 - **Editor UI: preferences modal redesign (2026-08-31, uncommitted in tree)**
   — Preferences is a focused `Modal` with icon sidebar (Appearance / Viewport
   / Audio / AI; General removed) over a 0.6-alpha scrim; theme picker is a
@@ -57,19 +104,13 @@ ShaderProfile::ShadowSkinned MSL binding map (joints to buffer 4, avoiding
 the buffer-3 collision with shadow_params). CI fully green.
 
 ## Open Items
-## Open Items
 
 - Docs: `docs/metal_backend.md` is now the Metal architecture reference
   (2026-08-30, commit 4bcb207a); the pre-implementation plan is archived with a
   superseded banner. Issues #51 and #57 closed after tip verification
   (CI 33239691228 at 59e0a50c); #53 and #58 carry state-of-play comments.
-- Pale strip at viewport top (y≈125–158 in 2560×1440 screenshots) — UI-side,
-  not a renderer artifact (present in pre-shadow screenshots; no code
-  constant matches its colours; clears are black). Investigated 2026-08-29:
-  see skill references/shadow-debugging.md "Pale strip investigation".
-  Overlaps the uncommitted collaborator WIP (Panel RT debug, viewport fix).
-  Ruled out: gizmo-row container (hstack hugs children, ~350px — band is
-  1461px); theme constants; canvas/HDR clears (both dark).
+- PRE-EXISTING on main: clippy `too_many_arguments` in
+  `katla_gfx/src/metal/shadow.rs` `encode_cascade_draws` (8 params).
 
 ## Temporary Boundaries
 
@@ -81,8 +122,10 @@ the buffer-3 collision with shadow_params). CI fully green.
   re-binds slot 0. Proper owner: fold these into the slot-ownership design
   (#36) and replace the bridge with graph-declared buffer resources (#31).
 - Billboard gizmos are excluded from shadow and outline passes on both
-  backends (committed 59cce2a3); gizmos must not cast shadows or receive
-  outlines because the shadow/outline vertex paths have no billboarding math.
+  backends (committed 59cce2a3); the app's shadow draw list additionally
+  filters billboard/gizmo/physics-debug overlay materials (2026-08-31) because
+  gizmos must not cast shadows and the shadow/outline vertex paths have no
+  billboarding math.
 - Shadow and depth-prepass remain explicit side-effect roots in the editor preset while their native targets are still backend-owned.
 - Some Metal semantic handlers still resolve backend-owned textures rather than graph resource handles.
 - Generic/custom executable payloads and backend-neutral compute commands are not complete.

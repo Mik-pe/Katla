@@ -21,7 +21,6 @@ pub(crate) struct InspectorDrawCtx {
     #[expect(dead_code)]
     pub edit: InspectorEditState,
     pub theme: ColorScheme,
-    #[expect(dead_code)]
     pub available_components: Vec<&'static str>,
     #[expect(dead_code)]
     pub add_component_open: bool,
@@ -33,6 +32,13 @@ pub(crate) struct InspectorDrawCtx {
 }
 
 pub(crate) struct InspectorView;
+
+/// Actions emitted by the inspector panel.
+#[derive(Clone, Debug)]
+pub(crate) enum InspectorAction {
+    ToggleAddComponent,
+    AddComponent { entity: EntityId, component: String },
+}
 
 impl Build for InspectorView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
@@ -49,9 +55,9 @@ impl Build for InspectorView {
         // would shift every later view's slots frame-to-frame (type confusion
         // and panics downstream).
         let transform_expanded_id: StateId = ctx.state(true);
-        let type_expanded_id: StateId = ctx.state(true);
         let audio_expanded_id: StateId = ctx.state(true);
         let listener_expanded_id: StateId = ctx.state(true);
+        let add_component_open_id: StateId = ctx.state(false);
 
         let content = if let Some(entity) = draw_ctx
             .entities
@@ -114,12 +120,6 @@ impl Build for InspectorView {
             .boxed();
             sections.push(section("Transform", transform_content, transform_expanded_id).boxed());
 
-            // Type section (collapsible)
-            let type_content = vstack([property_row("Type", &entity.entity_type).boxed()])
-                .spacing(4.0)
-                .boxed();
-            sections.push(section("Type", type_content, type_expanded_id).boxed());
-
             // AudioSource section (collapsible)
             if let Some(ref src) = entity.audio_source {
                 let mut audio_children: Vec<Box<dyn Widget>> = Vec::new();
@@ -177,6 +177,40 @@ impl Build for InspectorView {
                     )
                     .boxed(),
                 );
+            }
+
+            // Add Component action: a quiet expander listing the component
+            // types registered with the scene tool registry.
+            if !draw_ctx.available_components.is_empty() {
+                let add_open: bool = ctx.get_state(add_component_open_id).unwrap_or(false);
+                let mut footer: Vec<Box<dyn Widget>> = Vec::new();
+                footer.push(
+                    button("+ Add Component")
+                        .fill(katla_math::Color::TRANSPARENT)
+                        .border(draw_ctx.theme.border)
+                        .on_click(ctx.on_click(move |actions| {
+                            actions.emit(InspectorAction::ToggleAddComponent);
+                        }))
+                        .boxed(),
+                );
+                if add_open {
+                    let entity = entity.id;
+                    for component in draw_ctx.available_components.clone() {
+                        footer.push(
+                            button(component)
+                                .fill(katla_math::Color::TRANSPARENT)
+                                .border(katla_math::Color::TRANSPARENT)
+                                .on_click(ctx.on_click(move |actions| {
+                                    actions.emit(InspectorAction::AddComponent {
+                                        entity,
+                                        component: component.to_string(),
+                                    });
+                                }))
+                                .boxed(),
+                        );
+                    }
+                }
+                sections.push(vstack(footer).spacing(4.0).boxed());
             }
 
             vstack(sections)

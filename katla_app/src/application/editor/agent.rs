@@ -497,7 +497,10 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
 }
 
 /// Check if the operation targets a protected entity (editor camera, gizmo, etc.).
-fn check_protected_entity(op: &SceneOp, app: &super::super::Application) -> Result<(), String> {
+pub(crate) fn check_protected_entity(
+    op: &SceneOp,
+    app: &super::super::Application,
+) -> Result<(), String> {
     let target = match op {
         SceneOp::DestroyEntity { entity }
         | SceneOp::SetField { entity, .. }

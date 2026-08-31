@@ -1,7 +1,7 @@
 use std::boxed::Box;
 
 use katla_ui::ForkAwesome;
-use katla_ui::declarative::{Build, BuildContext, Widget, WidgetBox, hstack, tool_label_button};
+use katla_ui::declarative::{Build, BuildContext, Widget, WidgetBox, hstack, tool_button};
 
 #[derive(Clone)]
 pub(crate) struct GizmoDrawCtx {
@@ -13,8 +13,9 @@ pub(crate) struct GizmoModeChanged(pub u8);
 
 pub struct GizmoButtonsView;
 
-/// Compact editor tool group (Move/Rotate/Scale) overlaid on the viewport.
-/// Selected state uses the accent; inactive tools stay fully legible.
+/// Compact icon-only editor tool group (Move/Rotate/Scale) overlaid on the
+/// viewport. Shortcuts W/E/R are handled by the application's gizmo input;
+/// the tooltips surface them.
 impl Build for GizmoButtonsView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         let mode_from_env = ctx
@@ -23,16 +24,17 @@ impl Build for GizmoButtonsView {
             .unwrap_or(0);
 
         let modes: [(usize, char, &str); 3] = [
-            (0, ForkAwesome::CROSSHAIRS, "Move"),
-            (1, ForkAwesome::REFRESH, "Rotate"),
-            (2, ForkAwesome::EXPAND, "Scale"),
+            (0, ForkAwesome::CROSSHAIRS, "Move (W)"),
+            (1, ForkAwesome::REFRESH, "Rotate (E)"),
+            (2, ForkAwesome::EXPAND, "Scale (R)"),
         ];
 
         let children: Vec<Box<dyn Widget>> = modes
             .iter()
-            .map(|&(index, icon, label)| {
-                tool_label_button(icon, label)
+            .map(|&(index, icon, tooltip)| {
+                tool_button(icon)
                     .selected(mode_from_env == index)
+                    .tooltip(tooltip)
                     .on_click(ctx.on_click(move |actions| {
                         actions.emit(GizmoModeChanged(index as u8));
                     }))

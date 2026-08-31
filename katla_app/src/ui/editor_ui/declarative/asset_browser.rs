@@ -170,6 +170,7 @@ impl Build for AssetBrowserView {
             left: 8.0,
         })
         .align(Alignment::Middle)
+        .flex_shrink(0.0)
         .boxed();
 
         let item_size = 80.0;
@@ -258,6 +259,7 @@ impl Build for AssetBrowserView {
             left: 8.0,
         })
         .flex_grow(1.0)
+        .flex_min_height(0.0)
         .boxed();
 
         let context_items: Vec<katla_ui::declarative::ContextMenuEntry> =

@@ -30,8 +30,8 @@ pub use constructors::{
     keyed, labeled_slider, memoize, menu_entry, menu_entry_disabled, menu_group, menubar, modal,
     overlay, panel, panel_body, progress, property_row, radio, scroll, section, selectable,
     separator, separator_horizontal, separator_vertical, slider, statusbar, text, textfield,
-    theme_swatch, toggle, tool_button, tool_label_button, tree_view, vec3_slider, vstack,
-    vstack_keyed, vu_meter, zstack, zstack_keyed,
+    theme_swatch, toggle, tool_button, tree_view, vec3_slider, vstack, vstack_keyed, vu_meter,
+    zstack, zstack_keyed,
 };
 pub use descriptor::{
     Alignment, Anchor, Callback, ContextMenuEntry, DraggablePanelState, DraggablePanelVisibility,

@@ -134,9 +134,10 @@ impl Build for EditorOverlayView {
         let gizmo_offset = ctx
             .env::<ViewportGridDrawCtx>()
             .map(|c| {
+                // Below the viewport label, which owns the top-left corner.
                 Vec2::new(
                     c.bounds.min.x() + katla_ui::tokens::VIEWPORT_OVERLAY_MARGIN,
-                    c.bounds.min.y() + katla_ui::tokens::VIEWPORT_OVERLAY_MARGIN,
+                    c.bounds.min.y() + katla_ui::tokens::VIEWPORT_OVERLAY_MARGIN + 20.0,
                 )
             })
             .unwrap_or(Vec2::new(0.0, TOOLBAR_HEIGHT));

@@ -75,6 +75,7 @@ impl Build for HierarchyView {
 
         let search_field = textfield("Search entities...", search_id)
             .flex_width((draw_ctx.bounds.width() - 16.0).max(0.0))
+            .flex_shrink(0.0)
             .boxed();
 
         let display_names = build_display_names(&filtered_entities);
@@ -156,6 +157,7 @@ impl Build for HierarchyView {
         .spacing(8.0)
         .padding(Padding::all(8.0))
         .flex_grow(1.0)
+        .flex_min_height(0.0)
         .boxed();
 
         panel_body(content)

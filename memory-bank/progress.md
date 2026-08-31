@@ -2,6 +2,52 @@
 
 ## Completed Recently
 
+- **Editor UI/UX polish pass (2026-08-31, uncommitted)** — dock tabs
+  left-stacked at a 160px cap (shared draw/hit-test `tab_hit_width`); bottom
+  dock default 0.64→0.74; gizmo toolbar icon-only with accent selected state
+  (`UiStyle.accent` added, `ToolLabelButton` deleted); Inspector "+ Add
+  Component" wired through `EditorAction::AddComponent` →
+  `SceneToolExecutor` + protected-entity guard; ScrollView fix trilogy —
+  `min_size.height=0` so it shrinks inside panels, 3px scrollbar thumb, and
+  taffy `content_size` exposed as unclamped child bounds for
+  `draw_after_children`/`post_layout` (wheel scrolling previously always
+  clamped back to 0); scrollbar handle color derived from `text_muted`
+  (macro themes defaulted it to black). Judge-passed over 5 ui-test states;
+  workspace tests/clippy/fmt green.
+
+- **Headless render visual audit — 3 renderer bugs fixed (2026-08-31,
+  uncommitted)** — systematic screenshot pass (default scene 100 frames,
+  playground, 5 ui-test states, 2560×1440 Metal) plus shader-as-instrument
+  probes (solid-green billboards, red sky, target-pixel stripes) root-caused:
+  1. **Billboard scale dead** — `billboard.wgsl`/`billboard_depth.wgsl` VS
+     ignored the model matrix scale, so every gizmo was a fixed 1×1 world
+     unit (FillLight bulb rendered ~90px; size didn't respond to 10× desired
+     size — the decisive probe). Fix: derive scale from
+     `length(model[0].xyz)/length(model[1].xyz)` in both shaders.
+  2. **Fire icon canvas overflow** — ForkAwesome fire glyph at 64px exceeds
+     the canvas; clipped edge rows bled a bright bar through the FS alpha
+     threshold. Rasterizer now scales glyphs to fit (6% margin).
+  3. **Pale band at viewport top (long-open)** — NOT UI-side as suspected.
+     The UI display chain shows the render target Y-flipped relative to raw
+     NDC; geometry stores pre-flipped (projection includes it) but the sky
+     bypassed the projection → the sky displayed upside-down and its
+     below-horizon gradient read as a pale strip at the top. Probes that
+     nailed it: solid-red sky (band turned red = sky-rendered), then
+     row/column stripe markers in target pixels (stripes appeared bottom/left
+     = Y flip, X identity). Fix: `clip_position.y = -ndc.y` in `sky.wgsl`.
+  4. **Gizmo shadow slivers** — with an entity selected, the move gizmo's
+     arrows/cones cast flat shadow-map streaks (only billboards were filtered
+     from `shadow_draw_list`). Shadow list now filters ALL editor-overlay
+     materials (billboard, gizmo, physics-debug — reverb debug shares the
+     physics-debug material).
+  Non-bugs confirmed during audit: the "orange plate" behind one bulb is the
+  scene's own CenterCube lit by WarmLight; the white underline under flame
+  icons is part of the ForkAwesome fire glyph; "bulb-shaped shadows" were
+  cube/sphere shadows offset by light_direction (0.3, 1.0, 0.2) — billboard
+  shadow exclusion works. Verified: uniform 40px gizmos, no band, clean
+  ground, workspace tests + clippy + fmt green. Note: `compute_gizmo_scale`'s
+  vp_h=391 (logical panel height) is correct, not stale.
+
 - **Preferences modal redesign + UI primitives pass (2026-08-31, uncommitted)**
   — Preferences is now a centered `Modal` (560×520, scrim 0.6, Escape /
   outside-click / 28px close button, focus-trapped) instead of a draggable

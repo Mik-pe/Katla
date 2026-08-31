@@ -19,6 +19,7 @@ pub struct TaffyNodeMap {
     synced_versions: HashMap<ViewId, u32>,
     last_screen_size: Option<Vec2>,
     cached_bounds: HashMap<ViewId, Rect2D>,
+    cached_content_sizes: HashMap<ViewId, Vec2>,
     dirty: bool,
 }
 
@@ -37,6 +38,7 @@ impl TaffyNodeMap {
             synced_versions: HashMap::new(),
             last_screen_size: None,
             cached_bounds: HashMap::new(),
+            cached_content_sizes: HashMap::new(),
             dirty: true,
         }
     }
@@ -198,11 +200,26 @@ impl TaffyNodeMap {
         self.taffy.compute_layout(taffy_root, available).unwrap();
 
         let mut bounds = HashMap::new();
-        self.resolve_bounds_recursive(taffy_root, Vec2::new(0.0, 0.0), tree, &mut bounds);
+        let mut content_sizes = HashMap::new();
+        self.resolve_bounds_recursive(
+            taffy_root,
+            Vec2::new(0.0, 0.0),
+            tree,
+            &mut bounds,
+            &mut content_sizes,
+        );
 
         self.cached_bounds = bounds.clone();
+        self.cached_content_sizes = content_sizes.clone();
         self.dirty = false;
         bounds
+    }
+
+    /// Unclamped content size per node (taffy's `content_size`). For the
+    /// child of a scroll container this is the full scrollable extent, while
+    /// the resolved bounds are clamped to the visible area.
+    pub fn content_sizes(&self) -> &HashMap<ViewId, Vec2> {
+        &self.cached_content_sizes
     }
 
     fn resolve_bounds_recursive(
@@ -211,6 +228,7 @@ impl TaffyNodeMap {
         parent_offset: Vec2,
         tree: &ViewTree,
         bounds: &mut HashMap<ViewId, Rect2D>,
+        content_sizes: &mut HashMap<ViewId, Vec2>,
     ) {
         let layout = self.taffy.layout(taffy_id).unwrap();
         let x = parent_offset.x() + layout.location.x;
@@ -222,6 +240,10 @@ impl TaffyNodeMap {
 
         if let Some(&view_id) = self.reverse.get(&taffy_id) {
             bounds.insert(view_id, rect);
+            content_sizes.insert(
+                view_id,
+                Vec2::new(layout.content_size.width, layout.content_size.height),
+            );
 
             if let Some(node) = tree.get(view_id) {
                 for &child_id in &node.children {
@@ -231,6 +253,7 @@ impl TaffyNodeMap {
                             Vec2::new(x, y),
                             tree,
                             bounds,
+                            content_sizes,
                         );
                     }
                 }

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use log::info;
 
 use katla_ecs::EntityId;
-use katla_ecs::scene_tool::{SceneCommand, SceneToolError, UndoGroup};
+use katla_ecs::scene_tool::{SceneCommand, SceneToolError, SceneToolExecutor, UndoGroup};
 use katla_gfx::GpuRenderer;
 use katla_gfx::renderer::UIDrawList;
 use katla_math::{Vec2, Vec3};
@@ -1147,6 +1147,28 @@ pub fn process_editor_actions(app: &mut Application) {
                     _ => crate::gizmo::GizmoMode::Translate,
                 };
                 app.editor.gizmo_state.set_mode(mode);
+            }
+            EditorAction::AddComponent { entity, component } => {
+                let op = katla_ecs::scene_tool::SceneOp::AddComponent { entity, component };
+                if let Err(e) = agent::check_protected_entity(&op, app) {
+                    log::warn!("{e}");
+                } else {
+                    match SceneToolExecutor::execute(
+                        op,
+                        &mut app.world,
+                        &app.editor.component_registry,
+                    ) {
+                        Ok((result, undo_group)) => {
+                            if result.success {
+                                info!("{}", result.message);
+                                app.editor.push_undo(undo_group);
+                            } else {
+                                log::warn!("{}", result.message);
+                            }
+                        }
+                        Err(e) => log::warn!("Failed to add component: {e}"),
+                    }
+                }
             }
             EditorAction::CoCreatorRequest(text) => {
                 agent::process_co_creator_request(app, &text);

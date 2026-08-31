@@ -7,10 +7,10 @@ use katla_ui::{UiContext, mouse_button};
 
 use super::declarative::{
     AssetBrowserAction, AssetBrowserDrawCtx, AssetRenderData, ConsoleAction, ConsoleDrawCtx,
-    GizmoDrawCtx, GizmoModeChanged, HierarchyAction, HierarchyDrawCtx, InspectorDrawCtx,
-    MixerDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync, PreferencesDrawCtx,
-    PreferencesPanelSync, StatusBarData, ToolbarAction, ToolbarDrawCtx, ViewportGridDrawCtx,
-    process_asset_actions, process_declarative_actions,
+    GizmoDrawCtx, GizmoModeChanged, HierarchyAction, HierarchyDrawCtx, InspectorAction,
+    InspectorDrawCtx, MixerDrawCtx, ParticleInspectorDrawCtx, ParticleInspectorPanelSync,
+    PreferencesDrawCtx, PreferencesPanelSync, StatusBarData, ToolbarAction, ToolbarDrawCtx,
+    ViewportGridDrawCtx, process_asset_actions, process_declarative_actions,
 };
 use super::{
     EditorAction, EditorRenderParams, EditorUI,
@@ -341,6 +341,19 @@ impl EditorUI {
                     if !self.hierarchy_state.expanded_entities.remove(&id) {
                         self.hierarchy_state.expanded_entities.insert(id);
                     }
+                }
+            }
+        }
+
+        for action in self.view_tree.actions_mut().drain::<InspectorAction>() {
+            match action {
+                InspectorAction::ToggleAddComponent => {
+                    self.add_component_open = !self.add_component_open;
+                }
+                InspectorAction::AddComponent { entity, component } => {
+                    self.add_component_open = false;
+                    self.pending_actions
+                        .push(EditorAction::AddComponent { entity, component });
                 }
             }
         }

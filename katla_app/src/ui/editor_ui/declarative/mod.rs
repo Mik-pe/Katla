@@ -24,7 +24,7 @@ pub(super) use editor_root::EditorOverlayView;
 pub(super) use editor_root::STATUS_BAR_HEIGHT;
 pub(super) use gizmo::{GizmoDrawCtx, GizmoModeChanged};
 pub(super) use hierarchy::{HierarchyAction, HierarchyDrawCtx};
-pub(super) use inspector::InspectorDrawCtx;
+pub(super) use inspector::{InspectorAction, InspectorDrawCtx};
 pub(super) use mixer::MixerDrawCtx;
 pub(super) use particle_inspector::{ParticleInspectorDrawCtx, ParticleInspectorPanelSync};
 pub(super) use preferences::{PreferencesDrawCtx, PreferencesPanelSync};
