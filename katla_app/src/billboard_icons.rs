@@ -135,6 +135,28 @@ pub fn rasterize_icon(icon: BillboardIcon, size: u32) -> RasterizedIcon {
         bounds.y1 + 0.5,
     );
 
+    // Scale the outline so the padded glyph always fits the square canvas —
+    // some ForkAwesome glyphs (e.g. fire) are taller than the em box at this
+    // size and would otherwise rasterize clipped against the canvas edges,
+    // which bleeds a bright row onto the billboard's border texels.
+    const FIT_MARGIN_FRACTION: f64 = 0.06;
+    let canvas = f64::from(size);
+    let fit_scale = (canvas * (1.0 - FIT_MARGIN_FRACTION)) / padded.width().max(padded.height());
+    let fit_scale = fit_scale.min(1.0);
+    let path = if fit_scale < 1.0 {
+        let mut scaled = path.clone();
+        scaled.apply_affine(Affine::scale(fit_scale));
+        scaled
+    } else {
+        path
+    };
+    let padded = vello_cpu::kurbo::Rect::new(
+        padded.x0 * fit_scale,
+        padded.y0 * fit_scale,
+        padded.x1 * fit_scale,
+        padded.y1 * fit_scale,
+    );
+
     let glyph_w = padded.width().ceil() as u32;
     let glyph_h = padded.height().ceil() as u32;
 
@@ -245,25 +267,39 @@ mod tests {
             assert_eq!(icon.pixels.len(), (size * size * 4) as usize);
         }
     }
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
 
     #[test]
-    fn test_icon_not_clipped() {
-        let icon = rasterize_icon(BillboardIcon::Lightbulb, 64);
-        // Check that the edge rows/columns of the canvas are mostly transparent
-        // (the icon is centered and shouldn't touch the canvas edge at typical sizes).
-        let mut edge_alpha = 0u32;
-        for y in 0..64 {
-            for x in 0..64 {
-                if y == 0 || y == 63 || x == 0 || x == 63 {
-                    let idx = (y * 64 + x) * 4 + 3;
-                    edge_alpha += icon.pixels[idx] as u32;
-                }
+    fn test_icons_fit_canvas_without_clipping() {
+        for icon in [BillboardIcon::Lightbulb, BillboardIcon::Fire] {
+            let rasterized = rasterize_icon(icon, 64);
+
+            for edge in 0..64 {
+                let top = ((edge * 64) * 4 + 3) as usize;
+                let bottom = ((63 * 64 + edge) * 4 + 3) as usize;
+                let left = ((edge * 64) * 4 + 3) as usize;
+                let right = ((edge * 64 + 63) * 4 + 3) as usize;
+                assert_eq!(
+                    rasterized.pixels[top], 0,
+                    "{icon:?}: top edge row must stay transparent"
+                );
+                assert_eq!(
+                    rasterized.pixels[bottom], 0,
+                    "{icon:?}: bottom edge row must stay transparent"
+                );
+                assert_eq!(
+                    rasterized.pixels[left], 0,
+                    "{icon:?}: left edge must stay transparent"
+                );
+                assert_eq!(
+                    rasterized.pixels[right], 0,
+                    "{icon:?}: right edge must stay transparent"
+                );
             }
         }
-        // At 64px, the icon glyph is much smaller than the canvas, so edges should be 0.
-        assert_eq!(
-            edge_alpha, 0,
-            "Icon edges should be fully transparent at 64px"
-        );
     }
 }
