@@ -49,6 +49,10 @@ struct Args {
     /// Implies --headless and --single-frame (100 frames)
     #[arg(long, value_name = "DIR")]
     ui_test: Option<String>,
+
+    /// Editor camera pose as yaw_deg,pitch_deg,distance (diagnostic, headless captures)
+    #[arg(long, value_name = "YAW,PITCH,DIST", default_value = None)]
+    camera: Option<String>,
 }
 
 fn main() {
@@ -244,6 +248,14 @@ fn main() {
                     error!("Application init failed: {e}");
                     std::process::exit(1);
                 }
+                if let Some(camera) = parse_camera_pose(&args.camera) {
+                    let (yaw_deg, pitch_deg, distance) = camera;
+                    app.set_editor_camera_pose(
+                        yaw_deg.to_radians(),
+                        pitch_deg.to_radians(),
+                        distance,
+                    );
+                }
                 if let Err(e) = app.run_headless() {
                     error!("Headless render failed: {e}");
                     std::process::exit(1);
@@ -273,6 +285,28 @@ fn main() {
                 eprintln!("Failed to initialize application: {}", e);
                 std::process::exit(1);
             }
+        }
+    }
+}
+
+/// Parse the --camera diagnostic value "yaw_deg,pitch_deg,distance".
+fn parse_camera_pose(value: &Option<String>) -> Option<(f32, f32, f32)> {
+    let value = value.as_deref()?;
+    let parts: Vec<&str> = value.split(',').collect();
+    if parts.len() != 3 {
+        error!("--camera expects yaw_deg,pitch_deg,distance (got '{value}')");
+        std::process::exit(1);
+    }
+    let (yaw, pitch, distance) = (
+        parts[0].trim().parse::<f32>(),
+        parts[1].trim().parse::<f32>(),
+        parts[2].trim().parse::<f32>(),
+    );
+    match (yaw, pitch, distance) {
+        (Ok(yaw), Ok(pitch), Ok(distance)) => Some((yaw, pitch, distance)),
+        _ => {
+            error!("--camera expects numeric yaw_deg,pitch_deg,distance (got '{value}')");
+            std::process::exit(1);
         }
     }
 }

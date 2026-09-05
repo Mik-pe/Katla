@@ -90,6 +90,22 @@ impl Application {
         }
     }
 
+    /// Place the editor orbit camera at an explicit pose (yaw/pitch radians,
+    /// world-units distance) around its current target.
+    pub fn set_editor_camera_pose(&mut self, yaw: f32, pitch: f32, distance: f32) {
+        use crate::components::OrbitCameraControllerComponent;
+        let camera_entity = self.camera.entity;
+        if let Some(orbit) = self
+            .world
+            .get_component_mut::<OrbitCameraControllerComponent>(camera_entity)
+        {
+            orbit.yaw = yaw;
+            orbit.pitch = pitch;
+            orbit.distance = distance;
+            orbit.focus = None;
+        }
+    }
+
     pub(crate) fn render_editor_frame(&mut self, dt: f32) {
         use super::editor;
 
