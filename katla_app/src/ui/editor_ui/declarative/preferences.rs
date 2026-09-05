@@ -296,6 +296,8 @@ fn segmented(
                 .font_size(FontSize::Small)
                 .boxed()])
             .padding(Padding::horizontal(10.0))
+            .flex_height(katla_ui::tokens::CONTROL_HEIGHT)
+            .flex_shrink(0.0)
             .align(Alignment::Center)
             .boxed();
             selectable(cell)
@@ -465,9 +467,16 @@ fn build_appearance(ctx: &mut BuildContext, draw_ctx: &PreferencesDrawCtx) -> Bo
     }
 
     children.push(
-        grid(2, katla_math::Vec2::new(190.0, 36.0), cells)
-            .grid_spacing(4.0)
-            .boxed(),
+        grid(
+            2,
+            katla_math::Vec2::new(
+                190.0,
+                katla_ui::tokens::CONTROL_HEIGHT + katla_ui::tokens::SPACING_4,
+            ),
+            cells,
+        )
+        .grid_spacing(4.0)
+        .boxed(),
     );
 
     children.push(section_divider(theme));
@@ -499,7 +508,7 @@ fn build_appearance(ctx: &mut BuildContext, draw_ctx: &PreferencesDrawCtx) -> Bo
         PreferencesAction::SetFontScale,
     ));
 
-    vstack(children).spacing(12.0).boxed()
+    vstack(children).spacing(8.0).boxed()
 }
 
 // ---------------------------------------------------------------------------

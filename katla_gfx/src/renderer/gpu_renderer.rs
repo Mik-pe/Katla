@@ -523,6 +523,26 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::default_texture(self)
     }
 
+    fn recreate_scene_render_targets(&mut self, width: u32, height: u32) {
+        if let Err(error) = unsafe { self.context.device.device_wait_idle() } {
+            log::error!("Failed to wait before resizing scene targets: {error}");
+            return;
+        }
+        self.frame_context
+            .resize_scene_depth(ash::vk::Extent2D { width, height });
+        if let Some(base) = self.depth_texture_base_index {
+            for (frame, texture) in self.frame_context.depth_render_textures.iter().enumerate() {
+                if let Err(error) = self
+                    .bindless_manager
+                    .update_texture(base + frame as u32, texture.image_view.vk())
+                {
+                    log::error!("Failed to refresh scene depth binding: {error}");
+                }
+            }
+        }
+        self.resize_light_culling(width, height);
+    }
+
     fn compile_material(
         &mut self,
         shader_path: &str,
@@ -584,8 +604,8 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::destroy_viewport(self, handle);
     }
 
-    fn resize(&mut self, _width: u32, _height: u32) -> Result<(), RendererError> {
-        VulkanRenderer::recreate_swapchain(self)
+    fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
+        VulkanRenderer::recreate_swapchain(self, Size2D::new(width, height))
     }
 
     fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {

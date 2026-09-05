@@ -24,6 +24,8 @@ pub(super) struct ResolvedDrawCommand {
     norm_buf: vk::Buffer,
     tang_buf: vk::Buffer,
     uv_buf: vk::Buffer,
+    joints_buf: vk::Buffer,
+    weights_buf: vk::Buffer,
     index_buf: vk::Buffer,
     index_count: u32,
     instance_index: u32,
@@ -106,12 +108,21 @@ fn record_draw_chunk_sequential(
                 );
             }
 
-            device.cmd_bind_vertex_buffers(
-                cb,
-                0,
-                &[draw.pos_buf, draw.norm_buf, draw.tang_buf, draw.uv_buf],
-                &[0u64, 0u64, 0u64, 0u64],
-            );
+            for (binding, buffer) in [
+                draw.pos_buf,
+                draw.norm_buf,
+                draw.tang_buf,
+                draw.uv_buf,
+                draw.joints_buf,
+                draw.weights_buf,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if buffer != vk::Buffer::null() {
+                    device.cmd_bind_vertex_buffers(cb, binding as u32, &[buffer], &[0]);
+                }
+            }
 
             if draw.index_count > 0 {
                 device.cmd_bind_index_buffer(cb, draw.index_buf, 0, vk::IndexType::UINT32);
@@ -223,6 +234,10 @@ impl Frame<'_, VulkanRenderer> {
                     .asset_registry
                     .get_pipeline_handles(pipeline_handle)?;
 
+                self.renderer.bind_shadow_descriptors(
+                    self.renderer.frame_context.command_buffers[frame_idx].vk_command_buffer(),
+                    layout,
+                );
                 let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
                 let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
 
@@ -259,6 +274,14 @@ impl Frame<'_, VulkanRenderer> {
                     .map(|vb| vb.object())
                     .unwrap_or(vk::Buffer::null());
 
+                let joints_buf = mesh
+                    .get_attribute_buffer(AttributeType::JointIndices)
+                    .map(|vb| vb.object())
+                    .unwrap_or(vk::Buffer::null());
+                let weights_buf = mesh
+                    .get_attribute_buffer(AttributeType::JointWeights)
+                    .map(|vb| vb.object())
+                    .unwrap_or(vk::Buffer::null());
                 let index_buf = mesh
                     .index_buffer
                     .as_ref()
@@ -277,6 +300,8 @@ impl Frame<'_, VulkanRenderer> {
                     norm_buf,
                     tang_buf,
                     uv_buf,
+                    joints_buf,
+                    weights_buf,
                     index_buf,
                     index_count,
                     instance_index: draw_call.instance_index,

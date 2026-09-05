@@ -20,7 +20,7 @@
 //! ```ignore
 //! // Vulkan backend
 //! let renderer = AnyRenderer::new_vulkan(
-//!     &display, &window,
+//!     &display, &window, Size2D::new(1280, 720),
 //!     ValidationMode::Full,
 //!     CString::new("My App").unwrap(),
 //!     CString::new("Katla Engine").unwrap(),

@@ -2,6 +2,7 @@ use super::FRAMES_IN_FLIGHT;
 use crate::RendererError;
 use crate::handle::PipelineHandle;
 use crate::renderer::registry::AssetRegistry;
+use crate::shadow::cascade::MAX_CASCADES;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::compiler::MaterialCompiler;
 use crate::vulkan::material::storage_uniform::StorageDescriptorSet;
@@ -39,9 +40,9 @@ pub(crate) struct ShadowSubsystem {
     pipeline_skinned: Option<PipelineHandle>,
     /// Cascade descriptor set layout (Set 2 for shadow depth shader)
     cascade_descriptor_layout: Option<vk::DescriptorSetLayout>,
-    /// Per-frame cascade descriptor sets (Set 2)
+    /// Per-frame, per-cascade descriptor sets (Set 2)
     cascade_descriptor_sets: Vec<vk::DescriptorSet>,
-    /// Per-frame cascade storage buffers (CPU→GPU, contains ShadowCascadeGPU array)
+    /// Per-frame, per-cascade storage buffers (CPU→GPU, contains ShadowCascadeGPU array)
     cascade_buffers: Vec<vk::Buffer>,
     /// Per-frame cascade buffer allocations
     cascade_allocations: Vec<gpu_allocator::vulkan::Allocation>,
@@ -239,7 +240,7 @@ impl ShadowSubsystem {
 
         info!(
             "Shadow resources initialized (CSM, {} cascades)",
-            crate::shadow::cascade::MAX_CASCADES
+            MAX_CASCADES
         );
         Ok(())
     }
@@ -300,13 +301,13 @@ impl ShadowSubsystem {
                 })?
         };
 
-        // Create descriptor pool for per-frame cascade descriptor sets (2 bindings per set)
+        // Create descriptor pool for per-frame, per-cascade descriptor sets (2 bindings per set)
         let cascade_pool_sizes = [vk::DescriptorPoolSize::default()
             .ty(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(FRAMES_IN_FLIGHT as u32 * 2)];
+            .descriptor_count((FRAMES_IN_FLIGHT * MAX_CASCADES) as u32 * 2)];
 
         let cascade_pool_info = vk::DescriptorPoolCreateInfo::default()
-            .max_sets(FRAMES_IN_FLIGHT as u32)
+            .max_sets((FRAMES_IN_FLIGHT * MAX_CASCADES) as u32)
             .pool_sizes(&cascade_pool_sizes)
             .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND);
 
@@ -321,8 +322,10 @@ impl ShadowSubsystem {
                 })?
         };
 
-        // Allocate per-frame cascade descriptor sets
-        let cascade_layouts: Vec<_> = (0..FRAMES_IN_FLIGHT).map(|_| cascade_layout).collect();
+        // Allocate per-frame, per-cascade descriptor sets
+        let cascade_layouts: Vec<_> = (0..(FRAMES_IN_FLIGHT * MAX_CASCADES))
+            .map(|_| cascade_layout)
+            .collect();
         let cascade_allocate_info = vk::DescriptorSetAllocateInfo::default()
             .descriptor_pool(cascade_pool)
             .set_layouts(&cascade_layouts);
@@ -339,16 +342,15 @@ impl ShadowSubsystem {
         };
 
         // Create per-frame cascade storage buffers (4 x ShadowCascadeGPU + ShadowParams per frame)
-        let cascade_data_size =
-            std::mem::size_of::<ShadowCascadeGPU>() * crate::shadow::cascade::MAX_CASCADES;
+        let cascade_data_size = std::mem::size_of::<ShadowCascadeGPU>() * MAX_CASCADES;
         let params_size = 16u64; // ShadowParams: cascade_index(u32) + bias(f32) + pad(vec2f)
         let per_frame_buffer_size = cascade_data_size as u64 + params_size;
 
-        let mut cascade_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut cascade_allocations = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut cascade_mapped_ptrs = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut cascade_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT * MAX_CASCADES);
+        let mut cascade_allocations = Vec::with_capacity(FRAMES_IN_FLIGHT * MAX_CASCADES);
+        let mut cascade_mapped_ptrs = Vec::with_capacity(FRAMES_IN_FLIGHT * MAX_CASCADES);
 
-        for _frame in 0..FRAMES_IN_FLIGHT {
+        for _frame in 0..(FRAMES_IN_FLIGHT * MAX_CASCADES) {
             let buffer_info = vk::BufferCreateInfo::default()
                 .size(per_frame_buffer_size)
                 .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
@@ -590,25 +592,28 @@ impl ShadowSubsystem {
     /// to the cascade storage buffer for the shadow depth shader.
     pub fn upload_shadow_cascades(&self, context: &Rc<VulkanContext>, frame_idx: usize) {
         if let Some(csm) = &self.csm {
-            if frame_idx >= self.cascade_mapped_ptrs.len() {
-                return;
-            }
-            let mapped_ptr = self.cascade_mapped_ptrs[frame_idx];
-            let gpu_data = csm.gpu_data();
-            let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    gpu_data.cascades.as_ptr() as *const u8,
-                    mapped_ptr,
-                    cascade_size * crate::shadow::cascade::MAX_CASCADES,
-                );
-            }
-            if frame_idx < self.cascade_allocations.len() {
-                let _ = context.flush_mapped_memory(
-                    &self.cascade_allocations[frame_idx],
-                    0,
-                    (cascade_size * crate::shadow::cascade::MAX_CASCADES) as u64,
-                );
+            for cascade in 0..MAX_CASCADES {
+                let slot = frame_idx * MAX_CASCADES + cascade;
+                if slot >= self.cascade_mapped_ptrs.len() {
+                    return;
+                }
+                let mapped_ptr = self.cascade_mapped_ptrs[slot];
+                let gpu_data = csm.gpu_data();
+                let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>();
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        gpu_data.cascades.as_ptr() as *const u8,
+                        mapped_ptr,
+                        cascade_size * MAX_CASCADES,
+                    );
+                }
+                if slot < self.cascade_allocations.len() {
+                    let _ = context.flush_mapped_memory(
+                        &self.cascade_allocations[slot],
+                        0,
+                        (cascade_size * MAX_CASCADES) as u64,
+                    );
+                }
             }
         }
     }
@@ -623,12 +628,13 @@ impl ShadowSubsystem {
         cascade_index: u32,
         bias: f32,
     ) {
+        let frame_idx = frame_idx * MAX_CASCADES + cascade_index as usize;
         if frame_idx >= self.cascade_mapped_ptrs.len() {
             return;
         }
         let mapped_ptr = self.cascade_mapped_ptrs[frame_idx];
-        let cascade_size = std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>()
-            * crate::shadow::cascade::MAX_CASCADES;
+        let cascade_size =
+            std::mem::size_of::<crate::shadow::cascade::ShadowCascadeGPU>() * MAX_CASCADES;
         let params_offset = cascade_size;
         let params: [u32; 4] = [cascade_index, bias.to_bits(), 0, 0];
         unsafe {
@@ -696,8 +702,14 @@ impl ShadowSubsystem {
     }
 
     /// Get the cascade descriptor set for the given frame (Set 2).
-    pub fn cascade_descriptor_set(&self, frame_idx: usize) -> Option<vk::DescriptorSet> {
-        self.cascade_descriptor_sets.get(frame_idx).copied()
+    pub fn cascade_descriptor_set(
+        &self,
+        frame_idx: usize,
+        cascade: usize,
+    ) -> Option<vk::DescriptorSet> {
+        self.cascade_descriptor_sets
+            .get(frame_idx * MAX_CASCADES + cascade)
+            .copied()
     }
 
     /// Get the shadow depth pipeline handle.
@@ -929,8 +941,9 @@ impl super::VulkanRenderer {
     }
 
     /// Get the cascade descriptor set for the current frame (Set 2).
-    pub fn shadow_cascade_descriptor_set(&self) -> Option<vk::DescriptorSet> {
-        self.shadow.cascade_descriptor_set(self.current_frame())
+    pub fn shadow_cascade_descriptor_set(&self, cascade: usize) -> Option<vk::DescriptorSet> {
+        self.shadow
+            .cascade_descriptor_set(self.current_frame(), cascade)
     }
 
     /// Update shadow params for a specific cascade draw.

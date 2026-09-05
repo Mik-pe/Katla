@@ -21,7 +21,6 @@ pub struct ToolButton {
     pub on_click: Option<Callback>,
 }
 
-
 impl ToolButton {
     fn background(&self, ctx: &UiContext, hovered: bool) -> Color {
         if !self.enabled {

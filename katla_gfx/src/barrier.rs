@@ -378,6 +378,17 @@ impl ImageBarrier {
         }
 
         if old_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+            && new_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+        {
+            return Ok((
+                PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
+                PipelineStage2Flags::TRANSFER,
+                AccessFlags2::COLOR_ATTACHMENT_WRITE,
+                AccessFlags2::TRANSFER_READ,
+            ));
+        }
+
+        if old_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
             && new_layout == vk::ImageLayout::PRESENT_SRC_KHR
         {
             return Ok((

@@ -207,7 +207,16 @@ impl Frame<'_, VulkanRenderer> {
         )> = Vec::new();
         let mut seen = HashSet::new();
 
-        for data in self.pending.values() {
+        for (&pass_index, data) in &self.pending {
+            let Some(pass) = self.graph.pass(pass_index) else {
+                continue;
+            };
+            if pass.kind != Some(crate::render_graph::pass::PassKind::Geometry) {
+                continue;
+            }
+            let Some(format) = pass.output_format else {
+                continue;
+            };
             for draw_list in &data.draw_lists {
                 for draw_call in &draw_list.draws {
                     if seen.insert(draw_call.material)
@@ -217,7 +226,7 @@ impl Frame<'_, VulkanRenderer> {
                             .get_material(draw_call.material)
                         && !material.fully_compiled
                     {
-                        materials_to_compile.push((draw_call.material, material.color_format));
+                        materials_to_compile.push((draw_call.material, format));
                     }
                 }
             }

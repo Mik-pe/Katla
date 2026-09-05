@@ -6,6 +6,9 @@
 
 mod types;
 
+/// Logical size before applying each handle's relative dimensions.
+pub(crate) const GIZMO_SCREEN_SIZE: f32 = 80.0;
+
 pub use types::{
     GizmoAxis, GizmoColor, GizmoHandle, GizmoMode, GizmoPlane, GizmoResources, GizmoState,
     HitTestParams, compute_gizmo_scale, compute_rotate_delta, compute_scale_delta,

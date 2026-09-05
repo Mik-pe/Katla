@@ -6,8 +6,10 @@
 //! the per-frame CPU state update and dispatch sizing. The Metal renderer
 //! dispatches the staged workgroups inline at the top of its own `render()`.
 
+#[cfg(target_os = "macos")]
 use super::Application;
 
+#[cfg(target_os = "macos")]
 impl Application {
     pub(crate) fn step_particle_simulation(&mut self, delta_time: f32) {
         match &mut self.renderer {

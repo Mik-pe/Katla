@@ -53,6 +53,23 @@ impl Application {
         }
     }
 
+    #[cfg(not(target_os = "macos"))]
+    fn refresh_vulkan_transient_views(&mut self) {
+        if let Some(shadow_atlas) = self.frame_graph_bindings.resources.shadow_atlas.as_deref() {
+            for frame_idx in 0..2 {
+                if let Some(view) = self
+                    .frame_graph
+                    .as_vulkan()
+                    .transient_texture_view_for_frame(shadow_atlas, frame_idx)
+                {
+                    self.renderer
+                        .unwrap_vulkan()
+                        .set_shadow_atlas_view(frame_idx, view);
+                }
+            }
+        }
+    }
+
     #[cfg(target_os = "macos")]
     fn refresh_metal_transient_views(&mut self) {
         if let Some(hdr_resource) = self.frame_graph_bindings.resources.hdr_color.clone()
@@ -277,6 +294,8 @@ impl Application {
                     .recreate_transient_textures(&mut self.renderer, w, h)
             {
                 self.update_recreated_transient_bindings(&textures);
+                #[cfg(not(target_os = "macos"))]
+                self.refresh_vulkan_transient_views();
                 #[cfg(target_os = "macos")]
                 self.refresh_metal_transient_views();
             }
@@ -364,8 +383,6 @@ impl Application {
         }
 
         // Tile grid dimensions for Forward+ light culling.
-        // Must match the render target (swapchain) size, NOT the editor viewport panel size,
-        // because clip_position in the fragment shader covers the full render target.
         // Tile grid must match the panel-sized scene render targets (set in
         // recreate_panel_rt_resources). Fall back to the swapchain extent before
         // the first layout runs.
@@ -583,7 +600,17 @@ impl Application {
     /// - The window is unoccluded (`WindowEvent::Occluded(false)`)
     /// - `acquire_next_image` or `queue_present` returns `VK_SUBOPTIMAL_KHR` / `VK_ERROR_OUT_OF_DATE_KHR`
     pub(crate) fn recreate_swapchain_resources(&mut self) {
-        if let Err(e) = self.renderer.recreate_swapchain() {
+        let Some(window) = &self.window else {
+            return;
+        };
+        let size = window.inner_size();
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
+        if let Err(e) = self
+            .renderer
+            .recreate_swapchain(katla_gfx::Size2D::new(size.width, size.height))
+        {
             log::error!("Failed to recreate swapchain: {}", e);
             return;
         }
@@ -598,19 +625,7 @@ impl Application {
             self.update_recreated_transient_bindings(&recreated_textures);
         }
 
-        if let Some(shadow_atlas) = self.frame_graph_bindings.resources.shadow_atlas.clone() {
-            for frame_idx in 0..2 {
-                if let Some(view) = self
-                    .frame_graph
-                    .as_vulkan()
-                    .transient_texture_view_for_frame(&shadow_atlas, frame_idx)
-                {
-                    self.renderer
-                        .unwrap_vulkan()
-                        .set_shadow_atlas_view(frame_idx, view);
-                }
-            }
-        }
+        self.refresh_vulkan_transient_views();
 
         let aspect = extent.width as f32 / extent.height as f32;
         self.camera.aspect_ratio_changed(&mut self.world, aspect);
@@ -739,13 +754,12 @@ impl Application {
         };
 
         let fov_rad = fov.to_radians();
-        let desired_screen_size = 120.0; // pixels
         let gizmo_scale = compute_gizmo_scale(
             cam_pos,
             position,
             fov_rad,
             viewport_height,
-            desired_screen_size,
+            GIZMO_SCREEN_SIZE,
         );
 
         // Allocate instance indices starting after existing draws

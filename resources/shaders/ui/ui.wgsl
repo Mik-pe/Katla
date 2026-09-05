@@ -10,6 +10,7 @@ struct UiVertex {
     @location(0) position: vec2f,
     @location(1) uv: vec2f,
     @location(2) color: vec4f,
+    @location(3) texture_index: u32,
 }
 
 struct UnitQuadVertex {
@@ -118,7 +119,7 @@ fn vs_main(in: UiVertex) -> VertexOutput {
         srgb_to_linear(in.color.b),
         in.color.a,
     );
-    out.texture_index = 0u;
+    out.texture_index = in.texture_index;
 
     return out;
 }
@@ -126,7 +127,7 @@ fn vs_main(in: UiVertex) -> VertexOutput {
 // Shared fragment shader
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    let texture = bindless_textures[uniforms.texture_index];
+    let texture = bindless_textures[in.texture_index];
     let tex_color = textureSample(texture, font_sampler, in.uv);
     return in.color * tex_color;
 }

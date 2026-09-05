@@ -16,9 +16,9 @@ pub struct SwapchainInfo {
 
 pub struct Swapchain {
     pub swapchain_loader: Rc<SwapchainDevice>,
-    pub swapchain_info: SwapchainInfo,
     pub swapchain: vk::SwapchainKHR,
     pub format: vk::SurfaceFormatKHR,
+    extent: vk::Extent2D,
 }
 
 impl Swapchain {
@@ -28,6 +28,7 @@ impl Swapchain {
         physical_device: PhysicalDevice,
         surface: vk::SurfaceKHR,
         old_swapchain: Option<vk::SwapchainKHR>,
+        requested_extent: vk::Extent2D,
     ) -> Result<Self, RendererError> {
         let swapchain_info =
             SwapchainInfo::query_swapchain_support(surface_loader, physical_device, surface)?;
@@ -38,6 +39,8 @@ impl Swapchain {
         })?;
 
         let present_mode = swapchain_info.choose_present_mode();
+        let extent = swapchain_info.choose_extent(requested_extent);
+        log::info!("Creating swapchain at {}x{}", extent.width, extent.height);
 
         let frames_in_flight: u32 = 2;
         let mut image_count = surface_caps.min_image_count.max(frames_in_flight);
@@ -51,7 +54,7 @@ impl Swapchain {
             .min_image_count(image_count)
             .image_format(format.format)
             .image_color_space(format.color_space)
-            .image_extent(surface_caps.current_extent)
+            .image_extent(extent)
             .image_array_layers(1)
             .image_usage(
                 vk::ImageUsageFlags::COLOR_ATTACHMENT
@@ -71,9 +74,9 @@ impl Swapchain {
 
         Ok(Self {
             swapchain_loader,
-            swapchain_info,
             swapchain,
             format,
+            extent,
         })
     }
 
@@ -84,7 +87,7 @@ impl Swapchain {
     }
 
     pub fn get_extent(&self) -> vk::Extent2D {
-        self.swapchain_info.surface_caps.current_extent
+        self.extent
     }
 
     pub fn destroy(&mut self) {
@@ -96,6 +99,21 @@ impl Swapchain {
 }
 
 impl SwapchainInfo {
+    fn choose_extent(&self, requested: vk::Extent2D) -> vk::Extent2D {
+        let caps = &self.surface_caps;
+        if caps.current_extent.width != u32::MAX {
+            return caps.current_extent;
+        }
+        vk::Extent2D {
+            width: requested
+                .width
+                .clamp(caps.min_image_extent.width, caps.max_image_extent.width),
+            height: requested
+                .height
+                .clamp(caps.min_image_extent.height, caps.max_image_extent.height),
+        }
+    }
+
     pub fn choose_present_mode(&self) -> vk::PresentModeKHR {
         self.present_modes
             .iter()
@@ -151,5 +169,56 @@ impl SwapchainInfo {
                 present_modes,
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_surface_extent_selection() {
+        let mut info = SwapchainInfo {
+            surface_caps: vk::SurfaceCapabilitiesKHR {
+                current_extent: vk::Extent2D {
+                    width: u32::MAX,
+                    height: u32::MAX,
+                },
+                min_image_extent: vk::Extent2D {
+                    width: 1,
+                    height: 1,
+                },
+                max_image_extent: vk::Extent2D {
+                    width: 4096,
+                    height: 4096,
+                },
+                ..Default::default()
+            },
+            surface_formats: vec![],
+            present_modes: vec![],
+        };
+        let requested = vk::Extent2D {
+            width: 1280,
+            height: 720,
+        };
+        assert_eq!(info.choose_extent(requested), requested);
+        assert_eq!(
+            info.choose_extent(vk::Extent2D {
+                width: 8000,
+                height: 0
+            }),
+            vk::Extent2D {
+                width: 4096,
+                height: 1
+            }
+        );
+        info.surface_caps.current_extent = vk::Extent2D {
+            width: 800,
+            height: 600,
+        };
+        assert_eq!(
+            info.choose_extent(requested),
+            info.surface_caps.current_extent
+        );
     }
 }

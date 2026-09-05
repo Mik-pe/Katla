@@ -35,6 +35,31 @@ cargo run -- -s  # Limited frames (validation) ✅
 cargo test       # Run tests 🧪
 ```
 
+The `-s` / `--single-frame` flag runs **100 frames**, then exits automatically.
+On Arch Linux, install `vulkan-validation-layers` with pacman to enable Khronos
+validation in normal runs. Use `cargo run -- -s -v` for GPU-assisted validation.
+
+## Headless captures
+
+Render the scene and editor without a window (Vulkan on Linux, Metal on macOS):
+
+```bash
+cargo run -p game -- --headless -s --screenshot /tmp/katla.png
+cargo run -p game -- --ui-test /tmp/katla-ui
+cargo run -p game -- --headless -s --scene assets/scenes/playground.katla --screenshot /tmp/playground.png
+```
+
+Captures are 2560×1440 PNGs with a 1280×720 logical UI. The UI test captures
+five states, including entity selection and Preferences. A Vulkan device and
+its driver are required on Linux; no display server is needed. Install the
+Khronos validation layer to include Vulkan API checks.
+
+The GPU submission/readback regression test is opt-in:
+
+```bash
+cargo test -p katla_gfx --test headless_render -- --ignored
+```
+
 ## Is this vibecoded? 🤖
 **It sure is, I ain't got time to write all of this**  
 This repo has become my playground for vibecoding to see how good or bad it can be.

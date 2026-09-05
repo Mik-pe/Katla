@@ -42,7 +42,7 @@ impl Frame<'_, VulkanRenderer> {
 
         let instanced_pipeline_handle = material
             .instanced_pipeline
-            .unwrap_or(regular_pipeline_handle);
+            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
         let (instanced_pipeline, _) = self
             .renderer
             .asset_registry
@@ -80,7 +80,8 @@ impl Frame<'_, VulkanRenderer> {
         // For mixed mode, we need to bind both vertex and instance buffers
         // Bind unit quad vertex buffer at binding 0 for instanced draws
         if has_instances {
-            let (unit_quad_vb, _) = self.get_or_update_ui_unit_quad(frame_idx)?;
+            let (unit_quad_vb, unit_quad_ib) = self.get_or_update_ui_unit_quad(frame_idx)?;
+            cmd.bind_index_buffer(unit_quad_ib, 0, vk::IndexType::UINT32);
             unsafe {
                 self.renderer.context.device.cmd_bind_vertex_buffers(
                     cmd.vk_command_buffer(),
@@ -95,7 +96,7 @@ impl Frame<'_, VulkanRenderer> {
             cmd.bind_vertex_buffer(vertex_buffer.0, 0);
         }
 
-        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let extent = self.renderer.frame_context.extent;
 
         if self.renderer.ui_renderer.font_atlas_handle().is_none() {
             return Err(RenderGraphError::InvalidConfiguration(
@@ -142,7 +143,8 @@ impl Frame<'_, VulkanRenderer> {
                     );
                 }
                 // Re-bind unit quad vertex buffer at binding 0
-                let (unit_quad_vb, _) = self.get_or_update_ui_unit_quad(frame_idx)?;
+                let (unit_quad_vb, unit_quad_ib) = self.get_or_update_ui_unit_quad(frame_idx)?;
+                cmd.bind_index_buffer(unit_quad_ib, 0, vk::IndexType::UINT32);
                 unsafe {
                     self.renderer.context.device.cmd_bind_vertex_buffers(
                         cmd.vk_command_buffer(),
@@ -174,14 +176,11 @@ impl Frame<'_, VulkanRenderer> {
                 }
                 // Re-bind vertex buffer for non-instanced path (full UiVertex at binding 0)
                 if has_vertices {
-                    let (vertex_buffer, _) =
+                    let (vertex_buffer, index_buffer) =
                         self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
                     cmd.bind_vertex_buffer(vertex_buffer.0, 0);
+                    cmd.bind_index_buffer(index_buffer, 0, vk::IndexType::UINT32);
                 }
-
-                // Update uniform buffer with per-command texture_index for non-instanced path
-                let texture_index = self.renderer.get_texture_bindless_index(draw_cmd.texture);
-                self.update_ui_uniform_texture_index(texture_index)?;
 
                 // Vertex-based draw: complex geometry
                 unsafe {
@@ -510,33 +509,6 @@ impl Frame<'_, VulkanRenderer> {
                 .context
                 .device
                 .update_descriptor_sets(&writes, &[]);
-        }
-
-        Ok(())
-    }
-
-    /// Update the texture_index field in the UI uniform buffer for non-instanced draws.
-    ///
-    /// The uniform layout is: [screen_size.x, screen_size.y, ndc_y_flip, texture_index].
-    /// Only the texture_index (byte offset 12) is updated.
-    fn update_ui_uniform_texture_index(
-        &mut self,
-        texture_index: u32,
-    ) -> Result<(), RenderGraphError> {
-        let allocation = &self
-            .renderer
-            .ui_renderer
-            .ui_resources_mut()
-            .uniform_buffer
-            .as_ref()
-            .expect("UI uniform buffer allocated in constructor")
-            .1;
-        let ptr = self.renderer.context.map_buffer(allocation)?;
-
-        // texture_index is at byte offset 12 in the 16-byte uniform struct
-        unsafe {
-            let tex_idx_ptr = ptr.add(12) as *mut u32;
-            *tex_idx_ptr = texture_index;
         }
 
         Ok(())

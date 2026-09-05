@@ -96,7 +96,7 @@ pub struct VulkanContext {
     pub push_descriptor_loader: PushDescriptorDevice,
     pub physical_device: vk::PhysicalDevice,
     pub allocator: memory::GpuAllocator,
-    pub surface: Option<vk::SurfaceKHR>,
+    surface: std::cell::Cell<Option<vk::SurfaceKHR>>,
     pub graphics_queue: vk::Queue,
     pub gfx_queue: super::Queue,
     pub gfx_cmdpool: super::CommandPool,
@@ -117,7 +117,10 @@ pub struct VulkanContext {
 pub struct VulkanFrameCtx {
     pub context: Rc<VulkanContext>,
     pub(crate) swapchain_image_views: Vec<VkImageView>,
-    pub swapchain: super::Swapchain,
+    pub swapchain: Option<super::Swapchain>,
+    pub(crate) extent: vk::Extent2D,
+    pub(crate) scene_extent: vk::Extent2D,
+    pub(crate) offscreen_targets: Vec<RenderTexture>,
     pub(crate) swapchain_images: Vec<VkImage>,
     /// Per-frame depth render textures (one per FRAMES_IN_FLIGHT).
     /// Each in-flight frame uses its own depth buffer to prevent data races
@@ -143,7 +146,7 @@ impl VulkanContext {
         Some((
             self.swapchain_loader.as_ref()?,
             self.surface_loader.as_ref()?,
-            self.surface?,
+            self.surface.get()?,
         ))
     }
 
@@ -311,7 +314,7 @@ impl VulkanContext {
             push_descriptor_loader,
             physical_device,
             allocator,
-            surface: Some(surface),
+            surface: std::cell::Cell::new(Some(surface)),
             graphics_queue,
             gfx_queue,
             gfx_cmdpool,
@@ -470,7 +473,7 @@ impl VulkanContext {
             push_descriptor_loader,
             physical_device,
             allocator,
-            surface: None,
+            surface: std::cell::Cell::new(None),
             graphics_queue,
             gfx_queue,
             gfx_cmdpool,
@@ -487,6 +490,19 @@ impl VulkanContext {
     }
 }
 
+impl VulkanContext {
+    /// Release presentation resources while the native window and display still exist.
+    pub(crate) fn destroy_surface(&self) {
+        if let Some(surface) = self.surface.take()
+            && let Some(loader) = &self.surface_loader
+        {
+            unsafe {
+                loader.destroy_surface(surface, None);
+            }
+        }
+    }
+}
+
 impl Drop for VulkanContext {
     fn drop(&mut self) {
         unsafe {
@@ -498,11 +514,7 @@ impl Drop for VulkanContext {
             self.allocator.destroy();
             self.device.destroy_device(None);
 
-            if let Some(surface) = self.surface
-                && let Some(surface_loader) = &self.surface_loader
-            {
-                surface_loader.destroy_surface(surface, None);
-            }
+            self.destroy_surface();
 
             if let Some(messenger) = self.debug_callback {
                 self.debug_utils_loader

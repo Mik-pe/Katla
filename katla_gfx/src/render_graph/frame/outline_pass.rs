@@ -33,7 +33,7 @@ impl Frame<'_, VulkanRenderer> {
         }
 
         let frame_idx = self.current_frame();
-        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let extent = self.color_target_extent(pass);
 
         // Compute a tight scissor rect from the selected entity's screen-space bounds.
         // This avoids clearing/loading/storing the full-resolution stencil buffer on
@@ -246,7 +246,7 @@ impl Frame<'_, VulkanRenderer> {
             .asset_registry
             .get_pipeline_vk_handles(self.renderer.outline.outline_draw_skinned_pipeline);
 
-        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let extent = self.renderer.frame_context.scene_extent;
         let frame_idx = self.current_frame();
         let mut push_constants = OutlinePushConstants::default();
         push_constants.outline_width = compute_outline_width(extent.height as f32);
@@ -334,7 +334,7 @@ impl Frame<'_, VulkanRenderer> {
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
         let frame_idx = self.current_frame();
-        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let extent = self.color_target_extent(pass);
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,

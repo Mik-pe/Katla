@@ -31,12 +31,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
     );
     let ndc = uv * 2.0 - 1.0;
 
-    // The scene projection stores geometry Y-flipped in the render target
-    // relative to raw NDC (the UI's texture display undoes it). The sky
-    // bypasses the projection, so it must flip Y itself or it displays
-    // upside-down: the below-horizon gradient lands above the horizon and
-    // reads as a pale band at the top of the viewport.
-    out.clip_position = vec4f(ndc.x, -ndc.y, 0.0, 1.0);
+    out.clip_position = vec4f(ndc, 0.0, 1.0);
     out.ndc_pos = ndc;
 
     return out;
@@ -47,8 +42,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let ndc = vec4f(in.ndc_pos, 0.0, 1.0);
     let world_pos = frame_data.inv_view_proj * ndc;
 
-    let w = max(abs(world_pos.w), 1e-6);
-    let world_dir = normalize(world_pos.xyz / w);
+    let world_dir = normalize(world_pos.xyz - frame_data.camera_position.xyz * world_pos.w);
 
     let up = world_dir.y;
 
@@ -58,7 +52,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         let t = pow(up, 0.7);
         sky_color = mix(HORIZON_COLOR, ZENITH_COLOR, t);
     } else {
-        let t = pow(1.0 + up, 0.5);
+        let t = pow(clamp(-up, 0.0, 1.0), 0.5);
         sky_color = mix(HORIZON_COLOR, GROUND_COLOR, t);
     }
 

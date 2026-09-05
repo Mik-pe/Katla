@@ -277,6 +277,7 @@ impl ApplicationBuilder {
                 Renderer::new_vulkan(
                     event_loop,
                     window,
+                    katla_gfx::Size2D::new(window.inner_size().width, window.inner_size().height),
                     info.validation_mode,
                     app_name,
                     engine_name,
@@ -850,7 +851,6 @@ impl ApplicationBuilder {
     ///
     /// Returns an `Application` configured for headless rendering (no window),
     /// ready to run N frames and save a screenshot PNG.
-    #[cfg(target_os = "macos")]
     pub fn build_headless(
         mut self,
         max_frames: usize,
@@ -928,6 +928,7 @@ impl ApplicationBuilder {
                 message: e.to_string(),
             })?;
 
+        #[cfg(target_os = "macos")]
         let mut renderer = Renderer::new_metal_headless(
             crate::application::headless::HEADLESS_WIDTH,
             crate::application::headless::HEADLESS_HEIGHT,
@@ -936,6 +937,16 @@ impl ApplicationBuilder {
             engine_name,
         )
         .map_err(|e| crate::error::AppError::Graphics { source: e })?;
+
+        #[cfg(not(target_os = "macos"))]
+        let mut renderer = Renderer::new_vulkan_headless(
+            crate::application::headless::HEADLESS_WIDTH,
+            crate::application::headless::HEADLESS_HEIGHT,
+            self.validation_mode,
+            app_name,
+            engine_name,
+        )
+        .map_err(|source| crate::error::AppError::Graphics { source })?;
 
         // Upload font atlas
         let (font_atlas_handle, atlas_width, atlas_height) = {

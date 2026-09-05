@@ -7,7 +7,6 @@ mod graphics_pass;
 mod object_id_pass;
 mod outline_pass;
 mod parallel_geometry;
-mod parallel_shadow;
 mod particle_rendering;
 mod shadow_pass;
 mod ui_rendering;
@@ -172,6 +171,24 @@ use crate::renderer::VulkanRenderer;
 use crate::render_graph::BACKBUFFER_NAME;
 
 impl<'a> Frame<'a, VulkanRenderer> {
+    pub(super) fn color_target_extent(&self, pass: &PassDesc) -> ash::vk::Extent2D {
+        if self
+            .graph
+            .resource_id(BACKBUFFER_NAME)
+            .is_some_and(|id| pass.writes_to(id))
+        {
+            return self.renderer.frame_context.extent;
+        }
+        pass.color_attachments
+            .iter()
+            .find_map(|(id, ..)| {
+                self.graph
+                    .transient_texture_by_id(*id, self.current_frame())
+                    .map(|texture| texture.extent)
+            })
+            .unwrap_or(self.renderer.frame_context.scene_extent)
+    }
+
     /// Resolve a color attachment for a pass.
     ///
     /// Handles both backbuffer and transient texture targets, including
@@ -300,7 +317,7 @@ impl<'a> Frame<'a, VulkanRenderer> {
             match pass.pass_type {
                 super::pass::PassType::Graphics => match pass.kind {
                     Some(super::pass::PassKind::Shadow) => {
-                        self.execute_shadow_pass(&cmd, pass)?;
+                        self.execute_shadow_pass(&cmd, pass, data)?;
                     }
                     Some(super::pass::PassKind::DepthPrepass) => {
                         self.execute_depth_prepass(&cmd, pass, data)?;

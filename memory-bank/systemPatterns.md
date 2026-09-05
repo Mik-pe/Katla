@@ -73,6 +73,14 @@ Frame-graph topology is application policy. `ApplicationBuilder::with_frame_grap
 
 Katla's optional built-in runtime resolves pass and transient-resource roles from `FrameGraphBindings`. Absence is represented by `Option`, never `PassId(0)` or another valid-ID sentinel. Bindings are validated at construction, re-resolved after graph mutation, and all submission, resize, bindless, picking, and per-frame subsystem work must check the corresponding capability.
 
+## Headless Rendering
+
+Vulkan and Metal share the application's scene/editor preparation and graph submission paths. Linux headless mode owns two offscreen color targets instead of a presentation swapchain; it needs a Vulkan driver but no window system. Captures use 2560×1440 physical pixels and a 1280×720 logical UI. Readback observes completed GPU work and saves PNGs.
+
+Windowed Vulkan initialization and resize receive explicit pixel dimensions; variable-extent surfaces use these dimensions clamped to surface limits. Swapchain replacement also replaces its synchronization objects. Shutdown releases the Vulkan surface before the native window/display teardown.
+
+Vulkan frame fences are waited without resetting and reset immediately before submission. Scene attachment dimensions are independent of output dimensions, so panel-sized depth, lighting tiles, and graphics viewports agree. Vulkan cascaded shadows share one atlas pass, with independent cascade parameters for each frame slot. UI vertex and instanced pipelines are rebuilt together when material layouts change; texture selection belongs to draw data.
+
 ## ECS Architecture (katla_ecs)
 
 ### EntityId

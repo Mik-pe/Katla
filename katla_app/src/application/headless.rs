@@ -1,8 +1,4 @@
-//! Headless rendering constants and screenshot helpers.
-//!
-//! The headless frame loop is now driven by `Application::run_headless()`
-//! which reuses the exact same Application code (editor UI, scene, frame loop)
-//! as windowed mode, with only the window/drawable swapped for an offscreen texture.
+//! Headless scene/editor rendering and PNG capture on Vulkan and Metal.
 
 /// Headless offscreen texture dimensions (physical pixels).
 ///
@@ -23,6 +19,11 @@ use katla_gfx::GpuRenderer;
 use katla_gfx::MetalTextureRetained;
 use log::info;
 
+#[cfg(target_os = "macos")]
+type HeadlessFrame = Option<MetalTextureRetained>;
+#[cfg(not(target_os = "macos"))]
+type HeadlessFrame = ();
+
 impl Application {
     /// Run the headless frame loop: render N frames and save a screenshot.
     ///
@@ -30,7 +31,6 @@ impl Application {
     /// same render graph) but with an offscreen texture instead of a window drawable.
     pub fn run_headless(&mut self) -> AppResult<()> {
         let max_frames = self.info.max_frames.unwrap_or(10);
-        #[cfg(target_os = "macos")]
         let screenshot_path = self
             .info
             .screenshot_path
@@ -42,7 +42,7 @@ impl Application {
             .ui_test_path
             .as_ref()
             .map(|dir| crate::application::ui_test::UiTestRunner::new(dir.clone()));
-        #[cfg(all(target_os = "macos", feature = "editor"))]
+        #[cfg(feature = "editor")]
         let mut ui_test = ui_test;
 
         info!(
@@ -66,14 +66,20 @@ impl Application {
             {
                 last_offscreen = self.run_one_headless_frame();
             }
+            #[cfg(not(target_os = "macos"))]
+            self.run_one_headless_frame();
 
             // UI test: check for screenshot and inject state changes
-            #[cfg(all(target_os = "macos", feature = "editor"))]
+            #[cfg(feature = "editor")]
             if let Some(ref mut runner) = ui_test
                 && let Some(screenshot_dest) =
                     runner.on_frame(_frame, &mut self.editor.editor_ui, &self.world)
             {
-                self.save_headless_screenshot(&screenshot_dest, last_offscreen.clone())?;
+                self.save_headless_screenshot(
+                    &screenshot_dest,
+                    #[cfg(target_os = "macos")]
+                    last_offscreen.clone(),
+                )?;
             }
 
             self.frame_count += 1;
@@ -88,9 +94,12 @@ impl Application {
         }
 
         // Save screenshot from the last frame's offscreen texture (standard mode only)
-        #[cfg(target_os = "macos")]
         if ui_test.is_none() {
-            self.save_headless_screenshot(&screenshot_path, last_offscreen)?;
+            self.save_headless_screenshot(
+                &screenshot_path,
+                #[cfg(target_os = "macos")]
+                last_offscreen,
+            )?;
         }
 
         // Layout dump (if both --headless and --dump-layout are set)
@@ -113,8 +122,7 @@ impl Application {
     }
 
     /// Render one headless frame. Returns the offscreen texture that was rendered to.
-    #[cfg(target_os = "macos")]
-    fn run_one_headless_frame(&mut self) -> Option<MetalTextureRetained> {
+    fn run_one_headless_frame(&mut self) -> HeadlessFrame {
         self.timer.add_timestamp();
         let dt = self.timer.get_delta() as f32;
 
@@ -172,11 +180,17 @@ impl Application {
         // Clone it before passing to the renderer — the renderer takes ownership
         // via .take() during render_frame, but the Shared-storage texture persists
         // on the GPU and the clone remains valid for readback.
+        #[cfg(target_os = "macos")]
         let offscreen = self
             .renderer
             .create_offscreen_texture(HEADLESS_WIDTH, HEADLESS_HEIGHT);
+        #[cfg(target_os = "macos")]
         let offscreen_clone = offscreen.clone();
+        #[cfg(target_os = "macos")]
         self.renderer.set_headless_drawable(offscreen);
+
+        self.prepare_scene_gpu(dt);
+        self.poll_background_loader();
 
         // Render editor frame (same as windowed — includes UI generation)
         self.render_editor_frame(dt);
@@ -188,15 +202,18 @@ impl Application {
             log::error!("Failed to wait for GPU frame: {}", e);
         }
 
-        Some(offscreen_clone)
+        #[cfg(target_os = "macos")]
+        {
+            Some(offscreen_clone)
+        }
     }
 
-    #[cfg(target_os = "macos")]
     fn save_headless_screenshot(
-        &self,
+        &mut self,
         path: &str,
-        texture: Option<MetalTextureRetained>,
+        #[cfg(target_os = "macos")] texture: Option<MetalTextureRetained>,
     ) -> AppResult<()> {
+        #[cfg(target_os = "macos")]
         let Some(texture) = texture else {
             log::error!("No offscreen texture available for screenshot");
             return Err(crate::error::AppError::Other {
@@ -204,8 +221,24 @@ impl Application {
             });
         };
 
+        #[cfg(target_os = "macos")]
         let bgra_data =
             crate::Renderer::readback_bgra_texture(&texture, HEADLESS_WIDTH, HEADLESS_HEIGHT);
+
+        #[cfg(not(target_os = "macos"))]
+        let bgra_data = {
+            let renderer = self.renderer.unwrap_vulkan();
+            renderer
+                .queue_async_readback(self.frame_count)
+                .map_err(|source| crate::error::AppError::Graphics { source })?;
+            renderer
+                .wait_for_pending_readback()
+                .map_err(|source| crate::error::AppError::Graphics { source })?
+                .ok_or_else(|| crate::error::AppError::Other {
+                    message: "No headless frame available".into(),
+                })?
+                .1
+        };
 
         // Convert BGRA to RGBA for PNG
         let rgba_data: Vec<u8> = bgra_data

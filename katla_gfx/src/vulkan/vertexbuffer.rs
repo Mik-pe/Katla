@@ -150,10 +150,24 @@ impl IndexBuffer {
 
 impl VertexBuffer {
     pub fn new(context: Rc<VulkanContext>, buf_size: u64, count: u32) -> Self {
+        Self::with_usage(
+            context,
+            buf_size,
+            count,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+        )
+    }
+
+    pub(crate) fn with_usage(
+        context: Rc<VulkanContext>,
+        buf_size: u64,
+        count: u32,
+        usage: vk::BufferUsageFlags,
+    ) -> Self {
         let buffer = {
             let create_info = vk::BufferCreateInfo::default()
                 .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                .usage(usage)
                 .size(buf_size);
             let (buffer, allocation) = context
                 .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
@@ -165,7 +179,7 @@ impl VertexBuffer {
                 buf_size,
                 count,
                 context,
-                buffer_usage: vk::BufferUsageFlags::VERTEX_BUFFER,
+                buffer_usage: usage,
             }
         };
         Self { buffer }

@@ -3,28 +3,21 @@ use crate::render_graph::frame::Frame;
 use crate::render_graph::frame::draw_helpers::{
     DescriptorConfig, DrawParams, draw_meshes_with_skinning,
 };
-use crate::render_graph::frame::parallel_shadow::{
-    ShadowCascadeConfig, execute_parallel_shadow_recording,
-};
 use crate::render_graph::pass::PassDesc;
 use crate::render_graph::resource::ResourceState;
 use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
-/// Minimum number of draw calls to justify parallel shadow recording overhead.
-const PARALLEL_SHADOW_DRAW_THRESHOLD: usize = 16;
-
 impl Frame<'_, VulkanRenderer> {
     /// Execute a shadow pass.
     ///
-    /// Uses parallel secondary command buffer recording when there are enough draw
-    /// calls. Each cascade records into its own secondary CB. Falls back to
-    /// sequential recording for small batches.
+    /// All cascades share one atlas render pass and bind separate parameter buffers.
     pub(super) fn execute_shadow_pass(
         &mut self,
         cmd: &CommandBuffer,
         pass: &PassDesc,
+        data: crate::render_graph::frame::PassExecutionData,
     ) -> Result<(), RenderGraphError> {
         let frame_idx = self.current_frame();
 
@@ -89,11 +82,6 @@ impl Frame<'_, VulkanRenderer> {
                 (None, None)
             };
 
-        let data = self
-            .pending
-            .remove(&self.graph.pass_index(&pass.name).unwrap_or(0))
-            .unwrap_or_default();
-
         let num_cascades: u32 = self.renderer.shadow_cascade_count();
         let depth_bias = self.renderer.shadow_cascade_depth_bias();
 
@@ -133,98 +121,62 @@ impl Frame<'_, VulkanRenderer> {
             })
             .collect();
 
-        let cascade_ds = self
-            .renderer
-            .shadow_cascade_descriptor_set()
-            .unwrap_or_else(|| self.renderer.empty_descriptor_set(frame_idx));
-        let empty_ds = self.renderer.empty_descriptor_set(frame_idx);
-        let extra_sets = vec![(1u32, empty_ds), (2u32, cascade_ds)];
+        cmd.begin_rendering(&[], Some(&depth_attachment), None, render_area, 1);
 
-        let total_draws: usize = data.draw_lists.iter().map(|dl| dl.len()).sum();
-        let use_parallel = total_draws >= PARALLEL_SHADOW_DRAW_THRESHOLD;
+        for cascade_idx in 0..num_cascades {
+            let vp = viewports[cascade_idx as usize];
+            let sc = scissors[cascade_idx as usize];
 
-        if use_parallel {
-            log::debug!(
-                "[SHADOW] Parallel recording for '{}' ({} draws, {} cascades)",
-                pass.name,
-                total_draws,
-                num_cascades
-            );
-
-            // Set cascade params for all cascades before parallel recording
-            for cascade_idx in 0..num_cascades {
-                self.renderer
-                    .set_shadow_cascade_params(cascade_idx, depth_bias);
+            unsafe {
+                self.renderer.context.device.cmd_set_viewport(
+                    cmd.vk_command_buffer(),
+                    0,
+                    std::slice::from_ref(&vp),
+                );
+                self.renderer.context.device.cmd_set_scissor(
+                    cmd.vk_command_buffer(),
+                    0,
+                    std::slice::from_ref(&sc),
+                );
             }
 
-            let cascades = self.resolve_shadow_cascades(&ShadowCascadeConfig {
+            self.renderer
+                .set_shadow_cascade_params(cascade_idx, depth_bias);
+
+            let cascade_ds = self
+                .renderer
+                .shadow_cascade_descriptor_set(cascade_idx as usize)
+                .ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration(
+                        "Missing shadow cascade descriptor".into(),
+                    )
+                })?;
+            let extra_sets = vec![
+                (1, self.renderer.empty_descriptor_set(frame_idx)),
+                (2, cascade_ds),
+            ];
+            draw_meshes_with_skinning(DrawParams {
+                cmd,
+                renderer: self.renderer,
                 draw_lists: &data.draw_lists,
-                frame_idx,
                 pipeline,
                 layout,
                 skinned_pipeline,
                 skinned_layout,
-                num_cascades,
-                viewports: &viewports,
-                scissors: &scissors,
-                extra_sets: &extra_sets,
+                frame_idx,
+                descriptors: DescriptorConfig {
+                    bind_textures: false,
+                    skeleton_set: 3,
+                    extra_sets: extra_sets.clone(),
+                    skinned_extra_sets: Vec::new(),
+                },
+                billboard_pipeline: None,
+                billboard_layout: None,
+                exclude_billboards: true,
             })?;
+        }
 
-            execute_parallel_shadow_recording(
-                &self.renderer.context.device,
-                &self.renderer.context.gfx_cmdpool,
-                cmd,
-                &cascades,
-                &depth_attachment,
-                render_area,
-            )
-        } else {
-            cmd.begin_rendering(&[], Some(&depth_attachment), None, render_area, 1);
-
-            for cascade_idx in 0..num_cascades {
-                let vp = viewports[cascade_idx as usize];
-                let sc = scissors[cascade_idx as usize];
-
-                unsafe {
-                    self.renderer.context.device.cmd_set_viewport(
-                        cmd.vk_command_buffer(),
-                        0,
-                        std::slice::from_ref(&vp),
-                    );
-                    self.renderer.context.device.cmd_set_scissor(
-                        cmd.vk_command_buffer(),
-                        0,
-                        std::slice::from_ref(&sc),
-                    );
-                }
-
-                self.renderer
-                    .set_shadow_cascade_params(cascade_idx, depth_bias);
-
-                draw_meshes_with_skinning(DrawParams {
-                    cmd,
-                    renderer: self.renderer,
-                    draw_lists: &data.draw_lists,
-                    pipeline,
-                    layout,
-                    skinned_pipeline,
-                    skinned_layout,
-                    frame_idx,
-                    descriptors: DescriptorConfig {
-                        bind_textures: false,
-                        skeleton_set: 3,
-                        extra_sets: extra_sets.clone(),
-                        skinned_extra_sets: Vec::new(),
-                    },
-                    billboard_pipeline: None,
-                    billboard_layout: None,
-                    exclude_billboards: true,
-                })?;
-            }
-
-            cmd.end_rendering();
-            Ok(())
-        }?;
+        cmd.end_rendering();
 
         if let Some(&write_id) = pass.writes.first()
             && let Some(transient) = self.graph.transient_texture_by_id(write_id, frame_idx)
