@@ -1167,12 +1167,12 @@ impl Application {
         use crate::components::{PointLight, TransformComponent};
         use katla_gfx::PointLightGPU;
 
-        let mut lights = Vec::new();
+        self.point_lights_buffer.clear();
         for (_entity, point_light, transform) in
             self.world.query::<(&PointLight, &TransformComponent)>()
         {
             let pos = transform.transform.position;
-            lights.push(PointLightGPU {
+            self.point_lights_buffer.push(PointLightGPU {
                 position: [pos.x(), pos.y(), pos.z()],
                 range: point_light.range,
                 color: point_light.color,
@@ -1180,12 +1180,12 @@ impl Application {
             });
         }
 
-        if !lights.is_empty() {
+        if !self.point_lights_buffer.is_empty() {
             log::debug!(
                 "Uploading {} point lights for Metal Forward+ culling",
-                lights.len()
+                self.point_lights_buffer.len()
             );
         }
-        self.renderer.upload_lights(&lights);
+        self.renderer.upload_lights(&self.point_lights_buffer);
     }
 }
