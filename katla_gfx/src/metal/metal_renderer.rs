@@ -254,6 +254,10 @@ pub struct MetalRenderer {
     pub(crate) depth_stencil_view: Option<MetalTextureView>,
     pub(crate) shared_sampler: Option<super::sampler::MetalSamplerState>,
     pub(crate) shadow_cascade_buffer: Option<MetalBuffer>,
+    /// Cascade data with clip-space Y mirrored for Metal's Y-up convention;
+    /// consumed only by the shadow-depth encode (the sampler reads the
+    /// Vulkan-convention [`Self::shadow_cascade_buffer`]).
+    pub(crate) shadow_cascade_encode_buffer: Option<MetalBuffer>,
     pub(crate) shadow_sampler: Option<super::sampler::MetalSamplerState>,
     pub(crate) buffer_sizes_buffer: Option<MetalBuffer>,
     #[expect(dead_code)]
@@ -407,6 +411,7 @@ impl MetalRenderer {
             depth_stencil_view: None,
             shared_sampler: None,
             shadow_cascade_buffer: None,
+            shadow_cascade_encode_buffer: None,
             shadow_sampler: None,
             buffer_sizes_buffer: None,
             scene_color_view: None,
@@ -482,6 +487,18 @@ impl MetalRenderer {
             shadow_cascade_buf.unmap();
         }
         renderer.shadow_cascade_buffer = Some(shadow_cascade_buf);
+
+        // Shadow cascade encode buffer: same layout, clip-space Y mirrored
+        // for Metal (see crate::shadow::cascade::flip_projection_y).
+        let shadow_cascade_encode_buf = renderer.context.create_buffer(512, true)?;
+        {
+            let ptr = shadow_cascade_encode_buf.map();
+            unsafe {
+                std::ptr::write_bytes(ptr, 0, 512);
+            }
+            shadow_cascade_encode_buf.unmap();
+        }
+        renderer.shadow_cascade_encode_buffer = Some(shadow_cascade_encode_buf);
 
         // Shadow comparison sampler (Set 4, binding 2)
         {
@@ -1316,6 +1333,22 @@ impl GpuRenderer for MetalRenderer {
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast(), bytes.len());
         }
         shadow_buf.unmap();
+
+        // The shadow-depth encode projects with Metal's Y-up clip space;
+        // mirror the cascade Y so the atlas content matches the shared
+        // sampler's Vulkan-convention lookup.
+        let flipped = crate::shadow::cascade::flip_projection_y(&data);
+        if let Some(ref encode_buf) = self.shadow_cascade_encode_buffer {
+            let ptr = encode_buf.map();
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    bytemuck::bytes_of(&flipped).as_ptr(),
+                    ptr.cast(),
+                    bytes.len(),
+                );
+            }
+            encode_buf.unmap();
+        }
     }
 
     fn depth_texture_base_index(&self) -> Option<u32> {

@@ -56,6 +56,21 @@ pub struct CascadeShadowMap {
     light_direction: [f32; 3],
 }
 
+/// Mirror each cascade's projected Y (clip-space row 1).
+///
+/// The shared cascade data follows Vulkan's Y-down clip convention, which the
+/// shadow sampler assumes. Metal's clip space is Y-up, so the Metal shadow
+/// encode projects with the flipped copy; sampling keeps the shared data.
+pub fn flip_projection_y(data: &ShadowFrameData) -> ShadowFrameData {
+    let mut flipped = *data;
+    for cascade in flipped.cascades.iter_mut() {
+        for index in [1usize, 5, 9, 13] {
+            cascade.view_proj[index] = -cascade.view_proj[index];
+        }
+    }
+    flipped
+}
+
 impl CascadeShadowMap {
     pub fn new(params: CascadeParams) -> Self {
         let num_cascades = params.num_cascades.min(MAX_CASCADES);
@@ -467,11 +482,12 @@ fn mat4_inverse(m: &[f32; 16]) -> [f32; 16] {
     inv
 }
 
-/// Orthographic projection mapping NDC z to [0, 1] (the Metal and Vulkan
-/// clip-space depth convention). Light-view z runs positive toward the
-/// light, so `near` is the farthest plane from the light (smallest view z)
-/// and `far` the nearest (largest); depth 0 is nearest to the light and
-/// depth 1 farthest, giving the standard LessEqual front-culled PSM setup.
+/// Orthographic projection mapping NDC z to [0, 1] and NDC y to the Vulkan
+/// Y-down clip convention (the shared shadow sampler assumes that layout;
+/// [`flip_projection_y`] adapts the data for Metal's Y-up clip space at
+/// encode time). Light-view z runs positive away from the light, so depth 0
+/// is nearest to the light and depth 1 farthest, giving the standard
+/// LessEqual front-culled PSM setup.
 fn mat4_ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> [f32; 16] {
     [
         2.0 / (right - left),
@@ -707,6 +723,60 @@ mod tests {
                 "pancaked projection has NaN at [{}]",
                 i
             );
+        }
+    }
+
+    #[test]
+    fn test_flip_projection_y_mirrors_ndc_y_only() {
+        let mut csm = CascadeShadowMap::new(CascadeParams::default());
+        let view = [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 5.0, 1.0,
+        ];
+        let proj = katla_math_proj_reverse_z(60.0, 16.0 / 9.0, 0.1);
+        csm.update([0.5, -0.8, -0.3], &view, &proj);
+        let data = csm.gpu_data();
+
+        let flipped = flip_projection_y(&data);
+
+        // Double flip is the identity, and a single flip actually changed data.
+        assert_ne!(
+            flipped.cascades[0].view_proj, data.cascades[0].view_proj,
+            "sanity: single flip must change the matrix"
+        );
+        assert_eq!(
+            flip_projection_y(&flipped).cascades[0].view_proj,
+            data.cascades[0].view_proj,
+            "double flip must restore the original matrix"
+        );
+
+        // Projecting a point through the original and flipped matrices must
+        // negate clip y while x, z, and w are unchanged.
+        let world = [1.5, 2.0, -4.0, 1.0];
+        for (index, (original, flipped)) in data
+            .cascades
+            .iter()
+            .zip(flipped.cascades.iter())
+            .enumerate()
+        {
+            let p = mat4_transform_vec4(&original.view_proj, &world);
+            let q = mat4_transform_vec4(&flipped.view_proj, &world);
+            assert!(
+                (p[1] + q[1]).abs() < 1e-4,
+                "cascade {}: y not mirrored: {} vs {}",
+                index,
+                p[1],
+                q[1]
+            );
+            for component in [0usize, 2, 3] {
+                assert!(
+                    (p[component] - q[component]).abs() < 1e-4,
+                    "cascade {}: component {} changed: {} vs {}",
+                    index,
+                    component,
+                    p[component],
+                    q[component]
+                );
+            }
         }
     }
 
