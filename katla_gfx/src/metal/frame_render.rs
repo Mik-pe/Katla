@@ -370,7 +370,7 @@ impl MetalRenderer {
         let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
             RendererError::InvalidOperation("Metal Shadow record requires object storage".into())
         })?;
-        let shadow_buf = self.shadow_cascade_buffer.as_ref().ok_or_else(|| {
+        let shadow_buf = self.shadow_cascade_encode_buffer.as_ref().ok_or_else(|| {
             RendererError::InvalidOperation("Metal Shadow record requires cascade data".into())
         })?;
         let shadow_resolution = self.shadow.shadow_resolution();

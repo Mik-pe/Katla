@@ -121,7 +121,10 @@ impl MetalShadowSubsystem {
             true,
             CompareOp::Less,
             objc2_metal::MTLCullMode::Front,
-            objc2_metal::MTLWinding::Clockwise,
+            // The encode-side cascade matrices are Y-mirrored for Metal's
+            // Y-up clip space (flip_projection_y), which inverts projected
+            // winding relative to Vulkan's Y-down convention.
+            objc2_metal::MTLWinding::CounterClockwise,
             Some(&vd),
             false,
         )?;
@@ -145,7 +148,9 @@ impl MetalShadowSubsystem {
             true,
             CompareOp::Less,
             objc2_metal::MTLCullMode::Front,
-            objc2_metal::MTLWinding::Clockwise,
+            // Mirrored encode matrices invert projected winding (see
+            // create_pipeline above).
+            objc2_metal::MTLWinding::CounterClockwise,
             Some(&vd),
             false,
         )?;
@@ -223,8 +228,12 @@ pub(crate) fn render_cascades(
 
     // Render into each cascade's quadrant of the atlas. The sampling side
     // (cascade_uv_offset_scale) maps cascade i into the quadrant at
-    // (col * 0.5, row * 0.5) with row = 1 - i/2 in UV space; Metal viewports
-    // are y-down, which matches that layout (cascades 0/1 = uv-top = y-offset 0).
+    // (col * 0.5, row * 0.5) with row = 1 - i/2 in UV space, and Metal
+    // viewports are y-down from the texture's top row, so quadrant origin
+    // (0, quarter) equals uv (0, 0.5). Within each quadrant the encode-side
+    // cascade matrices are Y-mirrored (flip_projection_y) so Metal's Y-up
+    // clip space writes the same in-quadrant content Vulkan's Y-down
+    // clip space does.
     let quarter = (shadow_resolution / 2) as f32;
     for cascade_index in 0..cascade_count {
         let col = (cascade_index % 2) as f32;
@@ -259,6 +268,7 @@ pub(crate) fn render_cascades(
     encoder.end_encoding();
 }
 
+#[allow(clippy::too_many_arguments)]
 fn encode_cascade_draws(
     encoder: &mut super::render_encoder::MetalRenderEncoder,
     shadow_pipeline: &MetalGraphicsPipeline,
