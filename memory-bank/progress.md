@@ -2,7 +2,40 @@
 
 ## Completed Recently
 
-- **Editor UI/UX polish pass (2026-08-31, uncommitted)** — dock tabs
+- **Windowed Vulkan limited-frame validation (2026-09-05, working tree)** —
+  fixed Wayland's unspecified surface extent being passed as an image size,
+  stale signaled semaphores surviving swapchain recreation, and a shutdown
+  segfault caused by destroying the surface after Wayland teardown. Actual
+  window dimensions now reach initialization and resize; surface release
+  is explicit and idempotent. The extent-selection regression test and
+  strict workspace Clippy passed. The windowed GPU-assisted validation run
+  rendered 100 frames and exited with status zero and no Vulkan validation
+  errors. Khronos layers are not installed system-wide: these checks use
+  the temporary extracted layer package, not the normal loader search path.
+
+- **Vulkan headless rendering and visual audit (2026-09-05, working tree)** —
+  Linux now renders the normal scene/editor graph into offscreen targets and
+  saves PNGs without a window or display server. Fixed validation-layer
+  fallback startup, fence reuse, readback synchronization, missing UI
+  pipelines and texture selection, imported mesh attributes, HDR pipeline
+  formats, panel-sized scene targets, and stale shadow descriptors. Restored
+  particle, animation, and lighting work that graph liveness had culled.
+  Cascaded shadows use one atlas pass with independent cascade parameters;
+  the unsafe parallel shadow recorder was removed. The sky gradient is
+  continuous and reconstructs rays from rasterized NDC. Hierarchy selection
+  and inspector sections fill their panels, Preferences scale controls fit
+  at full height, and unit gizmo meshes render solid shafts at a shared,
+  smaller draw/hit-test size.
+  Verified on Intel Vulkan: 2,023 workspace tests passed (116 ignored),
+  explicit GPU pixel regression passed, strict workspace Clippy and format
+  checks passed. Default and playground scenes plus all five UI test states
+  were captured and viewed; final runs with DISPLAY/WAYLAND_DISPLAY removed
+  produced no Vulkan validation errors. Validation-layer absence also falls
+  back successfully. Captures: `.zcode/vulkan-captures/`; reproduction and
+  opt-in GPU test commands are in README. Native Metal remains unverified
+  on this Linux machine.
+
+- **Editor UI/UX polish pass (2026-08-31)** — dock tabs
   left-stacked at a 160px cap (shared draw/hit-test `tab_hit_width`); bottom
   dock default 0.64→0.74; gizmo toolbar icon-only with accent selected state
   (`UiStyle.accent` added, `ToolLabelButton` deleted); Inspector "+ Add
@@ -15,8 +48,7 @@
   (macro themes defaulted it to black). Judge-passed over 5 ui-test states;
   workspace tests/clippy/fmt green.
 
-- **Headless render visual audit — 3 renderer bugs fixed (2026-08-31,
-  uncommitted)** — systematic screenshot pass (default scene 100 frames,
+- **Headless render visual audit — 3 renderer bugs fixed (2026-08-31)** — systematic screenshot pass (default scene 100 frames,
   playground, 5 ui-test states, 2560×1440 Metal) plus shader-as-instrument
   probes (solid-green billboards, red sky, target-pixel stripes) root-caused:
   1. **Billboard scale dead** — `billboard.wgsl`/`billboard_depth.wgsl` VS
@@ -27,14 +59,11 @@
   2. **Fire icon canvas overflow** — ForkAwesome fire glyph at 64px exceeds
      the canvas; clipped edge rows bled a bright bar through the FS alpha
      threshold. Rasterizer now scales glyphs to fit (6% margin).
-  3. **Pale band at viewport top (long-open)** — NOT UI-side as suspected.
-     The UI display chain shows the render target Y-flipped relative to raw
-     NDC; geometry stores pre-flipped (projection includes it) but the sky
-     bypassed the projection → the sky displayed upside-down and its
-     below-horizon gradient read as a pale strip at the top. Probes that
-     nailed it: solid-red sky (band turned red = sky-rendered), then
-     row/column stripe markers in target pixels (stripes appeared bottom/left
-     = Y flip, X identity). Fix: `clip_position.y = -ndc.y` in `sky.wgsl`.
+  3. **Sky orientation investigation** — the earlier Metal-only clip-Y fix
+     was superseded by the 2026-09-05 Vulkan audit. Sky reconstruction now
+     uses the rasterized NDC, and the actual discontinuity between horizon
+     and ground colors has been removed. Native Metal verification remains
+     necessary after this shared shader change.
   4. **Gizmo shadow slivers** — with an entity selected, the move gizmo's
      arrows/cones cast flat shadow-map streaks (only billboards were filtered
      from `shadow_draw_list`). Shadow list now filters ALL editor-overlay
@@ -48,7 +77,7 @@
   ground, workspace tests + clippy + fmt green. Note: `compute_gizmo_scale`'s
   vp_h=391 (logical panel height) is correct, not stale.
 
-- **Preferences modal redesign + UI primitives pass (2026-08-31, uncommitted)**
+- **Preferences modal redesign + UI primitives pass (2026-08-31)**
   — Preferences is now a centered `Modal` (560×520, scrim 0.6, Escape /
   outside-click / 28px close button, focus-trapped) instead of a draggable
   panel; categories moved to an icon sidebar (Appearance/Viewport/Audio/AI —

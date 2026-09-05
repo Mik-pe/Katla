@@ -214,6 +214,7 @@ impl Build for InspectorView {
             }
 
             vstack(sections)
+                .flex_grow(1.0)
                 .spacing(12.0)
                 .padding(Padding::all(12.0))
                 .boxed()

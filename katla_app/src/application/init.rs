@@ -171,6 +171,7 @@ impl Application {
             self.frame_graph.insert_pass(
                 0,
                 PassDesc::new("particle_simulate", PassType::Compute, vec![], vec![])
+                    .with_side_effect()
                     .with_pipeline(simulate_pipeline)
                     .with_compute_fn(|frame, cmd, _pipeline_handle| {
                         let workgroup_count = frame.particle_simulate_workgroup_count();
@@ -234,6 +235,7 @@ impl Application {
             self.frame_graph.insert_pass(
                 0,
                 PassDesc::new("particle_emit", PassType::Compute, vec![], vec![])
+                    .with_side_effect()
                     .with_pipeline(emit_pipeline)
                     .with_compute_fn(|frame, cmd, _pipeline_handle| {
                         let workgroup_count = frame.particle_emit_workgroup_count();
@@ -306,6 +308,7 @@ impl Application {
             self.frame_graph.insert_pass(
                 0,
                 PassDesc::new("animation_pose_eval", PassType::Compute, vec![], vec![])
+                    .with_side_effect()
                     .with_pipeline(pipeline_handle)
                     .with_compute_fn(|frame, cmd, _pipeline_handle| {
                         let skeleton_count = frame.animation_skeleton_count();
@@ -389,15 +392,15 @@ impl Application {
             use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
             self.frame_graph.insert_pass(
                 1,
-                PassDesc::new("light_culling", PassType::Compute, vec![], vec![]).with_compute_fn(
-                    |frame, cmd, _pipeline_handle| {
+                PassDesc::new("light_culling", PassType::Compute, vec![], vec![])
+                    .with_side_effect()
+                    .with_compute_fn(|frame, cmd, _pipeline_handle| {
                         let renderer = frame.renderer_mut();
                         let view = renderer.frame_uniforms().view_matrix;
                         let proj = renderer.frame_uniforms().proj_matrix;
                         renderer.dispatch_light_culling(cmd.vk_command_buffer(), &view, &proj);
                         Ok::<(), RenderGraphError>(())
-                    },
-                ),
+                    }),
             );
             info!("Added light culling compute pass to frame graph");
         }

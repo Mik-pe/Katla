@@ -321,15 +321,12 @@ impl super::Application {
             vertex_count
         );
 
-        // 3. Create mesh using interleaved vertex data via create_mesh_dynamic
-        let vertex_bytes: &[u8] = if model.has_skinning {
-            bytemuck::cast_slice(&model.skinned_vertex_data)
-        } else {
-            bytemuck::cast_slice(&model.vertex_data)
-        };
-        let mesh_handle =
+        let mesh_handle = if model.has_skinning {
             self.renderer
-                .create_mesh_dynamic(vertex_bytes, vertex_count as u32, &indices);
+                .create_mesh(&model.skinned_vertex_data, &indices)
+        } else {
+            self.renderer.create_mesh(&model.vertex_data, &indices)
+        };
 
         let positions: Vec<[f32; 3]> = if model.has_skinning {
             model

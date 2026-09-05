@@ -90,6 +90,11 @@ impl MaterialOptions {
         };
         Self {
             vertex_type,
+            color_format: if matches!(vertex_type, VertexType::Ui) {
+                ImageFormat::B8G8R8A8Srgb
+            } else {
+                ImageFormat::Auto
+            },
             ..Default::default()
         }
     }
@@ -294,13 +299,10 @@ impl MaterialCompiler {
         // 4b. For UI materials, also compile an instanced pipeline
         // using vs_instanced/fs_instanced entry points with UnitQuadVertex format.
         let instanced_pipeline = if matches!(options.vertex_type, VertexType::Ui) {
-            match self.build_instanced_ui_pipeline(shader_path, &layouts) {
-                Ok(p) => Some(registry.register_pipeline(p)),
-                Err(e) => {
-                    log::error!("Failed to compile UI instanced pipeline: {}", e);
-                    None
-                }
-            }
+            Some(
+                registry
+                    .register_pipeline(self.build_instanced_ui_pipeline(shader_path, &layouts)?),
+            )
         } else {
             None
         };
@@ -423,12 +425,22 @@ impl MaterialCompiler {
             &vertex_binding,
         )?;
 
+        let instanced_pipeline = if matches!(vertex_type, VertexType::Ui) {
+            Some(
+                registry
+                    .register_pipeline(self.build_instanced_ui_pipeline(&shader_path, &layouts)?),
+            )
+        } else {
+            None
+        };
+
         // Register the pipeline
         let pipeline_handle = registry.register_pipeline(pipeline);
 
         // Update the material asset with the compiled pipeline
         if let Some(material) = registry.get_material_mut(material_handle) {
             material.pipeline = Some(pipeline_handle);
+            material.instanced_pipeline = instanced_pipeline;
             material.fully_compiled = true;
             material.color_format = format;
         }
@@ -652,7 +664,7 @@ impl MaterialCompiler {
         use crate::vulkan::material::builder::PipelineBuilder;
 
         // Load shaders with instanced entry points
-        let cache = self.shader_cache.borrow();
+        let mut cache = self.shader_cache.borrow_mut();
         let vert_module = cache
             .load_shader_with_entry(shader_path, vk::ShaderStageFlags::VERTEX, "vs_instanced")
             .map_err(|e| {
@@ -672,6 +684,7 @@ impl MaterialCompiler {
 
         let pipeline = PipelineBuilder::new(self.context.clone())
             .with_shaders(vert_module, frag_module)
+            .with_entry_points(c"vs_instanced", c"fs_instanced")
             .with_vertex_binding(quad_binding)
             .with_descriptor_layouts(layouts.to_vec())
             .with_rendering_formats(Some(crate::texture::ImageFormat::B8G8R8A8Srgb), None)

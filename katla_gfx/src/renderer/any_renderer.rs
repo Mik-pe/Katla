@@ -70,6 +70,7 @@ impl AnyRenderer {
     pub fn new_vulkan(
         display: &dyn raw_window_handle::HasDisplayHandle,
         window: &dyn raw_window_handle::HasWindowHandle,
+        size: crate::Size2D,
         validation_mode: crate::error::ValidationMode,
         app_name: std::ffi::CString,
         engine_name: std::ffi::CString,
@@ -77,6 +78,24 @@ impl AnyRenderer {
         Ok(AnyRenderer::Vulkan(VulkanRenderer::init(
             display,
             window,
+            size,
+            validation_mode,
+            app_name,
+            engine_name,
+        )?))
+    }
+
+    /// Create a Vulkan renderer with offscreen targets and no window surface.
+    pub fn new_vulkan_headless(
+        width: u32,
+        height: u32,
+        validation_mode: crate::error::ValidationMode,
+        app_name: std::ffi::CString,
+        engine_name: std::ffi::CString,
+    ) -> Result<Self, RendererError> {
+        Ok(Self::Vulkan(VulkanRenderer::init_headless(
+            width,
+            height,
             validation_mode,
             app_name,
             engine_name,
@@ -711,9 +730,9 @@ impl AnyRenderer {
 
     /// Recreate the swapchain (Vulkan only).
     /// Metal uses resize() + recreate_transient_textures() separately.
-    pub fn recreate_swapchain(&mut self) -> Result<(), RendererError> {
+    pub fn recreate_swapchain(&mut self, size: crate::Size2D) -> Result<(), RendererError> {
         match self {
-            AnyRenderer::Vulkan(r) => r.recreate_swapchain(),
+            AnyRenderer::Vulkan(r) => r.recreate_swapchain(size),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(_r) => Err(RendererError::InvalidOperation(
                 "Metal backend uses resize(), not recreate_swapchain()".into(),

@@ -46,7 +46,7 @@ impl Frame<'_, VulkanRenderer> {
             None
         };
 
-        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let extent = self.color_target_extent(pass);
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,
@@ -131,7 +131,7 @@ impl Frame<'_, VulkanRenderer> {
             pass.reads
         );
 
-        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let extent = self.color_target_extent(pass);
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,

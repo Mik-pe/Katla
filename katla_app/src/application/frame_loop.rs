@@ -170,64 +170,11 @@ impl Application {
             &mut self.renderer,
         );
 
-        let uses_katla_scene = self.frame_graph_runtime.uses_katla_scene();
-
-        // Built-in scene subsystems must not run for an application-owned graph.
-        // A custom graph may own entirely different compute/animation work.
-        // (Metal syncs emitters in step_particle_simulation instead.)
-        if uses_katla_scene
-            && let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
-            && let Some(ref mut ps) = vulkan_renderer.particle_system
-        {
-            self.particle_system.update(
-                &mut self.world,
-                ps as &mut dyn katla_gfx::ParticleEmitterDriver,
-                dt,
-            );
-        }
+        self.prepare_scene_gpu(dt);
 
         // Update audio system — process AudioEmitter components
         if let Some(ref mut audio) = self.audio_system {
             audio.update(&mut self.world, dt);
-        }
-
-        // Update GPU animation: prepare data and upload per-frame params
-        if uses_katla_scene
-            && let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
-            && let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
-                &mut self.gpu_animation_system,
-                &mut vulkan_renderer.animation_pipeline,
-                &mut vulkan_renderer.animation_buffers,
-            )
-        {
-            gpu_anim
-                .prepare(&mut self.world, pipeline, buffers)
-                .unwrap_or_else(|e| {
-                    log::error!("GPU animation prepare failed: {:?}", e);
-                });
-            gpu_anim.update_params(&mut self.world, buffers);
-            self.frame_graph
-                .as_vulkan_mut()
-                .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
-
-            // Build per-entity skeleton copy commands:
-            // (skeleton_handle_index, joint_offset, joint_count)
-            use crate::components::DrawableComponent;
-            let mut copy_cmds = Vec::new();
-            for entity in gpu_anim.entities() {
-                if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity)
-                    && let Some(info) = gpu_anim.entity_info(entity)
-                {
-                    copy_cmds.push((
-                        drawable.skeleton_handle.index(),
-                        info.joint_offset,
-                        info.joint_count,
-                    ));
-                }
-            }
-            self.frame_graph
-                .as_vulkan_mut()
-                .set_skeleton_copy_commands(copy_cmds);
         }
 
         // Poll background loader for completed asset loads
@@ -470,4 +417,63 @@ impl Application {
 
     #[cfg(not(feature = "editor"))]
     fn poll_asset_watcher(&mut self) {}
+}
+
+impl Application {
+    pub(crate) fn prepare_scene_gpu(&mut self, dt: f32) {
+        let uses_katla_scene = self.frame_graph_runtime.uses_katla_scene();
+
+        // Built-in scene subsystems must not run for an application-owned graph.
+        // A custom graph may own entirely different compute/animation work.
+        // (Metal syncs emitters in step_particle_simulation instead.)
+        if uses_katla_scene
+            && let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
+            && let Some(ref mut ps) = vulkan_renderer.particle_system
+        {
+            self.particle_system.update(
+                &mut self.world,
+                ps as &mut dyn katla_gfx::ParticleEmitterDriver,
+                dt,
+            );
+        }
+
+        // Update GPU animation: prepare data and upload per-frame params
+        if uses_katla_scene
+            && let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
+            && let (Some(gpu_anim), Some(pipeline), Some(buffers)) = (
+                &mut self.gpu_animation_system,
+                &mut vulkan_renderer.animation_pipeline,
+                &mut vulkan_renderer.animation_buffers,
+            )
+        {
+            gpu_anim
+                .prepare(&mut self.world, pipeline, buffers)
+                .unwrap_or_else(|e| {
+                    log::error!("GPU animation prepare failed: {:?}", e);
+                });
+            gpu_anim.update_params(&mut self.world, buffers);
+            self.frame_graph
+                .as_vulkan_mut()
+                .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
+
+            // Build per-entity skeleton copy commands:
+            // (skeleton_handle_index, joint_offset, joint_count)
+            use crate::components::DrawableComponent;
+            let mut copy_cmds = Vec::new();
+            for entity in gpu_anim.entities() {
+                if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity)
+                    && let Some(info) = gpu_anim.entity_info(entity)
+                {
+                    copy_cmds.push((
+                        drawable.skeleton_handle.index(),
+                        info.joint_offset,
+                        info.joint_count,
+                    ));
+                }
+            }
+            self.frame_graph
+                .as_vulkan_mut()
+                .set_skeleton_copy_commands(copy_cmds);
+        }
+    }
 }

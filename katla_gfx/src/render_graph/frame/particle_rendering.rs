@@ -38,7 +38,7 @@ impl Frame<'_, VulkanRenderer> {
         let transient = color_id.and_then(|id| self.graph.transient_texture_by_id(id, frame_idx));
         let extent = transient
             .map(|t| t.extent)
-            .unwrap_or_else(|| self.renderer.frame_context.swapchain.get_extent());
+            .unwrap_or_else(|| self.renderer.frame_context.extent);
 
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },

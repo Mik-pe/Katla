@@ -42,7 +42,7 @@ impl Frame<'_, VulkanRenderer> {
             pass.writes
         );
 
-        let extent = self.renderer.frame_context.swapchain.get_extent();
+        let extent = self.color_target_extent(pass);
 
         // With per-frame transient textures, the actual index is base + frame_idx
         let viewport_bindless_idx = if let Some(base_idx) = self.graph.get_ldr_texture_base_index()

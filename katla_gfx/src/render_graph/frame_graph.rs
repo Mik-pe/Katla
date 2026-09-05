@@ -333,6 +333,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
     }
 
     /// Get a pass index by name.
+    #[cfg(test)]
     pub(crate) fn pass_index(&self, name: &str) -> Option<usize> {
         self.pass_names.get(name).copied()
     }

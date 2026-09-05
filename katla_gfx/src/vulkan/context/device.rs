@@ -319,7 +319,7 @@ impl VulkanContext {
         entry: &Entry,
     ) -> Result<(Instance, bool), RendererError> {
         match create_instance_inner(validation_mode, app_name, engine_name, display, entry) {
-            Ok(instance) => Ok((instance, validation_mode.is_enabled())),
+            Ok(result) => Ok(result),
             Err(e) if validation_mode.is_enabled() => {
                 log::warn!(
                     "Vulkan instance creation with validation layers failed: {}",
@@ -333,7 +333,6 @@ impl VulkanContext {
                     display,
                     entry,
                 )
-                .map(|instance| (instance, false))
             }
             Err(e) => Err(e),
         }
@@ -346,7 +345,7 @@ fn create_instance_inner(
     engine_name: &CStr,
     display: Option<&dyn raw_window_handle::HasDisplayHandle>,
     entry: &Entry,
-) -> Result<Instance, RendererError> {
+) -> Result<(Instance, bool), RendererError> {
     use ash::vk::{self, ValidationFeatureEnableEXT, ValidationFeaturesEXT};
 
     let mut extension_names_raw = if let Some(d) = display {
@@ -443,12 +442,15 @@ fn create_instance_inner(
     }
 
     unsafe {
-        entry.create_instance(&create_info, None).map_err(|e| {
-            RendererError::InitializationFailed(format!(
-                "Failed to create Vulkan instance: {:?}",
-                e
-            ))
-        })
+        entry
+            .create_instance(&create_info, None)
+            .map(|instance| (instance, !instance_layers.is_empty()))
+            .map_err(|e| {
+                RendererError::InitializationFailed(format!(
+                    "Failed to create Vulkan instance: {:?}",
+                    e
+                ))
+            })
     }
 }
 

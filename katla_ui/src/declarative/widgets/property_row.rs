@@ -31,12 +31,10 @@ impl Widget for PropertyRow {
         }
     }
 
-    fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
-        let label_size = measure(&self.label, None);
-        let value_size = measure(&self.value, None);
+    fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
-                width: Dimension::Length(label_size.x() + value_size.x() + 16.0),
+                width: Dimension::Auto,
                 height: Dimension::Length(30.0),
             },
             padding: taffy::Rect {

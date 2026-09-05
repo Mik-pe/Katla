@@ -108,7 +108,12 @@ impl UiFrameResources {
                 IndexType::Uint32,
                 65536,
             ));
-            instance_buffers.push(VertexBuffer::new(context.clone(), 1024 * 1024, 65536));
+            instance_buffers.push(VertexBuffer::with_usage(
+                context.clone(),
+                1024 * 1024,
+                65536,
+                vk::BufferUsageFlags::STORAGE_BUFFER,
+            ));
             unit_quad_vertex_buffers.push(VertexBuffer::new(
                 context.clone(),
                 256, // 4 vertices × 8 bytes = 32 bytes, small
@@ -368,6 +373,7 @@ impl VulkanRenderer {
     pub fn init(
         display: &dyn HasDisplayHandle,
         window: &dyn HasWindowHandle,
+        size: crate::Size2D,
         validation_mode: ValidationMode,
         app_name: CString,
         engine_name: CString,
@@ -380,10 +386,47 @@ impl VulkanRenderer {
             engine_name,
         )?);
 
+        let frame_context = VulkanFrameCtx::init(
+            &context,
+            vk::Extent2D {
+                width: size.width,
+                height: size.height,
+            },
+        )?;
+        Self::init_with_context(context, frame_context, validation_mode)
+    }
+
+    /// Create a Vulkan renderer without a window or presentation surface.
+    pub fn init_headless(
+        width: u32,
+        height: u32,
+        validation_mode: ValidationMode,
+        app_name: CString,
+        engine_name: CString,
+    ) -> Result<Self, RendererError> {
+        if width == 0 || height == 0 {
+            return Err(RendererError::InitializationFailed(
+                "Headless dimensions must be nonzero".into(),
+            ));
+        }
+        let context = Rc::new(VulkanContext::init_headless(
+            validation_mode,
+            app_name,
+            engine_name,
+        )?);
+        let frame_context =
+            VulkanFrameCtx::init_headless(&context, vk::Extent2D { width, height })?;
+        Self::init_with_context(context, frame_context, validation_mode)
+    }
+
+    fn init_with_context(
+        context: Rc<VulkanContext>,
+        frame_context: VulkanFrameCtx,
+        validation_mode: ValidationMode,
+    ) -> Result<Self, RendererError> {
         if validation_mode.is_enabled() {
             context.setup_validation_logging();
         }
-
         let gpu_capabilities = {
             use crate::renderer::types::{GpuCapabilities, GpuVendor};
             let props = unsafe {
@@ -408,7 +451,6 @@ impl VulkanRenderer {
             }
         };
 
-        let frame_context = VulkanFrameCtx::init(&context)?;
         let swap_data = SwapData::new(
             &context.device,
             &frame_context
@@ -602,7 +644,7 @@ impl VulkanRenderer {
 
     /// Get the swapchain extent (primary window size).
     pub fn swapchain_extent(&self) -> crate::Size2D {
-        let ext = self.frame_context.swapchain.get_extent();
+        let ext = self.frame_context.extent;
         crate::Size2D::new(ext.width, ext.height)
     }
 
@@ -851,6 +893,7 @@ impl VulkanRenderer {
 
         self.swap_data.destroy(&self.context.device);
         self.frame_context.destroy();
+        self.context.destroy_surface();
         info!("Clean shutdown!");
     }
 
@@ -860,17 +903,36 @@ impl VulkanRenderer {
         }
     }
 
-    pub fn recreate_swapchain(&mut self) -> Result<(), crate::error::RendererError> {
+    pub fn recreate_swapchain(
+        &mut self,
+        size: crate::Size2D,
+    ) -> Result<(), crate::error::RendererError> {
         self.wait_for_device();
         self.first_frame_rendered = false;
 
-        let old_extent = self.frame_context.swapchain.get_extent();
+        let old_extent = self.frame_context.extent;
         info!("=== Recreating swapchain ===");
         info!("  Old extent: {}x{}", old_extent.width, old_extent.height);
 
-        self.frame_context.recreate_swapchain()?;
+        self.frame_context.recreate_swapchain(vk::Extent2D {
+            width: size.width,
+            height: size.height,
+        })?;
 
-        let new_extent = self.frame_context.swapchain.get_extent();
+        let swap_data = SwapData::new(
+            &self.context.device,
+            &self
+                .frame_context
+                .swapchain_images
+                .iter()
+                .map(|image| image.vk())
+                .collect::<Vec<_>>(),
+            FRAMES_IN_FLIGHT,
+        )?;
+        self.swap_data.destroy(&self.context.device);
+        self.swap_data = swap_data;
+
+        let new_extent = self.frame_context.extent;
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
 
         // Re-register depth textures with bindless (depth images were recreated)
@@ -1218,16 +1280,17 @@ impl VulkanRenderer {
         let frame_idx = self.current_frame();
 
         // 2. Acquire next swapchain image
-        let acquire_result = unsafe {
-            self.frame_context
-                .swapchain
-                .swapchain_loader
-                .acquire_next_image(
-                    self.frame_context.swapchain.swapchain,
+        let acquire_result = if let Some(swapchain) = &self.frame_context.swapchain {
+            unsafe {
+                swapchain.swapchain_loader.acquire_next_image(
+                    swapchain.swapchain,
                     u64::MAX,
                     self.swap_data.image_available_semaphore(),
                     vk::Fence::null(),
                 )
+            }
+        } else {
+            Ok((frame_idx as u32, false))
         };
 
         let (image_index, is_suboptimal) = match acquire_result {
@@ -1294,7 +1357,11 @@ impl VulkanRenderer {
             &self.context.device,
             swapchain_image,
             vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::ImageLayout::PRESENT_SRC_KHR,
+            if self.frame_context.swapchain.is_some() {
+                vk::ImageLayout::PRESENT_SRC_KHR
+            } else {
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+            },
         );
 
         // 8. End command buffer
@@ -1304,11 +1371,33 @@ impl VulkanRenderer {
             })?;
         }
 
+        unsafe {
+            self.context
+                .device
+                .reset_fences(&[self.swap_data.in_flight_fence()])
+        }
+        .map_err(|e| RendererError::VulkanError("Failed to reset frame fence".into(), e))?;
+        if self.frame_context.swapchain.is_none() {
+            self.context.gfx_queue.submit(
+                &[&self.frame_context.command_buffers[frame_idx]],
+                &[],
+                &[],
+                self.swap_data.in_flight_fence(),
+            );
+            self.swap_data.wait_for_fence(&self.context.device)?;
+            self.swap_data.step_frame();
+            return Ok(());
+        }
+        let swapchain = self
+            .frame_context
+            .swapchain
+            .as_ref()
+            .expect("window swapchain");
         // 9. Submit command buffer with synchronization
         let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
         let frame_complete_semaphore = self.swap_data.frame_complete_semaphore();
         let signal_semaphores = [render_finished_semaphore, frame_complete_semaphore];
-        let swapchains = [self.frame_context.swapchain.swapchain];
+        let swapchains = [swapchain.swapchain];
         let image_indices = [image_index];
 
         // On the first frame there's no previous frame to wait on.
@@ -1349,9 +1438,7 @@ impl VulkanRenderer {
             .image_indices(&image_indices);
 
         unsafe {
-            let present_result = self
-                .frame_context
-                .swapchain
+            let present_result = swapchain
                 .swapchain_loader
                 .queue_present(self.context.gfx_queue.vk_queue(), &present_info);
 

@@ -15,8 +15,8 @@ impl Application {
     pub(crate) fn init_gizmo_resources(&mut self) {
         use crate::gizmo::GizmoResources;
 
-        let shaft_mesh = primitives::create_cylinder(&mut self.renderer, 1.0, 0.05, 16);
-        let cone_mesh = primitives::create_cone(&mut self.renderer, 1.0, 0.5, 16);
+        let shaft_mesh = primitives::create_cylinder(&mut self.renderer, 1.0, 1.0, 16);
+        let cone_mesh = primitives::create_cone(&mut self.renderer, 1.0, 1.0, 16);
         let cube_mesh = primitives::create_cube(&mut self.renderer, [1.0, 1.0, 1.0]);
         let ring_mesh = primitives::create_torus(&mut self.renderer, 0.5, 0.02, 48, 24);
 
@@ -108,7 +108,7 @@ impl Application {
             self.editor.gizmo_state.origin,
             fov.to_radians(),
             viewport_height,
-            120.0,
+            GIZMO_SCREEN_SIZE,
         );
 
         hit_test_axes(&crate::gizmo::HitTestParams {
@@ -243,7 +243,7 @@ impl Application {
                     self.editor.gizmo_state.origin,
                     fov.to_radians(),
                     viewport_height,
-                    120.0,
+                    GIZMO_SCREEN_SIZE,
                 );
                 1.0 / (gs * 5.0)
             };

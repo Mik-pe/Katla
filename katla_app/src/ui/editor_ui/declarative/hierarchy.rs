@@ -147,7 +147,7 @@ impl Build for HierarchyView {
             .font_size(FontSize::Small)
             .boxed()
         } else {
-            vstack(tree_children).spacing(2.0).boxed()
+            vstack(tree_children).spacing(2.0).flex_grow(1.0).boxed()
         };
 
         let content = vstack([

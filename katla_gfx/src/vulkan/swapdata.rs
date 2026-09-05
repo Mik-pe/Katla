@@ -89,14 +89,6 @@ impl SwapData {
                         e
                     ))
                 })?;
-            device
-                .reset_fences(&[self.in_flight_fences[self.frame]])
-                .map_err(|e| {
-                    RendererError::SwapchainError(format!(
-                        "Failed to reset in-flight fence: {:?}",
-                        e
-                    ))
-                })?;
         }
         Ok(())
     }

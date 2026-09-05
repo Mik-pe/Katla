@@ -29,7 +29,7 @@ impl VulkanRenderer {
         };
 
         let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        let extent = self.frame_context.swapchain.get_extent();
+        let extent = self.frame_context.extent;
         let width = extent.width;
         let height = extent.height;
 
@@ -71,33 +71,17 @@ impl VulkanRenderer {
         command_buffer.begin_single_time_command()?;
 
         // Transition swapchain image to TRANSFER_SRC optimal layout
-        let barrier = vk::ImageMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
-            .dst_access_mask(vk::AccessFlags::TRANSFER_READ)
-            .old_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-            .new_layout(vk::ImageLayout::TRANSFER_SRC_OPTIMAL)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .image(swapchain_image)
-            .subresource_range(vk::ImageSubresourceRange {
-                aspect_mask: vk::ImageAspectFlags::COLOR,
-                base_mip_level: 0,
-                level_count: 1,
-                base_array_layer: 0,
-                layer_count: 1,
-            });
-
-        unsafe {
-            self.context.device.cmd_pipeline_barrier(
-                command_buffer.vk_command_buffer(),
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[barrier],
-            );
-        }
+        ImageBarrier::transition(
+            &command_buffer.vk_command_buffer(),
+            &self.context.device,
+            swapchain_image,
+            if self.frame_context.swapchain.is_some() {
+                vk::ImageLayout::PRESENT_SRC_KHR
+            } else {
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+            },
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+        );
 
         // Copy image to staging buffer
         let buffer_image_copy = vk::BufferImageCopy::default()
@@ -122,6 +106,16 @@ impl VulkanRenderer {
                 vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
                 staging_buffer,
                 &[buffer_image_copy],
+            );
+        }
+
+        if self.frame_context.swapchain.is_some() {
+            ImageBarrier::transition(
+                &command_buffer.vk_command_buffer(),
+                &self.context.device,
+                swapchain_image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                vk::ImageLayout::PRESENT_SRC_KHR,
             );
         }
 
@@ -227,10 +221,12 @@ impl VulkanRenderer {
                     "Waiting for pending readback (frame {}) to complete",
                     readback.frame
                 );
-                let _ = self
-                    .context
+                self.context
                     .device
-                    .wait_for_fences(&[readback.fence], true, u64::MAX);
+                    .wait_for_fences(&[readback.fence], true, u64::MAX)
+                    .map_err(|e| {
+                        RendererError::VulkanError("Failed to wait for readback".into(), e)
+                    })?;
 
                 self.context.invalidate_mapped_memory(
                     &readback.staging_allocation,

@@ -70,7 +70,10 @@ impl VulkanFrameCtx {
             .expect("Failed to create swapchain image view")
     }
 
-    pub fn init(context: &Rc<VulkanContext>) -> Result<Self, crate::error::RendererError> {
+    pub fn init(
+        context: &Rc<VulkanContext>,
+        extent: vk::Extent2D,
+    ) -> Result<Self, crate::error::RendererError> {
         let (swapchain_loader, surface_loader, surface) =
             context.window_resources().ok_or_else(|| {
                 crate::error::RendererError::InitializationFailed(
@@ -85,6 +88,7 @@ impl VulkanFrameCtx {
             context.physical_device,
             surface,
             None,
+            extent,
         )?;
 
         let swapchain_images = swapchain.get_swapchain_images()?;
@@ -116,7 +120,10 @@ impl VulkanFrameCtx {
 
         Ok(Self {
             context: context.clone(),
-            swapchain,
+            extent: swapchain.get_extent(),
+            scene_extent: swapchain.get_extent(),
+            swapchain: Some(swapchain),
+            offscreen_targets: Vec::new(),
             swapchain_image_views,
             swapchain_images: swapchain_images_wrapped,
             depth_render_textures,
@@ -124,7 +131,74 @@ impl VulkanFrameCtx {
         })
     }
 
-    pub fn recreate_swapchain(&mut self) -> Result<(), crate::error::RendererError> {
+    pub fn init_headless(
+        context: &Rc<VulkanContext>,
+        extent: vk::Extent2D,
+    ) -> Result<Self, crate::error::RendererError> {
+        let mut images = Vec::new();
+        let mut views = Vec::new();
+        let mut targets = Vec::new();
+        for _ in 0..2 {
+            let info = vk::ImageCreateInfo::default()
+                .image_type(vk::ImageType::TYPE_2D)
+                .format(vk::Format::B8G8R8A8_SRGB)
+                .extent(vk::Extent3D {
+                    width: extent.width,
+                    height: extent.height,
+                    depth: 1,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .usage(
+                    vk::ImageUsageFlags::COLOR_ATTACHMENT
+                        | vk::ImageUsageFlags::TRANSFER_SRC
+                        | vk::ImageUsageFlags::TRANSFER_DST,
+                );
+            let (image, allocation) = context.create_image(info, MemoryLocation::GpuOnly)?;
+            let view = VkImageView::new(Self::create_image_view(
+                &context.device,
+                image,
+                vk::Format::B8G8R8A8_SRGB,
+                vk::ImageAspectFlags::COLOR,
+            ));
+            views.push(view);
+            images.push(VkImage::new(image));
+            targets.push(RenderTexture {
+                image_view: view,
+                depth_stencil_image_view: None,
+                image: VkImage::new(image),
+                image_memory: allocation,
+                context: context.clone(),
+            });
+        }
+        Ok(Self {
+            context: context.clone(),
+            swapchain: None,
+            extent,
+            scene_extent: extent,
+            swapchain_images: images,
+            swapchain_image_views: views,
+            offscreen_targets: targets,
+            depth_render_textures: (0..2)
+                .map(|_| create_depth_render_texture(context.clone(), extent))
+                .collect(),
+            command_buffers: context.gfx_cmdpool.create_command_buffers(2),
+        })
+    }
+
+    pub(crate) fn resize_scene_depth(&mut self, extent: vk::Extent2D) {
+        self.depth_render_textures = (0..2)
+            .map(|_| create_depth_render_texture(self.context.clone(), extent))
+            .collect();
+        self.scene_extent = extent;
+    }
+
+    pub fn recreate_swapchain(
+        &mut self,
+        extent: vk::Extent2D,
+    ) -> Result<(), crate::error::RendererError> {
         let (swapchain_loader, surface_loader, surface) =
             self.context.window_resources().ok_or_else(|| {
                 crate::error::RendererError::InitializationFailed(
@@ -138,12 +212,13 @@ impl VulkanFrameCtx {
             surface_loader,
             self.context.physical_device,
             surface,
-            Some(self.swapchain.swapchain),
+            self.swapchain.as_ref().map(|s| s.swapchain),
+            extent,
         )?;
         self.destroy();
-        self.swapchain = swapchain;
-
-        let swapchain_images = self.swapchain.get_swapchain_images()?;
+        self.extent = swapchain.get_extent();
+        self.scene_extent = self.extent;
+        let swapchain_images = swapchain.get_swapchain_images()?;
 
         self.swapchain_images = swapchain_images
             .iter()
@@ -156,26 +231,31 @@ impl VulkanFrameCtx {
                 VkImageView::new(Self::create_image_view(
                     &self.context.device,
                     *swapchain_image,
-                    self.swapchain.format.format,
+                    swapchain.format.format,
                     vk::ImageAspectFlags::COLOR,
                 ))
             })
             .collect();
         const FRAMES_IN_FLIGHT: usize = 2;
         self.depth_render_textures = (0..FRAMES_IN_FLIGHT)
-            .map(|_| create_depth_render_texture(self.context.clone(), self.swapchain.get_extent()))
+            .map(|_| create_depth_render_texture(self.context.clone(), self.extent))
             .collect();
+        self.swapchain = Some(swapchain);
         Ok(())
     }
 
     pub fn destroy(&mut self) {
         unsafe {
-            for image_view in &self.swapchain_image_views {
-                self.context
-                    .device
-                    .destroy_image_view(image_view.vk(), None);
+            if let Some(mut swapchain) = self.swapchain.take() {
+                for image_view in &self.swapchain_image_views {
+                    self.context
+                        .device
+                        .destroy_image_view(image_view.vk(), None);
+                }
+                swapchain.destroy();
             }
-            self.swapchain.destroy();
+            self.offscreen_targets.clear();
+            self.swapchain_image_views.clear();
             self.depth_render_textures.clear();
         }
     }

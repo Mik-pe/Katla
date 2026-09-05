@@ -194,7 +194,7 @@ impl Drop for ShaderModule {
 
 pub struct ShaderCache {
     device: Device,
-    shaders: std::collections::HashMap<(PathBuf, vk::ShaderStageFlags), vk::ShaderModule>,
+    shaders: std::collections::HashMap<(PathBuf, vk::ShaderStageFlags, String), vk::ShaderModule>,
 }
 
 impl ShaderCache {
@@ -220,99 +220,43 @@ impl ShaderCache {
         path: impl AsRef<Path>,
         stage: vk::ShaderStageFlags,
     ) -> Result<vk::ShaderModule, ShaderError> {
-        let path = path.as_ref();
-        let cache_key = (path.to_path_buf(), stage);
-
-        log::debug!(
-            "load_shader: checking cache for {:?} stage={:?}",
-            path,
-            stage
-        );
-        if let Some(&module) = self.shaders.get(&cache_key) {
-            return Ok(module);
-        }
-
-        log::debug!("load_shader: loading from disk {:?}", path);
-        if let Some(extension) = path.extension()
-            && extension == "wgsl"
-        {
-            let entry_point = Self::get_entry_point(stage);
-            let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, entry_point)?;
-            log::debug!("load_shader: WGSL compiled successfully");
-            let module = shader.module;
-
-            // Prevent drop from destroying the module
-            std::mem::forget(shader);
-            self.shaders.insert(cache_key, module);
-            return Ok(module);
-        }
-
-        let entry_point = Self::get_entry_point(stage);
-        let shader = ShaderModule::from_file(self.device.clone(), path, stage, entry_point)?;
-        let module = shader.module;
-
-        // Prevent drop from destroying the module
-        std::mem::forget(shader);
-
-        self.shaders.insert(cache_key, module);
-        Ok(module)
+        self.load_shader_with_entry(path, stage, Self::get_entry_point(stage))
     }
 
-    /// Invalidate cached shader modules for a specific path.
-    ///
-    /// Removes all cached modules (vertex, fragment, compute stages) for the
-    /// given shader path and destroys the underlying Vulkan shader modules.
-    /// Used for shader hot reload to force recompilation from disk.
-    /// Load a shader with a custom entry point name.
-    ///
-    /// Similar to `load_shader` but uses the provided entry point instead of
-    /// the default (`vs_main`/`fs_main`/`cs_main`). Used for UI instanced
-    /// pipeline compilation where the shader has `vs_instanced`/`fs_instanced`
-    /// entry points alongside the default ones.
-    ///
-    /// Note: Does NOT cache the result since the cache key doesn't include
-    /// entry point names. This is fine since it's called once at init.
+    /// Load and cache a shader module for a specific entry point.
     pub fn load_shader_with_entry(
-        &self,
+        &mut self,
         path: impl AsRef<Path>,
         stage: vk::ShaderStageFlags,
         entry_point: &str,
     ) -> Result<vk::ShaderModule, ShaderError> {
         let path = path.as_ref();
-        log::debug!(
-            "load_shader_with_entry: loading {:?} stage={:?} entry={:?}",
-            path,
-            stage,
-            entry_point
-        );
-        if let Some(extension) = path.extension()
-            && extension == "wgsl"
-        {
-            let shader = ShaderModule::from_wgsl(self.device.clone(), path, stage, entry_point)?;
-            let module = shader.module;
-            std::mem::forget(shader);
+        let cache_key = (path.to_path_buf(), stage, entry_point.to_owned());
+        if let Some(&module) = self.shaders.get(&cache_key) {
             return Ok(module);
         }
-
-        let shader = ShaderModule::from_file(self.device.clone(), path, stage, entry_point)?;
+        let shader = if path.extension().is_some_and(|ext| ext == "wgsl") {
+            ShaderModule::from_wgsl(self.device.clone(), path, stage, entry_point)?
+        } else {
+            ShaderModule::from_file(self.device.clone(), path, stage, entry_point)?
+        };
         let module = shader.module;
         std::mem::forget(shader);
+        self.shaders.insert(cache_key, module);
         Ok(module)
     }
 
     pub fn invalidate(&mut self, path: &Path) {
-        let stages = [
-            vk::ShaderStageFlags::VERTEX,
-            vk::ShaderStageFlags::FRAGMENT,
-            vk::ShaderStageFlags::COMPUTE,
-        ];
-        for stage in stages {
-            if let Some(module) = self.shaders.remove(&(path.to_path_buf(), stage)) {
+        self.shaders.retain(|(shader_path, _, _), module| {
+            if shader_path == path {
                 unsafe {
-                    self.device.destroy_shader_module(module, None);
+                    self.device.destroy_shader_module(*module, None);
                 }
+                false
+            } else {
+                true
             }
-        }
+        });
     }
 
     pub fn clear(&mut self) {

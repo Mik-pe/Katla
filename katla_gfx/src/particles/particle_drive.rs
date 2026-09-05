@@ -34,6 +34,7 @@ impl ParticleEmitterDriver for crate::particles::GlobalParticleSystem {
     }
 }
 
+#[cfg(target_os = "macos")]
 impl ParticleEmitterDriver for crate::MetalRenderer {
     fn create_emitter(&mut self, config: EmitterConfig) -> Result<EmitterHandle, String> {
         match self.particle_system.as_mut() {

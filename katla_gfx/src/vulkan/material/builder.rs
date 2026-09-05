@@ -98,6 +98,16 @@ impl PipelineBuilder {
         self
     }
 
+    pub(crate) fn with_entry_points(
+        mut self,
+        vertex: &std::ffi::CStr,
+        fragment: &std::ffi::CStr,
+    ) -> Self {
+        self.vertex_shader_entry_point = vertex.to_owned();
+        self.fragment_shader_entry_point = fragment.to_owned();
+        self
+    }
+
     pub fn with_vertex_binding(mut self, binding: VertexBinding) -> Self {
         let binding_desc = binding.get_binding_desc(0);
         let attribute_descs = binding.get_attribute_desc(0);
@@ -378,7 +388,17 @@ impl PipelineBuilder {
                 None,
             )
         }
-        .map_err(|e| PipelineError::CreationFailed(e.1))?[0];
+        .map_err(|(pipelines, error)| {
+            unsafe {
+                for pipeline in pipelines {
+                    self.context.device.destroy_pipeline(pipeline, None);
+                }
+                self.context
+                    .device
+                    .destroy_pipeline_layout(pipeline_layout, None);
+            }
+            PipelineError::CreationFailed(error)
+        })?[0];
 
         // Clone descriptor layouts for storage in the pipeline
         let descriptor_set_layouts = self.descriptor_layouts.clone();
