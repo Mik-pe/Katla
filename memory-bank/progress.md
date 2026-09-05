@@ -2,6 +2,36 @@
 
 ## Completed Recently
 
+- **Metal UI + shadow fixes (2026-09-05, macOS)** —
+  1. **UI fully broken on Metal**: ui.wgsl reads `texture_index` per-vertex
+   (location 3, offset 20, 24-byte stride) since 4afa063b, but
+   `ui_vertex_descriptor()` (katla_gfx/src/metal/context.rs) still bound only
+   3 attributes, so pipeline creation failed ("Vertex attribute
+   texture_index(3) is missing"), every frame logged "Metal UI record has no
+   material", and the canvas rendered nearly blank (17KB screenshot). Fixed
+   by adding the UInt attribute at offset 20.
+  2. **"Inverted" shadows on Metal**: the atlas quadrant layout and the
+   shared sampler assume Vulkan's Y-down clip convention; Metal's Y-up clip
+   space mirrored each cascade's content inside its quadrant, so shadows
+   landed displaced/mirrored and appeared to move wrongly with the camera.
+   Diagnostic trail: multi-angle headless captures (new `--camera
+   yaw,pitch,distance` game flag + `Application::set_editor_camera_pose`),
+   then a temporary red shadow-mask probe in model_pbr.wgsl (reverted) that
+   showed torus-ring artifacts under unrelated geometry. Fix:
+   `flip_projection_y` (katla_gfx/src/shadow/cascade.rs, unit-tested) builds
+   a Metal-only encode buffer (`shadow_cascade_encode_buffer`) with mirrored
+   clip-Y; shadow pipelines switch to `MTLWinding::CounterClockwise` to
+   compensate the winding flip; the sampler keeps the shared buffer.
+   Verified: red probe shows masks under every caster; clean captures at
+   default/90°/180°/top-down plus playground scene show short coherent
+   shadows matching the 70° sun; workspace tests green (2,0xx pass), strict
+   workspace clippy clean (also fixed two pre-existing macOS-only warnings),
+   fmt clean, `METAL_DEVICE_WRAPPER_TYPE=1 katla -s` exits 0.
+  3. macOS-only clippy: `encode_cascade_draws` got the same
+   too-many-arguments allow as `render_cascades`; the macOS
+   `collect_and_upload_lights` now reuses `point_lights_buffer` (the
+   non-macOS path already did).
+
 - **Windowed Vulkan limited-frame validation (2026-09-05, working tree)** —
   fixed Wayland's unspecified surface extent being passed as an image size,
   stale signaled semaphores surviving swapchain recreation, and a shutdown
@@ -396,14 +426,14 @@ capture to root-cause before private storage lands.
    (tonemap params refactor) breaks rendering — init fails "PassId(5) is not
    a tonemap pass" on HEAD+mine, black viewport on combined tree. Do NOT
    commit these until a rendered screenshot proves all artifacts gone.
-   GOTCHA: ~/.cargo/bin/rustup shim BROKEN since ~12:00 Aug 29 — cargo
-   silently no-ops; use ~/.rustup/toolchains/stable-aarch64-apple-darwin/bin
-   on PATH (stale-binary trap hit twice).
+   GOTCHA (resolved 2026-09-05): the ~/.cargo/bin/rustup shim that silently
+   no-opped on Aug 29 works again (cargo 1.98.1); the direct toolchain PATH
+   workaround is no longer needed but remains a fallback if it regresses.
 
 STILL OPEN:
-- Pale strip at viewport top y~125-158 (UI-side, unchanged by this work).
-- katla_app scene/tests.rs has pre-existing clippy approximate-constant errors
-  on main (untouched by this work).
+- (Pale strip at viewport top and scene/tests.rs approximate-constant
+  clippy errors: both gone as of 2026-09-05 — resolved by later layout and
+  fixture work; no repro in current headless captures or clippy runs.)
 - Private storage for uploaded textures (see item 10; GPU capture needed).
 - #57 remainder: documented invariants for remaining Metal types, executor
   model, TSan stress test.
