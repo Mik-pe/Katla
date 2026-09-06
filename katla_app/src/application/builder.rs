@@ -73,6 +73,7 @@ pub struct ApplicationBuilder {
     headless: bool,
     screenshot_path: Option<String>,
     ui_test_path: Option<String>,
+    interaction_test_path: Option<String>,
     on_init: Option<InitHook>,
     on_update: Option<UpdateHook>,
     on_shutdown: Option<ShutdownHook>,
@@ -172,6 +173,14 @@ impl ApplicationBuilder {
     /// Implies `--headless` and `--single-frame`. The directory will be created if it doesn't exist.
     pub fn ui_test_path(mut self, dir: impl Into<String>) -> Self {
         self.ui_test_path = Some(dir.into());
+        self
+    }
+
+    /// Enable interaction test mode: drive synthetic mouse input (UI clicks,
+    /// wheel scrolling, viewport picking) headless and capture screenshots.
+    /// Implies `--headless` and `--single-frame`. The directory will be created if it doesn't exist.
+    pub fn interaction_test_path(mut self, dir: impl Into<String>) -> Self {
+        self.interaction_test_path = Some(dir.into());
         self
     }
 
@@ -856,7 +865,11 @@ impl ApplicationBuilder {
         max_frames: usize,
         screenshot_path: String,
     ) -> AppResult<Application> {
-        // Install logger
+        // Install logger. With the editor, the console logger wraps env_logger
+        // and owns the global logger slot; plain env_logger otherwise.
+        #[cfg(feature = "editor")]
+        let log_buffer = Self::install_console_logger();
+        #[cfg(not(feature = "editor"))]
         env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
             .try_init()
             .ok();
@@ -876,6 +889,7 @@ impl ApplicationBuilder {
             screenshot_path: Some(screenshot_path),
             headless: true,
             ui_test_path: self.ui_test_path.clone(),
+            interaction_test_path: self.interaction_test_path.clone(),
         };
 
         let mut world = self.world;
@@ -1049,7 +1063,30 @@ impl ApplicationBuilder {
             layout_dumped: false,
         };
 
+        #[cfg(feature = "editor")]
+        let mut app = app;
+        #[cfg(feature = "editor")]
+        app.editor.editor_ui.set_log_buffer(log_buffer);
+
         Ok(app)
+    }
+
+    /// Install the console logger (wrapping env_logger so stderr output is
+    /// preserved) and return the shared buffer backing the editor console panel.
+    #[cfg(feature = "editor")]
+    fn install_console_logger() -> std::sync::Arc<std::sync::Mutex<crate::ui::console::LogBuffer>> {
+        use crate::ui::console::ConsoleLoggerHandle;
+        let console_handle = ConsoleLoggerHandle::init(
+            log::LevelFilter::Debug,
+            Box::new(
+                env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+                    .build(),
+            ),
+        );
+        let buffer = console_handle.buffer();
+        log::set_boxed_logger(console_handle.into_logger()).ok();
+        log::set_max_level(log::LevelFilter::Info);
+        buffer
     }
 
     pub fn build(mut self) -> AppResult<(Application, EventLoop<()>)> {
@@ -1058,26 +1095,7 @@ impl ApplicationBuilder {
         // Install console logger early so all subsequent log messages are captured.
         // Wraps env_logger as secondary so stderr output is preserved.
         #[cfg(feature = "editor")]
-        let log_buffer = {
-            use crate::ui::console::ConsoleLoggerHandle;
-            let console_handle = ConsoleLoggerHandle::init(
-                log::LevelFilter::Debug,
-                Box::new(
-                    env_logger::Builder::from_env(
-                        env_logger::Env::default().default_filter_or("info"),
-                    )
-                    .build(),
-                ),
-            );
-            let buffer = console_handle.buffer();
-            log::set_boxed_logger(console_handle.into_logger()).map_err(|e| {
-                crate::error::AppError::Other {
-                    message: e.to_string(),
-                }
-            })?;
-            log::set_max_level(log::LevelFilter::Info);
-            buffer
-        };
+        let log_buffer = Self::install_console_logger();
         #[cfg(not(feature = "editor"))]
         let _ = (); // no console logger without editor
 
@@ -1098,6 +1116,7 @@ impl ApplicationBuilder {
             screenshot_path: None,
             headless: false,
             ui_test_path: None,
+            interaction_test_path: None,
         };
 
         let mut world = self.world;

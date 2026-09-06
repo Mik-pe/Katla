@@ -28,6 +28,7 @@ mod game_state;
 mod gizmo;
 mod headless;
 mod init;
+pub(crate) mod interaction_test;
 #[cfg(not(feature = "editor"))]
 mod no_editor_methods;
 mod particle_drive;
@@ -81,6 +82,7 @@ pub struct ApplicationInfo {
     screenshot_path: Option<String>, // Headless screenshot output path
     headless: bool,                  // Running without a window
     pub(crate) ui_test_path: Option<String>, // UI test mode: output directory for screenshots
+    pub(crate) interaction_test_path: Option<String>, // Interaction test mode: output directory
 }
 
 /// Where to write the layout dump.

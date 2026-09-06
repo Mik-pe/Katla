@@ -50,6 +50,12 @@ struct Args {
     #[arg(long, value_name = "DIR")]
     ui_test: Option<String>,
 
+    /// Interaction test mode: drive synthetic mouse clicks, wheel scrolling, and
+    /// viewport picking headless, saving screenshots and check results into <DIR>.
+    /// Implies --headless and --single-frame (100 frames)
+    #[arg(long, value_name = "DIR")]
+    interaction_test: Option<String>,
+
     /// Editor camera pose as yaw_deg,pitch_deg,distance (diagnostic, headless captures)
     #[arg(long, value_name = "YAW,PITCH,DIST", default_value = None)]
     camera: Option<String>,
@@ -204,7 +210,7 @@ fn main() {
     }
 
     // --headless: offscreen rendering, no window
-    if args.headless || args.ui_test.is_some() {
+    if args.headless || args.ui_test.is_some() || args.interaction_test.is_some() {
         builder = builder.headless(true);
     }
 
@@ -214,7 +220,7 @@ fn main() {
     }
 
     // UI test mode implies single-frame (100 frames)
-    if args.single_frame || args.ui_test.is_some() {
+    if args.single_frame || args.ui_test.is_some() || args.interaction_test.is_some() {
         builder = builder.max_frames(100);
     }
 
@@ -228,18 +234,22 @@ fn main() {
         info!("Layout dump mode: will write widget tree to {}", path);
     }
 
-    if args.headless || args.ui_test.is_some() {
+    if args.headless || args.ui_test.is_some() || args.interaction_test.is_some() {
         if let Some(ref dir) = args.ui_test {
             builder = builder.ui_test_path(dir.clone());
+        }
+        if let Some(ref dir) = args.interaction_test {
+            builder = builder.interaction_test_path(dir.clone());
         }
         let screenshot_path = args
             .screenshot
             .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
-        let max_frames = if args.single_frame || args.ui_test.is_some() {
-            100
-        } else {
-            10
-        };
+        let max_frames =
+            if args.single_frame || args.ui_test.is_some() || args.interaction_test.is_some() {
+                100
+            } else {
+                10
+            };
 
         let result = builder.build_headless(max_frames, screenshot_path);
         match result {
