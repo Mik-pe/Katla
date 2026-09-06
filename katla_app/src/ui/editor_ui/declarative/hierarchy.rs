@@ -45,6 +45,7 @@ impl Build for HierarchyView {
 
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
         let scroll_id: StateId = ctx.state(0.0f32);
+        let last_selected_id: StateId = ctx.state(Option::<EntityId>::None);
         let search_filter: String = ctx
             .get_state(search_id)
             .unwrap_or_else(|| draw_ctx.search_filter.clone());
@@ -72,6 +73,42 @@ impl Build for HierarchyView {
                 is_entity_visible_fast(e, &parent_map, &draw_ctx.hierarchy_state.expanded_entities)
             })
             .count();
+
+        // Auto-reveal: when the selection changes outside this panel (e.g. a
+        // viewport pick), scroll the selected row into view. Clicking a row
+        // that is already visible keeps the offset untouched.
+        if draw_ctx.selected_entity != ctx.get_state(last_selected_id) {
+            ctx.set_state(last_selected_id, draw_ctx.selected_entity);
+            if let Some(selected_id) = draw_ctx.selected_entity {
+                let row_pitch = katla_ui::tokens::TREE_ROW_HEIGHT + 2.0;
+                let mut selected_row: Option<f32> = None;
+                let mut visible_rows = 0.0f32;
+                for entity in &filtered_entities {
+                    if is_entity_visible_fast(
+                        entity,
+                        &parent_map,
+                        &draw_ctx.hierarchy_state.expanded_entities,
+                    ) {
+                        if entity.id == selected_id {
+                            selected_row = Some(visible_rows);
+                        }
+                        visible_rows += 1.0;
+                    }
+                }
+                if let Some(row_index) = selected_row {
+                    let view_height = (draw_ctx.bounds.height() - 52.0).max(0.0);
+                    let row_y = row_index * row_pitch;
+                    let offset: f32 = ctx.get_state(scroll_id).unwrap_or_default();
+                    if row_y < offset || row_y + row_pitch > offset + view_height {
+                        let content_height = visible_rows * row_pitch;
+                        let max_offset = (content_height - view_height).max(0.0);
+                        let target =
+                            (row_y - (view_height - row_pitch) * 0.5).clamp(0.0, max_offset);
+                        ctx.set_state(scroll_id, target);
+                    }
+                }
+            }
+        }
 
         let search_field = textfield("Search entities...", search_id)
             .flex_width((draw_ctx.bounds.width() - 16.0).max(0.0))
