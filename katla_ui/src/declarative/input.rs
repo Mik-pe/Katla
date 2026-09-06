@@ -272,7 +272,18 @@ pub(crate) fn process_input(
                 };
             }
             WidgetInputResult::Ignore => {
-                break;
+                // Wheel events must reach ancestor scroll containers even when
+                // the widget under the mouse ignores input (e.g. a Selectable
+                // row that was not clicked); otherwise scrolling over list
+                // content is dead.
+                if input.scroll_delta.y() != 0.0 {
+                    current_id = match parent {
+                        Some(id) => id,
+                        None => break,
+                    };
+                } else {
+                    break;
+                }
             }
         }
     }
