@@ -2,6 +2,50 @@
 
 ## Completed Recently
 
+- **Headless interaction harness + 3 input/picking bugs fixed (2026-09-06, working tree, UNCOMMITTED)** —
+  Built `--interaction-test DIR` (katla_app/src/application/interaction_test.rs):
+  a state machine that injects synthetic mouse input at headless-frame boundaries —
+  `ui_context.input_mut()` for UI clicks/wheel (press and release on separate
+  frames), `app.on_mouse_input` for the editor press path (focused panel, gizmo
+  hit test, `pending_pick`). Runs the full real pipeline: hit-test → widget
+  callbacks → actions → process_editor_actions, plus GPU picking readback.
+  Reports PASS/FAIL checks + screenshots (6/6 PASS: hierarchy row click selects
+  Sphere_1_0, viewport click GPU-picks LimeTorus, empty click deselects, Light
+  theme applies, Dark restores, modal close works; scroll both directions and
+  hierarchy auto-reveal judged from screenshots).
+  1. **First viewport click never picked**: `is_click_on_floating_panel`
+   (editor_ui/mod.rs) tested the centered Preferences modal rect without
+   checking visibility — with the modal closed, clicks in the viewport center
+   hit the phantom rect, `update_focused_panel_from_click` bailed, the pick
+   gate saw stale `FocusedPanel`, and `pending_pick` was never set (users had
+   to click twice). Fixed with a `preferences_panel.is_visible()` guard;
+   added `preferences_panel_visible()` accessor.
+  2. **Invalid picking readback (Vulkan validation errors)**: render-graph
+   color-attachment transients lacked `TRANSFER_SRC` usage, so
+   `vkCmdCopyImageToBuffer`/layout transitions on the object-ID image were
+   illegal. Color transients now include `TRANSFER_SRC` (vulkan_backend.rs),
+   matching the swapchain image usage precedent.
+  3. **Wheel scroll dead over list rows**: widget dispatch stopped at
+   `InputResult::Ignore`, and Selectable rows return Ignore when not clicked,
+   so the wheel never reached ancestor ScrollViews (hierarchy/inspector/asset
+   browser unscrollable over content). In katla_ui input.rs, wheel-only events
+   (scroll_delta != 0) now treat Ignore as bubble-to-parent; consumers
+   (ScrollView, code editor) still stop propagation.
+  UX: hierarchy auto-reveals the selected entity when selection changes
+  outside the panel (viewport pick) — scroll offset moves the row into view,
+  tracked via a `last_selected_id` state slot in HierarchyView::build. Headless
+  builds now install the console logger via shared
+  `ApplicationBuilder::install_console_logger` (console panel shows live log
+  entries in captures; the plain env_logger init previously claimed the global
+  logger slot first).
+  Verified on Intel Vulkan: 6/6 interaction checks, legacy `--ui-test` 5
+  states intact, 50 workspace test suites green (`katla_audio
+  ::test_engine_playback_lifecycle` flakes only under parallel load), strict
+  workspace clippy clean, fmt clean, windowed `katla -s` exits 0. Note:
+  viewport pick coordinates must avoid the selected entity's gizmo (12px
+  screen-space axis threshold); the harness targets the LimeTorus for this
+  reason.
+
 - **Metal UI + shadow fixes (2026-09-05, macOS)** —
   1. **UI fully broken on Metal**: ui.wgsl reads `texture_index` per-vertex
    (location 3, offset 20, 24-byte stride) since 4afa063b, but
