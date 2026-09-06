@@ -45,6 +45,12 @@ impl Application {
         #[cfg(feature = "editor")]
         let mut ui_test = ui_test;
 
+        let interaction_test = self.info.interaction_test_path.as_ref().map(|dir| {
+            crate::application::interaction_test::InteractionTestRunner::new(dir.clone())
+        });
+        #[cfg(feature = "editor")]
+        let mut interaction_test = interaction_test;
+
         info!(
             "Running {} headless frames at {}x{}",
             max_frames, HEADLESS_WIDTH, HEADLESS_HEIGHT
@@ -62,12 +68,30 @@ impl Application {
         let mut last_offscreen: Option<MetalTextureRetained> = None;
 
         for _frame in 0..max_frames {
+            // Interaction test: inject synthetic input before this frame renders.
+            #[cfg(feature = "editor")]
+            if let Some(ref mut runner) = interaction_test {
+                runner.begin_frame(self, _frame);
+            }
+
             #[cfg(target_os = "macos")]
             {
                 last_offscreen = self.run_one_headless_frame();
             }
             #[cfg(not(target_os = "macos"))]
             self.run_one_headless_frame();
+
+            // Interaction test: run checks and capture screenshots.
+            #[cfg(feature = "editor")]
+            if let Some(ref mut runner) = interaction_test
+                && let Some(screenshot_dest) = runner.end_frame(self, _frame)
+            {
+                self.save_headless_screenshot(
+                    &screenshot_dest,
+                    #[cfg(target_os = "macos")]
+                    last_offscreen.clone(),
+                )?;
+            }
 
             // UI test: check for screenshot and inject state changes
             #[cfg(feature = "editor")]
@@ -86,6 +110,8 @@ impl Application {
 
             #[cfg(all(target_os = "macos", not(feature = "editor")))]
             let _ = &mut ui_test;
+            #[cfg(all(target_os = "macos", not(feature = "editor")))]
+            let _ = &mut interaction_test;
         }
 
         // Wait for GPU to finish the last frame
@@ -94,7 +120,7 @@ impl Application {
         }
 
         // Save screenshot from the last frame's offscreen texture (standard mode only)
-        if ui_test.is_none() {
+        if ui_test.is_none() && interaction_test.is_none() {
             self.save_headless_screenshot(
                 &screenshot_path,
                 #[cfg(target_os = "macos")]
@@ -113,6 +139,12 @@ impl Application {
                 "UI test complete: {} screenshots saved to {}",
                 runner.screenshots_taken(),
                 self.info.ui_test_path.as_deref().unwrap_or("?")
+            );
+        } else if let Some(ref runner) = interaction_test {
+            runner.log_summary();
+            info!(
+                "Interaction test screenshots saved to {}",
+                self.info.interaction_test_path.as_deref().unwrap_or("?")
             );
         } else {
             info!("Headless render complete");
