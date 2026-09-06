@@ -407,6 +407,11 @@ impl EditorUI {
         self.theme.name
     }
 
+    /// Whether the Preferences modal is currently visible.
+    pub fn preferences_panel_visible(&self) -> bool {
+        self.preferences_panel.is_visible()
+    }
+
     /// Set the list of available component type names from the ComponentRegistry.
     pub fn set_available_components(&mut self, names: Vec<&'static str>) {
         self.available_components = names;
@@ -523,20 +528,22 @@ impl EditorUI {
         let screen = self.last_screen_size;
 
         // Preferences is a centered modal (not draggable).
-        let modal_min = Vec2::new(
-            (screen.x() - declarative::preferences::PREFERENCES_WIDTH) * 0.5,
-            (screen.y() - declarative::preferences::PREFERENCES_HEIGHT) * 0.5,
-        );
-        if Rect2D::from_origin_size(
-            modal_min,
-            Vec2::new(
-                declarative::preferences::PREFERENCES_WIDTH,
-                declarative::preferences::PREFERENCES_HEIGHT,
-            ),
-        )
-        .contains(pos)
-        {
-            return true;
+        if self.preferences_panel.is_visible() {
+            let modal_min = Vec2::new(
+                (screen.x() - declarative::preferences::PREFERENCES_WIDTH) * 0.5,
+                (screen.y() - declarative::preferences::PREFERENCES_HEIGHT) * 0.5,
+            );
+            if Rect2D::from_origin_size(
+                modal_min,
+                Vec2::new(
+                    declarative::preferences::PREFERENCES_WIDTH,
+                    declarative::preferences::PREFERENCES_HEIGHT,
+                ),
+            )
+            .contains(pos)
+            {
+                return true;
+            }
         }
 
         if let Some(bounds) = self
