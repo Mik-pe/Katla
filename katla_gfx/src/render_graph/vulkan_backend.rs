@@ -38,6 +38,9 @@ impl RenderGraphBackend for VulkanRenderer {
                     vk::ImageUsageFlags::COLOR_ATTACHMENT
                         | vk::ImageUsageFlags::SAMPLED
                         | vk::ImageUsageFlags::INPUT_ATTACHMENT
+                        // Editor targets may be read back (GPU picking, PNG
+                        // capture), matching the swapchain image usage.
+                        | vk::ImageUsageFlags::TRANSFER_SRC
                 }
                 super::resource::GraphResourceType::DepthAttachment { sampled, .. } => {
                     let mut usage = vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
