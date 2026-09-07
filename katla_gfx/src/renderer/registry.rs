@@ -56,8 +56,42 @@ pub struct MeshAsset {
     pub attribute_buffers: HashMap<AttributeType, VertexBuffer>,
     /// Index buffer for indexed drawing.
     pub index_buffer: Option<IndexBuffer>,
+    /// Backend-neutral format of `index_buffer`'s indices. Draw paths must bind
+    /// this exact format; it is recorded at mesh creation and never re-guessed.
+    pub index_format: crate::backend::command::IndexType,
     /// Number of vertices in this mesh.
     pub vertex_count: u32,
+}
+
+/// An index element type whose width is preserved through upload, storage, and
+/// draw encoding on every backend.
+///
+/// Mesh creation accepts only `u16` and `u32` indices; other element types are
+/// rejected here at the type level instead of being guessed from byte layout.
+pub trait MeshIndexElement: Copy + 'static {
+    /// The index format this element type maps to.
+    const INDEX_FORMAT: crate::backend::command::IndexType;
+
+    /// Widen one index to `u32` (used by backends that store a single width).
+    fn to_u32(self) -> u32;
+}
+
+impl MeshIndexElement for u16 {
+    const INDEX_FORMAT: crate::backend::command::IndexType =
+        crate::backend::command::IndexType::Uint16;
+
+    fn to_u32(self) -> u32 {
+        self as u32
+    }
+}
+
+impl MeshIndexElement for u32 {
+    const INDEX_FORMAT: crate::backend::command::IndexType =
+        crate::backend::command::IndexType::Uint32;
+
+    fn to_u32(self) -> u32 {
+        self
+    }
 }
 
 impl MeshAsset {

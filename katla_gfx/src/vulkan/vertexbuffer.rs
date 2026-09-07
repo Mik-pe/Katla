@@ -48,6 +48,22 @@ impl From<vk::IndexType> for IndexType {
     }
 }
 
+impl From<crate::backend::command::IndexType> for IndexType {
+    fn from(format: crate::backend::command::IndexType) -> Self {
+        match format {
+            crate::backend::command::IndexType::Uint8 => IndexType::Uint8,
+            crate::backend::command::IndexType::Uint16 => IndexType::Uint16,
+            crate::backend::command::IndexType::Uint32 => IndexType::Uint32,
+        }
+    }
+}
+
+impl From<crate::backend::command::IndexType> for vk::IndexType {
+    fn from(format: crate::backend::command::IndexType) -> Self {
+        IndexType::from(format).into()
+    }
+}
+
 use std::mem::ManuallyDrop;
 
 struct BufferObject {

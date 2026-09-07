@@ -292,9 +292,13 @@ pub use render_pass::{AttachmentInfo, BarrierKind, ClearValue, LoadOp, StoreOp};
 pub use renderer::{UIDrawList, UiDrawCommand};
 
 // Renderer types (backend-agnostic)
+pub use renderer::registry::MeshIndexElement;
 pub use renderer::{
     DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
 };
+
+// Backend-neutral resource metadata
+pub use backend::command::IndexType;
 
 // Renderer (Vulkan-specific)
 pub use renderer::VulkanRenderer;

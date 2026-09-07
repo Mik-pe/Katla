@@ -54,6 +54,7 @@ use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 use crate::barrier::ImageBarrier;
 use crate::error::RendererError;
 use crate::handle::ResourceStorage;
+use crate::renderer::registry::MeshIndexElement;
 use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::IndexType;
@@ -980,10 +981,20 @@ impl VulkanRenderer {
     pub fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
     where
         T: bytemuck::Pod,
-        U: bytemuck::Pod,
+        U: MeshIndexElement,
     {
         self.mesh_manager
             .create_mesh(&mut self.asset_registry, vertices, indices)
+    }
+
+    /// Report the index format recorded for a mesh, for diagnostics and tests.
+    pub fn mesh_index_format(
+        &self,
+        mesh: MeshHandle,
+    ) -> Option<crate::backend::command::IndexType> {
+        self.asset_registry
+            .get_mesh(mesh)
+            .map(|asset| asset.index_format)
     }
 
     /// Create a mesh with separate per-attribute vertex buffers (SOA layout).
@@ -1010,26 +1021,6 @@ impl VulkanRenderer {
             vertex_count,
             indices,
         )
-    }
-
-    /// Register a mesh with pre-existing buffers.
-    ///
-    /// This is useful when you've already created buffers and want to register them
-    /// with the renderer for use in the draw list system.
-    ///
-    /// # Arguments
-    /// * `vertex_buffer` - The vertex buffer (or None if no vertices)
-    /// * `index_buffer` - The index buffer (or None if no indices)
-    ///
-    /// # Returns
-    /// A `MeshHandle` that references the registered mesh.
-    pub fn register_mesh(
-        &mut self,
-        vertex_buffer: Option<VertexBuffer>,
-        index_buffer: Option<IndexBuffer>,
-    ) -> MeshHandle {
-        self.mesh_manager
-            .register_mesh(&mut self.asset_registry, vertex_buffer, index_buffer)
     }
 
     /// Create a cube mesh with the given size.

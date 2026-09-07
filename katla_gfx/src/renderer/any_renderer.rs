@@ -284,12 +284,20 @@ impl GpuRenderer for AnyRenderer {
     fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
     where
         T: bytemuck::Pod,
-        U: bytemuck::Pod,
+        U: crate::renderer::registry::MeshIndexElement,
     {
         match self {
             AnyRenderer::Vulkan(r) => r.create_mesh(vertices, indices),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.create_mesh(vertices, indices),
+        }
+    }
+
+    fn mesh_index_format(&self, mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.mesh_index_format(mesh),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.mesh_index_format(mesh),
         }
     }
 
