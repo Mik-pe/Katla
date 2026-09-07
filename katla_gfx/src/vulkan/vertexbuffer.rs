@@ -92,17 +92,19 @@ pub struct IndexBuffer {
 
 impl BufferObject {
     fn resize(&mut self, min_size: vk::DeviceSize) {
-        let old_allocation = unsafe { ManuallyDrop::take(&mut self.allocation) };
-        self.context.free_buffer(self.buffer, old_allocation);
         let new_size = min_size * 2;
         let create_info = vk::BufferCreateInfo::default()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
             .usage(self.buffer_usage)
             .size(new_size);
+        // Build the replacement first: if allocation fails, the old buffer
+        // and its allocation stay valid and owned by this object.
         let (buffer, allocation) = self
             .context
             .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
             .expect("Failed to resize buffer");
+        let old_allocation = unsafe { ManuallyDrop::take(&mut self.allocation) };
+        self.context.free_buffer(self.buffer, old_allocation);
         self.buffer = buffer;
         self.allocation = ManuallyDrop::new(allocation);
         self.buf_size = new_size;
