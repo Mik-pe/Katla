@@ -108,7 +108,14 @@ pub trait GpuRenderer: Sized + 'static {
     fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
     where
         T: bytemuck::Pod,
-        U: bytemuck::Pod;
+        U: crate::renderer::registry::MeshIndexElement;
+
+    /// Report the index format recorded for a mesh, for diagnostics and tests.
+    ///
+    /// Returns `None` when the handle does not reference a live mesh.
+    fn mesh_index_format(&self, _mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
+        None
+    }
 
     /// Create a dynamic (CPU-writable) mesh.
     fn create_mesh_dynamic(
@@ -467,9 +474,13 @@ impl GpuRenderer for VulkanRenderer {
     fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
     where
         T: bytemuck::Pod,
-        U: bytemuck::Pod,
+        U: crate::renderer::registry::MeshIndexElement,
     {
         VulkanRenderer::create_mesh(self, vertices, indices)
+    }
+
+    fn mesh_index_format(&self, mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
+        VulkanRenderer::mesh_index_format(self, mesh)
     }
 
     fn create_mesh_dynamic(

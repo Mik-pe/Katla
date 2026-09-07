@@ -5,7 +5,7 @@
 //! Meshes are stored in the shared AssetRegistry for compatibility with drawing code.
 
 use crate::handle::MeshHandle;
-use crate::renderer::registry::{AssetRegistry, MeshAsset};
+use crate::renderer::registry::{AssetRegistry, MeshAsset, MeshIndexElement};
 use crate::vertex::{VertexPBR, VertexPBRSkinned};
 use crate::vulkan::vertex_attribute::AttributeType;
 use crate::vulkan::{IndexBuffer, IndexType, VertexBuffer};
@@ -34,11 +34,13 @@ impl MeshManager {
         &self,
         attribute_buffers: HashMap<AttributeType, VertexBuffer>,
         index_buffer: Option<IndexBuffer>,
+        index_format: crate::backend::command::IndexType,
         vertex_count: u32,
     ) -> MeshAsset {
         MeshAsset {
             attribute_buffers,
             index_buffer,
+            index_format,
             vertex_count,
         }
     }
@@ -52,7 +54,7 @@ impl MeshManager {
     /// # Arguments
     /// * `registry` - The asset registry to store the mesh in
     /// * `vertices` - Vertex data (any Pod type)
-    /// * `indices` - Index data (any Pod type: u8, u16, u32)
+    /// * `indices` - Index data (`u16` or `u32`)
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
@@ -64,7 +66,7 @@ impl MeshManager {
     ) -> MeshHandle
     where
         T: bytemuck::Pod,
-        U: bytemuck::Pod,
+        U: MeshIndexElement,
     {
         let type_id = TypeId::of::<T>();
 
@@ -109,19 +111,9 @@ impl MeshManager {
             )
         };
 
-        let index_type = match std::mem::size_of::<U>() {
-            1 => IndexType::Uint8,
-            2 => IndexType::Uint16,
-            4 => IndexType::Uint32,
-            _ => IndexType::None,
-        };
+        let index_type = IndexType::from(U::INDEX_FORMAT);
 
-        let index_count = match index_type {
-            IndexType::Uint8 => index_bytes.len() as u32,
-            IndexType::Uint16 => (index_bytes.len() as u32) / 2,
-            IndexType::Uint32 => (index_bytes.len() as u32) / 4,
-            IndexType::None => 0_u32,
-        };
+        let index_count = index_bytes.len() as u32 / U::INDEX_FORMAT.size();
 
         let index_buffer = if !index_bytes.is_empty() {
             let mut ib = IndexBuffer::new(
@@ -136,8 +128,12 @@ impl MeshManager {
             None
         };
 
-        let mesh_asset =
-            self.create_mesh_asset(attribute_buffers, index_buffer, vertices.len() as u32);
+        let mesh_asset = self.create_mesh_asset(
+            attribute_buffers,
+            index_buffer,
+            U::INDEX_FORMAT,
+            vertices.len() as u32,
+        );
         registry.register_mesh(mesh_asset)
     }
 
@@ -224,36 +220,6 @@ impl MeshManager {
         map
     }
 
-    /// Register a mesh with pre-existing buffers.
-    ///
-    /// This is useful when you've already created buffers and want to register them.
-    ///
-    /// # Arguments
-    /// * `registry` - The asset registry to store the mesh in
-    /// * `vertex_buffer` - The vertex buffer (or None if no vertices)
-    /// * `index_buffer` - The index buffer (or None if no indices)
-    ///
-    /// # Returns
-    /// A `MeshHandle` that references the registered mesh.
-    pub(crate) fn register_mesh(
-        &self,
-        registry: &mut AssetRegistry,
-        vertex_buffer: Option<VertexBuffer>,
-        index_buffer: Option<IndexBuffer>,
-    ) -> MeshHandle {
-        let attribute_buffers = vertex_buffer
-            .map(|vb| {
-                let mut map = HashMap::new();
-                map.insert(AttributeType::Position, vb);
-                map
-            })
-            .unwrap_or_default();
-
-        let vertex_count = 0;
-        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, vertex_count);
-        registry.register_mesh(mesh_asset)
-    }
-
     /// Create a mesh with separate per-attribute vertex buffers (SOA layout).
     ///
     /// Each attribute type (Position, Normal, Tangent, etc.) gets its own buffer.
@@ -295,7 +261,12 @@ impl MeshManager {
             None
         };
 
-        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, vertex_count);
+        let mesh_asset = self.create_mesh_asset(
+            attribute_buffers,
+            index_buffer,
+            crate::backend::command::IndexType::Uint32,
+            vertex_count,
+        );
         registry.register_mesh(mesh_asset)
     }
 
@@ -433,7 +404,12 @@ impl MeshManager {
             })
             .unwrap_or_default();
 
-        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, vertex_count);
+        let mesh_asset = self.create_mesh_asset(
+            attribute_buffers,
+            index_buffer,
+            crate::backend::command::IndexType::Uint32,
+            vertex_count,
+        );
         registry.register_mesh(mesh_asset)
     }
 

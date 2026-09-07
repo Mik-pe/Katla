@@ -1142,9 +1142,15 @@ impl GpuRenderer for MetalRenderer {
     fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
     where
         T: bytemuck::Pod,
-        U: bytemuck::Pod,
+        U: crate::renderer::registry::MeshIndexElement,
     {
         self.create_mesh_from_vertices(vertices, indices)
+    }
+
+    fn mesh_index_format(&self, mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
+        self.meshes
+            .contains(mesh.index())
+            .then_some(crate::backend::command::IndexType::Uint32)
     }
 
     fn create_mesh_dynamic(

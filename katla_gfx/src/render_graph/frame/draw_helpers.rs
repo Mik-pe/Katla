@@ -210,7 +210,7 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
             bind_vertex_buffers(cmd, mesh, is_skinned, is_billboard);
 
             if let Some(ib) = &mesh.index_buffer {
-                cmd.bind_index_buffer(ib.object(), 0, vk::IndexType::UINT32);
+                cmd.bind_index_buffer(ib.object(), 0, mesh.index_format.into());
             }
 
             let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);

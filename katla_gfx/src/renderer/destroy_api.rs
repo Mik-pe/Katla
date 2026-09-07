@@ -105,6 +105,7 @@ mod tests {
         MeshAsset {
             attribute_buffers: std::collections::HashMap::new(),
             index_buffer: None,
+            index_format: crate::backend::command::IndexType::Uint32,
             vertex_count,
         }
     }

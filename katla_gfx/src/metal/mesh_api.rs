@@ -2,6 +2,7 @@ use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::MeshHandle;
 use crate::primitives;
+use crate::renderer::registry::MeshIndexElement;
 use crate::vertex::VertexPBR;
 
 use super::buffer::MetalBuffer;
@@ -66,21 +67,12 @@ impl MetalRenderer {
     ) -> MeshHandle
     where
         T: bytemuck::Pod,
-        U: bytemuck::Pod,
+        U: MeshIndexElement,
     {
         let vertex_bytes = bytemuck::cast_slice(vertices);
-        let index_u32: Vec<u32> = indices
-            .iter()
-            .map(|v| {
-                let bytes = bytemuck::bytes_of(v);
-                match bytes.len() {
-                    1 => bytes[0] as u32,
-                    2 => u16::from_ne_bytes([bytes[0], bytes[1]]) as u32,
-                    4 => u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
-                    _ => 0,
-                }
-            })
-            .collect();
+        // Metal storage keeps a single index width; conversion is keyed off the
+        // typed element format rather than guessed from byte sizes.
+        let index_u32: Vec<u32> = indices.iter().map(|&v| U::to_u32(v)).collect();
 
         let (vertex_buffer, index_buffer, index_count) = self
             .upload_vertex_index_data(vertex_bytes, &index_u32)
