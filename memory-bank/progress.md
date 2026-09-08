@@ -2,7 +2,87 @@
 
 ## Completed Recently
 
-- **Headless interaction harness + 3 input/picking bugs fixed (2026-09-06, working tree, UNCOMMITTED)** —
+- **Issue #94: transactional leak-free Vulkan resource construction
+  (2026-09-07, merged 2026-09-08 as cc31089a via PR #102)** —
+  Fallible multi-step constructors leaked already-created objects: buffer
+  leaked on allocation failure, buffer+allocation on bind failure
+  (allocate_buffer/create_image), and GlobalParticleBuffer::new leaked every
+  prior buffer on mid-sequence failure including its late alignment-validation
+  return. GpuAllocator::free silently abandoned allocations on borrow
+  conflict. Fixes: OwnedBuffer/OwnedImage RAII guards (commit-on-success);
+  allocate_buffer_named/create_image_named transactional helpers; all direct
+  create/allocate/bind call sites (gpu_buffer.rs, animation/pose_compute.rs,
+  particles/buffer.rs incl. its new PartialParticleBuffers whole-function
+  guard, particles/descriptors.rs, particles/debug_readback.rs) routed through
+  them; BufferObject::resize replacement-first; borrow-conflict frees queued
+  and drained deterministically; debug_allocation_stats() (live, pending)
+  accounting plus test-only inject_allocation_failures hook; 6 injected-
+  failure GPU tests in memory.rs `#[cfg(test)]` (#[ignore] device tests).
+  Verified on Intel Vulkan: 6/6 injection tests, 2,032 workspace tests green,
+  particle stress/preset suites green (they exercise the rewritten paths on
+  device), CI-style clippy clean, fmt clean, headless scene render intact,
+  interaction harness 8/8. Pre-existing on main: particle_validation example
+  broken under `--features validation`; scene-disk test flaky under parallel
+  load. Gotcha: `[T; N]::map` consumes the array — destructure into lets when
+  splitting (Buffer, Allocation) pairs.
+
+- **Issue #85: mesh index format preserved through upload/storage/draw
+  (2026-09-07, commit 37182eca)** —
+  The Vulkan mesh draw paths hardcoded `vk::IndexType::UINT32` while
+  `create_mesh` accepted any Pod index width, so a u16 mesh rendered garbage.
+  Fix: `MeshIndexElement` trait (u16/u32 only, compile-time rejection of other
+  element types replacing the size_of guess), `MeshAsset.index_format`
+  (backend-neutral, from `backend::command::IndexType`, now root-exported),
+  all three Vulkan draw sites bind the recorded format (draw_calls,
+  draw_helpers, parallel_geometry's ResolvedDrawCommand carries
+  index_type), Metal's upload conversion keyed off the typed format
+  (MetalMesh stores u32-by-conversion so its Uint32 binds stay correct),
+  `GpuRenderer::mesh_index_format` diagnostics accessor, dead
+  `VulkanRenderer::register_mesh` (pre-built-buffer path, zero callers)
+  removed end-to-end. Focused GPU test
+  `katla_gfx/tests/mesh_index_format.rs` (#[ignore = "requires a Vulkan
+  device"]): u16 and u32 triangles render byte-identically across 4 frames
+  with destroy/recreate interleaved; run with
+  `TMPDIR=$HOME/tmp cargo test -p katla_gfx --test mesh_index_format -- --ignored`.
+  Verified the test FAILS against the old hardcoded binding (u16 mesh draws
+  nothing). App-level regression: default-scene headless screenshot intact,
+  interaction harness 8/8 + screenshots, gfx 375 lib tests + workspace suites
+  green (only the known katla_audio timing failure), CI-style clippy clean,
+  fmt clean. Bare-init GPU test gotchas recorded in activeContext (shadow
+  resources before PBR compile; per-frame uniforms/object-data writes).
+  Metal runtime rendering remains unverified on Linux — CI macOS 26 covers
+  compile + unit tests.
+
+- **Inspector component listing + add/remove from the UI (2026-09-08, PR #103)** —
+  The inspector now lists every component on the selected entity as a
+  collapsible section in a canonical `SECTION_TYPES` order (17 slots reserved
+  unconditionally per the state-slot convention). Registry-removable components
+  get a header `×` wired through `InspectorAction::Remove` →
+  `EditorAction::RemoveComponent` → `SceneOp::RemoveComponent` (undo-grouped,
+  protected-entity-checked on agent/MCP paths). The Add Component picker was
+  dead code (view read a never-written local slot); it now opens from the env
+  flag, shows a live filter textfield (view-local String slot), excludes
+  components the entity already has, and sorts rows alphabetically — with
+  hover-selectable full-width rows (selectable + padded hstack like the
+  hierarchy). Three real bugs fixed: (1) picker could never open (state-slot
+  vs env mixup); (2) UI AddComponent ran the agent protected-entity guard —
+  `gizmo_state.entity` tracks the CURRENTLY SELECTED entity, so every add was
+  rejected as "editor gizmo"; guard removed from the UI path (agent/MCP keep
+  it); (3) particle emitter payload was hard-`None`d (d3665768) — restored.
+  `collect_entity_info` names now match the registry exactly
+  ("NameComponent", "ParticleEmitterComponent") and detect
+  VelocityComponent/ReverbZone/CollisionFilter; `ComponentRegistry::type_names()`
+  sorts because HashMap order randomized the picker between runs.
+  Verified on Intel Vulkan headless: interaction harness 8/8 (hierarchy click,
+  viewport pick, empty deselect, light+dark themes, modal close, add Collider
+  via picker row, remove Collider via section ×) + screenshots 01-13, legacy
+  `--ui-test` 5 states intact, workspace tests green, clippy clean on touched
+  files, fmt clean. Environmental notes: /tmp tmpfs quota breaks doctest
+  linking (use `TMPDIR=<home>`); `katla_audio::test_engine_playback_lifecycle`
+  is flaky on this machine (stop/state timing race; passed 2026-09-08),
+  pre-existing.
+
+- **Headless interaction harness + 3 input/picking bugs fixed (2026-09-06, commits e6211bd2 + 50cee9f4)** —
   Built `--interaction-test DIR` (katla_app/src/application/interaction_test.rs):
   a state machine that injects synthetic mouse input at headless-frame boundaries —
   `ui_context.input_mut()` for UI clicks/wheel (press and release on separate
@@ -458,7 +538,9 @@ capture to root-cause before private storage lands.
    cold/warm/hot-reload benchmark. #55 is GATED on #54 (Metal 4 rewrite —
    needs Micke's sequencing call; objc2-metal 0.3.2 has MTL4 headers but
    device support unverified).
-21. Headless artifact hunt (UNCOMMITTED, verified logic-level only):
+21. Headless artifact hunt (landed: 59cce2a3 billboard exclusion,
+   5397ecf6 TAB_BAR_HEIGHT viewport fix; pixel-verified via later
+   Metal/Vulkan capture passes):
    (a) shadow-map billboard slivers — root cause: encode_cascade_draws drew
    billboard gizmos flat via the non-billboard shadow VS; fix = is_billboard
    skip in metal/shadow.rs + exclude_billboards:DrawParams field (true in
@@ -466,10 +548,9 @@ capture to root-cause before private storage lands.
    root cause: last_viewport_bounds includes the tab-bar strip while the UI
    image cell excludes it → texture squeezed, sun-washed sub-tab rows
    exposed; fix = layout.rs subtracts TAB_BAR_HEIGHT for viewport bounds.
-   511/511, staged clippy clean. PIXEL VERIFY BLOCKED: collaborator WIP
-   (tonemap params refactor) breaks rendering — init fails "PassId(5) is not
-   a tonemap pass" on HEAD+mine, black viewport on combined tree. Do NOT
-   commit these until a rendered screenshot proves all artifacts gone.
+   511/511, staged clippy clean. (The later blocker — collaborator tonemap
+   WIP breaking rendering — was resolved; fixes pixel-verified in capture
+   passes on 2026-09-05.)
    GOTCHA (resolved 2026-09-05): the ~/.cargo/bin/rustup shim that silently
    no-opped on Aug 29 works again (cargo 1.98.1); the direct toolchain PATH
    workaround is no longer needed but remains a fallback if it regresses.
@@ -497,5 +578,5 @@ STILL OPEN:
   fixed-height rows; status bar brand filler removed.
 - Verified: `--headless --ui-test` 5 states judge-passed at 1280x720
   logical; katla_ui 640 + katla_app 252 tests green; clippy clean (my
-  crates). Only my files committed; collaborator WIP (gfx bridge, RCP
-  palette, layout.rs viewport hunk) remains uncommitted and required.
+  crates). Only my files committed at the time; the collaborator WIP
+  (gfx bridge, RCP palette, layout.rs viewport hunk) has since landed.
