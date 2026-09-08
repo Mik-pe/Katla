@@ -202,44 +202,18 @@ impl GlobalParticleSystem {
                 .usage(vk::BufferUsageFlags::UNIFORM_BUFFER | vk::BufferUsageFlags::STORAGE_BUFFER)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let frame_buffer = unsafe {
-                context
-                    .device
-                    .create_buffer(&frame_buffer_info, None)
-                    .map_err(|e| {
-                        format!("Failed to create frame data buffer[{}]: {:?}", frame_idx, e)
-                    })?
-            };
-
-            let frame_requirements =
-                unsafe { context.device.get_buffer_memory_requirements(frame_buffer) };
-
-            let frame_allocation = context
-                .allocator
-                .try_borrow_mut_string("particle_frame_data")?
-                .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
-                    name: &format!("particle_frame_data[{}]", frame_idx),
-                    requirements: frame_requirements,
-                    location: gpu_allocator::MemoryLocation::CpuToGpu,
-                    linear: true,
-                    allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-                })
+            let (frame_buffer, frame_allocation) = context
+                .allocate_buffer_named(
+                    &frame_buffer_info,
+                    gpu_allocator::MemoryLocation::CpuToGpu,
+                    &format!("particle_frame_data[{}]", frame_idx),
+                )
                 .map_err(|e| {
-                    format!("Failed to allocate frame data memory[{}]: {}", frame_idx, e)
+                    RendererError::ResourceCreationFailed(format!(
+                        "Failed to create frame data buffer[{}]: {}",
+                        frame_idx, e
+                    ))
                 })?;
-
-            unsafe {
-                context
-                    .device
-                    .bind_buffer_memory(
-                        frame_buffer,
-                        frame_allocation.memory(),
-                        frame_allocation.offset(),
-                    )
-                    .map_err(|e| {
-                        format!("Failed to bind frame data memory[{}]: {:?}", frame_idx, e)
-                    })?
-            }
 
             self.buffers.frame_data[frame_idx] = Some((frame_buffer, frame_allocation));
 
@@ -251,56 +225,18 @@ impl GlobalParticleSystem {
                 .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            let emitter_buffer = unsafe {
-                context
-                    .device
-                    .create_buffer(&emitter_buffer_info, None)
-                    .map_err(|e| {
-                        format!(
-                            "Failed to create emitter configs buffer[{}]: {:?}",
-                            frame_idx, e
-                        )
-                    })?
-            };
-
-            let emitter_requirements = unsafe {
-                context
-                    .device
-                    .get_buffer_memory_requirements(emitter_buffer)
-            };
-
-            let emitter_allocation = context
-                .allocator
-                .try_borrow_mut_string("particle_emitter_configs")?
-                .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
-                    name: &format!("particle_emitter_configs[{}]", frame_idx),
-                    requirements: emitter_requirements,
-                    location: gpu_allocator::MemoryLocation::CpuToGpu,
-                    linear: true,
-                    allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-                })
+            let (emitter_buffer, emitter_allocation) = context
+                .allocate_buffer_named(
+                    &emitter_buffer_info,
+                    gpu_allocator::MemoryLocation::CpuToGpu,
+                    &format!("particle_emitter_configs[{}]", frame_idx),
+                )
                 .map_err(|e| {
-                    format!(
-                        "Failed to allocate emitter configs memory[{}]: {}",
+                    RendererError::ResourceCreationFailed(format!(
+                        "Failed to create emitter configs buffer[{}]: {}",
                         frame_idx, e
-                    )
+                    ))
                 })?;
-
-            unsafe {
-                context
-                    .device
-                    .bind_buffer_memory(
-                        emitter_buffer,
-                        emitter_allocation.memory(),
-                        emitter_allocation.offset(),
-                    )
-                    .map_err(|e| {
-                        format!(
-                            "Failed to bind emitter configs memory[{}]: {:?}",
-                            frame_idx, e
-                        )
-                    })?
-            }
 
             self.buffers.emitter_configs[frame_idx] = Some((emitter_buffer, emitter_allocation));
         }

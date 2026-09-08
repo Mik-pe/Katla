@@ -6,7 +6,7 @@ use ash::vk;
 use bytemuck::{Pod, Zeroable};
 
 use crate::error::RendererError;
-use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc};
+use gpu_allocator::vulkan::Allocation;
 use std::mem::ManuallyDrop;
 
 use log::info;
@@ -168,6 +168,111 @@ pub struct GlobalParticleBuffer {
     destroyed: bool,
 }
 
+/// Collects the buffers built by [`GlobalParticleBuffer::new`] so that a
+/// failure at any construction step releases every buffer created before it.
+///
+/// Successful construction ends in `finish`, which hands the pieces to the
+/// returned struct and disarms the cleanup.
+struct PartialParticleBuffers<'a> {
+    context: &'a VulkanContext,
+    armed: bool,
+    particle: Option<(vk::Buffer, Allocation)>,
+    counters: [Option<(vk::Buffer, Allocation)>; 2],
+    indirect: [Option<(vk::Buffer, Allocation)>; 2],
+}
+
+impl<'a> PartialParticleBuffers<'a> {
+    fn new(context: &'a VulkanContext) -> Self {
+        Self {
+            context,
+            armed: false,
+            particle: None,
+            counters: [None, None],
+            indirect: [None, None],
+        }
+    }
+
+    fn set_particle(&mut self, buffer: vk::Buffer, allocation: Allocation) {
+        self.particle = Some((buffer, allocation));
+    }
+
+    fn set_counters(&mut self, frame: usize, buffer: vk::Buffer, allocation: Allocation) {
+        self.counters[frame] = Some((buffer, allocation));
+    }
+
+    fn counters_allocation(&self, frame: usize) -> &Allocation {
+        &self.counters[frame]
+            .as_ref()
+            .expect("counters buffer built")
+            .1
+    }
+
+    fn set_indirect(&mut self, frame: usize, buffer: vk::Buffer, allocation: Allocation) {
+        self.indirect[frame] = Some((buffer, allocation));
+    }
+
+    fn release(context: &VulkanContext, pair: Option<(vk::Buffer, Allocation)>) {
+        if let Some((buffer, allocation)) = pair {
+            context.free_buffer(buffer, allocation);
+        }
+    }
+
+    /// Hand the fully-constructed buffers to the returned struct.
+    #[allow(clippy::type_complexity)]
+    fn finish(
+        mut self,
+    ) -> (
+        vk::Buffer,
+        Allocation,
+        [Option<vk::Buffer>; 2],
+        [ManuallyDrop<Allocation>; 2],
+        [Option<vk::Buffer>; 2],
+        [ManuallyDrop<Allocation>; 2],
+    ) {
+        self.armed = true;
+        let (particle_buffer, particle_allocation) = self.particle.take().unwrap();
+        let [counters_0, counters_1] = [
+            self.counters[0].take().expect("counters buffer built"),
+            self.counters[1].take().expect("counters buffer built"),
+        ];
+        let counters_buffers = [Some(counters_0.0), Some(counters_1.0)];
+        let counters_allocations = [
+            ManuallyDrop::new(counters_0.1),
+            ManuallyDrop::new(counters_1.1),
+        ];
+        let [indirect_0, indirect_1] = [
+            self.indirect[0].take().expect("indirect draw buffer built"),
+            self.indirect[1].take().expect("indirect draw buffer built"),
+        ];
+        let indirect_draw_buffers = [Some(indirect_0.0), Some(indirect_1.0)];
+        let indirect_draw_allocations = [
+            ManuallyDrop::new(indirect_0.1),
+            ManuallyDrop::new(indirect_1.1),
+        ];
+        (
+            particle_buffer,
+            particle_allocation,
+            counters_buffers,
+            counters_allocations,
+            indirect_draw_buffers,
+            indirect_draw_allocations,
+        )
+    }
+}
+
+impl Drop for PartialParticleBuffers<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            return;
+        }
+        Self::release(self.context, self.particle.take());
+        for frame in 0..2 {
+            Self::release(self.context, self.counters[frame].take());
+            Self::release(self.context, self.indirect[frame].take());
+        }
+    }
+}
+
 impl GlobalParticleBuffer {
     /// Maximum particles supported by shaders (must match MAX_PARTICLES in WGSL)
     const SHADER_MAX_PARTICLES: u32 = 1_048_576;
@@ -208,46 +313,26 @@ impl GlobalParticleBuffer {
             )
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let particle_buffer = unsafe {
-            context
-                .device
-                .create_buffer(&particle_buffer_info, None)
-                .map_err(|e| format!("Failed to create particle buffer: {:?}", e))?
-        };
+        // Any failure before `finish` releases every buffer created so far,
+        // so an early return cannot leak partial state.
+        let mut builder = PartialParticleBuffers::new(&context);
 
-        let particle_requirements = unsafe {
-            context
-                .device
-                .get_buffer_memory_requirements(particle_buffer)
-        };
-
-        let particle_allocation = context
-            .allocator
-            .try_borrow_mut_string("global_particle_buffer")?
-            .allocate(&AllocationCreateDesc {
-                name: "global_particle_buffer",
-                requirements: particle_requirements,
-                location: gpu_allocator::MemoryLocation::GpuOnly,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate particle memory: {}", e))?;
-
-        unsafe {
-            context
-                .device
-                .bind_buffer_memory(
-                    particle_buffer,
-                    particle_allocation.memory(),
-                    particle_allocation.offset(),
-                )
-                .map_err(|e| format!("Failed to bind particle memory: {:?}", e))?
-        }
+        let (particle_buffer, particle_allocation) = context
+            .allocate_buffer_named(
+                &particle_buffer_info,
+                gpu_allocator::MemoryLocation::GpuOnly,
+                "global_particle_buffer",
+            )
+            .map_err(|e| {
+                RendererError::ResourceCreationFailed(format!(
+                    "Failed to create particle buffer: {}",
+                    e
+                ))
+            })?;
+        builder.set_particle(particle_buffer, particle_allocation);
 
         // Create per-frame counters buffers (CPU-visible for readback, double-buffered)
         let counters_size = std::mem::size_of::<ParticleCounters>();
-        let mut counters_buffers = [None; 2];
-        let mut counters_allocations_build: [Option<Allocation>; 2] = [None, None];
 
         for frame_idx in 0..2 {
             let counters_buffer_info = vk::BufferCreateInfo::default()
@@ -260,63 +345,22 @@ impl GlobalParticleBuffer {
                 )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            counters_buffers[frame_idx] = Some(unsafe {
-                context
-                    .device
-                    .create_buffer(&counters_buffer_info, None)
-                    .map_err(|e| {
-                        format!("Failed to create counters buffer[{}]: {:?}", frame_idx, e)
-                    })?
-            });
-
-            let counters_requirements = unsafe {
-                context
-                    .device
-                    .get_buffer_memory_requirements(counters_buffers[frame_idx].unwrap())
-            };
-
-            counters_allocations_build[frame_idx] = Some(
-                context
-                    .allocator
-                    .try_borrow_mut_string("particle_counters")?
-                    .allocate(&AllocationCreateDesc {
-                        name: &format!("particle_counters[{}]", frame_idx),
-                        requirements: counters_requirements,
-                        location: gpu_allocator::MemoryLocation::CpuToGpu,
-                        linear: true,
-                        allocation_scheme:
-                            gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-                    })
-                    .map_err(|e| {
-                        format!("Failed to allocate counters memory[{}]: {}", frame_idx, e)
-                    })?,
-            );
-
-            unsafe {
-                context
-                    .device
-                    .bind_buffer_memory(
-                        counters_buffers[frame_idx].unwrap(),
-                        counters_allocations_build[frame_idx]
-                            .as_ref()
-                            .unwrap()
-                            .memory(),
-                        counters_allocations_build[frame_idx]
-                            .as_ref()
-                            .unwrap()
-                            .offset(),
-                    )
-                    .map_err(|e| {
-                        format!("Failed to bind counters memory[{}]: {:?}", frame_idx, e)
-                    })?;
-            }
+            let (counters_buffer, counters_allocation) = context
+                .allocate_buffer_named(
+                    &counters_buffer_info,
+                    gpu_allocator::MemoryLocation::CpuToGpu,
+                    &format!("particle_counters[{}]", frame_idx),
+                )
+                .map_err(|e| {
+                    RendererError::ResourceCreationFailed(format!(
+                        "Failed to create counters buffer[{}]: {}",
+                        frame_idx, e
+                    ))
+                })?;
+            builder.set_counters(frame_idx, counters_buffer, counters_allocation);
 
             // Initialize counters
-            if let Some(mapped) = counters_allocations_build[frame_idx]
-                .as_ref()
-                .unwrap()
-                .mapped_ptr()
-            {
+            if let Some(mapped) = builder.counters_allocation(frame_idx).mapped_ptr() {
                 let counters = ParticleCounters {
                     alive_count: 0,
                     dead_count: max_particles,
@@ -331,22 +375,15 @@ impl GlobalParticleBuffer {
                     );
                 }
                 let _ = context.flush_mapped_memory(
-                    counters_allocations_build[frame_idx].as_ref().unwrap(),
+                    builder.counters_allocation(frame_idx),
                     0,
                     std::mem::size_of::<ParticleCounters>() as u64,
                 );
             }
         }
 
-        let counters_allocations = [
-            ManuallyDrop::new(counters_allocations_build[0].take().unwrap()),
-            ManuallyDrop::new(counters_allocations_build[1].take().unwrap()),
-        ];
-
         // Create per-frame indirect draw command buffers (16 bytes each, double-buffered)
         let indirect_draw_size: u64 = 16;
-        let mut indirect_draw_buffers = [None; 2];
-        let mut indirect_draw_allocations_build: [Option<Allocation>; 2] = [None, None];
 
         for frame_idx in 0..2 {
             let indirect_draw_buffer_info = vk::BufferCreateInfo::default()
@@ -358,71 +395,20 @@ impl GlobalParticleBuffer {
                 )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-            indirect_draw_buffers[frame_idx] = Some(unsafe {
-                context
-                    .device
-                    .create_buffer(&indirect_draw_buffer_info, None)
-                    .map_err(|e| {
-                        format!(
-                            "Failed to create indirect draw buffer[{}]: {:?}",
-                            frame_idx, e
-                        )
-                    })?
-            });
-
-            let indirect_draw_requirements = unsafe {
-                context
-                    .device
-                    .get_buffer_memory_requirements(indirect_draw_buffers[frame_idx].unwrap())
-            };
-
-            indirect_draw_allocations_build[frame_idx] = Some(
-                context
-                    .allocator
-                    .try_borrow_mut_string("particle_indirect_draw")?
-                    .allocate(&AllocationCreateDesc {
-                        name: &format!("particle_indirect_draw[{}]", frame_idx),
-                        requirements: indirect_draw_requirements,
-                        location: gpu_allocator::MemoryLocation::GpuOnly,
-                        linear: true,
-                        allocation_scheme:
-                            gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-                    })
-                    .map_err(|e| {
-                        format!(
-                            "Failed to allocate indirect draw memory[{}]: {}",
-                            frame_idx, e
-                        )
-                    })?,
-            );
-
-            unsafe {
-                context
-                    .device
-                    .bind_buffer_memory(
-                        indirect_draw_buffers[frame_idx].unwrap(),
-                        indirect_draw_allocations_build[frame_idx]
-                            .as_ref()
-                            .unwrap()
-                            .memory(),
-                        indirect_draw_allocations_build[frame_idx]
-                            .as_ref()
-                            .unwrap()
-                            .offset(),
-                    )
-                    .map_err(|e| {
-                        format!(
-                            "Failed to bind indirect draw memory[{}]: {:?}",
-                            frame_idx, e
-                        )
-                    })?;
-            }
+            let (indirect_draw_buffer, indirect_draw_allocation) = context
+                .allocate_buffer_named(
+                    &indirect_draw_buffer_info,
+                    gpu_allocator::MemoryLocation::GpuOnly,
+                    &format!("particle_indirect_draw[{}]", frame_idx),
+                )
+                .map_err(|e| {
+                    RendererError::ResourceCreationFailed(format!(
+                        "Failed to create indirect draw buffer[{}]: {}",
+                        frame_idx, e
+                    ))
+                })?;
+            builder.set_indirect(frame_idx, indirect_draw_buffer, indirect_draw_allocation);
         }
-
-        let indirect_draw_allocations = [
-            ManuallyDrop::new(indirect_draw_allocations_build[0].take().unwrap()),
-            ManuallyDrop::new(indirect_draw_allocations_build[1].take().unwrap()),
-        ];
 
         info!(
             "Created global particle buffer: {} particles ({} MB)",
@@ -459,6 +445,17 @@ impl GlobalParticleBuffer {
             }
         }
 
+        // All construction and validation succeeded — hand ownership to the
+        // returned struct instead of cleaning up.
+        let (
+            particle_buffer,
+            particle_allocation,
+            counters_buffers,
+            counters_allocations,
+            indirect_draw_buffers,
+            indirect_draw_allocations,
+        ) = builder.finish();
+
         Ok(Self {
             context,
             particle_buffer: Some(particle_buffer),
@@ -478,31 +475,15 @@ impl GlobalParticleBuffer {
             .size(size)
             .usage(vk::BufferUsageFlags::TRANSFER_SRC)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
-        let buffer = unsafe {
-            self.context
-                .device
-                .create_buffer(&buffer_info, None)
-                .map_err(|e| format!("Failed to create staging buffer '{}': {:?}", name, e))?
-        };
-        let requirements = unsafe { self.context.device.get_buffer_memory_requirements(buffer) };
-        let allocation = self
+        let (buffer, allocation) = self
             .context
-            .allocator
-            .try_borrow_mut_string(name)?
-            .allocate(&AllocationCreateDesc {
-                name,
-                requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate staging memory '{}': {}", name, e))?;
-        unsafe {
-            self.context
-                .device
-                .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
-                .map_err(|e| format!("Failed to bind staging memory '{}': {:?}", name, e))?;
-        }
+            .allocate_buffer_named(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu, name)
+            .map_err(|e| {
+                RendererError::ResourceCreationFailed(format!(
+                    "Failed to create staging buffer '{}': {}",
+                    name, e
+                ))
+            })?;
         Ok(StagingBuffer { buffer, allocation })
     }
 
