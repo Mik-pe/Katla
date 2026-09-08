@@ -265,33 +265,14 @@ impl ReadbackStagingBuffer {
             .usage(vk::BufferUsageFlags::TRANSFER_DST)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let buffer = unsafe {
-            context
-                .device
-                .create_buffer(&buffer_info, None)
-                .map_err(|e| format!("Failed to create readback buffer: {:?}", e))?
-        };
-
-        let requirements = unsafe { context.device.get_buffer_memory_requirements(buffer) };
-
-        let allocation = context
-            .allocator
-            .try_borrow_mut_string(name)?
-            .allocate(&gpu_allocator::vulkan::AllocationCreateDesc {
-                name,
-                requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged,
-            })
-            .map_err(|e| format!("Failed to allocate readback memory: {}", e))?;
-
-        unsafe {
-            context
-                .device
-                .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
-                .map_err(|e| format!("Failed to bind readback memory: {:?}", e))?
-        }
+        let (buffer, allocation) = context
+            .allocate_buffer_named(&buffer_info, gpu_allocator::MemoryLocation::CpuToGpu, name)
+            .map_err(|e| {
+                RendererError::ResourceCreationFailed(format!(
+                    "Failed to create readback buffer '{}': {}",
+                    name, e
+                ))
+            })?;
 
         Ok(Self {
             buffer: VkBuffer::new(buffer),

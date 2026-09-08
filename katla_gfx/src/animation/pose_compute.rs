@@ -6,10 +6,7 @@
 use std::rc::Rc;
 
 use ash::vk;
-use gpu_allocator::{
-    MemoryLocation,
-    vulkan::{Allocation, AllocationCreateDesc, AllocationScheme},
-};
+use gpu_allocator::{MemoryLocation, vulkan::Allocation};
 use log::{info, warn};
 
 use crate::error::RendererError;
@@ -35,12 +32,10 @@ fn allocate_upload_buffer(
     alloc_slot: &mut Option<Allocation>,
 ) -> Result<(), RendererError> {
     if size == 0 {
+        if let (Some(buf), Some(alloc)) = (buf_slot.take(), alloc_slot.take()) {
+            context.free_buffer(buf, alloc);
+        }
         return Ok(());
-    }
-
-    // Tear down previous allocation
-    if let (Some(buf), Some(alloc)) = (buf_slot.take(), alloc_slot.take()) {
-        context.free_buffer(buf, alloc);
     }
 
     let buffer_info = vk::BufferCreateInfo::default()
@@ -48,47 +43,16 @@ fn allocate_upload_buffer(
         .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST)
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-    let buffer = unsafe {
-        context
-            .device
-            .create_buffer(&buffer_info, None)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to create {} buffer: {:?}",
-                    name, e
-                ))
-            })?
-    };
-
-    let requirements = unsafe { context.device.get_buffer_memory_requirements(buffer) };
-
-    let allocation = context
-        .allocator
-        .try_borrow(name)?
-        .allocate(&AllocationCreateDesc {
-            name,
-            requirements,
-            location: MemoryLocation::CpuToGpu,
-            linear: true,
-            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-        })
+    // Build the replacement first: if any step fails, the previous buffer
+    // stays valid.
+    let (buffer, allocation) = context
+        .allocate_buffer_named(&buffer_info, MemoryLocation::CpuToGpu, name)
         .map_err(|e| {
-            RendererError::InitializationFailed(format!(
-                "Failed to allocate {} memory: {}",
-                name, e
-            ))
+            RendererError::InitializationFailed(format!("Failed to create {} buffer: {}", name, e))
         })?;
 
-    unsafe {
-        context
-            .device
-            .bind_buffer_memory(buffer, allocation.memory(), allocation.offset())
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to bind {} memory: {:?}",
-                    name, e
-                ))
-            })?;
+    if let (Some(buf), Some(alloc)) = (buf_slot.take(), alloc_slot.take()) {
+        context.free_buffer(buf, alloc);
     }
 
     *buf_slot = Some(buffer);
