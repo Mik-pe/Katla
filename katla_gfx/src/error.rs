@@ -81,6 +81,60 @@ pub enum RendererError {
     /// Invalid operation or state.
     InvalidOperation(String),
 
+    /// A descriptor or input failed validation before any GPU work began.
+    ///
+    /// Carries the resource under construction and the reason it was
+    /// rejected, so callers never have to parse message strings. Partial
+    /// failure leaves previous valid state intact: nothing is created,
+    /// replaced, or half-uploaded when this error returns.
+    InvalidDescriptor {
+        /// Resource under construction (e.g. `"texture"`, `"mesh"`).
+        resource: String,
+        /// Why the descriptor was rejected (expected vs actual values).
+        reason: String,
+    },
+
+    /// GPU memory allocation failed.
+    ///
+    /// Replaces ad-hoc `InitializationFailed` strings and `expect()` panics
+    /// on the allocation path. The failed operation leaves previous valid
+    /// state intact.
+    AllocationFailed {
+        /// Resource being allocated (e.g. `"texture image"`, `"mesh vertex buffer"`).
+        resource: String,
+        /// Allocator-reported reason.
+        reason: String,
+    },
+
+    /// Pixel/vertex data upload failed or was refused.
+    ///
+    /// Returned instead of logging-and-pretending-success: a failed upload
+    /// is never reported as `Ok`. Includes expected vs actual byte counts so
+    /// size mismatches are diagnosable without string parsing.
+    UploadFailed {
+        /// Resource under upload (e.g. `"texture"`, `"mesh"`).
+        resource: String,
+        /// Bytes the upload required.
+        expected_bytes: usize,
+        /// Bytes the caller supplied.
+        actual_bytes: usize,
+        /// Extra context (format, dimensions, row pitch) for diagnosis.
+        detail: String,
+    },
+
+    /// A handle no longer references a live resource.
+    ///
+    /// Handles are generational slot references; a stale handle must never
+    /// silently alias a reused slot or fall back to a default resource while
+    /// reporting success. Resolution failure returns this error with enough
+    /// context to identify the call site.
+    StaleHandle {
+        /// Resource kind looked up (e.g. `"texture"`, `"mesh"`).
+        resource: String,
+        /// Which handle failed and where (handle debug + operation).
+        detail: String,
+    },
+
     /// A required GPU/backend feature is not available in the current environment.
     UnsupportedFeature(String),
 
@@ -116,6 +170,24 @@ impl fmt::Display for RendererError {
             RendererError::IoError(err) => write!(f, "IO error: {}", err),
             RendererError::NotFound(msg) => write!(f, "Not found: {}", msg),
             RendererError::InvalidOperation(msg) => write!(f, "Invalid operation: {}", msg),
+            RendererError::InvalidDescriptor { resource, reason } => {
+                write!(f, "Invalid {resource} descriptor: {reason}")
+            }
+            RendererError::AllocationFailed { resource, reason } => {
+                write!(f, "Failed to allocate {resource}: {reason}")
+            }
+            RendererError::UploadFailed {
+                resource,
+                expected_bytes,
+                actual_bytes,
+                detail,
+            } => write!(
+                f,
+                "{resource} upload size mismatch: expected {expected_bytes} bytes, got {actual_bytes} ({detail})"
+            ),
+            RendererError::StaleHandle { resource, detail } => {
+                write!(f, "Stale {resource} handle: {detail}")
+            }
             RendererError::UnsupportedFeature(msg) => {
                 write!(f, "Unsupported GPU feature: {}", msg)
             }
@@ -230,9 +302,9 @@ impl RendererError {
         resource: &str,
         error: gpu_allocator::AllocationError,
     ) -> Self {
-        RendererError::InitializationFailed(format!(
-            "Failed to allocate {} memory: {:?}",
-            resource, error
-        ))
+        RendererError::AllocationFailed {
+            resource: resource.to_string(),
+            reason: format!("{error:?}"),
+        }
     }
 }

@@ -32,7 +32,10 @@ impl super::Application {
         let (width, height) = rgba.dimensions();
 
         let desc = TextureDescriptor::rgba8_srgb(width, height);
-        let handle = self.renderer.create_texture(&desc, rgba.as_raw());
+        let handle = self
+            .renderer
+            .create_texture(&desc, rgba.as_raw())
+            .map_err(|e| AppError::Graphics { source: e })?;
 
         info!(
             "Loaded texture '{}' ({}x{}) -> handle {}",
@@ -66,7 +69,10 @@ impl super::Application {
         let (width, height) = rgba.dimensions();
 
         let desc = TextureDescriptor::rgba8_unorm(width, height);
-        let handle = self.renderer.create_texture(&desc, rgba.as_raw());
+        let handle = self
+            .renderer
+            .create_texture(&desc, rgba.as_raw())
+            .map_err(|e| AppError::Graphics { source: e })?;
 
         info!(
             "Loaded UNORM texture '{}' ({}x{}) -> handle {}",

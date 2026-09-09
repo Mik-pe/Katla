@@ -24,22 +24,29 @@ pub(crate) fn validate_upload(
         format,
         ImageFormat::D32Sfloat | ImageFormat::D32SfloatS8Uint | ImageFormat::D24UnormS8Uint
     ) {
-        return Err(RendererError::InvalidOperation(format!(
-            "initial data upload into depth format {format:?} is not supported; render targets are created empty"
-        )));
+        return Err(RendererError::InvalidDescriptor {
+            resource: "texture".to_string(),
+            reason: format!(
+                "initial data upload into depth format {format:?} is not supported; render targets are created empty"
+            ),
+        });
     }
     if width == 0 || height == 0 {
-        return Err(RendererError::InvalidOperation(format!(
-            "texture upload for {width}x{height}: zero extent"
-        )));
+        return Err(RendererError::InvalidDescriptor {
+            resource: "texture".to_string(),
+            reason: format!("texture upload for {width}x{height}: zero extent"),
+        });
     }
     let bytes_per_pixel = format.bytes_per_pixel();
     let bytes_per_row = width * bytes_per_pixel;
     let expected = bytes_per_row as usize * height as usize;
     if len != expected {
-        return Err(RendererError::InvalidOperation(format!(
-            "texture upload for {width}x{height} {format:?} expects {expected} bytes (row pitch {bytes_per_row}), got {len}"
-        )));
+        return Err(RendererError::UploadFailed {
+            resource: "texture".to_string(),
+            expected_bytes: expected,
+            actual_bytes: len,
+            detail: format!("{width}x{height} {format:?}, row pitch {bytes_per_row}"),
+        });
     }
     Ok(())
 }

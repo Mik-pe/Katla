@@ -150,10 +150,20 @@ pub trait GpuRenderer: Sized + 'static {
     // ========================================================================
 
     /// Create a texture from a descriptor and pixel data.
-    fn create_texture(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle;
+    ///
+    /// Fails with a typed error (invalid descriptor, allocation or upload
+    /// failure, bindless exhaustion) instead of substituting a placeholder
+    /// or panicking. Failed creation retains nothing.
+    fn create_texture(
+        &mut self,
+        desc: &TextureDescriptor,
+        data: &[u8],
+    ) -> Result<TextureHandle, RendererError>;
 
     /// Create a 1×1 solid-color texture.
-    fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle;
+    ///
+    /// Same failure contract as [`GpuRenderer::create_texture`].
+    fn create_texture_solid(&mut self, color: [u8; 4]) -> Result<TextureHandle, RendererError>;
 
     /// Update an existing texture with new pixel data.
     /// The data must match the texture's format and dimensions.
@@ -434,7 +444,15 @@ pub trait GpuRenderer: Sized + 'static {
     // ========================================================================
 
     /// Create or replace the UI font atlas texture.
-    fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle;
+    ///
+    /// Fails with a typed error instead of installing a placeholder.
+    /// Failed creation changes nothing.
+    fn create_ui_font_atlas(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> Result<TextureHandle, RendererError>;
 
     /// Update the existing font atlas texture in-place.
     fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]);
@@ -596,20 +614,27 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::update_mesh_dynamic(self, mesh, vertex_data, vertex_count, indices)
     }
 
-    fn create_texture(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle {
+    fn create_texture(
+        &mut self,
+        desc: &TextureDescriptor,
+        data: &[u8],
+    ) -> Result<TextureHandle, RendererError> {
         VulkanRenderer::create_texture(self, desc, data)
     }
 
-    fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
+    fn create_texture_solid(&mut self, color: [u8; 4]) -> Result<TextureHandle, RendererError> {
         VulkanRenderer::create_texture_solid(self, color)
     }
 
     fn update_texture(&mut self, handle: TextureHandle, data: &[u8]) -> Result<(), RendererError> {
-        let texture = self.texture_manager.get_texture(handle).ok_or_else(|| {
-            RendererError::InvalidOperation(format!("Invalid texture handle {:?}", handle))
-        })?;
-        texture.update_data(data);
-        Ok(())
+        let texture =
+            self.texture_manager
+                .get_texture(handle)
+                .ok_or_else(|| RendererError::StaleHandle {
+                    resource: "texture".to_string(),
+                    detail: format!("{handle:?} in update_texture"),
+                })?;
+        texture.update_data(data)
     }
 
     fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
@@ -725,7 +750,12 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::init_particle_system(self)
     }
 
-    fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+    fn create_ui_font_atlas(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> Result<TextureHandle, RendererError> {
         VulkanRenderer::create_ui_font_atlas(self, width, height, data)
     }
 
