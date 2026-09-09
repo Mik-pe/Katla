@@ -221,6 +221,14 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn supports_feature(&self, feature: crate::renderer::features::RendererFeature) -> bool {
+        match self {
+            AnyRenderer::Vulkan(r) => r.supports_feature(feature),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.supports_feature(feature),
+        }
+    }
+
     fn wait_for_frame(&mut self) -> Result<(), RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => r.wait_for_frame(),
@@ -700,6 +708,14 @@ impl GpuRenderer for AnyRenderer {
             AnyRenderer::Vulkan(r) => r.set_viewport_panel_rect(rect),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.set_viewport_panel_rect(rect),
+        }
+    }
+
+    fn set_viewport_bindless_slot(&mut self, slot: u32) {
+        match self {
+            AnyRenderer::Vulkan(r) => r.set_viewport_bindless_slot(slot),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.set_viewport_bindless_slot(slot),
         }
     }
 }
