@@ -61,6 +61,222 @@ pub struct MeshAsset {
     pub index_format: crate::backend::command::IndexType,
     /// Number of vertices in this mesh.
     pub vertex_count: u32,
+    /// Vertex layout the mesh was created with. Backends translate this same
+    /// neutral descriptor into native vertex state; pipeline compatibility
+    /// (issue #100) keys off it.
+    pub layout: crate::vertex::VertexLayout,
+    /// Primitive topology. Only `TriangleList` is encodable today; anything
+    /// else fails creation with `UnsupportedFeature` instead of rendering as
+    /// triangles by accident.
+    pub topology: PrimitiveTopology,
+    /// Upload policy this mesh was created under. Static meshes are immutable
+    /// after creation (issue #96 stages them into GPU-optimal memory);
+    /// dynamic meshes are CPU-updatable.
+    pub usage: MeshUsage,
+}
+
+/// Backend-neutral primitive topology.
+///
+/// Mirrors the topologies the pipelines can encode. Vulkan and Metal
+/// translate the same value; unsupported values fail mesh creation instead
+/// of silently rendering as triangles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum PrimitiveTopology {
+    /// Triangle list (the only topology encodable today).
+    #[default]
+    TriangleList,
+    /// Triangle strip.
+    TriangleStrip,
+    /// Triangle fan.
+    TriangleFan,
+    /// Points.
+    Points,
+    /// Line list.
+    Lines,
+    /// Line strip.
+    LineStrip,
+}
+
+/// Buffer residency policy for mesh data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum MeshUsage {
+    /// Immutable after creation. May live in GPU-optimal memory behind a
+    /// staging upload (issue #96).
+    #[default]
+    Static,
+    /// CPU-updatable through `update_mesh_dynamic`.
+    Dynamic,
+}
+
+/// Explicit backend-neutral mesh creation descriptor.
+///
+/// Replaces `Pod`-shape guessing: the vertex layout comes from a trusted
+/// [`crate::vertex::Vertex`] implementation (or an explicit layout plus
+/// attribute semantics), the index width from [`MeshIndexElement`], and
+/// topology/usage are stated instead of implied. Creation validates the
+/// whole descriptor before touching the GPU.
+#[derive(Debug, Clone)]
+pub struct MeshDescriptor {
+    /// Vertex layout: attribute formats in order.
+    pub layout: crate::vertex::VertexLayout,
+    /// Semantic attribute per layout entry, in the same order.
+    pub attributes: Vec<AttributeType>,
+    /// Primitive topology.
+    pub topology: PrimitiveTopology,
+    /// Upload policy.
+    pub usage: MeshUsage,
+    /// Vertex count.
+    pub vertex_count: u32,
+    /// Index count (0 for non-indexed meshes).
+    pub index_count: u32,
+    /// Index element width for indexed meshes.
+    pub index_format: crate::backend::command::IndexType,
+}
+
+impl MeshDescriptor {
+    /// Build a descriptor from trusted type implementations.
+    pub fn from_types<V, I>(
+        topology: PrimitiveTopology,
+        usage: MeshUsage,
+        vertex_count: u32,
+        index_count: u32,
+    ) -> Self
+    where
+        V: crate::vertex::Vertex,
+        I: MeshIndexElement,
+    {
+        Self {
+            layout: V::layout(),
+            attributes: V::attribute_kinds(),
+            topology,
+            usage,
+            vertex_count,
+            index_count,
+            index_format: I::INDEX_FORMAT,
+        }
+    }
+
+    /// Describe and validate a typed mesh upload without touching the GPU.
+    ///
+    /// Shared by every backend: topology support, descriptor consistency,
+    /// struct stride, and per-index range are all checked before any buffer
+    /// is allocated. Returns the validated descriptor for upload.
+    pub fn describe_typed_upload<V, I>(
+        topology: PrimitiveTopology,
+        usage: MeshUsage,
+        vertices: &[V],
+        indices: &[I],
+    ) -> Result<Self, crate::error::RendererError>
+    where
+        V: crate::vertex::Vertex,
+        I: MeshIndexElement,
+    {
+        use crate::error::RendererError;
+        if topology != PrimitiveTopology::TriangleList {
+            return Err(RendererError::UnsupportedFeature(format!(
+                "mesh topology {topology:?} is not encodable; only TriangleList is supported"
+            )));
+        }
+        let descriptor = Self::from_types::<V, I>(
+            topology,
+            usage,
+            vertices.len() as u32,
+            indices.len() as u32,
+        );
+        descriptor.validate(std::mem::size_of::<V>())?;
+        for (position, index) in indices.iter().enumerate() {
+            let value = index.to_u32();
+            if value >= descriptor.vertex_count {
+                return Err(RendererError::InvalidDescriptor {
+                    resource: "mesh".to_string(),
+                    reason: format!(
+                        "index {position} references vertex {value} of {}",
+                        descriptor.vertex_count
+                    ),
+                });
+            }
+        }
+        Ok(descriptor)
+    }
+
+    /// Validate internal consistency without touching the GPU.
+    ///
+    /// Checks attribute/format agreement and the vertex struct stride
+    /// against the layout stride. Index ranges are validated against the
+    /// vertex count at upload time, where the index data is available.
+    pub fn validate(&self, vertex_stride: usize) -> Result<(), crate::error::RendererError> {
+        use crate::error::RendererError;
+        if self.vertex_count == 0 {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: "empty vertex list".to_string(),
+            });
+        }
+        if self.attributes.len() != self.layout.len() {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: format!(
+                    "attribute/layout mismatch: {} semantics for {} formats",
+                    self.attributes.len(),
+                    self.layout.len()
+                ),
+            });
+        }
+        if vertex_stride != self.layout.stride() {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: format!(
+                    "vertex stride {vertex_stride} disagrees with layout stride {}",
+                    self.layout.stride()
+                ),
+            });
+        }
+        if !self.attributes.contains(&AttributeType::Position) {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: "mesh has no Position attribute; draw paths require one".to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Validate split (Structure-of-Arrays) attribute data without GPUs.
+    ///
+    /// Each present buffer must hold exactly `vertex_count` elements of its
+    /// layout format, and a Position attribute is required. Empty buffers
+    /// are filtered by the caller before building the descriptor.
+    pub fn validate_split(
+        &self,
+        attributes: &std::collections::HashMap<AttributeType, Vec<u8>>,
+    ) -> Result<(), crate::error::RendererError> {
+        use crate::error::RendererError;
+        if self.vertex_count == 0 {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: "empty vertex list".to_string(),
+            });
+        }
+        if !self.attributes.contains(&AttributeType::Position) {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: "mesh has no Position attribute; draw paths require one".to_string(),
+            });
+        }
+        for (kind, format) in self.attributes.iter().zip(self.layout.formats().iter()) {
+            let expected = self.vertex_count as usize * format.size_bytes();
+            let actual = attributes.get(kind).map(Vec::len).unwrap_or(0);
+            if actual != expected {
+                return Err(RendererError::InvalidDescriptor {
+                    resource: "mesh".to_string(),
+                    reason: format!(
+                        "attribute {kind:?}: expected {expected} bytes for {} vertices, got {actual}",
+                        self.vertex_count
+                    ),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 /// An index element type whose width is preserved through upload, storage, and

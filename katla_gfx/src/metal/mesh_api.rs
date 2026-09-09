@@ -45,64 +45,126 @@ impl MetalRenderer {
         &mut self,
         vertices: Vec<VertexPBR>,
         indices: Vec<u32>,
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         let vertex_bytes = bytemuck::cast_slice(&vertices);
-        let (vertex_buffer, index_buffer, index_count) = self
-            .upload_vertex_index_data(vertex_bytes, &indices)
-            .expect("Failed to create primitive mesh buffers");
+        let descriptor =
+            crate::renderer::registry::MeshDescriptor::describe_typed_upload(
+                crate::renderer::registry::PrimitiveTopology::TriangleList,
+                crate::renderer::registry::MeshUsage::Static,
+                &vertices,
+                &indices,
+            )?;
+        let (vertex_buffer, index_buffer, index_count) =
+            self.upload_vertex_index_data(vertex_bytes, &indices)?;
 
         let mesh = MetalMesh {
             vertex_buffer,
             index_buffer,
             index_count,
+            layout: descriptor.layout,
+            topology: descriptor.topology,
+            usage: descriptor.usage,
         };
         let id = self.meshes.insert(mesh);
-        MeshHandle::new(id)
+        Ok(MeshHandle::new(id))
     }
 
     pub(crate) fn create_mesh_from_vertices<T, U>(
         &mut self,
         vertices: &[T],
         indices: &[U],
-    ) -> MeshHandle
+        topology: crate::renderer::registry::PrimitiveTopology,
+    ) -> Result<MeshHandle, RendererError>
     where
-        T: bytemuck::Pod,
+        T: crate::vertex::Vertex,
         U: MeshIndexElement,
     {
+        use crate::renderer::registry::MeshUsage;
+        let descriptor = crate::renderer::registry::MeshDescriptor::describe_typed_upload(
+            topology,
+            MeshUsage::Static,
+            vertices,
+            indices,
+        )?;
         let vertex_bytes = bytemuck::cast_slice(vertices);
         // Metal storage keeps a single index width; conversion is keyed off the
-        // typed element format rather than guessed from byte sizes.
+        // typed element format rather than guessed from byte sizes. Ranges
+        // were validated above, so widening cannot introduce aliasing.
         let index_u32: Vec<u32> = indices.iter().map(|&v| U::to_u32(v)).collect();
 
         let (vertex_buffer, index_buffer, index_count) = self
-            .upload_vertex_index_data(vertex_bytes, &index_u32)
-            .expect("Failed to create mesh buffers");
+            .upload_vertex_index_data(vertex_bytes, &index_u32)?;
 
         let mesh = MetalMesh {
             vertex_buffer,
             index_buffer,
             index_count,
+            layout: descriptor.layout,
+            topology: descriptor.topology,
+            usage: descriptor.usage,
         };
         let id = self.meshes.insert(mesh);
-        MeshHandle::new(id)
+        Ok(MeshHandle::new(id))
     }
 
     pub(crate) fn register_mesh_raw_impl(
         &mut self,
+        descriptor: &crate::renderer::registry::MeshDescriptor,
         vertex_data: &[u8],
         index_data: &[u32],
-    ) -> MeshHandle {
-        let (vertex_buffer, index_buffer, index_count) = self
-            .upload_vertex_index_data(vertex_data, index_data)
-            .expect("Failed to create mesh buffers");
+    ) -> Result<MeshHandle, RendererError> {
+        use crate::renderer::registry::{MeshUsage, PrimitiveTopology};
+        if descriptor.topology != PrimitiveTopology::TriangleList {
+            return Err(RendererError::UnsupportedFeature(format!(
+                "mesh topology {:?} is not encodable; only TriangleList is supported",
+                descriptor.topology
+            )));
+        }
+        let stride = descriptor.layout.stride();
+        if vertex_data.len() != descriptor.vertex_count as usize * stride {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: format!(
+                    "dynamic vertex blob {} bytes disagrees with {} vertices of stride {stride}",
+                    vertex_data.len(),
+                    descriptor.vertex_count
+                ),
+            });
+        }
+        if index_data.len() as u32 != descriptor.index_count {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: format!(
+                    "dynamic index count {} disagrees with descriptor count {}",
+                    index_data.len(),
+                    descriptor.index_count
+                ),
+            });
+        }
+        for (position, index) in index_data.iter().enumerate() {
+            if *index >= descriptor.vertex_count {
+                return Err(RendererError::InvalidDescriptor {
+                    resource: "mesh".to_string(),
+                    reason: format!(
+                        "index {position} references vertex {index} of {}",
+                        descriptor.vertex_count
+                    ),
+                });
+            }
+        }
+        let (vertex_buffer, index_buffer, index_count) =
+            self.upload_vertex_index_data(vertex_data, index_data)?;
 
         let mesh = MetalMesh {
             vertex_buffer,
             index_buffer,
             index_count,
+            layout: descriptor.layout.clone(),
+            topology: descriptor.topology,
+            usage: MeshUsage::Dynamic,
         };
         let id = self.meshes.insert(mesh);
-        MeshHandle::new(id)
+        Ok(MeshHandle::new(id))
     }
 
     pub(crate) fn update_mesh_dynamic_impl(
@@ -170,9 +232,9 @@ impl MetalRenderer {
     }
 
     #[expect(dead_code)]
-    pub(crate) fn create_cube_mesh_impl(&mut self, size: [f32; 3]) -> MeshHandle {
+    pub(crate) fn create_cube_mesh_impl(&mut self, size: [f32; 3]) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_cube(size);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_primitive_mesh(vertices, indices)?
     }
 
     #[expect(dead_code)]
@@ -181,15 +243,15 @@ impl MetalRenderer {
         radius: f32,
         segments: u32,
         rings: u32,
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_sphere(radius, segments, rings);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_primitive_mesh(vertices, indices)?
     }
 
     #[expect(dead_code)]
-    pub(crate) fn create_plane_mesh_impl(&mut self, width: f32, height: f32) -> MeshHandle {
+    pub(crate) fn create_plane_mesh_impl(&mut self, width: f32, height: f32) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_plane(width, height);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_primitive_mesh(vertices, indices)?
     }
 
     #[expect(dead_code)]
@@ -198,9 +260,9 @@ impl MetalRenderer {
         height: f32,
         base_radius: f32,
         segments: u32,
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_cone(height, base_radius, segments);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_primitive_mesh(vertices, indices)?
     }
 
     #[expect(dead_code)]
@@ -209,9 +271,9 @@ impl MetalRenderer {
         height: f32,
         radius: f32,
         segments: u32,
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_cylinder(height, radius, segments);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_primitive_mesh(vertices, indices)?
     }
 
     #[expect(dead_code)]
@@ -221,10 +283,10 @@ impl MetalRenderer {
         minor_radius: f32,
         segments: u32,
         rings: u32,
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) =
             primitives::generate_torus(major_radius, minor_radius, segments, rings);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_primitive_mesh(vertices, indices)?
     }
 
     #[expect(dead_code)]
@@ -233,8 +295,8 @@ impl MetalRenderer {
         width: f32,
         height: f32,
         segments: u32,
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_plane_xy(width, height, segments);
-        self.create_primitive_mesh(vertices, indices)
+        self.create_primitive_mesh(vertices, indices)?
     }
 }

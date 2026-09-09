@@ -19,6 +19,7 @@ impl AttributeType {
             AttributeType::JointWeights => 5,
             AttributeType::TexCoord1 => 6,
             AttributeType::Color0 => 7,
+            AttributeType::TextureIndex => 8,
         }
     }
 
@@ -32,6 +33,7 @@ impl AttributeType {
             AttributeType::Color0 => VertexFormat::RGBA32f,
             AttributeType::JointIndices => VertexFormat::RGBA16u,
             AttributeType::JointWeights => VertexFormat::RGBA32f,
+            AttributeType::TextureIndex => VertexFormat::R32u,
         }
     }
 }

@@ -8,6 +8,7 @@ use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::pipeline_kind::PipelineKind;
+use crate::renderer::registry::PrimitiveTopology;
 use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, UIDrawList};
 use crate::texture::TextureDescriptor;
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
@@ -289,15 +290,20 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
+    fn create_mesh<T, U>(
+        &mut self,
+        vertices: &[T],
+        indices: &[U],
+        topology: PrimitiveTopology,
+    ) -> Result<MeshHandle, RendererError>
     where
-        T: bytemuck::Pod,
+        T: crate::vertex::Vertex,
         U: crate::renderer::registry::MeshIndexElement,
     {
         match self {
-            AnyRenderer::Vulkan(r) => r.create_mesh(vertices, indices),
+            AnyRenderer::Vulkan(r) => r.create_mesh(vertices, indices, topology),
             #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_mesh(vertices, indices),
+            AnyRenderer::Metal(r) => r.create_mesh(vertices, indices, topology),
         }
     }
 
@@ -311,14 +317,14 @@ impl GpuRenderer for AnyRenderer {
 
     fn create_mesh_dynamic(
         &mut self,
+        descriptor: &crate::renderer::registry::MeshDescriptor,
         vertex_data: &[u8],
-        vertex_count: u32,
         indices: &[u32],
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         match self {
-            AnyRenderer::Vulkan(r) => r.create_mesh_dynamic(vertex_data, vertex_count, indices),
+            AnyRenderer::Vulkan(r) => r.create_mesh_dynamic(descriptor, vertex_data, indices),
             #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_mesh_dynamic(vertex_data, vertex_count, indices),
+            AnyRenderer::Metal(r) => r.create_mesh_dynamic(descriptor, vertex_data, indices),
         }
     }
 

@@ -55,6 +55,21 @@ impl super::Application {
         self.spawn_test_cube_with_color(position, size, katla_math::Color::WHITE)
     }
 
+    /// Spawn a bare transform entity when GPU mesh creation fails.
+    ///
+    /// Spawn helpers must return an entity; a failed mesh upload logs loudly
+    /// and yields a transform-only entity instead of aliasing a wrong mesh.
+    fn spawn_empty_at(&mut self, position: [f32; 3]) -> katla_ecs::EntityId {
+        use crate::components::TransformComponent;
+        use katla_math::Vec3;
+        self.world
+            .spawn((TransformComponent::from_position(Vec3::new(
+                position[0],
+                position[1],
+                position[2],
+            )),))
+    }
+
     /// Spawn a test cube entity with a specific color.
     /// Color is expected in sRGB (perceptual) space and converted to linear for PBR.
     pub fn spawn_test_cube_with_color(
@@ -63,7 +78,13 @@ impl super::Application {
         size: [f32; 3],
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = primitives::create_cube(&mut self.renderer, size);
+        let mesh_handle = match primitives::create_cube(&mut self.renderer, size) {
+            Ok(handle) => handle,
+            Err(error) => {
+                log::error!("Spawn mesh creation failed: {error}");
+                return self.spawn_empty_at(position);
+            }
+        };
         info!("Spawned test cube at {:?} with size {:?}", position, size);
         self.spawn_primitive_with_color(position, color, mesh_handle, EntitySource::Cube { size })
     }
@@ -89,7 +110,14 @@ impl super::Application {
         rings: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = primitives::create_sphere(&mut self.renderer, radius, segments, rings);
+        let mesh_handle =
+            match primitives::create_sphere(&mut self.renderer, radius, segments, rings) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    log::error!("Spawn mesh creation failed: {error}");
+                    return self.spawn_empty_at(position);
+                }
+            };
         info!("Spawned sphere at {:?} with radius {}", position, radius);
         self.spawn_primitive_with_color(
             position,
@@ -116,7 +144,14 @@ impl super::Application {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_math::Vec3;
 
-        let mesh_handle = primitives::create_sphere(&mut self.renderer, radius, segments, rings);
+        let mesh_handle =
+            match primitives::create_sphere(&mut self.renderer, radius, segments, rings) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    log::error!("Spawn mesh creation failed: {error}");
+                    return self.spawn_empty_at(position);
+                }
+            };
         let material_handle = self.default_material();
         let linear_color = material.color.map(|c| c.to_linear()).unwrap_or_default();
 
@@ -178,7 +213,14 @@ impl super::Application {
         segments: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = primitives::create_cylinder(&mut self.renderer, height, radius, segments);
+        let mesh_handle =
+            match primitives::create_cylinder(&mut self.renderer, height, radius, segments) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    log::error!("Spawn mesh creation failed: {error}");
+                    return self.spawn_empty_at(position);
+                }
+            };
         info!("Spawned cylinder at {:?}", position);
         self.spawn_primitive_with_color(
             position,
@@ -211,7 +253,13 @@ impl super::Application {
         height: f32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = primitives::create_plane(&mut self.renderer, width, height);
+        let mesh_handle = match primitives::create_plane(&mut self.renderer, width, height) {
+            Ok(handle) => handle,
+            Err(error) => {
+                log::error!("Spawn mesh creation failed: {error}");
+                return self.spawn_empty_at(position);
+            }
+        };
         info!("Spawned plane at {:?}", position);
         self.spawn_primitive_with_color(
             position,
@@ -251,13 +299,19 @@ impl super::Application {
         tube_segments: u32,
         color: katla_math::Color,
     ) -> katla_ecs::EntityId {
-        let mesh_handle = primitives::create_torus(
+        let mesh_handle = match primitives::create_torus(
             &mut self.renderer,
             radius,
             tube_radius,
             segments,
             tube_segments,
-        );
+        ) {
+            Ok(handle) => handle,
+            Err(error) => {
+                log::error!("Spawn mesh creation failed: {error}");
+                return self.spawn_empty_at(position);
+            }
+        };
         info!("Spawned torus at {:?}", position);
         self.spawn_primitive_with_color(
             position,
@@ -323,9 +377,20 @@ impl super::Application {
 
         let mesh_handle = if model.has_skinning {
             self.renderer
-                .create_mesh(&model.skinned_vertex_data, &indices)
+                .create_mesh(
+                    &model.skinned_vertex_data,
+                    &indices,
+                    katla_gfx::PrimitiveTopology::TriangleList,
+                )
+                .map_err(|e| crate::error::AppError::Graphics { source: e })?
         } else {
-            self.renderer.create_mesh(&model.vertex_data, &indices)
+            self.renderer
+                .create_mesh(
+                    &model.vertex_data,
+                    &indices,
+                    katla_gfx::PrimitiveTopology::TriangleList,
+                )
+                .map_err(|e| crate::error::AppError::Graphics { source: e })?
         };
 
         let positions: Vec<[f32; 3]> = if model.has_skinning {

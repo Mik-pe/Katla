@@ -743,7 +743,13 @@ impl Application {
         use crate::billboard::BillboardResources;
         use crate::components::BillboardIcon;
 
-        let mesh = primitives::create_plane_xy(&mut self.renderer, 1.0, 1.0, 1);
+        let mesh = match primitives::create_plane_xy(&mut self.renderer, 1.0, 1.0, 1) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                log::error!("Failed to create billboard quad mesh: {error}");
+                return;
+            }
+        };
 
         let shader_path = self.resources.shader_path("billboard.wgsl");
         let material = match &mut self.renderer {

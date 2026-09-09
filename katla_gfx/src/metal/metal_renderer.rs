@@ -145,6 +145,12 @@ pub(crate) struct MetalMesh {
     pub(crate) vertex_buffer: MetalBuffer,
     pub(crate) index_buffer: MetalBuffer,
     pub(crate) index_count: u32,
+    /// Neutral layout the mesh was validated against.
+    pub(crate) layout: crate::vertex::VertexLayout,
+    /// Topology (only `TriangleList` encodable).
+    pub(crate) topology: crate::renderer::registry::PrimitiveTopology,
+    /// Upload policy.
+    pub(crate) usage: crate::renderer::registry::MeshUsage,
 }
 
 /// A material (pipeline state + texture indices).
@@ -1202,12 +1208,17 @@ impl GpuRenderer for MetalRenderer {
         self.end_frame_impl()
     }
 
-    fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
+    fn create_mesh<T, U>(
+        &mut self,
+        vertices: &[T],
+        indices: &[U],
+        topology: crate::renderer::registry::PrimitiveTopology,
+    ) -> Result<MeshHandle, RendererError>
     where
-        T: bytemuck::Pod,
+        T: crate::vertex::Vertex,
         U: crate::renderer::registry::MeshIndexElement,
     {
-        self.create_mesh_from_vertices(vertices, indices)
+        self.create_mesh_from_vertices(vertices, indices, topology)
     }
 
     fn mesh_index_format(&self, mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
@@ -1218,11 +1229,11 @@ impl GpuRenderer for MetalRenderer {
 
     fn create_mesh_dynamic(
         &mut self,
+        descriptor: &crate::renderer::registry::MeshDescriptor,
         vertex_data: &[u8],
-        _vertex_count: u32,
         indices: &[u32],
-    ) -> MeshHandle {
-        self.register_mesh_raw_impl(vertex_data, indices)
+    ) -> Result<MeshHandle, RendererError> {
+        self.register_mesh_raw_impl(descriptor, vertex_data, indices)
     }
 
     fn update_mesh_dynamic(
@@ -1676,15 +1687,29 @@ mod tests {
 
     #[test]
     fn test_metal_mesh_dynamic_update() {
+        use crate::renderer::registry::{MeshDescriptor, MeshUsage, PrimitiveTopology};
+        use crate::vertex::{AttributeType, VertexLayout};
         let mut renderer = create_renderer();
 
+        // 3 vertices of one Float4 each (position-like), explicit descriptor.
         let vertex_data: [f32; 12] = [
             -0.5, -0.5, 0.0, 1.0, 0.5, -0.5, 0.0, 1.0, 0.0, 0.5, 0.0, 1.0,
         ];
         let indices: [u32; 3] = [0, 1, 2];
         let vertex_bytes = bytemuck::cast_slice(&vertex_data);
+        let descriptor = MeshDescriptor {
+            layout: VertexLayout::new(vec![crate::vertex::VertexAttributeFormat::Float4]),
+            attributes: vec![AttributeType::Position],
+            topology: PrimitiveTopology::TriangleList,
+            usage: MeshUsage::Dynamic,
+            vertex_count: 3,
+            index_count: 3,
+            index_format: crate::backend::command::IndexType::Uint32,
+        };
 
-        let mesh = renderer.create_mesh_dynamic(vertex_bytes, 3, &indices);
+        let mesh = renderer.create_mesh_dynamic(&descriptor, vertex_bytes, &indices);
+        assert!(mesh.is_ok(), "dynamic mesh creation should succeed");
+        let mesh = mesh.unwrap();
         assert!(mesh.is_some(), "dynamic mesh handle should be valid");
 
         let updated_verts: [f32; 12] = [
