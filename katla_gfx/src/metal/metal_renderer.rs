@@ -141,16 +141,13 @@ mod object_buffer_capacity_tests {
 }
 
 /// A mesh stored in Metal GPU buffers.
+///
+/// Creation validates bytes against the typed [`MeshDescriptor`](crate::renderer::registry::MeshDescriptor);
+/// Metal encodes `TriangleList` only, so the descriptor itself is not stored.
 pub(crate) struct MetalMesh {
     pub(crate) vertex_buffer: MetalBuffer,
     pub(crate) index_buffer: MetalBuffer,
     pub(crate) index_count: u32,
-    /// Neutral layout the mesh was validated against.
-    pub(crate) layout: crate::vertex::VertexLayout,
-    /// Topology (only `TriangleList` encodable).
-    pub(crate) topology: crate::renderer::registry::PrimitiveTopology,
-    /// Upload policy.
-    pub(crate) usage: crate::renderer::registry::MeshUsage,
 }
 
 /// A material (pipeline state + texture indices).

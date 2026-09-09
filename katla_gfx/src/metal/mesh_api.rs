@@ -47,7 +47,9 @@ impl MetalRenderer {
         indices: Vec<u32>,
     ) -> Result<MeshHandle, RendererError> {
         let vertex_bytes = bytemuck::cast_slice(&vertices);
-        let descriptor = crate::renderer::registry::MeshDescriptor::describe_typed_upload(
+        // Validate bytes against the typed layout; Metal encodes TriangleList
+        // only, so the descriptor itself is not stored.
+        crate::renderer::registry::MeshDescriptor::describe_typed_upload(
             crate::renderer::registry::PrimitiveTopology::TriangleList,
             crate::renderer::registry::MeshUsage::Static,
             &vertices,
@@ -60,9 +62,6 @@ impl MetalRenderer {
             vertex_buffer,
             index_buffer,
             index_count,
-            layout: descriptor.layout,
-            topology: descriptor.topology,
-            usage: descriptor.usage,
         };
         let id = self.meshes.insert(mesh);
         Ok(MeshHandle::new(id))
@@ -79,7 +78,9 @@ impl MetalRenderer {
         U: MeshIndexElement,
     {
         use crate::renderer::registry::MeshUsage;
-        let descriptor = crate::renderer::registry::MeshDescriptor::describe_typed_upload(
+        // Validate bytes against the typed layout; the descriptor itself is
+        // not stored.
+        crate::renderer::registry::MeshDescriptor::describe_typed_upload(
             topology,
             MeshUsage::Static,
             vertices,
@@ -98,9 +99,6 @@ impl MetalRenderer {
             vertex_buffer,
             index_buffer,
             index_count,
-            layout: descriptor.layout,
-            topology: descriptor.topology,
-            usage: descriptor.usage,
         };
         let id = self.meshes.insert(mesh);
         Ok(MeshHandle::new(id))
@@ -112,7 +110,7 @@ impl MetalRenderer {
         vertex_data: &[u8],
         index_data: &[u32],
     ) -> Result<MeshHandle, RendererError> {
-        use crate::renderer::registry::{MeshUsage, PrimitiveTopology};
+        use crate::renderer::registry::PrimitiveTopology;
         if descriptor.topology != PrimitiveTopology::TriangleList {
             return Err(RendererError::UnsupportedFeature(format!(
                 "mesh topology {:?} is not encodable; only TriangleList is supported",
@@ -158,9 +156,6 @@ impl MetalRenderer {
             vertex_buffer,
             index_buffer,
             index_count,
-            layout: descriptor.layout.clone(),
-            topology: descriptor.topology,
-            usage: MeshUsage::Dynamic,
         };
         let id = self.meshes.insert(mesh);
         Ok(MeshHandle::new(id))

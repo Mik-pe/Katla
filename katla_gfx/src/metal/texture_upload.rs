@@ -152,7 +152,6 @@ mod tests {
 
     use crate::backend::command::{GpuBlitEncoder, GpuCommandBuffer};
     use crate::backend::resource::GpuBuffer;
-    use crate::metal::blit_encoder::MetalBlitEncoder;
     use crate::texture::{TextureDescriptor, TextureUsage};
 
     fn headless_context() -> MetalContext {
@@ -221,7 +220,7 @@ mod tests {
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
         queue.retire_completed();
-        unsafe { cmd_buffer.inner.waitUntilCompleted() };
+        cmd_buffer.inner.waitUntilCompleted();
 
         // Copy private result into a shared mirror and read back.
         let (mirror, _) = ctx.create_texture_shared(&desc).unwrap();
@@ -234,7 +233,7 @@ mod tests {
         }
         copy_cmd.end();
         copy_cmd.submit(&ctx);
-        unsafe { copy_cmd.inner.waitUntilCompleted() };
+        copy_cmd.inner.waitUntilCompleted();
 
         let region = MTLRegion {
             origin: MTLOrigin { x: 0, y: 0, z: 0 },
@@ -310,7 +309,7 @@ mod tests {
         }
         cmd.end();
         cmd.submit(&ctx);
-        unsafe { cmd.inner.waitUntilCompleted() };
+        cmd.inner.waitUntilCompleted();
 
         let (mirror, _) = ctx.create_texture_shared(&desc).unwrap();
         let mut copy_cmd = ctx.create_command_buffer();
@@ -322,7 +321,7 @@ mod tests {
         }
         copy_cmd.end();
         copy_cmd.submit(&ctx);
-        unsafe { copy_cmd.inner.waitUntilCompleted() };
+        copy_cmd.inner.waitUntilCompleted();
 
         let read = |tex: &MetalTexture| -> Vec<u8> {
             let mut out = vec![0u8; data.len()];

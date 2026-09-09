@@ -409,6 +409,7 @@ impl BindlessTextureManager {
     /// # Note
     /// Currently unused but kept for future texture management features.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn get_slot_for_image_view(&self, image_view: vk::ImageView) -> Option<u32> {
         self.slots
             .iter()
@@ -594,12 +595,14 @@ impl BindlessTextureManager {
     /// # Returns
     /// true if the slot is reserved for default textures (0-4).
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn is_default_slot(&self, slot: u32) -> bool {
         slot < DEFAULT_TEXTURE_COUNT
     }
 
     /// Get the number of slots reserved for default textures.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn default_texture_count(&self) -> u32 {
         DEFAULT_TEXTURE_COUNT
     }
