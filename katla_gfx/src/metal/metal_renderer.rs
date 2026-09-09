@@ -1625,13 +1625,16 @@ mod tests {
     fn test_metal_primitive_meshes() {
         let mut renderer = create_renderer();
 
-        let cube = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0]);
+        let cube = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0])
+            .expect("cube creation should succeed");
         assert!(cube.is_some(), "cube handle should be valid");
 
-        let sphere = crate::primitives::create_sphere(&mut renderer, 1.0, 16, 16);
+        let sphere = crate::primitives::create_sphere(&mut renderer, 1.0, 16, 16)
+            .expect("sphere creation should succeed");
         assert!(sphere.is_some(), "sphere handle should be valid");
 
-        let plane = crate::primitives::create_plane(&mut renderer, 2.0, 2.0);
+        let plane = crate::primitives::create_plane(&mut renderer, 2.0, 2.0)
+            .expect("plane creation should succeed");
         assert!(plane.is_some(), "plane handle should be valid");
 
         assert_ne!(
@@ -1670,7 +1673,8 @@ mod tests {
     fn test_metal_execute_draw_calls() {
         let mut renderer = create_renderer();
 
-        let default_mesh = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0]);
+        let default_mesh = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0])
+            .expect("cube creation should succeed");
         let default_mat = renderer.default_material();
 
         let draw = DrawCall::new(default_mesh, default_mat);
@@ -1979,8 +1983,10 @@ mod tests {
         renderer.upload_lights(&[]);
 
         // Create meshes
-        let cube = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0]);
-        let plane = crate::primitives::create_plane(&mut renderer, 10.0, 10.0);
+        let cube = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0])
+            .expect("cube creation should succeed");
+        let plane = crate::primitives::create_plane(&mut renderer, 10.0, 10.0)
+            .expect("plane creation should succeed");
 
         // Create Shared BGRA8 texture as tonemap output (CPU-readable via getBytes)
         let readback_desc = TextureDescriptor::new(W, H, ImageFormat::B8G8R8A8Srgb)
