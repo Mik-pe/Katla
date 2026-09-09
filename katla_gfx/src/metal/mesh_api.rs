@@ -236,7 +236,7 @@ impl MetalRenderer {
         size: [f32; 3],
     ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_cube(size);
-        self.create_primitive_mesh(vertices, indices)?
+        self.create_primitive_mesh(vertices, indices)
     }
 
     #[expect(dead_code)]
@@ -247,7 +247,7 @@ impl MetalRenderer {
         rings: u32,
     ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_sphere(radius, segments, rings);
-        self.create_primitive_mesh(vertices, indices)?
+        self.create_primitive_mesh(vertices, indices)
     }
 
     #[expect(dead_code)]
@@ -257,7 +257,7 @@ impl MetalRenderer {
         height: f32,
     ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_plane(width, height);
-        self.create_primitive_mesh(vertices, indices)?
+        self.create_primitive_mesh(vertices, indices)
     }
 
     #[expect(dead_code)]
@@ -268,7 +268,7 @@ impl MetalRenderer {
         segments: u32,
     ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_cone(height, base_radius, segments);
-        self.create_primitive_mesh(vertices, indices)?
+        self.create_primitive_mesh(vertices, indices)
     }
 
     #[expect(dead_code)]
@@ -279,7 +279,7 @@ impl MetalRenderer {
         segments: u32,
     ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_cylinder(height, radius, segments);
-        self.create_primitive_mesh(vertices, indices)?
+        self.create_primitive_mesh(vertices, indices)
     }
 
     #[expect(dead_code)]
@@ -292,7 +292,7 @@ impl MetalRenderer {
     ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) =
             primitives::generate_torus(major_radius, minor_radius, segments, rings);
-        self.create_primitive_mesh(vertices, indices)?
+        self.create_primitive_mesh(vertices, indices)
     }
 
     #[expect(dead_code)]
@@ -303,6 +303,6 @@ impl MetalRenderer {
         segments: u32,
     ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_plane_xy(width, height, segments);
-        self.create_primitive_mesh(vertices, indices)?
+        self.create_primitive_mesh(vertices, indices)
     }
 }
