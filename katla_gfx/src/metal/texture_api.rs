@@ -12,59 +12,42 @@ impl MetalRenderer {
         &mut self,
         desc: &TextureDescriptor,
         data: &[u8],
-    ) -> TextureHandle {
+    ) -> Result<TextureHandle, RendererError> {
         // Initial data goes through the staged upload queue and is blitted at
         // the start of the frame. Textures keep Shared storage until the
         // private-storage sampling anomaly is root-caused (see issue #58).
-        let result = self.context.create_texture(desc);
-        match result {
-            Ok((texture, view)) => {
-                if !data.is_empty()
-                    && let Err(error) = self.texture_uploads.stage(
-                        &self.context,
-                        texture.clone(),
-                        desc.format,
-                        desc.width,
-                        desc.height,
-                        data,
-                    )
-                {
-                    log::error!(
-                        "texture upload rejected for {:?} ({}x{}, {:?}): {} — substituting placeholder per asset policy",
-                        desc.label,
-                        desc.width,
-                        desc.height,
-                        desc.format,
-                        error
-                    );
-                    return self.default_texture_impl();
-                }
-
-                let bindless_slot = self.bindless_manager.register_texture(&texture.inner).ok();
-
-                let entry = MetalTextureEntry {
-                    texture: texture.clone(),
-                    _view: view,
-                    bindless_slot,
-                };
-                let id = self.textures.insert(entry);
-                TextureHandle::new(id)
-            }
-            Err(error) => {
-                log::error!(
-                    "Metal texture creation failed for {:?} ({}x{}, {:?}): {} — substituting placeholder per asset policy",
-                    desc.label,
-                    desc.width,
-                    desc.height,
-                    desc.format,
-                    error
-                );
-                self.default_texture_impl()
-            }
+        // Empty data creates the texture uninitialized for later upload.
+        desc.validate_data(data.len())?;
+        let (texture, view) = self.context.create_texture(desc)?;
+        if !data.is_empty() {
+            // Staging after creation: propagate the error without inserting
+            // anything. The Metal texture drops with its refcount; no slot
+            // was registered. Callers decide fallback policy explicitly.
+            self.texture_uploads.stage(
+                &self.context,
+                texture.clone(),
+                desc.format,
+                desc.width,
+                desc.height,
+                data,
+            )?;
         }
+
+        let bindless_slot = self.bindless_manager.register_texture(&texture.inner).ok();
+
+        let entry = MetalTextureEntry {
+            texture: texture.clone(),
+            _view: view,
+            bindless_slot,
+        };
+        let id = self.textures.insert(entry);
+        Ok(TextureHandle::new(id))
     }
 
-    pub(crate) fn create_texture_solid_impl(&mut self, color: [u8; 4]) -> TextureHandle {
+    pub(crate) fn create_texture_solid_impl(
+        &mut self,
+        color: [u8; 4],
+    ) -> Result<TextureHandle, RendererError> {
         let desc = TextureDescriptor::new(1, 1, ImageFormat::R8G8B8A8Srgb);
         self.create_texture_impl(&desc, &color)
     }
@@ -102,9 +85,13 @@ impl MetalRenderer {
         data: &[u8],
     ) -> Result<(), RendererError> {
         let (format, width, height, texture) = {
-            let entry = self.textures.get(handle.index()).ok_or_else(|| {
-                RendererError::InvalidOperation(format!("Invalid texture handle {:?}", handle))
-            })?;
+            let entry =
+                self.textures
+                    .get(handle.index())
+                    .ok_or_else(|| RendererError::StaleHandle {
+                        resource: "texture".to_string(),
+                        detail: format!("{handle:?} in Metal update_texture"),
+                    })?;
             let view = &entry._view;
             let texture = entry.texture.clone();
             let format = texture.format();

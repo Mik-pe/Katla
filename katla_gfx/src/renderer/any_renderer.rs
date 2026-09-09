@@ -332,7 +332,11 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn create_texture(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle {
+    fn create_texture(
+        &mut self,
+        desc: &TextureDescriptor,
+        data: &[u8],
+    ) -> Result<TextureHandle, RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => r.create_texture(desc, data),
             #[cfg(target_os = "macos")]
@@ -340,7 +344,7 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
+    fn create_texture_solid(&mut self, color: [u8; 4]) -> Result<TextureHandle, RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => r.create_texture_solid(color),
             #[cfg(target_os = "macos")]
@@ -647,7 +651,12 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+    fn create_ui_font_atlas(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> Result<TextureHandle, RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => r.create_ui_font_atlas(width, height, data),
             #[cfg(target_os = "macos")]

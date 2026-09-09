@@ -642,10 +642,35 @@ impl super::Application {
 
         if srgb {
             let desc = katla_gfx::TextureDescriptor::rgba8_srgb(image.width, image.height);
-            self.renderer.create_texture(&desc, &pixels)
+            match self.renderer.create_texture(&desc, &pixels) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    // Explicit asset-layer fallback: a missing GLTF texture
+                    // renders with the default texture instead of failing the
+                    // whole model import. The failure is logged, not silent.
+                    log::warn!(
+                        "GLTF texture upload failed ({}x{}, srgb): {}; using default texture",
+                        image.width,
+                        image.height,
+                        error
+                    );
+                    self.renderer.default_texture()
+                }
+            }
         } else {
             let desc = katla_gfx::TextureDescriptor::rgba8_unorm(image.width, image.height);
-            self.renderer.create_texture(&desc, &pixels)
+            match self.renderer.create_texture(&desc, &pixels) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    log::warn!(
+                        "GLTF texture upload failed ({}x{}, linear): {}; using default texture",
+                        image.width,
+                        image.height,
+                        error
+                    );
+                    self.renderer.default_texture()
+                }
+            }
         }
     }
 

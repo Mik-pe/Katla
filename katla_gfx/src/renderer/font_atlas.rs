@@ -12,10 +12,16 @@ impl VulkanRenderer {
     /// * `data` - RGBA pixel data
     ///
     /// # Returns
-    /// The texture handle for the font atlas.
-    pub fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+    /// The texture handle for the font atlas, or a typed error when creation
+    /// fails. Failed creation changes nothing.
+    pub fn create_ui_font_atlas(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> Result<TextureHandle, crate::error::RendererError> {
         let desc = TextureDescriptor::rgba8_unorm(width, height);
-        let handle = self.create_texture(&desc, data);
+        let handle = self.create_texture(&desc, data)?;
 
         // create_texture() already registers with the bindless system.
         // Use that slot instead of registering a second time.
@@ -30,7 +36,7 @@ impl VulkanRenderer {
         }
 
         self.ui_renderer.set_font_atlas(handle);
-        handle
+        Ok(handle)
     }
 
     /// Update the UI font atlas texture with new pixel data.
@@ -47,17 +53,31 @@ impl VulkanRenderer {
         if let Some(handle) = current_handle {
             if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
                 if texture.width == width && texture.height == height {
-                    let _ = super::gpu_renderer::GpuRenderer::update_texture(self, handle, data);
+                    if let Err(error) =
+                        super::gpu_renderer::GpuRenderer::update_texture(self, handle, data)
+                    {
+                        log::warn!("Font atlas re-upload failed ({error}); keeping previous atlas");
+                    }
                 } else {
-                    // Destroy old atlas before creating the new one
-                    let old_handle = handle;
-                    let new_handle = self.create_ui_font_atlas(width, height, data);
-                    self.destroy_texture(old_handle);
-                    self.ui_renderer.set_font_atlas(new_handle);
+                    // Replacement-first: keep the old atlas when recreation fails.
+                    match self.create_ui_font_atlas(width, height, data) {
+                        Ok(new_handle) => {
+                            self.destroy_texture(handle);
+                            self.ui_renderer.set_font_atlas(new_handle);
+                        }
+                        Err(error) => {
+                            log::warn!(
+                                "Font atlas recreation failed ({error}); keeping previous atlas"
+                            );
+                        }
+                    }
                 }
             }
-        } else {
-            self.create_ui_font_atlas(width, height, data);
+        } else if let Err(error) = self
+            .create_ui_font_atlas(width, height, data)
+            .map(|handle| self.ui_renderer.set_font_atlas(handle))
+        {
+            log::warn!("Font atlas creation failed ({error}); UI text will miss glyphs");
         }
     }
 
