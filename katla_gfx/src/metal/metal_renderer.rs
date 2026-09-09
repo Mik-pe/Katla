@@ -17,7 +17,7 @@ use crate::handle::{MaterialHandle, MeshHandle, ResourceStorage, SkeletonHandle,
 use crate::renderer::MAX_OBJECTS_PER_FRAME;
 use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::pipeline_kind::PipelineKind;
-use crate::renderer::types::{DrawList, FrameUniforms};
+use crate::renderer::types::{DrawList, FrameUniforms, InstanceData};
 use crate::size::Size2D;
 use crate::texture::{ImageFormat, TextureDescriptor};
 use crate::viewport::Viewport;
@@ -48,24 +48,30 @@ fn validate_object_buffer_capacity(
     draw_list: &DrawList,
     buffer_size: usize,
 ) -> Result<(), RendererError> {
-    let Some(max_instance_index) = draw_list.draws.iter().map(|draw| draw.instance_index).max()
+    let Some(max_slot_end) = draw_list
+        .draws
+        .iter()
+        .map(|draw| {
+            draw.instance_index
+                .saturating_add(draw.instance_count().max(1))
+        })
+        .max()
     else {
         return Ok(());
     };
 
-    let required_size = (max_instance_index as usize)
-        .checked_add(1)
-        .and_then(|count| count.checked_mul(OBJECT_UNIFORM_SIZE as usize))
+    let required_size = (max_slot_end as usize)
+        .checked_mul(OBJECT_UNIFORM_SIZE as usize)
         .ok_or_else(|| {
             RendererError::InvalidOperation(format!(
-                "Object uniform size overflow for instance index {max_instance_index}"
+                "Object uniform size overflow for instance slot range ending at {max_slot_end}"
             ))
         })?;
 
     if required_size > buffer_size {
         let capacity = buffer_size / OBJECT_UNIFORM_SIZE as usize;
         return Err(RendererError::InvalidOperation(format!(
-            "Draw list requires object instance index {max_instance_index}, but the Metal object buffer only has {capacity} slots"
+            "Draw list requires object slots up to {max_slot_end}, but the Metal object buffer only has {capacity} slots"
         )));
     }
 
@@ -75,16 +81,30 @@ fn validate_object_buffer_capacity(
 #[cfg(test)]
 mod object_buffer_capacity_tests {
     use super::*;
-    use crate::renderer::types::DrawCall;
+    use crate::renderer::types::{DrawCall, InstanceData};
+
+    fn draw_list_with_counts(draws: &[(u32, u32)]) -> DrawList {
+        let mut list = DrawList::new();
+        for &(index, count) in draws {
+            let mut draw = if count > 1 {
+                DrawCall::instanced(
+                    MeshHandle::NONE,
+                    MaterialHandle::NONE,
+                    std::iter::repeat(InstanceData::default())
+                        .take(count as usize)
+                        .collect(),
+                )
+            } else {
+                DrawCall::new(MeshHandle::NONE, MaterialHandle::NONE)
+            };
+            draw.instance_index = index;
+            list.draws.push(draw);
+        }
+        list
+    }
 
     fn draw_list(indices: &[u32]) -> DrawList {
-        let mut draws = DrawList::new();
-        for &index in indices {
-            draws.push(
-                DrawCall::new(MeshHandle::NONE, MaterialHandle::NONE).with_instance_index(index),
-            );
-        }
-        draws
+        draw_list_with_counts(&indices.iter().map(|&i| (i, 1)).collect::<Vec<_>>())
     }
 
     #[test]
@@ -99,8 +119,24 @@ mod object_buffer_capacity_tests {
 
         let error = validate_object_buffer_capacity(&draw_list(&[0, 2]), two_slots)
             .expect_err("instance index 2 must not fit a two-slot object buffer");
-        assert!(error.to_string().contains("instance index 2"));
+        assert!(error.to_string().contains("up to 3"));
         assert!(error.to_string().contains("2 slots"));
+    }
+
+    #[test]
+    fn instanced_range_must_fit_not_just_its_base_slot() {
+        let three_slots = OBJECT_UNIFORM_SIZE as usize * 3;
+        // Base slot 1 with 2 instances occupies slots 1 and 2 — fits exactly.
+        assert!(
+            validate_object_buffer_capacity(&draw_list_with_counts(&[(1, 2)]), three_slots).is_ok()
+        );
+
+        // Base slot 1 with 3 instances spills into slot 3 — must not pass on
+        // a buffer that only covers slots 0..=2.
+        let error = validate_object_buffer_capacity(&draw_list_with_counts(&[(1, 3)]), three_slots)
+            .expect_err("an instanced range past the buffer end must be rejected");
+        assert!(error.to_string().contains("up to 4"));
+        assert!(error.to_string().contains("3 slots"));
     }
 }
 
@@ -1081,29 +1117,47 @@ impl GpuRenderer for MetalRenderer {
         let ptr = object_buf.map();
 
         for draw in &draw_list.draws {
-            let inst = match draw.instances.first() {
-                Some(i) => i,
-                None => continue,
-            };
-
-            let offset = draw.instance_index as usize * OBJECT_UNIFORM_SIZE as usize;
-            debug_assert!(offset + OBJECT_UNIFORM_SIZE as usize <= buf_size);
-            let dst = unsafe { ptr.add(offset) };
+            let base = draw.instance_index as usize;
+            let count = draw.instance_count().max(1) as usize;
 
             let material_params = draw.material_params();
 
-            unsafe {
-                std::ptr::copy_nonoverlapping(inst.model_matrix.as_ptr(), dst as *mut f32, 16);
-                std::ptr::copy_nonoverlapping(inst.color.as_ptr(), dst.add(64) as *mut f32, 4);
-                std::ptr::copy_nonoverlapping(material_params.as_ptr(), dst.add(80) as *mut f32, 4);
+            let tex_indices: [u32; 4] = if let Some(mat) = self.materials.get(draw.material.index())
+            {
+                mat.texture_indices
+            } else {
+                [0, 1, 2, 0]
+            };
 
-                let tex_indices: [u32; 4] =
-                    if let Some(mat) = self.materials.get(draw.material.index()) {
-                        mat.texture_indices
-                    } else {
-                        [0, 1, 2, 0]
-                    };
-                std::ptr::copy_nonoverlapping(tex_indices.as_ptr(), dst.add(96) as *mut u32, 4);
+            for (i, instance) in draw
+                .instances
+                .iter()
+                .chain(std::iter::repeat(&InstanceData::default()))
+                .take(count)
+                .enumerate()
+            {
+                let offset = (base + i) * OBJECT_UNIFORM_SIZE as usize;
+                debug_assert!(offset + OBJECT_UNIFORM_SIZE as usize <= buf_size);
+                let dst = unsafe { ptr.add(offset) };
+
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        instance.model_matrix.as_ptr(),
+                        dst as *mut f32,
+                        16,
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        instance.color.as_ptr(),
+                        dst.add(64) as *mut f32,
+                        4,
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        material_params.as_ptr(),
+                        dst.add(80) as *mut f32,
+                        4,
+                    );
+                    std::ptr::copy_nonoverlapping(tex_indices.as_ptr(), dst.add(96) as *mut u32, 4);
+                }
             }
         }
 
@@ -1120,9 +1174,10 @@ impl GpuRenderer for MetalRenderer {
         draw_calls: &[crate::renderer::types::DrawCall],
     ) -> Result<DrawList, RendererError> {
         self.set_frame_uniforms(uniforms.clone());
-        let draw_list = DrawList {
-            draws: draw_calls.to_vec(),
-        };
+        let mut draw_list = DrawList::new();
+        for draw in draw_calls {
+            draw_list.push(draw.clone());
+        }
         self.execute_draw_calls(&draw_list)?;
         Ok(draw_list)
     }
@@ -1589,7 +1644,8 @@ mod tests {
         let default_mat = renderer.default_material();
 
         let draw = DrawCall::new(default_mesh, default_mat);
-        let draw_list = DrawList { draws: vec![draw] };
+        let mut draw_list = DrawList::new();
+        draw_list.push(draw);
 
         let result = renderer.execute_draw_calls(&draw_list);
         assert!(
@@ -1944,9 +2000,9 @@ mod tests {
             .with_color([0.8, 0.2, 0.2, 1.0])
             .with_pbr(0.0, 0.5, 1.0);
 
-        let draw_list = DrawList {
-            draws: vec![plane_draw, cube_draw],
-        };
+        let mut draw_list = DrawList::new();
+        draw_list.push(plane_draw);
+        draw_list.push(cube_draw);
 
         // Upload uniforms and object data to GPU
         renderer

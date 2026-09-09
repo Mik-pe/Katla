@@ -21,7 +21,6 @@ mod color {
 pub fn generate_reverb_zone_wireframe(
     world: &mut katla_ecs::World,
     resources: &crate::rendering::physics_debug::PhysicsDebugResources,
-    next_instance: &mut u32,
 ) -> Vec<DrawCall> {
     use crate::components::audio::ReverbZone;
 
@@ -45,7 +44,7 @@ pub fn generate_reverb_zone_wireframe(
             zone.half_extents[1],
             zone.half_extents[2],
         );
-        draw_reverb_box(resources, &mat, he, color, next_instance, &mut draws);
+        draw_reverb_box(resources, &mat, he, color, &mut draws);
     }
 
     draws
@@ -56,7 +55,6 @@ fn draw_reverb_box(
     world_transform: &Mat4,
     half_extents: Vec3,
     color: [f32; 4],
-    next_instance: &mut u32,
     draws: &mut Vec<DrawCall>,
 ) {
     let hx = half_extents.x();
@@ -92,6 +90,6 @@ fn draw_reverb_box(
     for (a, b) in &edges {
         let p0 = *world_transform * corners[*a];
         let p1 = *world_transform * corners[*b];
-        crate::rendering::physics_debug::draw_edge(resources, p0, p1, color, next_instance, draws);
+        crate::rendering::physics_debug::draw_edge(resources, p0, p1, color, draws);
     }
 }

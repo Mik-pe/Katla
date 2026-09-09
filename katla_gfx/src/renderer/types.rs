@@ -127,24 +127,26 @@ impl InstanceData {
 /// Contains all per-object information needed to render without exposing Vulkan types.
 /// Frame-level data (view/proj matrices, lighting) is set separately via `set_frame_uniforms()`.
 ///
-/// # Instance Index
-/// Each draw call has an `instance_index` that specifies which slot in the storage
-/// buffer (Set 0, Binding 1) contains its per-object data. This is allocated by the
-/// FrameContext and used by the shader via `@builtin(instance_index)`.
+/// # Object Slot Allocation
+/// Frame-local object storage slots are allocated by the `DrawList` when a draw call is
+/// pushed: `push` assigns each draw a unique base slot covering all of its instances and
+/// returns it. Callers never choose storage indices; the shader addresses per-object data
+/// via `@builtin(instance_index)` starting at the assigned base slot.
 ///
 /// # Instances
 /// Every draw call uses `instances` (a `SmallVec<[InstanceData; 1]>`). Single-object draws use
-/// a single-element smallvec; multi-instance draws use N elements. The render pass always
-/// reads per-instance data from `instances[0]`.
+/// a single-element smallvec; multi-instance draws use N elements. The renderer uploads every
+/// instance to consecutive slots and encodes the full instance count, so the shader walks
+/// `instances[i]` via `@builtin(instance_index)`.
 #[derive(Clone, Debug)]
 pub struct DrawCall {
     /// Mesh to draw.
     pub mesh: MeshHandle,
     /// Material/shader to use.
     pub material: MaterialHandle,
-    /// Instance index for storage buffer lookup (Set 0, Binding 1).
-    /// The shader uses this to index objects[instance_index].
-    pub instance_index: u32,
+    /// Base object storage slot (Set 0, Binding 1) assigned by `DrawList::push`.
+    /// Covers slots `base_object_slot() .. base_object_slot() + instance_count()`.
+    pub(crate) instance_index: u32,
     /// Emission texture bindless index (0 = no emission).
     pub emission: f32,
     /// Whether this draw uses transparency (affects sort order).
@@ -205,6 +207,12 @@ impl DrawCall {
     /// Get the instance count.
     pub fn instance_count(&self) -> u32 {
         self.instances.len() as u32
+    }
+
+    /// Get the base object storage slot assigned when this draw was pushed
+    /// into a `DrawList`. Covers slots `base_object_slot() .. base_object_slot() + instance_count()`.
+    pub fn base_object_slot(&self) -> u32 {
+        self.instance_index
     }
 
     fn with_first_instance_mut<F: FnOnce(&mut InstanceData)>(&mut self, f: F) {
@@ -297,40 +305,76 @@ impl DrawCall {
         self.is_billboard = true;
         self
     }
-
-    /// Set the instance index for storage buffer lookup.
-    ///
-    /// This specifies which slot in the storage buffer (Set 0, Binding 1)
-    /// contains this draw call's per-object data.
-    pub fn with_instance_index(mut self, index: u32) -> Self {
-        self.instance_index = index;
-        self
-    }
 }
 
 /// A collection of draw calls to be submitted together.
 ///
 /// This allows the application to batch draw calls and optimize them
 /// before submitting to the renderer.
+///
+/// The list owns frame-local object slot allocation: every pushed draw call
+/// is assigned a unique base slot covering all of its instances, so draws can
+/// never overwrite each other's per-object data. Slot 0 is reserved for
+/// non-draw users of the object storage (e.g. fullscreen passes); allocation
+/// starts at 1.
 #[derive(Clone, Debug)]
 pub struct DrawList {
     /// The draw calls in this list.
     pub draws: Vec<DrawCall>,
+    /// Next unallocated object storage slot.
+    next_object_slot: u32,
 }
 
 impl DrawList {
     /// Create a new empty draw list.
     pub fn new() -> Self {
-        Self { draws: Vec::new() }
+        Self {
+            draws: Vec::new(),
+            next_object_slot: 1, // Slot 0 reserved for fullscreen/post-processing passes
+        }
     }
 
-    /// Add a draw call to the list.
-    pub fn push(&mut self, draw: DrawCall) {
+    /// Collect already-finalized draw calls into a list.
+    ///
+    /// Unlike `push`, this does not reassign object slots — the draws keep the
+    /// slots they were allocated when originally pushed. Allocation continues
+    /// past the highest slot in use, so later `push` calls stay unique.
+    pub fn from_draws(draws: Vec<DrawCall>) -> Self {
+        let mut list = Self::new();
+        for draw in &draws {
+            list.next_object_slot = list.next_object_slot.max(
+                draw.instance_index
+                    .saturating_add(draw.instance_count().max(1)),
+            );
+        }
+        list.draws = draws;
+        list
+    }
+
+    /// Add a draw call to the list, assigning it a unique object storage slot.
+    ///
+    /// The slot range covers every instance of the draw. Returns the assigned
+    /// base slot. Capacity is enforced at upload time: a range crossing the
+    /// renderer's per-frame object limit fails with a typed error instead of
+    /// silently overwriting another draw.
+    pub fn push(&mut self, mut draw: DrawCall) -> u32 {
+        let base = self.next_object_slot;
+        draw.instance_index = base;
+        self.next_object_slot = base.saturating_add(draw.instance_count().max(1));
         self.draws.push(draw);
+        base
     }
 
     /// Extend this list with all draws from another list.
+    ///
+    /// The moved draws keep their assigned slots; allocation continues past them.
     pub fn extend(&mut self, other: &mut DrawList) {
+        for draw in &other.draws {
+            self.next_object_slot = self.next_object_slot.max(
+                draw.instance_index
+                    .saturating_add(draw.instance_count().max(1)),
+            );
+        }
         self.draws.append(&mut other.draws);
     }
 
@@ -716,6 +760,95 @@ mod tests {
         assert_eq!(list.draws[0].sort_key, Some(1));
         assert_eq!(list.draws[1].sort_key, Some(2));
         assert_eq!(list.draws[2].sort_key, Some(3));
+    }
+
+    #[test]
+    fn test_push_assigns_unique_object_slots() {
+        let mut list = DrawList::new();
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
+
+        assert_eq!(list.push(DrawCall::new(mesh, material)), 1);
+        assert_eq!(list.push(DrawCall::new(mesh, material)), 2);
+
+        let instanced = DrawCall::instanced(
+            mesh,
+            material,
+            vec![InstanceData::default(), InstanceData::default()],
+        );
+        let instanced_base = list.push(instanced);
+        assert_eq!(instanced_base, 3);
+        assert_eq!(instanced_base + 1, 4);
+        // Empty instances still consume one slot.
+        let empty = DrawCall::instanced(mesh, material, Vec::new());
+        assert_eq!(list.push(empty), 5);
+
+        let slots: Vec<u32> = list.iter().map(|d| d.base_object_slot()).collect();
+        assert_eq!(slots, vec![1, 2, 3, 5]);
+    }
+
+    #[test]
+    fn test_sorting_preserves_assigned_object_slots() {
+        let mut list = DrawList::new();
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
+
+        let first = list.push(DrawCall::new(mesh, material).with_sort_key(2));
+        let second = list.push(DrawCall::new(mesh, material).with_sort_key(1));
+        assert!(first < second);
+
+        list.sort();
+
+        assert_eq!(list.draws[0].base_object_slot(), second);
+        assert_eq!(list.draws[1].base_object_slot(), first);
+    }
+
+    #[test]
+    fn test_from_draws_preserves_slots_and_continues_allocation() {
+        let mut source = DrawList::new();
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
+
+        let instanced = DrawCall::instanced(
+            mesh,
+            material,
+            vec![
+                InstanceData::default(),
+                InstanceData::default(),
+                InstanceData::default(),
+            ],
+        );
+        let base_a = source.push(DrawCall::new(mesh, material));
+        let base_b = source.push(instanced);
+
+        // Filtered/merged clones must keep their uploaded slots.
+        let filtered = DrawList::from_draws(source.draws.clone());
+        assert_eq!(filtered.draws[0].base_object_slot(), base_a);
+        assert_eq!(filtered.draws[1].base_object_slot(), base_b);
+
+        // New pushes continue past the preserved ranges.
+        let mut merged = DrawList::from_draws(filtered.draws);
+        assert_eq!(merged.push(DrawCall::new(mesh, material)), base_b + 3);
+    }
+
+    #[test]
+    fn test_extend_keeps_moved_slots_and_continues_allocation() {
+        let mut first = DrawList::new();
+        let mut second = DrawList::new();
+        let mesh = MeshHandle::new(0);
+        let material = MaterialHandle::new(0);
+
+        let a = first.push(DrawCall::new(mesh, material));
+        let b = second.push(DrawCall::new(mesh, material));
+        let c = second.push(DrawCall::new(mesh, material));
+
+        first.extend(&mut second);
+
+        assert_eq!(first.draws[0].base_object_slot(), a);
+        assert_eq!(first.draws[1].base_object_slot(), b);
+        assert_eq!(first.draws[2].base_object_slot(), c);
+        assert_eq!(first.push(DrawCall::new(mesh, material)), c + 1);
+        assert!(second.is_empty());
     }
 
     #[test]

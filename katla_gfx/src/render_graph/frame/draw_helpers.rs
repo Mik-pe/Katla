@@ -219,7 +219,7 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
                 renderer.context.device.cmd_draw_indexed(
                     cmd.vk_command_buffer(),
                     index_count,
-                    1,
+                    draw_call.instance_count().max(1),
                     0,
                     0,
                     draw_call.instance_index,

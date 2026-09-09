@@ -2,6 +2,33 @@
 
 ## Completed Recently
 
+- **Issue #87: geometry instancing allocates and encodes every submitted
+  instance (2026-09-09, branch fix/87-instanced-draw-allocation)** —
+  Instanced draws uploaded only `instances.first()` and every Vulkan/Metal
+  draw site hardcoded instanceCount=1, so instances 1..n never reached the
+  GPU; callers chose raw storage indices (default slot 0) and could silently
+  overwrite each other. Fix: `DrawList` owns frame-local slot allocation —
+  `push` assigns a unique base range and returns it; `from_draws` preserves
+  slots in filtered/merged lists (shadow/outline clones, Metal upload merge);
+  `with_instance_index` deleted, `instance_index` pub(crate) +
+  `base_object_slot()`; FrameContext counter and gizmo/physics/reverb manual
+  `next_instance_index` threading removed (dead `generate_raycast_vis` +
+  orphaned ray colors deleted too); upload loops write every instance with
+  whole-range capacity validation (typed ObjectLimitExceeded); all 3 Vulkan +
+  5 Metal encode sites pass the real instance count (Vulkan firstInstance =
+  base slot; Metal keeps its buffer-offset rebind so instance_id walks the
+  uploaded range). Entity→slot picking map now built from push/submit return
+  values. Focused GPU test `katla_gfx/tests/instanced_draws.rs` (#[ignore]):
+  4-instance draw byte-identical to 4 direct draws, mixed list, frame-slot
+  reuse, late-instance recolor, capacity exhaustion; mutation-verified to
+  fail against both original bugs. Verified on Intel Vulkan: interaction
+  harness 8/8 (incl. viewport pick through the reworked picking map),
+  legacy ui-test 5 states + screenshots healthy, windowed `katla -s` exits 0,
+  workspace tests green (known katla_audio parallel-load flake only),
+  CI-style clippy clean, fmt clean. GOTCHA: Vulkan headless readback row 0 is
+  NDC y=+1 (y down) — pixel probes use row=(ndc_y+1)/2*H. Metal compile
+  covered by CI macOS 26.
+
 - **Issue #94: transactional leak-free Vulkan resource construction
   (2026-09-07, merged 2026-09-08 as cc31089a via PR #102)** —
   Fallible multi-step constructors leaked already-created objects: buffer
@@ -53,7 +80,8 @@
   Metal runtime rendering remains unverified on Linux — CI macOS 26 covers
   compile + unit tests.
 
-- **Inspector component listing + add/remove from the UI (2026-09-08, PR #103)** —
+- **Inspector component listing + add/remove from the UI (2026-09-08, merged
+  2026-09-09 via PR #103)** —
   The inspector now lists every component on the selected entity as a
   collapsible section in a canonical `SECTION_TYPES` order (17 slots reserved
   unconditionally per the state-slot convention). Registry-removable components

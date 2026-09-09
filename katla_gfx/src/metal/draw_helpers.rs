@@ -175,7 +175,7 @@ impl MetalRenderer {
 
             encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
             encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
-            encoder.draw_indexed(mesh.index_count, 1, 0, 0, 0);
+            encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
         }
     }
 }

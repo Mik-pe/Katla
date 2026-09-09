@@ -323,7 +323,7 @@ pub(crate) fn render_stencil_mark(
             );
         }
 
-        encoder.draw_indexed(mesh.index_count, 1, 0, 0, 0);
+        encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
 
     encoder.end_encoding();
@@ -450,7 +450,7 @@ pub(crate) fn render_outline(
             );
         }
 
-        encoder.draw_indexed(mesh.index_count, 1, 0, 0, 0);
+        encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
 
     encoder.end_encoding();
