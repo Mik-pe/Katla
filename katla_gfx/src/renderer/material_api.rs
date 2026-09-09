@@ -186,6 +186,10 @@ impl VulkanRenderer {
             double_sided,
             wireframe,
             depth_test,
+            depth_write,
+            depth_compare,
+            vertex_entry,
+            fragment_entry,
             vertex_binding,
             color_format,
             old_pipeline_handle,
@@ -207,6 +211,10 @@ impl VulkanRenderer {
                 mat.double_sided,
                 mat.wireframe,
                 mat.depth_test,
+                mat.depth_write,
+                mat.depth_compare,
+                mat.vertex_entry.clone(),
+                mat.fragment_entry.clone(),
                 mat.vertex_binding.clone(),
                 mat.color_format,
                 mat.pipeline,
@@ -214,13 +222,18 @@ impl VulkanRenderer {
             )
         };
 
-        // Load shaders (cache was invalidated, so this reads from disk)
-        let vert_module = self
-            .material_compiler
-            .load_shader(&shader_path, ash::vk::ShaderStageFlags::VERTEX)?;
-        let frag_module = self
-            .material_compiler
-            .load_shader(&shader_path, ash::vk::ShaderStageFlags::FRAGMENT)?;
+        // Load shaders with the stored entry points (cache was invalidated,
+        // so this reads from disk)
+        let vert_module = self.material_compiler.load_shader_with_entry(
+            &shader_path,
+            ash::vk::ShaderStageFlags::VERTEX,
+            &vertex_entry,
+        )?;
+        let frag_module = self.material_compiler.load_shader_with_entry(
+            &shader_path,
+            ash::vk::ShaderStageFlags::FRAGMENT,
+            &fragment_entry,
+        )?;
 
         let material_type = match vertex_type {
             crate::vulkan::material::compiler::VertexType::Pbr => MaterialType::Pbr,
@@ -236,6 +249,10 @@ impl VulkanRenderer {
             double_sided,
             wireframe,
             depth_test,
+            depth_write,
+            depth_compare,
+            vertex_entry,
+            fragment_entry,
         };
 
         // Build new pipeline via material_compiler

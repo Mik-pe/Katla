@@ -11,6 +11,7 @@ use crate::Size2D;
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::renderer::features::RendererFeature;
+use crate::renderer::pipeline_descriptor::PipelineDescriptor;
 use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::registry::PrimitiveTopology;
 use crate::renderer::types::{DrawList, FrameUniforms, PointLightGPU, UIDrawList};
@@ -236,12 +237,15 @@ pub trait GpuRenderer: Sized + 'static {
     // ========================================================================
 
     /// Compile a shader into a GPU pipeline and return a material handle.
-    /// `shader_path` is relative to the resources/shaders directory.
-    /// `vertex_type` is a string identifying the vertex layout (e.g., "pbr", "ui").
+    ///
+    /// Takes a backend-neutral [`PipelineDescriptor`]: shader path and entry
+    /// points, canonical vertex layout, portable render state, and explicit
+    /// native extension points. Backends validate the descriptor before
+    /// touching native APIs. See
+    /// [`PipelineDescriptor::pbr`] and friends for canonical constructors.
     fn compile_material(
         &mut self,
-        shader_path: &str,
-        vertex_type: &str,
+        descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError>;
 
     /// Set texture indices on an existing material.
@@ -548,7 +552,6 @@ pub trait GpuRenderer: Sized + 'static {
 // ---------------------------------------------------------------------------
 
 use crate::renderer::VulkanRenderer;
-use crate::vulkan::material::compiler::MaterialOptions;
 
 impl GpuRenderer for VulkanRenderer {
     fn swapchain_extent(&self) -> Size2D {
@@ -730,11 +733,71 @@ impl GpuRenderer for VulkanRenderer {
 
     fn compile_material(
         &mut self,
-        shader_path: &str,
-        vertex_type: &str,
+        descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
-        let options = MaterialOptions::from_vertex_type_str(vertex_type);
-        VulkanRenderer::compile_material(self, shader_path, options)
+        use crate::renderer::pipeline_descriptor::{BlendMode, PipelineStages};
+        use crate::vertex::VertexLayout;
+        use crate::vulkan::material::compiler::{MaterialOptions, VertexType};
+
+        descriptor.validate()?;
+        if !descriptor.specialization.is_empty() {
+            return Err(RendererError::UnsupportedFeature(
+                "specialization constants are not yet plumbed into the Vulkan material compiler"
+                    .to_string(),
+            ));
+        }
+        let PipelineStages::Graphics { .. } = &descriptor.stages else {
+            return Err(RendererError::UnsupportedFeature(
+                "compute pipelines are not yet supported by compile_material".to_string(),
+            ));
+        };
+
+        // Derive the internal routing from canonical layout identity.
+        // No strings, no silent fallback: unknown layouts fail loudly.
+        let vertex_type = if descriptor.vertex == VertexLayout::pbr() {
+            VertexType::Pbr
+        } else if descriptor.vertex == VertexLayout::ui() {
+            VertexType::Ui
+        } else if descriptor.vertex == VertexLayout::position() {
+            VertexType::Simple
+        } else if descriptor.vertex == VertexLayout::pbr_skinned() {
+            VertexType::Skinned
+        } else {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "material".to_string(),
+                reason: format!(
+                    "unknown vertex layout ({} attributes, stride {}): \
+                     Vulkan material compilation supports the canonical \
+                     PBR / UI / position / skinned layouts",
+                    descriptor.vertex.len(),
+                    descriptor.vertex.stride(),
+                ),
+            });
+        };
+
+        // Depth state maps straight through; the compiler normalises
+        // test=false to (false, false, Always) for every entry path.
+        let (vertex_entry, fragment_entry) = match &descriptor.stages {
+            PipelineStages::Graphics {
+                vertex_entry,
+                fragment_entry,
+            } => (vertex_entry.clone(), fragment_entry.clone()),
+            PipelineStages::Compute { .. } => unreachable!("rejected above"),
+        };
+        let options = MaterialOptions {
+            alpha_blended: matches!(descriptor.blend, BlendMode::AlphaBlend),
+            double_sided: matches!(descriptor.cull, crate::pipeline::CullMode::None),
+            wireframe: descriptor.wireframe,
+            vertex_type,
+            color_format: descriptor.color_format,
+            is_compositing: descriptor.native.vulkan.compositing,
+            depth_test: descriptor.depth.test,
+            depth_write: descriptor.depth.write,
+            depth_compare: descriptor.depth.compare,
+            vertex_entry,
+            fragment_entry,
+        };
+        VulkanRenderer::compile_material(self, &descriptor.shader_path, options)
     }
 
     fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {

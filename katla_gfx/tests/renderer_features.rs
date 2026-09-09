@@ -13,9 +13,9 @@ use std::cell::{Cell, RefCell};
 
 use katla_gfx::{
     DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuRenderer, GpuVendor, IndexType,
-    MaterialHandle, MeshHandle, MeshIndexElement, PipelineKind, PointLightGPU, Rect, RendererError,
-    RendererFeature, Size2D, SkeletonHandle, TextureDescriptor, TextureHandle, UIDrawList,
-    ViewportBuilder, ViewportHandle,
+    MaterialHandle, MeshHandle, MeshIndexElement, PipelineDescriptor, PipelineKind, PointLightGPU,
+    Rect, RendererError, RendererFeature, Size2D, SkeletonHandle, TextureDescriptor, TextureHandle,
+    UIDrawList, ViewportBuilder, ViewportHandle,
 };
 
 /// Minimal backend: implements every required operation explicitly with
@@ -196,8 +196,7 @@ impl GpuRenderer for MockRenderer {
 
     fn compile_material(
         &mut self,
-        _shader_path: &str,
-        _vertex_type: &str,
+        _descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
         self.record("compile_material");
         Ok(MaterialHandle::new(0))

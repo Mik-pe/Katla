@@ -315,6 +315,7 @@ pub use metal::metal_renderer::MetalRenderer;
 // Backend-agnostic renderer trait
 pub use renderer::features::RendererFeature;
 pub use renderer::gpu_renderer::GpuRenderer;
+pub use renderer::pipeline_descriptor::{BlendMode, PipelineDescriptor};
 pub use renderer::pipeline_kind::PipelineKind;
 
 // Enum-based renderer dispatch (both backends)
