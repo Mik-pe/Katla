@@ -407,8 +407,12 @@ impl MetalContext {
         let texture = self
             .device
             .newTextureWithDescriptor(&tex_desc)
-            .ok_or_else(|| {
-                RendererError::InvalidOperation("Failed to create Metal texture".into())
+            .ok_or_else(|| RendererError::AllocationFailed {
+                resource: "metal texture".to_string(),
+                reason: format!(
+                    "{}x{} {:?}: device refused the texture descriptor",
+                    descriptor.width, descriptor.height, descriptor.format
+                ),
             })?;
         let metal_texture = MetalTexture::new(texture.clone(), descriptor.format);
         let view = MetalTextureView::new(texture, metal_texture.clone());
@@ -433,8 +437,12 @@ impl MetalContext {
         let texture = self
             .device
             .newTextureWithDescriptor(&tex_desc)
-            .ok_or_else(|| {
-                RendererError::InvalidOperation("Failed to create Metal texture".into())
+            .ok_or_else(|| RendererError::AllocationFailed {
+                resource: "metal texture".to_string(),
+                reason: format!(
+                    "{}x{} {:?}: device refused the texture descriptor",
+                    descriptor.width, descriptor.height, descriptor.format
+                ),
             })?;
         let metal_texture = MetalTexture::new(texture.clone(), descriptor.format);
         let view = MetalTextureView::new(texture, metal_texture.clone());

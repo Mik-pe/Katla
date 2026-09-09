@@ -294,7 +294,10 @@ impl BindlessTextureManager {
                 used_count,
                 MAX_BINDLESS_TEXTURES
             );
-            RendererError::InvalidOperation("No free bindless texture slots available".into())
+            RendererError::AllocationFailed {
+                resource: "bindless texture slot".to_string(),
+                reason: format!("{used_count}/{MAX_BINDLESS_TEXTURES} slots used"),
+            }
         })?;
 
         // Update the slot

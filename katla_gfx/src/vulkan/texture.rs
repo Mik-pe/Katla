@@ -139,15 +139,16 @@ impl Texture {
         context: &Rc<VulkanContext>,
         desc: &crate::texture::TextureDescriptor,
         pixel_data: &[u8],
-    ) -> Self {
-        Self::create_image(
+    ) -> Result<Self, crate::error::RendererError> {
+        desc.validate_data(pixel_data.len())?;
+        Ok(Self::create_image(
             context.clone(),
             desc.width,
             desc.height,
             desc.format,
             desc.usage,
             pixel_data,
-        )
+        ))
     }
 
     pub fn create_image(
@@ -330,16 +331,16 @@ impl Texture {
     ///
     /// Dimensions must match current texture size.
     /// Uses staging buffer for transfer with proper synchronization.
-    pub fn update_data(&self, pixel_data: &[u8]) {
+    pub fn update_data(&self, pixel_data: &[u8]) -> Result<(), crate::error::RendererError> {
         let bytes_per_pixel = self.format.bytes_per_pixel();
         let expected_size = (self.width * self.height * bytes_per_pixel) as usize;
         if pixel_data.len() != expected_size {
-            log::warn!(
-                "Texture::update_data: size mismatch (expected {}, got {})",
-                expected_size,
-                pixel_data.len()
-            );
-            return;
+            return Err(crate::error::RendererError::UploadFailed {
+                resource: "texture".to_string(),
+                expected_bytes: expected_size,
+                actual_bytes: pixel_data.len(),
+                detail: format!("{}x{} {:?}", self.width, self.height, self.format),
+            });
         }
 
         let total_size = pixel_data.len() as u64;
@@ -397,8 +398,10 @@ impl Texture {
                 .end_single_time_commands(command_buffer)
                 .expect("Failed to end single-time commands");
             self.context.free_buffer(staging_buffer, staging_allocation);
+            Ok(())
         }
     }
+
     /// Resize the texture, recreating the internal image.
     ///
     /// The image view and sampler are updated to the new image.

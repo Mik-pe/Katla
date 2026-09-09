@@ -108,4 +108,48 @@ impl TextureDescriptor {
         self.label = Some(label);
         self
     }
+
+    /// Bytes a full upload requires, or `None` when the dimensions overflow.
+    pub fn expected_bytes(&self) -> Option<usize> {
+        (self.width as usize)
+            .checked_mul(self.height as usize)?
+            .checked_mul(self.format.bytes_per_pixel() as usize)
+    }
+
+    /// Validate pixel data against this descriptor without touching the GPU.
+    ///
+    /// Empty data is legitimate: it creates the texture uninitialized for
+    /// later upload (render targets). Non-empty data with the wrong length
+    /// fails with [`crate::error::RendererError::InvalidDescriptor`], as do
+    /// zero extents — never a silent mis-sized texture.
+    pub fn validate_data(&self, data_len: usize) -> Result<(), crate::error::RendererError> {
+        let Some(expected) = self.expected_bytes() else {
+            return Err(crate::error::RendererError::InvalidDescriptor {
+                resource: "texture".to_string(),
+                reason: format!(
+                    "{}x{} {:?}: dimensions overflow",
+                    self.width, self.height, self.format
+                ),
+            });
+        };
+        if self.width == 0 || self.height == 0 {
+            return Err(crate::error::RendererError::InvalidDescriptor {
+                resource: "texture".to_string(),
+                reason: format!(
+                    "{}x{} {:?}: zero extent",
+                    self.width, self.height, self.format
+                ),
+            });
+        }
+        if data_len != 0 && data_len != expected {
+            return Err(crate::error::RendererError::InvalidDescriptor {
+                resource: "texture".to_string(),
+                reason: format!(
+                    "{}x{} {:?}: expected {expected} bytes, got {data_len}",
+                    self.width, self.height, self.format
+                ),
+            });
+        }
+        Ok(())
+    }
 }

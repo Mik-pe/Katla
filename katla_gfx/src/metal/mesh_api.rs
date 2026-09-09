@@ -112,8 +112,34 @@ impl MetalRenderer {
         indices: &[u32],
     ) -> Result<(), RendererError> {
         let Some(m) = self.meshes.get_mut(mesh.index()) else {
-            return Err(RendererError::NotFound("Mesh not found".into()));
+            return Err(RendererError::StaleHandle {
+                resource: "mesh".to_string(),
+                detail: format!("{mesh:?} in Metal update_mesh_dynamic"),
+            });
         };
+        // Validate both payloads before copying either: oversized data used
+        // to be silently truncated while index_count recorded the full
+        // length. Buffer growth policy belongs to dynamic-mesh capacity
+        // design; here a too-large update fails instead of corrupting.
+        let vertex_capacity = m.vertex_buffer.size() as usize;
+        if vertex_data.len() > vertex_capacity {
+            return Err(RendererError::UploadFailed {
+                resource: "mesh".to_string(),
+                expected_bytes: vertex_capacity,
+                actual_bytes: vertex_data.len(),
+                detail: "vertex data exceeds buffer capacity".to_string(),
+            });
+        }
+        let index_capacity = m.index_buffer.size() as usize;
+        let index_bytes_len = indices.len() * 4;
+        if index_bytes_len > index_capacity {
+            return Err(RendererError::UploadFailed {
+                resource: "mesh".to_string(),
+                expected_bytes: index_capacity,
+                actual_bytes: index_bytes_len,
+                detail: "index data exceeds buffer capacity".to_string(),
+            });
+        }
         {
             let ptr = m.vertex_buffer.map();
             unsafe {

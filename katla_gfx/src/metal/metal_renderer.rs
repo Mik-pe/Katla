@@ -475,17 +475,17 @@ impl MetalRenderer {
             gpu_diagnostics_mode: super::diagnostics::GpuDiagnosticsMode::Release,
         };
 
-        let default_tex = renderer.create_texture_solid([255, 255, 255, 255]);
+        let default_tex = renderer.create_texture_solid([255, 255, 255, 255])?;
         renderer.default_texture = Some(default_tex);
 
         // Flat normal: [128,128,255,255] in UNORM = neutral tangent-space normal (0.5,0.5,1.0)
         let normal_desc = TextureDescriptor::new(1, 1, ImageFormat::R8G8B8A8Unorm);
-        let default_normal = renderer.create_texture(&normal_desc, &[128, 128, 255, 255]);
+        let default_normal = renderer.create_texture(&normal_desc, &[128, 128, 255, 255])?;
         renderer.default_normal_texture = Some(default_normal);
 
         // Metallic-Roughness default: [255,128,0,255] in UNORM = roughness=0.5, metallic=0.0
         let mr_desc = TextureDescriptor::new(1, 1, ImageFormat::R8G8B8A8Unorm);
-        let default_mr = renderer.create_texture(&mr_desc, &[255, 128, 0, 255]);
+        let default_mr = renderer.create_texture(&mr_desc, &[255, 128, 0, 255])?;
         renderer.default_mr_texture = Some(default_mr);
 
         // Texture registration is valid before a shader layout exists. The argument
@@ -1235,11 +1235,15 @@ impl GpuRenderer for MetalRenderer {
         self.update_mesh_dynamic_impl(mesh, vertex_data, indices)
     }
 
-    fn create_texture(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle {
+    fn create_texture(
+        &mut self,
+        desc: &TextureDescriptor,
+        data: &[u8],
+    ) -> Result<TextureHandle, RendererError> {
         self.create_texture_impl(desc, data)
     }
 
-    fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
+    fn create_texture_solid(&mut self, color: [u8; 4]) -> Result<TextureHandle, RendererError> {
         self.create_texture_solid_impl(color)
     }
 
@@ -1367,7 +1371,12 @@ impl GpuRenderer for MetalRenderer {
         Ok(())
     }
 
-    fn create_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+    fn create_ui_font_atlas(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> Result<TextureHandle, RendererError> {
         self.create_ui_font_atlas_impl(width, height, data)
     }
 
@@ -1628,7 +1637,9 @@ mod tests {
     fn test_metal_texture_creation() {
         let mut renderer = create_renderer();
 
-        let red_tex = renderer.create_texture_solid([255, 0, 0, 255]);
+        let red_tex = renderer
+            .create_texture_solid([255, 0, 0, 255])
+            .expect("solid texture creation should succeed");
         assert!(red_tex.is_some(), "texture handle should be valid");
 
         let bindless_index = renderer.get_texture_bindless_index(red_tex);

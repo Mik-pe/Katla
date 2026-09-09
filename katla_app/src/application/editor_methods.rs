@@ -210,9 +210,23 @@ impl Application {
                     log::debug!("Thumbnail loaded: {:?} ({}x{})", path, width, height);
 
                     // Upload texture to renderer and get TextureHandle
-                    // Use SRGB format for correct color rendering in UI
+                    // Use SRGB format for correct color rendering in UI.
+                    // Creation failure is explicit: the thumbnail stays
+                    // unloaded instead of aliasing a placeholder texture.
                     let desc = katla_gfx::TextureDescriptor::rgba8_srgb(width, height);
-                    let texture_handle = self.renderer.create_texture(&desc, &pixels);
+                    let texture_handle = match self.renderer.create_texture(&desc, &pixels) {
+                        Ok(handle) => handle,
+                        Err(error) => {
+                            log::warn!(
+                                "Thumbnail upload failed for {:?} ({}x{}): {}; leaving unloaded",
+                                path,
+                                width,
+                                height,
+                                error
+                            );
+                            continue;
+                        }
+                    };
 
                     // Get the bindless slot for this texture
                     let bindless_slot = self

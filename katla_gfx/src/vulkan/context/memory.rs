@@ -171,9 +171,10 @@ impl GpuAllocator {
             if remaining > 0 {
                 self.injected_allocation_failures
                     .store(remaining - 1, Ordering::Relaxed);
-                return Err(RendererError::InvalidOperation(format!(
-                    "Injected allocation failure for {context}"
-                )));
+                return Err(RendererError::AllocationFailed {
+                    resource: context.to_string(),
+                    reason: format!("injected allocation failure ({remaining} remaining)"),
+                });
             }
         }
 

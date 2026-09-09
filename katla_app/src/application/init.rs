@@ -784,8 +784,16 @@ impl Application {
             let rasterized = crate::rendering::rasterize_billboard_icon(icon, 64);
             let desc =
                 katla_gfx::TextureDescriptor::rgba8_srgb(rasterized.width, rasterized.height);
-            let texture_handle = self.renderer.create_texture(&desc, &rasterized.pixels);
-            icon_textures.insert(icon, texture_handle);
+            // Icons are optional chrome: a failed upload skips the icon
+            // (consumers skip missing entries) instead of failing init.
+            match self.renderer.create_texture(&desc, &rasterized.pixels) {
+                Ok(texture_handle) => {
+                    icon_textures.insert(icon, texture_handle);
+                }
+                Err(error) => {
+                    warn!("Billboard icon {:?} upload failed: {}", icon, error);
+                }
+            }
         }
 
         self.editor.billboard_resources = BillboardResources {

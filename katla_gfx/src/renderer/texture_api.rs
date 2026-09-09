@@ -11,45 +11,67 @@ impl VulkanRenderer {
     /// * `data` - Pixel data (must match descriptor dimensions and format)
     ///
     /// # Returns
-    /// A TextureHandle for the created texture.
+    /// A `TextureHandle`, or a typed error (invalid descriptor, allocation or
+    /// upload failure, bindless exhaustion). Nothing is registered on failure.
     ///
     /// # Example
     /// ```ignore
     /// use katla_gfx::{TextureDescriptor, VulkanRenderer};
     ///
     /// let desc = TextureDescriptor::rgba8_srgb(512, 512);
-    /// let texture = renderer.create_texture(&desc, &pixel_data);
+    /// let texture = renderer.create_texture(&desc, &pixel_data)?;
     /// ```
-    pub fn create_texture(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle {
-        let handle = self.texture_manager.create(desc, data);
+    pub fn create_texture(
+        &mut self,
+        desc: &TextureDescriptor,
+        data: &[u8],
+    ) -> Result<TextureHandle, crate::error::RendererError> {
+        let handle = self.texture_manager.create(desc, data)?;
 
         if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
-            let slot = self
+            let slot = match self
                 .bindless_manager
                 .register_texture(texture.image_view().vk())
-                .expect("Failed to register texture with bindless system");
+            {
+                Ok(slot) => slot,
+                Err(error) => {
+                    // Registration failed after insertion: remove the texture
+                    // so failed creation retains nothing half-created.
+                    self.texture_manager.destroy(handle);
+                    return Err(error);
+                }
+            };
             self.texture_manager.register_bindless_slot(handle, slot);
         }
 
-        handle
+        Ok(handle)
     }
 
     /// Create a 1x1 solid color texture.
     ///
     /// Useful for placeholder or fallback textures.
     /// The texture is automatically registered with the bindless system.
-    pub fn create_texture_solid(&mut self, color: [u8; 4]) -> TextureHandle {
-        let handle = self.texture_manager.create_solid(color);
+    pub fn create_texture_solid(
+        &mut self,
+        color: [u8; 4],
+    ) -> Result<TextureHandle, crate::error::RendererError> {
+        let handle = self.texture_manager.create_solid(color)?;
 
         if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
-            let slot = self
+            let slot = match self
                 .bindless_manager
                 .register_texture(texture.image_view().vk())
-                .expect("Failed to register solid texture with bindless system");
+            {
+                Ok(slot) => slot,
+                Err(error) => {
+                    self.texture_manager.destroy(handle);
+                    return Err(error);
+                }
+            };
             self.texture_manager.register_bindless_slot(handle, slot);
         }
 
-        handle
+        Ok(handle)
     }
 
     /// Get the default white texture.

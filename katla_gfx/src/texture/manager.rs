@@ -5,7 +5,6 @@
 //! for common use cases.
 
 use crate::handle::{ResourceStorage, TextureHandle};
-use crate::texture::ImageFormat;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
 use ash::vk;
@@ -98,19 +97,31 @@ impl TextureManager {
     ///
     /// # Arguments
     /// * `desc` - Texture descriptor specifying dimensions, format, and usage
-    /// * `data` - Pixel data (must match descriptor dimensions and format)
+    /// * `data` - Pixel data (must match descriptor dimensions and format;
+    ///   empty data creates the texture uninitialized for later upload)
     ///
     /// # Returns
-    /// A TextureHandle for the created texture.
-    pub fn create(&mut self, desc: &TextureDescriptor, data: &[u8]) -> TextureHandle {
-        let texture = Rc::new(Texture::from_descriptor(&self.context, desc, data));
-        TextureHandle::new(self.textures.insert(texture))
+    /// A `TextureHandle` for the created texture, or a typed error when the
+    /// descriptor rejects the data, allocation fails, or upload fails. Failed
+    /// creation inserts nothing: no half-created texture is retained.
+    pub fn create(
+        &mut self,
+        desc: &TextureDescriptor,
+        data: &[u8],
+    ) -> Result<TextureHandle, crate::error::RendererError> {
+        let texture = Rc::new(Texture::from_descriptor(&self.context, desc, data)?);
+        Ok(TextureHandle::new(self.textures.insert(texture)))
     }
 
     /// Create an RGBA8 SRGB texture from pixel data.
     ///
     /// Convenience method for common texture type.
-    pub fn create_rgba(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+    pub fn create_rgba(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> Result<TextureHandle, crate::error::RendererError> {
         let desc = TextureDescriptor::rgba8_srgb(width, height);
         self.create(&desc, data)
     }
@@ -118,7 +129,12 @@ impl TextureManager {
     /// Create an RGBA8 UNORM texture from pixel data.
     ///
     /// Use for linear data like normal maps.
-    pub fn create_rgba_unorm(&mut self, width: u32, height: u32, data: &[u8]) -> TextureHandle {
+    pub fn create_rgba_unorm(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+    ) -> Result<TextureHandle, crate::error::RendererError> {
         let desc = TextureDescriptor::rgba8_unorm(width, height);
         self.create(&desc, data)
     }
@@ -126,12 +142,20 @@ impl TextureManager {
     /// Create a 1x1 solid color texture.
     ///
     /// Useful for placeholder or fallback textures.
-    pub fn create_solid(&mut self, color: [u8; 4]) -> TextureHandle {
+    pub fn create_solid(
+        &mut self,
+        color: [u8; 4],
+    ) -> Result<TextureHandle, crate::error::RendererError> {
         self.create_rgba(1, 1, &color)
     }
 
     /// Create a texture from RGB data (converts to RGBA internally).
-    pub fn create_from_rgb(&mut self, width: u32, height: u32, rgb_data: &[u8]) -> TextureHandle {
+    pub fn create_from_rgb(
+        &mut self,
+        width: u32,
+        height: u32,
+        rgb_data: &[u8],
+    ) -> Result<TextureHandle, crate::error::RendererError> {
         let rgba_data = Texture::convert_rgb_to_rgba(rgb_data, width, height);
         self.create_rgba(width, height, &rgba_data)
     }
@@ -139,17 +163,21 @@ impl TextureManager {
     /// Create an empty texture (no initial data).
     ///
     /// Useful for render targets or textures that will be filled later.
-    pub fn create_empty(&mut self, desc: &TextureDescriptor) -> TextureHandle {
-        // Calculate expected data size based on format
-        let bytes_per_pixel = match desc.format {
-            ImageFormat::R8Unorm => 1,
-            ImageFormat::Rg8Unorm => 2,
-            ImageFormat::R8G8B8A8Srgb | ImageFormat::R8G8B8A8Unorm | ImageFormat::B8G8R8A8Srgb => 4,
-            ImageFormat::R32Sfloat => 4,
-            ImageFormat::R16G16B16A16Sfloat => 8,
-            _ => 4, // Default to 4 bytes for depth formats (won't be used)
-        };
-        let size = (desc.width * desc.height * bytes_per_pixel) as usize;
+    pub fn create_empty(
+        &mut self,
+        desc: &TextureDescriptor,
+    ) -> Result<TextureHandle, crate::error::RendererError> {
+        // Zeroed data sized by the descriptor's own expectation, so the
+        // validation below cannot disagree with this constructor.
+        let size = desc.expected_bytes().ok_or_else(|| {
+            crate::error::RendererError::InvalidDescriptor {
+                resource: "texture".to_string(),
+                reason: format!(
+                    "{}x{} {:?}: dimensions overflow",
+                    desc.width, desc.height, desc.format
+                ),
+            }
+        })?;
         let data = vec![0u8; size];
         self.create(desc, &data)
     }
@@ -307,13 +335,22 @@ impl TextureManager {
     ///
     /// The data size must match the current texture dimensions.
     /// Uses a staging buffer for GPU upload.
-    pub fn update_data(&self, handle: TextureHandle, data: &[u8]) -> Result<(), vk::Result> {
-        if let Some(texture) = self.get_texture(handle) {
-            texture.update_data(data);
-            Ok(())
-        } else {
-            Err(vk::Result::ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS)
-        }
+    ///
+    /// Fails with [`RendererError::StaleHandle`] for dead handles and
+    /// [`RendererError::UploadFailed`] for size mismatches — never reports
+    /// success without uploading.
+    pub fn update_data(
+        &self,
+        handle: TextureHandle,
+        data: &[u8],
+    ) -> Result<(), crate::error::RendererError> {
+        let texture =
+            self.get_texture(handle)
+                .ok_or_else(|| crate::error::RendererError::StaleHandle {
+                    resource: "texture".to_string(),
+                    detail: format!("{handle:?} in TextureManager::update_data"),
+                })?;
+        texture.update_data(data)
     }
 
     /// Resize a texture with new dimensions and data.
@@ -498,6 +535,7 @@ impl TextureManager {
 mod tests {
     use super::*;
     use crate::TextureUsage;
+    use crate::texture::ImageFormat;
 
     #[test]
     fn test_texture_descriptor_default() {

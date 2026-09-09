@@ -52,9 +52,12 @@ fn test_headless_render_and_readback_across_frame_slots() {
     }
     graph.cleanup();
     drop(graph);
-    let atlas = renderer.create_ui_font_atlas(1, 1, &[255, 0, 0, 255]);
-    let white =
-        renderer.create_texture(&katla_gfx::TextureDescriptor::rgba8_unorm(1, 1), &[255; 4]);
+    let atlas = renderer
+        .create_ui_font_atlas(1, 1, &[255, 0, 0, 255])
+        .expect("test font atlas creation");
+    let white = renderer
+        .create_texture(&katla_gfx::TextureDescriptor::rgba8_unorm(1, 1), &[255; 4])
+        .expect("test texture creation");
     let red_slot = renderer.get_bindless_slot(atlas).unwrap();
     let white_slot = renderer.get_bindless_slot(white).unwrap();
     let shaders = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/shaders");

@@ -1242,7 +1242,9 @@ impl ApplicationBuilder {
             let (atlas_width, atlas_height) = fonts.atlas_size();
             let atlas_data = fonts.atlas_data_rgba();
             (
-                renderer.create_ui_font_atlas(atlas_width, atlas_height, &atlas_data),
+                renderer
+                    .create_ui_font_atlas(atlas_width, atlas_height, &atlas_data)
+                    .map_err(|e| crate::error::AppError::Graphics { source: e })?,
                 atlas_width,
                 atlas_height,
             )
