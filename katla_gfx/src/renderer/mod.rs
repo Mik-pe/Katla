@@ -56,7 +56,6 @@ use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 use crate::barrier::ImageBarrier;
 use crate::error::RendererError;
 use crate::handle::ResourceStorage;
-use crate::renderer::registry::MeshIndexElement;
 use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::IndexType;
@@ -980,13 +979,18 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
+    pub fn create_mesh<T, U>(
+        &mut self,
+        vertices: &[T],
+        indices: &[U],
+        topology: crate::renderer::registry::PrimitiveTopology,
+    ) -> Result<MeshHandle, RendererError>
     where
-        T: bytemuck::Pod,
-        U: MeshIndexElement,
+        T: crate::vertex::Vertex,
+        U: crate::renderer::registry::MeshIndexElement,
     {
         self.mesh_manager
-            .create_mesh(&mut self.asset_registry, vertices, indices)
+            .create_mesh(&mut self.asset_registry, vertices, indices, topology)
     }
 
     /// Report the index format recorded for a mesh, for diagnostics and tests.
@@ -1016,7 +1020,7 @@ impl VulkanRenderer {
         attributes: &std::collections::HashMap<AttributeType, Vec<u8>>,
         vertex_count: u32,
         indices: &[u32],
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager.create_mesh_soa(
             &mut self.asset_registry,
             attributes,
@@ -1032,7 +1036,7 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_cube_mesh(&mut self, size: [f32; 3]) -> MeshHandle {
+    pub fn create_cube_mesh(&mut self, size: [f32; 3]) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_cube(&mut self.asset_registry, size)
     }
@@ -1046,7 +1050,12 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> MeshHandle {
+    pub fn create_sphere_mesh(
+        &mut self,
+        radius: f32,
+        segments: u32,
+        rings: u32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_sphere(&mut self.asset_registry, radius, segments, rings)
     }
@@ -1059,7 +1068,11 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_plane_mesh(&mut self, width: f32, height: f32) -> MeshHandle {
+    pub fn create_plane_mesh(
+        &mut self,
+        width: f32,
+        height: f32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_plane(&mut self.asset_registry, width, height)
     }
@@ -1073,7 +1086,12 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> MeshHandle {
+    pub fn create_cone_mesh(
+        &mut self,
+        height: f32,
+        base_radius: f32,
+        segments: u32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_cone(&mut self.asset_registry, height, base_radius, segments)
     }
@@ -1087,7 +1105,12 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> MeshHandle {
+    pub fn create_cylinder_mesh(
+        &mut self,
+        height: f32,
+        radius: f32,
+        segments: u32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_cylinder(&mut self.asset_registry, height, radius, segments)
     }
@@ -1108,7 +1131,7 @@ impl VulkanRenderer {
         minor_radius: f32,
         segments: u32,
         rings: u32,
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager.create_torus(
             &mut self.asset_registry,
             major_radius,
@@ -1127,7 +1150,12 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> MeshHandle {
+    pub fn create_plane_xy_mesh(
+        &mut self,
+        width: f32,
+        height: f32,
+        segments: u32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_plane_xy(&mut self.asset_registry, width, height, segments)
     }
@@ -1146,14 +1174,14 @@ impl VulkanRenderer {
     /// A `MeshHandle` that references the registered mesh.
     pub fn create_mesh_dynamic(
         &mut self,
+        descriptor: &crate::renderer::registry::MeshDescriptor,
         vertex_data: &[u8],
-        vertex_count: u32,
         indices: &[u32],
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager.create_mesh_dynamic(
             &mut self.asset_registry,
+            descriptor,
             vertex_data,
-            vertex_count,
             indices,
         )
     }

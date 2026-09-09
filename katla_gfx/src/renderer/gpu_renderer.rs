@@ -12,6 +12,7 @@ use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::renderer::features::RendererFeature;
 use crate::renderer::pipeline_kind::PipelineKind;
+use crate::renderer::registry::PrimitiveTopology;
 use crate::renderer::types::{DrawList, FrameUniforms, PointLightGPU, UIDrawList};
 use crate::texture::TextureDescriptor;
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
@@ -115,10 +116,22 @@ pub trait GpuRenderer: Sized + 'static {
     // Mesh Creation
     // ========================================================================
 
-    /// Create a mesh from interleaved vertex and index data.
-    fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
+    /// Create a mesh from typed vertex and index data.
+    ///
+    /// The vertex type's trusted [`Vertex`] implementation declares the
+    /// layout and attribute semantics; the index width comes from
+    /// [`MeshIndexElement`]. Topology and static usage are explicit mesh
+    /// properties recorded on the mesh. Nothing is guessed from byte
+    /// shapes, and validation failures return typed errors before any GPU
+    /// upload. Failed creation registers nothing.
+    fn create_mesh<T, U>(
+        &mut self,
+        vertices: &[T],
+        indices: &[U],
+        topology: PrimitiveTopology,
+    ) -> Result<MeshHandle, RendererError>
     where
-        T: bytemuck::Pod,
+        T: crate::vertex::Vertex,
         U: crate::renderer::registry::MeshIndexElement;
 
     /// Report the index format recorded for a mesh, for diagnostics and tests.
@@ -128,13 +141,17 @@ pub trait GpuRenderer: Sized + 'static {
         None
     }
 
-    /// Create a dynamic (CPU-writable) mesh.
+    /// Create a dynamic (CPU-writable) mesh from an explicit descriptor.
+    ///
+    /// The descriptor carries layout, semantics, topology, and counts; the
+    /// blobs are validated against it before upload. Usage is recorded as
+    /// [`MeshUsage::Dynamic`](crate::renderer::registry::MeshUsage).
     fn create_mesh_dynamic(
         &mut self,
+        descriptor: &crate::renderer::registry::MeshDescriptor,
         vertex_data: &[u8],
-        vertex_count: u32,
         indices: &[u32],
-    ) -> MeshHandle;
+    ) -> Result<MeshHandle, RendererError>;
 
     /// Update a dynamic mesh with new data.
     fn update_mesh_dynamic(
@@ -583,12 +600,17 @@ impl GpuRenderer for VulkanRenderer {
         Ok(())
     }
 
-    fn create_mesh<T, U>(&mut self, vertices: &[T], indices: &[U]) -> MeshHandle
+    fn create_mesh<T, U>(
+        &mut self,
+        vertices: &[T],
+        indices: &[U],
+        topology: PrimitiveTopology,
+    ) -> Result<MeshHandle, RendererError>
     where
-        T: bytemuck::Pod,
+        T: crate::vertex::Vertex,
         U: crate::renderer::registry::MeshIndexElement,
     {
-        VulkanRenderer::create_mesh(self, vertices, indices)
+        VulkanRenderer::create_mesh(self, vertices, indices, topology)
     }
 
     fn mesh_index_format(&self, mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
@@ -597,11 +619,11 @@ impl GpuRenderer for VulkanRenderer {
 
     fn create_mesh_dynamic(
         &mut self,
+        descriptor: &crate::renderer::registry::MeshDescriptor,
         vertex_data: &[u8],
-        vertex_count: u32,
         indices: &[u32],
-    ) -> MeshHandle {
-        VulkanRenderer::create_mesh_dynamic(self, vertex_data, vertex_count, indices)
+    ) -> Result<MeshHandle, RendererError> {
+        VulkanRenderer::create_mesh_dynamic(self, descriptor, vertex_data, indices)
     }
 
     fn update_mesh_dynamic(

@@ -19,13 +19,18 @@ pub use plane::generate_plane_xy;
 pub use sphere::generate_sphere;
 pub use torus::generate_torus;
 
+use crate::RendererError;
 use crate::handle::MeshHandle;
 use crate::renderer::gpu_renderer::GpuRenderer;
+use crate::renderer::registry::PrimitiveTopology;
 
 /// Create a cube mesh centered at the origin.
-pub fn create_cube(renderer: &mut impl GpuRenderer, size: [f32; 3]) -> MeshHandle {
+pub fn create_cube(
+    renderer: &mut impl GpuRenderer,
+    size: [f32; 3],
+) -> Result<MeshHandle, RendererError> {
     let (vertices, indices) = generate_cube(size);
-    renderer.create_mesh(&vertices, &indices)
+    renderer.create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
 }
 
 /// Create a UV sphere mesh centered at the origin.
@@ -34,15 +39,19 @@ pub fn create_sphere(
     radius: f32,
     segments: u32,
     rings: u32,
-) -> MeshHandle {
+) -> Result<MeshHandle, RendererError> {
     let (vertices, indices) = generate_sphere(radius, segments, rings);
-    renderer.create_mesh(&vertices, &indices)
+    renderer.create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
 }
 
 /// Create a plane mesh on the XZ plane.
-pub fn create_plane(renderer: &mut impl GpuRenderer, width: f32, height: f32) -> MeshHandle {
+pub fn create_plane(
+    renderer: &mut impl GpuRenderer,
+    width: f32,
+    height: f32,
+) -> Result<MeshHandle, RendererError> {
     let (vertices, indices) = generate_plane(width, height);
-    renderer.create_mesh(&vertices, &indices)
+    renderer.create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
 }
 
 /// Create a cone mesh with base at y=0 and apex at y=height.
@@ -51,9 +60,9 @@ pub fn create_cone(
     height: f32,
     base_radius: f32,
     segments: u32,
-) -> MeshHandle {
+) -> Result<MeshHandle, RendererError> {
     let (vertices, indices) = generate_cone(height, base_radius, segments);
-    renderer.create_mesh(&vertices, &indices)
+    renderer.create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
 }
 
 /// Create a cylinder mesh standing on Y axis.
@@ -62,9 +71,9 @@ pub fn create_cylinder(
     height: f32,
     radius: f32,
     segments: u32,
-) -> MeshHandle {
+) -> Result<MeshHandle, RendererError> {
     let (vertices, indices) = generate_cylinder(height, radius, segments);
-    renderer.create_mesh(&vertices, &indices)
+    renderer.create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
 }
 
 /// Create a torus (donut) mesh on the XZ plane.
@@ -74,9 +83,9 @@ pub fn create_torus(
     minor_radius: f32,
     segments: u32,
     rings: u32,
-) -> MeshHandle {
+) -> Result<MeshHandle, RendererError> {
     let (vertices, indices) = generate_torus(major_radius, minor_radius, segments, rings);
-    renderer.create_mesh(&vertices, &indices)
+    renderer.create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
 }
 
 /// Create a plane on the XY axis (vertical, facing +Z).
@@ -85,7 +94,7 @@ pub fn create_plane_xy(
     width: f32,
     height: f32,
     segments: u32,
-) -> MeshHandle {
+) -> Result<MeshHandle, RendererError> {
     let (vertices, indices) = generate_plane_xy(width, height, segments);
-    renderer.create_mesh(&vertices, &indices)
+    renderer.create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
 }

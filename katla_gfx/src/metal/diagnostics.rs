@@ -342,7 +342,7 @@ mod tests {
         };
 
         {
-            let mut encoder = cmd.begin_render_pass(pass_info);
+            let encoder = cmd.begin_render_pass(pass_info);
             encoder.end_encoding();
         }
 

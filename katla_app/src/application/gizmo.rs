@@ -15,10 +15,34 @@ impl Application {
     pub(crate) fn init_gizmo_resources(&mut self) {
         use crate::gizmo::GizmoResources;
 
-        let shaft_mesh = primitives::create_cylinder(&mut self.renderer, 1.0, 1.0, 16);
-        let cone_mesh = primitives::create_cone(&mut self.renderer, 1.0, 1.0, 16);
-        let cube_mesh = primitives::create_cube(&mut self.renderer, [1.0, 1.0, 1.0]);
-        let ring_mesh = primitives::create_torus(&mut self.renderer, 0.5, 0.02, 48, 24);
+        let shaft_mesh = match primitives::create_cylinder(&mut self.renderer, 1.0, 1.0, 16) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                log::error!("Failed to create gizmo shaft mesh: {error}");
+                return;
+            }
+        };
+        let cone_mesh = match primitives::create_cone(&mut self.renderer, 1.0, 1.0, 16) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                log::error!("Failed to create gizmo cone mesh: {error}");
+                return;
+            }
+        };
+        let cube_mesh = match primitives::create_cube(&mut self.renderer, [1.0, 1.0, 1.0]) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                log::error!("Failed to create gizmo cube mesh: {error}");
+                return;
+            }
+        };
+        let ring_mesh = match primitives::create_torus(&mut self.renderer, 0.5, 0.02, 48, 24) {
+            Ok(mesh) => mesh,
+            Err(error) => {
+                log::error!("Failed to create gizmo ring mesh: {error}");
+                return;
+            }
+        };
 
         let unlit_shader_path = self.resources.shader_path("unlit.wgsl");
         let material = match &mut self.renderer {

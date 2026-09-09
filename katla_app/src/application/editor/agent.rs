@@ -438,7 +438,7 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
         let shape = args.shape.as_deref().unwrap_or("cube");
         let scale = args.scale.unwrap_or([1.0, 1.0, 1.0]);
 
-        let (mesh_handle, entity_source) = match shape {
+        let (mesh_result, entity_source) = match shape {
             "sphere" => (
                 primitives::create_sphere(&mut app.renderer, 0.5, 32, 16),
                 EntitySource::Sphere {
@@ -475,6 +475,13 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
                 primitives::create_cube(&mut app.renderer, scale),
                 EntitySource::Cube { size: scale },
             ),
+        };
+        let mesh_handle = match mesh_result {
+            Ok(mesh_handle) => mesh_handle,
+            Err(error) => {
+                log::warn!("Agent spawn visuals: mesh creation failed: {error}");
+                return;
+            }
         };
 
         let material_handle = app.default_material();

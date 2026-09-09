@@ -129,23 +129,28 @@ impl GpuRenderer for MockRenderer {
         Ok(())
     }
 
-    fn create_mesh<T, U>(&mut self, _vertices: &[T], _indices: &[U]) -> MeshHandle
+    fn create_mesh<T, U>(
+        &mut self,
+        _vertices: &[T],
+        _indices: &[U],
+        _topology: katla_gfx::PrimitiveTopology,
+    ) -> Result<MeshHandle, RendererError>
     where
-        T: bytemuck::Pod,
+        T: katla_gfx::Vertex,
         U: MeshIndexElement,
     {
         self.record("create_mesh");
-        MeshHandle::new(0)
+        Ok(MeshHandle::new(0))
     }
 
     fn create_mesh_dynamic(
         &mut self,
+        _descriptor: &katla_gfx::MeshDescriptor,
         _vertex_data: &[u8],
-        _vertex_count: u32,
         _indices: &[u32],
-    ) -> MeshHandle {
+    ) -> Result<MeshHandle, RendererError> {
         self.record("create_mesh_dynamic");
-        MeshHandle::new(1)
+        Ok(MeshHandle::new(1))
     }
 
     fn update_mesh_dynamic(

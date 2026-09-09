@@ -107,6 +107,9 @@ mod tests {
             index_buffer: None,
             index_format: crate::backend::command::IndexType::Uint32,
             vertex_count,
+            layout: crate::vertex::VertexLayout::position(),
+            topology: crate::renderer::registry::PrimitiveTopology::TriangleList,
+            usage: crate::renderer::registry::MeshUsage::Static,
         }
     }
 
