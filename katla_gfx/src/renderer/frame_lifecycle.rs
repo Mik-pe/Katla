@@ -60,15 +60,16 @@ impl VulkanRenderer {
     /// Execute draw calls from FrameContext and prepare them for rendering.
     ///
     /// This method writes all per-object data from draw calls to the storage buffer.
+    /// Every instance of an instanced draw is uploaded to its own object slot.
     /// Frame uniforms should be set separately via `set_frame_uniforms()`.
     ///
     /// # Arguments
-    /// * `draw_list` - The DrawList from FrameContext containing draw calls with instance_index
+    /// * `draw_list` - The DrawList containing draw calls with allocated object slots
     ///
     /// # Errors
     ///
-    /// Returns `RendererError::ObjectLimitExceeded` if any draw call's `instance_index`
-    /// exceeds `MAX_OBJECTS_PER_FRAME`.
+    /// Returns `RendererError::ObjectLimitExceeded` if any draw call's object slot
+    /// range crosses `MAX_OBJECTS_PER_FRAME`.
     ///
     /// # Example
     /// ```ignore
@@ -96,53 +97,46 @@ impl VulkanRenderer {
 
         // Write all per-object data to storage buffer
         for draw_call in &draw_list.draws {
-            let index = draw_call.instance_index as usize;
+            let base = draw_call.instance_index as usize;
+            let count = draw_call.instance_count().max(1) as usize;
 
             // Bounds check with clear error message
-            if index >= MAX_OBJECTS_PER_FRAME as usize {
+            if base + count > MAX_OBJECTS_PER_FRAME as usize {
                 return Err(RendererError::ObjectLimitExceeded {
-                    index,
+                    index: base,
                     limit: MAX_OBJECTS_PER_FRAME as usize,
                 });
             }
 
-            // Extract material parameters from first instance
-            let (model_matrix, color, metallic, roughness, ao) =
-                if let Some(inst) = draw_call.instances.first() {
-                    (
-                        inst.model_matrix,
-                        inst.color,
-                        inst.metallic,
-                        inst.roughness,
-                        inst.ao,
-                    )
-                } else {
-                    ([0.0; 16], [1.0, 1.0, 1.0, 1.0], 0.0, 0.5, 1.0)
-                };
+            // Material parameters and texture indices are shared by all instances
             let emission_idx = draw_call.emission;
-
-            // Get texture indices from material
-            // Default: [albedo=0, normal=1, metallic_roughness=2, ao=3]
             let texture_indices = self
                 .asset_registry
                 .get_material(draw_call.material)
                 .map(|m| m.textures.texture_indices)
                 .unwrap_or([0, 1, 2, 3]);
 
-            // Write to storage buffer at instance_index
-            self.storage_manager.update_object_bindless(
-                frame_idx,
-                index,
-                &crate::vulkan::material::storage_uniform::ObjectBindlessParams {
-                    model: &model_matrix,
-                    color: &color,
-                    metallic,
-                    roughness,
-                    ao,
-                    emission_idx,
-                    texture_indices,
-                },
-            );
+            for (i, instance) in draw_call
+                .instances
+                .iter()
+                .chain(std::iter::repeat(&InstanceData::default()))
+                .take(count)
+                .enumerate()
+            {
+                self.storage_manager.update_object_bindless(
+                    frame_idx,
+                    base + i,
+                    &crate::vulkan::material::storage_uniform::ObjectBindlessParams {
+                        model: &instance.model_matrix,
+                        color: &instance.color,
+                        metallic: instance.metallic,
+                        roughness: instance.roughness,
+                        ao: instance.ao,
+                        emission_idx,
+                        texture_indices,
+                    },
+                );
+            }
         }
         Ok(())
     }

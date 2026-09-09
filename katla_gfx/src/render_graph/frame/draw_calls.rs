@@ -156,7 +156,13 @@ impl Frame<'_, VulkanRenderer> {
 
             let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
 
-            cmd.draw_indexed(index_count, 1, 0, 0, draw_call.instance_index);
+            cmd.draw_indexed(
+                index_count,
+                draw_call.instance_count().max(1),
+                0,
+                0,
+                draw_call.instance_index,
+            );
         }
 
         Ok(())

@@ -1,8 +1,9 @@
 //! Frame context for submitting draws with automatic instance allocation.
 //!
-//! This module provides a high-level API for submitting draw calls that automatically
-//! manages instance index allocation. The fluent builder pattern makes it easy to
-//! configure draw calls without manually tracking storage buffer offsets.
+//! This module provides a high-level API for submitting draw calls. Object
+//! storage slots are allocated by `katla_gfx`'s `DrawList` when a draw is
+//! pushed, so callers never choose storage indices. The fluent builder
+//! pattern makes it easy to configure draw calls.
 //!
 //! # Example
 //!
@@ -43,19 +44,15 @@ use katla_gfx::{
 
 /// Per-frame context for submitting draws with automatic instance allocation.
 ///
-/// The FrameContext tracks instance index allocation and provides fluent builders
-/// for configuring draw calls. Instance indices are allocated sequentially and
-/// automatically reset when `take_draw_list()` is called.
+/// Object storage slots are assigned by the `DrawList` at push time;
+/// `submit()` returns the base slot assigned to the draw. The draw list is
+/// taken (and the context cleared) when `take_draw_list()` is called.
 pub struct FrameContext {
-    /// Next instance index to allocate
-    next_instance_index: u32,
     /// Accumulated draw calls for this frame
     draw_list: DrawList,
     /// Frame uniforms (camera, lighting) - from katla_gfx public API
     /// Always set via set_camera() or set_frame_uniforms() before rendering
     frame_uniforms: FrameUniforms,
-    /// Maximum instances per frame (panic in debug if exceeded)
-    max_instances: u32,
 }
 
 impl Default for FrameContext {
@@ -67,15 +64,11 @@ impl Default for FrameContext {
 impl FrameContext {
     /// Create a new empty frame context.
     ///
-    /// Instance counter starts at 1 (slot 0 is reserved for fullscreen passes)
-    /// and is reset when `take_draw_list()` is called.
     /// Frame uniforms are initialized to defaults (identity matrices, origin camera).
     pub fn new() -> Self {
         Self {
-            next_instance_index: 1, // Slot 0 reserved for fullscreen/post-processing passes
             draw_list: DrawList::new(),
             frame_uniforms: FrameUniforms::default(),
-            max_instances: 256, // Match StorageUniformLayout::MAX_OBJECTS
         }
     }
 
@@ -119,7 +112,7 @@ impl FrameContext {
         &self.frame_uniforms
     }
 
-    /// Submit a single draw call (allocates 1 instance slot).
+    /// Submit a single draw call.
     ///
     /// Returns a fluent builder for configuring the draw call.
     ///
@@ -127,10 +120,8 @@ impl FrameContext {
     /// * `mesh` - Mesh handle to draw
     /// * `material` - Material handle to use
     pub fn draw(&mut self, mesh: MeshHandle, material: MaterialHandle) -> DrawBuilder<'_> {
-        let instance_idx = self.alloc_instance(1);
         DrawBuilder {
             frame: self,
-            instance_index: instance_idx,
             mesh,
             material,
             skeleton: None,
@@ -144,7 +135,7 @@ impl FrameContext {
         }
     }
 
-    /// Submit an instanced draw call (allocates N instance slots).
+    /// Submit an instanced draw call.
     ///
     /// All instances share the same mesh and material but have different transforms.
     ///
@@ -158,10 +149,8 @@ impl FrameContext {
         material: MaterialHandle,
         instances: Vec<InstanceData>,
     ) -> DrawBuilder<'_> {
-        let start_idx = self.alloc_instance(instances.len() as u32);
         DrawBuilder {
             frame: self,
-            instance_index: start_idx,
             mesh,
             material,
             skeleton: None,
@@ -175,32 +164,11 @@ impl FrameContext {
         }
     }
 
-    /// Allocate instance slots and return the starting index.
-    fn alloc_instance(&mut self, count: u32) -> u32 {
-        let start_idx = self.next_instance_index;
-        self.next_instance_index += count;
-
-        if self.next_instance_index > self.max_instances {
-            log::error!(
-                "FrameContext: exceeded maximum instances per frame ({})",
-                self.max_instances
-            );
-        }
-
-        start_idx
-    }
-
-    /// Get the current instance count (number of slots allocated).
-    pub fn instance_count(&self) -> u32 {
-        self.next_instance_index
-    }
-
     /// Take the accumulated draw list, resetting the frame context.
     ///
     /// This should be called once per frame to submit all draws to the renderer.
     /// After calling this, the frame context is reset and ready for the next frame.
     pub fn take_draw_list(&mut self) -> DrawList {
-        self.next_instance_index = 1; // Slot 0 reserved for fullscreen passes
         self.frame_uniforms = FrameUniforms::default(); // Reset to defaults
         std::mem::take(&mut self.draw_list)
     }
@@ -208,19 +176,6 @@ impl FrameContext {
     /// Get the current draw list without taking it (for inspection).
     pub fn draw_list(&self) -> &DrawList {
         &self.draw_list
-    }
-
-    /// Get mutable access to the current draw list.
-    pub fn draw_list_mut(&mut self) -> &mut DrawList {
-        &mut self.draw_list
-    }
-
-    /// Add a draw call directly to the draw list (advanced usage).
-    ///
-    /// This bypasses the fluent builder and instance allocation.
-    /// Use `draw()` or `draw_instanced()` for normal usage.
-    pub fn push_draw(&mut self, draw: DrawCall) {
-        self.draw_list.push(draw);
     }
 }
 
@@ -231,8 +186,6 @@ impl FrameContext {
 pub struct DrawBuilder<'a> {
     /// Reference to parent frame context
     frame: &'a mut FrameContext,
-    /// Allocated instance index for this draw
-    instance_index: u32,
     /// Mesh handle
     mesh: MeshHandle,
     /// Material handle
@@ -303,9 +256,9 @@ impl<'a> DrawBuilder<'a> {
 
     /// Submit the draw call to the frame context.
     ///
-    /// This writes the per-object data to the storage buffer (at the allocated
-    /// instance index) and adds the draw call to the frame's draw list.
-    pub fn submit(self) {
+    /// This adds the draw call to the frame's draw list, assigning it a unique
+    /// object storage slot range, and returns the assigned base slot.
+    pub fn submit(self) -> u32 {
         let has_overrides = self.transform.is_some()
             || self.color.is_some()
             || self.metallic.is_some()
@@ -357,13 +310,12 @@ impl<'a> DrawBuilder<'a> {
         };
 
         let mut draw_call = DrawCall::instanced(self.mesh, self.material, instances)
-            .with_instance_index(self.instance_index)
             .with_emission(self.emission.unwrap_or(0.0));
 
         if let Some(skeleton) = self.skeleton {
             draw_call = draw_call.with_skeleton(skeleton);
         }
 
-        self.frame.push_draw(draw_call);
+        self.frame.draw_list.push(draw_call)
     }
 }

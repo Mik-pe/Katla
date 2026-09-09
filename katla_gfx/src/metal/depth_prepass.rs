@@ -267,7 +267,7 @@ pub(crate) fn render_depth_prepass(
             );
         }
 
-        encoder.draw_indexed(mesh.index_count, 1, 0, 0, 0);
+        encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
 
     encoder.end_encoding();

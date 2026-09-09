@@ -101,13 +101,11 @@ fn has_later_ui_work(plan: &MetalExecutionPlan, position: usize, ui_work: &HashS
 }
 
 fn merge_draw_lists(data: &PassExecutionData) -> DrawList {
-    let mut merged = DrawList::new();
+    let mut draws = Vec::new();
     for draw_list in &data.draw_lists {
-        for draw in &draw_list.draws {
-            merged.push(draw.clone());
-        }
+        draws.extend(draw_list.draws.iter().cloned());
     }
-    merged
+    DrawList::from_draws(draws)
 }
 
 fn single_ui_draw_list(
@@ -200,15 +198,15 @@ impl MetalRenderer {
 
         // Per-slot uniform data must exist before the first record encodes:
         // frame uniforms feed every pass, and object storage is bound by draw
-        // at instance-index offsets.
-        let mut upload_list = DrawList::new();
+        // at instance-index offsets. Slots were assigned when the submitted
+        // lists were built — preserve them so encoding and upload agree.
+        let mut draws = Vec::new();
         for data in pending.values() {
             for list in &data.draw_lists {
-                for draw in &list.draws {
-                    upload_list.push(draw.clone());
-                }
+                draws.extend(list.draws.iter().cloned());
             }
         }
+        let upload_list = DrawList::from_draws(draws);
         GpuRenderer::execute_draw_calls(self, &upload_list)?;
 
         let mut cmd_buffer = self
