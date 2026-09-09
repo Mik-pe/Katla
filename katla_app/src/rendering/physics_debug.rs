@@ -31,12 +31,6 @@ mod color {
     pub fn contact_point() -> [f32; 4] {
         [1.0, 0.3, 0.1, 1.0]
     }
-    pub fn ray_line() -> [f32; 4] {
-        [0.0, 1.0, 1.0, 0.7]
-    }
-    pub fn ray_hit() -> [f32; 4] {
-        [1.0, 0.0, 0.0, 1.0]
-    }
 }
 
 /// GPU resources for physics debug rendering.
@@ -82,7 +76,6 @@ pub fn init_physics_debug_resources(
 pub fn generate_collider_wireframe(
     world: &mut katla_ecs::World,
     resources: &PhysicsDebugResources,
-    next_instance: &mut u32,
 ) -> Vec<DrawCall> {
     use katla_physics::{BodyType, ColliderShape, RigidBody, TriggerVolume};
 
@@ -121,22 +114,14 @@ pub fn generate_collider_wireframe(
 
         match &shape {
             ColliderShape::Sphere(s) => {
-                draw_sphere_wireframe(resources, pos, s.radius, color, next_instance, &mut draws);
+                draw_sphere_wireframe(resources, pos, s.radius, color, &mut draws);
             }
             ColliderShape::Box(b) => {
                 let he = b.half_extents_vec();
-                draw_box_wireframe(resources, &mat, he, color, next_instance, &mut draws);
+                draw_box_wireframe(resources, &mat, he, color, &mut draws);
             }
             ColliderShape::Capsule(c) => {
-                draw_capsule_wireframe(
-                    resources,
-                    &mat,
-                    c.half_height,
-                    c.radius,
-                    color,
-                    next_instance,
-                    &mut draws,
-                );
+                draw_capsule_wireframe(resources, &mat, c.half_height, c.radius, color, &mut draws);
             }
             ColliderShape::Trimesh(_)
             | ColliderShape::ConvexHull(_)
@@ -156,41 +141,31 @@ fn draw_sphere_wireframe(
     center: Vec3,
     radius: f32,
     color: [f32; 4],
-    next_instance: &mut u32,
     draws: &mut Vec<DrawCall>,
 ) {
     let r = radius.max(0.01);
 
     // XY ring (identity rotation)
-    let idx = *next_instance;
-    *next_instance += 1;
     draws.push(
         DrawCall::new(resources.ring_mesh, resources.material)
             .with_transform(make_trs(center, Quat::identity(), Vec3::new(r, r, r)).to_array())
-            .with_color(color)
-            .with_instance_index(idx),
+            .with_color(color),
     );
 
     // XZ ring (rotate 90 degrees around X)
     let rot_x = Quat::from_axis_angle(Vec3::X_AXIS, std::f32::consts::FRAC_PI_2);
-    let idx = *next_instance;
-    *next_instance += 1;
     draws.push(
         DrawCall::new(resources.ring_mesh, resources.material)
             .with_transform(make_trs(center, rot_x, Vec3::new(r, r, r)).to_array())
-            .with_color(color)
-            .with_instance_index(idx),
+            .with_color(color),
     );
 
     // YZ ring (rotate 90 degrees around Z)
     let rot_z = Quat::from_axis_angle(Vec3::Z_AXIS, std::f32::consts::FRAC_PI_2);
-    let idx = *next_instance;
-    *next_instance += 1;
     draws.push(
         DrawCall::new(resources.ring_mesh, resources.material)
             .with_transform(make_trs(center, rot_z, Vec3::new(r, r, r)).to_array())
-            .with_color(color)
-            .with_instance_index(idx),
+            .with_color(color),
     );
 }
 
@@ -199,7 +174,6 @@ fn draw_box_wireframe(
     world_transform: &Mat4,
     half_extents: Vec3,
     color: [f32; 4],
-    next_instance: &mut u32,
     draws: &mut Vec<DrawCall>,
 ) {
     let hx = half_extents.x();
@@ -235,7 +209,7 @@ fn draw_box_wireframe(
     for (a, b) in &edges {
         let p0 = *world_transform * corners[*a];
         let p1 = *world_transform * corners[*b];
-        draw_edge(resources, p0, p1, color, next_instance, draws);
+        draw_edge(resources, p0, p1, color, draws);
     }
 }
 
@@ -245,33 +219,26 @@ fn draw_capsule_wireframe(
     half_height: f32,
     radius: f32,
     color: [f32; 4],
-    next_instance: &mut u32,
     draws: &mut Vec<DrawCall>,
 ) {
     let r = radius.max(0.01);
 
     // Top ring
     let top_center = *world_transform * Vec3::new(0.0, half_height, 0.0);
-    let idx = *next_instance;
-    *next_instance += 1;
     draws.push(
         DrawCall::new(resources.ring_mesh, resources.material)
             .with_transform(make_trs(top_center, Quat::identity(), Vec3::new(r, r, r)).to_array())
-            .with_color(color)
-            .with_instance_index(idx),
+            .with_color(color),
     );
 
     // Bottom ring
     let bottom_center = *world_transform * Vec3::new(0.0, -half_height, 0.0);
-    let idx = *next_instance;
-    *next_instance += 1;
     draws.push(
         DrawCall::new(resources.ring_mesh, resources.material)
             .with_transform(
                 make_trs(bottom_center, Quat::identity(), Vec3::new(r, r, r)).to_array(),
             )
-            .with_color(color)
-            .with_instance_index(idx),
+            .with_color(color),
     );
 
     // 4 vertical edges connecting top and bottom rings
@@ -286,7 +253,7 @@ fn draw_capsule_wireframe(
         let z = radius * angle.sin();
         let p0 = *world_transform * Vec3::new(x, -half_height, z);
         let p1 = *world_transform * Vec3::new(x, half_height, z);
-        draw_edge(resources, p0, p1, color, next_instance, draws);
+        draw_edge(resources, p0, p1, color, draws);
     }
 }
 
@@ -295,7 +262,6 @@ pub(crate) fn draw_edge(
     p0: Vec3,
     p1: Vec3,
     color: [f32; 4],
-    next_instance: &mut u32,
     draws: &mut Vec<DrawCall>,
 ) {
     let mid = (p0 + p1) * 0.5;
@@ -309,63 +275,11 @@ pub(crate) fn draw_edge(
     let up = Vec3::new(0.0, 1.0, 0.0);
     let rot = Quat::from_rotation_between(up, dir);
 
-    let idx = *next_instance;
-    *next_instance += 1;
     draws.push(
         DrawCall::new(resources.shaft_mesh, resources.material)
             .with_transform(make_trs(mid, rot, Vec3::new(1.0, length, 1.0)).to_array())
-            .with_color(color)
-            .with_instance_index(idx),
+            .with_color(color),
     );
-}
-
-/// Generate draw calls for raycast visualization.
-pub fn generate_raycast_vis(
-    resources: &PhysicsDebugResources,
-    origin: Vec3,
-    hit: Option<&katla_physics::RayHit>,
-    max_distance: f32,
-    direction: Vec3,
-    next_instance: &mut u32,
-) -> Vec<DrawCall> {
-    let mut draws = Vec::new();
-
-    let end = match hit {
-        Some(h) => h.point,
-        None => origin + direction * max_distance,
-    };
-    draw_edge(
-        resources,
-        origin,
-        end,
-        color::ray_line(),
-        next_instance,
-        &mut draws,
-    );
-
-    if let Some(h) = hit {
-        let r = 0.05;
-        let idx = *next_instance;
-        *next_instance += 1;
-        draws.push(
-            DrawCall::new(resources.sphere_mesh, resources.material)
-                .with_transform(make_trs(h.point, Quat::identity(), Vec3::new(r, r, r)).to_array())
-                .with_color(color::ray_hit())
-                .with_instance_index(idx),
-        );
-
-        let normal_end = h.point + h.normal * 0.3;
-        draw_edge(
-            resources,
-            h.point,
-            normal_end,
-            color::contact_normal(),
-            next_instance,
-            &mut draws,
-        );
-    }
-
-    draws
 }
 
 /// Generate draw calls for contact point visualization.
@@ -374,7 +288,6 @@ pub fn generate_raycast_vis(
 pub fn generate_contact_vis(
     resources: &PhysicsDebugResources,
     physics_world: &katla_physics::PhysicsWorld,
-    next_instance: &mut u32,
 ) -> Vec<DrawCall> {
     let contacts = physics_world.active_contacts();
     let mut draws = Vec::new();
@@ -382,13 +295,10 @@ pub fn generate_contact_vis(
     for (_e1, _e2, point, normal, _depth) in &contacts {
         // Contact point sphere
         let r = 0.03;
-        let idx = *next_instance;
-        *next_instance += 1;
         draws.push(
             DrawCall::new(resources.sphere_mesh, resources.material)
                 .with_transform(make_trs(*point, Quat::identity(), Vec3::new(r, r, r)).to_array())
-                .with_color(color::contact_point())
-                .with_instance_index(idx),
+                .with_color(color::contact_point()),
         );
 
         // Contact normal line
@@ -398,7 +308,6 @@ pub fn generate_contact_vis(
             *point,
             normal_end,
             color::contact_normal(),
-            next_instance,
             &mut draws,
         );
     }

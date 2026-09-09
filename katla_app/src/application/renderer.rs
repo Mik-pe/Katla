@@ -164,12 +164,16 @@ impl Application {
                 draw = draw.with_emission(drawable.emission);
             }
 
-            draw.submit();
-
             #[cfg(feature = "editor")]
-            self.editor
-                .draw_entity_map_entries
-                .push((frame.instance_count() - 1, entity_id));
+            {
+                let slot = draw.submit();
+                self.editor.draw_entity_map_entries.push((slot, entity_id));
+            }
+
+            #[cfg(not(feature = "editor"))]
+            {
+                draw.submit();
+            }
 
             drawable_count += 1;
         }
@@ -661,7 +665,7 @@ impl Application {
                 .filter(|dc| !overlay_materials.contains(&dc.material))
                 .cloned()
                 .collect::<Vec<_>>();
-            katla_gfx::renderer::DrawList { draws }
+            katla_gfx::renderer::DrawList::from_draws(draws)
         };
 
         let selected_outline_indices = self
@@ -673,10 +677,10 @@ impl Application {
         let outline_draw_list = selected_outline_indices.as_ref().map(|indices| {
             let draws = draw_list
                 .iter()
-                .filter(|dc| indices.contains(&dc.instance_index))
+                .filter(|dc| indices.contains(&dc.base_object_slot()))
                 .cloned()
                 .collect::<Vec<_>>();
-            katla_gfx::renderer::DrawList { draws }
+            katla_gfx::renderer::DrawList::from_draws(draws)
         });
 
         (shadow_draw_list, outline_draw_list)
@@ -762,14 +766,6 @@ impl Application {
             GIZMO_SCREEN_SIZE,
         );
 
-        // Allocate instance indices starting after existing draws
-        let mut next_instance = draw_list
-            .iter()
-            .map(|d| d.instance_index)
-            .max()
-            .unwrap_or(0)
-            + 1;
-
         let gizmo_draws = match self.editor.gizmo_state.mode {
             GizmoMode::Translate => generate_translate_draw_calls(
                 &self.editor.gizmo_resources,
@@ -777,7 +773,6 @@ impl Application {
                 gizmo_scale,
                 self.editor.gizmo_state.hovered_handle,
                 self.editor.gizmo_state.active_handle,
-                &mut next_instance,
             ),
             GizmoMode::Rotate => generate_rotate_draw_calls(
                 &self.editor.gizmo_resources,
@@ -785,7 +780,6 @@ impl Application {
                 gizmo_scale,
                 self.editor.gizmo_state.hovered_handle,
                 self.editor.gizmo_state.active_handle,
-                &mut next_instance,
             ),
             GizmoMode::Scale => generate_scale_draw_calls(
                 &self.editor.gizmo_resources,
@@ -793,7 +787,6 @@ impl Application {
                 gizmo_scale,
                 self.editor.gizmo_state.hovered_handle,
                 self.editor.gizmo_state.active_handle,
-                &mut next_instance,
             ),
         };
 
@@ -812,17 +805,9 @@ impl Application {
 
         use crate::rendering::physics_debug;
 
-        let mut next_instance = draw_list
-            .iter()
-            .map(|d| d.instance_index)
-            .max()
-            .unwrap_or(0)
-            + 1;
-
         let debug_draws = physics_debug::generate_collider_wireframe(
             &mut self.world,
             &self.editor.physics_debug_resources,
-            &mut next_instance,
         );
 
         for draw in debug_draws {
@@ -830,11 +815,8 @@ impl Application {
         }
 
         if let Some(physics) = self.world.get_resource::<katla_physics::PhysicsWorld>() {
-            let contact_draws = physics_debug::generate_contact_vis(
-                &self.editor.physics_debug_resources,
-                physics,
-                &mut next_instance,
-            );
+            let contact_draws =
+                physics_debug::generate_contact_vis(&self.editor.physics_debug_resources, physics);
             for draw in contact_draws {
                 draw_list.push(draw);
             }
@@ -851,17 +833,9 @@ impl Application {
 
         use crate::rendering::reverb_debug;
 
-        let mut next_instance = draw_list
-            .iter()
-            .map(|d| d.instance_index)
-            .max()
-            .unwrap_or(0)
-            + 1;
-
         let debug_draws = reverb_debug::generate_reverb_zone_wireframe(
             &mut self.world,
             &self.editor.physics_debug_resources,
-            &mut next_instance,
         );
 
         for draw in debug_draws {
@@ -900,13 +874,6 @@ impl Application {
 
         let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
         let fov_rad = fov.to_radians();
-
-        let mut next_instance = draw_list
-            .iter()
-            .map(|d| d.instance_index)
-            .max()
-            .unwrap_or(0)
-            + 1;
 
         for (entity_id, billboard) in self.world.query_ref::<&BillboardComponent>() {
             if self
@@ -948,9 +915,6 @@ impl Application {
             let transform_mat = Mat4::from_translation([position.x(), position.y(), position.z()])
                 * Mat4::from_scale(katla_math::Vec3::new(world_scale, world_scale, world_scale));
 
-            let idx = next_instance;
-            next_instance += 1;
-
             let color = billboard.color.to_linear();
 
             let draw = DrawCall::new(
@@ -959,11 +923,10 @@ impl Application {
             )
             .with_transform(transform_mat.to_array())
             .with_color(color.to_array())
-            .with_instance_index(idx)
             .with_emission(bindless_idx as f32)
             .with_billboard();
 
-            draw_list.push(draw);
+            let idx = draw_list.push(draw);
 
             self.editor.entity_instance_map.insert(idx, entity_id);
             self.editor

@@ -329,7 +329,7 @@ fn encode_cascade_draws(
             );
         }
 
-        encoder.draw_indexed(mesh.index_count, 1, 0, 0, 0);
+        encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
 }
 

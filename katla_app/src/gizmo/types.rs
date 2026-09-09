@@ -740,7 +740,6 @@ pub fn generate_translate_draw_calls(
     scale: f32,
     hovered_handle: Option<GizmoHandle>,
     active_handle: Option<GizmoHandle>,
-    next_instance_index: &mut u32,
 ) -> Vec<DrawCall> {
     let mut draws = Vec::with_capacity(9);
 
@@ -764,14 +763,10 @@ pub fn generate_translate_draw_calls(
         // Shaft: cylinder along the axis
         let shaft_transform = make_axis_cylinder_transform(origin, axis_end, shaft_radius);
 
-        let shaft_idx = *next_instance_index;
-        *next_instance_index += 1;
-
         draws.push(
             DrawCall::new(resources.shaft_mesh, resources.material)
                 .with_transform(shaft_transform)
-                .with_color(color.to_array())
-                .with_instance_index(shaft_idx),
+                .with_color(color.to_array()),
         );
 
         // Tip: cone at the end of the shaft
@@ -781,14 +776,10 @@ pub fn generate_translate_draw_calls(
             tip_radius,
         );
 
-        let tip_idx = *next_instance_index;
-        *next_instance_index += 1;
-
         draws.push(
             DrawCall::new(resources.cone_mesh, resources.material)
                 .with_transform(tip_transform)
-                .with_color(color.to_array())
-                .with_instance_index(tip_idx),
+                .with_color(color.to_array()),
         );
     }
 
@@ -798,7 +789,6 @@ pub fn generate_translate_draw_calls(
         scale,
         hovered_handle,
         active_handle,
-        next_instance_index,
         &mut draws,
     );
 
@@ -814,7 +804,6 @@ pub fn generate_rotate_draw_calls(
     scale: f32,
     hovered_handle: Option<GizmoHandle>,
     active_handle: Option<GizmoHandle>,
-    next_instance_index: &mut u32,
 ) -> Vec<DrawCall> {
     let mut draws = Vec::with_capacity(3);
 
@@ -839,14 +828,10 @@ pub fn generate_rotate_draw_calls(
         let scale_mat = Mat4::from_scale(Vec3::new(ring_radius, ring_radius, ring_radius));
         let ring_transform = (translation * rotation * scale_mat).to_array();
 
-        let idx = *next_instance_index;
-        *next_instance_index += 1;
-
         draws.push(
             DrawCall::new(resources.ring_mesh, resources.material)
                 .with_transform(ring_transform)
-                .with_color(color.to_array())
-                .with_instance_index(idx),
+                .with_color(color.to_array()),
         );
     }
 
@@ -863,7 +848,6 @@ pub fn generate_scale_draw_calls(
     scale: f32,
     hovered_handle: Option<GizmoHandle>,
     active_handle: Option<GizmoHandle>,
-    next_instance_index: &mut u32,
 ) -> Vec<DrawCall> {
     let mut draws = Vec::with_capacity(9);
 
@@ -886,14 +870,10 @@ pub fn generate_scale_draw_calls(
         // Shaft
         let shaft_transform = make_axis_cylinder_transform(origin, axis_end, shaft_radius);
 
-        let shaft_idx = *next_instance_index;
-        *next_instance_index += 1;
-
         draws.push(
             DrawCall::new(resources.shaft_mesh, resources.material)
                 .with_transform(shaft_transform)
-                .with_color(color.to_array())
-                .with_instance_index(shaft_idx),
+                .with_color(color.to_array()),
         );
 
         // Cube tip at the end
@@ -901,14 +881,10 @@ pub fn generate_scale_draw_calls(
         let cube_transform = mat4_from_translation(cube_center)
             * Mat4::from_scale(Vec3::new(cube_size, cube_size, cube_size));
 
-        let cube_idx = *next_instance_index;
-        *next_instance_index += 1;
-
         draws.push(
             DrawCall::new(resources.cube_mesh, resources.material)
                 .with_transform(cube_transform.to_array())
-                .with_color(color.to_array())
-                .with_instance_index(cube_idx),
+                .with_color(color.to_array()),
         );
     }
 
@@ -918,7 +894,6 @@ pub fn generate_scale_draw_calls(
         scale,
         hovered_handle,
         active_handle,
-        next_instance_index,
         &mut draws,
     );
 
@@ -933,7 +908,6 @@ fn generate_plane_quads(
     scale: f32,
     hovered_handle: Option<GizmoHandle>,
     active_handle: Option<GizmoHandle>,
-    next_instance_index: &mut u32,
     draws: &mut Vec<DrawCall>,
 ) {
     let plane_size = scale * 0.3;
@@ -972,14 +946,10 @@ fn generate_plane_quads(
         let translation = mat4_from_translation(center);
         let scale_mat = Mat4::from_scale(scale_vec);
 
-        let idx = *next_instance_index;
-        *next_instance_index += 1;
-
         draws.push(
             DrawCall::new(resources.cube_mesh, resources.material)
                 .with_transform((translation * scale_mat).to_array())
-                .with_color(color.to_array())
-                .with_instance_index(idx),
+                .with_color(color.to_array()),
         );
     }
 }

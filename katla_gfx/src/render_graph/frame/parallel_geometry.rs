@@ -30,6 +30,7 @@ pub(super) struct ResolvedDrawCommand {
     index_type: vk::IndexType,
     index_count: u32,
     instance_index: u32,
+    instance_count: u32,
     /// Shadow descriptor set (Set 4) — null if shadow not ready.
     shadow_ds: vk::DescriptorSet,
 }
@@ -127,7 +128,14 @@ fn record_draw_chunk_sequential(
 
             if draw.index_count > 0 {
                 device.cmd_bind_index_buffer(cb, draw.index_buf, 0, draw.index_type);
-                device.cmd_draw_indexed(cb, draw.index_count, 1, 0, 0, draw.instance_index);
+                device.cmd_draw_indexed(
+                    cb,
+                    draw.index_count,
+                    draw.instance_count,
+                    0,
+                    0,
+                    draw.instance_index,
+                );
             }
         }
     }
@@ -308,6 +316,7 @@ impl Frame<'_, VulkanRenderer> {
                     index_type,
                     index_count,
                     instance_index: draw_call.instance_index,
+                    instance_count: draw_call.instance_count().max(1),
                     shadow_ds,
                 });
             }

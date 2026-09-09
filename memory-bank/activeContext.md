@@ -2,26 +2,32 @@
 
 ## Current Work
 
-- Issue #85 fixed (2026-09-07, commit 37182eca): mesh index format is now
-  preserved end-to-end. `create_mesh` accepts only u16/u32 via the
-  `MeshIndexElement` trait (compile-time rejection of other widths),
-  `MeshAsset` records a backend-neutral `index_format`, all three Vulkan draw
-  paths (draw_calls, draw_helpers, parallel_geometry) bind the recorded format
-  instead of hardcoded UINT32, Metal keys its upload conversion off the typed
-  format (storage stays u32-by-conversion), and `GpuRenderer::mesh_index_format`
-  reports the effective format. Unused `register_mesh` wrapper removed.
-  Focused GPU test `katla_gfx/tests/mesh_index_format.rs` (#[ignore], needs
-  device) renders u16/u32 meshes byte-identically and was proven to fail
-  against the old binding. GOTCHAS for bare `init_headless` GPU tests:
-  compiling model_pbr.wgsl requires `init_light_culling` AND
-  `init_shadow_resources` first or pipeline creation segfaults the Intel
-  driver (ValidationMode::Enabled also segfaults driver-side on this machine —
-  use Disabled); the recommended per-frame order is wait_for_frame →
-  set_frame_uniforms → execute_draw_calls → render, all per frame slot —
-  a one-shot uniforms/object-data write leaves other slots zeroed and the
-  screen blank.
+- Issue #87 fixed (2026-09-09, PR on fix/87-instanced-draw-allocation): geometry
+  instancing now allocates/uploads/encodes every instance. `DrawList` owns
+  frame-local object-slot allocation — `push` assigns a unique base slot per
+  draw (bump allocator starting at 1; slot 0 stays reserved) and RETURNS it;
+  `DrawList::from_draws` preserves already-assigned slots for filtered/merged
+  lists (shadow/outline clones, Metal upload merge — re-push would reassign and
+  break upload/encode agreement). `DrawCall::with_instance_index` and the
+  FrameContext counter are deleted; `instance_index` is `pub(crate)` with
+  `base_object_slot()` getter. Upload loops write every instance (Vulkan
+  frame_lifecycle + Metal metal_renderer); capacity validation checks the whole
+  base+count range (typed ObjectLimitExceeded). All encode sites pass the real
+  instance count: Vulkan draw_calls/draw_helpers/parallel_geometry (firstInstance
+  = base slot; shader walks objects[@builtin(instance_index)]), Metal
+  geometry/depth_prepass/shadow/outline/picking (buffer-offset rebind means
+  instance_id 0..N-1 already reads the right consecutive slots). The app's
+  entity→slot picking map (billboards + scene draws) is built from the value
+  returned by push/submit. Focused GPU test
+  `katla_gfx/tests/instanced_draws.rs` (#[ignore], needs device): one 4-instance
+  draw renders byte-identically to 4 direct draws; mixed list; frame-slot reuse;
+  recolor-a-late-instance; capacity exhaustion → typed error. Proven to fail
+  against both original bugs (upload-only-first, count-1 encode). GOTCHA: in
+  Vulkan headless readback the target's row 0 is NDC y=+1 (y points DOWN) —
+  pixel probing math must use row = (ndc_y+1)/2*H.
 
-- Inspector component listing + add/remove pass (2026-09-08, PR #103, branch feat/inspector-component-sections): the inspector now renders a collapsible section for EVERY component on the selected entity (payload rows for lights/camera/script/particles/audio/physics, muted notes for tag-like components), each registry-removable component gets an `×` in its section header, and the Add Component picker works end-to-end: opens (accent border), live text filter (view-local state slot), excludes owned components, alphabetically sorted rows. Found and fixed three real bugs: (1) the picker could NEVER open — the view read a never-written local state slot instead of the env flag (the old EditorUI-side `add_component_filter`/`add_component_scroll_state` dead state was removed); (2) the UI AddComponent path ran the agent's protected-entity guard, but `gizmo_state.entity` means "currently selected entity", so EVERY add on a selected entity was rejected ("is the editor gizmo and cannot be modified") — the guard stays on agent/MCP paths only, UI actions go straight to `SceneToolExecutor`; (3) the particle emitter inspector payload was hard-`None`d since the Metal feature-gating commit — restored. Also: `collect_entity_info` component names now match registry type names ("NameComponent", "ParticleEmitterComponent", plus VelocityComponent/ReverbZone/CollisionFilter now detected), and `ComponentRegistry::type_names()` sorts (HashMap order was process-random, which made picker rows shuffle between runs). Interaction harness extended to 8/8 checks (add ColliderShape via picker row click, remove it via section ×) with screenshots 11-13; harness budget now 130 frames (`game/src/main.rs`). Verified: 8/8 checks, workspace tests green, clippy clean on touched files, fmt clean.
+- Inspector PR #103 merged (2026-09-09, squash as 1886e070-ish via gh; branch
+  deleted). Working tree was clean before starting — nothing uncommitted.
 
 - Metal visual verification pass (2026-09-05, macOS): the shared sky/UI shader changes from the Vulkan audit are now verified on native Metal. Two Metal-only regressions found and fixed: (1) the UI vertex descriptor lacked the `texture_index` attribute the shader now reads per-vertex, so the UI material failed to compile and EVERY frame errored ("Metal UI record has no material") with a nearly blank canvas; (2) cascaded shadow atlas content was vertically mirrored inside each atlas quadrant — Metal clip space is Y-up while the shared cascade data and sampler follow Vulkan's Y-down convention — which displaced/mirrored all sun shadows ("inverted shadows"). Fixed by a Metal-only encode-side cascade buffer with flipped clip-Y matrices plus `MTLWinding::CounterClockwise` on the shadow pipelines; sampling keeps the shared Vulkan-convention data. Verified headless from default/side/back/top-down angles plus the playground scene; red-shadow-mask shader probe (temporary, reverted) confirmed the mask tracks casters. Metal validation run (`METAL_DEVICE_WRAPPER_TYPE=1 katla -s`) exits clean.
 - The game binary gained a `--camera yaw,pitch,distance` diagnostic flag (degrees) for headless captures from explicit orbit poses; `Application::set_editor_camera_pose` drives it.
@@ -38,6 +44,7 @@
 
 ## Conventions and Validation Limits
 
+- Object storage slots are allocated ONLY by `DrawList::push` (assigns a unique base range and returns it) — never set `instance_index` by hand. Filtered/merged/cloned draw lists must use `DrawList::from_draws` to preserve uploaded slots; re-pushing clones would reassign and desynchronize upload from encode.
 - Reserve declarative editor state slots unconditionally in a stable order. Conditional slots cause cross-view type confusion. The inspector reserves one expansion slot per `SECTION_TYPES` entry plus the picker filter String slot, all before any conditional build.
 - Component type names in `EntityInfo.components` must match `ComponentRegistry` type names exactly — the UI filters the add-picker by comparing them.
 - Use UI design tokens for chrome dimensions. Docked content uses panel bodies; dock tab strips provide titles.
