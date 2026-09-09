@@ -1,6 +1,6 @@
 # Katla ✨🎮
 
-![Katla](assets/katla-logo.jpg)
+![Katla](assets/katla-logo.svg)
 
 A Vulkan game engine in Rust. Playground for graphics experiments. 🐒
 
