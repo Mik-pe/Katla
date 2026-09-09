@@ -156,9 +156,12 @@ impl ComponentRegistry {
         self.entries.contains_key(type_name)
     }
 
-    /// List all registered component type names.
+    /// List all registered component type names, sorted for deterministic
+    /// ordering across processes (the backing store is a HashMap).
     pub fn type_names(&self) -> Vec<&'static str> {
-        self.entries.keys().copied().collect()
+        let mut names: Vec<&'static str> = self.entries.keys().copied().collect();
+        names.sort_unstable();
+        names
     }
 }
 

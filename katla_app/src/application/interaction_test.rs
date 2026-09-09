@@ -38,6 +38,15 @@ mod target {
     pub const PREFERENCES_DARK_SWATCH: (f32, f32) = (800.0, 192.0);
     /// Close button of the Preferences modal (top-right).
     pub const PREFERENCES_CLOSE: (f32, f32) = (900.0, 120.0);
+    /// "+ Add Component" expander at the foot of the inspector panel
+    /// (measured from screenshot 11 with Sphere_1_0 selected).
+    pub const INSPECTOR_ADD_COMPONENT: (f32, f32) = (1120.0, 390.0);
+    /// "Collider" row (2nd alphabetically) in the opened Add Component list,
+    /// visible without scrolling.
+    pub const ADD_COMPONENT_COLLIDER: (f32, f32) = (1120.0, 492.0);
+    /// "×" remove button on the "Collider" section header in the inspector
+    /// (hit zone is the rightmost 20px of the section header).
+    pub const INSPECTOR_COLLIDER_REMOVE: (f32, f32) = (1258.0, 391.0);
 }
 
 /// What the runner should do next. `begin_frame` performs press/release/scroll
@@ -74,6 +83,17 @@ enum State {
     PressClose,
     ReleaseClose,
     ShotClose,
+    PressHierarchyAgain,
+    ReleaseHierarchyAgain,
+    PressAddComponent,
+    ReleaseAddComponent,
+    ShotAddOpen,
+    PressAddRow,
+    ReleaseAddRow,
+    CheckAddComponent,
+    PressRemoveComponent,
+    ReleaseRemoveComponent,
+    CheckRemoveComponent,
     Done,
 }
 
@@ -139,6 +159,15 @@ impl InteractionTestRunner {
         app.world
             .get_component::<NameComponent>(id)
             .map(|n| n.name.clone())
+    }
+
+    /// Whether the selected entity carries a component of type `T`.
+    #[cfg(feature = "editor")]
+    fn selected_has_component<T: katla_ecs::Component>(app: &Application) -> bool {
+        app.editor
+            .editor_ui
+            .selected_entity
+            .is_some_and(|id| app.world.get_component::<T>(id).is_some())
     }
 
     /// Synthetic UI press: position the mouse and press the left button.
@@ -276,6 +305,38 @@ impl InteractionTestRunner {
                 Self::ui_release(app);
                 self.state = State::ShotClose;
             }
+            State::PressHierarchyAgain if frame == 84 => {
+                Self::ui_press(app, target::HIERARCHY_SPHERE_1_0);
+                self.state = State::ReleaseHierarchyAgain;
+            }
+            State::ReleaseHierarchyAgain if frame == 85 => {
+                Self::ui_release(app);
+                self.state = State::PressAddComponent;
+            }
+            State::PressAddComponent if frame == 88 => {
+                Self::ui_press(app, target::INSPECTOR_ADD_COMPONENT);
+                self.state = State::ReleaseAddComponent;
+            }
+            State::ReleaseAddComponent if frame == 89 => {
+                Self::ui_release(app);
+                self.state = State::ShotAddOpen;
+            }
+            State::PressAddRow if frame == 95 => {
+                Self::ui_press(app, target::ADD_COMPONENT_COLLIDER);
+                self.state = State::ReleaseAddRow;
+            }
+            State::ReleaseAddRow if frame == 96 => {
+                Self::ui_release(app);
+                self.state = State::CheckAddComponent;
+            }
+            State::PressRemoveComponent if frame == 103 => {
+                Self::ui_press(app, target::INSPECTOR_COLLIDER_REMOVE);
+                self.state = State::ReleaseRemoveComponent;
+            }
+            State::ReleaseRemoveComponent if frame == 104 => {
+                Self::ui_release(app);
+                self.state = State::CheckRemoveComponent;
+            }
             _ => {}
         }
     }
@@ -373,10 +434,45 @@ impl InteractionTestRunner {
                     format!("preferences panel visible after close: {}", visible),
                 );
                 self.screenshots_taken += 1;
-                self.state = State::Done;
+                self.state = State::PressHierarchyAgain;
                 Some(self.screenshot_path("10_preferences_closed"))
             }
-            State::Done if frame == 88 => {
+            State::ShotAddOpen if frame == 92 => {
+                self.screenshots_taken += 1;
+                self.state = State::PressAddRow;
+                Some(self.screenshot_path("11_add_component_open"))
+            }
+            State::CheckAddComponent if frame == 99 => {
+                let has_collider =
+                    Self::selected_has_component::<katla_physics::ColliderShape>(app);
+                self.record(
+                    "add_component_click_adds_collider",
+                    has_collider,
+                    format!(
+                        "ColliderShape on selected entity after pick: {}",
+                        has_collider
+                    ),
+                );
+                self.screenshots_taken += 1;
+                self.state = State::PressRemoveComponent;
+                Some(self.screenshot_path("12_component_added"))
+            }
+            State::CheckRemoveComponent if frame == 107 => {
+                let has_collider =
+                    Self::selected_has_component::<katla_physics::ColliderShape>(app);
+                self.record(
+                    "remove_component_click_removes_collider",
+                    !has_collider,
+                    format!(
+                        "ColliderShape on selected entity after remove: {}",
+                        has_collider
+                    ),
+                );
+                self.screenshots_taken += 1;
+                self.state = State::Done;
+                Some(self.screenshot_path("13_component_removed"))
+            }
+            State::Done if frame == 117 => {
                 let passed = self.checks.iter().filter(|c| c.passed).count();
                 info!(
                     "Interaction test summary: {}/{} checks passed",

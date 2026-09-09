@@ -181,7 +181,6 @@ impl EditorUI {
                             theme: self.theme.clone(),
                             available_components: self.available_components.clone(),
                             add_component_open: self.add_component_open,
-                            add_component_filter: self.add_component_filter.clone(),
                             focus_script_input: self.focus_script_input,
                             audio_listener_count: params
                                 .entities
@@ -347,13 +346,17 @@ impl EditorUI {
 
         for action in self.view_tree.actions_mut().drain::<InspectorAction>() {
             match action {
-                InspectorAction::ToggleAddComponent => {
+                InspectorAction::TogglePicker => {
                     self.add_component_open = !self.add_component_open;
                 }
-                InspectorAction::AddComponent { entity, component } => {
+                InspectorAction::Add { entity, component } => {
                     self.add_component_open = false;
                     self.pending_actions
                         .push(EditorAction::AddComponent { entity, component });
+                }
+                InspectorAction::Remove { entity, component } => {
+                    self.pending_actions
+                        .push(EditorAction::RemoveComponent { entity, component });
                 }
             }
         }
