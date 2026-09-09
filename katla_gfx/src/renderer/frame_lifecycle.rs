@@ -20,6 +20,8 @@ impl VulkanRenderer {
             self.swap_data.frame_counter(),
             self.swap_data.frames_in_flight(),
         );
+        // Release staged mesh uploads whose copy submissions finished.
+        self.context.drain_completed_staged_uploads();
         Ok(())
     }
 

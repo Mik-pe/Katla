@@ -1,15 +1,32 @@
 use super::*;
 
 impl VulkanRenderer {
-    /// Destroy a mesh and release its GPU vertex/index buffers.
+    /// Destroy a mesh and retire its GPU vertex/index buffers.
     ///
-    /// After destruction, `get_mesh(handle)` returns `None` and `mesh_count()` decreases.
+    /// The handle invalidates immediately (`get_mesh` returns `None`,
+    /// `mesh_count()` decreases), but the native buffers retire instead of
+    /// freeing right away: staged uploads and in-flight frames may still
+    /// reference them, and the retirement queue frees them once those
+    /// submissions have provably completed.
+    ///
     /// Double-destroy is safe (no-op). Destroying an unowned or `NONE` handle is safe.
     ///
     /// # Arguments
     /// * `handle` - The mesh handle to destroy
     pub fn destroy_mesh(&mut self, handle: MeshHandle) {
-        self.asset_registry.remove_mesh(handle);
+        let Some(mut asset) = self.asset_registry.remove_mesh(handle) else {
+            return;
+        };
+        let mut retirements =
+            FrameRetirements::new(&mut self.buffer_retirements, self.swap_data.frame_counter());
+        for (_, vertex_buffer) in asset.attribute_buffers.drain() {
+            let (buffer, allocation) = vertex_buffer.into_native_parts();
+            retirements.retire(RetiredBuffer::new(buffer, allocation, self.context.clone()));
+        }
+        if let Some(index_buffer) = asset.index_buffer.take() {
+            let (buffer, allocation) = index_buffer.into_native_parts();
+            retirements.retire(RetiredBuffer::new(buffer, allocation, self.context.clone()));
+        }
     }
 
     /// Destroy a material and release its pipeline resources.

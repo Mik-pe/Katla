@@ -268,13 +268,13 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
         pixels
     };
 
-    /// True when the pixel is red-dominant (the mesh tint). The target is
-    /// B8G8R8A8: the red channel is byte 2 of the readback.
+    // True when the pixel is red-dominant (the mesh tint). The target is
+    // B8G8R8A8: the red channel is byte 2 of the readback.
     let covered = |pixels: &Vec<u8>, ndc: (f32, f32)| -> bool {
         let at = pixel(ndc.0, ndc.1);
         pixels[at + 2] > 120 && pixels[at] < 120 && pixels[at + 1] < 120
     };
-    /// True when no mesh-tinted pixel exists anywhere.
+    // True when no mesh-tinted pixel exists anywhere.
     let no_mesh_pixels = |pixels: &Vec<u8>| -> bool {
         !pixels
             .chunks_exact(4)

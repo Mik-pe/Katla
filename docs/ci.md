@@ -46,3 +46,9 @@ cargo clippy -p katla_gfx -p katla_app --locked -- -D warnings
 ```
 
 Linux separately validates the graphics library and Vulkan path on Ubuntu 24.04.
+## Linux apt source hygiene
+
+GitHub's `ubuntu-24.04` runners preinstall Google's Chrome apt source. Its
+upstream metadata intermittently arrives hash-mismatched, which fails
+`apt-get update` before any build step runs. The Linux graphics job removes
+that source before updating — no Katla job uses Chrome.

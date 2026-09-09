@@ -49,6 +49,10 @@ criterion = "0.5"
 name = "command_buffer_recording"
 harness = false
 
+[[bench]]
+name = "mesh_upload"
+harness = false
+
 [[example]]
 name = "particle_validation"
 required-features = ["validation"]
