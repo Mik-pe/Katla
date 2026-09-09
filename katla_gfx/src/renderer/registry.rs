@@ -111,11 +111,13 @@ pub enum PrimitiveTopology {
 /// Buffer residency policy for mesh data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum MeshUsage {
-    /// Immutable after creation. May live in GPU-optimal memory behind a
-    /// staging upload (issue #96).
+    /// Immutable after creation. Uploaded through one batched staged copy
+    /// into GPU-optimal memory where supported (host-visible fallback), so
+    /// hot draw data does not live in streaming memory.
     #[default]
     Static,
-    /// CPU-updatable through `update_mesh_dynamic`.
+    /// CPU-updatable streaming data (`update_mesh_dynamic`): kept in
+    /// host-visible memory for direct per-frame writes.
     Dynamic,
 }
 
@@ -284,6 +286,31 @@ impl MeshDescriptor {
         }
         Ok(())
     }
+}
+
+/// Memory class a mesh buffer was placed in.
+///
+/// Static meshes prefer [`MeshMemoryClass::DeviceLocal`] (populated through
+/// staged copies); dynamic meshes stay [`MeshMemoryClass::HostVisible`] for
+/// direct per-frame writes. The selected placement is observable through
+/// `mesh_memory_report` for diagnostics and tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeshMemoryClass {
+    /// GPU-optimal memory, populated through a staging copy.
+    DeviceLocal,
+    /// Host-visible memory for direct CPU writes.
+    HostVisible,
+}
+
+/// Placement report for one mesh's GPU buffers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeshMemoryReport {
+    /// Buffers placed in GPU-optimal memory.
+    pub device_local_buffers: usize,
+    /// Buffers placed in host-visible memory (dynamic policy or fallback).
+    pub host_visible_buffers: usize,
+    /// Placement of the index buffer, when the mesh has one.
+    pub index_buffer: Option<MeshMemoryClass>,
 }
 
 /// Validate a dynamic-mesh update payload against a mesh's recorded layout.

@@ -10,6 +10,7 @@ use crate::renderer::registry::{
 };
 use crate::vertex::Vertex;
 use crate::vulkan::retirement::{FrameRetirements, RetiredBuffer};
+use crate::vulkan::staged_upload::{BufferPlacement, StagedUploadBatch};
 use crate::vulkan::vertex_attribute::AttributeType;
 use crate::vulkan::{IndexBuffer, IndexType, VertexBuffer};
 use crate::{RendererError, VulkanContext};
@@ -88,9 +89,13 @@ impl MeshManager {
 
         // Deinterleave the trusted layout into SOA attribute buffers.
         let vertex_bytes = bytemuck::cast_slice(vertices);
-        let attribute_buffers = self.deinterleave(&descriptor, vertex_bytes)?;
+        let split = split_attribute_bytes(
+            &descriptor.layout,
+            &descriptor.attributes,
+            vertex_bytes,
+            descriptor.vertex_count,
+        )?;
 
-        // Create index buffer
         let index_bytes = unsafe {
             std::slice::from_raw_parts(
                 indices.as_ptr() as *const u8,
@@ -98,25 +103,72 @@ impl MeshManager {
             )
         };
 
-        let index_type = IndexType::from(U::INDEX_FORMAT);
-
-        let index_count = index_bytes.len() as u32 / U::INDEX_FORMAT.size();
-
-        let index_buffer = if !index_bytes.is_empty() {
-            let mut ib = IndexBuffer::new(
-                self.context.clone(),
-                index_bytes.len() as u64,
-                index_type,
-                index_count,
-            );
-            ib.upload_data(index_bytes);
-            Some(ib)
-        } else {
-            None
-        };
+        let (attribute_buffers, index_buffer) = self.upload_soa_buffers(SoaUpload {
+            usage: MeshUsage::Static,
+            split: &split,
+            vertex_count: descriptor.vertex_count,
+            index_bytes,
+            index_type: IndexType::from(U::INDEX_FORMAT),
+            index_count: index_bytes.len() as u32 / U::INDEX_FORMAT.size(),
+        })?;
 
         let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, descriptor);
         Ok(registry.register_mesh(mesh_asset))
+    }
+
+    /// Upload split attribute data plus index bytes under a placement
+    /// policy: static meshes go through one batched staged submission into
+    /// device-local memory, dynamic meshes take direct host-visible writes.
+    fn upload_soa_buffers(
+        &self,
+        upload: SoaUpload<'_>,
+    ) -> Result<(HashMap<AttributeType, VertexBuffer>, Option<IndexBuffer>), RendererError> {
+        match BufferPlacement::for_mesh_usage(upload.usage) {
+            BufferPlacement::DeviceLocal => {
+                // Canonical attribute order keeps the staging layout
+                // deterministic across runs.
+                let mut kinds: Vec<AttributeType> = upload.split.keys().copied().collect();
+                kinds.sort_by_key(|kind| kind.default_location());
+
+                let mut batch = StagedUploadBatch::new(self.context.clone());
+                let mut attribute_buffers = HashMap::new();
+                for kind in kinds {
+                    let bytes = &upload.split[&kind];
+                    let vb = batch.push_vertex(bytes, upload.vertex_count)?;
+                    attribute_buffers.insert(kind, vb);
+                }
+                let index_buffer = if upload.index_bytes.is_empty() {
+                    None
+                } else {
+                    Some(batch.push_index(
+                        upload.index_bytes,
+                        upload.index_type,
+                        upload.index_count,
+                    )?)
+                };
+                batch.finish()?;
+                Ok((attribute_buffers, index_buffer))
+            }
+            BufferPlacement::HostVisible => {
+                let mut attribute_buffers = HashMap::new();
+                for (kind, bytes) in upload.split {
+                    attribute_buffers.insert(*kind, self.create_attr_buffer(bytes));
+                }
+                let index_buffer = if upload.index_bytes.is_empty() {
+                    None
+                } else {
+                    let mut ib = IndexBuffer::new(
+                        self.context.clone(),
+                        upload.index_bytes.len() as u64,
+                        upload.index_type,
+                        upload.index_count,
+                    );
+                    ib.upload_data(upload.index_bytes);
+                    Some(ib)
+                };
+                Ok((attribute_buffers, index_buffer))
+            }
+        }
     }
 
     /// Validate every index against the vertex count before upload.
@@ -212,35 +264,26 @@ impl MeshManager {
         descriptor.validate_split(attributes)?;
         self.validate_index_range(&descriptor, indices)?;
 
-        let mut attribute_buffers = HashMap::new();
-
-        for (attr_type, data) in attributes {
-            if !data.is_empty() {
-                let mut vb =
-                    VertexBuffer::new(self.context.clone(), data.len() as u64, vertex_count);
-                vb.upload_data(data);
-                attribute_buffers.insert(*attr_type, vb);
-            }
-        }
-
-        let index_buffer = if !indices.is_empty() {
-            let index_bytes = unsafe {
-                std::slice::from_raw_parts(
-                    indices.as_ptr() as *const u8,
-                    std::mem::size_of_val(indices),
-                )
-            };
-            let mut ib = IndexBuffer::new(
-                self.context.clone(),
-                index_bytes.len() as u64,
-                IndexType::Uint32,
-                indices.len() as u32,
-            );
-            ib.upload_data(index_bytes);
-            Some(ib)
-        } else {
-            None
+        let filtered: HashMap<AttributeType, Vec<u8>> = attributes
+            .iter()
+            .filter(|(_, data)| !data.is_empty())
+            .map(|(kind, data)| (*kind, data.clone()))
+            .collect();
+        let index_bytes = unsafe {
+            std::slice::from_raw_parts(
+                indices.as_ptr() as *const u8,
+                std::mem::size_of_val(indices),
+            )
         };
+
+        let (attribute_buffers, index_buffer) = self.upload_soa_buffers(SoaUpload {
+            usage: MeshUsage::Static,
+            split: &filtered,
+            vertex_count,
+            index_bytes,
+            index_type: IndexType::Uint32,
+            index_count: indices.len() as u32,
+        })?;
 
         let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, descriptor);
         Ok(registry.register_mesh(mesh_asset))
@@ -608,6 +651,16 @@ impl MeshManager {
         mesh_asset.index_count = indices.len() as u32;
         Ok(())
     }
+}
+
+/// One split-attribute upload request for `MeshManager::upload_soa_buffers`.
+struct SoaUpload<'a> {
+    usage: MeshUsage,
+    split: &'a HashMap<AttributeType, Vec<u8>>,
+    vertex_count: u32,
+    index_bytes: &'a [u8],
+    index_type: IndexType,
+    index_count: u32,
 }
 
 /// Slice one interleaved vertex blob into per-attribute byte buffers.

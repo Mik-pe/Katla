@@ -73,6 +73,9 @@ struct BufferObject {
     count: u32,
     context: Rc<VulkanContext>,
     buffer_usage: vk::BufferUsageFlags,
+    /// Where this buffer's memory lives; device-local buffers are only
+    /// writable through staged copies, never direct mappings.
+    location: gpu_allocator::MemoryLocation,
 }
 
 impl Drop for BufferObject {
@@ -111,6 +114,11 @@ impl BufferObject {
     }
 
     fn upload_data(&mut self, data: &[u8]) {
+        assert!(
+            self.location == gpu_allocator::MemoryLocation::CpuToGpu,
+            "direct upload requires host-visible memory; device-local mesh \
+             buffers are populated through staged copies"
+        );
         let data_size = std::mem::size_of_val(data) as vk::DeviceSize;
         if self.buf_size < data_size {
             self.resize(data_size);
@@ -127,6 +135,22 @@ impl BufferObject {
     /// Byte capacity of this buffer's storage.
     fn capacity(&self) -> vk::DeviceSize {
         self.buf_size
+    }
+
+    /// Where this buffer's memory lives.
+    fn location(&self) -> gpu_allocator::MemoryLocation {
+        self.location
+    }
+
+    /// Write bytes through the host-visible mapping and flush.
+    ///
+    /// Only valid for host-visible buffers; device-local placement is
+    /// populated through staged copies instead.
+    fn write_host_visible(&self, data: &[u8]) -> Result<(), crate::error::RendererError> {
+        let ptr = self.mapped_ptr()?;
+        unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, data.len()) };
+        self.context
+            .flush_mapped_memory(&self.allocation, 0, data.len() as vk::DeviceSize)
     }
 
     /// Host-visible mapping of the whole buffer, without writing to it.
@@ -178,8 +202,39 @@ impl IndexBuffer {
             count,
             context,
             buffer_usage: vk::BufferUsageFlags::INDEX_BUFFER,
+            location: gpu_allocator::MemoryLocation::CpuToGpu,
         };
         Ok(Self { buffer, index_type })
+    }
+
+    /// Wrap an already-allocated buffer (staged static-mesh upload).
+    ///
+    /// Ownership of the native buffer and allocation transfers into this
+    /// wrapper; staged copies for device-local placements must have been
+    /// queued by the allocating batch before the wrappers are used.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_native(
+        context: Rc<VulkanContext>,
+        buffer: vk::Buffer,
+        allocation: Allocation,
+        buf_size: vk::DeviceSize,
+        index_type: IndexType,
+        count: u32,
+        usage: vk::BufferUsageFlags,
+        location: gpu_allocator::MemoryLocation,
+    ) -> Self {
+        Self {
+            buffer: BufferObject {
+                allocation: ManuallyDrop::new(allocation),
+                buffer,
+                buf_size,
+                count,
+                context,
+                buffer_usage: usage,
+                location,
+            },
+            index_type,
+        }
     }
 
     pub fn upload_data(&mut self, data: &[u8]) {
@@ -192,6 +247,19 @@ impl IndexBuffer {
 
     pub fn count(&self) -> u32 {
         self.buffer.count
+    }
+
+    /// Where this buffer's memory lives.
+    pub fn memory_location(&self) -> gpu_allocator::MemoryLocation {
+        self.buffer.location()
+    }
+
+    /// Write bytes through the host-visible mapping (fallback placement).
+    pub(crate) fn write_host_visible(
+        &self,
+        data: &[u8],
+    ) -> Result<(), crate::error::RendererError> {
+        self.buffer.write_host_visible(data)
     }
 
     /// Byte capacity of this buffer's storage.
@@ -268,8 +336,37 @@ impl VertexBuffer {
             count,
             context,
             buffer_usage: usage,
+            location: gpu_allocator::MemoryLocation::CpuToGpu,
         };
         Ok(Self { buffer })
+    }
+
+    /// Wrap an already-allocated buffer (staged static-mesh upload).
+    ///
+    /// Ownership of the native buffer and allocation transfers into this
+    /// wrapper; staged copies for device-local placements must have been
+    /// queued by the allocating batch before the wrappers are used.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_native(
+        context: Rc<VulkanContext>,
+        buffer: vk::Buffer,
+        allocation: Allocation,
+        buf_size: vk::DeviceSize,
+        count: u32,
+        usage: vk::BufferUsageFlags,
+        location: gpu_allocator::MemoryLocation,
+    ) -> Self {
+        Self {
+            buffer: BufferObject {
+                allocation: ManuallyDrop::new(allocation),
+                buffer,
+                buf_size,
+                count,
+                context,
+                buffer_usage: usage,
+                location,
+            },
+        }
     }
 
     pub fn object(&self) -> vk::Buffer {
@@ -278,6 +375,19 @@ impl VertexBuffer {
 
     pub fn count(&self) -> u32 {
         self.buffer.count
+    }
+
+    /// Where this buffer's memory lives.
+    pub fn memory_location(&self) -> gpu_allocator::MemoryLocation {
+        self.buffer.location()
+    }
+
+    /// Write bytes through the host-visible mapping (fallback placement).
+    pub(crate) fn write_host_visible(
+        &self,
+        data: &[u8],
+    ) -> Result<(), crate::error::RendererError> {
+        self.buffer.write_host_visible(data)
     }
 
     pub fn upload_data(&mut self, data: &[u8]) {

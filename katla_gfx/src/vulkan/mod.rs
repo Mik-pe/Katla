@@ -9,6 +9,7 @@ pub(crate) mod pipeline_state;
 pub(crate) mod queue;
 pub(crate) mod retirement;
 pub(crate) mod skeleton_buffer;
+pub(crate) mod staged_upload;
 pub(crate) mod swapchain;
 pub(crate) mod swapdata;
 pub(crate) mod texture;

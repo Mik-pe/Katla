@@ -65,7 +65,7 @@ use crate::vulkan::context::VulkanFrameCtx;
 use crate::vulkan::material::SkeletonDescriptorSet;
 use crate::vulkan::material::compiler::MaterialCompiler;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
-use crate::vulkan::retirement::{BufferRetirementQueue, FrameRetirements};
+use crate::vulkan::retirement::{BufferRetirementQueue, FrameRetirements, RetiredBuffer};
 use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 use crate::vulkan::swapdata::SwapData;
 use crate::vulkan::vertex_attribute::AttributeType;
@@ -807,8 +807,10 @@ impl VulkanRenderer {
 
         // Wait for device idle to ensure all GPU operations have completed
         self.wait_for_device();
-        // Every submission has completed: replaced buffers can free now.
+        // Every submission has completed: replaced buffers can free now and
+        // staged uploads release their fences and staging allocations.
         self.buffer_retirements.drain_all();
+        self.context.wait_and_drain_all_staged_uploads();
 
         // Destroy output render target (Drop handles cleanup)
         self.output_target = None;
@@ -918,6 +920,7 @@ impl VulkanRenderer {
         size: crate::Size2D,
     ) -> Result<(), crate::error::RendererError> {
         self.wait_for_device();
+        self.context.wait_and_drain_all_staged_uploads();
         self.first_frame_rendered = false;
 
         let old_extent = self.frame_context.extent;
@@ -1265,6 +1268,51 @@ impl VulkanRenderer {
     /// retirement (diagnostics and tests).
     pub fn pending_buffer_retirements(&self) -> usize {
         self.buffer_retirements.pending()
+    }
+
+    /// Report the number of staged mesh uploads submitted but not yet
+    /// observed complete (diagnostics and tests). They release at frame
+    /// boundaries.
+    pub fn pending_staged_uploads(&self) -> usize {
+        self.context.pending_staged_uploads()
+    }
+
+    /// Report the memory placement of a mesh's GPU buffers.
+    ///
+    /// Static meshes are staged into device-local memory where supported
+    /// (with a host-visible fallback reported here); dynamic meshes stay
+    /// host-visible. Returns `None` when the handle does not reference a
+    /// live mesh.
+    pub fn mesh_memory_report(
+        &self,
+        mesh: MeshHandle,
+    ) -> Option<crate::renderer::registry::MeshMemoryReport> {
+        use gpu_allocator::MemoryLocation;
+
+        let class = |location: MemoryLocation| match location {
+            MemoryLocation::GpuOnly => crate::renderer::registry::MeshMemoryClass::DeviceLocal,
+            _ => crate::renderer::registry::MeshMemoryClass::HostVisible,
+        };
+        let mesh_asset = self.asset_registry.get_mesh(mesh)?;
+        let mut report = crate::renderer::registry::MeshMemoryReport {
+            device_local_buffers: 0,
+            host_visible_buffers: 0,
+            index_buffer: mesh_asset
+                .index_buffer
+                .as_ref()
+                .map(|ib| class(ib.memory_location())),
+        };
+        for vb in mesh_asset.attribute_buffers.values() {
+            match class(vb.memory_location()) {
+                crate::renderer::registry::MeshMemoryClass::DeviceLocal => {
+                    report.device_local_buffers += 1;
+                }
+                crate::renderer::registry::MeshMemoryClass::HostVisible => {
+                    report.host_visible_buffers += 1;
+                }
+            }
+        }
+        Some(report)
     }
 
     // ========================================================================
