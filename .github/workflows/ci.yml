@@ -37,6 +37,11 @@ jobs:
 
       - name: Install Linux graphics dependencies
         run: |
+          # The runner's preinstalled google-chrome apt source intermittently
+          # serves hash-mismatched metadata that fails apt-get update; the
+          # jobs never use Chrome, so drop the source before updating.
+          # Ubuntu 24.04 images carry it as either .list or deb822 .sources.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome*
           sudo apt-get update
           sudo apt-get install -y \
             libasound2-dev \
