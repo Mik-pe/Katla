@@ -159,14 +159,18 @@ impl GpuRenderer for MockRenderer {
         Ok(())
     }
 
-    fn create_texture(&mut self, _desc: &TextureDescriptor, _data: &[u8]) -> TextureHandle {
+    fn create_texture(
+        &mut self,
+        _desc: &TextureDescriptor,
+        _data: &[u8],
+    ) -> Result<TextureHandle, RendererError> {
         self.record("create_texture");
-        TextureHandle::new(0)
+        Ok(TextureHandle::new(0))
     }
 
-    fn create_texture_solid(&mut self, _color: [u8; 4]) -> TextureHandle {
+    fn create_texture_solid(&mut self, _color: [u8; 4]) -> Result<TextureHandle, RendererError> {
         self.record("create_texture_solid");
-        TextureHandle::new(1)
+        Ok(TextureHandle::new(1))
     }
 
     fn get_bindless_slot(&self, _handle: TextureHandle) -> Option<u32> {
@@ -284,9 +288,14 @@ impl GpuRenderer for MockRenderer {
         ))
     }
 
-    fn create_ui_font_atlas(&mut self, _width: u32, _height: u32, _data: &[u8]) -> TextureHandle {
+    fn create_ui_font_atlas(
+        &mut self,
+        _width: u32,
+        _height: u32,
+        _data: &[u8],
+    ) -> Result<TextureHandle, RendererError> {
         self.record("create_ui_font_atlas");
-        TextureHandle::new(2)
+        Ok(TextureHandle::new(2))
     }
 
     fn update_ui_font_atlas(&mut self, _width: u32, _height: u32, _data: &[u8]) {
