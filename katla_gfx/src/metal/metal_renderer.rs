@@ -1637,7 +1637,9 @@ mod tests {
     fn test_metal_texture_creation() {
         let mut renderer = create_renderer();
 
-        let red_tex = renderer.create_texture_solid([255, 0, 0, 255]);
+        let red_tex = renderer
+            .create_texture_solid([255, 0, 0, 255])
+            .expect("solid texture creation should succeed");
         assert!(red_tex.is_some(), "texture handle should be valid");
 
         let bindless_index = renderer.get_texture_bindless_index(red_tex);
