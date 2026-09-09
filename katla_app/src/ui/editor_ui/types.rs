@@ -352,6 +352,8 @@ pub enum EditorAction {
     SetGizmoMode(u8), // 0=Translate, 1=Rotate, 2=Scale
     /// Add a registered component type to an entity.
     AddComponent { entity: EntityId, component: String },
+    /// Remove a registered component type from an entity.
+    RemoveComponent { entity: EntityId, component: String },
     /// AI Co-Creator request from the chat panel.
     CoCreatorRequest(String),
     /// Set the LLM provider kind ("disabled", "open_ai", "open_ai_compatible").

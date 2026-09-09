@@ -18,7 +18,7 @@ use katla_math::{Vec2, Vec3};
 use crate::components::ParticleEmitterComponent;
 use crate::components::{
     Children, DirectionalLight, DrawableComponent, EditorHidden, NameComponent, Parent,
-    PerspectiveComponent, PointLight, TransformComponent,
+    PerspectiveComponent, PointLight, ReverbZone, TransformComponent, VelocityComponent,
 };
 
 use crate::ui::{
@@ -1150,24 +1150,32 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::AddComponent { entity, component } => {
                 let op = katla_ecs::scene_tool::SceneOp::AddComponent { entity, component };
-                if let Err(e) = agent::check_protected_entity(&op, app) {
-                    log::warn!("{e}");
-                } else {
-                    match SceneToolExecutor::execute(
-                        op,
-                        &mut app.world,
-                        &app.editor.component_registry,
-                    ) {
-                        Ok((result, undo_group)) => {
-                            if result.success {
-                                info!("{}", result.message);
-                                app.editor.push_undo(undo_group);
-                            } else {
-                                log::warn!("{}", result.message);
-                            }
+                match SceneToolExecutor::execute(op, &mut app.world, &app.editor.component_registry)
+                {
+                    Ok((result, undo_group)) => {
+                        if result.success {
+                            info!("{}", result.message);
+                            app.editor.push_undo(undo_group);
+                        } else {
+                            log::warn!("{}", result.message);
                         }
-                        Err(e) => log::warn!("Failed to add component: {e}"),
                     }
+                    Err(e) => log::warn!("Failed to add component: {e}"),
+                }
+            }
+            EditorAction::RemoveComponent { entity, component } => {
+                let op = katla_ecs::scene_tool::SceneOp::RemoveComponent { entity, component };
+                match SceneToolExecutor::execute(op, &mut app.world, &app.editor.component_registry)
+                {
+                    Ok((result, undo_group)) => {
+                        if result.success {
+                            info!("{}", result.message);
+                            app.editor.push_undo(undo_group);
+                        } else {
+                            log::warn!("{}", result.message);
+                        }
+                    }
+                    Err(e) => log::warn!("Failed to remove component: {e}"),
                 }
             }
             EditorAction::CoCreatorRequest(text) => {
@@ -1515,6 +1523,15 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             .world
             .get_component::<DrawableComponent>(entity_id)
             .is_some();
+        let has_velocity = app
+            .world
+            .get_component::<VelocityComponent>(entity_id)
+            .is_some();
+        let has_reverb_zone = app.world.get_component::<ReverbZone>(entity_id).is_some();
+        let has_collision_filter = app
+            .world
+            .get_component::<katla_physics::CollisionFilter>(entity_id)
+            .is_some();
         let point_light =
             app.world
                 .get_component::<PointLight>(entity_id)
@@ -1523,7 +1540,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                     intensity: pl.intensity,
                     range: pl.range,
                 });
-        let _particle_emitter = app
+        let particle_emitter = app
             .world
             .get_component::<ParticleEmitterComponent>(entity_id)
             .map(|pe| ParticleEmitterInfo {
@@ -1533,7 +1550,6 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 gravity: pe.config.gravity,
                 base_scale: pe.config.base_scale,
             });
-        let particle_emitter: Option<ParticleEmitterInfo> = None;
         let has_parent = app.world.get_component::<Parent>(entity_id).is_some();
         let has_children = app.world.get_component::<Children>(entity_id).is_some();
 
@@ -1572,7 +1588,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         let mut components: Vec<&'static str> = Vec::with_capacity(12);
         components.push("Transform");
         if has_name {
-            components.push("Name");
+            components.push("NameComponent");
         }
         if has_drawable {
             components.push("Drawable");
@@ -1584,7 +1600,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             components.push("PointLight");
         }
         if particle_emitter.is_some() {
-            components.push("ParticleEmitter");
+            components.push("ParticleEmitterComponent");
         }
         if perspective_info.is_some() {
             components.push("PerspectiveComponent");
@@ -1598,6 +1614,15 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         }
         if audio_emitter_info.is_some() {
             components.push("AudioEmitter");
+        }
+        if has_velocity {
+            components.push("VelocityComponent");
+        }
+        if has_reverb_zone {
+            components.push("ReverbZone");
+        }
+        if has_collision_filter {
+            components.push("CollisionFilter");
         }
 
         let audio_source_info = app

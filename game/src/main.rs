@@ -246,7 +246,7 @@ fn main() {
             .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
         let max_frames =
             if args.single_frame || args.ui_test.is_some() || args.interaction_test.is_some() {
-                100
+                130
             } else {
                 10
             };
