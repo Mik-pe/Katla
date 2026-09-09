@@ -1,9 +1,7 @@
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::MeshHandle;
-use crate::primitives;
 use crate::renderer::registry::MeshIndexElement;
-use crate::vertex::VertexPBR;
 
 use super::buffer::MetalBuffer;
 use super::metal_renderer::MetalMesh;
@@ -39,32 +37,6 @@ impl MetalRenderer {
         }
 
         Ok((vertex_buffer, index_buffer, index_data.len() as u32))
-    }
-
-    pub(crate) fn create_primitive_mesh(
-        &mut self,
-        vertices: Vec<VertexPBR>,
-        indices: Vec<u32>,
-    ) -> Result<MeshHandle, RendererError> {
-        let vertex_bytes = bytemuck::cast_slice(&vertices);
-        // Validate bytes against the typed layout; Metal encodes TriangleList
-        // only, so the descriptor itself is not stored.
-        crate::renderer::registry::MeshDescriptor::describe_typed_upload(
-            crate::renderer::registry::PrimitiveTopology::TriangleList,
-            crate::renderer::registry::MeshUsage::Static,
-            &vertices,
-            &indices,
-        )?;
-        let (vertex_buffer, index_buffer, index_count) =
-            self.upload_vertex_index_data(vertex_bytes, &indices)?;
-
-        let mesh = MetalMesh {
-            vertex_buffer,
-            index_buffer,
-            index_count,
-        };
-        let id = self.meshes.insert(mesh);
-        Ok(MeshHandle::new(id))
     }
 
     pub(crate) fn create_mesh_from_vertices<T, U>(
@@ -223,81 +195,5 @@ impl MetalRenderer {
         }
         m.index_count = indices.len() as u32;
         Ok(())
-    }
-
-    #[expect(dead_code)]
-    pub(crate) fn create_cube_mesh_impl(
-        &mut self,
-        size: [f32; 3],
-    ) -> Result<MeshHandle, RendererError> {
-        let (vertices, indices) = primitives::generate_cube(size);
-        self.create_primitive_mesh(vertices, indices)
-    }
-
-    #[expect(dead_code)]
-    pub(crate) fn create_sphere_mesh_impl(
-        &mut self,
-        radius: f32,
-        segments: u32,
-        rings: u32,
-    ) -> Result<MeshHandle, RendererError> {
-        let (vertices, indices) = primitives::generate_sphere(radius, segments, rings);
-        self.create_primitive_mesh(vertices, indices)
-    }
-
-    #[expect(dead_code)]
-    pub(crate) fn create_plane_mesh_impl(
-        &mut self,
-        width: f32,
-        height: f32,
-    ) -> Result<MeshHandle, RendererError> {
-        let (vertices, indices) = primitives::generate_plane(width, height);
-        self.create_primitive_mesh(vertices, indices)
-    }
-
-    #[expect(dead_code)]
-    pub(crate) fn create_cone_mesh_impl(
-        &mut self,
-        height: f32,
-        base_radius: f32,
-        segments: u32,
-    ) -> Result<MeshHandle, RendererError> {
-        let (vertices, indices) = primitives::generate_cone(height, base_radius, segments);
-        self.create_primitive_mesh(vertices, indices)
-    }
-
-    #[expect(dead_code)]
-    pub(crate) fn create_cylinder_mesh_impl(
-        &mut self,
-        height: f32,
-        radius: f32,
-        segments: u32,
-    ) -> Result<MeshHandle, RendererError> {
-        let (vertices, indices) = primitives::generate_cylinder(height, radius, segments);
-        self.create_primitive_mesh(vertices, indices)
-    }
-
-    #[expect(dead_code)]
-    pub(crate) fn create_torus_mesh_impl(
-        &mut self,
-        major_radius: f32,
-        minor_radius: f32,
-        segments: u32,
-        rings: u32,
-    ) -> Result<MeshHandle, RendererError> {
-        let (vertices, indices) =
-            primitives::generate_torus(major_radius, minor_radius, segments, rings);
-        self.create_primitive_mesh(vertices, indices)
-    }
-
-    #[expect(dead_code)]
-    pub(crate) fn create_plane_xy_mesh_impl(
-        &mut self,
-        width: f32,
-        height: f32,
-        segments: u32,
-    ) -> Result<MeshHandle, RendererError> {
-        let (vertices, indices) = primitives::generate_plane_xy(width, height, segments);
-        self.create_primitive_mesh(vertices, indices)
     }
 }

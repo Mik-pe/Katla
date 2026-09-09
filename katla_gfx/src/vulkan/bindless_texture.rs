@@ -395,28 +395,6 @@ impl BindlessTextureManager {
         self.ui_sampler
     }
 
-    /// Get the bindless slot index for a texture handle.
-    ///
-    /// This is used internally by the renderer to map TextureHandle values
-    /// to their bindless slot indices for shader binding.
-    ///
-    /// # Arguments
-    /// * `image_view` - The Vulkan image view to look up
-    ///
-    /// # Returns
-    /// The slot index if the texture is registered, None otherwise.
-    ///
-    /// # Note
-    /// Currently unused but kept for future texture management features.
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn get_slot_for_image_view(&self, image_view: vk::ImageView) -> Option<u32> {
-        self.slots
-            .iter()
-            .position(|&slot| slot == Some(image_view))
-            .map(|i| i as u32)
-    }
-
     /// Check if a slot is occupied by a texture.
     ///
     /// # Arguments
@@ -585,26 +563,6 @@ impl BindlessTextureManager {
         self.slots[slot as usize] = None;
         self.free_slots.push(slot);
         true
-    }
-
-    /// Check if a slot is a default texture slot.
-    ///
-    /// # Arguments
-    /// * `slot` - The slot index to check
-    ///
-    /// # Returns
-    /// true if the slot is reserved for default textures (0-4).
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn is_default_slot(&self, slot: u32) -> bool {
-        slot < DEFAULT_TEXTURE_COUNT
-    }
-
-    /// Get the number of slots reserved for default textures.
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn default_texture_count(&self) -> u32 {
-        DEFAULT_TEXTURE_COUNT
     }
 }
 
