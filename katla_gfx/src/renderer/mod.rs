@@ -1050,7 +1050,12 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_sphere_mesh(&mut self, radius: f32, segments: u32, rings: u32) -> Result<MeshHandle, RendererError> {
+    pub fn create_sphere_mesh(
+        &mut self,
+        radius: f32,
+        segments: u32,
+        rings: u32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_sphere(&mut self.asset_registry, radius, segments, rings)
     }
@@ -1063,7 +1068,11 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_plane_mesh(&mut self, width: f32, height: f32) -> Result<MeshHandle, RendererError> {
+    pub fn create_plane_mesh(
+        &mut self,
+        width: f32,
+        height: f32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_plane(&mut self.asset_registry, width, height)
     }
@@ -1077,7 +1086,12 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_cone_mesh(&mut self, height: f32, base_radius: f32, segments: u32) -> Result<MeshHandle, RendererError> {
+    pub fn create_cone_mesh(
+        &mut self,
+        height: f32,
+        base_radius: f32,
+        segments: u32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_cone(&mut self.asset_registry, height, base_radius, segments)
     }
@@ -1091,7 +1105,12 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_cylinder_mesh(&mut self, height: f32, radius: f32, segments: u32) -> Result<MeshHandle, RendererError> {
+    pub fn create_cylinder_mesh(
+        &mut self,
+        height: f32,
+        radius: f32,
+        segments: u32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_cylinder(&mut self.asset_registry, height, radius, segments)
     }
@@ -1131,7 +1150,12 @@ impl VulkanRenderer {
     ///
     /// # Returns
     /// A `MeshHandle` that references the registered mesh.
-    pub fn create_plane_xy_mesh(&mut self, width: f32, height: f32, segments: u32) -> Result<MeshHandle, RendererError> {
+    pub fn create_plane_xy_mesh(
+        &mut self,
+        width: f32,
+        height: f32,
+        segments: u32,
+    ) -> Result<MeshHandle, RendererError> {
         self.mesh_manager
             .create_plane_xy(&mut self.asset_registry, width, height, segments)
     }

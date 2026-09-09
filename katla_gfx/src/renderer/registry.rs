@@ -177,12 +177,8 @@ impl MeshDescriptor {
                 "mesh topology {topology:?} is not encodable; only TriangleList is supported"
             )));
         }
-        let descriptor = Self::from_types::<V, I>(
-            topology,
-            usage,
-            vertices.len() as u32,
-            indices.len() as u32,
-        );
+        let descriptor =
+            Self::from_types::<V, I>(topology, usage, vertices.len() as u32, indices.len() as u32);
         descriptor.validate(std::mem::size_of::<V>())?;
         for (position, index) in indices.iter().enumerate() {
             let value = index.to_u32();

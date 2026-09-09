@@ -47,13 +47,12 @@ impl MetalRenderer {
         indices: Vec<u32>,
     ) -> Result<MeshHandle, RendererError> {
         let vertex_bytes = bytemuck::cast_slice(&vertices);
-        let descriptor =
-            crate::renderer::registry::MeshDescriptor::describe_typed_upload(
-                crate::renderer::registry::PrimitiveTopology::TriangleList,
-                crate::renderer::registry::MeshUsage::Static,
-                &vertices,
-                &indices,
-            )?;
+        let descriptor = crate::renderer::registry::MeshDescriptor::describe_typed_upload(
+            crate::renderer::registry::PrimitiveTopology::TriangleList,
+            crate::renderer::registry::MeshUsage::Static,
+            &vertices,
+            &indices,
+        )?;
         let (vertex_buffer, index_buffer, index_count) =
             self.upload_vertex_index_data(vertex_bytes, &indices)?;
 
@@ -92,8 +91,8 @@ impl MetalRenderer {
         // were validated above, so widening cannot introduce aliasing.
         let index_u32: Vec<u32> = indices.iter().map(|&v| U::to_u32(v)).collect();
 
-        let (vertex_buffer, index_buffer, index_count) = self
-            .upload_vertex_index_data(vertex_bytes, &index_u32)?;
+        let (vertex_buffer, index_buffer, index_count) =
+            self.upload_vertex_index_data(vertex_bytes, &index_u32)?;
 
         let mesh = MetalMesh {
             vertex_buffer,
@@ -232,7 +231,10 @@ impl MetalRenderer {
     }
 
     #[expect(dead_code)]
-    pub(crate) fn create_cube_mesh_impl(&mut self, size: [f32; 3]) -> Result<MeshHandle, RendererError> {
+    pub(crate) fn create_cube_mesh_impl(
+        &mut self,
+        size: [f32; 3],
+    ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_cube(size);
         self.create_primitive_mesh(vertices, indices)?
     }
@@ -249,7 +251,11 @@ impl MetalRenderer {
     }
 
     #[expect(dead_code)]
-    pub(crate) fn create_plane_mesh_impl(&mut self, width: f32, height: f32) -> Result<MeshHandle, RendererError> {
+    pub(crate) fn create_plane_mesh_impl(
+        &mut self,
+        width: f32,
+        height: f32,
+    ) -> Result<MeshHandle, RendererError> {
         let (vertices, indices) = primitives::generate_plane(width, height);
         self.create_primitive_mesh(vertices, indices)?
     }

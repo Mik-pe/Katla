@@ -112,11 +112,7 @@ impl MeshManager {
             None
         };
 
-        let mesh_asset = self.create_mesh_asset(
-            attribute_buffers,
-            index_buffer,
-            descriptor,
-        );
+        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, descriptor);
         Ok(registry.register_mesh(mesh_asset))
     }
 
@@ -270,11 +266,7 @@ impl MeshManager {
             None
         };
 
-        let mesh_asset = self.create_mesh_asset(
-            attribute_buffers,
-            index_buffer,
-            descriptor,
-        );
+        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, descriptor);
         Ok(registry.register_mesh(mesh_asset))
     }
 
@@ -479,11 +471,7 @@ impl MeshManager {
             None
         };
 
-        let mesh_asset = self.create_mesh_asset(
-            attribute_buffers,
-            index_buffer,
-            descriptor,
-        );
+        let mesh_asset = self.create_mesh_asset(attribute_buffers, index_buffer, descriptor);
         Ok(registry.register_mesh(mesh_asset))
     }
 
@@ -496,12 +484,12 @@ impl MeshManager {
         _vertex_count: u32,
         indices: &[u32],
     ) -> Result<(), RendererError> {
-        let mesh_asset = registry.get_mesh_mut(mesh).ok_or_else(|| {
-            RendererError::StaleHandle {
+        let mesh_asset = registry
+            .get_mesh_mut(mesh)
+            .ok_or_else(|| RendererError::StaleHandle {
                 resource: "mesh".to_string(),
                 detail: format!("{mesh:?} in update_mesh_dynamic"),
-            }
-        })?;
+            })?;
 
         // Update vertex buffer
         if let Some(ref mut vb) = mesh_asset
