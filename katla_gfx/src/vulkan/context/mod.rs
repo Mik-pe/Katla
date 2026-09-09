@@ -112,6 +112,18 @@ pub struct VulkanContext {
     pub push_descriptor_khr: Option<ash::khr::push_descriptor::Device>,
     /// Cached non-coherent atom size for aligned memory flushes.
     pub non_coherent_atom_size: vk::DeviceSize,
+    /// Staged mesh uploads that are submitted but not yet provably complete.
+    /// Each entry holds its fence, command buffer, and staging allocation
+    /// alive until the next frame-slot wait retires it.
+    pub(crate) pending_staged_uploads: std::cell::RefCell<Vec<PendingStagedUpload>>,
+}
+
+/// One submitted staged upload awaiting fence completion.
+pub(crate) struct PendingStagedUpload {
+    fence: vk::Fence,
+    command_buffer: Option<super::CommandBuffer>,
+    staging_buffer: vk::Buffer,
+    staging_allocation: gpu_allocator::vulkan::Allocation,
 }
 
 pub struct VulkanFrameCtx {
@@ -327,6 +339,7 @@ impl VulkanContext {
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
+            pending_staged_uploads: std::cell::RefCell::new(Vec::new()),
         })
     }
 
@@ -486,11 +499,81 @@ impl VulkanContext {
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
+            pending_staged_uploads: std::cell::RefCell::new(Vec::new()),
         })
     }
 }
 
 impl VulkanContext {
+    /// Park a submitted staged upload until its fence signals.
+    ///
+    /// The entry keeps the command buffer, staging buffer, and staging
+    /// allocation alive; `drain_completed_staged_uploads` releases them.
+    pub(crate) fn defer_staged_upload(
+        &self,
+        fence: vk::Fence,
+        command_buffer: super::CommandBuffer,
+        staging_buffer: vk::Buffer,
+        staging_allocation: gpu_allocator::vulkan::Allocation,
+    ) {
+        self.pending_staged_uploads
+            .borrow_mut()
+            .push(PendingStagedUpload {
+                fence,
+                command_buffer: Some(command_buffer),
+                staging_buffer,
+                staging_allocation,
+            });
+    }
+
+    /// Wait for and release every completed staged upload.
+    ///
+    /// Called at frame boundaries (the entries' fences are typically long
+    /// signaled) and after device-wide idle waits.
+    pub(crate) fn drain_completed_staged_uploads(&self) {
+        let mut pending = self.pending_staged_uploads.borrow_mut();
+        let mut index = 0;
+        while index < pending.len() {
+            let entry = &pending[index];
+            let completed = unsafe { self.device.get_fence_status(entry.fence) }.unwrap_or(false);
+            if completed {
+                let mut entry = pending.swap_remove(index);
+                if let Some(command_buffer) = entry.command_buffer.take() {
+                    command_buffer.return_to_pool();
+                }
+                unsafe {
+                    self.device.destroy_fence(entry.fence, None);
+                }
+                self.free_buffer(entry.staging_buffer, entry.staging_allocation);
+            } else {
+                index += 1;
+            }
+        }
+    }
+
+    /// Block until every staged upload completed, then release it.
+    ///
+    /// Only valid after a device-wide idle wait (renderer teardown).
+    pub(crate) fn wait_and_drain_all_staged_uploads(&self) {
+        for entry in std::mem::take(&mut *self.pending_staged_uploads.borrow_mut()) {
+            unsafe {
+                let _ = self.device.wait_for_fences(&[entry.fence], true, u64::MAX);
+            }
+            if let Some(command_buffer) = entry.command_buffer {
+                command_buffer.return_to_pool();
+            }
+            unsafe {
+                self.device.destroy_fence(entry.fence, None);
+            }
+            self.free_buffer(entry.staging_buffer, entry.staging_allocation);
+        }
+    }
+
+    /// Number of staged uploads awaiting completion (diagnostics, tests).
+    pub(crate) fn pending_staged_uploads(&self) -> usize {
+        self.pending_staged_uploads.borrow().len()
+    }
+
     /// Release presentation resources while the native window and display still exist.
     pub(crate) fn destroy_surface(&self) {
         if let Some(surface) = self.surface.take()
