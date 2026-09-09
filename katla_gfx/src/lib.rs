@@ -278,8 +278,9 @@ pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
 // Vertex types (public module for discoverability and extensibility)
 pub use vertex::{
-    UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES, VertexPBR, VertexPBRSkinned, VertexUI, VertexUIInstance,
-    VertexUIQuad,
+    UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES, Vertex, VertexAttributeFormat, VertexLayout, VertexPBR,
+    VertexPBRSkinned, VertexPosition, VertexPositionColor, VertexPositionNormal,
+    VertexPositionNormalUV, VertexUI, VertexUIInstance, VertexUIQuad,
 };
 
 // SOA vertex attribute types (shared enum definition)
@@ -293,6 +294,7 @@ pub use renderer::{UIDrawList, UiDrawCommand};
 
 // Renderer types (backend-agnostic)
 pub use renderer::registry::MeshIndexElement;
+pub use renderer::registry::{MeshDescriptor, MeshUsage, PrimitiveTopology};
 pub use renderer::{
     DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
 };

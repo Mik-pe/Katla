@@ -24,6 +24,9 @@ pub enum AttributeType {
     Color0,
     JointIndices,
     JointWeights,
+    /// Per-vertex bindless texture slot (UI `texture_index`).
+    /// Sorts after all geometry attributes in SoA binding order.
+    TextureIndex,
 }
 
 // Vertex Attribute Format
@@ -161,6 +164,32 @@ impl VertexLayout {
         Self::new(vec![VertexAttributeFormat::Float3])
     }
 
+    /// Layout for an explicit attribute set, in canonical binding order.
+    ///
+    /// Used by Structure-of-Arrays upload, where attributes arrive split and
+    /// the layout derives from the declared semantics rather than a struct.
+    pub fn for_attributes(attributes: &[AttributeType]) -> Self {
+        let mut sorted = attributes.to_vec();
+        sorted.sort_by_key(attribute_canonical_order);
+        Self::new(
+            sorted
+                .iter()
+                .map(|attribute| match attribute {
+                    AttributeType::Position => VertexAttributeFormat::Float3,
+                    AttributeType::Normal => VertexAttributeFormat::Float3,
+                    AttributeType::Tangent => VertexAttributeFormat::Float4,
+                    AttributeType::TexCoord0 | AttributeType::TexCoord1 => {
+                        VertexAttributeFormat::Float2
+                    }
+                    AttributeType::Color0 => VertexAttributeFormat::Float4,
+                    AttributeType::JointIndices => VertexAttributeFormat::UShort4,
+                    AttributeType::JointWeights => VertexAttributeFormat::Float4,
+                    AttributeType::TextureIndex => VertexAttributeFormat::UInt,
+                })
+                .collect(),
+        )
+    }
+
     /// Get the attribute formats.
     pub fn formats(&self) -> &[VertexAttributeFormat] {
         &self.formats
@@ -183,6 +212,24 @@ impl VertexLayout {
 }
 
 // Vertex Layout Conversion Implementations
+
+/// Canonical SoA binding order for attribute semantics.
+///
+/// Matches the Vulkan default locations so Structure-of-Arrays layouts and
+/// interleaved layouts agree on attribute order.
+fn attribute_canonical_order(attribute: &AttributeType) -> u32 {
+    match attribute {
+        AttributeType::Position => 0,
+        AttributeType::Normal => 1,
+        AttributeType::Tangent => 2,
+        AttributeType::TexCoord0 => 3,
+        AttributeType::JointIndices => 4,
+        AttributeType::JointWeights => 5,
+        AttributeType::TexCoord1 => 6,
+        AttributeType::Color0 => 7,
+        AttributeType::TextureIndex => 8,
+    }
+}
 
 impl From<VertexAttributeFormat> for crate::vulkan::vertexbinding::VertexFormat {
     fn from(format: VertexAttributeFormat) -> Self {
@@ -224,6 +271,13 @@ impl From<&VertexLayout> for crate::vulkan::vertexbinding::VertexBinding {
 pub trait Vertex: bytemuck::Pod + bytemuck::Zeroable {
     /// Returns the vertex layout describing this vertex's attributes.
     fn layout() -> VertexLayout;
+
+    /// Semantic attribute for each entry of [`VertexLayout::formats`], in
+    /// the same order. This is the trusted mapping mesh upload uses instead
+    /// of guessing layouts from byte shapes: every `Vertex` implementation
+    /// declares what its bytes mean, and upload validates the declaration
+    /// (attribute count, stride, ranges) before touching the GPU.
+    fn attribute_kinds() -> Vec<AttributeType>;
 }
 
 // Standard Vertex Types
@@ -300,6 +354,16 @@ impl Vertex for VertexPBR {
     fn layout() -> VertexLayout {
         VertexLayout::pbr()
     }
+
+    #[inline]
+    fn attribute_kinds() -> Vec<AttributeType> {
+        vec![
+            AttributeType::Position,
+            AttributeType::Normal,
+            AttributeType::Tangent,
+            AttributeType::TexCoord0,
+        ]
+    }
 }
 
 /// Skinned PBR vertex format with joint indices and weights for skeletal animation.
@@ -374,6 +438,18 @@ impl Vertex for VertexPBRSkinned {
     fn layout() -> VertexLayout {
         VertexLayout::pbr_skinned()
     }
+
+    #[inline]
+    fn attribute_kinds() -> Vec<AttributeType> {
+        vec![
+            AttributeType::Position,
+            AttributeType::Normal,
+            AttributeType::Tangent,
+            AttributeType::TexCoord0,
+            AttributeType::JointIndices,
+            AttributeType::JointWeights,
+        ]
+    }
 }
 
 /// Simple position-only vertex format.
@@ -398,6 +474,11 @@ impl Vertex for VertexPosition {
     #[inline]
     fn layout() -> VertexLayout {
         VertexLayout::position()
+    }
+
+    #[inline]
+    fn attribute_kinds() -> Vec<AttributeType> {
+        vec![AttributeType::Position]
     }
 }
 
@@ -425,6 +506,11 @@ impl Vertex for VertexPositionNormal {
     #[inline]
     fn layout() -> VertexLayout {
         VertexLayout::position_normal()
+    }
+
+    #[inline]
+    fn attribute_kinds() -> Vec<AttributeType> {
+        vec![AttributeType::Position, AttributeType::Normal]
     }
 }
 
@@ -459,6 +545,15 @@ impl Vertex for VertexPositionNormalUV {
     fn layout() -> VertexLayout {
         VertexLayout::position_normal_uv()
     }
+
+    #[inline]
+    fn attribute_kinds() -> Vec<AttributeType> {
+        vec![
+            AttributeType::Position,
+            AttributeType::Normal,
+            AttributeType::TexCoord0,
+        ]
+    }
 }
 
 /// Position + color vertex format.
@@ -485,6 +580,11 @@ impl Vertex for VertexPositionColor {
     #[inline]
     fn layout() -> VertexLayout {
         VertexLayout::position_color()
+    }
+
+    #[inline]
+    fn attribute_kinds() -> Vec<AttributeType> {
+        vec![AttributeType::Position, AttributeType::Color0]
     }
 }
 
@@ -540,6 +640,16 @@ impl Vertex for VertexUI {
     #[inline]
     fn layout() -> VertexLayout {
         VertexLayout::ui()
+    }
+
+    #[inline]
+    fn attribute_kinds() -> Vec<AttributeType> {
+        vec![
+            AttributeType::Position,
+            AttributeType::TexCoord0,
+            AttributeType::Color0,
+            AttributeType::TextureIndex,
+        ]
     }
 }
 

@@ -152,7 +152,13 @@ fn test_instanced_draw_matches_direct_draws() {
 
     let vertices = triangle_vertices();
     let indices: Vec<u32> = vec![0, 1, 2];
-    let mesh = renderer.create_mesh(&vertices, &indices);
+    let mesh = renderer
+        .create_mesh(
+            &vertices,
+            &indices,
+            katla_gfx::PrimitiveTopology::TriangleList,
+        )
+        .expect("test mesh creation");
 
     let mut graph = FrameGraphBuilder::new()
         .add_pass(

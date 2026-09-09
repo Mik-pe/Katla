@@ -112,8 +112,20 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
 
     let (u16_vertices, u16_indices) = triangle_u16();
     let (u32_vertices, u32_indices) = triangle_u32();
-    let mesh_u16 = renderer.create_mesh(&u16_vertices, &u16_indices);
-    let mesh_u32 = renderer.create_mesh(&u32_vertices, &u32_indices);
+    let mesh_u16 = renderer
+        .create_mesh(
+            &u16_vertices,
+            &u16_indices,
+            katla_gfx::PrimitiveTopology::TriangleList,
+        )
+        .expect("test mesh creation");
+    let mesh_u32 = renderer
+        .create_mesh(
+            &u32_vertices,
+            &u32_indices,
+            katla_gfx::PrimitiveTopology::TriangleList,
+        )
+        .expect("test mesh creation");
 
     assert_eq!(
         renderer.mesh_index_format(mesh_u16),
@@ -130,7 +142,13 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
     assert_eq!(renderer.mesh_index_format(stale), None);
 
     // Recreate the u16 mesh that was destroyed above.
-    let mesh_u16 = renderer.create_mesh(&u16_vertices, &u16_indices);
+    let mesh_u16 = renderer
+        .create_mesh(
+            &u16_vertices,
+            &u16_indices,
+            katla_gfx::PrimitiveTopology::TriangleList,
+        )
+        .expect("test mesh creation");
 
     let draw_list_for = |mesh| {
         let mut list = DrawList::new();

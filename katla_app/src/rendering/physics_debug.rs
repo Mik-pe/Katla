@@ -59,9 +59,27 @@ pub fn init_physics_debug_resources(
     resources: &mut PhysicsDebugResources,
     unlit_material: MaterialHandle,
 ) {
-    let shaft_mesh = primitives::create_cylinder(renderer, 1.0, 0.02, 8);
-    let ring_mesh = primitives::create_torus(renderer, 1.0, 0.015, 64, 8);
-    let sphere_mesh = primitives::create_sphere(renderer, 1.0, 8, 8);
+    let shaft_mesh = match primitives::create_cylinder(renderer, 1.0, 0.02, 8) {
+        Ok(mesh) => mesh,
+        Err(error) => {
+            log::error!("Failed to create physics debug shaft mesh: {error}");
+            return;
+        }
+    };
+    let ring_mesh = match primitives::create_torus(renderer, 1.0, 0.015, 64, 8) {
+        Ok(mesh) => mesh,
+        Err(error) => {
+            log::error!("Failed to create physics debug ring mesh: {error}");
+            return;
+        }
+    };
+    let sphere_mesh = match primitives::create_sphere(renderer, 1.0, 8, 8) {
+        Ok(mesh) => mesh,
+        Err(error) => {
+            log::error!("Failed to create physics debug sphere mesh: {error}");
+            return;
+        }
+    };
 
     *resources = PhysicsDebugResources {
         shaft_mesh,

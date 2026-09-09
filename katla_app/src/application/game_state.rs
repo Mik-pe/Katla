@@ -137,7 +137,7 @@ impl SceneSnapshot {
 
         let pos = desc.transform.position;
         let entity_id = if desc.source.is_mesh_primitive() {
-            let mesh_handle = match &desc.source {
+            let mesh_result = match &desc.source {
                 EntitySource::Cube { size } => primitives::create_cube(&mut app.renderer, *size),
                 EntitySource::Sphere {
                     radius,
@@ -168,6 +168,15 @@ impl SceneSnapshot {
                     *tube_segments,
                 ),
                 _ => unreachable!(),
+            };
+            let mesh_handle = match mesh_result {
+                Ok(mesh_handle) => mesh_handle,
+                Err(error) => {
+                    log::error!("Failed to restore primitive mesh: {error}");
+                    return app.world.spawn((TransformComponent::from_position(
+                        katla_math::Vec3::new(pos[0], pos[1], pos[2]),
+                    ),));
+                }
             };
 
             let material_handle = app.default_material();

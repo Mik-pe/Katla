@@ -523,7 +523,7 @@ impl SceneManager {
         );
 
         let entity_id = if desc.source.is_mesh_primitive() {
-            let mesh_handle = match &desc.source {
+            let mesh_result = match &desc.source {
                 EntitySource::Cube { size } => primitives::create_cube(&mut app.renderer, *size),
                 EntitySource::Sphere {
                     radius,
@@ -554,6 +554,10 @@ impl SceneManager {
                     *tube_segments,
                 ),
                 _ => unreachable!(),
+            };
+            let mesh_handle = match mesh_result {
+                Ok(mesh_handle) => mesh_handle,
+                Err(error) => return Err(format!("primitive mesh creation failed: {error}")),
             };
 
             let material_handle = app.default_material();
