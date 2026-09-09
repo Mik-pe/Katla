@@ -10,6 +10,7 @@
 use crate::Size2D;
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+use crate::renderer::features::RendererFeature;
 use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::types::{DrawList, FrameUniforms, PointLightGPU, UIDrawList};
 use crate::texture::TextureDescriptor;
@@ -59,6 +60,16 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Query GPU hardware capabilities and limits.
     fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities;
+
+    /// Report whether this backend implements an optional renderer feature.
+    ///
+    /// Required operations carry no flag: every backend implements them.
+    /// Optional operations declare their [`RendererFeature`] and fail with
+    /// `RendererError::UnsupportedFeature` when the backend reports `false`.
+    /// Callers choose fallback behavior from this query, never from backend
+    /// names. This method itself is required and has no default: a backend
+    /// that omits it fails to compile instead of silently misreporting.
+    fn supports_feature(&self, feature: RendererFeature) -> bool;
 
     // ========================================================================
     // Frame Lifecycle
@@ -156,9 +167,12 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Update an existing texture with new pixel data.
     /// The data must match the texture's format and dimensions.
+    ///
+    /// Optional ([`RendererFeature::TextureInPlaceUpdate`]): the default
+    /// fails with `UnsupportedFeature` before touching any state.
     fn update_texture(&mut self, handle: TextureHandle, data: &[u8]) -> Result<(), RendererError> {
         let _ = (handle, data);
-        Err(RendererError::InvalidOperation(
+        Err(RendererError::UnsupportedFeature(
             "update_texture not implemented for this backend".into(),
         ))
     }
@@ -202,9 +216,10 @@ pub trait GpuRenderer: Sized + 'static {
     /// Invalidates cached shader modules, re-reads the shader from disk,
     /// and rebuilds pipelines for each matching material in-place (keeping
     /// the same handle). Returns the number of materials recompiled.
-    fn recompile_materials_for_shader(&mut self, _shader_path: &std::path::Path) -> usize {
-        0
-    }
+    /// Required: every backend implements this explicitly. A backend with no
+    /// recompilation support returns 0 from its own implementation rather
+    /// than inheriting silence.
+    fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize;
 
     // ========================================================================
     // Destruction
@@ -252,27 +267,36 @@ pub trait GpuRenderer: Sized + 'static {
     /// size, independent of the swapchain. Under the editor the scene is
     /// composed for the viewport panel's aspect ratio, so its render targets
     /// must be sized to the panel — not the window — to avoid stretching the
-    /// scene across the full drawable and then cropping. Backends whose scene
-    /// targets are frame-graph transients (and thus sized via the frame graph)
-    /// can leave this as a no-op.
-    fn recreate_scene_render_targets(&mut self, _width: u32, _height: u32) {}
+    /// scene across the full drawable and then cropping.
+    ///
+    /// Required with no default. A backend whose scene targets are
+    /// frame-graph transients (sized via the frame graph) implements this as
+    /// an explicit documented no-op instead of inheriting silence.
+    fn recreate_scene_render_targets(&mut self, width: u32, height: u32);
 
     // ========================================================================
     // Lighting
     // ========================================================================
 
     /// Upload point light data for Forward+ tile-based culling.
-    fn upload_lights(&mut self, _lights: &[PointLightGPU]) {}
+    ///
+    /// Required: every backend implements this explicitly, even if only to
+    /// record that light upload is owned elsewhere.
+    fn upload_lights(&mut self, lights: &[PointLightGPU]);
 
     // ========================================================================
     // Shadows
     // ========================================================================
 
     /// Update shadow cascade view-projection matrices from light direction.
-    fn update_shadows(&mut self, _light_direction: [f32; 3]) {}
+    ///
+    /// Required: every backend implements this explicitly.
+    fn update_shadows(&mut self, light_direction: [f32; 3]);
 
     /// Upload shadow cascade data to GPU for the current frame.
-    fn upload_shadow_cascades(&mut self) {}
+    ///
+    /// Required: every backend implements this explicitly.
+    fn upload_shadow_cascades(&mut self);
 
     /// Get the base bindless index for per-frame depth textures.
     /// Actual index for frame N is `base + N`. Returns `None` if not registered.
@@ -288,8 +312,11 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Register per-frame depth textures with the bindless system.
     /// Returns the base bindless slot index.
+    ///
+    /// Optional ([`RendererFeature::DepthBindlessRegistration`]): the default
+    /// fails with `UnsupportedFeature` before touching any state.
     fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {
-        Err(RendererError::InvalidOperation(
+        Err(RendererError::UnsupportedFeature(
             "register_depth_textures_bindless not supported".into(),
         ))
     }
@@ -306,11 +333,14 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Initialize the GPU animation compute pipeline.
     /// `shader_path` is an absolute or relative path to the WGSL shader.
+    ///
+    /// Optional ([`RendererFeature::AnimationCompute`]): the default fails
+    /// with `UnsupportedFeature` before touching any state.
     fn init_animation_pipeline(
         &mut self,
         _shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        Err(RendererError::InvalidOperation(
+        Err(RendererError::UnsupportedFeature(
             "init_animation_pipeline not implemented for this backend".into(),
         ))
     }
@@ -319,17 +349,29 @@ pub trait GpuRenderer: Sized + 'static {
     // Pipeline Initialization
     // ========================================================================
 
+    /// Initialize Forward+ light culling for the given output size.
+    ///
+    /// Optional ([`RendererFeature::LightCulling`]): the default fails with
+    /// `UnsupportedFeature` before touching any state.
     fn init_light_culling(
         &mut self,
         _width: u32,
         _height: u32,
         _shader_path: &std::path::Path,
     ) -> Result<(), RendererError> {
-        Ok(())
+        Err(RendererError::UnsupportedFeature(
+            "init_light_culling not implemented for this backend".into(),
+        ))
     }
 
+    /// Initialize shadow-map resources.
+    ///
+    /// Optional ([`RendererFeature::ShadowMaps`]): the default fails with
+    /// `UnsupportedFeature` before touching any state.
     fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
-        Ok(())
+        Err(RendererError::UnsupportedFeature(
+            "init_shadow_resources not implemented for this backend".into(),
+        ))
     }
 
     /// Initialize a GPU pipeline by kind.
@@ -341,25 +383,44 @@ pub trait GpuRenderer: Sized + 'static {
     ///   DepthPrepassBillboard, Picking, PickingSkinned, Sky, Tonemap
     /// - **2 paths**: StencilIndicator (base + skinned)
     /// - **4 paths**: Outline (stencil_mark + stencil_mark_skinned + outline_draw + outline_draw_skinned)
+    ///
+    /// Optional ([`RendererFeature::PassPipelines`]): the default fails with
+    /// `UnsupportedFeature` before touching any state.
     fn init_pass_pipeline(
         &mut self,
         _kind: PipelineKind,
         _shader_paths: &[&std::path::Path],
     ) -> Result<(), RendererError> {
-        Ok(())
+        Err(RendererError::UnsupportedFeature(
+            "init_pass_pipeline not implemented for this backend".into(),
+        ))
     }
 
-    fn set_viewport_bindless_slot(&mut self, _slot: u32) {}
+    /// Store the bindless slot of the viewport texture for UI composition.
+    ///
+    /// Required with no default. A backend that resolves the viewport texture
+    /// through graph bindings instead of a stored slot implements this as an
+    /// explicit documented no-op.
+    fn set_viewport_bindless_slot(&mut self, slot: u32);
 
     // ========================================================================
     // UI Rendering
     // ========================================================================
 
     /// Set the UI material handle for backends that render UI directly (Metal).
-    fn set_ui_material(&mut self, _material: MaterialHandle) {}
+    ///
+    /// Required with no default. A backend that renders UI through the frame
+    /// graph instead of a direct pass implements this as an explicit
+    /// documented no-op.
+    fn set_ui_material(&mut self, material: MaterialHandle);
 
     /// Queue a UI draw list for rendering in the next frame.
-    fn render_ui_pass(&mut self, _draw_list: UIDrawList) {}
+    ///
+    /// Required with no default. Gated by
+    /// [`RendererFeature::DirectUiPass`]: backends that render UI through the
+    /// frame graph implement this as an explicit documented no-op and report
+    /// the feature as unsupported.
+    fn render_ui_pass(&mut self, draw_list: UIDrawList);
 
     // ========================================================================
     // Skeleton
@@ -404,12 +465,24 @@ pub trait GpuRenderer: Sized + 'static {
     // ========================================================================
 
     /// Begin a timestamp query with the given label.
+    ///
+    /// Debug hook gated by [`RendererFeature::TimestampQueries`]: the default
+    /// no-op is the documented semantic for backends without profiling
+    /// support.
     fn begin_timestamp(&mut self, _label: &str) {}
 
     /// End the timestamp query started with the matching label.
+    ///
+    /// Debug hook gated by [`RendererFeature::TimestampQueries`]: the default
+    /// no-op is the documented semantic for backends without profiling
+    /// support.
     fn end_timestamp(&mut self, _label: &str) {}
 
     /// Read all collected timestamp results from the last frame.
+    ///
+    /// Debug hook gated by [`RendererFeature::TimestampQueries`]: the default
+    /// empty result is the documented semantic for backends without profiling
+    /// support.
     fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
         Vec::new()
     }
@@ -420,7 +493,11 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Set the viewport panel bounds in physical pixel coordinates.
     /// When Some, the 3D scene is restricted to this rect. When None, full-screen.
-    fn set_viewport_panel_rect(&mut self, _rect: Option<crate::rect::Rect>) {}
+    ///
+    /// Required with no default. A backend that sizes its scene targets
+    /// through [`GpuRenderer::recreate_scene_render_targets`] instead of a
+    /// per-frame rect implements this as an explicit documented no-op.
+    fn set_viewport_panel_rect(&mut self, rect: Option<crate::rect::Rect>);
 }
 
 // ---------------------------------------------------------------------------
@@ -454,6 +531,23 @@ impl GpuRenderer for VulkanRenderer {
 
     fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities {
         &self.capabilities
+    }
+
+    fn supports_feature(&self, feature: crate::renderer::features::RendererFeature) -> bool {
+        use crate::renderer::features::RendererFeature;
+        match feature {
+            // Vulkan renders UI through the frame graph (`frame.submit_ui()`),
+            // not through a direct queued UI pass.
+            RendererFeature::DirectUiPass => false,
+            RendererFeature::AnimationCompute
+            | RendererFeature::LightCulling
+            | RendererFeature::PassPipelines
+            | RendererFeature::ShadowMaps
+            | RendererFeature::ParticleSystem
+            | RendererFeature::TimestampQueries
+            | RendererFeature::TextureInPlaceUpdate
+            | RendererFeature::DepthBindlessRegistration => true,
+        }
     }
 
     fn wait_for_frame(&mut self) -> Result<(), RendererError> {
@@ -708,9 +802,24 @@ impl GpuRenderer for VulkanRenderer {
 
     // -- UI Rendering --
 
+    fn set_ui_material(&mut self, _material: MaterialHandle) {
+        // Vulkan renders UI through the frame graph via frame.submit_ui();
+        // there is no stored direct-pass UI material.
+    }
+
     fn render_ui_pass(&mut self, _draw_list: UIDrawList) {
         // Vulkan renders UI through the frame graph via frame.submit_ui(),
         // not through a direct render_ui_pass call.
+    }
+
+    fn set_viewport_panel_rect(&mut self, _rect: Option<crate::rect::Rect>) {
+        // Vulkan sizes its 3D-scene targets through
+        // recreate_scene_render_targets; no per-frame panel rect is stored.
+    }
+
+    fn set_viewport_bindless_slot(&mut self, _slot: u32) {
+        // Vulkan resolves the viewport texture through frame-graph bindings,
+        // not through a stored bindless slot.
     }
 
     // -- Pipeline Initialization --
