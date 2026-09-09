@@ -13,7 +13,14 @@ impl VulkanRenderer {
     /// 3. `execute_draw_calls()` - writes per-object data to storage buffer
     /// 4. `render()` - submits GPU work
     pub fn wait_for_frame(&mut self) -> Result<(), crate::error::RendererError> {
-        self.swap_data.wait_for_fence(&self.context.device)
+        self.swap_data.wait_for_fence(&self.context.device)?;
+        // This slot's previous submission completed, which retires every
+        // buffer replaced at least FRAMES_IN_FLIGHT frames ago.
+        self.buffer_retirements.drain_completed(
+            self.swap_data.frame_counter(),
+            self.swap_data.frames_in_flight(),
+        );
+        Ok(())
     }
 
     /// Set frame-level uniforms for the current frame.

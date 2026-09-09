@@ -297,7 +297,7 @@ impl Frame<'_, VulkanRenderer> {
                     .map(|ib| ib.object())
                     .unwrap_or(vk::Buffer::null());
                 let index_type = mesh.index_format.into();
-                let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
+                let index_count = mesh.index_count;
 
                 commands.push(ResolvedDrawCommand {
                     pipeline,

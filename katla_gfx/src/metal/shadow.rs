@@ -290,6 +290,10 @@ fn encode_cascade_draws(
         let Some(mesh) = meshes.get(draw.mesh.index()) else {
             continue;
         };
+        // An empty dynamic mesh draws nothing.
+        if mesh.index_count == 0 {
+            continue;
+        }
         let Some(material) = materials.get(draw.material.index()) else {
             continue;
         };

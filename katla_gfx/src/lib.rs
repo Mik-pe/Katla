@@ -294,7 +294,9 @@ pub use renderer::{UIDrawList, UiDrawCommand};
 
 // Renderer types (backend-agnostic)
 pub use renderer::registry::MeshIndexElement;
-pub use renderer::registry::{MeshDescriptor, MeshUsage, PrimitiveTopology};
+pub use renderer::registry::{
+    MeshDescriptor, MeshUsage, PrimitiveTopology, validate_dynamic_update,
+};
 pub use renderer::{
     DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
 };

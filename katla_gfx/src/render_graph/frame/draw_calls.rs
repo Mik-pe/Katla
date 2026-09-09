@@ -150,14 +150,17 @@ impl Frame<'_, VulkanRenderer> {
                 ]);
             }
 
+            // An empty dynamic mesh draws nothing: skip instead of encoding a
+            // zero-count indexed draw without a bound index buffer.
+            if mesh.index_count == 0 {
+                continue;
+            }
             if let Some(ib) = &mesh.index_buffer {
                 cmd.bind_index_buffer(ib.object(), 0, mesh.index_format.into());
             }
 
-            let index_count = mesh.index_buffer.as_ref().map(|ib| ib.count()).unwrap_or(0);
-
             cmd.draw_indexed(
-                index_count,
+                mesh.index_count,
                 draw_call.instance_count().max(1),
                 0,
                 0,

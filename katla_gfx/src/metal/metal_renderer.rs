@@ -144,10 +144,15 @@ mod object_buffer_capacity_tests {
 ///
 /// Creation validates bytes against the typed [`MeshDescriptor`](crate::renderer::registry::MeshDescriptor);
 /// Metal encodes `TriangleList` only, so the descriptor itself is not stored.
+/// `vertex_count`/`vertex_stride` are recorded so dynamic updates validate
+/// exactly like Vulkan's; interleaved storage keeps the whole blob in
+/// `vertex_buffer`.
 pub(crate) struct MetalMesh {
     pub(crate) vertex_buffer: MetalBuffer,
     pub(crate) index_buffer: MetalBuffer,
     pub(crate) index_count: u32,
+    pub(crate) vertex_count: u32,
+    pub(crate) vertex_stride: u32,
 }
 
 /// A material (pipeline state + texture indices).
@@ -1224,6 +1229,14 @@ impl GpuRenderer for MetalRenderer {
             .then_some(crate::backend::command::IndexType::Uint32)
     }
 
+    fn mesh_vertex_count(&self, mesh: MeshHandle) -> Option<u32> {
+        self.meshes.get(mesh.index()).map(|m| m.vertex_count)
+    }
+
+    fn mesh_index_count(&self, mesh: MeshHandle) -> Option<u32> {
+        self.meshes.get(mesh.index()).map(|m| m.index_count)
+    }
+
     fn create_mesh_dynamic(
         &mut self,
         descriptor: &crate::renderer::registry::MeshDescriptor,
@@ -1237,10 +1250,10 @@ impl GpuRenderer for MetalRenderer {
         &mut self,
         mesh: MeshHandle,
         vertex_data: &[u8],
-        _vertex_count: u32,
+        vertex_count: u32,
         indices: &[u32],
     ) -> Result<(), RendererError> {
-        self.update_mesh_dynamic_impl(mesh, vertex_data, indices)
+        self.update_mesh_dynamic_impl(mesh, vertex_data, vertex_count, indices)
     }
 
     fn create_texture(
@@ -1708,21 +1721,65 @@ mod tests {
             index_format: crate::backend::command::IndexType::Uint32,
         };
 
-        let mesh = renderer.create_mesh_dynamic(&descriptor, vertex_bytes, &indices);
-        assert!(mesh.is_ok(), "dynamic mesh creation should succeed");
-        let mesh = mesh.unwrap();
-        assert!(mesh.is_some(), "dynamic mesh handle should be valid");
+        let mesh = renderer
+            .create_mesh_dynamic(&descriptor, vertex_bytes, &indices)
+            .expect("dynamic mesh creation should succeed");
+        assert_eq!(renderer.mesh_vertex_count(mesh), Some(3));
+        assert_eq!(renderer.mesh_index_count(mesh), Some(3));
 
         let updated_verts: [f32; 12] = [
             -1.0, -1.0, 0.0, 1.0, 1.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0,
         ];
         let updated_bytes = bytemuck::cast_slice(&updated_verts);
-        let result = renderer.update_mesh_dynamic(mesh, updated_bytes, 3, &indices);
-        assert!(
-            result.is_ok(),
-            "update_mesh_dynamic should succeed: {:?}",
-            result.err()
-        );
+        renderer
+            .update_mesh_dynamic(mesh, updated_bytes, 3, &indices)
+            .expect("same-size update should succeed");
+        assert_eq!(renderer.mesh_index_count(mesh), Some(3));
+
+        // Growth beyond the created capacity reallocate safely and publish
+        // the larger counts.
+        let grown_verts: [f32; 24] = [
+            -1.0, -1.0, 0.0, 1.0, 1.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, -0.5, -0.5, 0.5, 1.0,
+            0.5, -0.5, 0.5, 1.0, 0.0, 0.5, 0.5, 1.0,
+        ];
+        let grown_bytes = bytemuck::cast_slice(&grown_verts);
+        let grown_indices: [u32; 6] = [0, 1, 2, 3, 4, 5];
+        renderer
+            .update_mesh_dynamic(mesh, grown_bytes, 6, &grown_indices)
+            .expect("growing update should reallocate and succeed");
+        assert_eq!(renderer.mesh_vertex_count(mesh), Some(6));
+        assert_eq!(renderer.mesh_index_count(mesh), Some(6));
+
+        // Populated → empty: valid, draws nothing.
+        renderer
+            .update_mesh_dynamic(mesh, &[], 0, &[])
+            .expect("empty update should succeed");
+        assert_eq!(renderer.mesh_vertex_count(mesh), Some(0));
+        assert_eq!(renderer.mesh_index_count(mesh), Some(0));
+
+        // Empty → populated again through growth.
+        renderer
+            .update_mesh_dynamic(mesh, updated_bytes, 3, &indices)
+            .expect("repopulation should succeed");
+        assert_eq!(renderer.mesh_vertex_count(mesh), Some(3));
+
+        // Inconsistent payloads fail typed and change nothing.
+        let error = renderer
+            .update_mesh_dynamic(mesh, updated_bytes, 4, &indices)
+            .expect_err("blob disagreeing with vertex_count must fail");
+        assert!(matches!(
+            error,
+            crate::error::RendererError::InvalidDescriptor { .. }
+        ));
+        let error = renderer
+            .update_mesh_dynamic(mesh, updated_bytes, 3, &[0, 1, 3])
+            .expect_err("out-of-range index must fail");
+        assert!(matches!(
+            error,
+            crate::error::RendererError::InvalidDescriptor { .. }
+        ));
+        assert_eq!(renderer.mesh_vertex_count(mesh), Some(3));
+        assert_eq!(renderer.mesh_index_count(mesh), Some(3));
     }
 
     // --- Headless render test helpers ---
