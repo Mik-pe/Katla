@@ -60,11 +60,22 @@ pub struct MeshAsset {
     /// this exact format; it is recorded at mesh creation and never re-guessed.
     pub index_format: crate::backend::command::IndexType,
     /// Number of vertices in this mesh.
+    ///
+    /// For dynamic meshes this is the logical count published by the latest
+    /// successful update, which may be smaller than the buffers' capacity.
     pub vertex_count: u32,
+    /// Logical number of indices in `index_buffer`.
+    ///
+    /// Draw paths encode exactly this many indices; it tracks the latest
+    /// successful dynamic update and is independent of buffer capacity.
+    pub index_count: u32,
     /// Vertex layout the mesh was created with. Backends translate this same
     /// neutral descriptor into native vertex state; pipeline compatibility
     /// (issue #100) keys off it.
     pub layout: crate::vertex::VertexLayout,
+    /// Attribute semantics aligned 1:1 with `layout.formats()` by position.
+    /// Dynamic updates slice interleaved blobs through this mapping.
+    pub attributes: Vec<AttributeType>,
     /// Primitive topology. Only `TriangleList` is encodable today; anything
     /// else fails creation with `UnsupportedFeature` instead of rendering as
     /// triangles by accident.
@@ -273,6 +284,44 @@ impl MeshDescriptor {
         }
         Ok(())
     }
+}
+
+/// Validate a dynamic-mesh update payload against a mesh's recorded layout.
+///
+/// This is the backend-neutral dynamic update contract: the interleaved
+/// vertex blob must describe exactly `vertex_count` vertices of the layout's
+/// stride, and every index must reference a vertex in range. Unlike mesh
+/// creation, a fully empty update (`vertex_count == 0`, no blob, no indices)
+/// is valid — it transitions the mesh to an empty state that draws nothing.
+///
+/// Backends must call this (or implement the same checks) before touching any
+/// GPU state, so an invalid update never partially overwrites a live mesh.
+pub fn validate_dynamic_update(
+    stride: usize,
+    vertex_data: &[u8],
+    vertex_count: u32,
+    indices: &[u32],
+) -> Result<(), crate::error::RendererError> {
+    use crate::error::RendererError;
+    let expected = vertex_count as usize * stride;
+    if vertex_data.len() != expected {
+        return Err(RendererError::InvalidDescriptor {
+            resource: "mesh".to_string(),
+            reason: format!(
+                "dynamic vertex blob {} bytes disagrees with {vertex_count} vertices of stride {stride}",
+                vertex_data.len()
+            ),
+        });
+    }
+    for (position, index) in indices.iter().enumerate() {
+        if *index >= vertex_count {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: format!("index {position} references vertex {index} of {vertex_count}"),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// An index element type whose width is preserved through upload, storage, and

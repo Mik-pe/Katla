@@ -141,6 +141,22 @@ pub trait GpuRenderer: Sized + 'static {
         None
     }
 
+    /// Report the logical vertex count recorded for a mesh.
+    ///
+    /// For dynamic meshes this tracks the latest successful update. Returns
+    /// `None` when the handle does not reference a live mesh.
+    fn mesh_vertex_count(&self, _mesh: MeshHandle) -> Option<u32> {
+        None
+    }
+
+    /// Report the logical index count recorded for a mesh.
+    ///
+    /// Draw encoding reads exactly this many indices. Returns `None` when
+    /// the handle does not reference a live mesh.
+    fn mesh_index_count(&self, _mesh: MeshHandle) -> Option<u32> {
+        None
+    }
+
     /// Create a dynamic (CPU-writable) mesh from an explicit descriptor.
     ///
     /// The descriptor carries layout, semantics, topology, and counts; the
@@ -153,7 +169,16 @@ pub trait GpuRenderer: Sized + 'static {
         indices: &[u32],
     ) -> Result<MeshHandle, RendererError>;
 
-    /// Update a dynamic mesh with new data.
+    /// Update a dynamic mesh with new vertex and index data.
+    ///
+    /// Backend-neutral contract: the interleaved blob must describe exactly
+    /// `vertex_count` vertices of the mesh's recorded stride and every index
+    /// must be in range; success publishes one internally consistent mesh
+    /// (counts, contents, capacity), shrinking never reallocates, growth
+    /// replaces buffers and retires the old natives until their submissions
+    /// complete, and failure leaves the previous mesh state intact. An empty
+    /// update (`vertex_count == 0`, no indices) makes the mesh draw nothing;
+    /// the recorded `u32` index width never changes.
     fn update_mesh_dynamic(
         &mut self,
         mesh: MeshHandle,
@@ -615,6 +640,14 @@ impl GpuRenderer for VulkanRenderer {
 
     fn mesh_index_format(&self, mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
         VulkanRenderer::mesh_index_format(self, mesh)
+    }
+
+    fn mesh_vertex_count(&self, mesh: MeshHandle) -> Option<u32> {
+        VulkanRenderer::mesh_vertex_count(self, mesh)
+    }
+
+    fn mesh_index_count(&self, mesh: MeshHandle) -> Option<u32> {
+        VulkanRenderer::mesh_index_count(self, mesh)
     }
 
     fn create_mesh_dynamic(

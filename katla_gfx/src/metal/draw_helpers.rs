@@ -173,6 +173,10 @@ impl MetalRenderer {
                 }
             }
 
+            // An empty dynamic mesh draws nothing.
+            if mesh.index_count == 0 {
+                continue;
+            }
             encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
             encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
             encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);

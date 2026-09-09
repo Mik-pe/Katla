@@ -71,6 +71,8 @@ impl MetalRenderer {
             vertex_buffer,
             index_buffer,
             index_count,
+            vertex_count: vertices.len() as u32,
+            vertex_stride: std::mem::size_of::<T>() as u32,
         };
         let id = self.meshes.insert(mesh);
         Ok(MeshHandle::new(id))
@@ -128,15 +130,32 @@ impl MetalRenderer {
             vertex_buffer,
             index_buffer,
             index_count,
+            vertex_count: descriptor.vertex_count,
+            vertex_stride: stride as u32,
         };
         let id = self.meshes.insert(mesh);
         Ok(MeshHandle::new(id))
     }
 
+    /// Update a dynamic mesh with new vertex and index data.
+    ///
+    /// Implements the same backend-neutral contract as Vulkan's
+    /// `update_mesh_dynamic` (see
+    /// `crate::renderer::registry::validate_dynamic_update`): the blob must
+    /// describe exactly `vertex_count` vertices of the recorded stride and
+    /// every index must be in range; success publishes one consistent mesh,
+    /// shrinking never reallocates, growth allocates replacement buffers
+    /// before any state changes, and failure leaves the previous mesh intact.
+    ///
+    /// Retirement: replaced `MTLBuffer`s are dropped immediately, which is
+    /// safe on Metal — command buffers retain the resources their encoded
+    /// commands reference until the command buffer completes, so in-flight
+    /// submissions keep the old buffers alive.
     pub(crate) fn update_mesh_dynamic_impl(
         &mut self,
         mesh: MeshHandle,
         vertex_data: &[u8],
+        vertex_count: u32,
         indices: &[u32],
     ) -> Result<(), RendererError> {
         let Some(m) = self.meshes.get_mut(mesh.index()) else {
@@ -145,55 +164,73 @@ impl MetalRenderer {
                 detail: format!("{mesh:?} in Metal update_mesh_dynamic"),
             });
         };
-        // Validate both payloads before copying either: oversized data used
-        // to be silently truncated while index_count recorded the full
-        // length. Buffer growth policy belongs to dynamic-mesh capacity
-        // design; here a too-large update fails instead of corrupting.
-        let vertex_capacity = m.vertex_buffer.size() as usize;
-        if vertex_data.len() > vertex_capacity {
-            return Err(RendererError::UploadFailed {
-                resource: "mesh".to_string(),
-                expected_bytes: vertex_capacity,
-                actual_bytes: vertex_data.len(),
-                detail: "vertex data exceeds buffer capacity".to_string(),
-            });
-        }
-        let index_capacity = m.index_buffer.size() as usize;
+        crate::renderer::registry::validate_dynamic_update(
+            m.vertex_stride as usize,
+            vertex_data,
+            vertex_count,
+            indices,
+        )?;
+
+        // Fallible phase: allocate and fill replacement buffers for anything
+        // that no longer fits, before touching the mesh.
+        let needed_vertex = vertex_data.len() as u64;
+        let vertex_replacement = if m.vertex_buffer.size() < needed_vertex {
+            let new_capacity = needed_vertex.max(m.vertex_buffer.size() * 2);
+            let buffer = self.context.create_buffer(new_capacity, true)?;
+            let ptr = buffer.map();
+            unsafe {
+                std::ptr::copy_nonoverlapping(vertex_data.as_ptr(), ptr, vertex_data.len());
+            }
+            buffer.unmap();
+            Some(buffer)
+        } else {
+            None
+        };
+
         let index_bytes_len = indices.len() * 4;
-        if index_bytes_len > index_capacity {
-            return Err(RendererError::UploadFailed {
-                resource: "mesh".to_string(),
-                expected_bytes: index_capacity,
-                actual_bytes: index_bytes_len,
-                detail: "index data exceeds buffer capacity".to_string(),
-            });
-        }
-        {
+        let needed_index = index_bytes_len as u64;
+        let index_replacement = if m.index_buffer.size() < needed_index {
+            let new_capacity = needed_index.max(m.index_buffer.size() * 2);
+            let buffer = self.context.create_buffer(new_capacity, true)?;
+            let index_bytes = unsafe {
+                std::slice::from_raw_parts(indices.as_ptr() as *const u8, index_bytes_len)
+            };
+            let ptr = buffer.map();
+            unsafe {
+                std::ptr::copy_nonoverlapping(index_bytes.as_ptr(), ptr, index_bytes.len());
+            }
+            buffer.unmap();
+            Some(buffer)
+        } else {
+            None
+        };
+
+        // Commit phase: infallible copies through mapped shared storage and
+        // field updates. Dropped old buffers stay alive through any in-flight
+        // command buffer referencing them (Metal resource retention).
+        if let Some(new_vertex) = vertex_replacement {
+            m.vertex_buffer = new_vertex;
+        } else {
             let ptr = m.vertex_buffer.map();
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    vertex_data.as_ptr(),
-                    ptr,
-                    vertex_data.len().min(m.vertex_buffer.size() as usize),
-                );
+                std::ptr::copy_nonoverlapping(vertex_data.as_ptr(), ptr, vertex_data.len());
             }
             m.vertex_buffer.unmap();
         }
-        {
+        if let Some(new_index) = index_replacement {
+            m.index_buffer = new_index;
+        } else {
             let index_bytes = unsafe {
-                std::slice::from_raw_parts(indices.as_ptr() as *const u8, indices.len() * 4)
+                std::slice::from_raw_parts(indices.as_ptr() as *const u8, index_bytes_len)
             };
             let ptr = m.index_buffer.map();
             unsafe {
-                std::ptr::copy_nonoverlapping(
-                    index_bytes.as_ptr(),
-                    ptr,
-                    index_bytes.len().min(m.index_buffer.size() as usize),
-                );
+                std::ptr::copy_nonoverlapping(index_bytes.as_ptr(), ptr, index_bytes.len());
             }
             m.index_buffer.unmap();
         }
         m.index_count = indices.len() as u32;
+        m.vertex_count = vertex_count;
         Ok(())
     }
 }
