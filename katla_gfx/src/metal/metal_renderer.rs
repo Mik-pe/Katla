@@ -1078,6 +1078,14 @@ impl GpuRenderer for MetalRenderer {
         &self.capabilities
     }
 
+    fn supports_feature(&self, _feature: crate::renderer::features::RendererFeature) -> bool {
+        // Metal implements every optional renderer feature: animation
+        // compute, light culling, pass pipelines, shadow maps, particles,
+        // timestamp queries, in-place texture upload, depth bindless
+        // registration, and the direct UI pass.
+        true
+    }
+
     fn destroy(&mut self) {
         self.particle_system = None;
         self.meshes = ResourceStorage::new();
