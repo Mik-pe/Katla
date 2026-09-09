@@ -123,6 +123,26 @@ impl BufferObject {
             std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
         }
     }
+
+    /// Byte capacity of this buffer's storage.
+    fn capacity(&self) -> vk::DeviceSize {
+        self.buf_size
+    }
+
+    /// Host-visible mapping of the whole buffer, without writing to it.
+    fn mapped_ptr(&self) -> Result<*mut u8, crate::error::RendererError> {
+        self.context.map_buffer(&self.allocation)
+    }
+
+    /// Transfer the native buffer and allocation out without destroying them.
+    ///
+    /// The caller (the retirement queue) becomes responsible for freeing.
+    fn into_native_parts(mut self) -> (vk::Buffer, Allocation) {
+        let allocation = unsafe { ManuallyDrop::take(&mut self.allocation) };
+        let buffer = self.buffer;
+        std::mem::forget(self);
+        (buffer, allocation)
+    }
 }
 
 impl IndexBuffer {
@@ -132,25 +152,34 @@ impl IndexBuffer {
         index_type: IndexType,
         count: u32,
     ) -> Self {
-        let buffer = {
-            let create_info = vk::BufferCreateInfo::default()
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .usage(vk::BufferUsageFlags::INDEX_BUFFER)
-                .size(buf_size);
-            let (buffer, allocation) = context
-                .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
-                .expect("Failed to allocate index buffer");
+        Self::try_new(context, buf_size, index_type, count)
+            .expect("Failed to allocate index buffer")
+    }
 
-            BufferObject {
-                allocation: ManuallyDrop::new(allocation),
-                buffer,
-                buf_size,
-                count,
-                context,
-                buffer_usage: vk::BufferUsageFlags::INDEX_BUFFER,
-            }
+    /// Fallible constructor used by paths that must preserve prior state on
+    /// allocation failure (dynamic mesh growth).
+    pub(crate) fn try_new(
+        context: Rc<VulkanContext>,
+        buf_size: vk::DeviceSize,
+        index_type: IndexType,
+        count: u32,
+    ) -> Result<Self, crate::error::RendererError> {
+        let create_info = vk::BufferCreateInfo::default()
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .usage(vk::BufferUsageFlags::INDEX_BUFFER)
+            .size(buf_size);
+        let (buffer, allocation) =
+            context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)?;
+
+        let buffer = BufferObject {
+            allocation: ManuallyDrop::new(allocation),
+            buffer,
+            buf_size,
+            count,
+            context,
+            buffer_usage: vk::BufferUsageFlags::INDEX_BUFFER,
         };
-        Self { buffer, index_type }
+        Ok(Self { buffer, index_type })
     }
 
     pub fn upload_data(&mut self, data: &[u8]) {
@@ -163,6 +192,24 @@ impl IndexBuffer {
 
     pub fn count(&self) -> u32 {
         self.buffer.count
+    }
+
+    /// Byte capacity of this buffer's storage.
+    pub fn capacity(&self) -> vk::DeviceSize {
+        self.buffer.capacity()
+    }
+
+    /// Host-visible mapping of the whole buffer, without writing to it.
+    pub fn mapped_ptr(&self) -> Result<*mut u8, crate::error::RendererError> {
+        self.buffer.mapped_ptr()
+    }
+
+    /// Transfer the native buffer and allocation out without destroying them.
+    ///
+    /// Used by dynamic-mesh growth: the returned parts enter the retirement
+    /// queue instead of being freed while in-flight submissions read them.
+    pub fn into_native_parts(self) -> (vk::Buffer, Allocation) {
+        self.buffer.into_native_parts()
     }
 }
 
@@ -182,25 +229,47 @@ impl VertexBuffer {
         count: u32,
         usage: vk::BufferUsageFlags,
     ) -> Self {
-        let buffer = {
-            let create_info = vk::BufferCreateInfo::default()
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .usage(usage)
-                .size(buf_size);
-            let (buffer, allocation) = context
-                .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
-                .expect("Failed to allocate vertex buffer");
+        Self::try_with_usage(context, buf_size, count, usage)
+            .expect("Failed to allocate vertex buffer")
+    }
 
-            BufferObject {
-                allocation: ManuallyDrop::new(allocation),
-                buffer,
-                buf_size,
-                count,
-                context,
-                buffer_usage: usage,
-            }
+    /// Fallible constructor used by paths that must preserve prior state on
+    /// allocation failure (dynamic mesh growth).
+    pub(crate) fn try_new(
+        context: Rc<VulkanContext>,
+        buf_size: u64,
+        count: u32,
+    ) -> Result<Self, crate::error::RendererError> {
+        Self::try_with_usage(
+            context,
+            buf_size,
+            count,
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+        )
+    }
+
+    pub(crate) fn try_with_usage(
+        context: Rc<VulkanContext>,
+        buf_size: u64,
+        count: u32,
+        usage: vk::BufferUsageFlags,
+    ) -> Result<Self, crate::error::RendererError> {
+        let create_info = vk::BufferCreateInfo::default()
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .usage(usage)
+            .size(buf_size);
+        let (buffer, allocation) =
+            context.allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)?;
+
+        let buffer = BufferObject {
+            allocation: ManuallyDrop::new(allocation),
+            buffer,
+            buf_size,
+            count,
+            context,
+            buffer_usage: usage,
         };
-        Self { buffer }
+        Ok(Self { buffer })
     }
 
     pub fn object(&self) -> vk::Buffer {
@@ -213,6 +282,24 @@ impl VertexBuffer {
 
     pub fn upload_data(&mut self, data: &[u8]) {
         self.buffer.upload_data(data);
+    }
+
+    /// Byte capacity of this buffer's storage.
+    pub fn capacity(&self) -> vk::DeviceSize {
+        self.buffer.capacity()
+    }
+
+    /// Host-visible mapping of the whole buffer, without writing to it.
+    pub fn mapped_ptr(&self) -> Result<*mut u8, crate::error::RendererError> {
+        self.buffer.mapped_ptr()
+    }
+
+    /// Transfer the native buffer and allocation out without destroying them.
+    ///
+    /// Used by dynamic-mesh growth: the returned parts enter the retirement
+    /// queue instead of being freed while in-flight submissions read them.
+    pub fn into_native_parts(self) -> (vk::Buffer, Allocation) {
+        self.buffer.into_native_parts()
     }
 }
 

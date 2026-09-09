@@ -9,6 +9,7 @@ use crate::renderer::registry::{
     AssetRegistry, MeshAsset, MeshDescriptor, MeshIndexElement, MeshUsage, PrimitiveTopology,
 };
 use crate::vertex::Vertex;
+use crate::vulkan::retirement::{FrameRetirements, RetiredBuffer};
 use crate::vulkan::vertex_attribute::AttributeType;
 use crate::vulkan::{IndexBuffer, IndexType, VertexBuffer};
 use crate::{RendererError, VulkanContext};
@@ -42,7 +43,9 @@ impl MeshManager {
             index_buffer,
             index_format: descriptor.index_format,
             vertex_count: descriptor.vertex_count,
+            index_count: descriptor.index_count,
             layout: descriptor.layout,
+            attributes: descriptor.attributes,
             topology: descriptor.topology,
             usage: descriptor.usage,
         }
@@ -153,43 +156,16 @@ impl MeshManager {
         descriptor: &MeshDescriptor,
         vertex_bytes: &[u8],
     ) -> Result<HashMap<AttributeType, VertexBuffer>, RendererError> {
-        let stride = descriptor.layout.stride();
-        let vertex_count = descriptor.vertex_count as usize;
-        if vertex_bytes.len() != vertex_count * stride {
-            return Err(RendererError::InvalidDescriptor {
-                resource: "mesh".to_string(),
-                reason: format!(
-                    "vertex blob {} bytes disagrees with {vertex_count} vertices of stride {stride}",
-                    vertex_bytes.len()
-                ),
-            });
-        }
-        let mut map = HashMap::new();
-        let mut offset = 0usize;
-        for (format, attribute) in descriptor
-            .layout
-            .formats()
-            .iter()
-            .zip(descriptor.attributes.iter())
-        {
-            let size = format.size_bytes();
-            if offset + size > stride {
-                return Err(RendererError::InvalidDescriptor {
-                    resource: "mesh".to_string(),
-                    reason: format!(
-                        "attribute {attribute:?} range {offset}..{} exceeds stride {stride}",
-                        offset + size
-                    ),
-                });
-            }
-            let mut bytes = Vec::with_capacity(vertex_count * size);
-            for vertex in vertex_bytes.chunks_exact(stride) {
-                bytes.extend_from_slice(&vertex[offset..offset + size]);
-            }
-            map.insert(*attribute, self.create_attr_buffer(&bytes));
-            offset += size;
-        }
-        Ok(map)
+        let split = split_attribute_bytes(
+            &descriptor.layout,
+            &descriptor.attributes,
+            vertex_bytes,
+            descriptor.vertex_count,
+        )?;
+        Ok(split
+            .into_iter()
+            .map(|(kind, bytes)| (kind, self.create_attr_buffer(&bytes)))
+            .collect())
     }
 
     fn create_attr_buffer(&self, bytes: &[u8]) -> VertexBuffer {
@@ -476,14 +452,124 @@ impl MeshManager {
     }
 
     /// Update a dynamic mesh with new vertex and index data.
+    ///
+    /// Backend contract for both backends (see
+    /// `crate::renderer::registry::validate_dynamic_update`):
+    ///
+    /// - The interleaved `vertex_data` blob must describe exactly
+    ///   `vertex_count` vertices of the mesh's recorded layout stride, and
+    ///   every index must be in range; violations fail with typed errors
+    ///   before any GPU state changes.
+    /// - The mesh's logical vertex/index counts are updated to the new
+    ///   values; byte capacity only grows. Shrinking and empty updates never
+    ///   reallocate — they publish smaller counts and draw correspondingly
+    ///   less (an empty mesh draws nothing).
+    /// - Growth replaces buffers whose capacity is insufficient. Replacement
+    ///   buffers are fully allocated and filled first; the old buffers enter
+    ///   `retirement` tagged with the current frame so they stay alive until
+    ///   the submissions that can still read them have completed. An
+    ///   allocation failure returns [`RendererError::AllocationFailed`] and
+    ///   leaves the previously published mesh state untouched.
+    /// - The recorded index width never changes: dynamic meshes store `u32`
+    ///   indices and updates stay `u32`.
     pub(crate) fn update_mesh_dynamic(
         &self,
         registry: &mut AssetRegistry,
+        retirement: &mut FrameRetirements,
         mesh: MeshHandle,
         vertex_data: &[u8],
-        _vertex_count: u32,
+        vertex_count: u32,
         indices: &[u32],
     ) -> Result<(), RendererError> {
+        let (layout, attributes) = {
+            let mesh_asset = registry
+                .get_mesh(mesh)
+                .ok_or_else(|| RendererError::StaleHandle {
+                    resource: "mesh".to_string(),
+                    detail: format!("{mesh:?} in update_mesh_dynamic"),
+                })?;
+            if mesh_asset.usage != MeshUsage::Dynamic {
+                return Err(RendererError::InvalidOperation(format!(
+                    "mesh {mesh:?} is not dynamic; static meshes are immutable"
+                )));
+            }
+            (mesh_asset.layout.clone(), mesh_asset.attributes.clone())
+        };
+
+        crate::renderer::registry::validate_dynamic_update(
+            layout.stride(),
+            vertex_data,
+            vertex_count,
+            indices,
+        )?;
+
+        // Split the interleaved blob per attribute using the recorded layout
+        // (creation and update slice identically).
+        let split = split_attribute_bytes(&layout, &attributes, vertex_data, vertex_count)?;
+
+        // Fallible phase: allocate and fill every replacement buffer before
+        // any mesh state changes. Old buffers stay live and owned by the
+        // asset until the commit below.
+        let mut replaced_attributes: Vec<(AttributeType, VertexBuffer)> = Vec::new();
+        for (kind, bytes) in &split {
+            let needed = bytes.len() as u64;
+            let existing = registry
+                .get_mesh(mesh)
+                .and_then(|asset| asset.attribute_buffers.get(kind))
+                .map(|vb| vb.capacity());
+            let must_replace = existing.is_none_or(|capacity| capacity < needed);
+            if !must_replace {
+                continue;
+            }
+            // Amortized growth: at least double the previous capacity so a
+            // gradually growing mesh does not reallocate every update.
+            let new_capacity = existing.map_or(needed, |old| needed.max(old * 2));
+            let mut vb = VertexBuffer::try_new(self.context.clone(), new_capacity, vertex_count)?;
+            vb.upload_data(bytes);
+            replaced_attributes.push((*kind, vb));
+        }
+
+        let index_bytes = unsafe {
+            std::slice::from_raw_parts(
+                indices.as_ptr() as *const u8,
+                std::mem::size_of_val(indices),
+            )
+        };
+        let needed_index_bytes = index_bytes.len() as u64;
+        let existing_index = registry
+            .get_mesh(mesh)
+            .and_then(|asset| asset.index_buffer.as_ref())
+            .map(|ib| ib.capacity());
+        let replaced_index = match existing_index {
+            Some(capacity) if capacity >= needed_index_bytes => None,
+            Some(capacity) => {
+                let new_capacity = needed_index_bytes.max(capacity * 2);
+                let mut ib = IndexBuffer::try_new(
+                    self.context.clone(),
+                    new_capacity,
+                    IndexType::Uint32,
+                    indices.len() as u32,
+                )?;
+                ib.upload_data(index_bytes);
+                Some(ib)
+            }
+            None if indices.is_empty() => None,
+            None => {
+                let mut ib = IndexBuffer::try_new(
+                    self.context.clone(),
+                    needed_index_bytes,
+                    IndexType::Uint32,
+                    indices.len() as u32,
+                )?;
+                ib.upload_data(index_bytes);
+                Some(ib)
+            }
+        };
+
+        // Commit phase: infallible pointer writes and field updates. Mapped
+        // pointers for in-place buffers are acquired here too — mapping a
+        // persistently-mapped CpuToGpu allocation cannot fail, but the error
+        // surfaces before any state changes if it ever does.
         let mesh_asset = registry
             .get_mesh_mut(mesh)
             .ok_or_else(|| RendererError::StaleHandle {
@@ -491,25 +577,149 @@ impl MeshManager {
                 detail: format!("{mesh:?} in update_mesh_dynamic"),
             })?;
 
-        // Update vertex buffer
-        if let Some(ref mut vb) = mesh_asset
-            .attribute_buffers
-            .get_mut(&AttributeType::Position)
+        for (kind, new_vb) in replaced_attributes {
+            if let Some(old) = mesh_asset.attribute_buffers.insert(kind, new_vb) {
+                let (buffer, allocation) = old.into_native_parts();
+                retirement.retire(RetiredBuffer::new(buffer, allocation, self.context.clone()));
+            }
+        }
+        for (kind, bytes) in &split {
+            if let Some(vb) = mesh_asset.attribute_buffers.get(kind)
+                && vb.capacity() >= bytes.len() as u64
+            {
+                let ptr = vb.mapped_ptr()?;
+                unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len()) };
+            }
+        }
+
+        if let Some(new_ib) = replaced_index {
+            if let Some(old) = mesh_asset.index_buffer.replace(new_ib) {
+                let (buffer, allocation) = old.into_native_parts();
+                retirement.retire(RetiredBuffer::new(buffer, allocation, self.context.clone()));
+            }
+        } else if let Some(ib) = mesh_asset.index_buffer.as_ref()
+            && ib.capacity() >= needed_index_bytes
         {
-            vb.upload_data(vertex_data);
+            let ptr = ib.mapped_ptr()?;
+            unsafe { std::ptr::copy_nonoverlapping(index_bytes.as_ptr(), ptr, index_bytes.len()) };
         }
 
-        // Update index buffer
-        if let Some(ref mut ib) = mesh_asset.index_buffer {
-            let index_bytes = unsafe {
-                std::slice::from_raw_parts(
-                    indices.as_ptr() as *const u8,
-                    std::mem::size_of_val(indices),
-                )
-            };
-            ib.upload_data(index_bytes);
-        }
-
+        mesh_asset.vertex_count = vertex_count;
+        mesh_asset.index_count = indices.len() as u32;
         Ok(())
+    }
+}
+
+/// Slice one interleaved vertex blob into per-attribute byte buffers.
+///
+/// Offsets derive from the layout formats zipped with the attribute
+/// semantics; every attribute range is checked against the stride before
+/// slicing, and the blob length must describe exactly `vertex_count`
+/// vertices. Creation and dynamic updates share this slicing so both paths
+/// publish structurally identical attribute data.
+fn split_attribute_bytes(
+    layout: &crate::vertex::VertexLayout,
+    attributes: &[AttributeType],
+    vertex_bytes: &[u8],
+    vertex_count: u32,
+) -> Result<HashMap<AttributeType, Vec<u8>>, RendererError> {
+    let stride = layout.stride();
+    if vertex_bytes.len() != vertex_count as usize * stride {
+        return Err(RendererError::InvalidDescriptor {
+            resource: "mesh".to_string(),
+            reason: format!(
+                "vertex blob {} bytes disagrees with {vertex_count} vertices of stride {stride}",
+                vertex_bytes.len()
+            ),
+        });
+    }
+    let mut map = HashMap::new();
+    let mut offset = 0usize;
+    for (format, attribute) in layout.formats().iter().zip(attributes.iter()) {
+        let size = format.size_bytes();
+        if offset + size > stride {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "mesh".to_string(),
+                reason: format!(
+                    "attribute {attribute:?} range {offset}..{} exceeds stride {stride}",
+                    offset + size
+                ),
+            });
+        }
+        let mut bytes = Vec::with_capacity(vertex_count as usize * size);
+        for vertex in vertex_bytes.chunks_exact(stride) {
+            bytes.extend_from_slice(&vertex[offset..offset + size]);
+        }
+        map.insert(*attribute, bytes);
+        offset += size;
+    }
+    Ok(map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ValidationMode;
+
+    /// Allocation failure during growth returns a typed error and leaves the
+    /// previously published mesh fully intact (issue #86).
+    #[test]
+    #[ignore = "requires a Vulkan device"]
+    fn test_dynamic_update_allocation_failure_preserves_mesh() {
+        use crate::vertex::{VertexAttributeFormat, VertexLayout};
+
+        let mut renderer = crate::renderer::VulkanRenderer::init_headless(
+            64,
+            48,
+            ValidationMode::Disabled,
+            std::ffi::CString::new("mesh update failure test").unwrap(),
+            std::ffi::CString::new("Katla").unwrap(),
+        )
+        .unwrap();
+
+        let descriptor = MeshDescriptor {
+            layout: VertexLayout::new(vec![VertexAttributeFormat::Float3]),
+            attributes: vec![AttributeType::Position],
+            topology: PrimitiveTopology::TriangleList,
+            usage: MeshUsage::Dynamic,
+            vertex_count: 3,
+            index_count: 3,
+            index_format: crate::backend::command::IndexType::Uint32,
+        };
+        let blob = [0.25f32; 9].map(f32::to_bits);
+        let blob =
+            unsafe { std::slice::from_raw_parts(blob.as_ptr() as *const u8, blob.len() * 4) };
+        let mesh = renderer
+            .create_mesh_dynamic(&descriptor, blob, &[0, 1, 2])
+            .unwrap();
+        assert_eq!(renderer.mesh_vertex_count(mesh), Some(3));
+        assert_eq!(renderer.mesh_index_count(mesh), Some(3));
+
+        // Fail the next allocation: growing to 6 vertices must fail typed
+        // without changing counts, buffers, or queuing retirements.
+        renderer.context.allocator.inject_allocation_failures(1);
+        let grown = [0.25f32; 18].map(f32::to_bits);
+        let grown =
+            unsafe { std::slice::from_raw_parts(grown.as_ptr() as *const u8, grown.len() * 4) };
+        let error = renderer
+            .update_mesh_dynamic(mesh, grown, 6, &[0, 1, 2, 3, 4, 5])
+            .unwrap_err();
+        match error {
+            RendererError::AllocationFailed { .. } => {}
+            other => panic!("expected AllocationFailed, got {other:?}"),
+        }
+        assert_eq!(renderer.mesh_vertex_count(mesh), Some(3));
+        assert_eq!(renderer.mesh_index_count(mesh), Some(3));
+        assert_eq!(renderer.pending_buffer_retirements(), 0);
+
+        // The failure corrupted nothing: the same growth succeeds retrying
+        // without injected failures.
+        renderer
+            .update_mesh_dynamic(mesh, grown, 6, &[0, 1, 2, 3, 4, 5])
+            .expect("retry after allocation failure must succeed");
+        assert_eq!(renderer.mesh_vertex_count(mesh), Some(6));
+        assert_eq!(renderer.mesh_index_count(mesh), Some(6));
+
+        renderer.destroy();
     }
 }

@@ -7,6 +7,7 @@ pub(crate) mod descriptor_set;
 pub(crate) mod material;
 pub(crate) mod pipeline_state;
 pub(crate) mod queue;
+pub(crate) mod retirement;
 pub(crate) mod skeleton_buffer;
 pub(crate) mod swapchain;
 pub(crate) mod swapdata;

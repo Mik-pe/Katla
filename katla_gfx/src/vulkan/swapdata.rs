@@ -5,6 +5,9 @@ use crate::error::RendererError;
 pub struct SwapData {
     frames_in_flight: usize,
     frame: usize,
+    /// Monotonic frame counter (never wraps), unlike `frame` which cycles
+    /// through frame slots. Resource retirement ages are measured with this.
+    frame_counter: u64,
     in_flight_fences: Vec<vk::Fence>,
     /// Per-swapchain-image semaphores to avoid reuse issues
     image_available_semaphores: Vec<vk::Semaphore>,
@@ -72,6 +75,7 @@ impl SwapData {
         Ok(Self {
             frames_in_flight,
             frame,
+            frame_counter: 0,
             in_flight_fences,
             image_available_semaphores,
             render_finished_semaphores,
@@ -95,11 +99,22 @@ impl SwapData {
 
     pub fn step_frame(&mut self) {
         self.frame = (self.frame + 1) % self.frames_in_flight;
+        self.frame_counter += 1;
     }
 
     /// Get the current frame index (0 to frames_in_flight-1)
     pub fn current_frame(&self) -> usize {
         self.frame
+    }
+
+    /// Monotonic count of frames started since renderer creation.
+    pub fn frame_counter(&self) -> u64 {
+        self.frame_counter
+    }
+
+    /// Number of frame slots that may have uncompleted submissions.
+    pub fn frames_in_flight(&self) -> usize {
+        self.frames_in_flight
     }
 
     /// Get the image available semaphore for the current frame

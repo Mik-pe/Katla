@@ -315,6 +315,22 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn mesh_vertex_count(&self, mesh: MeshHandle) -> Option<u32> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.mesh_vertex_count(mesh),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.mesh_vertex_count(mesh),
+        }
+    }
+
+    fn mesh_index_count(&self, mesh: MeshHandle) -> Option<u32> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.mesh_index_count(mesh),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.mesh_index_count(mesh),
+        }
+    }
+
     fn create_mesh_dynamic(
         &mut self,
         descriptor: &crate::renderer::registry::MeshDescriptor,

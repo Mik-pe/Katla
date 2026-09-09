@@ -65,6 +65,7 @@ use crate::vulkan::context::VulkanFrameCtx;
 use crate::vulkan::material::SkeletonDescriptorSet;
 use crate::vulkan::material::compiler::MaterialCompiler;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
+use crate::vulkan::retirement::{BufferRetirementQueue, FrameRetirements};
 use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 use crate::vulkan::swapdata::SwapData;
 use crate::vulkan::vertex_attribute::AttributeType;
@@ -171,6 +172,10 @@ pub struct VulkanRenderer {
     pub(crate) context: Rc<VulkanContext>,
     pub(crate) frame_context: VulkanFrameCtx,
     pub(crate) swap_data: SwapData,
+    /// Replaced native buffers waiting for their last in-flight submission
+    /// to complete (dynamic mesh growth). Drained after each frame-slot
+    /// fence wait; everything frees after the device idle wait in destroy().
+    pub(crate) buffer_retirements: BufferRetirementQueue,
     /// Mesh manager for mesh creation and storage.
     pub(crate) mesh_manager: mesh_manager::MeshManager,
     /// Asset registry for managing GPU resources (materials).
@@ -517,6 +522,7 @@ impl VulkanRenderer {
             context,
             frame_context,
             swap_data,
+            buffer_retirements: BufferRetirementQueue::new(),
             mesh_manager,
             asset_registry: AssetRegistry::new(),
             bindless_manager,
@@ -801,6 +807,8 @@ impl VulkanRenderer {
 
         // Wait for device idle to ensure all GPU operations have completed
         self.wait_for_device();
+        // Every submission has completed: replaced buffers can free now.
+        self.buffer_retirements.drain_all();
 
         // Destroy output render target (Drop handles cleanup)
         self.output_target = None;
@@ -933,6 +941,9 @@ impl VulkanRenderer {
         )?;
         self.swap_data.destroy(&self.context.device);
         self.swap_data = swap_data;
+        // The new SwapData restarts its frame counter; the device idle wait
+        // above completed every old submission, so retirements can free now.
+        self.buffer_retirements.drain_all();
 
         let new_extent = self.frame_context.extent;
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
@@ -1188,17 +1199,32 @@ impl VulkanRenderer {
 
     /// Update a dynamic mesh with new vertex and index data.
     ///
-    /// The mesh must have been created with `create_mesh_dynamic`.
-    /// This method updates the existing buffers with new data.
+    /// The mesh must have been created with `create_mesh_dynamic`; static
+    /// meshes are immutable and updating them fails with a typed error.
+    ///
+    /// Contract (identical on every backend):
+    /// - `vertex_data` is one interleaved blob describing exactly
+    ///   `vertex_count` vertices of the mesh's recorded layout stride;
+    ///   every index must reference a vertex in range. Violations fail with
+    ///   typed errors before any GPU state changes.
+    /// - Success publishes one internally consistent mesh: logical vertex
+    ///   and index counts, buffer contents, and buffer capacities all
+    ///   describe the new mesh. Shrinking updates only shrink the logical
+    ///   counts; buffers keep their capacity for later growth.
+    /// - Growth reallocates the buffers that no longer fit, retiring the old
+    ///   native buffers until the submissions that can still read them have
+    ///   completed. Allocation failure returns a typed error and leaves the
+    ///   previous mesh state fully intact.
+    /// - `vertex_count == 0` with empty `vertex_data` and empty `indices`
+    ///   transitions the mesh to an empty state that draws nothing; a later
+    ///   update can repopulate it.
+    /// - The recorded index width (`u32`) never changes.
     ///
     /// # Arguments
     /// * `mesh` - Handle to the mesh to update
-    /// * `vertex_data` - New vertex data in bytes
-    /// * `vertex_count` - Number of vertices
+    /// * `vertex_data` - New interleaved vertex data in bytes
+    /// * `vertex_count` - Number of vertices in `vertex_data`
     /// * `indices` - New index data (u32)
-    ///
-    /// # Returns
-    /// `Ok(())` on success, `Err` if mesh not found or buffers too small.
     pub fn update_mesh_dynamic(
         &mut self,
         mesh: MeshHandle,
@@ -1206,13 +1232,39 @@ impl VulkanRenderer {
         vertex_count: u32,
         indices: &[u32],
     ) -> Result<(), RendererError> {
+        let mut retirements =
+            FrameRetirements::new(&mut self.buffer_retirements, self.swap_data.frame_counter());
         self.mesh_manager.update_mesh_dynamic(
             &mut self.asset_registry,
+            &mut retirements,
             mesh,
             vertex_data,
             vertex_count,
             indices,
         )
+    }
+
+    /// Report the logical vertex count recorded for a mesh.
+    ///
+    /// For dynamic meshes this tracks the latest successful update and may
+    /// be smaller than the underlying buffer capacity. Returns `None` when
+    /// the handle does not reference a live mesh.
+    pub fn mesh_vertex_count(&self, mesh: MeshHandle) -> Option<u32> {
+        self.asset_registry.get_mesh(mesh).map(|m| m.vertex_count)
+    }
+
+    /// Report the logical index count recorded for a mesh.
+    ///
+    /// Draw encoding reads exactly this many indices. Returns `None` when
+    /// the handle does not reference a live mesh.
+    pub fn mesh_index_count(&self, mesh: MeshHandle) -> Option<u32> {
+        self.asset_registry.get_mesh(mesh).map(|m| m.index_count)
+    }
+
+    /// Report the number of replaced native buffers still awaiting
+    /// retirement (diagnostics and tests).
+    pub fn pending_buffer_retirements(&self) -> usize {
+        self.buffer_retirements.pending()
     }
 
     // ========================================================================
