@@ -44,7 +44,8 @@ fn test_headless_render_and_readback_across_frame_slots() {
         let (captured_frame, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
         assert_eq!(captured_frame, frame);
         assert_eq!(pixels.len(), 64 * 48 * 4);
-        assert!(pixels.chunks_exact(4).all(|p| p[0] > 0 && p[3] == 255));
+        // The declared backbuffer ops are Clear->Store with opaque black.
+        assert!(pixels.chunks_exact(4).all(|p| p == [0, 0, 0, 255]));
         if let Some(previous) = &previous {
             assert_eq!(&pixels, previous);
         }

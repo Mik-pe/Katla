@@ -122,6 +122,8 @@ pub struct SimplePass {
     reads: Vec<String>,
     writes: Vec<String>,
     image_accesses: Vec<NamedImageAccess>,
+    color_attachments: Vec<(String, crate::render_pass::AttachmentOps)>,
+    depth_attachment: Option<crate::render_pass::DepthStencilAttachmentOps>,
     kind: Option<PassKind>,
     tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
 }
@@ -134,6 +136,8 @@ impl SimplePass {
             reads: Vec::new(),
             writes: Vec::new(),
             image_accesses: Vec::new(),
+            color_attachments: Vec::new(),
+            depth_attachment: None,
             kind: None,
             tonemap_params: None,
         }
@@ -146,6 +150,30 @@ impl SimplePass {
 
     pub fn write(mut self, name: impl Into<String>) -> Self {
         self.writes.push(name.into());
+        self
+    }
+
+    /// Declare load/store/clear operations for a color target this pass writes.
+    ///
+    /// Graphics passes writing an attachment target must declare their ops
+    /// or graph compilation fails validation.
+    pub fn attachment(
+        mut self,
+        name: impl Into<String>,
+        ops: crate::render_pass::AttachmentOps,
+    ) -> Self {
+        self.color_attachments.push((name.into(), ops));
+        self
+    }
+
+    /// Declare separate depth and stencil attachment operations.
+    pub fn depth_ops(
+        mut self,
+        depth: crate::render_pass::AttachmentOps,
+        stencil: crate::render_pass::AttachmentOps,
+    ) -> Self {
+        self.depth_attachment =
+            Some(crate::render_pass::DepthStencilAttachmentOps { depth, stencil });
         self
     }
 
@@ -194,6 +222,8 @@ impl PassBuilder for SimplePass {
             reads: self.reads,
             writes: self.writes,
             image_accesses: self.image_accesses,
+            color_attachments: self.color_attachments,
+            depth_attachment: self.depth_attachment,
             pipeline: None,
             tonemap_params: self.tonemap_params,
             overlay_params: None,
@@ -201,8 +231,6 @@ impl PassBuilder for SimplePass {
             output_format: None,
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
-            color_attachments: Vec::new(),
-            depth_attachment: None,
             kind: self.kind,
             side_effect: false,
         }

@@ -168,6 +168,10 @@ pub struct RenderGraphDiagnosticPass {
     pub reads: Vec<RenderGraphDiagnosticResourceRef>,
     pub writes: Vec<RenderGraphDiagnosticResourceRef>,
     pub image_accesses: Vec<RenderGraphDiagnosticImageAccess>,
+    /// Declared load/store operations per color target, in declaration order.
+    pub color_attachments: Vec<RenderGraphDiagnosticAttachmentOps>,
+    /// Declared depth/stencil operations, when the pass has a depth contract.
+    pub depth_attachment: Option<RenderGraphDiagnosticDepthAttachmentOps>,
     pub predecessors: Vec<usize>,
     pub successors: Vec<usize>,
     pub execution_position: Option<usize>,
@@ -175,6 +179,24 @@ pub struct RenderGraphDiagnosticPass {
     pub side_effect: bool,
     pub live: bool,
     pub culled: bool,
+}
+
+/// Declared load/store/clear operations for one color target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticAttachmentOps {
+    pub resource: u32,
+    pub load: String,
+    pub store: String,
+    pub clear_value: String,
+}
+
+/// Declared per-aspect operations for a depth-stencil target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticDepthAttachmentOps {
+    pub depth_load: String,
+    pub depth_store: String,
+    pub stencil_load: String,
+    pub stencil_store: String,
 }
 
 /// Resource hazard represented by a dependency edge.
@@ -324,6 +346,29 @@ impl RenderGraphDiagnostics {
                         .copied()
                         .map(|access| diagnostic_image_access(access, resources))
                         .collect(),
+                    color_attachments: pass
+                        .color_attachments
+                        .iter()
+                        .map(|(resource, ops)| RenderGraphDiagnosticAttachmentOps {
+                            resource: resource.0,
+                            load: format!("{:?}", ops.load),
+                            store: format!("{:?}", ops.store),
+                            clear_value: match ops.clear_value {
+                                crate::render_pass::ClearValue::Color(c) => format!("color {c:?}"),
+                                crate::render_pass::ClearValue::DepthStencil { depth, stencil } => {
+                                    format!("depth-stencil depth={depth} stencil={stencil}")
+                                }
+                            },
+                        })
+                        .collect(),
+                    depth_attachment: pass.depth_attachment.map(|ops| {
+                        RenderGraphDiagnosticDepthAttachmentOps {
+                            depth_load: format!("{:?}", ops.depth.load),
+                            depth_store: format!("{:?}", ops.depth.store),
+                            stencil_load: format!("{:?}", ops.stencil.load),
+                            stencil_store: format!("{:?}", ops.stencil.store),
+                        }
+                    }),
                     predecessors: node.predecessors.clone(),
                     successors: node.successors.clone(),
                     execution_position: execution_positions.get(&node.pass_index).copied(),
@@ -480,7 +525,7 @@ impl fmt::Display for RenderGraphDiagnostics {
                 .expect("live execution-order pass must have a parallel level");
             writeln!(
                 f,
-                "  [{}] {} (level {}, reads {}, writes {}{})",
+                "  [{}] {} (level {}, reads {}, writes {}{}){}{}",
                 pass.index,
                 pass.name,
                 level,
@@ -490,6 +535,28 @@ impl fmt::Display for RenderGraphDiagnostics {
                     ", side-effect"
                 } else {
                     ""
+                },
+                if pass.color_attachments.is_empty() {
+                    String::new()
+                } else {
+                    let colors = pass
+                        .color_attachments
+                        .iter()
+                        .map(|a| format!("r{} {}->{}", a.resource, a.load, a.store))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(", colors [{colors}]")
+                },
+                if let Some(depth) = &pass.depth_attachment {
+                    format!(
+                        ", depth [{}->{}, stencil {}->{}]",
+                        depth.depth_load,
+                        depth.depth_store,
+                        depth.stencil_load,
+                        depth.stencil_store
+                    )
+                } else {
+                    String::new()
                 }
             )?;
         }
@@ -755,6 +822,60 @@ mod tests {
             &exported_resources,
             &plan,
         )
+    }
+
+    #[test]
+    fn pass_traces_expose_declared_attachment_ops() {
+        let resources = vec![
+            namespace_resource(BACKBUFFER_NAME),
+            namespace_resource("color"),
+        ];
+        let transient_resources = vec![transient_resource("color")];
+        let mut geometry = pass("geometry", Vec::new(), vec![ResourceId(1)]);
+        geometry.color_attachments.push((
+            ResourceId(1),
+            crate::render_pass::AttachmentOps {
+                load: crate::render_pass::LoadOp::Clear,
+                store: crate::render_pass::StoreOp::Store,
+                clear_value: crate::render_pass::ClearValue::OPAQUE_BLACK,
+            },
+        ));
+        geometry.depth_attachment =
+            Some(crate::render_pass::DepthStencilAttachmentOps::reverse_z_default());
+        let mut present = pass("present", vec![ResourceId(1)], vec![ResourceId(0)]);
+        present
+            .color_attachments
+            .push((ResourceId(0), crate::render_pass::AttachmentOps::load()));
+        let passes = vec![geometry, present];
+
+        let exported_resources = BTreeSet::from([ResourceId(0)]);
+        let plan = GraphCompiler::from_pass_descs_with_exports(
+            &passes,
+            exported_resources.iter().copied(),
+        )
+        .compile()
+        .unwrap();
+        let diagnostics = RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &transient_resources,
+            &exported_resources,
+            &plan,
+        );
+
+        let trace = diagnostics.to_string();
+        assert!(
+            trace.contains("colors [r1 Clear->Store]"),
+            "geometry trace missing declared color ops: {trace}"
+        );
+        assert!(
+            trace.contains("depth [Clear->Store, stencil Clear->DontCare]"),
+            "geometry trace missing declared depth ops: {trace}"
+        );
+        assert!(
+            trace.contains("colors [r0 Load->Store]"),
+            "present trace missing declared color ops: {trace}"
+        );
     }
 
     #[test]

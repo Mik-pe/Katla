@@ -1629,6 +1629,301 @@ mod tests {
         );
     }
 
+    // --- Attachment operation validation (#95) ---
+
+    use crate::render_pass::{AttachmentOps, ClearValue};
+
+    fn missing_ops_error(builder: FrameGraphBuilder) -> GraphValidationError {
+        match builder.build::<MockBackend>() {
+            Err(RenderGraphError::Validation(error)) => error,
+            Err(error) => panic!("expected graph validation error, got {error}"),
+            Ok(_) => panic!("expected graph validation error, graph compiled"),
+        }
+    }
+
+    #[test]
+    fn writing_an_attachment_without_declared_ops_fails_validation() {
+        let error = missing_ops_error(
+            FrameGraphBuilder::new()
+                .create_resource(validation_resource("color", 64, 64))
+                .export_resource("color")
+                .add_pass(
+                    super::super::builder::SimplePass::new("paint", PassType::Graphics)
+                        .write("color"),
+                ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::MissingAttachmentOps { pass, resource }
+                if pass == "paint" && resource == "color"
+        ));
+    }
+
+    #[test]
+    fn writing_the_backbuffer_without_declared_ops_fails_validation() {
+        let error = missing_ops_error(
+            FrameGraphBuilder::new().add_pass(
+                super::super::builder::SimplePass::new("present", PassType::Graphics)
+                    .write(BACKBUFFER_NAME),
+            ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::MissingAttachmentOps { resource, .. } if resource == BACKBUFFER_NAME
+        ));
+    }
+
+    #[test]
+    fn ops_targeting_unwritten_resources_fail_validation() {
+        let error = missing_ops_error(
+            FrameGraphBuilder::new()
+                .create_resource(validation_resource("color", 64, 64))
+                .create_resource(validation_resource("other", 64, 64))
+                .export_resource("color")
+                .add_pass(
+                    super::super::builder::SimplePass::new("paint", PassType::Graphics)
+                        .write("color")
+                        .attachment("color", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
+                        .attachment("other", AttachmentOps::clear(ClearValue::OPAQUE_BLACK)),
+                ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::StrayAttachmentOps { pass, resource }
+                if pass == "paint" && resource == "other"
+        ));
+    }
+
+    #[test]
+    fn clear_op_rejects_depth_clear_value_on_a_color_target() {
+        let error = missing_ops_error(
+            FrameGraphBuilder::new()
+                .create_resource(validation_resource("color", 64, 64))
+                .export_resource("color")
+                .add_pass(
+                    super::super::builder::SimplePass::new("paint", PassType::Graphics)
+                        .write("color")
+                        .attachment("color", AttachmentOps::clear(ClearValue::DEFAULT_DEPTH)),
+                ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::AttachmentClearValueAspect {
+                expected: "a color clear value",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn loading_an_unproduced_transient_fails_validation() {
+        let error = missing_ops_error(
+            FrameGraphBuilder::new()
+                .create_resource(validation_resource("history", 64, 64))
+                .export_resource("history")
+                .add_pass(
+                    super::super::builder::SimplePass::new("first", PassType::Graphics)
+                        .write("history")
+                        .attachment("history", AttachmentOps::load()),
+                ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::LoadingUndefinedAttachment { pass, resource }
+                if pass == "first" && resource == "history"
+        ));
+    }
+
+    #[test]
+    fn two_pass_accumulation_compiles() {
+        let graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("color", 64, 64))
+            .export_resource("color")
+            .add_pass(
+                super::super::builder::SimplePass::new("paint", PassType::Graphics)
+                    .write("color")
+                    .attachment("color", AttachmentOps::clear(ClearValue::OPAQUE_BLACK)),
+            )
+            .add_pass(
+                super::super::builder::SimplePass::new("extend", PassType::Graphics)
+                    .read("color")
+                    .write("color")
+                    .attachment("color", AttachmentOps::load()),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        assert_eq!(graph.execution_order().len(), 2);
+    }
+
+    #[test]
+    fn imported_backbuffer_may_load_without_an_in_graph_producer() {
+        let graph = FrameGraphBuilder::new()
+            .add_pass(
+                super::super::builder::SimplePass::new("overlay", PassType::Graphics)
+                    .read(BACKBUFFER_NAME)
+                    .write(BACKBUFFER_NAME)
+                    .attachment(BACKBUFFER_NAME, AttachmentOps::load()),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        assert_eq!(graph.execution_order().len(), 1);
+    }
+
+    #[test]
+    fn compute_passes_reject_attachment_ops() {
+        let error = missing_ops_error(
+            FrameGraphBuilder::new()
+                .create_resource(validation_resource("color", 64, 64))
+                .export_resource("color")
+                .add_pass(
+                    super::super::builder::SimplePass::new("dispatch", PassType::Compute)
+                        .write("color")
+                        .attachment("color", AttachmentOps::clear(ClearValue::OPAQUE_BLACK)),
+                ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::AttachmentOpsOnComputePass(ref pass) if pass == "dispatch"
+        ));
+    }
+
+    #[test]
+    fn depth_ops_without_depth_use_fail_validation() {
+        let mut builder = super::super::builder::SimplePass::new("flat", PassType::Graphics)
+            .write(BACKBUFFER_NAME)
+            .attachment(BACKBUFFER_NAME, AttachmentOps::load())
+            .as_builder();
+        builder.uses_depth = false;
+        builder.depth_attachment =
+            Some(crate::render_pass::DepthStencilAttachmentOps::reverse_z_default());
+        let error = match FrameGraphBuilder::new()
+            .add_pass(AnonPass(builder))
+            .build::<MockBackend>()
+        {
+            Err(RenderGraphError::Validation(error)) => error,
+            Err(other) => panic!("expected validation error, got {other}"),
+            Ok(_) => panic!("expected validation error, graph compiled"),
+        };
+        assert!(matches!(
+            error,
+            GraphValidationError::DepthOpsWithoutDepthUse(ref pass) if pass == "flat"
+        ));
+    }
+
+    struct AnonPass(super::super::builder::InternalPassBuilder);
+    impl super::super::builder::PassBuilder for AnonPass {
+        fn as_builder(self) -> super::super::builder::InternalPassBuilder {
+            self.0
+        }
+    }
+
+    #[test]
+    fn depth_load_without_a_depth_producer_fails_validation() {
+        let error = missing_ops_error(
+            FrameGraphBuilder::new()
+                .create_resource(validation_resource("color", 64, 64))
+                .export_resource("color")
+                .add_pass(
+                    super::super::builder::SimplePass::new("lone", PassType::Graphics)
+                        .write("color")
+                        .attachment("color", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
+                        .depth_ops(
+                            AttachmentOps::clear(ClearValue::DEFAULT_DEPTH)
+                                .with_load(crate::render_pass::LoadOp::Load),
+                            AttachmentOps::dont_care(),
+                        ),
+                ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::LoadingUndefinedAttachment { pass, .. } if pass == "lone"
+        ));
+    }
+
+    #[test]
+    fn graphics_depth_defaults_are_normalized_to_the_reverse_z_contract() {
+        let graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("color", 64, 64))
+            .export_resource("color")
+            .add_pass(
+                super::super::builder::SimplePass::new("paint", PassType::Graphics)
+                    .write("color")
+                    .attachment("color", AttachmentOps::clear(ClearValue::OPAQUE_BLACK)),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let ops = graph
+            .pass(graph.pass_index("paint").unwrap())
+            .unwrap()
+            .depth_attachment
+            .expect("depth contract normalized");
+        assert_eq!(ops.depth.load, crate::render_pass::LoadOp::Clear);
+        assert_eq!(ops.depth.store, crate::render_pass::StoreOp::Store);
+        assert_eq!(
+            ops.depth.clear_value,
+            ClearValue::DepthStencil {
+                depth: 0.0,
+                stencil: 0
+            }
+        );
+        assert_eq!(ops.stencil.load, crate::render_pass::LoadOp::Clear);
+        assert_eq!(ops.stencil.store, crate::render_pass::StoreOp::DontCare);
+    }
+
+    #[test]
+    fn distinct_same_format_targets_keep_separate_declarations() {
+        let graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("albedo", 64, 64))
+            .create_resource(validation_resource("normals", 64, 64))
+            .export_resource("albedo")
+            .export_resource("normals")
+            .add_pass(
+                super::super::builder::SimplePass::new("mrt", PassType::Graphics)
+                    .write("albedo")
+                    .write("normals")
+                    .attachment("albedo", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
+                    .attachment(
+                        "normals",
+                        AttachmentOps::clear(ClearValue::TRANSPARENT_BLACK),
+                    ),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let pass = graph.pass(graph.pass_index("mrt").unwrap()).unwrap();
+        assert_eq!(pass.color_attachments.len(), 2);
+        assert_ne!(pass.color_attachments[0].0, pass.color_attachments[1].0);
+        assert_ne!(pass.color_attachments[0].1, pass.color_attachments[1].1);
+    }
+
+    #[test]
+    fn out_of_range_depth_clear_values_fail_validation() {
+        let error = missing_ops_error(
+            FrameGraphBuilder::new()
+                .create_resource(validation_resource("color", 64, 64))
+                .export_resource("color")
+                .add_pass(AnonPass({
+                    let mut builder =
+                        super::super::builder::SimplePass::new("bad_depth", PassType::Graphics)
+                            .write("color")
+                            .attachment("color", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
+                            .as_builder();
+                    builder.depth_attachment =
+                        Some(crate::render_pass::DepthStencilAttachmentOps::clear(
+                            ClearValue::DepthStencil {
+                                depth: 1.5,
+                                stencil: 0,
+                            },
+                        ));
+                    builder
+                })),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::InvalidDepthClearValue { pass, depth }
+                if pass == "bad_depth" && depth == 1.5
+        ));
+    }
+
     #[test]
     fn builder_rejects_empty_names() {
         assert_eq!(
@@ -1651,12 +1946,19 @@ mod tests {
             .create_resource(validation_resource("color", 64, 64))
             .add_pass(
                 super::super::builder::SimplePass::new("geometry", PassType::Graphics)
-                    .write("color"),
+                    .write("color")
+                    .attachment(
+                        "color",
+                        crate::render_pass::AttachmentOps::clear(
+                            crate::render_pass::ClearValue::OPAQUE_BLACK,
+                        ),
+                    ),
             )
             .add_pass(
                 super::super::builder::SimplePass::new("present", PassType::Graphics)
                     .read("color")
-                    .write(BACKBUFFER_NAME),
+                    .write(BACKBUFFER_NAME)
+                    .attachment(BACKBUFFER_NAME, crate::render_pass::AttachmentOps::load()),
             )
             .build::<MockBackend>();
         assert!(result.is_ok());
@@ -1672,7 +1974,8 @@ mod tests {
             )
             .add_pass(
                 super::super::builder::SimplePass::new("present", PassType::Graphics)
-                    .write(BACKBUFFER_NAME),
+                    .write(BACKBUFFER_NAME)
+                    .attachment(BACKBUFFER_NAME, crate::render_pass::AttachmentOps::load()),
             )
             .build::<MockBackend>()
             .unwrap();
@@ -1713,12 +2016,24 @@ mod tests {
             .export_resource("readback")
             .add_pass(
                 super::super::builder::SimplePass::new("produce", PassType::Graphics)
-                    .write("intermediate"),
+                    .write("intermediate")
+                    .attachment(
+                        "intermediate",
+                        crate::render_pass::AttachmentOps::clear(
+                            crate::render_pass::ClearValue::OPAQUE_BLACK,
+                        ),
+                    ),
             )
             .add_pass(
                 super::super::builder::SimplePass::new("copy_for_readback", PassType::Graphics)
                     .read("intermediate")
-                    .write("readback"),
+                    .write("readback")
+                    .attachment(
+                        "readback",
+                        crate::render_pass::AttachmentOps::clear(
+                            crate::render_pass::ClearValue::OPAQUE_BLACK,
+                        ),
+                    ),
             )
             .build::<MockBackend>()
             .unwrap();
@@ -1740,7 +2055,13 @@ mod tests {
             .create_resource(validation_resource("query_input", 64, 64))
             .add_pass(
                 super::super::builder::SimplePass::new("produce_query_data", PassType::Graphics)
-                    .write("query_input"),
+                    .write("query_input")
+                    .attachment(
+                        "query_input",
+                        crate::render_pass::AttachmentOps::clear(
+                            crate::render_pass::ClearValue::OPAQUE_BLACK,
+                        ),
+                    ),
             )
             .add_side_effect_pass(
                 super::super::builder::SimplePass::new("timestamp_readback", PassType::Graphics)
