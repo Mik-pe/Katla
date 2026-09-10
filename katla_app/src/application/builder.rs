@@ -413,7 +413,7 @@ impl ApplicationBuilder {
             DepthPrepass, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
             OutlinePass, ShadowPass, StencilIndicatorPass,
         };
-        use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
+        use katla_gfx::render_pass::LoadOp;
         use katla_gfx::texture::ImageFormat as TextureImageFormat;
 
         let extent = renderer.swapchain_extent();
@@ -677,20 +677,21 @@ impl ApplicationBuilder {
             // Reuses depth from the depth prepass (LoadOp::Load)
             .add_pass(
                 GeometryPass::new("geometry")
-                    .write_color_with(
+                    .write_color_ops(
                         "hdr_color",
                         TextureImageFormat::R16G16B16A16Sfloat,
-                        LoadOp::Load,
-                        StoreOp::Store,
-                        ClearValue::OPAQUE_BLACK,
+                        katla_gfx::AttachmentOps::load(),
                     )
                     .depth_config(
-                        LoadOp::Load,
-                        StoreOp::Store,
-                        ClearValue::DepthStencil {
+                        katla_gfx::AttachmentOps::clear(katla_gfx::ClearValue::DepthStencil {
                             depth: 0.0,
                             stencil: 0,
-                        },
+                        })
+                        .with_load(LoadOp::Load),
+                        katla_gfx::AttachmentOps::clear(katla_gfx::ClearValue::DepthStencil {
+                            depth: 0.0,
+                            stencil: 0,
+                        }),
                     )
                     .material(geometry_material)
                     .read("shadow_atlas"),

@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
-use super::super::resource::GraphResourceHandle;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use crate::render_pass::{AttachmentOps, ClearValue, DepthStencilAttachmentOps, LoadOp};
 use crate::texture::ImageFormat;
 
 /// Particle render pass template.
@@ -38,6 +35,12 @@ impl PassBuilder for ParticlePass {
         let writes = self.writes.clone();
         let reads = writes.clone();
 
+        // Particles alpha-blend over the existing HDR contents.
+        let color_attachments = writes
+            .iter()
+            .map(|name| (name.clone(), AttachmentOps::load()))
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
@@ -49,18 +52,21 @@ impl PassBuilder for ParticlePass {
             overlay_params: None,
             material: None,
             output_format: Some(ImageFormat::R16G16B16A16Sfloat),
-            build_fn: Box::new(|_resource_map: &HashMap<String, GraphResourceHandle>| {
-                Ok(Box::new(()))
-            }),
+            build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
-            depth_attachment: Some((
-                LoadOp::Load,
-                StoreOp::Store,
-                ClearValue::DepthStencil {
+            color_attachments,
+            // Depth is reused from the scene and stored for later passes.
+            depth_attachment: Some(DepthStencilAttachmentOps {
+                depth: AttachmentOps::clear(ClearValue::DepthStencil {
                     depth: 0.0,
                     stencil: 0,
-                },
-            )),
+                })
+                .with_load(LoadOp::Load),
+                stencil: AttachmentOps::clear(ClearValue::DepthStencil {
+                    depth: 0.0,
+                    stencil: 0,
+                }),
+            }),
             kind: Some(PassKind::Particles),
             side_effect: false,
         }
@@ -78,5 +84,6 @@ mod tests {
             .as_builder();
         assert_eq!(builder.reads, vec!["hdr"]);
         assert_eq!(builder.writes, vec!["hdr"]);
+        assert_eq!(builder.color_attachments[0].1.load, LoadOp::Load);
     }
 }

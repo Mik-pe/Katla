@@ -42,17 +42,25 @@ impl Frame<'_, VulkanRenderer> {
         let half_w = extent.width / 2;
         let half_h = extent.height / 2;
 
-        let depth_attachment = vk::RenderingAttachmentInfo::default()
-            .image_view(shadow_atlas.image_view.vk())
-            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .clear_value(vk::ClearValue {
-                depth_stencil: vk::ClearDepthStencilValue {
-                    depth: 1.0,
-                    stencil: 0,
-                },
-            });
+        // The shadow atlas is this pass's declared depth target: translate
+        // the declared depth ops exactly.
+        let ops = pass.depth_attachment.ok_or_else(|| {
+            RenderGraphError::InvalidConfiguration(format!(
+                "shadow pass '{}' declares no depth ops",
+                pass.name
+            ))
+        })?;
+        let clear = match ops.depth.clear_value {
+            crate::render_pass::ClearValue::DepthStencil { depth, stencil } => {
+                vk::ClearDepthStencilValue { depth, stencil }
+            }
+            _ => vk::ClearDepthStencilValue {
+                depth: 1.0,
+                stencil: 0,
+            },
+        };
+        let depth_attachment =
+            super::depth_attachment_info(shadow_atlas.image_view.vk(), &ops.depth, clear);
 
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },

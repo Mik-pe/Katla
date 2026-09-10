@@ -3,13 +3,9 @@
 //! Renders 3D geometry with color outputs. Depth is handled automatically
 //! using the global depth buffer.
 
-use std::collections::HashMap;
-
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
-use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::pass::{PassKind, PassType};
-use crate::render_graph::resource::GraphResourceHandle;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use crate::render_pass::{AttachmentOps, ClearValue, DepthStencilAttachmentOps, LoadOp};
 use crate::texture::ImageFormat;
 
 /// Geometry render pass template.
@@ -46,7 +42,7 @@ pub struct GeometryPass {
     /// Material handle for this pass (optional).
     material: Option<crate::handle::MaterialHandle>,
     /// Depth attachment configuration.
-    depth_config: Option<(LoadOp, StoreOp, ClearValue)>,
+    depth_config: Option<DepthStencilAttachmentOps>,
 }
 
 /// Describes a color attachment output.
@@ -56,12 +52,8 @@ struct ColorOutput {
     name: String,
     /// Image format.
     format: ImageFormat,
-    /// Load operation.
-    load_op: LoadOp,
-    /// Store operation.
-    store_op: StoreOp,
-    /// Clear value (used if load_op is Clear).
-    clear_value: ClearValue,
+    /// Declared attachment operations.
+    ops: AttachmentOps,
 }
 
 impl GeometryPass {
@@ -92,9 +84,7 @@ impl GeometryPass {
         self.color_outputs.push(ColorOutput {
             name: name.into(),
             format,
-            load_op: LoadOp::Clear,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::OPAQUE_BLACK,
+            ops: AttachmentOps::clear(ClearValue::OPAQUE_BLACK),
         });
         self
     }
@@ -105,23 +95,17 @@ impl GeometryPass {
     ///
     /// * `name` - Resource name for graph reference.
     /// * `format` - Image format for the color attachment.
-    /// * `load_op` - How the attachment is loaded.
-    /// * `store_op` - How the attachment is stored.
-    /// * `clear_value` - Clear value if load_op is Clear.
-    pub fn write_color_with(
+    /// * `ops` - How the attachment is loaded, stored, and cleared.
+    pub fn write_color_ops(
         mut self,
         name: impl Into<String>,
         format: ImageFormat,
-        load_op: LoadOp,
-        store_op: StoreOp,
-        clear_value: ClearValue,
+        ops: AttachmentOps,
     ) -> Self {
         self.color_outputs.push(ColorOutput {
             name: name.into(),
             format,
-            load_op,
-            store_op,
-            clear_value,
+            ops,
         });
         self
     }
@@ -147,7 +131,7 @@ impl GeometryPass {
     /// * `color` - RGBA clear color (values 0.0 - 1.0).
     pub fn clear_color(mut self, color: [f32; 4]) -> Self {
         if let Some(output) = self.color_outputs.last_mut() {
-            output.clear_value = ClearValue::Color(color);
+            output.ops.clear_value = ClearValue::Color(color);
         }
         self
     }
@@ -165,17 +149,13 @@ impl GeometryPass {
         self
     }
 
-    /// Configure depth attachment load/store operations.
+    /// Configure depth and stencil attachment operations.
     ///
-    /// By default, depth is cleared to 0.0 (reverse-Z far plane).
-    /// Use `depth_load(LoadOp::Load, ...)` after a depth prepass to reuse depth.
-    pub fn depth_config(
-        mut self,
-        load_op: LoadOp,
-        store_op: StoreOp,
-        clear_value: ClearValue,
-    ) -> Self {
-        self.depth_config = Some((load_op, store_op, clear_value));
+    /// By default, depth is cleared to 0.0 and stored (reverse-Z far plane)
+    /// and stencil is cleared. Use a Load depth op after a depth prepass to
+    /// reuse depth.
+    pub fn depth_config(mut self, depth: AttachmentOps, stencil: AttachmentOps) -> Self {
+        self.depth_config = Some(DepthStencilAttachmentOps { depth, stencil });
         self
     }
 
@@ -195,19 +175,6 @@ impl GeometryPass {
     }
 }
 
-/// Internal data for a geometry pass after name resolution.
-#[derive(Debug)]
-pub(crate) struct GeometryPassData {
-    /// Color attachments with resolved handles.
-    pub(crate) colors: Vec<(
-        GraphResourceHandle,
-        ImageFormat,
-        LoadOp,
-        StoreOp,
-        ClearValue,
-    )>,
-}
-
 impl PassBuilder for GeometryPass {
     fn as_builder(self) -> InternalPassBuilder {
         // Collect write resource names (color only - depth is implicit).
@@ -217,22 +184,23 @@ impl PassBuilder for GeometryPass {
         // a read-before-write dependency for ordering and pass liveness.
         let mut reads = self.reads.clone();
         for output in &self.color_outputs {
-            if output.load_op == LoadOp::Load && !reads.contains(&output.name) {
+            if output.ops.load == LoadOp::Load && !reads.contains(&output.name) {
                 reads.push(output.name.clone());
             }
         }
 
-        // Store pass data for the build function
-        let color_outputs = self.color_outputs;
-        let material = self.material;
-        let depth_config = self.depth_config;
+        let color_attachments = self
+            .color_outputs
+            .iter()
+            .map(|o| (o.name.clone(), o.ops))
+            .collect();
 
         // Extract output format from first color attachment (for material format inference).
         //
         // Note: When using `ImageFormat::Auto` materials with multiple render targets (MRT),
         // only the first color attachment's format is used for compilation. Mixed-format MRT
         // is not supported with Auto materials - use explicit format materials for that case.
-        let output_format = color_outputs.first().map(|o| o.format);
+        let output_format = self.color_outputs.first().map(|o| o.format);
 
         InternalPassBuilder {
             name: self.name,
@@ -243,36 +211,12 @@ impl PassBuilder for GeometryPass {
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
-            material,
+            material: self.material,
             output_format,
-            build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
-                // Resolve color output names to handles
-                let colors: Vec<(
-                    GraphResourceHandle,
-                    ImageFormat,
-                    LoadOp,
-                    StoreOp,
-                    ClearValue,
-                )> = color_outputs
-                    .iter()
-                    .map(|output| {
-                        let handle = resource_map.get(&output.name).copied().ok_or_else(|| {
-                            RenderGraphError::ResourceNotFound(output.name.clone())
-                        })?;
-                        Ok((
-                            handle,
-                            output.format,
-                            output.load_op,
-                            output.store_op,
-                            output.clear_value,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
-
-                Ok(Box::new(GeometryPassData { colors }))
-            }),
+            build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
-            depth_attachment: depth_config,
+            color_attachments,
+            depth_attachment: self.depth_config,
             kind: Some(PassKind::Geometry),
             side_effect: false,
         }
@@ -282,42 +226,34 @@ impl PassBuilder for GeometryPass {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render_pass::StoreOp;
 
     #[test]
-    fn test_geometry_pass_build_fn_resolution() {
-        let pass = GeometryPass::new("geometry")
+    fn write_color_declares_clear_ops() {
+        let builder = GeometryPass::new("geometry")
             .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-            .read("shadow_map");
+            .as_builder();
 
-        let builder = pass.as_builder();
-
-        let mut resource_map = HashMap::new();
-        resource_map.insert("color".to_string(), GraphResourceHandle::new(0));
-        resource_map.insert("shadow_map".to_string(), GraphResourceHandle::new(1));
-
-        let result = (builder.build_fn)(&resource_map);
-        assert!(result.is_ok());
-
-        let data = result.unwrap();
-        let pass_data = data.downcast_ref::<GeometryPassData>().unwrap();
-        assert_eq!(pass_data.colors.len(), 1);
+        assert_eq!(builder.writes, vec!["color"]);
+        let (name, ops) = &builder.color_attachments[0];
+        assert_eq!(name, "color");
+        assert_eq!(ops.load, LoadOp::Clear);
+        assert_eq!(ops.store, StoreOp::Store);
+        assert_eq!(ops.clear_value, ClearValue::OPAQUE_BLACK);
     }
 
     #[test]
-    fn test_geometry_pass_build_fn_missing_resource() {
-        let pass =
-            GeometryPass::new("geometry").write_color("color", ImageFormat::R16G16B16A16Sfloat);
+    fn write_color_ops_preserves_declared_ops() {
+        let builder = GeometryPass::new("geometry")
+            .write_color_ops(
+                "color",
+                ImageFormat::R16G16B16A16Sfloat,
+                AttachmentOps::load(),
+            )
+            .as_builder();
 
-        let builder = pass.as_builder();
-        let resource_map = HashMap::new();
-
-        let result = (builder.build_fn)(&resource_map);
-        assert!(result.is_err());
-
-        match result {
-            Err(RenderGraphError::ResourceNotFound(name)) => assert_eq!(name, "color"),
-            _ => panic!("Expected ResourceNotFound error"),
-        }
+        assert_eq!(builder.color_attachments[0].1.load, LoadOp::Load);
+        assert!(builder.reads.contains(&"color".to_string()));
     }
 
     #[test]
@@ -327,25 +263,17 @@ mod tests {
             .write_color("normals", ImageFormat::R16G16B16A16Sfloat);
 
         let builder = pass.as_builder();
-
-        let mut resource_map = HashMap::new();
-        resource_map.insert("albedo".to_string(), GraphResourceHandle::new(0));
-        resource_map.insert("normals".to_string(), GraphResourceHandle::new(1));
-
-        let result = (builder.build_fn)(&resource_map).unwrap();
-        let pass_data = result.downcast_ref::<GeometryPassData>().unwrap();
-        assert_eq!(pass_data.colors.len(), 2);
+        assert_eq!(builder.color_attachments.len(), 2);
+        assert_eq!(builder.writes, vec!["albedo", "normals"]);
     }
 
     #[test]
     fn load_color_attachment_declares_read_dependency() {
         let builder = GeometryPass::new("geometry")
-            .write_color_with(
+            .write_color_ops(
                 "color",
                 ImageFormat::R16G16B16A16Sfloat,
-                LoadOp::Load,
-                StoreOp::Store,
-                ClearValue::OPAQUE_BLACK,
+                AttachmentOps::load(),
             )
             .as_builder();
 

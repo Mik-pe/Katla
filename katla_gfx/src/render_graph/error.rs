@@ -5,7 +5,7 @@ use std::fmt;
 use super::resource::ResourceState;
 
 /// Structural errors detected before a render graph is compiled or allocated.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GraphValidationError {
     /// A resource declaration or import has an empty name.
     EmptyResourceName,
@@ -31,6 +31,24 @@ pub enum GraphValidationError {
     UndeclaredExportedResource(String),
     /// A transient descriptor is missing from the graph resource namespace.
     MissingResourceNamespaceEntry(String),
+    /// A graphics pass writes an attachment target without declaring its operations.
+    MissingAttachmentOps { pass: String, resource: String },
+    /// A pass declares attachment operations for a resource it does not write.
+    StrayAttachmentOps { pass: String, resource: String },
+    /// A clear load op carries a clear value for the wrong aspect.
+    AttachmentClearValueAspect {
+        pass: String,
+        resource: String,
+        expected: &'static str,
+    },
+    /// A pass loads an attachment whose contents are never produced.
+    LoadingUndefinedAttachment { pass: String, resource: String },
+    /// A compute pass declares attachment operations.
+    AttachmentOpsOnComputePass(String),
+    /// A pass declares depth operations but does not use depth.
+    DepthOpsWithoutDepthUse(String),
+    /// A depth clear value is outside the [0, 1] range.
+    InvalidDepthClearValue { pass: String, depth: f32 },
 }
 
 impl fmt::Display for GraphValidationError {
@@ -75,6 +93,45 @@ impl fmt::Display for GraphValidationError {
                 f,
                 "transient resource '{}' is missing from the graph namespace",
                 resource
+            ),
+            Self::MissingAttachmentOps { pass, resource } => write!(
+                f,
+                "pass '{}' writes attachment '{}' without declared load/store ops",
+                pass, resource
+            ),
+            Self::StrayAttachmentOps { pass, resource } => write!(
+                f,
+                "pass '{}' declares ops for '{}' which it does not write",
+                pass, resource
+            ),
+            Self::AttachmentClearValueAspect {
+                pass,
+                resource,
+                expected,
+            } => write!(
+                f,
+                "pass '{}' clears '{}' with a clear value that is not {}",
+                pass, resource, expected
+            ),
+            Self::LoadingUndefinedAttachment { pass, resource } => write!(
+                f,
+                "pass '{}' loads '{}' but no earlier pass produces its contents",
+                pass, resource
+            ),
+            Self::AttachmentOpsOnComputePass(pass) => write!(
+                f,
+                "compute pass '{}' must not declare attachment operations",
+                pass
+            ),
+            Self::DepthOpsWithoutDepthUse(pass) => write!(
+                f,
+                "pass '{}' declares depth ops but does not use depth",
+                pass
+            ),
+            Self::InvalidDepthClearValue { pass, depth } => write!(
+                f,
+                "pass '{}' uses depth clear value {} outside [0, 1]",
+                pass, depth
             ),
         }
     }

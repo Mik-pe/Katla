@@ -138,6 +138,12 @@ impl PassBuilder for UIPass {
                 move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
             uses_depth: false,
+            // UI alpha-composites over the existing target contents.
+            color_attachments: self
+                .color_output
+                .iter()
+                .map(|o| (o.name.clone(), crate::render_pass::AttachmentOps::load()))
+                .collect(),
             depth_attachment: None,
             kind: Some(PassKind::Ui),
             side_effect: false,

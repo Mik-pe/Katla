@@ -1,12 +1,10 @@
 //! Shadow mapping pass template for directional (CSM) shadow mapping.
 
-use std::collections::HashMap;
-
+use crate::render_pass::{ClearValue, DepthStencilAttachmentOps};
 use crate::texture::ImageFormat;
 
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
-use super::super::resource::GraphResourceHandle;
 
 /// Shadow mapping pass template for directional light cascaded shadow maps.
 ///
@@ -57,6 +55,12 @@ impl ShadowPass {
 impl PassBuilder for ShadowPass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes: Vec<String> = self.depth_output.iter().map(|(n, _)| n.clone()).collect();
+        // The shadow atlas is a fresh depth target every frame: clear to the
+        // far plane (1.0, reverse-Z) and store for the geometry pass to sample.
+        let depth_attachment = Some(DepthStencilAttachmentOps::clear(ClearValue::DepthStencil {
+            depth: 1.0,
+            stencil: 0,
+        }));
 
         InternalPassBuilder {
             name: self.name,
@@ -69,11 +73,10 @@ impl PassBuilder for ShadowPass {
             overlay_params: None,
             material: None,
             output_format: None,
-            build_fn: Box::new(
-                move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
-            ),
+            build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
-            depth_attachment: None,
+            color_attachments: Vec::new(),
+            depth_attachment,
             kind: Some(PassKind::Shadow),
             side_effect: false,
         }

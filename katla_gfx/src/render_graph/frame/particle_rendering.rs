@@ -25,20 +25,18 @@ impl Frame<'_, VulkanRenderer> {
 
         let frame_idx = self.current_frame();
 
-        // Resolve attachments using the same helpers as other graphics passes.
-        let color_attachment = self.resolve_color_attachment(pass)?.ok_or_else(|| {
-            RenderGraphError::InvalidConfiguration(
+        // Resolve attachments using the same declaration-driven helpers as
+        // other graphics passes.
+        let color_attachments = self.resolve_color_attachments(pass)?;
+        if color_attachments.is_empty() {
+            return Err(RenderGraphError::InvalidConfiguration(
                 "Particle pass has no color outputs.".to_string(),
-            )
-        })?;
+            ));
+        }
 
-        let (depth_attachment, _stencil_attachment) = self.resolve_depth_attachment(pass)?;
+        let (depth_attachment, _stencil_attachment) = self.resolve_frame_depth_attachments(pass)?;
 
-        let color_id = pass.writes.first().copied();
-        let transient = color_id.and_then(|id| self.graph.transient_texture_by_id(id, frame_idx));
-        let extent = transient
-            .map(|t| t.extent)
-            .unwrap_or_else(|| self.renderer.frame_context.extent);
+        let extent = self.color_target_extent(pass);
 
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
@@ -51,7 +49,7 @@ impl Frame<'_, VulkanRenderer> {
         }
 
         cmd.begin_rendering(
-            &[color_attachment],
+            &color_attachments,
             depth_attachment.as_ref(),
             None,
             render_area,

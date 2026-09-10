@@ -46,6 +46,106 @@ impl From<StoreOp> for ash::vk::AttachmentStoreOp {
     }
 }
 
+/// Load/store operations and clear value for one attachment aspect.
+///
+/// This is the single declaration of how a target is loaded at pass start,
+/// stored at pass end, and cleared. Backends translate it exactly; execution
+/// never infers any of it from renderer-local state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AttachmentOps {
+    /// How the attachment is loaded at the beginning of the pass.
+    pub load: LoadOp,
+    /// How the attachment is stored at the end of the pass.
+    pub store: StoreOp,
+    /// Clear value used when `load` is [`LoadOp::Clear`].
+    pub clear_value: ClearValue,
+}
+
+impl AttachmentOps {
+    /// Clear to `clear_value` and store.
+    pub fn clear(clear_value: ClearValue) -> Self {
+        Self {
+            load: LoadOp::Clear,
+            store: StoreOp::Store,
+            clear_value,
+        }
+    }
+
+    /// Load the previous contents and store.
+    pub fn load() -> Self {
+        Self {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+            clear_value: ClearValue::OPAQUE_BLACK,
+        }
+    }
+
+    /// Contents at pass start are undefined; discard at pass end.
+    pub fn dont_care() -> Self {
+        Self {
+            load: LoadOp::DontCare,
+            store: StoreOp::DontCare,
+            clear_value: ClearValue::OPAQUE_BLACK,
+        }
+    }
+
+    /// Override the load operation.
+    pub fn with_load(mut self, load: LoadOp) -> Self {
+        self.load = load;
+        self
+    }
+
+    /// Override the store operation.
+    pub fn with_store(mut self, store: StoreOp) -> Self {
+        self.store = store;
+        self
+    }
+
+    /// Override the clear value.
+    pub fn with_clear_value(mut self, clear_value: ClearValue) -> Self {
+        self.clear_value = clear_value;
+        self
+    }
+}
+
+/// Separate depth and stencil operations for one depth-stencil target.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DepthStencilAttachmentOps {
+    /// Operations on the depth aspect.
+    pub depth: AttachmentOps,
+    /// Operations on the stencil aspect.
+    pub stencil: AttachmentOps,
+}
+
+impl DepthStencilAttachmentOps {
+    /// Both aspects clear to `clear_value` and store.
+    pub fn clear(clear_value: ClearValue) -> Self {
+        Self {
+            depth: AttachmentOps::clear(clear_value),
+            stencil: AttachmentOps::clear(clear_value),
+        }
+    }
+
+    /// Canonical graphics-pass default: depth cleared to 0.0 and stored
+    /// (reverse-Z), stencil cleared and discarded.
+    pub fn reverse_z_default() -> Self {
+        Self {
+            depth: AttachmentOps::clear(ClearValue::DepthStencil {
+                depth: 0.0,
+                stencil: 0,
+            }),
+            stencil: AttachmentOps {
+                load: LoadOp::Clear,
+                store: StoreOp::DontCare,
+                clear_value: ClearValue::DepthStencil {
+                    depth: 0.0,
+                    stencil: 0,
+                },
+            },
+        }
+    }
+}
+
 /// Clear value for an attachment.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ClearValue {

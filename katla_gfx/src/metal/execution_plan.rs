@@ -46,7 +46,11 @@ pub(crate) struct MetalPassRecord {
 }
 
 impl MetalPassRecord {
-    fn from_pass(pass_index: usize, pass: &PassDesc) -> Result<Self, RenderGraphError> {
+    fn from_pass(
+        pass_index: usize,
+        pass: &PassDesc,
+        format_at: &impl Fn(ResourceId) -> Option<ImageFormat>,
+    ) -> Result<Self, RenderGraphError> {
         if pass.pass_type == PassType::Compute {
             return Err(RenderGraphError::BackendError(format!(
                 "Metal pass '{}' is compute; backend-neutral compute commands are not implemented",
@@ -89,24 +93,28 @@ impl MetalPassRecord {
             color_attachments: pass
                 .color_attachments
                 .iter()
-                .map(|&(resource, format, load_op, store_op, clear_value)| {
-                    MetalColorAttachmentRecord {
+                .map(|&(resource, ops)| {
+                    let format = format_at(resource).ok_or_else(|| {
+                        RenderGraphError::BackendError(format!(
+                            "Metal pass '{}' targets resource {} with no declared format",
+                            pass.name, resource.0
+                        ))
+                    })?;
+                    Ok(MetalColorAttachmentRecord {
                         resource,
                         format,
-                        load_op,
-                        store_op,
-                        clear_value,
-                    }
+                        load_op: ops.load,
+                        store_op: ops.store,
+                        clear_value: ops.clear_value,
+                    })
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, RenderGraphError>>()?,
             uses_depth: pass.uses_depth,
-            depth_attachment: pass
-                .depth_attachment
-                .map(|(load_op, store_op, clear_value)| MetalDepthAttachmentOps {
-                    load_op,
-                    store_op,
-                    clear_value,
-                }),
+            depth_attachment: pass.depth_attachment.map(|ops| MetalDepthAttachmentOps {
+                load_op: ops.depth.load,
+                store_op: ops.depth.store,
+                clear_value: ops.depth.clear_value,
+            }),
         })
     }
 
@@ -173,12 +181,14 @@ impl MetalExecutionPlan {
         frame_graph: &FrameGraph<MetalRenderer>,
     ) -> Result<Self, RenderGraphError> {
         let order = frame_graph.execution_order();
-        Self::compile_order(&order, |index| frame_graph.pass(index))
+        let format_at = |id: ResourceId| frame_graph.resource_format(id);
+        Self::compile_order(&order, |index| frame_graph.pass(index), &format_at)
     }
 
     fn compile_order<'a>(
         order: &[usize],
         mut pass_at: impl FnMut(usize) -> Option<&'a PassDesc>,
+        format_at: &impl Fn(ResourceId) -> Option<ImageFormat>,
     ) -> Result<Self, RenderGraphError> {
         let passes = order
             .iter()
@@ -189,7 +199,7 @@ impl MetalExecutionPlan {
                         "Metal execution plan references missing pass index {pass_index}"
                     ))
                 })?;
-                MetalPassRecord::from_pass(pass_index, pass)
+                MetalPassRecord::from_pass(pass_index, pass, format_at)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -261,7 +271,9 @@ mod tests {
         passes: &[PassDesc],
         order: &[usize],
     ) -> Result<MetalExecutionPlan, RenderGraphError> {
-        MetalExecutionPlan::compile_order(order, |index| passes.get(index))
+        let format_at =
+            |_: crate::render_graph::handles::ResourceId| Some(ImageFormat::R16G16B16A16Sfloat);
+        MetalExecutionPlan::compile_order(order, |index| passes.get(index), &format_at)
     }
 
     #[test]
@@ -349,19 +361,30 @@ mod tests {
         ]);
         geometry.color_attachments.push((
             ResourceId(7),
-            ImageFormat::R16G16B16A16Sfloat,
-            LoadOp::Load,
-            StoreOp::Store,
-            ClearValue::OPAQUE_BLACK,
-        ));
-        geometry.depth_attachment = Some((
-            LoadOp::Load,
-            StoreOp::Store,
-            ClearValue::DepthStencil {
-                depth: 0.0,
-                stencil: 1,
+            crate::render_pass::AttachmentOps {
+                load: LoadOp::Load,
+                store: StoreOp::Store,
+                clear_value: ClearValue::OPAQUE_BLACK,
             },
         ));
+        geometry.depth_attachment = Some(crate::render_pass::DepthStencilAttachmentOps {
+            depth: crate::render_pass::AttachmentOps {
+                load: LoadOp::Load,
+                store: StoreOp::Store,
+                clear_value: ClearValue::DepthStencil {
+                    depth: 0.0,
+                    stencil: 1,
+                },
+            },
+            stencil: crate::render_pass::AttachmentOps {
+                load: LoadOp::Load,
+                store: StoreOp::Store,
+                clear_value: ClearValue::DepthStencil {
+                    depth: 0.0,
+                    stencil: 1,
+                },
+            },
+        });
 
         let plan = compile(&[geometry], &[0]).unwrap();
         let record = &plan.passes()[0];

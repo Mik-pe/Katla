@@ -1,4 +1,3 @@
-use crate::render_graph::BACKBUFFER_NAME;
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::render_graph::handles::ResourceId;
@@ -97,43 +96,15 @@ impl Frame<'_, VulkanRenderer> {
             extent,
         };
 
-        let backbuffer_id = self.graph.resource_id(BACKBUFFER_NAME);
-        let color_attachment = if backbuffer_id.is_some_and(|id| pass.writes_to(id)) {
-            let swapchain_view =
-                self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
-            vk::RenderingAttachmentInfo::default()
-                .image_view(swapchain_view)
-                .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .clear_value(vk::ClearValue {
-                    color: vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 1.0],
-                    },
-                })
-        } else if let Some(&color_id) = pass.writes.first() {
-            let frame_idx = self.current_frame();
-            if let Some(transient) = self.graph.transient_texture_by_id(color_id, frame_idx) {
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(transient.image_view.vk())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::CLEAR)
-                    .store_op(vk::AttachmentStoreOp::STORE)
-                    .clear_value(vk::ClearValue {
-                        color: vk::ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
-                        },
-                    })
-            } else {
-                return Err(RenderGraphError::ResourceNotFound(format!(
-                    "Output target '{}' not found",
-                    self.graph.resource_name(color_id).unwrap_or("?")
-                )));
+        // Output target and its ops come from the pass declaration.
+        let mut color_attachments = self.resolve_color_attachments(pass)?;
+        let color_attachment = match color_attachments.pop() {
+            Some(attachment) => attachment,
+            None => {
+                return Err(RenderGraphError::InvalidConfiguration(
+                    "Compositing pass has no output target".to_string(),
+                ));
             }
-        } else {
-            return Err(RenderGraphError::InvalidConfiguration(
-                "Compositing pass has no output target".to_string(),
-            ));
         };
 
         cmd.begin_rendering(

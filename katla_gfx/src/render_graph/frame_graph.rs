@@ -6,9 +6,9 @@ use super::builder::{InternalPassBuilder, PassBuilder};
 use super::compiler::{ExecutionPlan, GraphCompiler};
 use super::error::{GraphValidationError, RenderGraphError};
 use super::handles::{PassId, ResourceId};
-use super::pass::PassDesc;
-use super::passes::geometry::GeometryPassData;
+use super::pass::{PassDesc, PassType};
 use super::resource::{GraphResourceDesc, GraphResourceHandle};
+use crate::render_pass::{ClearValue, DepthStencilAttachmentOps, LoadOp};
 
 const BACKBUFFER_NAME: &str = super::BACKBUFFER_NAME;
 
@@ -44,6 +44,22 @@ impl Default for FrameParams {
             skeleton_copy_commands: Vec::new(),
         }
     }
+}
+
+/// What kind of render target a written graph resource resolves to.
+///
+/// Used by attachment validation and by backend attachment resolution to
+/// distinguish the imported swapchain backbuffer from graph-owned transients.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum WriteTargetRole {
+    /// The imported swapchain image; contents exist outside the graph.
+    ImportedBackbuffer,
+    /// A graph-owned color-attachment transient.
+    TransientColor,
+    /// A graph-owned depth attachment transient (e.g. a shadow atlas).
+    TransientDepth,
+    /// Not an attachment target (sampled image, imported texture, unknown).
+    Other,
 }
 
 /// Executable render graph.
@@ -243,8 +259,188 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             return Ok(());
         }
 
-        self.execution_plan = Some(self.build_execution_plan()?);
+        let plan = self.build_execution_plan()?;
+        self.validate_attachment_ops(&plan)?;
+        self.execution_plan = Some(plan);
         self.compiled = true;
+        Ok(())
+    }
+
+    /// Classify what kind of attachment target a written resource is.
+    fn write_target_role(&self, id: ResourceId) -> WriteTargetRole {
+        use super::resource::GraphResourceType;
+
+        let Some(desc) = self.resources.get(id.0 as usize) else {
+            return WriteTargetRole::Other;
+        };
+        if desc.name == BACKBUFFER_NAME {
+            return WriteTargetRole::ImportedBackbuffer;
+        }
+        match self
+            .transient_resources
+            .iter()
+            .find(|d| d.name == desc.name)
+            .map(|d| &d.resource_type)
+        {
+            Some(GraphResourceType::ColorAttachment { .. }) => WriteTargetRole::TransientColor,
+            Some(GraphResourceType::DepthAttachment { .. }) => WriteTargetRole::TransientDepth,
+            _ => WriteTargetRole::Other,
+        }
+    }
+
+    /// Validate declared attachment operations against pass writes.
+    ///
+    /// Runs at compile time — after liveness culling, before any backend sees
+    /// the graph — so invalid attachment contracts fail before command
+    /// encoding. The declared operations are the only source of attachment
+    /// behavior; this check makes missing or contradictory declarations loud.
+    fn validate_attachment_ops(&self, plan: &ExecutionPlan) -> Result<(), RenderGraphError> {
+        let mut produced: HashSet<ResourceId> = HashSet::new();
+        let mut frame_depth_written = false;
+
+        for &pass_idx in &plan.sorted_passes {
+            let pass = &self.passes[pass_idx];
+
+            if pass.pass_type == PassType::Compute {
+                if !pass.color_attachments.is_empty() || pass.depth_attachment.is_some() {
+                    return Err(GraphValidationError::AttachmentOpsOnComputePass(
+                        pass.name.clone(),
+                    )
+                    .into());
+                }
+                continue;
+            }
+
+            if !pass.uses_depth && pass.depth_attachment.is_some() {
+                return Err(
+                    GraphValidationError::DepthOpsWithoutDepthUse(pass.name.clone()).into(),
+                );
+            }
+
+            // Declared color ops must target color attachments the pass writes.
+            for (resource, ops) in &pass.color_attachments {
+                let name = self.resource_name(*resource).unwrap_or("?").to_string();
+                match self.write_target_role(*resource) {
+                    WriteTargetRole::ImportedBackbuffer | WriteTargetRole::TransientColor => {}
+                    _ => {
+                        return Err(GraphValidationError::StrayAttachmentOps {
+                            pass: pass.name.clone(),
+                            resource: name,
+                        }
+                        .into());
+                    }
+                }
+                if !pass.writes.contains(resource) {
+                    return Err(GraphValidationError::StrayAttachmentOps {
+                        pass: pass.name.clone(),
+                        resource: name,
+                    }
+                    .into());
+                }
+                if ops.load == LoadOp::Clear && !matches!(ops.clear_value, ClearValue::Color(_)) {
+                    return Err(GraphValidationError::AttachmentClearValueAspect {
+                        pass: pass.name.clone(),
+                        resource: name,
+                        expected: "a color clear value",
+                    }
+                    .into());
+                }
+                // Imported resources have external contents; transients must
+                // be produced by an earlier live pass before they can load.
+                let imported =
+                    self.write_target_role(*resource) == WriteTargetRole::ImportedBackbuffer;
+                if ops.load == LoadOp::Load && !imported && !produced.contains(resource) {
+                    return Err(GraphValidationError::LoadingUndefinedAttachment {
+                        pass: pass.name.clone(),
+                        resource: name,
+                    }
+                    .into());
+                }
+            }
+
+            // Every written attachment target must have declared ops.
+            for &write_id in &pass.writes {
+                let name = self.resource_name(write_id).unwrap_or("?").to_string();
+                let has_color_decl = pass.color_attachments.iter().any(|(id, _)| *id == write_id);
+                match self.write_target_role(write_id) {
+                    WriteTargetRole::ImportedBackbuffer | WriteTargetRole::TransientColor => {
+                        if !has_color_decl {
+                            return Err(GraphValidationError::MissingAttachmentOps {
+                                pass: pass.name.clone(),
+                                resource: name,
+                            }
+                            .into());
+                        }
+                    }
+                    WriteTargetRole::TransientDepth => {
+                        if pass.depth_attachment.is_none() {
+                            return Err(GraphValidationError::MissingAttachmentOps {
+                                pass: pass.name.clone(),
+                                resource: name,
+                            }
+                            .into());
+                        }
+                    }
+                    WriteTargetRole::Other => {}
+                }
+            }
+
+            // Depth ops must be consistent and their clear values in range.
+            if let Some(ops) = &pass.depth_attachment {
+                for (aspect, aspect_ops) in [("depth", ops.depth), ("stencil", ops.stencil)] {
+                    if aspect_ops.load == LoadOp::Clear
+                        && !matches!(aspect_ops.clear_value, ClearValue::DepthStencil { .. })
+                    {
+                        return Err(GraphValidationError::AttachmentClearValueAspect {
+                            pass: pass.name.clone(),
+                            resource: aspect.to_string(),
+                            expected: "a depth-stencil clear value",
+                        }
+                        .into());
+                    }
+                    if let ClearValue::DepthStencil { depth, .. } = aspect_ops.clear_value
+                        && !(0.0..=1.0).contains(&depth)
+                    {
+                        return Err(GraphValidationError::InvalidDepthClearValue {
+                            pass: pass.name.clone(),
+                            depth,
+                        }
+                        .into());
+                    }
+                }
+                // Loading depth requires a producer: an earlier pass that
+                // wrote the frame depth, or the pass's own depth transient.
+                let loads_depth =
+                    ops.depth.load == LoadOp::Load || ops.stencil.load == LoadOp::Load;
+                if loads_depth {
+                    let depth_transient =
+                        pass.writes.iter().copied().find(|&id| {
+                            self.write_target_role(id) == WriteTargetRole::TransientDepth
+                        });
+                    let has_producer = match depth_transient {
+                        Some(id) => produced.contains(&id),
+                        None => frame_depth_written,
+                    };
+                    if !has_producer {
+                        let resource = depth_transient
+                            .and_then(|id| self.resource_name(id))
+                            .unwrap_or("scene depth")
+                            .to_string();
+                        return Err(GraphValidationError::LoadingUndefinedAttachment {
+                            pass: pass.name.clone(),
+                            resource,
+                        }
+                        .into());
+                    }
+                }
+            }
+
+            produced.extend(pass.writes.iter().copied());
+            if pass.uses_depth {
+                frame_depth_written = true;
+            }
+        }
+
         Ok(())
     }
 
@@ -407,6 +603,19 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
     /// Get a pass by index.
     pub(crate) fn pass(&self, index: usize) -> Option<&PassDesc> {
         self.passes.get(index)
+    }
+
+    /// Image format declared for a transient graph resource.
+    ///
+    /// `None` for imported resources (the backbuffer and external textures),
+    /// whose formats are backend-owned.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn resource_format(&self, id: ResourceId) -> Option<crate::texture::ImageFormat> {
+        let name = self.resource_name(id)?;
+        self.transient_resources
+            .iter()
+            .find(|desc| desc.name == name)
+            .map(|desc| desc.format)
     }
 
     /// Get the execution order for passes.
@@ -1094,29 +1303,32 @@ impl FrameGraphBuilder {
             pass.kind = pass_builder.kind;
             pass.side_effect = pass_builder.side_effect;
 
-            if let Some(geom_data) = pass_data.downcast_ref::<GeometryPassData>() {
-                for (handle, format, load_op, store_op, clear_value) in &geom_data.colors {
-                    pass.color_attachments.push((
-                        ResourceId(handle.index()),
-                        *format,
-                        *load_op,
-                        *store_op,
-                        *clear_value,
-                    ));
-                }
-            } else if let Some(dp_data) =
-                pass_data
-                    .downcast_ref::<crate::render_graph::passes::depth_prepass::DepthPrepassData>()
+            pass.color_attachments = pass_builder
+                .color_attachments
+                .iter()
+                .map(|(name, ops)| {
+                    graph
+                        .resource_by_name
+                        .get(name)
+                        .copied()
+                        .map(|resource| (resource, *ops))
+                        .ok_or_else(|| {
+                            RenderGraphError::Validation(GraphValidationError::UndeclaredResource {
+                                pass: pass_name.clone(),
+                                resource: name.clone(),
+                            })
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            // Every graphics pass that uses depth gets an explicit depth
+            // contract: the canonical reverse-Z default when the template
+            // declares nothing. Execution never guesses.
+            if pass_builder.pass_type == PassType::Graphics
+                && pass.uses_depth
+                && pass.depth_attachment.is_none()
             {
-                for (handle, format, load_op, store_op, clear_value) in &dp_data.colors {
-                    pass.color_attachments.push((
-                        ResourceId(handle.index()),
-                        *format,
-                        *load_op,
-                        *store_op,
-                        *clear_value,
-                    ));
-                }
+                pass.depth_attachment = Some(DepthStencilAttachmentOps::reverse_z_default());
             }
 
             if !has_explicit_image_accesses {

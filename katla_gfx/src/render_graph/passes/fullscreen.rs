@@ -150,6 +150,9 @@ impl PassBuilder for FullscreenPass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes: Vec<String> = self.writes.iter().map(|(n, _)| n.clone()).collect();
 
+        // Fullscreen draws cover the whole target, but the historical canvas
+        // clear is preserved: the first writer leaves [0.1, 0.1, 0.1, 1.0]
+        // where nothing was drawn.
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
@@ -165,6 +168,18 @@ impl PassBuilder for FullscreenPass {
                 move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
             uses_depth: false,
+            color_attachments: self
+                .writes
+                .iter()
+                .map(|(name, _)| {
+                    (
+                        name.clone(),
+                        crate::render_pass::AttachmentOps::clear(
+                            crate::render_pass::ClearValue::color(0.1, 0.1, 0.1, 1.0),
+                        ),
+                    )
+                })
+                .collect(),
             depth_attachment: None,
             kind: Some(PassKind::Fullscreen),
             side_effect: false,
@@ -230,6 +245,7 @@ impl PassBuilder for OverlayPass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes: Vec<String> = self.writes.iter().map(|(n, _)| n.clone()).collect();
 
+        // The overlay composites over the tonemapped contents of its target.
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
@@ -244,6 +260,11 @@ impl PassBuilder for OverlayPass {
                 move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
             uses_depth: false,
+            color_attachments: self
+                .writes
+                .iter()
+                .map(|(name, _)| (name.clone(), crate::render_pass::AttachmentOps::load()))
+                .collect(),
             depth_attachment: None,
             kind: Some(PassKind::Fullscreen),
             side_effect: false,

@@ -3,12 +3,11 @@
 //! Renders each mesh with a flat color encoding its instance index into a R32Uint texture.
 //! Used for GPU-based entity picking via pixel readback.
 
-use std::collections::HashMap;
-
-use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
-use crate::render_graph::pass::{PassKind, PassType};
-use crate::render_graph::resource::GraphResourceHandle;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use super::super::builder::{InternalPassBuilder, PassBuilder};
+use super::super::pass::{PassKind, PassType};
+use crate::render_pass::{
+    AttachmentOps, ClearValue, DepthStencilAttachmentOps, LoadOp, StoreOp,
+};
 use crate::texture::ImageFormat;
 
 /// Object-ID picking pass template.
@@ -23,7 +22,7 @@ pub struct ObjectIdPass {
     name: String,
     reads: Vec<String>,
     writes: Vec<String>,
-    depth_config: Option<(LoadOp, StoreOp, ClearValue)>,
+    depth_config: Option<DepthStencilAttachmentOps>,
 }
 
 impl ObjectIdPass {
@@ -49,19 +48,32 @@ impl ObjectIdPass {
     }
 
     /// Configure depth attachment (default: LoadOp::Load to reuse depth prepass).
-    pub fn depth_config(
-        mut self,
-        load_op: LoadOp,
-        store_op: StoreOp,
-        clear_value: ClearValue,
-    ) -> Self {
-        self.depth_config = Some((load_op, store_op, clear_value));
+    pub fn depth_config(mut self, depth: AttachmentOps, stencil: AttachmentOps) -> Self {
+        self.depth_config = Some(DepthStencilAttachmentOps { depth, stencil });
         self
     }
 }
 
 impl PassBuilder for ObjectIdPass {
     fn as_builder(self) -> InternalPassBuilder {
+        // Object-ID targets are cleared to 0 (no object) and stored.
+        let color_attachments = self
+            .writes
+            .iter()
+            .map(|name| (name.clone(), AttachmentOps::clear(ClearValue::TRANSPARENT_BLACK)))
+            .collect();
+
+        // Default depth contract: load the depth prepass result, discard it.
+        let depth_attachment = self.depth_config.unwrap_or(DepthStencilAttachmentOps {
+            depth: AttachmentOps::clear(ClearValue::DepthStencil {
+                depth: 0.0,
+                stencil: 0,
+            })
+            .with_load(LoadOp::Load)
+            .with_store(StoreOp::DontCare),
+            stencil: AttachmentOps::dont_care(),
+        });
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
@@ -73,15 +85,12 @@ impl PassBuilder for ObjectIdPass {
             overlay_params: None,
             material: None,
             output_format: Some(ImageFormat::R32Uint),
-            build_fn: Box::new(|_resource_map: &HashMap<String, GraphResourceHandle>| {
-                Ok(Box::new(()))
-            }),
+            build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
-            depth_attachment: self.depth_config,
+            color_attachments,
+            depth_attachment: Some(depth_attachment),
             kind: Some(PassKind::ObjectId),
             side_effect: false,
         }
     }
 }
-
-

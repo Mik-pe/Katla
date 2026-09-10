@@ -30,8 +30,10 @@ pub struct Frame<'a, B: RenderGraphBackend> {
     pub(super) renderer: &'a mut B,
     pub(super) image_index: u32,
     pub(super) pending: HashMap<usize, PassExecutionData>,
-    /// Whether the backbuffer has been written to this frame.
-    pub(super) backbuffer_written: bool,
+    /// Whether the backend-owned depth texture has been written this frame.
+    ///
+    /// Scheduling fact for barrier insertion only — attachment load/store
+    /// behavior always comes from the pass's declared ops.
     pub(super) depth_buffer_written: bool,
     /// Whether the particle emit compute pass ran this frame.
     pub particle_emit_ran: bool,
@@ -62,7 +64,6 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
             renderer,
             image_index,
             pending: HashMap::new(),
-            backbuffer_written: false,
             depth_buffer_written: false,
             particle_emit_ran: false,
         }
@@ -170,6 +171,34 @@ use crate::renderer::VulkanRenderer;
 
 use crate::render_graph::BACKBUFFER_NAME;
 
+/// Build a depth/stencil attachment info for one aspect of a target.
+///
+/// The clear value union is shared between aspects; Vulkan reads `depth`
+/// for the depth attachment and `stencil` for the stencil attachment.
+fn depth_attachment_info(
+    view: ash::vk::ImageView,
+    ops: &crate::render_pass::AttachmentOps,
+    clear: ash::vk::ClearDepthStencilValue,
+) -> ash::vk::RenderingAttachmentInfo<'static> {
+    use crate::render_pass::{LoadOp, StoreOp};
+
+    ash::vk::RenderingAttachmentInfo::default()
+        .image_view(view)
+        .image_layout(ash::vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+        .load_op(match ops.load {
+            LoadOp::Clear => ash::vk::AttachmentLoadOp::CLEAR,
+            LoadOp::Load => ash::vk::AttachmentLoadOp::LOAD,
+            LoadOp::DontCare => ash::vk::AttachmentLoadOp::NONE_EXT,
+        })
+        .store_op(match ops.store {
+            StoreOp::Store => ash::vk::AttachmentStoreOp::STORE,
+            StoreOp::DontCare => ash::vk::AttachmentStoreOp::NONE_EXT,
+        })
+        .clear_value(ash::vk::ClearValue {
+            depth_stencil: clear,
+        })
+}
+
 impl<'a> Frame<'a, VulkanRenderer> {
     pub(super) fn color_target_extent(&self, pass: &PassDesc) -> ash::vk::Extent2D {
         if self
@@ -181,7 +210,7 @@ impl<'a> Frame<'a, VulkanRenderer> {
         }
         pass.color_attachments
             .iter()
-            .find_map(|(id, ..)| {
+            .find_map(|(id, _)| {
                 self.graph
                     .transient_texture_by_id(*id, self.current_frame())
                     .map(|texture| texture.extent)
@@ -189,110 +218,156 @@ impl<'a> Frame<'a, VulkanRenderer> {
             .unwrap_or(self.renderer.frame_context.scene_extent)
     }
 
-    /// Resolve a color attachment for a pass.
+    /// Resolve the image view of a declared color target.
     ///
-    /// Handles both backbuffer and transient texture targets, including
-    /// load/store/clear operation resolution from `pass.color_attachments`.
-    ///
-    /// Returns `None` if the pass has no color outputs.
-    pub(super) fn resolve_color_attachment(
+    /// The imported backbuffer resolves to the acquired swapchain image;
+    /// everything else resolves to its graph transient texture.
+    fn color_target_view(
         &self,
-        pass: &PassDesc,
-    ) -> Result<Option<ash::vk::RenderingAttachmentInfo<'_>>, RenderGraphError> {
-        use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-
-        let backbuffer_id = self.graph.resource_id(BACKBUFFER_NAME);
-
-        if backbuffer_id.is_some_and(|id| pass.writes_to(id)) {
-            let swapchain_view =
-                self.renderer.frame_context.swapchain_image_views[self.image_index as usize].vk();
-
-            let load_op = if self.backbuffer_written {
-                ash::vk::AttachmentLoadOp::LOAD
-            } else {
-                ash::vk::AttachmentLoadOp::CLEAR
-            };
-
-            return Ok(Some(
-                ash::vk::RenderingAttachmentInfo::default()
-                    .image_view(swapchain_view)
-                    .image_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(load_op)
-                    .store_op(ash::vk::AttachmentStoreOp::STORE)
-                    .clear_value(ash::vk::ClearValue {
-                        color: ash::vk::ClearColorValue {
-                            float32: [0.1, 0.1, 0.1, 1.0],
-                        },
-                    }),
-            ));
+        id: crate::render_graph::handles::ResourceId,
+    ) -> Result<ash::vk::ImageView, RenderGraphError> {
+        if self.graph.resource_id(BACKBUFFER_NAME) == Some(id) {
+            return Ok(self.renderer.frame_context.swapchain_image_views
+                [self.image_index as usize]
+                .vk());
         }
 
-        let &color_id = match pass.writes.first() {
-            Some(id) => id,
-            None => return Ok(None),
-        };
-
-        let color_name = self.graph.resource_name(color_id).unwrap_or("?");
-
-        let transient = self
-            .graph
-            .transient_texture_by_id(color_id, self.current_frame())
+        self.graph
+            .transient_texture_by_id(id, self.current_frame())
+            .map(|texture| texture.image_view.vk())
             .ok_or_else(|| {
                 RenderGraphError::ResourceNotFound(format!(
                     "Color target '{}' not found. Use 'backbuffer' for swapchain or create a transient resource.",
-                    color_name
+                    self.graph.resource_name(id).unwrap_or("?")
+                ))
+            })
+    }
+
+    /// Resolve the format of a declared color target (for clear-value typing).
+    fn color_target_format(&self, id: crate::render_graph::handles::ResourceId) -> ash::vk::Format {
+        self.graph
+            .transient_texture_by_id(id, self.current_frame())
+            .map(|texture| texture.format)
+            .unwrap_or(ash::vk::Format::UNDEFINED)
+    }
+
+    /// Resolve every declared color attachment of a pass.
+    ///
+    /// Views come from the pass's declared targets and load/store/clear
+    /// behavior comes from its declared attachment ops — nothing is inferred
+    /// from renderer-local state. Returns an empty vec for passes without
+    /// declared color attachments.
+    pub(super) fn resolve_color_attachments(
+        &self,
+        pass: &PassDesc,
+    ) -> Result<Vec<ash::vk::RenderingAttachmentInfo<'_>>, RenderGraphError> {
+        use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+
+        let mut infos = Vec::with_capacity(pass.color_attachments.len());
+        for (id, ops) in &pass.color_attachments {
+            let view = self.color_target_view(*id)?;
+            let format = self.color_target_format(*id);
+
+            let clear = match ops.clear_value {
+                ClearValue::Color(c) => c,
+                // Validation rejects depth-stencil clear values on color
+                // targets; this fallback keeps encoding deterministic.
+                ClearValue::DepthStencil { .. } => [0.0, 0.0, 0.0, 1.0],
+            };
+            let clear_color = if format == ash::vk::Format::R32_UINT {
+                // Integer targets clear through the uint32 union member.
+                ash::vk::ClearColorValue {
+                    uint32: [clear[0] as u32, 0, 0, 0],
+                }
+            } else {
+                ash::vk::ClearColorValue { float32: clear }
+            };
+
+            infos.push(
+                ash::vk::RenderingAttachmentInfo::default()
+                    .image_view(view)
+                    .image_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                    .load_op(match ops.load {
+                        LoadOp::Clear => ash::vk::AttachmentLoadOp::CLEAR,
+                        LoadOp::Load => ash::vk::AttachmentLoadOp::LOAD,
+                        LoadOp::DontCare => ash::vk::AttachmentLoadOp::NONE_EXT,
+                    })
+                    .store_op(match ops.store {
+                        StoreOp::Store => ash::vk::AttachmentStoreOp::STORE,
+                        StoreOp::DontCare => ash::vk::AttachmentStoreOp::NONE_EXT,
+                    })
+                    .clear_value(ash::vk::ClearValue { color: clear_color }),
+            );
+        }
+        Ok(infos)
+    }
+
+    /// Resolve the declared depth and stencil attachments for a pass.
+    ///
+    /// Targets the backend-owned frame depth texture; per-aspect load/store/
+    /// clear behavior comes from the pass's declared depth ops. Returns
+    /// `(depth, stencil)`; stencil is `None` when the frame depth has no
+    /// stencil aspect.
+    pub(super) fn resolve_frame_depth_attachments(
+        &self,
+        pass: &PassDesc,
+    ) -> Result<
+        (
+            Option<ash::vk::RenderingAttachmentInfo<'_>>,
+            Option<ash::vk::RenderingAttachmentInfo<'_>>,
+        ),
+        RenderGraphError,
+    > {
+        use crate::render_pass::ClearValue;
+
+        if !pass.uses_depth {
+            return Ok((None, None));
+        }
+        let Some(ops) = pass.depth_attachment else {
+            return Err(RenderGraphError::InvalidConfiguration(format!(
+                "graphics pass '{}' uses depth but declares no depth ops",
+                pass.name
+            )));
+        };
+
+        let frame_idx = self.current_frame();
+        let depth_texture = self
+            .renderer
+            .frame_context
+            .depth_render_textures
+            .get(frame_idx)
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "depth_render_textures missing entry for frame {}",
+                    frame_idx
                 ))
             })?;
 
-        let resource_already_written =
-            transient.state() != super::resource::ResourceState::Undefined;
+        let clear = match ops.depth.clear_value {
+            ClearValue::DepthStencil { depth, stencil } => {
+                ash::vk::ClearDepthStencilValue { depth, stencil }
+            }
+            _ => ash::vk::ClearDepthStencilValue {
+                depth: 0.0,
+                stencil: 0,
+            },
+        };
 
-        let (load_op, store_op, clear_value) = pass
-            .color_attachments
-            .iter()
-            .find(|(id, ..)| *id == color_id)
-            .map(|(_, _, load_op, store_op, clear_value)| {
-                (
-                    match load_op {
-                        LoadOp::Load => ash::vk::AttachmentLoadOp::LOAD,
-                        LoadOp::Clear => ash::vk::AttachmentLoadOp::CLEAR,
-                        LoadOp::DontCare => ash::vk::AttachmentLoadOp::NONE_EXT,
-                    },
-                    match store_op {
-                        StoreOp::Store => ash::vk::AttachmentStoreOp::STORE,
-                        StoreOp::DontCare => ash::vk::AttachmentStoreOp::NONE_EXT,
-                    },
-                    match clear_value {
-                        ClearValue::Color(c) => ash::vk::ClearColorValue { float32: *c },
-                        _ => ash::vk::ClearColorValue {
-                            float32: [0.0, 0.0, 0.0, 1.0],
-                        },
-                    },
-                )
-            })
-            .unwrap_or_else(|| {
-                let load = if resource_already_written {
-                    ash::vk::AttachmentLoadOp::LOAD
-                } else {
-                    ash::vk::AttachmentLoadOp::CLEAR
-                };
-                (
-                    load,
-                    ash::vk::AttachmentStoreOp::STORE,
-                    ash::vk::ClearColorValue {
-                        float32: [0.1, 0.1, 0.1, 1.0],
-                    },
-                )
-            });
-
-        Ok(Some(
-            ash::vk::RenderingAttachmentInfo::default()
-                .image_view(transient.image_view.vk())
-                .image_layout(ash::vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .load_op(load_op)
-                .store_op(store_op)
-                .clear_value(ash::vk::ClearValue { color: clear_value }),
-        ))
+        if let Some(ref ds_view) = depth_texture.depth_stencil_image_view {
+            Ok((
+                Some(depth_attachment_info(ds_view.vk(), &ops.depth, clear)),
+                Some(depth_attachment_info(ds_view.vk(), &ops.stencil, clear)),
+            ))
+        } else {
+            Ok((
+                Some(depth_attachment_info(
+                    depth_texture.image_view.vk(),
+                    &ops.depth,
+                    clear,
+                )),
+                None,
+            ))
+        }
     }
 
     /// Execute all passes in order.
@@ -306,11 +381,6 @@ impl<'a> Frame<'a, VulkanRenderer> {
         for index in execution_order {
             let pass = &self.graph.passes[index];
             let data = self.pending.remove(&index).unwrap_or_default();
-
-            let writes_backbuffer = self
-                .graph
-                .resource_id(BACKBUFFER_NAME)
-                .is_some_and(|id| pass.writes_to(id));
 
             self.insert_barriers(&cmd, index)?;
 
@@ -396,9 +466,6 @@ impl<'a> Frame<'a, VulkanRenderer> {
 
             self.insert_post_pass_barriers(&cmd, index)?;
 
-            if writes_backbuffer {
-                self.backbuffer_written = true;
-            }
             if pass.uses_depth {
                 self.depth_buffer_written = true;
             }

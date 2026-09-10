@@ -33,68 +33,17 @@ impl Frame<'_, VulkanRenderer> {
             data.draw_lists.len()
         );
 
-        // Color attachment: R32Uint transient texture
-        let color_attachment = if let Some(&color_id) = pass.writes.first() {
-            if let Some(transient) = self
-                .graph
-                .transient_texture_by_id(color_id, self.current_frame())
-            {
-                let (load_op, store_op, clear_value) = pass
-                    .color_attachments
-                    .iter()
-                    .find(|(id, ..)| *id == color_id)
-                    .map(|(_, _, load_op, store_op, clear_value)| {
-                        (
-                            match load_op {
-                                crate::render_pass::LoadOp::Load => vk::AttachmentLoadOp::LOAD,
-                                crate::render_pass::LoadOp::Clear => vk::AttachmentLoadOp::CLEAR,
-                                crate::render_pass::LoadOp::DontCare => {
-                                    vk::AttachmentLoadOp::NONE_EXT
-                                }
-                            },
-                            match store_op {
-                                crate::render_pass::StoreOp::Store => vk::AttachmentStoreOp::STORE,
-                                crate::render_pass::StoreOp::DontCare => {
-                                    vk::AttachmentStoreOp::NONE_EXT
-                                }
-                            },
-                            match clear_value {
-                                crate::render_pass::ClearValue::Color(c) => vk::ClearColorValue {
-                                    uint32: [c[0] as u32, 0, 0, 0],
-                                },
-                                _ => vk::ClearColorValue {
-                                    uint32: [0, 0, 0, 0],
-                                },
-                            },
-                        )
-                    })
-                    .unwrap_or((
-                        vk::AttachmentLoadOp::CLEAR,
-                        vk::AttachmentStoreOp::STORE,
-                        vk::ClearColorValue {
-                            uint32: [0, 0, 0, 0],
-                        },
-                    ));
-
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(transient.image_view.vk())
-                    .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                    .load_op(load_op)
-                    .store_op(store_op)
-                    .clear_value(vk::ClearValue { color: clear_value })
-            } else {
-                return Err(RenderGraphError::ResourceNotFound(format!(
-                    "Object-ID target '{}' not found",
-                    self.graph.resource_name(color_id).unwrap_or("?")
-                )));
-            }
-        } else {
+        // Color attachment: R32Uint transient texture, ops from the pass
+        // declaration (cleared to 0 = no object).
+        let color_attachments = self.resolve_color_attachments(pass)?;
+        if color_attachments.is_empty() {
             return Err(RenderGraphError::InvalidConfiguration(
                 "Object-ID pass has no color outputs".to_string(),
             ));
-        };
+        }
 
-        // Depth attachment: reuse from depth prepass
+        // Depth attachment: reuse the depth prepass result via the declared
+        // depth ops (depth-only view, no stencil attachment).
         let depth_view = self
             .renderer
             .frame_context
@@ -108,43 +57,26 @@ impl Frame<'_, VulkanRenderer> {
                 ))
             })?;
 
-        let depth_attachment = if let Some((lo, so, cv)) = pass.depth_attachment {
-            let depth_val = match cv {
-                crate::render_pass::ClearValue::DepthStencil { depth, .. } => depth,
-                _ => 0.0,
-            };
-            Some(
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(depth_view)
-                    .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                    .load_op(lo.into())
-                    .store_op(so.into())
-                    .clear_value(vk::ClearValue {
-                        depth_stencil: vk::ClearDepthStencilValue {
-                            depth: depth_val,
-                            stencil: 0,
-                        },
-                    }),
-            )
-        } else {
-            Some(
-                vk::RenderingAttachmentInfo::default()
-                    .image_view(depth_view)
-                    .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                    .load_op(vk::AttachmentLoadOp::LOAD)
-                    .store_op(vk::AttachmentStoreOp::DONT_CARE)
-                    .clear_value(vk::ClearValue {
-                        depth_stencil: vk::ClearDepthStencilValue {
-                            depth: 0.0,
-                            stencil: 0,
-                        },
-                    }),
-            )
+        let ops = pass.depth_attachment.ok_or_else(|| {
+            RenderGraphError::InvalidConfiguration(format!(
+                "object-ID pass '{}' declares no depth ops",
+                pass.name
+            ))
+        })?;
+        let clear = match ops.depth.clear_value {
+            crate::render_pass::ClearValue::DepthStencil { depth, stencil } => {
+                vk::ClearDepthStencilValue { depth, stencil }
+            }
+            _ => vk::ClearDepthStencilValue {
+                depth: 0.0,
+                stencil: 0,
+            },
         };
+        let depth_attachment = super::depth_attachment_info(depth_view, &ops.depth, clear);
 
         cmd.begin_rendering(
-            &[color_attachment],
-            depth_attachment.as_ref(),
+            &color_attachments,
+            Some(&depth_attachment),
             None,
             render_area,
             1,

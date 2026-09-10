@@ -101,13 +101,14 @@ pub struct InternalPassBuilder {
     /// Whether this pass uses depth testing (default true for graphics passes).
     pub uses_depth: bool,
 
-    /// Depth attachment load/store/clear configuration.
-    /// When None, defaults to (Clear, Store, depth=0.0) for reverse-Z.
-    pub depth_attachment: Option<(
-        crate::render_pass::LoadOp,
-        crate::render_pass::StoreOp,
-        crate::render_pass::ClearValue,
-    )>,
+    /// Declared load/store/clear operations per color target (resource names,
+    /// resolved against the resource namespace at graph build).
+    pub color_attachments: Vec<(String, crate::render_pass::AttachmentOps)>,
+
+    /// Depth and stencil attachment operations.
+    /// When None, graphics passes that use depth get the canonical reverse-Z
+    /// default (depth cleared to 0.0 and stored, stencil cleared).
+    pub depth_attachment: Option<crate::render_pass::DepthStencilAttachmentOps>,
 
     /// Semantic kind of this pass, used for dispatch routing.
     pub kind: Option<PassKind>,
@@ -200,6 +201,7 @@ impl PassBuilder for SimplePass {
             output_format: None,
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
+            color_attachments: Vec::new(),
             depth_attachment: None,
             kind: self.kind,
             side_effect: false,
@@ -251,6 +253,7 @@ mod tests {
                 output_format: None,
                 build_fn: Box::new(|_resource_map| Ok(Box::new(()))),
                 uses_depth: true,
+                color_attachments: Vec::new(),
                 depth_attachment: None,
                 kind: None,
                 overlay_params: None,
