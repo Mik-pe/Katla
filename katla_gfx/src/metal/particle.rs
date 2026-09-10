@@ -14,7 +14,8 @@ use log::info;
 use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
-use crate::particles::types::{EmitterConfig, EmitterHandle};
+use crate::handle::EmitterHandle;
+use crate::particles::types::EmitterConfig;
 use crate::pipeline::CompareOp;
 
 use super::buffer::MetalBuffer;

@@ -17,7 +17,6 @@
 //! | 7       | output_matrices   | GPU       | final joint matrices            |
 
 use crate::error::RendererError;
-use crate::handle::SkeletonHandle;
 
 use super::context::MetalContext;
 use super::pipeline::MetalComputePipeline;
@@ -293,13 +292,13 @@ impl MetalAnimationSystem {
 
     /// Get the skeleton copy commands (handle, joint_offset, joint_count).
     #[cfg(test)]
-    pub fn skeleton_copy_commands(&self) -> Vec<(SkeletonHandle, u32, u32)> {
+    pub fn skeleton_copy_commands(&self) -> Vec<(crate::handle::SkeletonHandle, u32, u32)> {
         self.skeleton_entries
             .iter()
             .enumerate()
             .map(|(i, entry)| {
                 (
-                    SkeletonHandle::from_raw(i as u32, 0),
+                    crate::handle::SkeletonHandle::from_raw(i as u32, 0),
                     entry.joint_offset,
                     entry.joint_count,
                 )
@@ -461,6 +460,7 @@ impl MetalAnimationSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handle::SkeletonHandle;
 
     fn create_context() -> MetalContext {
         MetalContext::init_headless().expect("Failed to create headless context")
