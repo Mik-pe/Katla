@@ -3,6 +3,11 @@
 //! Diagnostics intentionally contain only stable graph data: declaration indices,
 //! resource names, access hazards, execution order, and parallel levels. Backend
 //! pointers, device addresses, and hash-map iteration order never enter the output.
+//!
+//! Text and DOT access labels include mode, usage, pipeline stage, aspects, and
+//! mip/layer ranges as `base+count`. A count of `u32::MAX` means all remaining
+//! subresources, matching the typed graph declaration. Read-write accesses have
+//! edges in both directions; dotted edges belong to culled passes.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
@@ -465,19 +470,30 @@ impl RenderGraphDiagnostics {
                 status
             );
 
-            for resource in &pass.reads {
-                let _ = writeln!(
-                    output,
-                    "  r{} -> p{} [label=\"read\"{}];",
-                    resource.id, pass.index, edge_style
-                );
-            }
-            for resource in &pass.writes {
-                let _ = writeln!(
-                    output,
-                    "  p{} -> r{} [label=\"write\"{}];",
-                    pass.index, resource.id, edge_style
-                );
+            for access in &pass.image_accesses {
+                let label = escape_dot(&access.to_string());
+                if matches!(
+                    access.mode,
+                    RenderGraphDiagnosticImageAccessMode::Read
+                        | RenderGraphDiagnosticImageAccessMode::ReadWrite
+                ) {
+                    let _ = writeln!(
+                        output,
+                        "  r{} -> p{} [label=\"{}\"{}];",
+                        access.resource.id, pass.index, label, edge_style
+                    );
+                }
+                if matches!(
+                    access.mode,
+                    RenderGraphDiagnosticImageAccessMode::Write
+                        | RenderGraphDiagnosticImageAccessMode::ReadWrite
+                ) {
+                    let _ = writeln!(
+                        output,
+                        "  p{} -> r{} [label=\"{}\"{}];",
+                        pass.index, access.resource.id, label, edge_style
+                    );
+                }
             }
         }
 
@@ -559,13 +575,48 @@ impl fmt::Display for RenderGraphDiagnostics {
                     String::new()
                 }
             )?;
+            for access in &pass.image_accesses {
+                writeln!(
+                    f,
+                    "    r{} ({}): {access}",
+                    access.resource.id, access.resource.name
+                )?;
+            }
         }
 
         for pass in self.passes.iter().filter(|pass| pass.culled) {
             writeln!(f, "  [{}] {} (culled)", pass.index, pass.name)?;
+            for access in &pass.image_accesses {
+                writeln!(
+                    f,
+                    "    r{} ({}): {access}",
+                    access.resource.id, access.resource.name
+                )?;
+            }
         }
 
         Ok(())
+    }
+}
+
+impl fmt::Display for RenderGraphDiagnosticImageAccess {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mode = match self.mode {
+            RenderGraphDiagnosticImageAccessMode::Read => "read",
+            RenderGraphDiagnosticImageAccessMode::Write => "write",
+            RenderGraphDiagnosticImageAccessMode::ReadWrite => "read_write",
+        };
+        write!(
+            f,
+            "{mode} {:?} @ {:?}, {}, mips {}+{}, layers {}+{}",
+            self.usage,
+            self.stage,
+            self.range.aspects.join("|"),
+            self.range.base_mip_level,
+            self.range.mip_level_count,
+            self.range.base_array_layer,
+            self.range.array_layer_count
+        )
     }
 }
 
@@ -1031,8 +1082,8 @@ mod tests {
         assert!(dot.starts_with("digraph render_graph"));
         assert!(dot.contains("r1 [shape=ellipse"));
         assert!(dot.contains("p0 [shape=box"));
-        assert!(dot.contains("p0 -> r1 [label=\"write\"]"));
-        assert!(dot.contains("r1 -> p1 [label=\"read\"]"));
+        assert!(dot.contains("p0 -> r1 [label=\"write Storage @ AllGraphics"));
+        assert!(dot.contains("r1 -> p1 [label=\"read Sampled @ FragmentShader"));
         assert!(dot.contains("Waw color"));
         assert!(dot.contains("Raw post"));
     }
@@ -1086,6 +1137,51 @@ mod tests {
         assert!(dot.contains("culled"));
         assert!(dot.contains("side-effect"));
         assert!(diagnostics.to_string().contains("3 live, 1 culled"));
+    }
+
+    #[test]
+    fn test_typed_access_exports_preserve_ranges_and_culled_passes() {
+        use crate::render_graph::access::{ImageAspects, ImageSubresourceRange};
+
+        let resources = vec![namespace_resource("depth\"atlas")];
+        let access = ImageAccess::storage_read_write(ResourceId(0)).with_range(
+            ImageSubresourceRange::new(ImageAspects::DEPTH | ImageAspects::STENCIL, 2, 3, 4, 5),
+        );
+        let mut live = pass("live", vec![], vec![]).with_image_accesses([access]);
+        live.side_effect = true;
+        let passes = vec![
+            live,
+            pass("unused", vec![], vec![]).with_image_accesses([access]),
+        ];
+        let plan = GraphCompiler::from_pass_descs_with_exports(&passes, [])
+            .compile()
+            .unwrap();
+        let diagnostics =
+            RenderGraphDiagnostics::from_parts(&passes, &resources, &[], &BTreeSet::new(), &plan);
+        let label = "read_write Storage @ AllGraphics, depth|stencil, mips 2+3, layers 4+5";
+        let text = diagnostics.to_string();
+        assert_eq!(text.matches(label).count(), 2);
+        assert!(text.contains("[1] unused (culled)"));
+        let dot = diagnostics.to_dot();
+        for edge in ["r0 -> p0", "p0 -> r0"] {
+            assert!(dot.contains(&format!("{edge} [label=\"{label}\"];")));
+        }
+        for edge in ["r0 -> p1", "p1 -> r0"] {
+            assert!(dot.contains(&format!(
+                "{edge} [label=\"{label}\",style=\"dotted\",color=\"gray60\"];"
+            )));
+        }
+        assert!(dot.contains("depth\\\"atlas"));
+        let json: Value = serde_json::from_str(&diagnostics.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(
+            json["passes"][0]["image_accesses"][0]["range"],
+            serde_json::json!({
+                "aspects": ["depth", "stencil"],
+                "base_mip_level": 2, "mip_level_count": 3,
+                "base_array_layer": 4, "array_layer_count": 5,
+            })
+        );
+        assert_eq!(diagnostics.execution_order, vec![0]);
     }
 
     #[test]
