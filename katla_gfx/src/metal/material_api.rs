@@ -223,8 +223,7 @@ impl MetalRenderer {
             shader_path: Some(shader_path.clone()),
             descriptor: Some(descriptor.clone()),
         };
-        let id = self.materials.insert(material);
-        let handle = MaterialHandle::new(id);
+        let handle = self.materials.insert(material);
 
         if let Some(inst) = instanced_pipeline {
             self.ui_renderer.set_instanced_pipeline(inst);
@@ -238,7 +237,7 @@ impl MetalRenderer {
         material: MaterialHandle,
         indices: [u32; 4],
     ) {
-        if let Some(mat) = self.materials.get_mut(material.index()) {
+        if let Some(mat) = self.materials.get_mut(material) {
             mat.texture_indices = indices;
         }
     }
@@ -248,7 +247,7 @@ impl MetalRenderer {
     }
 
     pub(crate) fn destroy_material_impl(&mut self, handle: MaterialHandle) {
-        self.materials.remove(handle.index());
+        self.materials.remove(handle);
     }
 
     /// Recompile all materials whose shader path matches the given file.
@@ -267,21 +266,17 @@ impl MetalRenderer {
         let handles: Vec<MaterialHandle> = self
             .materials
             .iter_enumerated()
-            .filter_map(|(idx, mat)| {
+            .filter_map(|(handle, mat)| {
                 let sp = mat.shader_path.as_ref()?;
                 let mat_file = std::path::Path::new(sp).file_name()?.to_str()?;
-                if mat_file == file_name {
-                    Some(MaterialHandle::new(idx))
-                } else {
-                    None
-                }
+                (mat_file == file_name).then_some(handle)
             })
             .collect();
 
         let count = handles.len();
         for handle in handles {
             let descriptor = {
-                let Some(mat) = self.materials.get(handle.index()) else {
+                let Some(mat) = self.materials.get(handle) else {
                     continue;
                 };
                 match mat.descriptor.as_ref() {
@@ -294,12 +289,12 @@ impl MetalRenderer {
                 Ok(new_handle) => {
                     let new_pipeline = self
                         .materials
-                        .get(new_handle.index())
+                        .get(new_handle)
                         .and_then(|m| m.pipeline.clone());
-                    if let Some(old_mat) = self.materials.get_mut(handle.index()) {
+                    if let Some(old_mat) = self.materials.get_mut(handle) {
                         old_mat.pipeline = new_pipeline;
                     }
-                    self.materials.remove(new_handle.index());
+                    self.materials.remove(new_handle);
                 }
                 Err(e) => {
                     log::warn!(

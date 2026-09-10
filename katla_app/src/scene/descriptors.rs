@@ -198,9 +198,11 @@ pub enum ColliderShapeDescriptor {
     },
     Trimesh {
         mesh_handle_index: u32,
+        mesh_handle_generation: u32,
     },
     ConvexHull {
         mesh_handle_index: u32,
+        mesh_handle_generation: u32,
     },
     Heightfield {
         rows: u32,

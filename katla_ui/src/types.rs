@@ -39,12 +39,14 @@ impl TextureId {
         Self(id)
     }
 
-    /// Create a TextureId from a handle index.
+    /// Create a TextureId from a generational texture handle.
     ///
-    /// This is used by katla_app to convert GPU handle indices to texture IDs.
+    /// Packs the handle's slot index and generation so the ID keeps the full
+    /// handle identity: a stale handle (slot reused under a new generation)
+    /// never resolves to the replacement's bindless slot.
     #[inline]
-    pub const fn from_handle_index(index: u32) -> Self {
-        Self(index as u64)
+    pub const fn from_handle(index: u32, generation: u32) -> Self {
+        Self(((generation as u64) << 32) | index as u64)
     }
 }
 

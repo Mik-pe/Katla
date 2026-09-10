@@ -60,7 +60,7 @@ use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
 use crate::barrier::ImageBarrier;
 use crate::error::RendererError;
-use crate::handle::ResourceStorage;
+use crate::handle::{ResourceStorage, SkeletonMarker};
 use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::IndexType;
@@ -201,11 +201,12 @@ pub struct VulkanRenderer {
     /// Each set contains the storage buffer bound at two offsets (frame_data at 0, objects at 256).
     pub(crate) storage_descriptor_sets: Vec<StorageDescriptorSet>,
     /// Skeleton descriptor sets for GPU skeletal animation.
-    /// Indexed by SkeletonHandle via ResourceStorage.
-    pub(crate) skeleton_descriptors: ResourceStorage<SkeletonDescriptorSet>,
+    /// Indexed by SkeletonHandle via generational ResourceStorage.
+    pub(crate) skeleton_descriptors: ResourceStorage<SkeletonDescriptorSet, SkeletonMarker>,
     /// Skeleton buffers for GPU skeletal animation.
-    /// Indexed by SkeletonHandle via ResourceStorage.
-    pub(crate) skeleton_buffers: ResourceStorage<SkeletonBuffer>,
+    /// Kept slot-aligned with `skeleton_descriptors`: both storages see the
+    /// same insert/remove sequence so one SkeletonHandle addresses both.
+    pub(crate) skeleton_buffers: ResourceStorage<SkeletonBuffer, SkeletonMarker>,
     /// Compositing descriptor set layout for multi-viewport compositing.
     /// Created during initialization and used when compiling compositing materials.
     pub(crate) compositing_descriptor_set_layout: vk::DescriptorSetLayout,

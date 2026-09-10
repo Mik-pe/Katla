@@ -152,6 +152,9 @@ pub(crate) struct MetalParticleSubsystem {
     _emitter_states: Vec<EmitterState>,
     _next_slot: u32,
     _free_slots: Vec<u32>,
+    /// Generation per slot, bumped on destroy so stale emitter handles can
+    /// never alias the emitter that later occupies the same slot.
+    _generations: Vec<u32>,
 
     // State
     _max_particles: u32,
@@ -316,6 +319,7 @@ impl MetalParticleSubsystem {
             _emitter_states: Vec::with_capacity(MAX_EMITTERS as usize),
             _next_slot: 0,
             _free_slots: Vec::new(),
+            _generations: Vec::new(),
             _max_particles: max_particles,
             _frame_count: 0,
             _estimated_max_alive: max_particles,
@@ -403,41 +407,65 @@ impl MetalParticleSubsystem {
             self._emitter_states
                 .resize(index as usize + 1, EmitterState::default());
         }
+        if self._generations.len() <= index as usize {
+            self._generations.resize(index as usize + 1, 0);
+        }
 
         self._emitters[index as usize] = config;
         self._emitter_states[index as usize] = EmitterState::default();
         self.recompute_estimated_max_alive();
 
-        Ok(EmitterHandle::new(index))
+        Ok(EmitterHandle::from_raw(
+            index,
+            self._generations[index as usize],
+        ))
+    }
+
+    /// Resolve a handle against the pool, rejecting out-of-range slots and
+    /// wrong generations (destroyed emitters whose slot was reused).
+    fn live_emitter_slot(&self, handle: EmitterHandle) -> Option<usize> {
+        let slot = handle.index() as usize;
+        if handle.is_none()
+            || slot >= self._emitters.len()
+            || self._generations.get(slot) != Some(&handle.generation())
+        {
+            return None;
+        }
+        Some(slot)
     }
 
     pub(crate) fn update_emitter(&mut self, handle: EmitterHandle, config: EmitterConfig) {
-        if handle.index() < self._emitters.len() as u32 {
-            self._emitters[handle.index() as usize] = config;
+        if let Some(slot) = self.live_emitter_slot(handle) {
+            self._emitters[slot] = config;
             self.recompute_estimated_max_alive();
         }
     }
 
     pub(crate) fn destroy_emitter(&mut self, handle: EmitterHandle, kill_all: bool) {
-        if handle.index() < self._emitters.len() as u32 {
-            self._emitters[handle.index() as usize] = EmitterConfig {
+        if let Some(slot) = self.live_emitter_slot(handle) {
+            self._emitters[slot] = EmitterConfig {
                 emit_rate: 0.0,
                 kill_all: if kill_all { 1 } else { 0 },
                 ..Default::default()
             };
-            if handle.index() < self._emitter_states.len() as u32 {
-                self._emitter_states[handle.index() as usize] = EmitterState::default();
+            if slot < self._emitter_states.len() {
+                self._emitter_states[slot] = EmitterState::default();
             }
+            // Bump the generation so this handle stays invalid even after the
+            // slot is reused, and double-destroy is a no-op.
+            let generation = self._generations[slot].wrapping_add(1);
+            self._generations[slot] = if generation == 0 { 1 } else { generation };
             self._free_slots.push(handle.index());
         }
     }
 
     pub(crate) fn burst(&mut self, handle: EmitterHandle, count: u32) -> Result<(), String> {
-        if handle.index() < self._emitter_states.len() as u32 {
-            self._emitter_states[handle.index() as usize]._burst_count = count;
-            Ok(())
-        } else {
-            Err(format!("Invalid emitter handle: {:?}", handle))
+        match self.live_emitter_slot(handle) {
+            Some(slot) => {
+                self._emitter_states[slot]._burst_count = count;
+                Ok(())
+            }
+            None => Err(format!("Invalid emitter handle: {:?}", handle)),
         }
     }
 

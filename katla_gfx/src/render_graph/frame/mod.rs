@@ -19,6 +19,7 @@ use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::PassId;
 use super::pass::PassDesc;
+use crate::handle::SkeletonHandle;
 use crate::renderer::types::{DrawList, UIDrawList};
 
 /// Frame context for submitting work to passes.
@@ -108,7 +109,7 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     }
 
     /// Get the skeleton copy commands for this frame.
-    pub fn skeleton_copy_commands(&self) -> &[(u32, u32, u32)] {
+    pub fn skeleton_copy_commands(&self) -> &[(SkeletonHandle, u32, u32)] {
         &self.graph.params.skeleton_copy_commands
     }
 

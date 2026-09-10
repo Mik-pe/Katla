@@ -48,10 +48,12 @@ impl Serialize for ColliderShape {
             },
             Trimesh {
                 mesh_handle_index: u32,
+                mesh_handle_generation: u32,
             },
             #[serde(rename = "ConvexHull")]
             ConvexHull {
                 mesh_handle_index: u32,
+                mesh_handle_generation: u32,
             },
             Heightfield {
                 rows: u32,
@@ -71,9 +73,11 @@ impl Serialize for ColliderShape {
             },
             ColliderShape::Trimesh(h) => ShapeRepr::Trimesh {
                 mesh_handle_index: h.index(),
+                mesh_handle_generation: h.generation(),
             },
             ColliderShape::ConvexHull(h) => ShapeRepr::ConvexHull {
                 mesh_handle_index: h.index(),
+                mesh_handle_generation: h.generation(),
             },
             ColliderShape::Heightfield(h) => ShapeRepr::Heightfield {
                 rows: h.rows,
@@ -102,10 +106,12 @@ impl<'de> Deserialize<'de> for ColliderShape {
             },
             Trimesh {
                 mesh_handle_index: u32,
+                mesh_handle_generation: u32,
             },
             #[serde(rename = "ConvexHull")]
             ConvexHull {
                 mesh_handle_index: u32,
+                mesh_handle_generation: u32,
             },
             Heightfield {
                 rows: u32,
@@ -126,12 +132,20 @@ impl<'de> Deserialize<'de> for ColliderShape {
                 half_height,
                 radius,
             ))),
-            ShapeRepr::Trimesh { mesh_handle_index } => {
-                Ok(ColliderShape::Trimesh(MeshHandle::new(mesh_handle_index)))
-            }
-            ShapeRepr::ConvexHull { mesh_handle_index } => Ok(ColliderShape::ConvexHull(
-                MeshHandle::new(mesh_handle_index),
-            )),
+            ShapeRepr::Trimesh {
+                mesh_handle_index,
+                mesh_handle_generation,
+            } => Ok(ColliderShape::Trimesh(MeshHandle::from_raw(
+                mesh_handle_index,
+                mesh_handle_generation,
+            ))),
+            ShapeRepr::ConvexHull {
+                mesh_handle_index,
+                mesh_handle_generation,
+            } => Ok(ColliderShape::ConvexHull(MeshHandle::from_raw(
+                mesh_handle_index,
+                mesh_handle_generation,
+            ))),
             ShapeRepr::Heightfield {
                 rows,
                 cols,

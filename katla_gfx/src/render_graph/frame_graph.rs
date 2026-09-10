@@ -30,7 +30,7 @@ pub(super) struct FrameParams {
     pub particle_emit_workgroup_count: u32,
     pub particle_simulate_workgroup_count: u32,
     pub animation_skeleton_count: u32,
-    pub skeleton_copy_commands: Vec<(u32, u32, u32)>,
+    pub skeleton_copy_commands: Vec<(crate::handle::SkeletonHandle, u32, u32)>,
 }
 
 impl Default for FrameParams {
@@ -575,7 +575,10 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
     }
 
     /// Set skeleton copy commands for this frame.
-    pub fn set_skeleton_copy_commands(&mut self, commands: Vec<(u32, u32, u32)>) {
+    pub fn set_skeleton_copy_commands(
+        &mut self,
+        commands: Vec<(crate::handle::SkeletonHandle, u32, u32)>,
+    ) {
         self.params.skeleton_copy_commands = commands;
     }
 

@@ -42,7 +42,7 @@ impl MetalRenderer {
 
     pub(crate) fn update_ui_font_atlas_impl(&mut self, width: u32, height: u32, data: &[u8]) {
         if let Some(atlas_handle) = self.ui_font_atlas {
-            if let Some(entry) = self.textures.get(atlas_handle.index()) {
+            if let Some(entry) = self.textures.get(atlas_handle) {
                 let view = &entry._view;
                 let atlas_texture = entry.texture.clone();
                 let atlas_format = atlas_texture.format();

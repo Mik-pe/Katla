@@ -11,7 +11,7 @@ use crate::backend::command::{
     ShaderStages,
 };
 use crate::error::RendererError;
-use crate::handle::ResourceStorage;
+use crate::handle::{ResourceStorage, SkeletonMarker};
 use crate::pipeline::CompareOp;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::shadow::{CascadeParams, CascadeShadowMap};
@@ -185,7 +185,7 @@ pub(crate) fn render_cascades(
     cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
     shadow_pipeline: &MetalGraphicsPipeline,
     shadow_pipeline_skinned: Option<&MetalGraphicsPipeline>,
-    skeleton_buffers: Option<&ResourceStorage<MetalBuffer>>,
+    skeleton_buffers: Option<&ResourceStorage<MetalBuffer, SkeletonMarker>>,
     shadow_map_view: &MetalTextureView,
     shadow_resolution: u32,
     frame_uniform_buffer: &MetalBuffer,
@@ -193,8 +193,11 @@ pub(crate) fn render_cascades(
     shadow_cascade_buffer: &MetalBuffer,
     buffer_sizes: Option<&MetalBuffer>,
     cascade_count: u32,
-    meshes: &ResourceStorage<super::metal_renderer::MetalMesh>,
-    materials: &ResourceStorage<super::metal_renderer::MetalMaterial>,
+    meshes: &ResourceStorage<super::metal_renderer::MetalMesh, crate::handle::MeshMarker>,
+    materials: &ResourceStorage<
+        super::metal_renderer::MetalMaterial,
+        crate::handle::MaterialMarker,
+    >,
     draw_list: &crate::renderer::types::DrawList,
 ) {
     let render_pass_info = RenderPassInfo {
@@ -273,10 +276,13 @@ fn encode_cascade_draws(
     encoder: &mut super::render_encoder::MetalRenderEncoder,
     shadow_pipeline: &MetalGraphicsPipeline,
     shadow_pipeline_skinned: Option<&MetalGraphicsPipeline>,
-    skeleton_buffers: Option<&ResourceStorage<MetalBuffer>>,
+    skeleton_buffers: Option<&ResourceStorage<MetalBuffer, SkeletonMarker>>,
     object_storage_buffer: &MetalBuffer,
-    meshes: &ResourceStorage<super::metal_renderer::MetalMesh>,
-    materials: &ResourceStorage<super::metal_renderer::MetalMaterial>,
+    meshes: &ResourceStorage<super::metal_renderer::MetalMesh, crate::handle::MeshMarker>,
+    materials: &ResourceStorage<
+        super::metal_renderer::MetalMaterial,
+        crate::handle::MaterialMarker,
+    >,
     draw_list: &crate::renderer::types::DrawList,
 ) {
     for draw in &draw_list.draws {
@@ -287,14 +293,14 @@ fn encode_cascade_draws(
         if draw.is_billboard {
             continue;
         }
-        let Some(mesh) = meshes.get(draw.mesh.index()) else {
+        let Some(mesh) = meshes.get(draw.mesh) else {
             continue;
         };
         // An empty dynamic mesh draws nothing.
         if mesh.index_count == 0 {
             continue;
         }
-        let Some(material) = materials.get(draw.material.index()) else {
+        let Some(material) = materials.get(draw.material) else {
             continue;
         };
         let Some(ref _pipeline) = material.pipeline else {
@@ -305,8 +311,7 @@ fn encode_cascade_draws(
         if is_skinned {
             let skinned = shadow_pipeline_skinned.expect("checked is_skinned above");
             encoder.bind_graphics_pipeline(skinned);
-            if let Some(skeleton_buf) = skeleton_buffers.and_then(|s| s.get(draw.skeleton.index()))
-            {
+            if let Some(skeleton_buf) = skeleton_buffers.and_then(|s| s.get(draw.skeleton)) {
                 // shadow_depth_skinned maps joint_matrices to [[buffer(4)]].
                 encoder.bind_storage_buffer(skeleton_buf, 0, 4, ShaderStages::VERTEX);
             }

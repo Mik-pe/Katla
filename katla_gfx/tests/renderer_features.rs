@@ -140,7 +140,7 @@ impl GpuRenderer for MockRenderer {
         U: MeshIndexElement,
     {
         self.record("create_mesh");
-        Ok(MeshHandle::new(0))
+        Ok(MeshHandle::from_raw(0, 0))
     }
 
     fn create_mesh_dynamic(
@@ -150,7 +150,7 @@ impl GpuRenderer for MockRenderer {
         _indices: &[u32],
     ) -> Result<MeshHandle, RendererError> {
         self.record("create_mesh_dynamic");
-        Ok(MeshHandle::new(1))
+        Ok(MeshHandle::from_raw(1, 0))
     }
 
     fn update_mesh_dynamic(
@@ -170,12 +170,12 @@ impl GpuRenderer for MockRenderer {
         _data: &[u8],
     ) -> Result<TextureHandle, RendererError> {
         self.record("create_texture");
-        Ok(TextureHandle::new(0))
+        Ok(TextureHandle::from_raw(0, 0))
     }
 
     fn create_texture_solid(&mut self, _color: [u8; 4]) -> Result<TextureHandle, RendererError> {
         self.record("create_texture_solid");
-        Ok(TextureHandle::new(1))
+        Ok(TextureHandle::from_raw(1, 0))
     }
 
     fn get_bindless_slot(&self, _handle: TextureHandle) -> Option<u32> {
@@ -191,7 +191,7 @@ impl GpuRenderer for MockRenderer {
     }
 
     fn default_texture(&self) -> TextureHandle {
-        TextureHandle::new(0)
+        TextureHandle::from_raw(0, 0)
     }
 
     fn compile_material(
@@ -199,7 +199,7 @@ impl GpuRenderer for MockRenderer {
         _descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
         self.record("compile_material");
-        Ok(MaterialHandle::new(0))
+        Ok(MaterialHandle::from_raw(0, 0))
     }
 
     fn set_material_texture_indices(&mut self, _material: MaterialHandle, _indices: [u32; 4]) {
@@ -211,7 +211,7 @@ impl GpuRenderer for MockRenderer {
     }
 
     fn default_material(&self) -> MaterialHandle {
-        MaterialHandle::new(0)
+        MaterialHandle::from_raw(0, 0)
     }
 
     fn recompile_materials_for_shader(&mut self, _shader_path: &std::path::Path) -> usize {
@@ -279,7 +279,7 @@ impl GpuRenderer for MockRenderer {
 
     fn create_skeleton(&mut self, _joint_count: usize) -> Result<SkeletonHandle, RendererError> {
         self.record("create_skeleton");
-        Ok(SkeletonHandle::new(0))
+        Ok(SkeletonHandle::from_raw(0, 0))
     }
 
     fn update_skeleton(&mut self, _handle: SkeletonHandle, _matrices: &[[f32; 16]]) {
@@ -299,7 +299,7 @@ impl GpuRenderer for MockRenderer {
         _data: &[u8],
     ) -> Result<TextureHandle, RendererError> {
         self.record("create_ui_font_atlas");
-        Ok(TextureHandle::new(2))
+        Ok(TextureHandle::from_raw(2, 0))
     }
 
     fn update_ui_font_atlas(&mut self, _width: u32, _height: u32, _data: &[u8]) {
@@ -364,7 +364,7 @@ fn test_unsupported_operations_fail_explicitly_without_mutation() {
     assert!(unsupported_message(&error).contains("particle"));
 
     let error = renderer
-        .update_texture(TextureHandle::new(0), &[])
+        .update_texture(TextureHandle::from_raw(0, 0), &[])
         .unwrap_err();
     assert!(unsupported_message(&error).contains("update_texture"));
 
@@ -390,7 +390,7 @@ fn test_required_operations_reach_explicit_implementations() {
     renderer.update_shadows([0.0, 1.0, 0.0]);
     renderer.upload_shadow_cascades();
     renderer.set_viewport_bindless_slot(3);
-    renderer.set_ui_material(MaterialHandle::new(0));
+    renderer.set_ui_material(MaterialHandle::from_raw(0, 0));
     renderer.render_ui_pass(UIDrawList::default());
     renderer.set_viewport_panel_rect(None);
     renderer.recreate_scene_render_targets(64, 48);
@@ -429,6 +429,6 @@ fn test_timestamp_hooks_stay_silent_when_unsupported() {
 #[test]
 fn test_mesh_index_format_absent_is_explicit() {
     let renderer = MockRenderer::new();
-    assert_eq!(renderer.mesh_index_format(MeshHandle::new(0)), None);
-    let _: Option<IndexType> = renderer.mesh_index_format(MeshHandle::new(0));
+    assert_eq!(renderer.mesh_index_format(MeshHandle::from_raw(0, 0)), None);
+    let _: Option<IndexType> = renderer.mesh_index_format(MeshHandle::from_raw(0, 0));
 }

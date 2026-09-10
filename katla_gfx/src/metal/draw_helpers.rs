@@ -114,11 +114,11 @@ impl MetalRenderer {
         );
         let stages = ShaderStages::VERTEX_FRAGMENT;
         for (i, draw) in draw_list.draws.iter().enumerate() {
-            let Some(mesh) = self.meshes.get(draw.mesh.index()) else {
+            let Some(mesh) = self.meshes.get(draw.mesh) else {
                 log::warn!("Draw {}: mesh index {} not found", i, draw.mesh.index());
                 continue;
             };
-            let Some(material) = self.materials.get(draw.material.index()) else {
+            let Some(material) = self.materials.get(draw.material) else {
                 log::warn!(
                     "Draw {}: material index {} not found",
                     i,
@@ -149,7 +149,7 @@ impl MetalRenderer {
             encoder.bind_graphics_pipeline(pipeline);
 
             if !draw.skeleton.is_none()
-                && let Some(skeleton_buf) = self.skeletons.get(draw.skeleton.index())
+                && let Some(skeleton_buf) = self.skeletons.get(draw.skeleton)
             {
                 encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
             }

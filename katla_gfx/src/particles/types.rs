@@ -308,27 +308,6 @@ impl Default for EmitterConfig {
     }
 }
 
-/// Handle to an emitter in the global particle system.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct EmitterHandle {
-    index: u32,
-}
-
-impl EmitterHandle {
-    /// Invalid emitter handle
-    pub const NONE: Self = Self { index: u32::MAX };
-
-    /// Create a new emitter handle from index
-    pub fn new(index: u32) -> Self {
-        Self { index }
-    }
-
-    /// Get the emitter index
-    pub fn index(&self) -> u32 {
-        self.index
-    }
-}
-
 /// Per-emitter runtime state (not uploaded to GPU).
 #[derive(Clone, Default)]
 pub(crate) struct EmitterState {

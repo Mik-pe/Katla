@@ -4,7 +4,7 @@
 //! textures using opaque TextureHandle values. It also manages default textures
 //! for common use cases.
 
-use crate::handle::{ResourceStorage, TextureHandle};
+use crate::handle::{ResourceStorage, TextureHandle, TextureMarker};
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
 use ash::vk;
@@ -30,7 +30,7 @@ pub(crate) const DEFAULT_EMISSION_SLOT: u32 = 4;
 /// - Optional bindless slot tracking
 pub struct TextureManager {
     /// Storage for all textures.
-    textures: ResourceStorage<Rc<Texture>>,
+    textures: ResourceStorage<Rc<Texture>, TextureMarker>,
     /// Vulkan context for texture creation.
     context: Rc<VulkanContext>,
     /// Pre-created default textures.
@@ -81,12 +81,12 @@ impl TextureManager {
 
     /// Helper to create a default texture and return its handle.
     fn create_default_texture(
-        textures: &mut ResourceStorage<Rc<Texture>>,
+        textures: &mut ResourceStorage<Rc<Texture>, TextureMarker>,
         context: &Rc<VulkanContext>,
         create_fn: fn(Rc<VulkanContext>) -> Texture,
     ) -> TextureHandle {
         let texture = Rc::new(create_fn(context.clone()));
-        TextureHandle::new(textures.insert(texture))
+        textures.insert(texture)
     }
 
     // ========================================================================
@@ -110,7 +110,7 @@ impl TextureManager {
         data: &[u8],
     ) -> Result<TextureHandle, crate::error::RendererError> {
         let texture = Rc::new(Texture::from_descriptor(&self.context, desc, data)?);
-        Ok(TextureHandle::new(self.textures.insert(texture)))
+        Ok(self.textures.insert(texture))
     }
 
     /// Create an RGBA8 SRGB texture from pixel data.
@@ -232,24 +232,22 @@ impl TextureManager {
     /// This returns a clone of the Rc, allowing the caller to keep the texture alive.
     /// Use this for legacy code that needs Rc<Texture>.
     pub fn get_texture_rc(&self, handle: TextureHandle) -> Option<Rc<Texture>> {
-        self.textures.get(handle.index()).cloned()
+        self.textures.get(handle).cloned()
     }
 
     /// Get a reference to the Texture for a handle.
     pub fn get_texture(&self, handle: TextureHandle) -> Option<&Texture> {
-        self.textures.get(handle.index()).map(|rc| rc.as_ref())
+        self.textures.get(handle).map(|rc| rc.as_ref())
     }
 
     /// Get a mutable reference to the Texture for a handle.
     pub fn get_texture_mut(&mut self, handle: TextureHandle) -> Option<&mut Texture> {
-        self.textures
-            .get_mut(handle.index())
-            .and_then(|rc| Rc::get_mut(rc))
+        self.textures.get_mut(handle).and_then(|rc| Rc::get_mut(rc))
     }
 
     /// Check if a handle points to a valid texture.
     pub fn contains(&self, handle: TextureHandle) -> bool {
-        self.textures.contains(handle.index())
+        self.textures.contains(handle)
     }
 
     /// Get the number of textures stored.
@@ -420,16 +418,9 @@ impl TextureManager {
     /// ```
     pub fn list_unregistered_textures(&self) -> Vec<TextureHandle> {
         self.textures
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, _)| {
-                let handle = TextureHandle::new(idx as u32);
-                if !self.bindless_slots.contains_key(&handle) {
-                    Some(handle)
-                } else {
-                    None
-                }
-            })
+            .iter_enumerated()
+            .filter(|(handle, _)| !self.bindless_slots.contains_key(handle))
+            .map(|(handle, _)| handle)
             .collect()
     }
 
@@ -490,14 +481,16 @@ impl TextureManager {
     pub fn destroy(&mut self, handle: TextureHandle) -> bool {
         // Also remove from bindless tracking
         self.bindless_slots.remove(&handle);
-        self.textures.remove(handle.index()).is_some()
+        self.textures.remove(handle).is_some()
     }
 
     /// Clear all textures except defaults.
     ///
     /// Default textures are always kept alive.
     pub fn clear(&mut self) {
-        // Collect handles to remove (everything except defaults)
+        // Remove every non-default texture individually so removed slots bump
+        // their generations (stale handles stay invalid) while the default
+        // textures keep their slots and stay valid under existing handles.
         let defaults = [
             self.default_white,
             self.default_normal,
@@ -506,17 +499,18 @@ impl TextureManager {
             self.default_emission,
         ];
 
-        // Clear bindless tracking
+        // Clear bindless tracking; defaults re-register below.
         self.bindless_slots.clear();
 
-        // Rebuild storage with only defaults
-        let mut new_storage = ResourceStorage::new();
-        for default_handle in defaults {
-            if let Some(texture) = self.textures.remove(default_handle.index()) {
-                let _ = new_storage.insert(texture);
-            }
+        let non_defaults: Vec<TextureHandle> = self
+            .textures
+            .iter_enumerated()
+            .map(|(handle, _)| handle)
+            .filter(|handle| !defaults.contains(handle))
+            .collect();
+        for handle in non_defaults {
+            self.textures.remove(handle);
         }
-        self.textures = new_storage;
     }
 
     /// Get an iterator over all textures.
