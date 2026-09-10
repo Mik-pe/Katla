@@ -1,8 +1,6 @@
 use super::*;
 use crate::error::RendererError;
 
-use types::EmitterState;
-
 impl GlobalParticleSystem {
     pub fn create_emitter(
         &mut self,
@@ -19,43 +17,19 @@ impl GlobalParticleSystem {
             )));
         }
 
-        let index = self
-            .emitter_pool
-            .free_slots
-            .pop()
-            .unwrap_or(self.emitter_pool.next_slot);
-        if index >= self.emitter_pool.next_slot {
-            self.emitter_pool.next_slot = index + 1;
-        }
-
-        if self.emitter_pool.emitters.len() <= index as usize {
-            self.emitter_pool
-                .emitters
-                .resize(index as usize + 1, EmitterConfig::default());
-        }
-        if self.emitter_pool.emitter_states.len() <= index as usize {
-            self.emitter_pool
-                .emitter_states
-                .resize(index as usize + 1, EmitterState::default());
-        }
-
-        self.emitter_pool.emitters[index as usize] = config;
+        let handle = self.emitter_pool.insert(config);
         self.recompute_estimated_max_alive();
-
-        self.emitter_pool.emitter_states[index as usize] = EmitterState::default();
-
         log::debug!(
-            "Created particle emitter {} at position {:?}",
-            index,
+            "Created particle emitter {} (generation {}) at position {:?}",
+            handle.index(),
+            handle.generation(),
             config.position
         );
-
-        Ok(EmitterHandle::new(index))
+        Ok(handle)
     }
 
     pub fn update_emitter(&mut self, handle: EmitterHandle, config: EmitterConfig) {
-        if handle.index() < self.emitter_pool.emitters.len() as u32 {
-            self.emitter_pool.emitters[handle.index() as usize] = config;
+        if self.emitter_pool.update(handle, config) {
             self.recompute_estimated_max_alive();
         } else {
             warn!("Invalid emitter handle: {:?}", handle);
@@ -63,8 +37,7 @@ impl GlobalParticleSystem {
     }
 
     pub fn burst(&mut self, handle: EmitterHandle, count: u32) -> Result<(), RendererError> {
-        if handle.index() < self.emitter_pool.emitter_states.len() as u32 {
-            self.emitter_pool.emitter_states[handle.index() as usize].burst_count = count;
+        if self.emitter_pool.burst(handle, count) {
             log::debug!("Burst {} particles from emitter {}", count, handle.index());
             Ok(())
         } else {
@@ -76,16 +49,8 @@ impl GlobalParticleSystem {
     }
 
     pub fn destroy_emitter(&mut self, handle: EmitterHandle, kill_all: bool) {
-        if handle.index() < self.emitter_pool.emitters.len() as u32 {
-            self.emitter_pool.emitters[handle.index() as usize] = EmitterConfig {
-                emit_rate: 0.0,
-                kill_all: if kill_all { 1 } else { 0 },
-                ..Default::default()
-            };
-            if handle.index() < self.emitter_pool.emitter_states.len() as u32 {
-                self.emitter_pool.emitter_states[handle.index() as usize] = EmitterState::default();
-            }
-            self.emitter_pool.free_slots.push(handle.index());
+        if self.emitter_pool.remove(handle, kill_all) {
+            self.recompute_estimated_max_alive();
             log::info!(
                 "Destroyed particle emitter {} (kill_all={})",
                 handle.index(),

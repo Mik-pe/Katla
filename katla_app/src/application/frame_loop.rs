@@ -457,15 +457,16 @@ impl Application {
                 .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
 
             // Build per-entity skeleton copy commands:
-            // (skeleton_handle_index, joint_offset, joint_count)
+            // (skeleton_handle, joint_offset, joint_count)
             use crate::components::DrawableComponent;
             let mut copy_cmds = Vec::new();
             for entity in gpu_anim.entities() {
                 if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity)
                     && let Some(info) = gpu_anim.entity_info(entity)
+                    && drawable.skeleton_handle.is_some()
                 {
                     copy_cmds.push((
-                        drawable.skeleton_handle.index(),
+                        drawable.skeleton_handle,
                         info.joint_offset,
                         info.joint_count,
                     ));

@@ -190,7 +190,7 @@ impl Build for AssetBrowserView {
 
             let icon_content = match &asset.thumbnail_state {
                 ThumbnailState::Loaded { texture_handle } => image(
-                    TextureId::from_handle_index(texture_handle.index()),
+                    TextureId::from_handle(texture_handle.index(), texture_handle.generation()),
                     katla_math::Color::WHITE,
                 )
                 .boxed(),

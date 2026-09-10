@@ -208,7 +208,9 @@ impl fmt::Display for RenderGraphError {
             Self::PipelineNotSet(name) => write!(f, "Pipeline not set for pass '{}'", name),
             Self::BackendError(msg) => write!(f, "Backend error: {}", msg),
             Self::NotCompiled => write!(f, "Render graph has not been compiled"),
-            Self::InvalidMeshHandle(handle) => write!(f, "Invalid mesh handle: {}", handle.index()),
+            Self::InvalidMeshHandle(handle) => {
+                write!(f, "Invalid mesh handle: {}", handle.index())
+            }
             Self::InvalidMaterialHandle(handle) => {
                 write!(f, "Invalid material handle: {}", handle.index())
             }

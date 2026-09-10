@@ -96,7 +96,10 @@ impl AnyFrameGraph {
         }
     }
 
-    pub fn set_skeleton_copy_commands(&mut self, commands: Vec<(u32, u32, u32)>) {
+    pub fn set_skeleton_copy_commands(
+        &mut self,
+        commands: Vec<(crate::handle::SkeletonHandle, u32, u32)>,
+    ) {
         match self {
             AnyFrameGraph::Vulkan(fg) => fg.set_skeleton_copy_commands(commands),
             #[cfg(target_os = "macos")]

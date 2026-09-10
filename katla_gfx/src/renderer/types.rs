@@ -692,8 +692,8 @@ mod tests {
 
     #[test]
     fn test_draw_call_creation() {
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
 
         let draw = DrawCall::new(mesh, material);
 
@@ -703,8 +703,8 @@ mod tests {
 
     #[test]
     fn test_draw_call_builder() {
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
         let model = [
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
@@ -736,8 +736,8 @@ mod tests {
         assert!(list.is_empty());
         assert_eq!(list.len(), 0);
 
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
 
         list.push(DrawCall::new(mesh, material));
 
@@ -748,8 +748,8 @@ mod tests {
     #[test]
     fn test_draw_list_sorting() {
         let mut list = DrawList::new();
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
 
         list.push(DrawCall::new(mesh, material).with_sort_key(3));
         list.push(DrawCall::new(mesh, material).with_sort_key(1));
@@ -765,8 +765,8 @@ mod tests {
     #[test]
     fn test_push_assigns_unique_object_slots() {
         let mut list = DrawList::new();
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
 
         assert_eq!(list.push(DrawCall::new(mesh, material)), 1);
         assert_eq!(list.push(DrawCall::new(mesh, material)), 2);
@@ -790,8 +790,8 @@ mod tests {
     #[test]
     fn test_sorting_preserves_assigned_object_slots() {
         let mut list = DrawList::new();
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
 
         let first = list.push(DrawCall::new(mesh, material).with_sort_key(2));
         let second = list.push(DrawCall::new(mesh, material).with_sort_key(1));
@@ -806,8 +806,8 @@ mod tests {
     #[test]
     fn test_from_draws_preserves_slots_and_continues_allocation() {
         let mut source = DrawList::new();
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
 
         let instanced = DrawCall::instanced(
             mesh,
@@ -835,8 +835,8 @@ mod tests {
     fn test_extend_keeps_moved_slots_and_continues_allocation() {
         let mut first = DrawList::new();
         let mut second = DrawList::new();
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
 
         let a = first.push(DrawCall::new(mesh, material));
         let b = second.push(DrawCall::new(mesh, material));
@@ -854,8 +854,8 @@ mod tests {
     #[test]
     fn test_draw_list_into_iter() {
         let mut list = DrawList::new();
-        let mesh = MeshHandle::new(0);
-        let material = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
 
         list.push(DrawCall::new(mesh, material));
         list.push(DrawCall::new(mesh, material));
@@ -866,9 +866,9 @@ mod tests {
 
     #[test]
     fn test_compute_sort_key_opaque() {
-        let mat1 = MaterialHandle::new(1);
-        let mat2 = MaterialHandle::new(2);
-        let mesh = MeshHandle::new(0);
+        let mat1 = MaterialHandle::from_raw(1, 0);
+        let mat2 = MaterialHandle::from_raw(2, 0);
+        let mesh = MeshHandle::from_raw(0, 0);
 
         // For opaque: material grouping takes priority
         let key_near = compute_sort_key(mat1, mesh, 10.0, false);
@@ -884,8 +884,8 @@ mod tests {
 
     #[test]
     fn test_compute_sort_key_transparent() {
-        let mat = MaterialHandle::new(0);
-        let mesh = MeshHandle::new(0);
+        let mat = MaterialHandle::from_raw(0, 0);
+        let mesh = MeshHandle::from_raw(0, 0);
 
         // For transparent: back-to-front, far objects first
         let key_near = compute_sort_key(mat, mesh, 10.0, true);
@@ -909,8 +909,8 @@ mod tests {
     #[test]
     fn test_draw_list_compute_sort_keys() {
         let mut list = DrawList::new();
-        let mesh = MeshHandle::new(0);
-        let mat = MaterialHandle::new(0);
+        let mesh = MeshHandle::from_raw(0, 0);
+        let mat = MaterialHandle::from_raw(0, 0);
 
         // Identity matrix at origin
         let model = [

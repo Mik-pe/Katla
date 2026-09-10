@@ -436,7 +436,7 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
 
     // Register the viewport texture if it exists
     if let Some(texture_id) = viewport_texture_id {
-        let texture_handle = katla_gfx::TextureHandle::new(texture_id.0 as u32);
+        let texture_handle = katla_gfx::TextureHandle::from_raw(texture_id.0 as u32, 0);
         ui_renderer.register_texture(texture_id, texture_handle);
     }
 

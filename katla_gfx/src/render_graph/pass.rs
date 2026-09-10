@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn test_pass_desc_with_pipeline() {
         let desc = PassDesc::new("test", PassType::Graphics, vec![], vec![rid(1)])
-            .with_pipeline(crate::handle::PipelineHandle::new(42));
+            .with_pipeline(crate::handle::PipelineHandle::from_raw(42, 0));
 
         assert_eq!(desc.pipeline.unwrap().index(), 42);
     }

@@ -24,12 +24,11 @@ impl MetalRenderer {
         }
         buffer.unmap();
 
-        let id = self.skeletons.insert(buffer);
-        Ok(SkeletonHandle::new(id))
+        Ok(self.skeletons.insert(buffer))
     }
 
     pub(crate) fn update_skeleton_impl(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        let Some(buffer) = self.skeletons.get_mut(handle.index()) else {
+        let Some(buffer) = self.skeletons.get_mut(handle) else {
             return;
         };
         let max_matrices = (buffer.size() / 64) as usize;
@@ -44,6 +43,6 @@ impl MetalRenderer {
     }
 
     pub(crate) fn destroy_skeleton_impl(&mut self, handle: SkeletonHandle) {
-        self.skeletons.remove(handle.index());
+        self.skeletons.remove(handle);
     }
 }

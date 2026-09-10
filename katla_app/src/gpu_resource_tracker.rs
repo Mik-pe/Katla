@@ -14,10 +14,10 @@ use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 /// reference count. Resources are only destroyed when their ref count drops to zero.
 /// The default material is protected and never destroyed.
 pub struct GpuResourceTracker {
-    mesh_refs: HashMap<u32, u32>,
-    material_refs: HashMap<u32, u32>,
-    texture_refs: HashMap<u32, u32>,
-    skeleton_refs: HashMap<u32, u32>,
+    mesh_refs: HashMap<MeshHandle, u32>,
+    material_refs: HashMap<MaterialHandle, u32>,
+    texture_refs: HashMap<TextureHandle, u32>,
+    skeleton_refs: HashMap<SkeletonHandle, u32>,
     /// Material handle that must never be destroyed (default PBR material).
     protected_material: MaterialHandle,
 }
@@ -55,17 +55,17 @@ impl GpuResourceTracker {
         material: MaterialHandle,
         skeleton: SkeletonHandle,
     ) {
-        *self.mesh_refs.entry(mesh.index()).or_insert(0) += 1;
-        *self.material_refs.entry(material.index()).or_insert(0) += 1;
+        *self.mesh_refs.entry(mesh).or_insert(0) += 1;
+        *self.material_refs.entry(material).or_insert(0) += 1;
         if !skeleton.is_none() {
-            *self.skeleton_refs.entry(skeleton.index()).or_insert(0) += 1;
+            *self.skeleton_refs.entry(skeleton).or_insert(0) += 1;
         }
     }
 
     /// Track a texture handle (increment ref count).
     pub fn track_texture(&mut self, texture: TextureHandle) {
         if !texture.is_none() {
-            *self.texture_refs.entry(texture.index()).or_insert(0) += 1;
+            *self.texture_refs.entry(texture).or_insert(0) += 1;
         }
     }
 
@@ -82,16 +82,16 @@ impl GpuResourceTracker {
     ) -> GpuResourcesToDestroy {
         let mut to_destroy = GpuResourcesToDestroy::default();
 
-        if Self::release_ref(&mut self.mesh_refs, mesh.index()) {
+        if Self::release_ref(&mut self.mesh_refs, mesh) {
             to_destroy.meshes.push(mesh);
         }
 
         let is_protected = material == self.protected_material || material.is_none();
-        if !is_protected && Self::release_ref(&mut self.material_refs, material.index()) {
+        if !is_protected && Self::release_ref(&mut self.material_refs, material) {
             to_destroy.materials.push(material);
         }
 
-        if !skeleton.is_none() && Self::release_ref(&mut self.skeleton_refs, skeleton.index()) {
+        if !skeleton.is_none() && Self::release_ref(&mut self.skeleton_refs, skeleton) {
             to_destroy.skeletons.push(skeleton);
         }
 
@@ -103,7 +103,7 @@ impl GpuResourceTracker {
         if texture.is_none() {
             return false;
         }
-        Self::release_ref(&mut self.texture_refs, texture.index())
+        Self::release_ref(&mut self.texture_refs, texture)
     }
 
     /// Release all tracked resources, returning all handles that should be destroyed.
@@ -112,24 +112,20 @@ impl GpuResourceTracker {
     pub fn release_all(&mut self) -> GpuResourcesToDestroy {
         let mut to_destroy = GpuResourcesToDestroy::default();
 
-        for &idx in self.mesh_refs.keys() {
-            to_destroy.meshes.push(MeshHandle::new(idx));
-        }
+        to_destroy.meshes.extend(self.mesh_refs.keys().copied());
 
-        for &idx in self.material_refs.keys() {
-            let handle = MaterialHandle::new(idx);
+        for &handle in self.material_refs.keys() {
             if handle != self.protected_material {
                 to_destroy.materials.push(handle);
             }
         }
 
-        for &idx in self.texture_refs.keys() {
-            to_destroy.textures.push(TextureHandle::new(idx));
-        }
-
-        for &idx in self.skeleton_refs.keys() {
-            to_destroy.skeletons.push(SkeletonHandle::new(idx));
-        }
+        to_destroy
+            .textures
+            .extend(self.texture_refs.keys().copied());
+        to_destroy
+            .skeletons
+            .extend(self.skeleton_refs.keys().copied());
 
         self.mesh_refs.clear();
         self.material_refs.clear();
@@ -156,19 +152,22 @@ impl GpuResourceTracker {
 
     /// Get the reference count for a specific mesh.
     pub fn mesh_ref_count(&self, handle: MeshHandle) -> u32 {
-        *self.mesh_refs.get(&handle.index()).unwrap_or(&0)
+        *self.mesh_refs.get(&handle).unwrap_or(&0)
     }
 
     /// Get the reference count for a specific material.
     pub fn material_ref_count(&self, handle: MaterialHandle) -> u32 {
-        *self.material_refs.get(&handle.index()).unwrap_or(&0)
+        *self.material_refs.get(&handle).unwrap_or(&0)
     }
 
-    fn release_ref(refs: &mut HashMap<u32, u32>, idx: u32) -> bool {
-        if let Some(count) = refs.get_mut(&idx) {
+    fn release_ref<H: std::hash::Hash + PartialEq + Eq>(
+        refs: &mut HashMap<H, u32>,
+        handle: H,
+    ) -> bool {
+        if let Some(count) = refs.get_mut(&handle) {
             *count = count.saturating_sub(1);
             if *count == 0 {
-                refs.remove(&idx);
+                refs.remove(&handle);
                 return true;
             }
         }
@@ -194,16 +193,16 @@ mod tests {
     use super::*;
 
     fn protected_mat() -> MaterialHandle {
-        MaterialHandle::new(42)
+        MaterialHandle::from_raw(42, 0)
     }
 
     #[test]
     fn test_track_and_release_single() {
         let mut tracker = GpuResourceTracker::new(protected_mat());
 
-        let mesh = MeshHandle::new(1);
-        let mat = MaterialHandle::new(2);
-        let skel = SkeletonHandle::new(3);
+        let mesh = MeshHandle::from_raw(1, 0);
+        let mat = MaterialHandle::from_raw(2, 0);
+        let skel = SkeletonHandle::from_raw(3, 0);
 
         tracker.track_drawable(mesh, mat, skel);
 
@@ -223,8 +222,8 @@ mod tests {
     fn test_shared_resources_not_destroyed_by_single_release() {
         let mut tracker = GpuResourceTracker::new(protected_mat());
 
-        let mesh = MeshHandle::new(1);
-        let mat = MaterialHandle::new(2);
+        let mesh = MeshHandle::from_raw(1, 0);
+        let mat = MaterialHandle::from_raw(2, 0);
 
         // Two entities share the same mesh and material
         tracker.track_drawable(mesh, mat, SkeletonHandle::NONE);
@@ -256,9 +255,16 @@ mod tests {
     fn test_protected_material_never_destroyed() {
         let mut tracker = GpuResourceTracker::new(protected_mat());
 
-        tracker.track_drawable(MeshHandle::new(1), protected_mat(), SkeletonHandle::NONE);
-        let to_destroy =
-            tracker.release_drawable(MeshHandle::new(1), protected_mat(), SkeletonHandle::NONE);
+        tracker.track_drawable(
+            MeshHandle::from_raw(1, 0),
+            protected_mat(),
+            SkeletonHandle::NONE,
+        );
+        let to_destroy = tracker.release_drawable(
+            MeshHandle::from_raw(1, 0),
+            protected_mat(),
+            SkeletonHandle::NONE,
+        );
 
         assert_eq!(to_destroy.meshes.len(), 1);
         assert!(
@@ -272,16 +278,16 @@ mod tests {
         let mut tracker = GpuResourceTracker::new(protected_mat());
 
         tracker.track_drawable(
-            MeshHandle::new(1),
-            MaterialHandle::new(2),
-            SkeletonHandle::new(3),
+            MeshHandle::from_raw(1, 0),
+            MaterialHandle::from_raw(2, 0),
+            SkeletonHandle::from_raw(3, 0),
         );
         tracker.track_drawable(
-            MeshHandle::new(4),
-            MaterialHandle::new(5),
+            MeshHandle::from_raw(4, 0),
+            MaterialHandle::from_raw(5, 0),
             SkeletonHandle::NONE,
         );
-        tracker.track_texture(TextureHandle::new(10));
+        tracker.track_texture(TextureHandle::from_raw(10, 0));
 
         let to_destroy = tracker.release_all();
 
@@ -297,10 +303,14 @@ mod tests {
     fn test_release_all_excludes_protected_material() {
         let mut tracker = GpuResourceTracker::new(protected_mat());
 
-        tracker.track_drawable(MeshHandle::new(1), protected_mat(), SkeletonHandle::NONE);
         tracker.track_drawable(
-            MeshHandle::new(2),
-            MaterialHandle::new(99),
+            MeshHandle::from_raw(1, 0),
+            protected_mat(),
+            SkeletonHandle::NONE,
+        );
+        tracker.track_drawable(
+            MeshHandle::from_raw(2, 0),
+            MaterialHandle::from_raw(99, 0),
             SkeletonHandle::NONE,
         );
 
@@ -316,13 +326,13 @@ mod tests {
         let mut tracker = GpuResourceTracker::new(protected_mat());
 
         tracker.track_drawable(
-            MeshHandle::new(1),
-            MaterialHandle::new(2),
+            MeshHandle::from_raw(1, 0),
+            MaterialHandle::from_raw(2, 0),
             SkeletonHandle::NONE,
         );
         let to_destroy = tracker.release_drawable(
-            MeshHandle::new(1),
-            MaterialHandle::new(2),
+            MeshHandle::from_raw(1, 0),
+            MaterialHandle::from_raw(2, 0),
             SkeletonHandle::NONE,
         );
 
@@ -333,8 +343,8 @@ mod tests {
     fn test_double_release_safe() {
         let mut tracker = GpuResourceTracker::new(protected_mat());
 
-        let mesh = MeshHandle::new(1);
-        let mat = MaterialHandle::new(2);
+        let mesh = MeshHandle::from_raw(1, 0);
+        let mat = MaterialHandle::from_raw(2, 0);
 
         tracker.track_drawable(mesh, mat, SkeletonHandle::NONE);
         let _ = tracker.release_drawable(mesh, mat, SkeletonHandle::NONE);
@@ -346,13 +356,49 @@ mod tests {
     }
 
     #[test]
+    fn test_stale_handle_cannot_release_replacement() {
+        let mut tracker = GpuResourceTracker::new(protected_mat());
+
+        // A mesh is destroyed and its slot reused by a new mesh. The stale
+        // handle (same index, old generation) must not affect the replacement's
+        // refcount or destroy it.
+        let stale = MeshHandle::from_raw(1, 0);
+        tracker.track_drawable(stale, MaterialHandle::from_raw(2, 0), SkeletonHandle::NONE);
+        let _ =
+            tracker.release_drawable(stale, MaterialHandle::from_raw(2, 0), SkeletonHandle::NONE);
+
+        let replacement = MeshHandle::from_raw(1, 1);
+        tracker.track_drawable(
+            replacement,
+            MaterialHandle::from_raw(3, 0),
+            SkeletonHandle::NONE,
+        );
+
+        // Late release with the stale handle: nothing tracked under it.
+        let to_destroy =
+            tracker.release_drawable(stale, MaterialHandle::from_raw(3, 0), SkeletonHandle::NONE);
+        assert!(
+            to_destroy.meshes.is_empty(),
+            "stale release must not destroy the slot's replacement"
+        );
+
+        // The replacement still releases normally.
+        let to_destroy = tracker.release_drawable(
+            replacement,
+            MaterialHandle::from_raw(3, 0),
+            SkeletonHandle::NONE,
+        );
+        assert_eq!(to_destroy.meshes, vec![replacement]);
+    }
+
+    #[test]
     fn test_create_destroy_sequence_counts() {
         let mut tracker = GpuResourceTracker::new(protected_mat());
 
-        let m1 = MeshHandle::new(1);
-        let m2 = MeshHandle::new(2);
-        let m3 = MeshHandle::new(3);
-        let mat = MaterialHandle::new(10);
+        let m1 = MeshHandle::from_raw(1, 0);
+        let m2 = MeshHandle::from_raw(2, 0);
+        let m3 = MeshHandle::from_raw(3, 0);
+        let mat = MaterialHandle::from_raw(10, 0);
 
         tracker.track_drawable(m1, mat, SkeletonHandle::NONE);
         tracker.track_drawable(m2, mat, SkeletonHandle::NONE);

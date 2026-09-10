@@ -23,8 +23,11 @@ pub struct UIRenderer {
     font_atlas_bindless_slot: Option<u32>,
     /// White texture bindless slot index for solid color rendering.
     white_texture_bindless_slot: Option<u32>,
-    /// Maps TextureHandle indices to their bindless texture slots.
-    bindless_slots: HashMap<u32, u32>,
+    /// Maps texture handles to their bindless texture slots.
+    ///
+    /// Keyed by the full generational handle so a stale handle (destroyed
+    /// texture, reused slot) can never resolve to the replacement's slot.
+    bindless_slots: HashMap<TextureHandle, u32>,
 
     // Reusable conversion buffers (cleared each frame, avoids reallocation)
     texture_to_index: HashMap<TextureId, u32>,
@@ -75,14 +78,14 @@ impl UIRenderer {
     /// This tracks which bindless slot a texture was registered to,
     /// allowing lookup by handle index later.
     pub fn register_bindless_slot(&mut self, handle: TextureHandle, slot: u32) {
-        self.bindless_slots.insert(handle.index(), slot);
+        self.bindless_slots.insert(handle, slot);
     }
 
     /// Get the bindless slot for a texture handle.
     ///
     /// Returns None if the texture hasn't been registered with bindless.
     pub fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
-        self.bindless_slots.get(&handle.index()).copied()
+        self.bindless_slots.get(&handle).copied()
     }
 
     /// Convert a `katla_ui::DrawList` to a `katla_gfx::UIDrawList`.
@@ -190,14 +193,14 @@ impl UIRenderer {
                     cmd.offset,
                     cmd.count,
                     cmd.clip_rect,
-                    TextureHandle::new(bindless_index),
+                    TextureHandle::from_raw(bindless_index, 0),
                 )
             } else {
                 UiDrawCommand::vertex(
                     cmd.offset,
                     cmd.count,
                     cmd.clip_rect,
-                    TextureHandle::new(bindless_index),
+                    TextureHandle::from_raw(bindless_index, 0),
                 )
             }
         }));
@@ -258,8 +261,12 @@ impl UIRenderer {
                 id.0
             );
             self.white_texture_bindless_slot.unwrap_or(0)
-        } else if let Some(slot) = self.bindless_slots.get(&(id.0 as u32)) {
-            // TextureId created via from_handle_index — look up bindless slot directly
+        } else if let Some(slot) = self.bindless_slots.get(&TextureHandle::from_raw(
+            (id.0 & 0xFFFF_FFFF) as u32,
+            (id.0 >> 32) as u32,
+        )) {
+            // TextureId created via `TextureId::from_handle`: reconstruct the
+            // full generational handle and resolve its registered slot.
             *slot
         } else {
             // Fallback to white texture slot for unknown textures

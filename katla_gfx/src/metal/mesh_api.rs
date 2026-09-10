@@ -74,8 +74,7 @@ impl MetalRenderer {
             vertex_count: vertices.len() as u32,
             vertex_stride: std::mem::size_of::<T>() as u32,
         };
-        let id = self.meshes.insert(mesh);
-        Ok(MeshHandle::new(id))
+        Ok(self.meshes.insert(mesh))
     }
 
     pub(crate) fn register_mesh_raw_impl(
@@ -133,8 +132,7 @@ impl MetalRenderer {
             vertex_count: descriptor.vertex_count,
             vertex_stride: stride as u32,
         };
-        let id = self.meshes.insert(mesh);
-        Ok(MeshHandle::new(id))
+        Ok(self.meshes.insert(mesh))
     }
 
     /// Update a dynamic mesh with new vertex and index data.
@@ -158,7 +156,7 @@ impl MetalRenderer {
         vertex_count: u32,
         indices: &[u32],
     ) -> Result<(), RendererError> {
-        let Some(m) = self.meshes.get_mut(mesh.index()) else {
+        let Some(m) = self.meshes.get_mut(mesh) else {
             return Err(RendererError::StaleHandle {
                 resource: "mesh".to_string(),
                 detail: format!("{mesh:?} in Metal update_mesh_dynamic"),
