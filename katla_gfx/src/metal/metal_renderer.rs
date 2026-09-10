@@ -16,6 +16,7 @@ use crate::handle::{MaterialHandle, MeshHandle, ResourceStorage, SkeletonHandle,
 
 use crate::renderer::MAX_OBJECTS_PER_FRAME;
 use crate::renderer::gpu_renderer::GpuRenderer;
+use crate::renderer::pipeline_descriptor::PipelineDescriptor;
 use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::types::{DrawList, FrameUniforms, InstanceData};
 use crate::size::Size2D;
@@ -160,7 +161,7 @@ pub(crate) struct MetalMaterial {
     pub(crate) pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     pub(crate) texture_indices: [u32; 4],
     pub(crate) shader_path: Option<String>,
-    pub(crate) vertex_type: Option<String>,
+    pub(crate) descriptor: Option<crate::renderer::pipeline_descriptor::PipelineDescriptor>,
 }
 
 /// A texture stored with its bindless slot.
@@ -511,7 +512,7 @@ impl MetalRenderer {
             pipeline: None,
             texture_indices: [0, 1, 2, 0],
             shader_path: None,
-            vertex_type: None,
+            descriptor: None,
         };
         let id = renderer.materials.insert(default_mat);
         renderer.default_material = Some(MaterialHandle::new(id));
@@ -1324,10 +1325,9 @@ impl GpuRenderer for MetalRenderer {
 
     fn compile_material(
         &mut self,
-        shader_path: &str,
-        vertex_type: &str,
+        descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
-        self.compile_material_impl(shader_path, vertex_type)
+        self.compile_material_impl(descriptor)
     }
 
     fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
@@ -2021,7 +2021,7 @@ mod tests {
 
         // Compile pipelines the same way the app does
         let pbr_material = renderer
-            .compile_material("model_pbr.wgsl", "pbr")
+            .compile_material(&PipelineDescriptor::pbr("model_pbr.wgsl"))
             .expect("Failed to compile PBR material");
         renderer
             .init_sky_pipeline(std::path::Path::new("sky.wgsl"))

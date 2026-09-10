@@ -12,6 +12,7 @@ pub(crate) mod types;
 pub mod any_renderer;
 pub mod features;
 pub mod gpu_renderer;
+pub mod pipeline_descriptor;
 pub mod pipeline_kind;
 
 pub(crate) mod animation_init;
@@ -42,6 +43,10 @@ pub use crate::handle::{
     Handle, MaterialHandle, MeshHandle, PipelineHandle, SkeletonHandle, TextureHandle,
 };
 pub use features::RendererFeature;
+pub use pipeline_descriptor::{
+    BlendMode, DepthState, MetalPipelineOptions, NativePipelineOptions, PipelineDescriptor,
+    PipelineStages, SpecializationValue, VulkanPipelineOptions,
+};
 pub use types::{
     DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
     PointLightGPU, UIDrawList, UiDrawCommand,

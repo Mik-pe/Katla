@@ -62,16 +62,19 @@ impl Application {
                 }
             },
             #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => match self
-                .renderer
-                .compile_material(&unlit_shader_path.to_string_lossy(), "pbr")
-            {
-                Ok(m) => m,
-                Err(e) => {
-                    log::error!("Failed to create gizmo unlit material: {e}");
-                    return;
+            katla_gfx::AnyRenderer::Metal(_) => {
+                match self
+                    .renderer
+                    .compile_material(&katla_gfx::PipelineDescriptor::pbr(
+                        unlit_shader_path.to_string_lossy().into_owned(),
+                    )) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        log::error!("Failed to create gizmo unlit material: {e}");
+                        return;
+                    }
                 }
-            },
+            }
         };
 
         self.gpu_resource_tracker.set_protected_material(material);

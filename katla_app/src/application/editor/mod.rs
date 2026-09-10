@@ -306,7 +306,7 @@ pub fn upload_font_atlas(app: &mut Application) {
     let data = app.ui_context.fonts().atlas_data_rgba();
 
     if was_resized {
-        let atlas_handle = match app.renderer.create_ui_font_atlas(width, height, &data) {
+        let _atlas_handle = match app.renderer.create_ui_font_atlas(width, height, &data) {
             Ok(handle) => handle,
             Err(error) => {
                 log::error!("Font atlas recreation failed: {error}");
@@ -317,7 +317,7 @@ pub fn upload_font_atlas(app: &mut Application) {
         if let Some(bindless_slot) = match &mut app.renderer {
             katla_gfx::AnyRenderer::Vulkan(r) => r.ui_renderer.font_atlas_bindless_slot(),
             #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => app.renderer.get_bindless_slot(atlas_handle),
+            katla_gfx::AnyRenderer::Metal(_) => app.renderer.get_bindless_slot(_atlas_handle),
         } {
             app.editor
                 .ui_renderer

@@ -3,6 +3,7 @@ use objc2_metal::MTLPixelFormat;
 
 use crate::error::RendererError;
 use crate::handle::MaterialHandle;
+use crate::renderer::pipeline_descriptor::PipelineDescriptor;
 
 use super::metal_renderer::{MetalMaterial, MetalRenderer, read_shader};
 use super::shader;
@@ -10,9 +11,29 @@ use super::shader;
 impl MetalRenderer {
     pub(crate) fn compile_material_impl(
         &mut self,
-        shader_path: &str,
-        vertex_type: &str,
+        descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
+        use crate::pipeline::CullMode;
+        use crate::renderer::pipeline_descriptor::PipelineStages;
+        use crate::vertex::VertexLayout;
+
+        descriptor.validate()?;
+        if !descriptor.specialization.is_empty() {
+            return Err(RendererError::UnsupportedFeature(
+                "specialization constants are not yet supported by the Metal backend".to_string(),
+            ));
+        }
+        let PipelineStages::Graphics {
+            vertex_entry,
+            fragment_entry,
+        } = &descriptor.stages
+        else {
+            return Err(RendererError::UnsupportedFeature(
+                "compute pipelines are not yet supported by Metal compile_material".to_string(),
+            ));
+        };
+
+        let shader_path = &descriptor.shader_path;
         let wgsl_source = read_shader(shader_path)?;
 
         log::debug!(
@@ -24,12 +45,9 @@ impl MetalRenderer {
             log::debug!("compile_material: WGSL contains PBR lighting code");
         }
 
-        let entry_points = match vertex_type {
-            "compute" => vec!["cs_main"],
-            _ => vec!["vs_main", "fs_main"],
-        };
+        let entry_points = vec![vertex_entry.as_str(), fragment_entry.as_str()];
 
-        let is_ui = vertex_type == "ui";
+        let is_ui = descriptor.is_ui_layout();
         let profile = if is_ui {
             shader::ShaderProfile::Ui
         } else {
@@ -46,18 +64,17 @@ impl MetalRenderer {
         let vertex_fn = compiled
             .module
             .entry_points
-            .get("vs_main")
-            .or_else(|| compiled.module.entry_points.get("cs_main"))
+            .get(vertex_entry.as_str())
             .ok_or_else(|| {
                 RendererError::InvalidOperation("Vertex entry point not found".into())
             })?;
 
-        let fragment_fn = compiled.module.entry_points.get("fs_main");
+        let fragment_fn = compiled.module.entry_points.get(fragment_entry.as_str());
 
         // Derive the bindless argument-buffer encoder from an actual compiled
         // shader function. This avoids the arbitrary-layout MTLDevice API that
         // raises an Objective-C exception on AppleParavirtDevice.
-        if vertex_type != "compute" && !self.bindless_manager.is_initialized() {
+        if !self.bindless_manager.is_initialized() {
             let fragment_function = fragment_fn.ok_or_else(|| {
                 RendererError::InitializationFailed(
                     "The first Metal graphics material has no fragment function for bindless layout reflection"
@@ -127,8 +144,9 @@ impl MetalRenderer {
             Some(MTLPixelFormat::Depth32Float_Stencil8)
         };
 
-        let is_skinned = vertex_type == "skinned";
-        let is_billboard = vertex_type == "billboard";
+        let is_skinned = descriptor.vertex == VertexLayout::pbr_skinned();
+        let is_billboard =
+            descriptor.vertex == VertexLayout::pbr() && matches!(descriptor.cull, CullMode::None);
 
         let pipeline = if is_ui {
             let vd = super::context::ui_vertex_descriptor();
@@ -202,8 +220,8 @@ impl MetalRenderer {
         let material = MetalMaterial {
             pipeline: Some(pipeline),
             texture_indices: [0, 1, 2, 0],
-            shader_path: Some(shader_path.to_string()),
-            vertex_type: Some(vertex_type.to_string()),
+            shader_path: Some(shader_path.clone()),
+            descriptor: Some(descriptor.clone()),
         };
         let id = self.materials.insert(material);
         let handle = MaterialHandle::new(id);
@@ -262,22 +280,17 @@ impl MetalRenderer {
 
         let count = handles.len();
         for handle in handles {
-            let (shader_path, vertex_type) = {
+            let descriptor = {
                 let Some(mat) = self.materials.get(handle.index()) else {
                     continue;
                 };
-                let sp = match mat.shader_path.as_ref() {
-                    Some(p) => p.clone(),
+                match mat.descriptor.as_ref() {
+                    Some(d) => d.clone(),
                     None => continue,
-                };
-                let vt = match mat.vertex_type.as_ref() {
-                    Some(v) => v.clone(),
-                    None => continue,
-                };
-                (sp, vt)
+                }
             };
 
-            match self.compile_material_impl(&shader_path, &vertex_type) {
+            match self.compile_material_impl(&descriptor) {
                 Ok(new_handle) => {
                     let new_pipeline = self
                         .materials
@@ -290,9 +303,8 @@ impl MetalRenderer {
                 }
                 Err(e) => {
                     log::warn!(
-                        "Failed to recompile material '{}' for shader '{}': {}",
-                        vertex_type,
-                        shader_path,
+                        "Failed to recompile material for shader '{}': {}",
+                        descriptor.shader_path,
                         e
                     );
                 }

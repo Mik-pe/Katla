@@ -47,6 +47,11 @@ pub enum VertexType {
 }
 
 /// Options for material creation.
+///
+/// Vulkan-side compilation inputs. Public callers should build a
+/// backend-neutral [`PipelineDescriptor`](crate::renderer::pipeline_descriptor::PipelineDescriptor)
+/// and call [`GpuRenderer::compile_material`](crate::renderer::GpuRenderer::compile_material);
+/// the trait implementation maps it onto these options.
 #[derive(Clone, Debug)]
 pub struct MaterialOptions {
     pub alpha_blended: bool,
@@ -64,6 +69,15 @@ pub struct MaterialOptions {
     /// Default is true. Set to false for overlays, gizmos, and debug rendering
     /// that should render on top of scene geometry.
     pub depth_test: bool,
+    /// Whether passing fragments write depth. Default is true.
+    pub depth_write: bool,
+    /// Comparison used when depth testing. Default is GreaterOrEqual
+    /// (reversed depth, matching both backends).
+    pub depth_compare: crate::pipeline::CompareOp,
+    /// Vertex shader entry point (convention: `"vs_main"`).
+    pub vertex_entry: String,
+    /// Fragment shader entry point (convention: `"fs_main"`).
+    pub fragment_entry: String,
 }
 
 impl Default for MaterialOptions {
@@ -76,26 +90,10 @@ impl Default for MaterialOptions {
             color_format: ImageFormat::B8G8R8A8Srgb,
             is_compositing: false,
             depth_test: true,
-        }
-    }
-}
-
-impl MaterialOptions {
-    pub fn from_vertex_type_str(s: &str) -> Self {
-        let vertex_type = match s {
-            "ui" => VertexType::Ui,
-            "simple" => VertexType::Simple,
-            "skinned" => VertexType::Skinned,
-            _ => VertexType::Pbr,
-        };
-        Self {
-            vertex_type,
-            color_format: if matches!(vertex_type, VertexType::Ui) {
-                ImageFormat::B8G8R8A8Srgb
-            } else {
-                ImageFormat::Auto
-            },
-            ..Default::default()
+            depth_write: true,
+            depth_compare: crate::pipeline::CompareOp::GreaterOrEqual,
+            vertex_entry: "vs_main".to_string(),
+            fragment_entry: "fs_main".to_string(),
         }
     }
 }
@@ -262,6 +260,10 @@ impl MaterialCompiler {
                 double_sided: options.double_sided,
                 wireframe: options.wireframe,
                 depth_test: options.depth_test,
+                depth_write: options.depth_write,
+                depth_compare: options.depth_compare,
+                vertex_entry: options.vertex_entry.clone(),
+                fragment_entry: options.fragment_entry.clone(),
                 vertex_binding,
                 textures: crate::renderer::registry::MaterialTextures::default(),
                 material_descriptor_set: None,
@@ -271,14 +273,23 @@ impl MaterialCompiler {
             return Ok(registry.register_material(material_asset));
         }
 
-        // 2. Load shaders (WGSL file contains both vert and frag)
+        // 2. Load shaders (WGSL file contains both vert and frag), using the
+        // requested entry points.
         let mut cache = self.shader_cache.borrow_mut();
         let vert_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::VERTEX)
-            .map_err(|e| MaterialError::ShaderCompilation(format!("Vertex shader: {:?}", e)))?;
+            .load_shader_with_entry(
+                shader_path,
+                vk::ShaderStageFlags::VERTEX,
+                &options.vertex_entry,
+            )
+            .map_err(|e| MaterialError::ShaderCompilation(format!("Vertex shader: {e:?}")))?;
         let frag_module = cache
-            .load_shader(shader_path, vk::ShaderStageFlags::FRAGMENT)
-            .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {:?}", e)))?;
+            .load_shader_with_entry(
+                shader_path,
+                vk::ShaderStageFlags::FRAGMENT,
+                &options.fragment_entry,
+            )
+            .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {e:?}")))?;
         drop(cache);
         log::debug!("compile: shaders loaded, building descriptor layouts");
 
@@ -321,6 +332,10 @@ impl MaterialCompiler {
             double_sided: options.double_sided,
             wireframe: options.wireframe,
             depth_test: options.depth_test,
+            depth_write: options.depth_write,
+            depth_compare: options.depth_compare,
+            vertex_entry: options.vertex_entry.clone(),
+            fragment_entry: options.fragment_entry.clone(),
             vertex_binding,
             textures: crate::renderer::registry::MaterialTextures::default(),
             material_descriptor_set: None,
@@ -351,6 +366,10 @@ impl MaterialCompiler {
             double_sided,
             wireframe,
             depth_test,
+            depth_write,
+            depth_compare,
+            vertex_entry,
+            fragment_entry,
         ) = {
             let material = registry.get_material(material_handle).ok_or_else(|| {
                 MaterialError::ShaderCompilation(format!(
@@ -389,17 +408,25 @@ impl MaterialCompiler {
                 material.double_sided,
                 material.wireframe,
                 material.depth_test,
+                material.depth_write,
+                material.depth_compare,
+                material.vertex_entry.clone(),
+                material.fragment_entry.clone(),
             )
         };
 
-        // Load shaders
+        // Load shaders with the stored entry points.
         let mut cache = self.shader_cache.borrow_mut();
         let vert_module = cache
-            .load_shader(&shader_path, vk::ShaderStageFlags::VERTEX)
-            .map_err(|e| MaterialError::ShaderCompilation(format!("Vertex shader: {:?}", e)))?;
+            .load_shader_with_entry(&shader_path, vk::ShaderStageFlags::VERTEX, &vertex_entry)
+            .map_err(|e| MaterialError::ShaderCompilation(format!("Vertex shader: {e:?}")))?;
         let frag_module = cache
-            .load_shader(&shader_path, vk::ShaderStageFlags::FRAGMENT)
-            .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {:?}", e)))?;
+            .load_shader_with_entry(
+                &shader_path,
+                vk::ShaderStageFlags::FRAGMENT,
+                &fragment_entry,
+            )
+            .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {e:?}")))?;
         drop(cache);
 
         // Create options preserving original vertex_type and compositing flag
@@ -411,6 +438,10 @@ impl MaterialCompiler {
             double_sided,
             wireframe,
             depth_test,
+            depth_write,
+            depth_compare,
+            vertex_entry,
+            fragment_entry,
         };
 
         // Build descriptor layouts
@@ -593,16 +624,18 @@ impl MaterialCompiler {
         self.shader_cache.borrow_mut().invalidate(path);
     }
 
-    /// Load a shader module for the given path and stage.
-    pub(crate) fn load_shader(
+    /// Load a shader module for a specific entry point (see
+    /// [`PipelineDescriptor`](crate::renderer::pipeline_descriptor::PipelineDescriptor)).
+    pub(crate) fn load_shader_with_entry(
         &self,
         path: &Path,
         stage: vk::ShaderStageFlags,
+        entry: &str,
     ) -> Result<vk::ShaderModule, MaterialError> {
         self.shader_cache
             .borrow_mut()
-            .load_shader(path, stage)
-            .map_err(|e| MaterialError::ShaderCompilation(format!("{:?}", e)))
+            .load_shader_with_entry(path, stage, entry)
+            .map_err(|e| MaterialError::ShaderCompilation(format!("{e:?}")))
     }
 
     /// Build a pipeline from pre-loaded shader modules.
@@ -714,16 +747,27 @@ impl MaterialCompiler {
         // UI materials use different rendering configuration
         let is_ui = matches!(options.vertex_type, VertexType::Ui);
 
+        // Entry points come from the descriptor (defaults: vs_main/fs_main).
+        let vertex_entry = std::ffi::CString::new(options.vertex_entry.as_str()).map_err(|e| {
+            MaterialError::PipelineCreation(format!("invalid vertex entry point: {e}"))
+        })?;
+        let fragment_entry =
+            std::ffi::CString::new(options.fragment_entry.as_str()).map_err(|e| {
+                MaterialError::PipelineCreation(format!("invalid fragment entry point: {e}"))
+            })?;
+
         // SOA vertex bindings for non-UI materials (separate per-attribute buffers)
         // UI materials keep interleaved binding for dynamic mesh updates
         let mut builder = if is_ui {
             PipelineBuilder::new(self.context.clone())
                 .with_shaders(vert_module, frag_module)
+                .with_entry_points(vertex_entry.as_c_str(), fragment_entry.as_c_str())
                 .with_vertex_binding(vertex_binding.clone())
                 .with_descriptor_layouts(layouts.to_vec())
         } else {
             PipelineBuilder::new(self.context.clone())
                 .with_shaders(vert_module, frag_module)
+                .with_entry_points(vertex_entry.as_c_str(), fragment_entry.as_c_str())
                 .with_vertex_binding_soa(vertex_binding.clone())
                 .with_descriptor_layouts(layouts.to_vec())
         };
@@ -748,16 +792,14 @@ impl MaterialCompiler {
             );
         }
 
-        // Configure render state from options
-        // Disable depth test for UI passes and compositing passes (no depth attachment)
-        // or when the material explicitly opts out (e.g., gizmo overlays)
-        if is_ui || options.is_compositing {
+        // Configure render state from options.
+        // UI and compositing passes have no depth attachment; a disabled
+        // depth test implies no depth writes or comparison (normalised here
+        // so every entry path shares the same effective state).
+        if is_ui || options.is_compositing || !options.depth_test {
             builder = builder.with_depth_test(false, false, crate::pipeline::CompareOp::Always);
-        } else if options.depth_test {
-            builder =
-                builder.with_depth_test(true, true, crate::pipeline::CompareOp::GreaterOrEqual);
         } else {
-            builder = builder.with_depth_test(false, false, crate::pipeline::CompareOp::Always);
+            builder = builder.with_depth_test(true, options.depth_write, options.depth_compare);
         }
 
         if options.double_sided {
