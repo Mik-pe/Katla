@@ -441,6 +441,14 @@ pub struct MaterialAsset {
     pub wireframe: bool,
     /// Whether depth testing is enabled for this material.
     pub depth_test: bool,
+    /// Whether passing fragments write depth.
+    pub depth_write: bool,
+    /// Comparison used when depth testing.
+    pub depth_compare: crate::pipeline::CompareOp,
+    /// Vertex shader entry point (convention: `"vs_main"`).
+    pub vertex_entry: String,
+    /// Fragment shader entry point (convention: `"fs_main"`).
+    pub fragment_entry: String,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
     /// Bindless texture indices for this material.

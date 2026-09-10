@@ -512,12 +512,12 @@ impl Application {
         // Initialize default PBR material via GpuRenderer trait
         let shader_path = self.resources.shader_path("model_pbr.wgsl");
         let shader_str = shader_path.to_string_lossy();
-        self.default_material_handle =
-            self.renderer
-                .compile_material(&shader_str, "pbr")
-                .map_err(|e| AppError::RendererInitFailed {
-                    reason: format!("Failed to create default PBR material: {e}"),
-                })?;
+        self.default_material_handle = self
+            .renderer
+            .compile_material(&katla_gfx::PipelineDescriptor::pbr(shader_str.into_owned()))
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to create default PBR material: {e}"),
+            })?;
 
         // Propagate to the renderer so its default_material() returns the correct handle
         self.renderer
@@ -593,8 +593,9 @@ impl Application {
         let ui_shader_path = self.resources.shader_path("ui/ui.wgsl");
         match self
             .renderer
-            .compile_material(&ui_shader_path.to_string_lossy(), "ui")
-        {
+            .compile_material(&katla_gfx::PipelineDescriptor::ui(
+                ui_shader_path.to_string_lossy().into_owned(),
+            )) {
             Ok(ui_material) => {
                 self.renderer.set_ui_material(ui_material);
                 info!("UI material compiled and set (Metal)");
@@ -771,16 +772,19 @@ impl Application {
                 }
             },
             #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => match self
-                .renderer
-                .compile_material(&shader_path.to_string_lossy(), "billboard")
-            {
-                Ok(m) => m,
-                Err(e) => {
-                    log::error!("Failed to create billboard material: {e}");
-                    return;
+            katla_gfx::AnyRenderer::Metal(_) => {
+                match self
+                    .renderer
+                    .compile_material(&katla_gfx::PipelineDescriptor::billboard(
+                        shader_path.to_string_lossy().into_owned(),
+                    )) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        log::error!("Failed to create billboard material: {e}");
+                        return;
+                    }
                 }
-            },
+            }
         };
 
         self.gpu_resource_tracker.set_protected_material(material);

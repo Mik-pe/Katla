@@ -7,6 +7,7 @@
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::renderer::gpu_renderer::GpuRenderer;
+use crate::renderer::pipeline_descriptor::PipelineDescriptor;
 use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::registry::PrimitiveTopology;
 use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, UIDrawList};
@@ -424,13 +425,12 @@ impl GpuRenderer for AnyRenderer {
 
     fn compile_material(
         &mut self,
-        shader_path: &str,
-        vertex_type: &str,
+        descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
         match self {
-            AnyRenderer::Vulkan(r) => GpuRenderer::compile_material(r, shader_path, vertex_type),
+            AnyRenderer::Vulkan(r) => GpuRenderer::compile_material(r, descriptor),
             #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => GpuRenderer::compile_material(r, shader_path, vertex_type),
+            AnyRenderer::Metal(r) => GpuRenderer::compile_material(r, descriptor),
         }
     }
 

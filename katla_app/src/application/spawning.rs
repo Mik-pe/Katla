@@ -434,15 +434,18 @@ impl super::Application {
         } else {
             self.resources.shader_path("model_pbr.wgsl")
         };
-        let vertex_type_str = if model.has_skinning { "skinned" } else { "pbr" };
         let shader_str = shader_path.to_string_lossy();
-        let material_handle = self
-            .renderer
-            .compile_material(&shader_str, vertex_type_str)
-            .map_err(|e| AppError::ShaderCompileFailed {
+        let descriptor = if model.has_skinning {
+            katla_gfx::PipelineDescriptor::skinned(shader_str.into_owned())
+        } else {
+            katla_gfx::PipelineDescriptor::pbr(shader_str.into_owned())
+        };
+        let material_handle = self.renderer.compile_material(&descriptor).map_err(|e| {
+            AppError::ShaderCompileFailed {
                 path: path_display.clone(),
                 reason: format!("{e}"),
-            })?;
+            }
+        })?;
 
         // 5. Upload textures and set texture indices
         let texture_upload = self.upload_gltf_textures(&model);
