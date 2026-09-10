@@ -772,17 +772,19 @@ impl Application {
                 }
             },
             #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => match self.renderer.compile_material(
-                &katla_gfx::PipelineDescriptor::pbr(shader_path.to_string_lossy().into_owned())
-                    .with_blend(katla_gfx::BlendMode::AlphaBlend)
-                    .with_cull(katla_gfx::CullMode::None),
-            ) {
-                Ok(m) => m,
-                Err(e) => {
-                    log::error!("Failed to create billboard material: {e}");
-                    return;
+            katla_gfx::AnyRenderer::Metal(_) => {
+                match self
+                    .renderer
+                    .compile_material(&katla_gfx::PipelineDescriptor::billboard(
+                        shader_path.to_string_lossy().into_owned(),
+                    )) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        log::error!("Failed to create billboard material: {e}");
+                        return;
+                    }
                 }
-            },
+            }
         };
 
         self.gpu_resource_tracker.set_protected_material(material);

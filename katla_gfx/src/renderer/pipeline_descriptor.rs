@@ -170,7 +170,8 @@ pub struct NativePipelineOptions {
 ///
 /// Build with a canonical constructor ([`PipelineDescriptor::pbr`],
 /// [`PipelineDescriptor::ui`], [`PipelineDescriptor::skinned`],
-/// [`PipelineDescriptor::simple`], [`PipelineDescriptor::compute`]) and tweak
+/// [`PipelineDescriptor::billboard`], [`PipelineDescriptor::simple`],
+/// [`PipelineDescriptor::compute`]) and tweak
 /// with the `with_*` modifiers. Call [`PipelineDescriptor::validate`] before
 /// handing it to [`GpuRenderer::compile_material`](crate::renderer::GpuRenderer::compile_material).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -255,6 +256,25 @@ impl PipelineDescriptor {
             vertex: VertexLayout::position(),
             blend: BlendMode::Opaque,
             cull: CullMode::Back,
+            depth: DepthState::default(),
+            wireframe: false,
+            color_format: ImageFormat::Auto,
+            specialization: BTreeMap::new(),
+            native: NativePipelineOptions::default(),
+        }
+    }
+
+    /// Billboard material: PBR layout, alpha-blended, unculled.
+    ///
+    /// Backends key the billboard pipeline wire-up off PBR layout plus an
+    /// unculled raster state.
+    pub fn billboard(shader_path: impl Into<String>) -> Self {
+        Self {
+            shader_path: shader_path.into(),
+            stages: PipelineStages::graphics(),
+            vertex: VertexLayout::pbr(),
+            blend: BlendMode::AlphaBlend,
+            cull: CullMode::None,
             depth: DepthState::default(),
             wireframe: false,
             color_format: ImageFormat::Auto,
@@ -482,6 +502,9 @@ mod tests {
             .validate()
             .unwrap();
         PipelineDescriptor::skinned("shaders/skinned.wgsl")
+            .validate()
+            .unwrap();
+        PipelineDescriptor::billboard("shaders/billboard.wgsl")
             .validate()
             .unwrap();
         PipelineDescriptor::simple("shaders/simple.wgsl")
