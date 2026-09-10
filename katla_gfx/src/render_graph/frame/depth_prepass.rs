@@ -33,115 +33,18 @@ impl Frame<'_, VulkanRenderer> {
             data.draw_lists.len()
         );
 
-        // Color attachment: R32Uint object-ID texture (cleared to 0 = no object)
-        let color_attachments: Vec<vk::RenderingAttachmentInfo> = pass
-            .writes
-            .iter()
-            .filter_map(|&color_id| {
-                self.graph
-                    .transient_texture_by_id(color_id, frame_idx)
-                    .map(|transient| {
-                        let (load_op, store_op, clear_value) = pass
-                            .color_attachments
-                            .iter()
-                            .find(|(id, ..)| *id == color_id)
-                            .map(|(_, _, load_op, store_op, clear_value)| {
-                                (
-                                    match load_op {
-                                        crate::render_pass::LoadOp::Load => {
-                                            vk::AttachmentLoadOp::LOAD
-                                        }
-                                        crate::render_pass::LoadOp::Clear => {
-                                            vk::AttachmentLoadOp::CLEAR
-                                        }
-                                        crate::render_pass::LoadOp::DontCare => {
-                                            vk::AttachmentLoadOp::NONE_EXT
-                                        }
-                                    },
-                                    match store_op {
-                                        crate::render_pass::StoreOp::Store => {
-                                            vk::AttachmentStoreOp::STORE
-                                        }
-                                        crate::render_pass::StoreOp::DontCare => {
-                                            vk::AttachmentStoreOp::NONE_EXT
-                                        }
-                                    },
-                                    match clear_value {
-                                        crate::render_pass::ClearValue::Color(c) => {
-                                            vk::ClearColorValue {
-                                                uint32: [c[0] as u32, 0, 0, 0],
-                                            }
-                                        }
-                                        _ => vk::ClearColorValue {
-                                            uint32: [0, 0, 0, 0],
-                                        },
-                                    },
-                                )
-                            })
-                            .unwrap_or((
-                                vk::AttachmentLoadOp::CLEAR,
-                                vk::AttachmentStoreOp::STORE,
-                                vk::ClearColorValue {
-                                    uint32: [0, 0, 0, 0],
-                                },
-                            ));
+        // Color attachments (R32Uint object-ID textures cleared to 0) come
+        // from the pass declaration.
+        let color_attachments = self.resolve_color_attachments(pass)?;
 
-                        vk::RenderingAttachmentInfo::default()
-                            .image_view(transient.image_view.vk())
-                            .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                            .load_op(load_op)
-                            .store_op(store_op)
-                            .clear_value(vk::ClearValue { color: clear_value })
-                    })
-            })
-            .collect();
-
-        // Depth attachment
-        let depth_texture = self
-            .renderer
-            .frame_context
-            .depth_render_textures
-            .get(frame_idx)
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration(format!(
-                    "depth_render_textures missing entry for frame {}",
-                    frame_idx
-                ))
-            })?;
-
-        let (depth_view, stencil_attachment) =
-            if let Some(ref ds_view) = depth_texture.depth_stencil_image_view {
-                (
-                    ds_view.vk(),
-                    Some(
-                        vk::RenderingAttachmentInfo::default()
-                            .image_view(ds_view.vk())
-                            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                            .load_op(vk::AttachmentLoadOp::CLEAR)
-                            .store_op(vk::AttachmentStoreOp::DONT_CARE)
-                            .clear_value(vk::ClearValue {
-                                depth_stencil: vk::ClearDepthStencilValue {
-                                    depth: 0.0,
-                                    stencil: 0,
-                                },
-                            }),
-                    ),
-                )
-            } else {
-                (depth_texture.image_view.vk(), None)
-            };
-
-        let depth_attachment = vk::RenderingAttachmentInfo::default()
-            .image_view(depth_view)
-            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .clear_value(vk::ClearValue {
-                depth_stencil: vk::ClearDepthStencilValue {
-                    depth: 0.0,
-                    stencil: 0,
-                },
-            });
+        // Depth + stencil attachments come from the declared depth ops.
+        let (depth_attachment, stencil_attachment) = self.resolve_frame_depth_attachments(pass)?;
+        let (Some(depth_attachment), stencil_attachment) = (depth_attachment, stencil_attachment)
+        else {
+            return Err(RenderGraphError::InvalidConfiguration(
+                "Depth prepass must write depth".to_string(),
+            ));
+        };
 
         cmd.begin_rendering(
             &color_attachments,

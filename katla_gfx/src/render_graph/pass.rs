@@ -8,8 +8,7 @@ use crate::render_graph::access::{
 };
 use crate::render_graph::handles::ResourceId;
 use crate::render_graph::resource::GraphResourceHandle;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-use crate::texture::ImageFormat;
+use crate::render_pass::{AttachmentOps, DepthStencilAttachmentOps, LoadOp};
 
 /// Callback for custom compute dispatch logic (Vulkan-specific).
 ///
@@ -83,13 +82,20 @@ pub struct PassDesc {
     pub material: Option<crate::handle::MaterialHandle>,
     /// Output color format (for material format inference).
     pub output_format: Option<crate::texture::ImageFormat>,
-    /// Color attachment load/store ops for each write target.
-    pub color_attachments: Vec<(ResourceId, ImageFormat, LoadOp, StoreOp, ClearValue)>,
+    /// Declared load/store/clear operations per color target.
+    ///
+    /// The authoritative attachment contract for a pass: execution resolves
+    /// targets and translates exactly these operations. Populated at graph
+    /// build from the pass templates and validated before compilation.
+    pub color_attachments: Vec<(ResourceId, AttachmentOps)>,
     /// Whether this pass uses depth testing (default true for graphics passes).
     pub uses_depth: bool,
-    /// Depth attachment load/store/clear configuration.
-    /// When None, defaults to (Clear, Store, depth=0.0) for reverse-Z.
-    pub depth_attachment: Option<(LoadOp, StoreOp, ClearValue)>,
+    /// Depth and stencil attachment operations for this pass's depth target.
+    ///
+    /// Normalized to a canonical default at graph build when a graphics pass
+    /// uses depth but declares nothing, so execution always consumes a
+    /// declaration.
+    pub depth_attachment: Option<DepthStencilAttachmentOps>,
     /// Compositing pass data: viewport textures with rectangles.
     /// Set for CompositePass, None for other pass types.
     pub compositing_viewports: Option<Vec<(GraphResourceHandle, ViewportRect)>>,
@@ -189,8 +195,8 @@ impl PassDesc {
                 .iter()
                 .find(|(resource, ..)| *resource == access.resource);
 
-            if let Some((_, _, load_op, _, _)) = color_attachment {
-                access.mode = if *load_op == LoadOp::Load || access.mode.reads() {
+            if let Some((_, ops)) = color_attachment {
+                access.mode = if ops.load == LoadOp::Load || access.mode.reads() {
                     ImageAccessMode::ReadWrite
                 } else {
                     ImageAccessMode::Write
@@ -322,13 +328,8 @@ mod tests {
     #[test]
     fn loaded_color_attachment_is_a_read_write_access() {
         let mut desc = PassDesc::new("blend", PassType::Graphics, Vec::new(), vec![rid(1)]);
-        desc.color_attachments.push((
-            rid(1),
-            ImageFormat::R8G8B8A8Unorm,
-            LoadOp::Load,
-            StoreOp::Store,
-            ClearValue::OPAQUE_BLACK,
-        ));
+        desc.color_attachments
+            .push((rid(1), crate::render_pass::AttachmentOps::load()));
         desc.refine_inferred_image_accesses();
 
         assert_eq!(desc.image_accesses.len(), 1);

@@ -4,13 +4,9 @@
 //! to a R32Uint texture for GPU-based entity picking.
 //! The depth buffer is then reused by the geometry pass via `LoadOp::Load`.
 
-use std::collections::HashMap;
-
 use super::super::builder::{InternalPassBuilder, PassBuilder};
-use super::super::error::RenderGraphError;
 use super::super::pass::{PassKind, PassType};
-use super::super::resource::GraphResourceHandle;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use crate::render_pass::{AttachmentOps, ClearValue};
 use crate::texture::ImageFormat;
 
 /// Depth prepass template.
@@ -46,28 +42,26 @@ impl DepthPrepass {
     }
 }
 
-/// Internal data for a depth prepass with optional color output.
-pub(crate) struct DepthPrepassData {
-    pub(crate) colors: Vec<(
-        GraphResourceHandle,
-        ImageFormat,
-        LoadOp,
-        StoreOp,
-        ClearValue,
-    )>,
-}
-
 impl PassBuilder for DepthPrepass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes = self.writes.clone();
-        let reads = self.reads.clone();
         let has_writes = !writes.is_empty();
-        let build_writes = writes.clone();
+
+        // Object-ID targets are cleared to 0 (no object) and stored.
+        let color_attachments = writes
+            .iter()
+            .map(|name| {
+                (
+                    name.clone(),
+                    AttachmentOps::clear(ClearValue::TRANSPARENT_BLACK),
+                )
+            })
+            .collect();
 
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
-            reads,
+            reads: self.reads,
             writes,
             image_accesses: Vec::new(),
             pipeline: None,
@@ -79,32 +73,9 @@ impl PassBuilder for DepthPrepass {
             } else {
                 None
             },
-            build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {
-                let colors: Vec<(
-                    GraphResourceHandle,
-                    ImageFormat,
-                    LoadOp,
-                    StoreOp,
-                    ClearValue,
-                )> = build_writes
-                    .iter()
-                    .map(|output_name| {
-                        let handle = resource_map.get(output_name).copied().ok_or_else(|| {
-                            RenderGraphError::ResourceNotFound(output_name.clone())
-                        })?;
-                        Ok((
-                            handle,
-                            ImageFormat::R32Uint,
-                            LoadOp::Clear,
-                            StoreOp::Store,
-                            ClearValue::Color([0.0, 0.0, 0.0, 0.0]),
-                        ))
-                    })
-                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
-
-                Ok(Box::new(DepthPrepassData { colors }))
-            }),
+            build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
+            color_attachments,
             depth_attachment: None,
             kind: Some(PassKind::DepthPrepass),
             side_effect: false,

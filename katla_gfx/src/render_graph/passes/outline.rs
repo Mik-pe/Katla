@@ -1,9 +1,6 @@
-use std::collections::HashMap;
-
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
-use super::super::resource::GraphResourceHandle;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+use crate::render_pass::{AttachmentOps, ClearValue, DepthStencilAttachmentOps, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
 
 /// Outline pass template for stencil-based selection highlights.
@@ -24,7 +21,7 @@ impl OutlinePass {
         }
     }
 
-    /// Write the outline to an HDR color buffer.
+    /// Write the outline to an HDR color buffer (loaded, not cleared).
     pub fn write_color(mut self, name: impl Into<String>, _format: ImageFormat) -> Self {
         self.writes.push(name.into());
         self
@@ -35,6 +32,12 @@ impl PassBuilder for OutlinePass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes = self.writes.clone();
         let reads = writes.clone();
+
+        // Outline shells blend over the existing HDR contents.
+        let color_attachments = writes
+            .iter()
+            .map(|name| (name.clone(), AttachmentOps::load()))
+            .collect();
 
         InternalPassBuilder {
             name: self.name,
@@ -47,18 +50,22 @@ impl PassBuilder for OutlinePass {
             overlay_params: None,
             material: None,
             output_format: Some(ImageFormat::R16G16B16A16Sfloat),
-            build_fn: Box::new(|_resource_map: &HashMap<String, GraphResourceHandle>| {
-                Ok(Box::new(()))
-            }),
+            build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
-            depth_attachment: Some((
-                LoadOp::Load,
-                StoreOp::Store,
-                ClearValue::DepthStencil {
+            color_attachments,
+            // Depth is reused from the scene; the stencil aspect is cleared
+            // and stored so the sub-passes can mark and combine stencil bits.
+            depth_attachment: Some(DepthStencilAttachmentOps {
+                depth: AttachmentOps::clear(ClearValue::DepthStencil {
                     depth: 0.0,
                     stencil: 0,
-                },
-            )),
+                })
+                .with_load(LoadOp::Load),
+                stencil: AttachmentOps::clear(ClearValue::DepthStencil {
+                    depth: 0.0,
+                    stencil: 0,
+                }),
+            }),
             kind: Some(PassKind::Outline),
             side_effect: false,
         }
@@ -92,6 +99,12 @@ impl PassBuilder for StencilIndicatorPass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes = self.writes.clone();
 
+        // The indicator mask is rebuilt every frame.
+        let color_attachments = writes
+            .iter()
+            .map(|name| (name.clone(), AttachmentOps::clear(ClearValue::OPAQUE_BLACK)))
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
@@ -103,18 +116,25 @@ impl PassBuilder for StencilIndicatorPass {
             overlay_params: None,
             material: None,
             output_format: Some(ImageFormat::R8Unorm),
-            build_fn: Box::new(
-                move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
-            ),
+            build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
-            depth_attachment: Some((
-                LoadOp::Load,
-                StoreOp::DontCare,
-                ClearValue::DepthStencil {
+            color_attachments,
+            // Both aspects load the stencil state left by the outline pass;
+            // neither is stored back.
+            depth_attachment: Some(DepthStencilAttachmentOps {
+                depth: AttachmentOps::clear(ClearValue::DepthStencil {
                     depth: 0.0,
                     stencil: 0,
-                },
-            )),
+                })
+                .with_load(LoadOp::Load)
+                .with_store(StoreOp::DontCare),
+                stencil: AttachmentOps::clear(ClearValue::DepthStencil {
+                    depth: 0.0,
+                    stencil: 0,
+                })
+                .with_load(LoadOp::Load)
+                .with_store(StoreOp::DontCare),
+            }),
             kind: Some(PassKind::StencilIndicator),
             side_effect: false,
         }
@@ -132,5 +152,22 @@ mod tests {
             .as_builder();
         assert_eq!(builder.reads, vec!["hdr"]);
         assert_eq!(builder.writes, vec!["hdr"]);
+        assert_eq!(builder.color_attachments[0].1.load, LoadOp::Load);
+        assert_eq!(
+            builder.depth_attachment.unwrap().stencil.load,
+            LoadOp::Clear
+        );
+    }
+
+    #[test]
+    fn stencil_indicator_loads_stencil_and_discards_depth() {
+        let builder = StencilIndicatorPass::new("indicator")
+            .write_color("stencil_indicator", ImageFormat::R8Unorm)
+            .as_builder();
+        let ops = builder.depth_attachment.unwrap();
+        assert_eq!(ops.depth.load, LoadOp::Load);
+        assert_eq!(ops.depth.store, StoreOp::DontCare);
+        assert_eq!(ops.stencil.load, LoadOp::Load);
+        assert_eq!(ops.stencil.store, StoreOp::DontCare);
     }
 }

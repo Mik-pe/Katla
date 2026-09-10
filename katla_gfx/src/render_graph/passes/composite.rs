@@ -288,6 +288,19 @@ impl PassBuilder for CompositePass {
         // Output format for material compilation (backbuffer is sRGB)
         let output_format = Some(crate::texture::ImageFormat::B8G8R8A8Srgb);
 
+        // Compositing replaces the whole target: clear and store.
+        let color_attachments = writes
+            .iter()
+            .map(|name| {
+                (
+                    name.clone(),
+                    crate::render_pass::AttachmentOps::clear(
+                        crate::render_pass::ClearValue::OPAQUE_BLACK,
+                    ),
+                )
+            })
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
@@ -315,6 +328,7 @@ impl PassBuilder for CompositePass {
                 Ok(Box::new(CompositePassData { viewports }))
             }),
             uses_depth: false, // Compositing is a fullscreen pass, no depth needed
+            color_attachments,
             depth_attachment: None,
             kind: Some(PassKind::Compositing),
             side_effect: false,

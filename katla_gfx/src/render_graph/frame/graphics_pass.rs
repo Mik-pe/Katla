@@ -52,19 +52,18 @@ impl Frame<'_, VulkanRenderer> {
             extent,
         };
 
-        let color_attachment = self
-            .resolve_color_attachment(pass)?
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration(
-                    "Pass has no color outputs. Use .write_color() for transient textures or declare output explicitly".to_string()
-                )
-            })?;
+        let mut color_attachments = self.resolve_color_attachments(pass)?;
+        if color_attachments.is_empty() {
+            return Err(RenderGraphError::InvalidConfiguration(
+                "Pass has no color outputs. Use .write_color() for transient textures or declare output explicitly".to_string()
+            ));
+        }
 
-        let (depth_attachment, stencil_attachment) = self.resolve_depth_attachment(pass)?;
+        let (depth_attachment, stencil_attachment) = self.resolve_frame_depth_attachments(pass)?;
 
         if let Some(commands) = resolved_commands {
             let params = RenderPassParams {
-                color_attachment,
+                color_attachment: color_attachments.remove(0),
                 depth_attachment,
                 stencil_attachment,
                 render_area,
@@ -83,7 +82,7 @@ impl Frame<'_, VulkanRenderer> {
             )
         } else {
             cmd.begin_rendering(
-                &[color_attachment],
+                &color_attachments,
                 depth_attachment.as_ref(),
                 stencil_attachment.as_ref(),
                 render_area,
@@ -137,13 +136,14 @@ impl Frame<'_, VulkanRenderer> {
             extent,
         };
 
-        let color_attachment = self.resolve_color_attachment(pass)?.ok_or_else(|| {
-            RenderGraphError::InvalidConfiguration(
+        let color_attachments = self.resolve_color_attachments(pass)?;
+        if color_attachments.is_empty() {
+            return Err(RenderGraphError::InvalidConfiguration(
                 "Fullscreen pass has no color outputs.".to_string(),
-            )
-        })?;
+            ));
+        }
 
-        cmd.begin_rendering(&[color_attachment], None, None, render_area, 1);
+        cmd.begin_rendering(&color_attachments, None, None, render_area, 1);
 
         cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
             0.0,
@@ -188,88 +188,5 @@ impl Frame<'_, VulkanRenderer> {
         cmd.end_rendering();
 
         Ok(())
-    }
-
-    /// Resolve the depth attachment for a pass.
-    ///
-    /// Returns `(depth, stencil)` where each is `Option<vk::RenderingAttachmentInfo>`.
-    /// Returns `(None, None)` if the pass does not use depth.
-    pub(super) fn resolve_depth_attachment(
-        &self,
-        pass: &PassDesc,
-    ) -> Result<
-        (
-            Option<vk::RenderingAttachmentInfo<'_>>,
-            Option<vk::RenderingAttachmentInfo<'_>>,
-        ),
-        RenderGraphError,
-    > {
-        if !pass.uses_depth {
-            return Ok((None, None));
-        }
-
-        let frame_idx = self.current_frame();
-        let depth_texture = self
-            .renderer
-            .frame_context
-            .depth_render_textures
-            .get(frame_idx)
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration(format!(
-                    "depth_render_textures missing entry for frame {}",
-                    frame_idx
-                ))
-            })?;
-
-        let (load_op, store_op, clear_depth) = pass
-            .depth_attachment
-            .map(|(lo, so, cv)| {
-                let depth_val = match cv {
-                    crate::render_pass::ClearValue::DepthStencil { depth, .. } => depth,
-                    _ => 0.0,
-                };
-                (lo.into(), so.into(), depth_val)
-            })
-            .unwrap_or((
-                vk::AttachmentLoadOp::CLEAR,
-                vk::AttachmentStoreOp::STORE,
-                0.0,
-            ));
-
-        let (depth_view, stencil) =
-            if let Some(ref ds_view) = depth_texture.depth_stencil_image_view {
-                (
-                    ds_view.vk(),
-                    Some(
-                        vk::RenderingAttachmentInfo::default()
-                            .image_view(ds_view.vk())
-                            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-                            .load_op(vk::AttachmentLoadOp::CLEAR)
-                            .store_op(vk::AttachmentStoreOp::DONT_CARE)
-                            .clear_value(vk::ClearValue {
-                                depth_stencil: vk::ClearDepthStencilValue {
-                                    depth: 0.0,
-                                    stencil: 0,
-                                },
-                            }),
-                    ),
-                )
-            } else {
-                (depth_texture.image_view.vk(), None)
-            };
-
-        let depth = vk::RenderingAttachmentInfo::default()
-            .image_view(depth_view)
-            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .load_op(load_op)
-            .store_op(store_op)
-            .clear_value(vk::ClearValue {
-                depth_stencil: vk::ClearDepthStencilValue {
-                    depth: clear_depth,
-                    stencil: 0,
-                },
-            });
-
-        Ok((Some(depth), stencil))
     }
 }

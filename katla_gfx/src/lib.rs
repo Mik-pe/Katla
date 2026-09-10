@@ -287,7 +287,10 @@ pub use vertex::{
 pub use vertex::AttributeType;
 
 // Render pass system
-pub use render_pass::{AttachmentInfo, BarrierKind, ClearValue, LoadOp, StoreOp};
+pub use render_pass::{
+    AttachmentInfo, AttachmentOps, BarrierKind, ClearValue, DepthStencilAttachmentOps, LoadOp,
+    StoreOp,
+};
 
 // UI rendering types
 pub use renderer::{UIDrawList, UiDrawCommand};
