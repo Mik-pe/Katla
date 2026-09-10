@@ -325,10 +325,18 @@ impl SceneSnapshot {
                 } => ColliderShape::Capsule(CapsuleShape::new(*half_height, *radius)),
                 crate::scene::descriptors::ColliderShapeDescriptor::Trimesh {
                     mesh_handle_index,
-                } => ColliderShape::Trimesh(katla_gfx::MeshHandle::new(*mesh_handle_index)),
+                    mesh_handle_generation,
+                } => ColliderShape::Trimesh(katla_gfx::MeshHandle::from_raw(
+                    *mesh_handle_index,
+                    *mesh_handle_generation,
+                )),
                 crate::scene::descriptors::ColliderShapeDescriptor::ConvexHull {
                     mesh_handle_index,
-                } => ColliderShape::ConvexHull(katla_gfx::MeshHandle::new(*mesh_handle_index)),
+                    mesh_handle_generation,
+                } => ColliderShape::ConvexHull(katla_gfx::MeshHandle::from_raw(
+                    *mesh_handle_index,
+                    *mesh_handle_generation,
+                )),
                 crate::scene::descriptors::ColliderShapeDescriptor::Heightfield {
                     rows,
                     cols,

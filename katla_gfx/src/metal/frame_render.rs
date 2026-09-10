@@ -838,7 +838,7 @@ impl MetalRenderer {
         })?;
         let pipeline = self
             .materials
-            .get(material_handle.index())
+            .get(material_handle)
             .and_then(|material| material.pipeline.as_ref())
             .ok_or_else(|| {
                 RendererError::InvalidOperation(

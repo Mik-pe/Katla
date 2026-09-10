@@ -3,7 +3,10 @@
 //! The registry stores meshes and materials internally and provides opaque handles
 //! for referencing them. This keeps ash::vk types contained within katla_gfx.
 
-use crate::handle::{MaterialHandle, MeshHandle, PipelineHandle, ResourceStorage};
+use crate::handle::{
+    MaterialHandle, MaterialMarker, MeshHandle, MeshMarker, PipelineHandle, PipelineMarker,
+    ResourceStorage,
+};
 use crate::render_graph::RenderGraphError;
 use crate::vulkan::material::builder::Pipeline;
 use crate::vulkan::material::compute_pipeline::ComputePipeline;
@@ -467,12 +470,13 @@ pub struct MaterialAsset {
 /// Stores meshes and materials internally, providing opaque handles for reference.
 /// This prevents ash::vk types from leaking to the application layer.
 pub struct AssetRegistry {
-    /// Mesh storage with slot recycling.
-    meshes: ResourceStorage<MeshAsset>,
-    /// Material storage with slot recycling.
-    materials: ResourceStorage<MaterialAsset>,
-    /// Pipeline storage with slot recycling (graphics and compute).
-    pipelines: ResourceStorage<AnyPipeline>,
+    /// Mesh storage with slot recycling and generational handles.
+    meshes: ResourceStorage<MeshAsset, MeshMarker>,
+    /// Material storage with slot recycling and generational handles.
+    materials: ResourceStorage<MaterialAsset, MaterialMarker>,
+    /// Pipeline storage with slot recycling and generational handles
+    /// (graphics and compute).
+    pipelines: ResourceStorage<AnyPipeline, PipelineMarker>,
 }
 
 impl Default for AssetRegistry {
@@ -493,48 +497,44 @@ impl AssetRegistry {
 
     /// Register a graphics pipeline and return a handle.
     pub(crate) fn register_pipeline(&mut self, pipeline: Pipeline) -> PipelineHandle {
-        let id = self.pipelines.insert(AnyPipeline::Graphics(pipeline));
-        PipelineHandle::new(id)
+        self.pipelines.insert(AnyPipeline::Graphics(pipeline))
     }
 
     /// Register a compute pipeline and return a handle.
     pub fn register_compute_pipeline(&mut self, pipeline: ComputePipeline) -> PipelineHandle {
-        let id = self.pipelines.insert(AnyPipeline::Compute(pipeline));
-        PipelineHandle::new(id)
+        self.pipelines.insert(AnyPipeline::Compute(pipeline))
     }
 
     /// Register a mesh and return a handle.
     pub(crate) fn register_mesh(&mut self, mesh: MeshAsset) -> MeshHandle {
-        let id = self.meshes.insert(mesh);
-        MeshHandle::new(id)
+        self.meshes.insert(mesh)
     }
 
     /// Register a material and return a handle.
     ///
     /// Materials use bindless textures - texture indices should be set in MaterialAsset.
     pub(crate) fn register_material(&mut self, material: MaterialAsset) -> MaterialHandle {
-        let id = self.materials.insert(material);
-        MaterialHandle::new(id)
+        self.materials.insert(material)
     }
 
     /// Get a mesh by handle.
     pub fn get_mesh(&self, handle: MeshHandle) -> Option<&MeshAsset> {
-        self.meshes.get(handle.index())
+        self.meshes.get(handle)
     }
 
     /// Get a mutable mesh by handle (for dynamic updates).
     pub fn get_mesh_mut(&mut self, handle: MeshHandle) -> Option<&mut MeshAsset> {
-        self.meshes.get_mut(handle.index())
+        self.meshes.get_mut(handle)
     }
 
     /// Get a material by handle (immutable).
     pub fn get_material(&self, handle: MaterialHandle) -> Option<&MaterialAsset> {
-        self.materials.get(handle.index())
+        self.materials.get(handle)
     }
 
     /// Get a mutable material by handle (for rendering updates).
     pub fn get_material_mut(&mut self, handle: MaterialHandle) -> Option<&mut MaterialAsset> {
-        self.materials.get_mut(handle.index())
+        self.materials.get_mut(handle)
     }
 
     /// Update a material's pipeline handle (for hot reload).
@@ -543,7 +543,7 @@ impl AssetRegistry {
         handle: MaterialHandle,
         new_pipeline: PipelineHandle,
     ) {
-        if let Some(material) = self.materials.get_mut(handle.index()) {
+        if let Some(material) = self.materials.get_mut(handle) {
             material.pipeline = Some(new_pipeline);
         }
     }
@@ -553,7 +553,7 @@ impl AssetRegistry {
         &self,
         handle: PipelineHandle,
     ) -> Option<(vk::Pipeline, vk::PipelineLayout)> {
-        let pipeline = self.pipelines.get(handle.index())?;
+        let pipeline = self.pipelines.get(handle)?;
         Some((pipeline.vk_pipeline(), pipeline.vk_layout()))
     }
 
@@ -568,7 +568,7 @@ impl AssetRegistry {
 
     /// Get a pipeline by handle.
     pub fn get_pipeline(&self, handle: PipelineHandle) -> Option<&AnyPipeline> {
-        self.pipelines.get(handle.index())
+        self.pipelines.get(handle)
     }
 
     /// Get the number of registered meshes.
@@ -592,10 +592,10 @@ impl AssetRegistry {
         let file_name = shader_path.file_name();
         self.materials
             .iter_enumerated()
-            .filter_map(|(idx, mat)| {
+            .filter_map(|(handle, mat)| {
                 let sp = mat.shader_path.as_ref()?;
                 if sp.file_name() == file_name {
-                    Some((MaterialHandle::new(idx), sp.clone()))
+                    Some((handle, sp.clone()))
                 } else {
                     None
                 }
@@ -605,16 +605,20 @@ impl AssetRegistry {
 
     /// Remove a mesh by handle, returning the removed asset for GPU cleanup.
     ///
-    /// Returns `None` if the handle is invalid or already removed.
+    /// Returns `None` if the handle is invalid or already removed. Removal
+    /// permanently invalidates the handle: the slot may be reused, but only
+    /// under a new generation.
     pub fn remove_mesh(&mut self, handle: MeshHandle) -> Option<MeshAsset> {
-        self.meshes.remove(handle.index())
+        self.meshes.remove(handle)
     }
 
     /// Remove a material by handle, returning the removed asset for GPU cleanup.
     ///
-    /// Returns `None` if the handle is invalid or already removed.
+    /// Returns `None` if the handle is invalid or already removed. Removal
+    /// permanently invalidates the handle: the slot may be reused, but only
+    /// under a new generation.
     pub fn remove_material(&mut self, handle: MaterialHandle) -> Option<MaterialAsset> {
-        self.materials.remove(handle.index())
+        self.materials.remove(handle)
     }
 
     /// Clear all assets from the registry.
@@ -626,7 +630,7 @@ impl AssetRegistry {
 
     /// Remove a pipeline by handle.
     pub(crate) fn remove_pipeline(&mut self, handle: PipelineHandle) -> Option<AnyPipeline> {
-        self.pipelines.remove(handle.index())
+        self.pipelines.remove(handle)
     }
 
     /// Invalidate all compiled materials and destroy their pipelines.
@@ -650,7 +654,7 @@ impl AssetRegistry {
         }
         // Only destroy the specific material pipelines, not all pipelines
         for handle in pipelines_to_destroy {
-            self.pipelines.remove(handle.index());
+            self.pipelines.remove(handle);
         }
     }
 

@@ -283,7 +283,7 @@ mod tests {
 
     #[test]
     fn test_geometry_pass_material_propagates() {
-        let material = crate::handle::MaterialHandle::new(42);
+        let material = crate::handle::MaterialHandle::from_raw(42, 0);
         let pass = GeometryPass::new("test")
             .write_color("color", ImageFormat::R16G16B16A16Sfloat)
             .material(material);

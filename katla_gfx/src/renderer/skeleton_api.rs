@@ -6,7 +6,7 @@ impl VulkanRenderer {
         &self,
         handle: SkeletonHandle,
     ) -> Option<&SkeletonDescriptorSet> {
-        self.skeleton_descriptors.get(handle.index())
+        self.skeleton_descriptors.get(handle)
     }
 
     /// Create a new skeleton for GPU skeletal animation.
@@ -37,10 +37,11 @@ impl VulkanRenderer {
                 },
             )?;
 
-        // Store both the descriptor and the buffer with matching IDs
-        let id = self.skeleton_descriptors.insert(descriptor_set);
-        let _ = self.skeleton_buffers.insert(buffer);
-        let handle = SkeletonHandle::new(id);
+        // Insert the descriptor and buffer back to back so both storages
+        // assign the same slot and generation; one handle addresses both.
+        let handle = self.skeleton_descriptors.insert(descriptor_set);
+        let buffer_handle = self.skeleton_buffers.insert(buffer);
+        debug_assert_eq!(handle, buffer_handle);
 
         Ok(handle)
     }
@@ -54,7 +55,7 @@ impl VulkanRenderer {
     /// * `handle` - Skeleton handle from `create_skeleton()`
     /// * `matrices` - Joint matrices as column-major [f32; 16] arrays (one per joint)
     pub fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        if let Some(buffer) = self.skeleton_buffers.get_mut(handle.index()) {
+        if let Some(buffer) = self.skeleton_buffers.get_mut(handle) {
             buffer.update(matrices);
         }
     }
@@ -80,7 +81,7 @@ impl VulkanRenderer {
     ) {
         let dst_buffer = match self
             .skeleton_buffers
-            .get(skeleton_handle.index())
+            .get(skeleton_handle)
             .map(|b| b.buffer())
         {
             Some(b) => b,
@@ -104,8 +105,6 @@ impl VulkanRenderer {
 
     /// Get the raw Vulkan buffer for a skeleton handle.
     pub fn skeleton_buffer_handle(&self, handle: SkeletonHandle) -> Option<vk::Buffer> {
-        self.skeleton_buffers
-            .get(handle.index())
-            .map(|b| b.buffer())
+        self.skeleton_buffers.get(handle).map(|b| b.buffer())
     }
 }

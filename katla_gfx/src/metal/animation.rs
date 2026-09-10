@@ -290,13 +290,19 @@ impl MetalAnimationSystem {
         self.skeleton_count
     }
 
-    /// Get the skeleton copy commands (skeleton_handle_index, joint_offset, joint_count).
+    /// Get the skeleton copy commands (handle, joint_offset, joint_count).
     #[cfg(test)]
-    pub fn skeleton_copy_commands(&self) -> Vec<(u32, u32, u32)> {
+    pub fn skeleton_copy_commands(&self) -> Vec<(crate::handle::SkeletonHandle, u32, u32)> {
         self.skeleton_entries
             .iter()
             .enumerate()
-            .map(|(i, entry)| (i as u32, entry.joint_offset, entry.joint_count))
+            .map(|(i, entry)| {
+                (
+                    crate::handle::SkeletonHandle::from_raw(i as u32, 0),
+                    entry.joint_offset,
+                    entry.joint_count,
+                )
+            })
             .collect()
     }
 
@@ -454,6 +460,7 @@ impl MetalAnimationSystem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handle::SkeletonHandle;
 
     fn create_context() -> MetalContext {
         MetalContext::init_headless().expect("Failed to create headless context")
@@ -689,7 +696,7 @@ mod tests {
 
         let commands = system.skeleton_copy_commands();
         assert_eq!(commands.len(), 2);
-        assert_eq!(commands[0], (0, 0, 4));
-        assert_eq!(commands[1], (1, 4, 6));
+        assert_eq!(commands[0], (SkeletonHandle::from_raw(0, 0), 0, 4));
+        assert_eq!(commands[1], (SkeletonHandle::from_raw(1, 0), 4, 6));
     }
 }

@@ -131,8 +131,8 @@ mod tests {
     fn test_spawn_primitive_creates_entity_with_components() {
         let mut world = World::new();
 
-        let mesh = MeshHandle::new(1);
-        let material = MaterialHandle::new(2);
+        let mesh = MeshHandle::from_raw(1, 0);
+        let material = MaterialHandle::from_raw(2, 0);
 
         let entity = world.spawn_primitive([1.0, 2.0, 3.0], mesh, material, Color::WHITE);
 
@@ -153,8 +153,8 @@ mod tests {
     fn test_spawn_primitive_with_material() {
         let mut world = World::new();
 
-        let mesh = MeshHandle::new(1);
-        let material = MaterialHandle::new(2);
+        let mesh = MeshHandle::from_raw(1, 0);
+        let material = MaterialHandle::from_raw(2, 0);
 
         let entity = world.spawn_primitive_with_material(
             [0.0, 0.0, 0.0],
@@ -181,8 +181,8 @@ mod tests {
 
         let mut world = World::new();
 
-        let mesh = MeshHandle::new(1);
-        let material = MaterialHandle::new(2);
+        let mesh = MeshHandle::from_raw(1, 0);
+        let material = MaterialHandle::from_raw(2, 0);
 
         let entity = world.spawn_primitive_with(
             [5.0, 0.0, 0.0],
@@ -210,8 +210,8 @@ mod tests {
 
         let entity = world.spawn_primitive(
             [0.0, 0.0, 0.0],
-            MeshHandle::new(1),
-            MaterialHandle::new(2),
+            MeshHandle::from_raw(1, 0),
+            MaterialHandle::from_raw(2, 0),
             Color::WHITE,
         );
 

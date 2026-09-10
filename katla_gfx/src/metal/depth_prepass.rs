@@ -11,7 +11,7 @@ use crate::backend::command::{
     ShaderStages,
 };
 use crate::error::RendererError;
-use crate::handle::ResourceStorage;
+use crate::handle::{MaterialMarker, MeshMarker, ResourceStorage, SkeletonMarker};
 use crate::pipeline::CompareOp;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -140,10 +140,10 @@ pub(crate) fn render_depth_prepass(
     height: u32,
     frame_uniform_buffer: &MetalBuffer,
     object_storage_buffer: &MetalBuffer,
-    meshes: &ResourceStorage<MetalMesh>,
-    materials: &ResourceStorage<MetalMaterial>,
+    meshes: &ResourceStorage<MetalMesh, MeshMarker>,
+    materials: &ResourceStorage<MetalMaterial, MaterialMarker>,
     draw_list: &crate::renderer::types::DrawList,
-    skeleton_buffers: &ResourceStorage<MetalBuffer>,
+    skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
     bindless_argument_buffer: Option<&objc2::runtime::ProtocolObject<dyn objc2_metal::MTLBuffer>>,
     shared_sampler: Option<&super::sampler::MetalSamplerState>,
 ) {
@@ -182,14 +182,14 @@ pub(crate) fn render_depth_prepass(
     let mut current_variant = PipelineVariant::Regular;
 
     for draw in &draw_list.draws {
-        let Some(mesh) = meshes.get(draw.mesh.index()) else {
+        let Some(mesh) = meshes.get(draw.mesh) else {
             continue;
         };
         // An empty dynamic mesh draws nothing.
         if mesh.index_count == 0 {
             continue;
         }
-        let Some(material) = materials.get(draw.material.index()) else {
+        let Some(material) = materials.get(draw.material) else {
             continue;
         };
         let Some(ref _pipeline) = material.pipeline else {
@@ -251,7 +251,7 @@ pub(crate) fn render_depth_prepass(
             current_variant = target_variant;
         }
 
-        if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
+        if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton) {
             encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
         }
 

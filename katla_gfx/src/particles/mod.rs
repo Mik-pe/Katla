@@ -16,11 +16,12 @@ pub(crate) mod validation;
 
 pub mod particle_drive;
 
+pub use crate::handle::EmitterHandle;
 pub use buffer::{FrameData, GlobalParticleBuffer, ParticleCounters, ParticleData};
 pub use debug_readback::{IndirectDrawCommandData, ParticleDebugData, ParticleDebugReadback};
 pub use presets::EmitterPreset;
 pub use stats::ParticleStats;
-pub use types::{Align16Vec4, EmitterConfig, EmitterConfigBuilder, EmitterHandle, EmitterShape};
+pub use types::{Align16Vec4, EmitterConfig, EmitterConfigBuilder, EmitterShape};
 pub use validation::{
     ValidationError, validate_all_emitters, validate_counters, validate_emitter_config,
 };
@@ -71,6 +72,88 @@ pub(super) struct ParticleEmitterPool {
     pub(super) emitter_states: Vec<EmitterState>,
     pub(super) next_slot: u32,
     pub(super) free_slots: Vec<u32>,
+    /// Generation per slot, bumped on destroy. `EmitterHandle`s carry the
+    /// generation they were issued against, so stale handles can never alias
+    /// the emitter that later occupies the same slot.
+    pub(super) generations: Vec<u32>,
+}
+
+impl ParticleEmitterPool {
+    /// Resolve a handle against the pool, rejecting out-of-range slots and
+    /// wrong generations (destroyed emitters whose slot was reused).
+    pub(super) fn live_slot(&self, handle: EmitterHandle) -> Option<usize> {
+        let slot = handle.index() as usize;
+        if handle.is_none()
+            || slot >= self.emitters.len()
+            || self.generations.get(slot) != Some(&handle.generation())
+        {
+            return None;
+        }
+        Some(slot)
+    }
+
+    pub(super) fn insert(&mut self, config: EmitterConfig) -> EmitterHandle {
+        let index = self.free_slots.pop().unwrap_or(self.next_slot);
+        if index >= self.next_slot {
+            self.next_slot = index + 1;
+        }
+        if self.emitters.len() <= index as usize {
+            self.emitters
+                .resize(index as usize + 1, EmitterConfig::default());
+        }
+        if self.emitter_states.len() <= index as usize {
+            self.emitter_states
+                .resize(index as usize + 1, EmitterState::default());
+        }
+        if self.generations.len() <= index as usize {
+            self.generations.resize(index as usize + 1, 0);
+        }
+        self.emitters[index as usize] = config;
+        self.emitter_states[index as usize] = EmitterState::default();
+        EmitterHandle::from_raw(index, self.generations[index as usize])
+    }
+
+    pub(super) fn update(&mut self, handle: EmitterHandle, config: EmitterConfig) -> bool {
+        match self.live_slot(handle) {
+            Some(slot) => {
+                self.emitters[slot] = config;
+                true
+            }
+            None => false,
+        }
+    }
+
+    pub(super) fn burst(&mut self, handle: EmitterHandle, count: u32) -> bool {
+        match self.live_slot(handle) {
+            Some(slot) => {
+                self.emitter_states[slot].burst_count = count;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Clear one emitter. Returns its kill decision (true when the last
+    /// destroy requested kill-all semantics). Bumps the slot's generation so
+    /// the destroyed handle stays invalid even after slot reuse, making
+    /// double-destroy a no-op.
+    pub(super) fn remove(&mut self, handle: EmitterHandle, kill_all: bool) -> bool {
+        let Some(slot) = self.live_slot(handle) else {
+            return false;
+        };
+        self.emitters[slot] = EmitterConfig {
+            emit_rate: 0.0,
+            kill_all: if kill_all { 1 } else { 0 },
+            ..Default::default()
+        };
+        if slot < self.emitter_states.len() {
+            self.emitter_states[slot] = EmitterState::default();
+        }
+        let generation = self.generations[slot].wrapping_add(1);
+        self.generations[slot] = if generation == 0 { 1 } else { generation };
+        self.free_slots.push(handle.index());
+        true
+    }
 }
 
 /// Maximum emitters in system
@@ -145,6 +228,7 @@ impl GlobalParticleSystem {
                 emitter_states: Vec::with_capacity(MAX_EMITTERS as usize),
                 next_slot: 0,
                 free_slots: Vec::new(),
+                generations: Vec::new(),
             },
             context: context.clone(),
             destroyed: false,
@@ -313,6 +397,7 @@ impl GlobalParticleSystem {
         self.emitter_pool.emitters.clear();
         self.emitter_pool.next_slot = 0;
         self.emitter_pool.free_slots.clear();
+        self.emitter_pool.generations.clear();
 
         info!("  destroying descriptor pools");
         for fi in 0..2 {
@@ -485,7 +570,7 @@ mod tests {
 
     #[test]
     fn test_emitter_handle() {
-        let handle = EmitterHandle::new(42);
+        let handle = EmitterHandle::from_raw(42, 0);
         assert_eq!(handle.index(), 42);
         assert_ne!(handle, EmitterHandle::NONE);
     }
@@ -631,6 +716,7 @@ mod vulkan_tests {
             }],
             next_slot: 1,
             free_slots: vec![],
+            generations: vec![0],
         };
 
         for state in &mut pool.emitter_states {
@@ -658,6 +744,7 @@ mod vulkan_tests {
             }],
             next_slot: 1,
             free_slots: vec![],
+            generations: vec![0],
         };
 
         for state in &mut pool.emitter_states {
@@ -682,5 +769,71 @@ mod vulkan_tests {
         assert_eq!(counters_after_reset.dead_count, DEFAULT_MAX_PARTICLES);
         assert_eq!(counters_after_reset.emit_count, 0);
         assert_eq!(counters_after_reset.workgroups_finished, 0);
+    }
+}
+
+#[cfg(test)]
+mod pool_tests {
+    use super::*;
+
+    fn config(rate: f32) -> EmitterConfig {
+        EmitterConfig {
+            emit_rate: rate,
+            ..Default::default()
+        }
+    }
+
+    fn pool() -> ParticleEmitterPool {
+        ParticleEmitterPool {
+            emitters: Vec::new(),
+            emitter_states: Vec::new(),
+            next_slot: 0,
+            free_slots: Vec::new(),
+            generations: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_destroy_then_reuse_rejects_stale_handle() {
+        let mut pool = pool();
+        let first = pool.insert(config(10.0));
+        assert!(pool.remove(first, false));
+
+        let second = pool.insert(config(20.0));
+        assert_eq!(second.index(), first.index());
+        assert_ne!(second, first);
+        assert_eq!(second.generation(), first.generation() + 1);
+
+        // Stale operations reject instead of aliasing the replacement.
+        assert!(!pool.update(first, config(99.0)));
+        assert!(!pool.burst(first, 5));
+        assert!(!pool.remove(first, false));
+        assert_eq!(pool.emitters[second.index() as usize].emit_rate, 20.0);
+        assert!(pool.update(second, config(30.0)));
+        assert_eq!(pool.emitters[second.index() as usize].emit_rate, 30.0);
+    }
+
+    #[test]
+    fn test_double_destroy_is_harmless() {
+        let mut pool = pool();
+        let handle = pool.insert(config(5.0));
+        assert!(pool.remove(handle, true));
+        assert!(!pool.remove(handle, true), "second destroy is a no-op");
+        // The free list holds the slot exactly once.
+        let replacement = pool.insert(config(1.0));
+        assert_eq!(replacement.index(), handle.index());
+        assert!(pool.remove(replacement, false));
+        assert_eq!(pool.free_slots.len(), 1);
+    }
+
+    #[test]
+    fn test_none_and_out_of_range_handles_rejected() {
+        let mut pool = pool();
+        pool.insert(config(1.0));
+        assert!(!pool.update(EmitterHandle::NONE, config(2.0)));
+        assert!(!pool.burst(EmitterHandle::NONE, 3));
+        assert!(!pool.remove(EmitterHandle::NONE, false));
+        let beyond = EmitterHandle::from_raw(900, 0);
+        assert!(!pool.update(beyond, config(2.0)));
     }
 }

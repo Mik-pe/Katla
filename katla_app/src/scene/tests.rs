@@ -962,14 +962,14 @@ fn test_scene_load_gpu_cleanup_tracker_logic() {
     use crate::gpu_resource_tracker::GpuResourceTracker;
     use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
 
-    let protected = MaterialHandle::new(100);
+    let protected = MaterialHandle::from_raw(100, 0);
     let mut tracker = GpuResourceTracker::new(protected);
 
     // Simulate spawning 3 entities with shared material
-    let shared_mat = MaterialHandle::new(10);
-    let m1 = MeshHandle::new(1);
-    let m2 = MeshHandle::new(2);
-    let m3 = MeshHandle::new(3);
+    let shared_mat = MaterialHandle::from_raw(10, 0);
+    let m1 = MeshHandle::from_raw(1, 0);
+    let m2 = MeshHandle::from_raw(2, 0);
+    let m3 = MeshHandle::from_raw(3, 0);
 
     tracker.track_drawable(m1, shared_mat, SkeletonHandle::NONE);
     tracker.track_drawable(m2, shared_mat, SkeletonHandle::NONE);
@@ -1000,14 +1000,14 @@ fn test_repeated_load_no_leak() {
     use crate::gpu_resource_tracker::GpuResourceTracker;
     use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
 
-    let protected = MaterialHandle::new(100);
+    let protected = MaterialHandle::from_raw(100, 0);
     let mut tracker = GpuResourceTracker::new(protected);
 
     for load_iteration in 0..5 {
         // Simulate loading a scene with 10 entities
         for i in 0..10 {
-            let mesh = MeshHandle::new((load_iteration * 100) + i);
-            let mat = MaterialHandle::new((load_iteration * 100) + i + 50);
+            let mesh = MeshHandle::from_raw((load_iteration * 100) + i, 0);
+            let mat = MaterialHandle::from_raw((load_iteration * 100) + i + 50, 0);
             tracker.track_drawable(mesh, mat, SkeletonHandle::NONE);
         }
 
@@ -1036,12 +1036,12 @@ fn test_entity_destroy_gpu_cleanup() {
     use crate::gpu_resource_tracker::GpuResourceTracker;
     use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
 
-    let protected = MaterialHandle::new(100);
+    let protected = MaterialHandle::from_raw(100, 0);
     let mut tracker = GpuResourceTracker::new(protected);
 
-    let mesh = MeshHandle::new(1);
-    let mat = MaterialHandle::new(2);
-    let skeleton = SkeletonHandle::new(3);
+    let mesh = MeshHandle::from_raw(1, 0);
+    let mat = MaterialHandle::from_raw(2, 0);
+    let skeleton = SkeletonHandle::from_raw(3, 0);
 
     tracker.track_drawable(mesh, mat, skeleton);
 
@@ -1070,12 +1070,12 @@ fn test_component_remove_gpu_cleanup() {
     use crate::gpu_resource_tracker::GpuResourceTracker;
     use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
 
-    let protected = MaterialHandle::new(100);
+    let protected = MaterialHandle::from_raw(100, 0);
     let mut tracker = GpuResourceTracker::new(protected);
 
-    let mesh = MeshHandle::new(1);
-    let mat = MaterialHandle::new(2);
-    let skeleton = SkeletonHandle::new(3);
+    let mesh = MeshHandle::from_raw(1, 0);
+    let mat = MaterialHandle::from_raw(2, 0);
+    let skeleton = SkeletonHandle::from_raw(3, 0);
 
     tracker.track_drawable(mesh, mat, skeleton);
 
@@ -1122,8 +1122,8 @@ fn test_component_remove_emits_correct_event() {
     world.add_component(
         entity,
         DrawableComponent::with_handles(
-            katla_gfx::MeshHandle::new(1),
-            katla_gfx::MaterialHandle::new(2),
+            katla_gfx::MeshHandle::from_raw(1, 0),
+            katla_gfx::MaterialHandle::from_raw(2, 0),
         ),
     );
 
@@ -1150,20 +1150,20 @@ fn test_gltf_texture_tracking() {
     use crate::gpu_resource_tracker::GpuResourceTracker;
     use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 
-    let protected = MaterialHandle::new(100);
+    let protected = MaterialHandle::from_raw(100, 0);
     let mut tracker = GpuResourceTracker::new(protected);
 
     // Simulate what spawn_gltf_model does: track drawable + textures
-    let mesh = MeshHandle::new(1);
-    let mat = MaterialHandle::new(2);
+    let mesh = MeshHandle::from_raw(1, 0);
+    let mat = MaterialHandle::from_raw(2, 0);
     tracker.track_drawable(mesh, mat, SkeletonHandle::NONE);
 
     // Track textures (albedo, normal, mr, ao, emission)
-    let albedo = TextureHandle::new(10);
-    let normal = TextureHandle::new(11);
-    let mr = TextureHandle::new(12);
-    let ao = TextureHandle::new(13);
-    let emission = TextureHandle::new(14);
+    let albedo = TextureHandle::from_raw(10, 0);
+    let normal = TextureHandle::from_raw(11, 0);
+    let mr = TextureHandle::from_raw(12, 0);
+    let ao = TextureHandle::from_raw(13, 0);
+    let emission = TextureHandle::from_raw(14, 0);
 
     tracker.track_texture(albedo);
     tracker.track_texture(normal);
@@ -1208,12 +1208,12 @@ fn test_shared_resources_safe() {
     use crate::gpu_resource_tracker::GpuResourceTracker;
     use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
 
-    let protected = MaterialHandle::new(100);
+    let protected = MaterialHandle::from_raw(100, 0);
     let mut tracker = GpuResourceTracker::new(protected);
 
     // Two entities share the same mesh and material
-    let shared_mesh = MeshHandle::new(1);
-    let shared_mat = MaterialHandle::new(2);
+    let shared_mesh = MeshHandle::from_raw(1, 0);
+    let shared_mat = MaterialHandle::from_raw(2, 0);
 
     tracker.track_drawable(shared_mesh, shared_mat, SkeletonHandle::NONE);
     tracker.track_drawable(shared_mesh, shared_mat, SkeletonHandle::NONE);
@@ -1259,15 +1259,15 @@ fn test_resource_counts_create_destroy_sequence() {
     use crate::gpu_resource_tracker::GpuResourceTracker;
     use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
 
-    let protected = MaterialHandle::new(100);
+    let protected = MaterialHandle::from_raw(100, 0);
     let mut tracker = GpuResourceTracker::new(protected);
 
-    let mat = MaterialHandle::new(50);
+    let mat = MaterialHandle::from_raw(50, 0);
 
     // Create 3 meshes (each with unique mesh, shared material)
-    let m1 = MeshHandle::new(1);
-    let m2 = MeshHandle::new(2);
-    let m3 = MeshHandle::new(3);
+    let m1 = MeshHandle::from_raw(1, 0);
+    let m2 = MeshHandle::from_raw(2, 0);
+    let m3 = MeshHandle::from_raw(3, 0);
 
     tracker.track_drawable(m1, mat, SkeletonHandle::NONE);
     tracker.track_drawable(m2, mat, SkeletonHandle::NONE);
@@ -1287,7 +1287,7 @@ fn test_resource_counts_create_destroy_sequence() {
     assert_eq!(tracker.mesh_count(), 1);
 
     // Create new → 2
-    let m4 = MeshHandle::new(4);
+    let m4 = MeshHandle::from_raw(4, 0);
     tracker.track_drawable(m4, mat, SkeletonHandle::NONE);
     assert_eq!(tracker.mesh_count(), 2);
 
@@ -2892,7 +2892,7 @@ fn test_entity_destruction_cleanup() {
     use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
     use std::any::TypeId;
 
-    let protected = MaterialHandle::new(999);
+    let protected = MaterialHandle::from_raw(999, 0);
     let mut tracker = GpuResourceTracker::new(protected);
 
     let mut world = katla_ecs::World::new();
@@ -2900,8 +2900,8 @@ fn test_entity_destruction_cleanup() {
     // Create entity with multiple components
     let entity_a = world.create_entity();
     world.add_component(entity_a, TransformComponent::default());
-    let mesh_a = MeshHandle::new(1);
-    let mat_a = MaterialHandle::new(2);
+    let mesh_a = MeshHandle::from_raw(1, 0);
+    let mat_a = MaterialHandle::from_raw(2, 0);
     world.add_component(entity_a, DrawableComponent::with_handles(mesh_a, mat_a));
     world.add_component(entity_a, PointLight::new([1.0, 0.5, 0.2], 10.0, 15.0));
     world.add_component(entity_a, NameComponent::new("EntityA"));
@@ -2912,8 +2912,8 @@ fn test_entity_destruction_cleanup() {
     // Create second entity
     let entity_b = world.create_entity();
     world.add_component(entity_b, TransformComponent::default());
-    let mesh_b = MeshHandle::new(3);
-    let mat_b = MaterialHandle::new(4);
+    let mesh_b = MeshHandle::from_raw(3, 0);
+    let mat_b = MaterialHandle::from_raw(4, 0);
     world.add_component(entity_b, DrawableComponent::with_handles(mesh_b, mat_b));
     world.add_component(entity_b, NameComponent::new("EntityB"));
     tracker.track_drawable(mesh_b, mat_b, SkeletonHandle::NONE);
@@ -3077,8 +3077,8 @@ fn test_component_add_events() {
     world.add_component(
         entity,
         DrawableComponent::with_handles(
-            katla_gfx::MeshHandle::new(1),
-            katla_gfx::MaterialHandle::new(2),
+            katla_gfx::MeshHandle::from_raw(1, 0),
+            katla_gfx::MaterialHandle::from_raw(2, 0),
         ),
     );
 

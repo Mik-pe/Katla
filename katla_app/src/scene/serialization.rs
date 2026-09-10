@@ -268,9 +268,11 @@ impl SceneManager {
                     },
                     ColliderShape::Trimesh(handle) => ColliderShapeDescriptor::Trimesh {
                         mesh_handle_index: handle.index(),
+                        mesh_handle_generation: handle.generation(),
                     },
                     ColliderShape::ConvexHull(handle) => ColliderShapeDescriptor::ConvexHull {
                         mesh_handle_index: handle.index(),
+                        mesh_handle_generation: handle.generation(),
                     },
                     ColliderShape::Heightfield(h) => ColliderShapeDescriptor::Heightfield {
                         rows: h.rows,
@@ -815,12 +817,20 @@ impl SceneManager {
                     half_height,
                     radius,
                 } => ColliderShape::Capsule(CapsuleShape::new(*half_height, *radius)),
-                ColliderShapeDescriptor::Trimesh { mesh_handle_index } => {
-                    ColliderShape::Trimesh(katla_gfx::MeshHandle::new(*mesh_handle_index))
-                }
-                ColliderShapeDescriptor::ConvexHull { mesh_handle_index } => {
-                    ColliderShape::ConvexHull(katla_gfx::MeshHandle::new(*mesh_handle_index))
-                }
+                ColliderShapeDescriptor::Trimesh {
+                    mesh_handle_index,
+                    mesh_handle_generation,
+                } => ColliderShape::Trimesh(katla_gfx::MeshHandle::from_raw(
+                    *mesh_handle_index,
+                    *mesh_handle_generation,
+                )),
+                ColliderShapeDescriptor::ConvexHull {
+                    mesh_handle_index,
+                    mesh_handle_generation,
+                } => ColliderShape::ConvexHull(katla_gfx::MeshHandle::from_raw(
+                    *mesh_handle_index,
+                    *mesh_handle_generation,
+                )),
                 ColliderShapeDescriptor::Heightfield {
                     rows,
                     cols,

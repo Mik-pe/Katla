@@ -40,8 +40,7 @@ impl MetalRenderer {
             _view: view,
             bindless_slot,
         };
-        let id = self.textures.insert(entry);
-        Ok(TextureHandle::new(id))
+        Ok(self.textures.insert(entry))
     }
 
     pub(crate) fn create_texture_solid_impl(
@@ -54,17 +53,15 @@ impl MetalRenderer {
 
     pub(crate) fn get_bindless_slot_impl(&self, handle: TextureHandle) -> Option<u32> {
         self.textures
-            .get(handle.index())
+            .get(handle)
             .and_then(|entry| entry.bindless_slot)
     }
 
     pub(crate) fn get_texture_at_slot_impl(&self, slot: u32) -> Option<TextureHandle> {
-        for (idx, entry) in self.textures.iter().enumerate() {
-            if entry.bindless_slot == Some(slot) {
-                return Some(TextureHandle::new(idx as u32));
-            }
-        }
-        None
+        self.textures
+            .iter_enumerated()
+            .find(|(_, entry)| entry.bindless_slot == Some(slot))
+            .map(|(handle, _)| handle)
     }
 
     pub(crate) fn default_texture_impl(&self) -> TextureHandle {
@@ -72,7 +69,7 @@ impl MetalRenderer {
     }
 
     pub(crate) fn destroy_texture_impl(&mut self, handle: TextureHandle) {
-        if let Some(entry) = self.textures.remove(handle.index())
+        if let Some(entry) = self.textures.remove(handle)
             && let Some(slot) = entry.bindless_slot
         {
             self.bindless_manager.release_slot(slot);
@@ -85,13 +82,13 @@ impl MetalRenderer {
         data: &[u8],
     ) -> Result<(), RendererError> {
         let (format, width, height, texture) = {
-            let entry =
-                self.textures
-                    .get(handle.index())
-                    .ok_or_else(|| RendererError::StaleHandle {
-                        resource: "texture".to_string(),
-                        detail: format!("{handle:?} in Metal update_texture"),
-                    })?;
+            let entry = self
+                .textures
+                .get(handle)
+                .ok_or_else(|| RendererError::StaleHandle {
+                    resource: "texture".to_string(),
+                    detail: format!("{handle:?} in Metal update_texture"),
+                })?;
             let view = &entry._view;
             let texture = entry.texture.clone();
             let format = texture.format();

@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn test_fullscreen_pass_build_fn_with_resources() {
-        let pipeline = PipelineHandle::new(42);
+        let pipeline = PipelineHandle::from_raw(42, 0);
         let pass = FullscreenPass::new("tone_map")
             .read("hdr_color")
             .write("ldr_output", ImageFormat::R8G8B8A8Srgb)
@@ -329,7 +329,7 @@ mod tests {
         let pass = FullscreenPass::new("tonemap")
             .read("hdr_color")
             .write_backbuffer()
-            .pipeline(PipelineHandle::new(1))
+            .pipeline(PipelineHandle::from_raw(1, 0))
             .tonemap(params);
 
         assert!(pass.tonemap_params.is_some());

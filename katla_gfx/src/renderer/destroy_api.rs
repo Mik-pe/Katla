@@ -87,14 +87,14 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `handle` - The skeleton handle to destroy
     pub fn destroy_skeleton(&mut self, handle: SkeletonHandle) {
-        self.skeleton_descriptors.remove(handle.index());
-        self.skeleton_buffers.remove(handle.index());
+        self.skeleton_descriptors.remove(handle);
+        self.skeleton_buffers.remove(handle);
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+    use crate::handle::{MaterialHandle, MeshHandle, TextureHandle};
     use crate::renderer::registry::{AssetRegistry, MaterialAsset, MaterialTextures, MeshAsset};
     use crate::vulkan::vertexbinding::VertexBinding;
 
@@ -183,8 +183,8 @@ mod tests {
             "NONE handle must be detected for early return"
         );
 
-        // TextureHandle::new(u32::MAX) is also NONE
-        let max = TextureHandle::new(u32::MAX);
+        // TextureHandle::from_raw(u32::MAX, 0) is also NONE
+        let max = TextureHandle::from_raw(u32::MAX, 0);
         assert!(max.is_none());
     }
 
@@ -194,18 +194,19 @@ mod tests {
 
     #[test]
     fn test_destroy_skeleton() {
-        use crate::handle::ResourceStorage;
+        use crate::handle::{ResourceStorage, SkeletonMarker};
 
-        let mut descriptors: ResourceStorage<String> = ResourceStorage::new();
-        let mut buffers: ResourceStorage<String> = ResourceStorage::new();
+        let mut descriptors: ResourceStorage<String, SkeletonMarker> = ResourceStorage::new();
+        let mut buffers: ResourceStorage<String, SkeletonMarker> = ResourceStorage::new();
 
-        let handle = SkeletonHandle::new(descriptors.insert("desc".to_string()));
-        let _ = buffers.insert("buf".to_string());
+        let handle = descriptors.insert("desc".to_string());
+        let buffer_handle = buffers.insert("buf".to_string());
+        assert_eq!(handle, buffer_handle);
         assert_eq!(descriptors.len(), 1);
         assert_eq!(buffers.len(), 1);
 
-        descriptors.remove(handle.index());
-        buffers.remove(handle.index());
+        descriptors.remove(handle);
+        buffers.remove(buffer_handle);
         assert_eq!(descriptors.len(), 0);
         assert_eq!(buffers.len(), 0);
     }
@@ -239,9 +240,9 @@ mod tests {
     fn test_destroy_unowned_safe() {
         let mut registry = AssetRegistry::new();
         registry.remove_mesh(MeshHandle::NONE);
-        registry.remove_mesh(MeshHandle::new(99999));
+        registry.remove_mesh(MeshHandle::from_raw(99999, 0));
         registry.remove_material(MaterialHandle::NONE);
-        registry.remove_material(MaterialHandle::new(99999));
+        registry.remove_material(MaterialHandle::from_raw(99999, 0));
     }
 
     // =========================================================================
@@ -253,7 +254,7 @@ mod tests {
         // Verify the is_default_texture check works correctly for all 5 defaults
         // Default handles are at indices 0-4 (created first in TextureManager::new)
         for i in 0..5 {
-            let handle = TextureHandle::new(i);
+            let handle = TextureHandle::from_raw(i, 0);
             // We can't create a TextureManager without GPU, but we verify
             // the NONE guard prevents destruction of invalid handles
             if i == u32::MAX {

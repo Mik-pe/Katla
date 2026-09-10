@@ -347,8 +347,7 @@ impl Application {
                             Ok(buf) => buf,
                             Err(_) => return Ok(()),
                         };
-                        for &(handle_idx, joint_offset, joint_count) in &copy_cmds {
-                            let handle = katla_gfx::SkeletonHandle::new(handle_idx);
+                        for &(handle, joint_offset, joint_count) in &copy_cmds {
                             renderer.copy_skeleton_from_compute_output(
                                 cmd.vk_command_buffer(),
                                 handle,

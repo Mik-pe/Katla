@@ -12,7 +12,10 @@ use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLTexture};
 use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
-use crate::handle::{MaterialHandle, MeshHandle, ResourceStorage, SkeletonHandle, TextureHandle};
+use crate::handle::{
+    MaterialHandle, MaterialMarker, MeshHandle, MeshMarker, ResourceStorage, SkeletonHandle,
+    SkeletonMarker, TextureHandle, TextureMarker,
+};
 
 use crate::renderer::MAX_OBJECTS_PER_FRAME;
 use crate::renderer::gpu_renderer::GpuRenderer;
@@ -266,10 +269,10 @@ pub struct MetalRenderer {
     pub(crate) current_drawable_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
     pub(crate) drawable_texture_view: Option<MetalTextureView>,
     pub(crate) frame_index: u32,
-    pub(crate) meshes: ResourceStorage<MetalMesh>,
-    pub(crate) materials: ResourceStorage<MetalMaterial>,
-    pub(crate) textures: ResourceStorage<MetalTextureEntry>,
-    pub(crate) skeletons: ResourceStorage<MetalBuffer>,
+    pub(crate) meshes: ResourceStorage<MetalMesh, MeshMarker>,
+    pub(crate) materials: ResourceStorage<MetalMaterial, MaterialMarker>,
+    pub(crate) textures: ResourceStorage<MetalTextureEntry, TextureMarker>,
+    pub(crate) skeletons: ResourceStorage<MetalBuffer, SkeletonMarker>,
     pub(crate) viewports: Vec<Viewport>,
     pub(crate) bindless_manager: MetalBindlessTextureManager,
     pub(crate) default_texture: Option<TextureHandle>,
@@ -500,7 +503,7 @@ impl MetalRenderer {
         // Texture registration is valid before a shader layout exists. The argument
         // buffer itself is initialized lazily from the first compiled fragment
         // function so Metal, rather than Katla, owns the concrete layout ABI.
-        if let Some(entry) = renderer.textures.get(default_tex.index()) {
+        if let Some(entry) = renderer.textures.get(default_tex) {
             renderer
                 .bindless_manager
                 .set_default_texture(&entry._view.inner);
@@ -514,8 +517,7 @@ impl MetalRenderer {
             shader_path: None,
             descriptor: None,
         };
-        let id = renderer.materials.insert(default_mat);
-        renderer.default_material = Some(MaterialHandle::new(id));
+        renderer.default_material = Some(renderer.materials.insert(default_mat));
 
         renderer.recreate_render_targets(renderer.size.width, renderer.size.height);
 
@@ -1139,8 +1141,7 @@ impl GpuRenderer for MetalRenderer {
 
             let material_params = draw.material_params();
 
-            let tex_indices: [u32; 4] = if let Some(mat) = self.materials.get(draw.material.index())
-            {
+            let tex_indices: [u32; 4] = if let Some(mat) = self.materials.get(draw.material) {
                 mat.texture_indices
             } else {
                 [0, 1, 2, 0]
@@ -1226,16 +1227,16 @@ impl GpuRenderer for MetalRenderer {
 
     fn mesh_index_format(&self, mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
         self.meshes
-            .contains(mesh.index())
+            .contains(mesh)
             .then_some(crate::backend::command::IndexType::Uint32)
     }
 
     fn mesh_vertex_count(&self, mesh: MeshHandle) -> Option<u32> {
-        self.meshes.get(mesh.index()).map(|m| m.vertex_count)
+        self.meshes.get(mesh).map(|m| m.vertex_count)
     }
 
     fn mesh_index_count(&self, mesh: MeshHandle) -> Option<u32> {
-        self.meshes.get(mesh.index()).map(|m| m.index_count)
+        self.meshes.get(mesh).map(|m| m.index_count)
     }
 
     fn create_mesh_dynamic(
@@ -1290,7 +1291,7 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn destroy_mesh(&mut self, handle: MeshHandle) {
-        self.meshes.remove(handle.index());
+        self.meshes.remove(handle);
     }
 
     fn destroy_texture(&mut self, handle: TextureHandle) {

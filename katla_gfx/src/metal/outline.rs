@@ -14,7 +14,7 @@ use crate::backend::command::{
     RenderPassInfo, ShaderStages,
 };
 use crate::error::RendererError;
-use crate::handle::ResourceStorage;
+use crate::handle::{MaterialMarker, MeshMarker, ResourceStorage, SkeletonMarker};
 use crate::pipeline::CompareOp;
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -243,10 +243,10 @@ pub(crate) fn render_stencil_mark(
     height: u32,
     frame_uniform_buffer: &MetalBuffer,
     object_storage_buffer: &MetalBuffer,
-    meshes: &ResourceStorage<MetalMesh>,
-    materials: &ResourceStorage<MetalMaterial>,
+    meshes: &ResourceStorage<MetalMesh, MeshMarker>,
+    materials: &ResourceStorage<MetalMaterial, MaterialMarker>,
     draw_list: &crate::renderer::types::DrawList,
-    skeleton_buffers: &ResourceStorage<MetalBuffer>,
+    skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
 ) {
     let render_pass_info = RenderPassInfo {
         color_attachments: vec![ColorAttachmentInfo {
@@ -278,14 +278,14 @@ pub(crate) fn render_stencil_mark(
     let mut current_is_skinned = false;
 
     for draw in &draw_list.draws {
-        let Some(mesh) = meshes.get(draw.mesh.index()) else {
+        let Some(mesh) = meshes.get(draw.mesh) else {
             continue;
         };
         // An empty dynamic mesh draws nothing.
         if mesh.index_count == 0 {
             continue;
         }
-        let Some(material) = materials.get(draw.material.index()) else {
+        let Some(material) = materials.get(draw.material) else {
             continue;
         };
         let Some(ref _pipeline) = material.pipeline else {
@@ -307,7 +307,7 @@ pub(crate) fn render_stencil_mark(
             current_is_skinned = is_skinned;
         }
 
-        if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
+        if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton) {
             encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
         }
 
@@ -349,10 +349,10 @@ pub(crate) fn render_outline(
     height: u32,
     frame_uniform_buffer: &MetalBuffer,
     object_storage_buffer: &MetalBuffer,
-    meshes: &ResourceStorage<MetalMesh>,
-    materials: &ResourceStorage<MetalMaterial>,
+    meshes: &ResourceStorage<MetalMesh, MeshMarker>,
+    materials: &ResourceStorage<MetalMaterial, MaterialMarker>,
     draw_list: &crate::renderer::types::DrawList,
-    skeleton_buffers: &ResourceStorage<MetalBuffer>,
+    skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
 ) {
     let outline_width = compute_outline_width(height as f32);
     let push_constants = OutlinePushConstants {
@@ -397,14 +397,14 @@ pub(crate) fn render_outline(
     let mut current_is_skinned = false;
 
     for draw in &draw_list.draws {
-        let Some(mesh) = meshes.get(draw.mesh.index()) else {
+        let Some(mesh) = meshes.get(draw.mesh) else {
             continue;
         };
         // An empty dynamic mesh draws nothing.
         if mesh.index_count == 0 {
             continue;
         }
-        let Some(material) = materials.get(draw.material.index()) else {
+        let Some(material) = materials.get(draw.material) else {
             continue;
         };
         let Some(ref _pipeline) = material.pipeline else {
@@ -438,7 +438,7 @@ pub(crate) fn render_outline(
             current_is_skinned = is_skinned;
         }
 
-        if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton.index()) {
+        if is_skinned && let Some(skeleton_buf) = skeleton_buffers.get(draw.skeleton) {
             encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
         }
 
