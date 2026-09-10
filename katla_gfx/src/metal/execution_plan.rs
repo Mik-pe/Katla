@@ -271,8 +271,7 @@ mod tests {
         passes: &[PassDesc],
         order: &[usize],
     ) -> Result<MetalExecutionPlan, RenderGraphError> {
-        let format_at =
-            |_: crate::render_graph::ResourceId| Some(ImageFormat::R16G16B16A16Sfloat);
+        let format_at = |_: crate::render_graph::ResourceId| Some(ImageFormat::R16G16B16A16Sfloat);
         MetalExecutionPlan::compile_order(order, |index| passes.get(index), &format_at)
     }
 
