@@ -308,6 +308,10 @@ pub struct ImageAccess {
 }
 
 impl ImageAccess {
+    /// Every aspect, mip, and layer of the image.
+    pub const WHOLE_RESOURCE: ImageSubresourceRange =
+        ImageSubresourceRange::whole(ImageAspects::ALL);
+
     pub const fn new(
         resource: ResourceId,
         mode: ImageAccessMode,
@@ -351,6 +355,72 @@ impl ImageAccess {
             ImageUsage::Storage,
             ImagePipelineStage::AllGraphics,
             ImageSubresourceRange::WHOLE_COLOR,
+        )
+    }
+
+    /// Write a color attachment (whole color aspect).
+    pub const fn color_attachment_write(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ImageAccessMode::Write,
+            ImageUsage::ColorAttachment,
+            ImagePipelineStage::ColorAttachmentOutput,
+            ImageSubresourceRange::WHOLE_COLOR,
+        )
+    }
+
+    /// Read a depth-stencil attachment, e.g. sampling a shadow map.
+    pub const fn depth_attachment_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ImageAccessMode::Read,
+            ImageUsage::DepthStencilAttachment,
+            ImagePipelineStage::DepthStencil,
+            ImageSubresourceRange::WHOLE_DEPTH,
+        )
+    }
+
+    /// Write a depth-stencil attachment (whole depth-stencil aspect).
+    pub const fn depth_attachment_write(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ImageAccessMode::Write,
+            ImageUsage::DepthStencilAttachment,
+            ImagePipelineStage::DepthStencil,
+            ImageSubresourceRange::WHOLE_DEPTH_STENCIL,
+        )
+    }
+
+    /// Read as a transfer source.
+    pub const fn transfer_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ImageAccessMode::Read,
+            ImageUsage::TransferSource,
+            ImagePipelineStage::Transfer,
+            Self::WHOLE_RESOURCE,
+        )
+    }
+
+    /// Write as a transfer destination.
+    pub const fn transfer_write(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ImageAccessMode::Write,
+            ImageUsage::TransferDestination,
+            ImagePipelineStage::Transfer,
+            Self::WHOLE_RESOURCE,
+        )
+    }
+
+    /// Final present-engine read of the swapchain image.
+    pub const fn present_write(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ImageAccessMode::Write,
+            ImageUsage::Present,
+            ImagePipelineStage::Present,
+            Self::WHOLE_RESOURCE,
         )
     }
 
