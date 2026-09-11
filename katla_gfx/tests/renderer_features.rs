@@ -202,8 +202,12 @@ impl GpuRenderer for MockRenderer {
         Ok(MaterialHandle::from_raw(0, 0))
     }
 
-    fn set_material_texture_indices(&mut self, _material: MaterialHandle, _indices: [u32; 4]) {
-        self.record("set_material_texture_indices");
+    fn set_material_textures(
+        &mut self,
+        _material: MaterialHandle,
+        _textures: katla_gfx::MaterialTextures,
+    ) {
+        self.record("set_material_textures");
     }
 
     fn set_default_material(&mut self, _material: MaterialHandle) {

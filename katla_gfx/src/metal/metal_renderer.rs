@@ -162,7 +162,7 @@ pub(crate) struct MetalMesh {
 /// A material (pipeline state + texture indices).
 pub(crate) struct MetalMaterial {
     pub(crate) pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
-    pub(crate) texture_indices: [u32; 4],
+    pub(crate) textures: crate::renderer::registry::MaterialTextures,
     pub(crate) shader_path: Option<String>,
     pub(crate) descriptor: Option<crate::renderer::pipeline_descriptor::PipelineDescriptor>,
 }
@@ -513,7 +513,7 @@ impl MetalRenderer {
 
         let default_mat = MetalMaterial {
             pipeline: None,
-            texture_indices: [0, 1, 2, 0],
+            textures: crate::renderer::registry::MaterialTextures::default(),
             shader_path: None,
             descriptor: None,
         };
@@ -1141,11 +1141,7 @@ impl GpuRenderer for MetalRenderer {
 
             let material_params = draw.material_params();
 
-            let tex_indices: [u32; 4] = if let Some(mat) = self.materials.get(draw.material) {
-                mat.texture_indices
-            } else {
-                [0, 1, 2, 0]
-            };
+            let tex_indices: [u32; 4] = self.resolve_material_texture_slots_impl(draw.material);
 
             for (i, instance) in draw
                 .instances
@@ -1331,8 +1327,12 @@ impl GpuRenderer for MetalRenderer {
         self.compile_material_impl(descriptor)
     }
 
-    fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
-        self.set_material_texture_indices_impl(material, indices)
+    fn set_material_textures(
+        &mut self,
+        material: MaterialHandle,
+        textures: crate::renderer::registry::MaterialTextures,
+    ) {
+        self.set_material_textures_impl(material, textures)
     }
 
     fn set_default_material(&mut self, material: MaterialHandle) {

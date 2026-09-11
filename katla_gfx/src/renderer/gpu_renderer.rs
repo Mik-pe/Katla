@@ -249,7 +249,11 @@ pub trait GpuRenderer: Sized + 'static {
     ) -> Result<MaterialHandle, RendererError>;
 
     /// Set texture indices on an existing material.
-    fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]);
+    fn set_material_textures(
+        &mut self,
+        material: MaterialHandle,
+        textures: crate::renderer::registry::MaterialTextures,
+    );
 
     /// Set the default PBR material handle (called once during init).
     fn set_default_material(&mut self, material: MaterialHandle);
@@ -800,8 +804,12 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::compile_material(self, &descriptor.shader_path, options)
     }
 
-    fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
-        VulkanRenderer::set_material_texture_indices(self, material, indices);
+    fn set_material_textures(
+        &mut self,
+        material: MaterialHandle,
+        textures: crate::renderer::registry::MaterialTextures,
+    ) {
+        VulkanRenderer::set_material_textures(self, material, textures);
     }
 
     fn set_default_material(&mut self, material: MaterialHandle) {

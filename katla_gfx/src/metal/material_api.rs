@@ -219,7 +219,7 @@ impl MetalRenderer {
 
         let material = MetalMaterial {
             pipeline: Some(pipeline),
-            texture_indices: [0, 1, 2, 0],
+            textures: crate::renderer::registry::MaterialTextures::default(),
             shader_path: Some(shader_path.clone()),
             descriptor: Some(descriptor.clone()),
         };
@@ -232,14 +232,39 @@ impl MetalRenderer {
         Ok(handle)
     }
 
-    pub(crate) fn set_material_texture_indices_impl(
+    pub(crate) fn set_material_textures_impl(
         &mut self,
         material: MaterialHandle,
-        indices: [u32; 4],
+        textures: crate::renderer::registry::MaterialTextures,
     ) {
         if let Some(mat) = self.materials.get_mut(material) {
-            mat.texture_indices = indices;
+            mat.textures = textures;
         }
+    }
+
+    /// Resolve a material's typed texture bindings to argument-table
+    /// indices. `NONE` and stale handles resolve to the role's default
+    /// texture slot; this is the only place material texture handles
+    /// become shader-visible numbers on Metal.
+    pub(crate) fn resolve_material_texture_slots_impl(&self, material: MaterialHandle) -> [u32; 4] {
+        use crate::texture::{
+            DEFAULT_ALBEDO_SLOT, DEFAULT_MR_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_OCCLUSION_SLOT,
+        };
+        let textures = self
+            .materials
+            .get(material)
+            .map(|mat| mat.textures)
+            .unwrap_or_default();
+        [
+            self.get_bindless_slot_impl(textures.albedo)
+                .unwrap_or(DEFAULT_ALBEDO_SLOT),
+            self.get_bindless_slot_impl(textures.normal)
+                .unwrap_or(DEFAULT_NORMAL_SLOT),
+            self.get_bindless_slot_impl(textures.metallic_roughness)
+                .unwrap_or(DEFAULT_MR_SLOT),
+            self.get_bindless_slot_impl(textures.occlusion)
+                .unwrap_or(DEFAULT_OCCLUSION_SLOT),
+        ]
     }
 
     pub(crate) fn default_material_impl(&self) -> MaterialHandle {
