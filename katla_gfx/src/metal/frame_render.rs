@@ -47,7 +47,6 @@ struct MetalPassTrace {
 struct FrameEncodingState {
     drawable_view: MetalTextureView,
     drawable_written: bool,
-    depth_prepass_ran: bool,
     tonemap_ran: bool,
     drawable_width: f32,
     drawable_height: f32,
@@ -252,7 +251,6 @@ impl MetalRenderer {
         let mut state = FrameEncodingState {
             drawable_view,
             drawable_written: false,
-            depth_prepass_ran: false,
             tonemap_ran: false,
             drawable_width,
             drawable_height,
@@ -270,10 +268,7 @@ impl MetalRenderer {
             let encoded = match record.kind {
                 PassKind::Shadow => self.encode_shadow_record(&mut cmd_buffer, &state, &data)?,
                 PassKind::DepthPrepass => {
-                    let encoded =
-                        self.encode_depth_prepass_record(&mut cmd_buffer, &state, &data)?;
-                    state.depth_prepass_ran |= encoded;
-                    encoded
+                    self.encode_depth_prepass_record(&mut cmd_buffer, &state, &data)?
                 }
                 PassKind::Geometry => self.encode_geometry_record(
                     &mut cmd_buffer,
@@ -456,34 +451,28 @@ impl MetalRenderer {
     ) -> Result<bool, RendererError> {
         let draw_list = merge_draw_lists(data);
         // The graph's declared attachments drive the encoder: depth is bound
-        // only when the pass declares it, and the declared load/store/clear
-        // ops replace the legacy canvas defaults. The prepass heuristic only
-        // fills in ops for records compiled before depth declarations.
-        let depth_attachment = if record.uses_depth {
-            let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "Metal Geometry record declares depth but has no depth-stencil target".into(),
-                )
-            })?;
-            let declared = record.depth_attachment;
-            Some(DepthAttachmentInfo {
-                view: depth_view.clone(),
-                load_op: declared
-                    .map(|ops| ops.load_op)
-                    .unwrap_or(if state.depth_prepass_ran {
-                        LoadOp::Load
-                    } else {
-                        LoadOp::Clear
-                    }),
-                store_op: declared.map(|ops| ops.store_op).unwrap_or(StoreOp::Store),
-                clear_value: declared
-                    .map(|ops| ops.clear_value)
-                    .unwrap_or(ClearValue::depth_stencil(0.0, 0)),
-                format: ImageFormat::D32SfloatS8Uint,
+        // only when the pass declares a depth attachment (with its declared
+        // ops), matching the Vulkan backend. A depth-needing pass kind
+        // without a declared attachment renders without depth, exactly as
+        // the compiled graph describes.
+        let depth_attachment = record
+            .depth_attachment
+            .map(|declared| {
+                let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+                    RendererError::InvalidOperation(
+                        "Metal Geometry record declares depth but has no depth-stencil target"
+                            .into(),
+                    )
+                })?;
+                Ok(DepthAttachmentInfo {
+                    view: depth_view.clone(),
+                    load_op: declared.load_op,
+                    store_op: declared.store_op,
+                    clear_value: declared.clear_value,
+                    format: ImageFormat::D32SfloatS8Uint,
+                })
             })
-        } else {
-            None
-        };
+            .transpose()?;
         let declared_color = record.color_attachments.first();
 
         let color_view = if post_process_later {
