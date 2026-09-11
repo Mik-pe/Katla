@@ -296,6 +296,7 @@ pub use render_pass::{
 pub use renderer::{UIDrawList, UiDrawCommand};
 
 // Renderer types (backend-agnostic)
+pub use renderer::registry::MaterialTextures;
 pub use renderer::registry::MeshIndexElement;
 pub use renderer::registry::{
     MeshDescriptor, MeshMemoryClass, MeshMemoryReport, MeshUsage, PrimitiveTopology,

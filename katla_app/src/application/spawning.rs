@@ -5,7 +5,11 @@ use log::{debug, info};
 use crate::scene::entity_source::EntitySource;
 
 struct GltfTextureUpload {
-    indices: [u32; 5],
+    /// Typed handles for the four material PBR roles.
+    textures: katla_gfx::MaterialTextures,
+    /// Emission bindless index for the draw path (raw; tracked with the
+    /// DrawCall emission field, not material state).
+    emission_index: u32,
     handles: Vec<katla_gfx::TextureHandle>,
 }
 
@@ -455,16 +459,10 @@ impl super::Application {
             self.gpu_resource_tracker.track_texture(*handle);
         }
 
-        // Set texture indices on material (only first 4: albedo, normal, mr, ao)
-        self.renderer.set_material_texture_indices(
-            material_handle,
-            [
-                texture_upload.indices[0],
-                texture_upload.indices[1],
-                texture_upload.indices[2],
-                texture_upload.indices[3],
-            ],
-        );
+        // Bind the four PBR roles by handle; the backend resolves them to
+        // its binding table at upload/encode time.
+        self.renderer
+            .set_material_textures(material_handle, texture_upload.textures);
 
         // 6. Spawn entity with emission texture index
         let entity = self.world.spawn((
@@ -490,13 +488,13 @@ impl super::Application {
 
         // Set emission texture index on drawable component
         if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
-            drawable.emission = texture_upload.indices[4] as f32;
+            drawable.emission = texture_upload.emission_index as f32;
 
-            if texture_upload.indices[4] > 0 {
+            if texture_upload.emission_index > 0 {
                 info!(
                     "Model '{}' has emission texture at bindless index {}",
                     path.as_ref().display(),
-                    texture_upload.indices[4]
+                    texture_upload.emission_index
                 );
             }
         }
@@ -614,12 +612,8 @@ impl super::Application {
     ///
     /// Returns [albedo, normal, metallic_roughness, ao, emission] indices.
     fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> GltfTextureUpload {
-        let default_index = 0u32;
-        let mut albedo_index = default_index;
-        let mut normal_index = default_index;
-        let mut mr_index = default_index;
-        let mut ao_index = default_index;
-        let mut emission_index = default_index;
+        let mut textures = katla_gfx::MaterialTextures::default();
+        let mut emission_index = 0u32;
         let mut handles = Vec::new();
 
         let material_info = model.materials.first();
@@ -629,42 +623,36 @@ impl super::Application {
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, true);
-                albedo_index = self.get_bindless_index(handle);
+                textures.albedo = handle;
                 handles.push(handle);
-                debug!(
-                    "Uploaded albedo texture {} -> bindless {}",
-                    tex_idx, albedo_index
-                );
+                debug!("Uploaded albedo texture {} -> {:?}", tex_idx, handle);
             }
 
             if let Some(tex_idx) = mat.normal_texture
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, false);
-                normal_index = self.get_bindless_index(handle);
+                textures.normal = handle;
                 handles.push(handle);
-                debug!(
-                    "Uploaded normal texture {} -> bindless {}",
-                    tex_idx, normal_index
-                );
+                debug!("Uploaded normal texture {} -> {:?}", tex_idx, handle);
             }
 
             if let Some(tex_idx) = mat.metallic_roughness_texture
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, false);
-                mr_index = self.get_bindless_index(handle);
+                textures.metallic_roughness = handle;
                 handles.push(handle);
-                debug!("Uploaded MR texture {} -> bindless {}", tex_idx, mr_index);
+                debug!("Uploaded MR texture {} -> {:?}", tex_idx, handle);
             }
 
             if let Some(tex_idx) = mat.occlusion_texture
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, false);
-                ao_index = self.get_bindless_index(handle);
+                textures.occlusion = handle;
                 handles.push(handle);
-                debug!("Uploaded AO texture {} -> bindless {}", tex_idx, ao_index);
+                debug!("Uploaded AO texture {} -> {:?}", tex_idx, handle);
             }
 
             if let Some(tex_idx) = mat.emission_texture
@@ -681,13 +669,8 @@ impl super::Application {
         }
 
         GltfTextureUpload {
-            indices: [
-                albedo_index,
-                normal_index,
-                mr_index,
-                ao_index,
-                emission_index,
-            ],
+            textures,
+            emission_index,
             handles,
         }
     }

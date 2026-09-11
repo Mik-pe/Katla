@@ -141,7 +141,7 @@ impl MetalRenderer {
                     draw.instance_index,
                     draw.skeleton,
                     mesh.index_count,
-                    material.texture_indices,
+                    material.textures,
                     material.descriptor.as_ref().map(|d| &d.vertex),
                 );
             }

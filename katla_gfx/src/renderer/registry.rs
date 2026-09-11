@@ -397,20 +397,34 @@ impl MeshAsset {
     }
 }
 
-/// Bindless texture indices for a material.
+/// Typed texture bindings for a material.
 ///
-/// Stores the indices into the bindless texture array for each PBR texture slot.
-/// Layout: [albedo, normal, metallic_roughness, ao].
+/// A material refers to textures by handle, per named PBR role. Backends
+/// resolve each handle to their binding-table representation (Vulkan
+/// bindless slot, Metal argument-table index) when preparing or encoding
+/// work; shader-visible numeric indices stay an internal ABI detail.
+/// `TextureHandle::NONE` (the default) means "use the role's fallback
+/// texture"; stale handles also resolve to the fallback rather than to
+/// whatever now occupies a recycled slot.
 #[derive(Clone, Copy, Debug)]
 pub struct MaterialTextures {
-    /// Texture indices for bindless: [albedo, normal, metallic_roughness, ao]
-    pub texture_indices: [u32; 4],
+    /// Base-color (albedo) texture.
+    pub albedo: crate::handle::TextureHandle,
+    /// Surface-normal texture.
+    pub normal: crate::handle::TextureHandle,
+    /// Metallic/roughness texture.
+    pub metallic_roughness: crate::handle::TextureHandle,
+    /// Ambient-occlusion texture.
+    pub occlusion: crate::handle::TextureHandle,
 }
 
 impl Default for MaterialTextures {
     fn default() -> Self {
         Self {
-            texture_indices: [0, 1, 2, 3], // albedo, normal, metallic_roughness, ao
+            albedo: crate::handle::TextureHandle::NONE,
+            normal: crate::handle::TextureHandle::NONE,
+            metallic_roughness: crate::handle::TextureHandle::NONE,
+            occlusion: crate::handle::TextureHandle::NONE,
         }
     }
 }
@@ -454,7 +468,7 @@ pub struct MaterialAsset {
     pub fragment_entry: String,
     /// Vertex binding description.
     pub vertex_binding: VertexBinding,
-    /// Bindless texture indices for this material.
+    /// Typed texture bindings for this material.
     pub textures: MaterialTextures,
     /// Descriptor set containing material uniforms (Set 1).
     pub material_descriptor_set: Option<vk::DescriptorSet>,
