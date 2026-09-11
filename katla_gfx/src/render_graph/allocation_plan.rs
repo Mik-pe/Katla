@@ -13,19 +13,30 @@ use super::resource::{GraphResourceDesc, GraphResourceType};
 use crate::texture::ImageFormat;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TransientAllocationKind {
+pub(crate) enum TransientAllocationKind {
     ColorAttachment,
     DepthAttachment { sampled: bool },
     SampledImage,
 }
 
+impl TransientAllocationKind {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::ColorAttachment => "color_attachment",
+            Self::DepthAttachment { sampled: true } => "sampled_depth_attachment",
+            Self::DepthAttachment { sampled: false } => "depth_attachment",
+            Self::SampledImage => "sampled_image",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TransientCompatibilityKey {
-    kind: TransientAllocationKind,
-    format: ImageFormat,
-    width: u32,
-    height: u32,
-    tracks_swapchain_size: bool,
+pub(crate) struct TransientCompatibilityKey {
+    pub(crate) kind: TransientAllocationKind,
+    pub(crate) format: ImageFormat,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    pub(crate) tracks_swapchain_size: bool,
 }
 
 impl From<&GraphResourceDesc> for TransientCompatibilityKey {
@@ -49,12 +60,16 @@ impl From<&GraphResourceDesc> for TransientCompatibilityKey {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct PhysicalAllocationSlot {
-    id: u32,
-    compatibility: TransientCompatibilityKey,
-    last_execution_position: usize,
-    pinned: bool,
-    bytes: u64,
+pub(crate) struct PhysicalAllocationSlot {
+    pub(crate) id: u32,
+    pub(crate) compatibility: TransientCompatibilityKey,
+    /// Members in first-use order: each member's alias predecessor precedes
+    /// it and its alias successor follows it in this list.
+    pub(crate) members: Vec<ResourceId>,
+    pub(crate) first_execution_position: usize,
+    pub(crate) last_execution_position: usize,
+    pub(crate) pinned: bool,
+    pub(crate) bytes: u64,
 }
 
 /// Stable assignment of logical transient resources to physical allocation slots.
@@ -62,6 +77,7 @@ struct PhysicalAllocationSlot {
 pub(crate) struct TransientAllocationPlan {
     assignments: BTreeMap<ResourceId, u32>,
     slots: Vec<PhysicalAllocationSlot>,
+    member_bytes: BTreeMap<ResourceId, u64>,
     logical_bytes: u64,
 }
 
@@ -112,6 +128,8 @@ impl TransientAllocationPlan {
                 plan.slots.push(PhysicalAllocationSlot {
                     id,
                     compatibility,
+                    members: Vec::new(),
+                    first_execution_position: lifetime.first_execution_position,
                     last_execution_position: lifetime.last_execution_position,
                     pinned: exported,
                     bytes,
@@ -120,9 +138,11 @@ impl TransientAllocationPlan {
             });
 
             let slot = &mut plan.slots[slot_index];
+            slot.members.push(resource_id);
             slot.last_execution_position = lifetime.last_execution_position;
             slot.pinned |= exported;
             debug_assert_eq!(slot.bytes, bytes);
+            plan.member_bytes.insert(resource_id, bytes);
             plan.assignments.insert(resource_id, slot.id);
         }
 
@@ -137,11 +157,28 @@ impl TransientAllocationPlan {
         self.slots.len()
     }
 
-    pub(crate) fn slot_bytes(&self, id: u32) -> Option<u64> {
-        self.slots
-            .iter()
-            .find(|slot| slot.id == id)
-            .map(|slot| slot.bytes)
+    pub(crate) fn slots(&self) -> &[PhysicalAllocationSlot] {
+        &self.slots
+    }
+
+    pub(crate) fn slot(&self, id: u32) -> Option<&PhysicalAllocationSlot> {
+        self.slots.get(id as usize).filter(|slot| slot.id == id)
+    }
+
+    /// Standalone allocation bytes of a slot's members added up.
+    pub(crate) fn slot_logical_bytes(&self, id: u32) -> Option<u64> {
+        self.slot(id).map(|slot| {
+            slot.members
+                .iter()
+                .filter_map(|member| self.member_bytes.get(member))
+                .fold(0u64, |total, &bytes| total.saturating_add(bytes))
+        })
+    }
+
+    /// Estimated memory the slot's aliasing saves over standalone allocations.
+    pub(crate) fn slot_saved_bytes(&self, id: u32) -> Option<u64> {
+        let slot = self.slot(id)?;
+        Some(self.slot_logical_bytes(id)?.saturating_sub(slot.bytes))
     }
 
     pub(crate) fn logical_bytes(&self) -> u64 {
@@ -201,6 +238,15 @@ mod tests {
         assert_eq!(plan.physical_allocation_count(), 2);
         assert_eq!(plan.logical_bytes(), 3 * 64 * 64 * 4);
         assert_eq!(plan.physical_bytes(), 2 * 64 * 64 * 4);
+
+        let shared = plan.slot(0).unwrap();
+        assert_eq!(shared.members, vec![ResourceId(0), ResourceId(1)]);
+        assert_eq!(shared.first_execution_position, 0);
+        assert_eq!(shared.last_execution_position, 3);
+        assert_eq!(plan.slot_logical_bytes(0), Some(2 * 64 * 64 * 4));
+        assert_eq!(plan.slot_saved_bytes(0), Some(64 * 64 * 4));
+        assert_eq!(plan.slot_saved_bytes(1), Some(0));
+        assert_eq!(plan.slot_saved_bytes(9), None);
     }
 
     #[test]
