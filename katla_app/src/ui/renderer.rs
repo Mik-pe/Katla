@@ -183,25 +183,10 @@ impl UIRenderer {
 
         // Convert commands
         self.commands.extend(draw_list.commands().iter().map(|cmd| {
-            let bindless_index = self
-                .texture_to_index
-                .get(&cmd.texture)
-                .copied()
-                .unwrap_or(0);
             if cmd.is_instanced {
-                UiDrawCommand::instanced(
-                    cmd.offset,
-                    cmd.count,
-                    cmd.clip_rect,
-                    TextureHandle::from_raw(bindless_index, 0),
-                )
+                UiDrawCommand::instanced(cmd.offset, cmd.count, cmd.clip_rect)
             } else {
-                UiDrawCommand::vertex(
-                    cmd.offset,
-                    cmd.count,
-                    cmd.clip_rect,
-                    TextureHandle::from_raw(bindless_index, 0),
-                )
+                UiDrawCommand::vertex(cmd.offset, cmd.count, cmd.clip_rect)
             }
         }));
 
