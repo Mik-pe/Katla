@@ -54,6 +54,7 @@ mod pbr {
         let graph = harness::build_graph(|builder| {
             builder.add_pass(
                 GeometryPass::new("geometry")
+                    .without_depth()
                     .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                     .clear_color([0.0, 0.0, 0.0, 1.0])
                     .material(material),
@@ -579,6 +580,7 @@ mod pbr {
         let mut dark_graph = harness::build_graph(|builder| {
             builder.add_pass(
                 GeometryPass::new("geometry")
+                    .without_depth()
                     .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                     .clear_color([0.0, 0.0, 0.0, 1.0])
                     .material(material),
@@ -587,6 +589,7 @@ mod pbr {
         let mut blue_graph = harness::build_graph(|builder| {
             builder.add_pass(
                 GeometryPass::new("geometry")
+                    .without_depth()
                     .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                     .clear_color([0.0, 0.0, 0.5, 1.0])
                     .material(material),
@@ -678,11 +681,15 @@ fn test_contract_declared_load_extends_and_clear_replaces() {
     ] {
         let mut graph = harness::build_graph(|builder| {
             builder
-                .add_pass(GeometryPass::new("background").write_color_ops(
-                    "backbuffer",
-                    ImageFormat::B8G8R8A8Srgb,
-                    AttachmentOps::clear(clear),
-                ))
+                .add_pass(
+                    GeometryPass::new("background")
+                        .without_depth()
+                        .write_color_ops(
+                            "backbuffer",
+                            ImageFormat::B8G8R8A8Srgb,
+                            AttachmentOps::clear(clear),
+                        ),
+                )
                 .add_pass(
                     UIPass::new("ui")
                         .write("backbuffer")

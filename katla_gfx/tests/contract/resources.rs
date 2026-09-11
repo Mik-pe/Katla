@@ -37,11 +37,15 @@ fn single_color_graph(
 ) -> katla_gfx::render_graph::any_frame_graph::AnyFrameGraph {
     harness::build_graph(|builder| {
         builder
-            .add_pass(GeometryPass::new("background").write_color_ops(
-                "backbuffer",
-                ImageFormat::B8G8R8A8Srgb,
-                AttachmentOps::clear(ClearValue::Color([0.0, 0.0, 0.0, 1.0])),
-            ))
+            .add_pass(
+                GeometryPass::new("background")
+                    .without_depth()
+                    .write_color_ops(
+                        "backbuffer",
+                        ImageFormat::B8G8R8A8Srgb,
+                        AttachmentOps::clear(ClearValue::Color([0.0, 0.0, 0.0, 1.0])),
+                    ),
+            )
             .add_pass(
                 UIPass::new("ui")
                     .write("backbuffer")
@@ -237,18 +241,26 @@ fn test_contract_frame_slots_keep_frames_independent() {
     renderer.init_frame_pipelines();
 
     let mut red_graph = harness::build_graph(|builder| {
-        builder.add_pass(GeometryPass::new("background").write_color_ops(
-            "backbuffer",
-            ImageFormat::B8G8R8A8Srgb,
-            AttachmentOps::clear(ClearValue::Color([1.0, 0.0, 0.0, 1.0])),
-        ))
+        builder.add_pass(
+            GeometryPass::new("background")
+                .without_depth()
+                .write_color_ops(
+                    "backbuffer",
+                    ImageFormat::B8G8R8A8Srgb,
+                    AttachmentOps::clear(ClearValue::Color([1.0, 0.0, 0.0, 1.0])),
+                ),
+        )
     });
     let mut black_graph = harness::build_graph(|builder| {
-        builder.add_pass(GeometryPass::new("background").write_color_ops(
-            "backbuffer",
-            ImageFormat::B8G8R8A8Srgb,
-            AttachmentOps::clear(ClearValue::Color([0.0, 0.0, 0.0, 1.0])),
-        ))
+        builder.add_pass(
+            GeometryPass::new("background")
+                .without_depth()
+                .write_color_ops(
+                    "backbuffer",
+                    ImageFormat::B8G8R8A8Srgb,
+                    AttachmentOps::clear(ClearValue::Color([0.0, 0.0, 0.0, 1.0])),
+                ),
+        )
     });
     let cycles = (renderer.gfx().num_images() * 2).max(4);
 
