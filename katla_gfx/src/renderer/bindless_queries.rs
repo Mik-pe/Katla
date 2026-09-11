@@ -31,6 +31,17 @@ impl VulkanRenderer {
         self.texture_manager.get_bindless_index(handle)
     }
 
+    /// Resolve a draw's emission texture handle to its binding-table slot.
+    ///
+    /// This is the only place a [`DrawCall`](crate::renderer::DrawCall)
+    /// emission handle becomes a shader-visible number. `NONE` and stale
+    /// handles resolve to 0 — the shaders' no-emission sentinel — so a dead
+    /// handle can never sample whatever texture now occupies a recycled
+    /// slot. Public for validation against the prepared binding table.
+    pub fn resolve_emission_texture_slot(&self, handle: TextureHandle) -> u32 {
+        self.texture_manager.get_bindless_slot(handle).unwrap_or(0)
+    }
+
     /// Get the texture handle at a specific bindless slot.
     ///
     /// This is useful for debugging and texture inspection tools to determine

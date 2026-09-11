@@ -1156,7 +1156,8 @@ impl GpuRenderer for MetalRenderer {
             let base = draw.instance_index as usize;
             let count = draw.instance_count().max(1) as usize;
 
-            let material_params = draw.material_params();
+            let emission_slot = self.resolve_emission_texture_slot_impl(draw.emission) as f32;
+            let material_params = draw.material_params(emission_slot);
 
             let tex_indices: [u32; 4] = self.resolve_material_texture_slots_impl(draw.material);
 
