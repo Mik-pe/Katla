@@ -309,6 +309,7 @@ impl MetalExecutionPlan {
                             | PassKind::Outline
                     ),
                     depth_attachment: None,
+                    material: None,
                 })
                 .collect(),
         }
