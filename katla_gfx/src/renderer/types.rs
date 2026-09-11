@@ -5,7 +5,7 @@
 
 use smallvec::{SmallVec, smallvec};
 
-use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle};
+use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::vertex::VertexUI;
 use crate::vertex::VertexUIInstance;
 
@@ -145,8 +145,10 @@ pub struct DrawCall {
     /// Base object storage slot (Set 0, Binding 1) assigned by `DrawList::push`.
     /// Covers slots `base_object_slot() .. base_object_slot() + instance_count()`.
     pub(crate) instance_index: u32,
-    /// Emission texture bindless index (0 = no emission).
-    pub emission: f32,
+    /// Emission texture for self-illumination, referenced by handle.
+    /// The backend resolves it to a binding-table slot when preparing work
+    /// (`NONE` and stale handles resolve to 0 = no emission).
+    pub emission: TextureHandle,
     /// Whether this draw uses transparency (affects sort order).
     pub transparent: bool,
     /// Optional sorting key (for transparent objects, etc.).
@@ -166,7 +168,7 @@ impl DrawCall {
             mesh,
             material,
             instance_index: 0, // Will be set by FrameContext
-            emission: 0.0,
+            emission: TextureHandle::NONE,
             transparent: false,
             sort_key: None,
             skeleton: SkeletonHandle::NONE,
@@ -188,7 +190,7 @@ impl DrawCall {
             mesh,
             material,
             instance_index: 0, // Will be set by FrameContext
-            emission: 0.0,
+            emission: TextureHandle::NONE,
             transparent: false,
             sort_key: None,
             skeleton: SkeletonHandle::NONE,
@@ -249,8 +251,8 @@ impl DrawCall {
         self
     }
 
-    /// Set emission texture index for self-illumination (0 = no emission).
-    pub fn with_emission(mut self, emission: f32) -> Self {
+    /// Set the emission texture for self-illumination (`NONE` = no emission).
+    pub fn with_emission(mut self, emission: TextureHandle) -> Self {
         self.emission = emission;
         self
     }
@@ -266,13 +268,16 @@ impl DrawCall {
     }
 
     /// Get material parameters as an array for GPU upload: [metallic, roughness, ao, emission].
-    pub fn material_params(&self) -> [f32; 4] {
+    ///
+    /// The emission slot is supplied by the backend after resolving
+    /// [`DrawCall::emission`] against its binding table (0 = no emission).
+    pub fn material_params(&self, emission_slot: f32) -> [f32; 4] {
         let inst = self.instances.first();
         [
             inst.map(|i| i.metallic).unwrap_or(0.0),
             inst.map(|i| i.roughness).unwrap_or(0.5),
             inst.map(|i| i.ao).unwrap_or(1.0),
-            self.emission,
+            emission_slot,
         ]
     }
 

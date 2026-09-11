@@ -38,7 +38,7 @@
 //! ```
 
 use katla_gfx::{
-    MaterialHandle, MeshHandle, SkeletonHandle,
+    MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle,
     renderer::{DrawCall, DrawList, FrameUniforms, InstanceData},
 };
 
@@ -202,8 +202,8 @@ pub struct DrawBuilder<'a> {
     roughness: Option<f32>,
     /// Ambient occlusion factor
     ao: Option<f32>,
-    /// Emission texture bindless index
-    emission: Option<f32>,
+    /// Emission texture handle
+    emission: Option<TextureHandle>,
     /// Instance data for instanced rendering
     instances: Vec<InstanceData>,
 }
@@ -234,11 +234,11 @@ impl<'a> DrawBuilder<'a> {
         self
     }
 
-    /// Set emission texture index for self-illumination.
+    /// Set the emission texture for self-illumination.
     ///
     /// # Arguments
-    /// * `emission` - Emission texture bindless index (0.0 = no emission)
-    pub fn with_emission(mut self, emission: f32) -> Self {
+    /// * `emission` - Emission texture handle (`NONE` = no emission)
+    pub fn with_emission(mut self, emission: TextureHandle) -> Self {
         self.emission = Some(emission);
         self
     }
@@ -310,7 +310,7 @@ impl<'a> DrawBuilder<'a> {
         };
 
         let mut draw_call = DrawCall::instanced(self.mesh, self.material, instances)
-            .with_emission(self.emission.unwrap_or(0.0));
+            .with_emission(self.emission.unwrap_or(TextureHandle::NONE));
 
         if let Some(skeleton) = self.skeleton {
             draw_call = draw_call.with_skeleton(skeleton);

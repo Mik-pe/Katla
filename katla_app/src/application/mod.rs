@@ -121,9 +121,6 @@ pub(crate) struct EditorState {
     /// Pending picking operation: (frame_number, mouse_x_physical, mouse_y_physical).
     /// Set on left-click in viewport, processed after the next render.
     pub(crate) pending_pick: Option<(usize, f32, f32)>,
-    /// Bindless texture index for the stencil indicator R8 texture.
-    /// Passed to the tonemap shader each frame via emission_idx field.
-    pub(crate) stencil_indicator_bindless_index: Option<u32>,
     /// Gizmo state (mode, drag, hover).
     pub(crate) gizmo_state: crate::gizmo::GizmoState,
     /// Gizmo GPU resources (meshes, material).
@@ -202,7 +199,6 @@ impl EditorState {
             entity_instance_map: std::collections::HashMap::new(),
             entity_to_instance_indices: std::collections::HashMap::new(),
             pending_pick: None,
-            stencil_indicator_bindless_index: None,
             gizmo_state: crate::gizmo::GizmoState::default(),
             gizmo_resources: crate::gizmo::GizmoResources::default(),
             physics_debug_resources:

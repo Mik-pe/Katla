@@ -57,6 +57,16 @@ impl MetalRenderer {
             .and_then(|entry| entry.bindless_slot)
     }
 
+    /// Resolve a draw's emission texture handle to its binding-table slot.
+    ///
+    /// The only place a draw emission handle becomes a shader-visible
+    /// number. `NONE` and stale handles resolve to 0 — the shaders'
+    /// no-emission sentinel — so a dead handle can never sample whatever
+    /// texture now occupies a recycled slot.
+    pub(crate) fn resolve_emission_texture_slot_impl(&self, handle: TextureHandle) -> u32 {
+        self.get_bindless_slot_impl(handle).unwrap_or(0)
+    }
+
     pub(crate) fn get_texture_at_slot_impl(&self, slot: u32) -> Option<TextureHandle> {
         self.textures
             .iter_enumerated()

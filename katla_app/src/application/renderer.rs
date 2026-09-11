@@ -160,9 +160,7 @@ impl Application {
 
             draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
 
-            if drawable.emission > 0.0 {
-                draw = draw.with_emission(drawable.emission);
-            }
+            draw = draw.with_emission(drawable.emission);
 
             #[cfg(feature = "editor")]
             {
@@ -898,10 +896,6 @@ impl Application {
             else {
                 continue;
             };
-            let bindless_idx = self
-                .renderer
-                .get_bindless_slot(*texture_handle)
-                .unwrap_or(0);
 
             let desired_screen_size = 40.0 * billboard.size;
             let world_scale = compute_gizmo_scale(
@@ -923,7 +917,7 @@ impl Application {
             )
             .with_transform(transform_mat.to_array())
             .with_color(color.to_array())
-            .with_emission(bindless_idx as f32)
+            .with_emission(*texture_handle)
             .with_billboard();
 
             let idx = draw_list.push(draw);

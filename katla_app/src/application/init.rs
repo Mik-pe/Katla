@@ -467,18 +467,16 @@ impl Application {
                 .stencil_indicator
                 .as_deref()
             {
-                let index = self
-                    .frame_graph
-                    .register_transient_texture_bindless(&mut self.renderer, name)
-                    .map_err(|e| AppError::RendererInitFailed {
-                        reason: format!(
-                            "Failed to register stencil-indicator resource '{name}': {e}"
-                        ),
-                    })?;
-                self.editor.stencil_indicator_bindless_index = Some(index);
-                Some(index)
+                Some(
+                    self.frame_graph
+                        .register_transient_texture_bindless(&mut self.renderer, name)
+                        .map_err(|e| AppError::RendererInitFailed {
+                            reason: format!(
+                                "Failed to register stencil-indicator resource '{name}': {e}"
+                            ),
+                        })?,
+                )
             } else {
-                self.editor.stencil_indicator_bindless_index = None;
                 None
             };
 
