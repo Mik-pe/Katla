@@ -123,13 +123,11 @@ impl VulkanRenderer {
                 });
             }
 
-            // Material parameters and texture indices are shared by all instances
+            // Material parameters and texture indices are shared by all
+            // instances; handles resolve to slots (with per-role fallback)
+            // here, right before the upload.
             let emission_idx = draw_call.emission;
-            let texture_indices = self
-                .asset_registry
-                .get_material(draw_call.material)
-                .map(|m| m.textures.texture_indices)
-                .unwrap_or([0, 1, 2, 3]);
+            let texture_indices = self.resolve_material_texture_slots(draw_call.material);
 
             for (i, instance) in draw_call
                 .instances

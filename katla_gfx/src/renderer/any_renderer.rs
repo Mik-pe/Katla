@@ -434,11 +434,15 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
+    fn set_material_textures(
+        &mut self,
+        material: MaterialHandle,
+        textures: crate::renderer::registry::MaterialTextures,
+    ) {
         match self {
-            AnyRenderer::Vulkan(r) => r.set_material_texture_indices(material, indices),
+            AnyRenderer::Vulkan(r) => r.set_material_textures(material, textures),
             #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.set_material_texture_indices(material, indices),
+            AnyRenderer::Metal(r) => r.set_material_textures(material, textures),
         }
     }
 

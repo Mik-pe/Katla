@@ -1,4 +1,8 @@
+use super::registry::MaterialTextures;
 use super::*;
+use crate::texture::{
+    DEFAULT_ALBEDO_SLOT, DEFAULT_MR_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_OCCLUSION_SLOT,
+};
 
 impl VulkanRenderer {
     /// Create a PBR material with configurable color format.
@@ -102,18 +106,47 @@ impl VulkanRenderer {
         }
     }
 
-    /// Set texture indices for a material.
+    /// Set the typed texture bindings for a material.
     ///
-    /// Updates the material's texture indices for bindless sampling.
-    /// Texture indices are obtained from `create_texture_*` methods.
+    /// Each role refers to a texture by handle; `TextureHandle::NONE`
+    /// leaves the role on its fallback texture. The backend resolves
+    /// handles to its binding-table representation at upload/encode time,
+    /// so materials never store raw slot numbers.
     ///
     /// # Arguments
     /// * `material` - Material handle to update
-    /// * `indices` - [albedo, normal, metallic_roughness, ao] texture indices
-    pub fn set_material_texture_indices(&mut self, material: MaterialHandle, indices: [u32; 4]) {
+    /// * `textures` - Handles for [albedo, normal, metallic_roughness, occlusion]
+    pub fn set_material_textures(&mut self, material: MaterialHandle, textures: MaterialTextures) {
         if let Some(mat) = self.asset_registry.get_material_mut(material) {
-            mat.textures.texture_indices = indices;
+            mat.textures = textures;
         }
+    }
+
+    /// Resolve a material's typed texture bindings to bindless slots.
+    ///
+    /// This is the only place material texture handles become shader-visible
+    /// numbers. `NONE` and stale handles resolve to the role's default
+    /// texture slot, so a dead handle can never sample whatever texture now
+    /// occupies a recycled slot. Public for validation against the prepared
+    /// binding table (tests and diagnostics).
+    pub fn resolve_material_texture_slots(&self, material: MaterialHandle) -> [u32; 4] {
+        let textures = self
+            .asset_registry
+            .get_material(material)
+            .map(|m| m.textures)
+            .unwrap_or_default();
+        [
+            self.resolve_texture_slot(textures.albedo, DEFAULT_ALBEDO_SLOT),
+            self.resolve_texture_slot(textures.normal, DEFAULT_NORMAL_SLOT),
+            self.resolve_texture_slot(textures.metallic_roughness, DEFAULT_MR_SLOT),
+            self.resolve_texture_slot(textures.occlusion, DEFAULT_OCCLUSION_SLOT),
+        ]
+    }
+
+    fn resolve_texture_slot(&self, handle: TextureHandle, fallback_slot: u32) -> u32 {
+        self.texture_manager
+            .get_bindless_slot(handle)
+            .unwrap_or(fallback_slot)
     }
 
     /// Returns the default white PBR material handle.
