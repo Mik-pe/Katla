@@ -9,7 +9,6 @@ use std::{ffi::CString, rc::Rc};
 
 use super::super::context::VulkanContext;
 use crate::sync::{VkDescriptorSetLayout, VkPipeline, VkPipelineLayout};
-use crate::vulkan::pipeline_state::ShaderStages;
 
 /// Builder for creating compute pipelines.
 pub struct ComputePipelineBuilder {
@@ -38,11 +37,6 @@ impl ComputePipelineBuilder {
     }
 
     /// Set a custom entry point name (default: "cs_main").
-    pub fn with_entry_point(mut self, entry_point: CString) -> Self {
-        self.entry_point = entry_point;
-        self
-    }
-
     /// Set the descriptor set layouts using wrapper types.
     pub fn with_descriptor_layouts(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
         self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
@@ -56,23 +50,6 @@ impl ComputePipelineBuilder {
     }
 
     /// Set the push constant ranges.
-    pub fn with_push_constants(mut self, ranges: Vec<vk::PushConstantRange>) -> Self {
-        self.push_constant_ranges = ranges;
-        self
-    }
-
-    /// Add a push constant range.
-    pub fn add_push_constant_range(mut self, stages: ShaderStages, offset: u32, size: u32) -> Self {
-        let vk_stages: vk::ShaderStageFlags = stages.into();
-        self.push_constant_ranges.push(
-            vk::PushConstantRange::default()
-                .stage_flags(vk_stages)
-                .offset(offset)
-                .size(size),
-        );
-        self
-    }
-
     /// Build the compute pipeline.
     pub fn build(self) -> Result<ComputePipeline, ComputePipelineError> {
         let compute_shader = self

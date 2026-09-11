@@ -24,35 +24,18 @@ impl VulkanRenderer {
     ///
     /// # Example
     /// ```ignore
-    /// use katla_gfx::vulkan::material::compiler::{MaterialOptions, VertexType};
+    /// use katla_gfx::{PipelineDescriptor, GpuRenderer};
     ///
     /// // PBR material (default settings)
-    /// let pbr = renderer.compile_material("shaders/pbr.wgsl", MaterialOptions {
-    ///     vertex_type: VertexType::Pbr,
-    ///     ..Default::default()
-    /// })?;
-    ///
-    /// // UI material with alpha blending
-    /// let ui = renderer.compile_material("shaders/ui.wgsl", MaterialOptions {
-    ///     vertex_type: VertexType::Ui,
-    ///     alpha_blended: true,
-    ///     ..Default::default()
-    /// })?;
-    ///
-    /// // Skinned mesh material for GLTF models
-    /// let skinned = renderer.compile_material("shaders/skinned.wgsl", MaterialOptions {
-    ///     vertex_type: VertexType::Skinned,
-    ///     ..Default::default()
-    /// })?;
+    /// let pbr = renderer.compile_material(&PipelineDescriptor::pbr("shaders/pbr.wgsl"))?;
     ///
     /// // HDR material for intermediate render targets
-    /// let hdr = renderer.compile_material("shaders/pbr.wgsl", MaterialOptions {
-    ///     vertex_type: VertexType::Pbr,
-    ///     color_format: ImageFormat::R16G16B16A16Sfloat,
-    ///     ..Default::default()
-    /// })?;
+    /// let hdr = renderer.compile_material(
+    ///     &PipelineDescriptor::pbr("shaders/pbr.wgsl")
+    ///         .with_color_format(ImageFormat::R16G16B16A16Sfloat),
+    /// )?;
     /// ```
-    pub fn compile_material(
+    pub(crate) fn compile_material(
         &mut self,
         shader_path: impl AsRef<std::path::Path>,
         options: crate::vulkan::material::compiler::MaterialOptions,

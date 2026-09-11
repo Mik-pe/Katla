@@ -86,19 +86,14 @@ impl Application {
         );
 
         // Create HDR PBR material for rendering to HDR intermediate
-        self.default_material_handle = self
-            .renderer
-            .unwrap_vulkan()
-            .compile_material(
-                &shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: katla_gfx::VertexType::Pbr,
-                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                    ..Default::default()
-                },
-            )
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to create default HDR PBR material: {e}"),
+        let descriptor =
+            katla_gfx::PipelineDescriptor::pbr(shader_path.to_string_lossy().into_owned())
+                .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat);
+        self.default_material_handle =
+            self.renderer.compile_material(&descriptor).map_err(|e| {
+                AppError::RendererInitFailed {
+                    reason: format!("Failed to create default HDR PBR material: {e}"),
+                }
             })?;
 
         info!("Default HDR PBR material loaded successfully");
@@ -752,37 +747,14 @@ impl Application {
         };
 
         let shader_path = self.resources.shader_path("billboard.wgsl");
-        let material = match &mut self.renderer {
-            katla_gfx::AnyRenderer::Vulkan(r) => match r.compile_material(
-                &shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: katla_gfx::VertexType::Pbr,
-                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                    alpha_blended: true,
-                    depth_test: true,
-                    double_sided: true,
-                    ..Default::default()
-                },
-            ) {
-                Ok(m) => m,
-                Err(e) => {
-                    log::error!("Failed to create billboard material: {e}");
-                    return;
-                }
-            },
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => {
-                match self
-                    .renderer
-                    .compile_material(&katla_gfx::PipelineDescriptor::billboard(
-                        shader_path.to_string_lossy().into_owned(),
-                    )) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        log::error!("Failed to create billboard material: {e}");
-                        return;
-                    }
-                }
+        let descriptor =
+            katla_gfx::PipelineDescriptor::billboard(shader_path.to_string_lossy().into_owned())
+                .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat);
+        let material = match self.renderer.compile_material(&descriptor) {
+            Ok(m) => m,
+            Err(e) => {
+                log::error!("Failed to create billboard material: {e}");
+                return;
             }
         };
 

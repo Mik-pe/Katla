@@ -18,7 +18,8 @@ use katla_gfx::animation::{
 };
 use katla_gfx::renderer::AssetRegistry;
 use katla_gfx::sync::VkShaderModule;
-use katla_gfx::{ShaderCache, ValidationMode, VulkanContext};
+use katla_gfx::vulkan_native::ShaderCache;
+use katla_gfx::{ValidationMode, VulkanContext};
 use std::ffi::CString;
 use std::path::PathBuf;
 use std::process::ExitCode;

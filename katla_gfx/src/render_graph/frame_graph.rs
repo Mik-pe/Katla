@@ -116,7 +116,7 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// Per-frame compositing descriptor sets (one per frame in flight).
     /// Pre-allocated and reused each frame via update_textures().
     pub(super) compositing_descriptor_sets:
-        RefCell<[Option<crate::render_graph::descriptor_sets::CompositingDescriptorSet>; 2]>,
+        RefCell<[Option<crate::vulkan::compositing::CompositingDescriptorSet>; 2]>,
 }
 
 // --- Backend-agnostic methods ---

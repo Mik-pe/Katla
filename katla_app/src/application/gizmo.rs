@@ -4,7 +4,6 @@ use winit::keyboard::KeyCode;
 
 use crate::application::Application;
 use crate::gizmo::*;
-#[cfg(target_os = "macos")]
 use katla_gfx::GpuRenderer;
 use katla_gfx::primitives;
 use katla_math::Vec2;
@@ -45,35 +44,15 @@ impl Application {
         };
 
         let unlit_shader_path = self.resources.shader_path("unlit.wgsl");
-        let material = match &mut self.renderer {
-            katla_gfx::AnyRenderer::Vulkan(r) => match r.compile_material(
-                &unlit_shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: katla_gfx::VertexType::Pbr,
-                    color_format: katla_gfx::ImageFormat::R16G16B16A16Sfloat,
-                    depth_test: false,
-                    ..Default::default()
-                },
-            ) {
-                Ok(m) => m,
-                Err(e) => {
-                    log::error!("Failed to create gizmo unlit material: {e}");
-                    return;
-                }
-            },
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => {
-                match self
-                    .renderer
-                    .compile_material(&katla_gfx::PipelineDescriptor::pbr(
-                        unlit_shader_path.to_string_lossy().into_owned(),
-                    )) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        log::error!("Failed to create gizmo unlit material: {e}");
-                        return;
-                    }
-                }
+        let descriptor =
+            katla_gfx::PipelineDescriptor::pbr(unlit_shader_path.to_string_lossy().into_owned())
+                .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat)
+                .with_depth(katla_gfx::DepthState::disabled());
+        let material = match self.renderer.compile_material(&descriptor) {
+            Ok(m) => m,
+            Err(e) => {
+                log::error!("Failed to create gizmo unlit material: {e}");
+                return;
             }
         };
 

@@ -13,7 +13,7 @@ use katla_gfx::render_pass::{AttachmentOps, ClearValue};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::VertexUIInstance;
 use katla_gfx::{
-    MaterialOptions, UIDrawList, UiDrawCommand, ValidationMode, VertexType, VulkanRenderer,
+    GpuRenderer, PipelineDescriptor, UIDrawList, UiDrawCommand, ValidationMode, VulkanRenderer,
 };
 
 #[test]
@@ -47,17 +47,9 @@ fn declared_clear_replaces_and_declared_load_extends_attachments() {
     let white_slot = renderer.get_bindless_slot(white).unwrap();
     let shaders = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/shaders");
     let material = renderer
-        .compile_material(
-            shaders.join("ui/ui.wgsl"),
-            MaterialOptions {
-                vertex_type: VertexType::Ui,
-                color_format: ImageFormat::B8G8R8A8Srgb,
-                depth_test: false,
-                alpha_blended: true,
-                double_sided: true,
-                ..Default::default()
-            },
-        )
+        .compile_material(&PipelineDescriptor::ui(
+            shaders.join("ui/ui.wgsl").to_string_lossy().into_owned(),
+        ))
         .unwrap();
     renderer
         .init_light_culling(64, 48, &shaders.join("lighting/light_cull.wgsl"))

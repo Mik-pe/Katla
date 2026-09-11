@@ -178,7 +178,7 @@ impl Frame<'_, VulkanRenderer> {
         viewports: &[(GraphResourceHandle, ViewportRect)],
         frame_idx: usize,
     ) -> Result<vk::DescriptorSet, RenderGraphError> {
-        use crate::render_graph::descriptor_sets::CompositingDescriptorSet;
+        use crate::vulkan::compositing::CompositingDescriptorSet;
         use std::rc::Rc;
 
         let mut texture_views = Vec::with_capacity(viewports.len());

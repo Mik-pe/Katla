@@ -18,8 +18,9 @@ use katla_gfx::renderer::{DrawCall, DrawList};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::{Vertex, VertexPBR};
 use katla_gfx::{
-    FrameUniforms, IndexType, MaterialHandle, MaterialOptions, MeshDescriptor, MeshHandle,
-    MeshMemoryClass, MeshUsage, PrimitiveTopology, ValidationMode, VertexType, VulkanRenderer,
+    CullMode, DepthState, FrameUniforms, GpuRenderer, IndexType, MaterialHandle, MeshDescriptor,
+    MeshHandle, MeshMemoryClass, MeshUsage, PipelineDescriptor, PrimitiveTopology, ValidationMode,
+    VulkanRenderer,
 };
 
 const WIDTH: u32 = 64;
@@ -152,14 +153,15 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
         .unwrap();
     let material: MaterialHandle = renderer
         .compile_material(
-            shaders.join("model_pbr.wgsl"),
-            MaterialOptions {
-                vertex_type: VertexType::Pbr,
-                color_format: ImageFormat::B8G8R8A8Srgb,
-                depth_test: false,
-                double_sided: true,
-                ..Default::default()
-            },
+            &PipelineDescriptor::pbr(
+                shaders
+                    .join("model_pbr.wgsl")
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+            .with_color_format(ImageFormat::B8G8R8A8Srgb)
+            .with_depth(DepthState::disabled())
+            .with_cull(CullMode::None),
         )
         .unwrap();
 

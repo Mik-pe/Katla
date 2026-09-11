@@ -495,8 +495,8 @@ pub fn load_and_create_pipelines(
     asset_registry: &mut AssetRegistry,
     shader_dir: &PathBuf,
 ) -> Result<(), String> {
-    use katla_gfx::ShaderCache;
     use katla_gfx::sync::VkShaderModule;
+    use katla_gfx::vulkan_native::ShaderCache;
 
     let mut shader_cache = ShaderCache::new(context.device.clone());
 

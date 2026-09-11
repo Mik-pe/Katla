@@ -44,7 +44,6 @@ pub mod access;
 mod allocation_plan;
 mod builder;
 mod compiler;
-pub mod descriptor_sets;
 mod diagnostics;
 mod error;
 mod execution_plan_diagnostics;

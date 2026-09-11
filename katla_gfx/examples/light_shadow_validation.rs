@@ -16,10 +16,10 @@ use katla_gfx::shadow::cascade::{
     CascadeParams, CascadeShadowMap, ShadowCascadeGPU, ShadowFrameData,
 };
 use katla_gfx::sync::VkDescriptorSetLayout;
-use katla_gfx::{
-    CommandBuffer, ComputePipeline, ComputePipelineBuilder, ShaderCache, ValidationMode,
-    VulkanContext,
+use katla_gfx::vulkan_native::{
+    CommandBuffer, ComputePipeline, ComputePipelineBuilder, ShaderCache,
 };
+use katla_gfx::{ValidationMode, VulkanContext};
 use std::ffi::CString;
 use std::path::PathBuf;
 use std::process::ExitCode;

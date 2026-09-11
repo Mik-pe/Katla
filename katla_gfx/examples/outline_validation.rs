@@ -14,10 +14,11 @@
 
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
-use katla_gfx::{CommandBuffer, ShaderCache, ValidationMode, VulkanContext};
-use katla_gfx::{
-    CompareOp, CullMode, FrontFace, ImageFormat, Pipeline, PipelineBuilder, VertexFormat,
+use katla_gfx::vulkan_native::{
+    CommandBuffer, Pipeline, PipelineBuilder, ShaderCache, VertexFormat,
 };
+use katla_gfx::{CompareOp, CullMode, FrontFace, ImageFormat};
+use katla_gfx::{ValidationMode, VulkanContext};
 use std::ffi::CString;
 use std::path::PathBuf;
 use std::process::ExitCode;

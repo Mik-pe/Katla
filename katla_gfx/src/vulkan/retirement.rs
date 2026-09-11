@@ -18,6 +18,8 @@ use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 use std::rc::Rc;
 
+use crate::renderer::retirement::RetirementSnapshot;
+
 use super::context::VulkanContext;
 use super::skeleton_buffer::SkeletonBuffer;
 use super::texture::Texture;
@@ -212,85 +214,6 @@ pub enum RetirementKind {
     DescriptorSetLayout,
     SkeletonBuffer,
     BindlessSlot,
-}
-
-impl RetirementKind {
-    fn label(self) -> &'static str {
-        match self {
-            RetirementKind::Buffer => "buffers",
-            RetirementKind::Texture => "textures",
-            RetirementKind::Pipeline => "pipelines",
-            RetirementKind::DescriptorSetLayout => "descriptor-set-layouts",
-            RetirementKind::SkeletonBuffer => "skeleton-buffers",
-            RetirementKind::BindlessSlot => "bindless-slots",
-        }
-    }
-}
-
-/// Diagnostics snapshot of a retirement queue.
-///
-/// `oldest_retired_at` is the frame counter of the oldest pending entry; a
-/// pending entry whose age (`current_frame - oldest_retired_at`) far exceeds
-/// the frames-in-flight count indicates retirement draining has stopped
-/// (e.g. rendering ceased) rather than a leak.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RetirementSnapshot {
-    /// Pending replaced/destroyed vertex, index, and UI buffers.
-    pub buffers: usize,
-    /// Pending destroyed textures.
-    pub textures: usize,
-    /// Pending replaced/destroyed pipelines.
-    pub pipelines: usize,
-    /// Pending standalone descriptor set layouts.
-    pub descriptor_set_layouts: usize,
-    /// Pending skeleton joint-matrix buffers.
-    pub skeleton_buffers: usize,
-    /// Pending bindless slot releases.
-    pub bindless_slots: usize,
-    /// Device-memory bytes held by pending entries that know their size
-    /// (buffers and skeleton buffers; textures and pipelines do not).
-    pub pending_bytes: u64,
-    /// Frame counter at which the oldest pending entry was retired.
-    pub oldest_retired_at: Option<u64>,
-}
-
-impl RetirementSnapshot {
-    /// Total number of pending retirement entries.
-    pub fn total(&self) -> usize {
-        self.buffers
-            + self.textures
-            + self.pipelines
-            + self.descriptor_set_layouts
-            + self.skeleton_buffers
-            + self.bindless_slots
-    }
-
-    /// Human-readable per-kind summary for logs and diagnostics.
-    pub fn summary(&self) -> String {
-        let mut out = format!("pending retirements: {}", self.total());
-        for (count, kind) in [
-            (self.buffers, RetirementKind::Buffer),
-            (self.textures, RetirementKind::Texture),
-            (self.pipelines, RetirementKind::Pipeline),
-            (
-                self.descriptor_set_layouts,
-                RetirementKind::DescriptorSetLayout,
-            ),
-            (self.skeleton_buffers, RetirementKind::SkeletonBuffer),
-            (self.bindless_slots, RetirementKind::BindlessSlot),
-        ] {
-            if count > 0 {
-                out.push_str(&format!(" {}={}", kind.label(), count));
-            }
-        }
-        if self.pending_bytes > 0 {
-            out.push_str(&format!(" bytes={}", self.pending_bytes));
-        }
-        if let Some(retired_at) = self.oldest_retired_at {
-            out.push_str(&format!(" oldest=frame:{retired_at}"));
-        }
-        out
-    }
 }
 
 /// Queue of retired resources waiting for their last user to complete.

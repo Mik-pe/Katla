@@ -446,7 +446,7 @@ pub struct MaterialAsset {
     pub shader_path: Option<std::path::PathBuf>,
     /// Vertex type used when compiling (Pbr, Ui, Skinned, etc.).
     /// Needed for correct recompilation when descriptor layouts change.
-    pub vertex_type: crate::vulkan::material::compiler::VertexType,
+    pub(crate) vertex_type: crate::vulkan::material::compiler::VertexType,
     /// Whether this material uses compositing (requires set 2 descriptor set layout).
     pub is_compositing: bool,
     /// Whether alpha blending is enabled for this material.
