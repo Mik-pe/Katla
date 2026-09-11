@@ -1,0 +1,32 @@
+digraph render_graph {
+  rankdir=LR;
+  r0 [shape=ellipse,peripheries=2,label="0: backbuffer\nbuilt-in\nexported\ninitial ColorAttachment, final PresentSrc"];
+  r1 [shape=ellipse,peripheries=1,label="1: shadow_atlas\ntransient"];
+  r2 [shape=ellipse,peripheries=1,label="2: gbuffer\ntransient"];
+  r3 [shape=ellipse,peripheries=1,label="3: hdr_color\ntransient"];
+  p0 [shape=box,label="0: shadow\nlevel 0"];
+  p0 -> r1 [label="write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295"];
+  p1 [shape=box,label="1: geometry\nlevel 1"];
+  r1 -> p1 [label="read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295"];
+  p1 -> r2 [label="write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295"];
+  p2 [shape=box,label="2: lighting\nlevel 2"];
+  r2 -> p2 [label="read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295"];
+  p2 -> r3 [label="write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295"];
+  p3 [shape=box,label="3: present\nlevel 3"];
+  p3 -> r0 [label="write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295"];
+  r3 -> p3 [label="read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295"];
+  p0 -> p1 [style=dashed,label="Raw shadow_atlas"];
+  p1 -> p2 [style=dashed,label="Raw gbuffer"];
+  p2 -> p3 [style=dashed,label="Raw hdr_color"];
+  frame_start [shape=box,style="rounded,dashed",label="frame start"];
+  frame_end [shape=box,style="rounded,dashed",label="frame end"];
+  frame_start -> p0 [label="r1 (shadow_atlas), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)",style="dashed",color="gray40"];
+  frame_start -> p1 [label="r1 (shadow_atlas), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)",style="dashed",color="gray40"];
+  frame_start -> p1 [label="r2 (gbuffer), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)",style="dashed",color="gray40"];
+  frame_start -> p2 [label="r2 (gbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)",style="dashed",color="gray40"];
+  frame_start -> p2 [label="r3 (hdr_color), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)",style="dashed",color="gray40"];
+  frame_start -> p3 [label="r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Storage @ AllGraphics (initial_use)",style="dashed",color="gray40"];
+  frame_start -> p3 [label="r3 (hdr_color), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)",style="dashed",color="gray40"];
+  frame_start -> frame_end [label="r0 (backbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Present @ Present (imported_final)",style="dashed",color="gray40"];
+  p3 -> frame_end [label="r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> write Present @ Present (imported_final)",style="dashed",color="gray40"];
+}
