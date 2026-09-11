@@ -16,6 +16,10 @@
 //! pass-to-pass operations ride the dependency edges that already carry
 //! their hazards.
 //!
+//! Transient allocation slots list the physical alias groups from the
+//! compiled allocation plan: member resources, allocation size, and the
+//! execution-position span the slot is live for.
+//!
 //! Checked-in golden snapshots under `tests/goldens/` pin the canonical
 //! exports of a representative graph. Rerun the golden tests with
 //! `KATLA_BLESS_GOLDENS=1` to regenerate them after an intentional format
@@ -39,7 +43,7 @@ use super::resource::{GraphResourceDesc, GraphResourceType, ImportedImageContrac
 use super::{ImageSyncOp, ImageSyncState, ResourceHazardKind};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 8;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 9;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -52,6 +56,7 @@ pub struct RenderGraphDiagnostics {
     pub synchronization: Vec<RenderGraphDiagnosticTransition>,
     pub execution_order: Vec<usize>,
     pub parallel_groups: Vec<Vec<usize>>,
+    pub transient_slots: Vec<RenderGraphDiagnosticAllocationSlot>,
 }
 
 /// Aggregate counts for a diagnostics snapshot.
@@ -93,6 +98,18 @@ pub struct RenderGraphDiagnosticResourceLifetime {
 pub struct RenderGraphDiagnosticImportedContract {
     pub initial: String,
     pub required_final: Option<String>,
+}
+
+/// One physical allocation slot and the transient resources aliased into it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticAllocationSlot {
+    pub id: u32,
+    pub resources: Vec<RenderGraphDiagnosticResourceRef>,
+    /// Byte size of the physical allocation (largest member).
+    pub bytes: u64,
+    /// Inclusive span of execution positions the slot is live for.
+    pub first_execution_position: usize,
+    pub last_execution_position: usize,
 }
 
 /// Resource information resolved from the graph namespace.
@@ -439,6 +456,36 @@ impl RenderGraphDiagnostics {
 
         let synchronization = transition_diagnostics(passes, resources, plan);
         let dependencies = dependency_diagnostics(passes, resources, plan);
+
+        let mut slots = BTreeMap::<u32, RenderGraphDiagnosticAllocationSlot>::new();
+        for resource in &diagnostic_resources {
+            let Some(slot_id) = resource.physical_allocation_id else {
+                continue;
+            };
+            let slot =
+                slots
+                    .entry(slot_id)
+                    .or_insert_with(|| RenderGraphDiagnosticAllocationSlot {
+                        id: slot_id,
+                        resources: Vec::new(),
+                        bytes: allocation_plan.slot_bytes(slot_id).unwrap_or(0),
+                        first_execution_position: usize::MAX,
+                        last_execution_position: 0,
+                    });
+            slot.resources.push(RenderGraphDiagnosticResourceRef {
+                id: resource.id,
+                name: resource.name.clone(),
+            });
+            if let Some(lifetime) = &resource.lifetime {
+                slot.first_execution_position = slot
+                    .first_execution_position
+                    .min(lifetime.first_execution_position);
+                slot.last_execution_position = slot
+                    .last_execution_position
+                    .max(lifetime.last_execution_position);
+            }
+        }
+
         let summary = RenderGraphDiagnosticSummary {
             declared_passes: passes.len(),
             live_passes: plan.live_passes.iter().filter(|&&live| live).count(),
@@ -462,6 +509,7 @@ impl RenderGraphDiagnostics {
             synchronization,
             execution_order: plan.sorted_passes.clone(),
             parallel_groups: plan.parallel_groups.clone(),
+            transient_slots: slots.into_values().collect(),
         }
     }
 
@@ -727,6 +775,25 @@ impl fmt::Display for RenderGraphDiagnostics {
             writeln!(f, "  synchronization transitions:")?;
             for transition in &self.synchronization {
                 writeln!(f, "    {transition}")?;
+            }
+        }
+
+        if !self.transient_slots.is_empty() {
+            writeln!(f, "  transient allocation slots:")?;
+            for slot in &self.transient_slots {
+                writeln!(
+                    f,
+                    "    slot {} ({} bytes, positions {}-{}): {}",
+                    slot.id,
+                    slot.bytes,
+                    slot.first_execution_position,
+                    slot.last_execution_position,
+                    slot.resources
+                        .iter()
+                        .map(|resource| format!("r{} ({})", resource.id, resource.name))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )?;
             }
         }
 

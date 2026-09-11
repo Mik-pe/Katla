@@ -137,6 +137,13 @@ impl TransientAllocationPlan {
         self.slots.len()
     }
 
+    pub(crate) fn slot_bytes(&self, id: u32) -> Option<u64> {
+        self.slots
+            .iter()
+            .find(|slot| slot.id == id)
+            .map(|slot| slot.bytes)
+    }
+
     pub(crate) fn logical_bytes(&self) -> u64 {
         self.logical_bytes
     }

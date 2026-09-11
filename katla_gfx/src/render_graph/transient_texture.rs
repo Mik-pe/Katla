@@ -6,14 +6,68 @@ use crate::vulkan::context::VulkanContext;
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 
+/// Device memory shared by every transient texture aliased into one
+/// physical allocation slot.
+///
+/// Member images bind this memory at offset zero and are created with
+/// `ALIAS`, so their contents are undefined whenever execution crosses
+/// from one member's live interval into another's — the same discard
+/// semantics a fresh allocation has. The memory is freed when the last
+/// member texture is destroyed.
+pub(crate) struct VkSlotMemory {
+    context: Rc<VulkanContext>,
+    memory: vk::DeviceMemory,
+    bytes: u64,
+    lazily_allocated: bool,
+}
+
+impl VkSlotMemory {
+    pub(crate) fn new(
+        context: Rc<VulkanContext>,
+        memory: vk::DeviceMemory,
+        bytes: u64,
+        lazily_allocated: bool,
+    ) -> Self {
+        Self {
+            context,
+            memory,
+            bytes,
+            lazily_allocated,
+        }
+    }
+
+    pub(crate) fn memory(&self) -> vk::DeviceMemory {
+        self.memory
+    }
+
+    pub(crate) fn bytes(&self) -> u64 {
+        self.bytes
+    }
+
+    pub(crate) fn lazily_allocated(&self) -> bool {
+        self.lazily_allocated
+    }
+}
+
+impl Drop for VkSlotMemory {
+    fn drop(&mut self) {
+        unsafe {
+            self.context.device.free_memory(self.memory, None);
+        }
+    }
+}
+
 /// Transient texture created and managed by the frame graph.
 pub struct TransientTexture {
     /// Vulkan context for cleanup.
     context: Rc<VulkanContext>,
     /// Vulkan image handle.
     pub image: vk::Image,
-    /// Memory allocation for the image.
+    /// Standalone memory allocation; `None` when the texture is aliased
+    /// into a physical slot owned by [`VkSlotMemory`].
     pub allocation: Option<Allocation>,
+    /// Shared slot memory this texture is aliased into, if any.
+    slot_memory: Option<Rc<VkSlotMemory>>,
     /// Image view for rendering/sampling.
     pub image_view: VkImageView,
     /// Image format.
@@ -41,12 +95,26 @@ impl TransientTexture {
             context,
             image,
             allocation,
+            slot_memory: None,
             image_view,
             format,
             extent,
             bindless_slot: None,
             current_layout: Cell::new(vk::ImageLayout::UNDEFINED),
         }
+    }
+
+    /// Alias this texture into a physical allocation slot.
+    ///
+    /// The texture owns a reference to the shared memory; the image itself
+    /// must already be bound to it.
+    pub(crate) fn set_slot_memory(&mut self, slot_memory: Rc<VkSlotMemory>) {
+        self.slot_memory = Some(slot_memory);
+    }
+
+    /// Shared slot memory backing this texture, when aliased.
+    pub(crate) fn slot_memory(&self) -> Option<&VkSlotMemory> {
+        self.slot_memory.as_deref()
     }
 
     /// Get the current tracked GPU layout.
@@ -75,6 +143,8 @@ impl Drop for TransientTexture {
             if let Some(allocation) = self.allocation.take() {
                 self.context.allocator.free(allocation, "transient texture");
             }
+            // Shared slot memory outlives every member image and is freed
+            // when the last `Rc<VkSlotMemory>` drops.
         }
     }
 }

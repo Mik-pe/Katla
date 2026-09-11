@@ -23,11 +23,19 @@ pub trait RenderGraphBackend: Sized + 'static {
     /// Backend-specific image view type for render pass attachments.
     type ImageView: Clone + Send + Sync;
 
-    /// Create a transient texture for a resource descriptor.
-    fn create_transient_texture(
+    /// Create transient textures for one physical allocation slot.
+    ///
+    /// The graph compiler assigns compatible, non-overlapping transient
+    /// resources to the same slot; `members` holds their descriptors in
+    /// declaration order. Backends with memory aliasing back every member
+    /// with shared physical storage sized for the largest member; backends
+    /// without aliasing (or single-member slots) create standalone
+    /// resources. The returned textures correspond one-to-one with
+    /// `members`.
+    fn create_transient_slot(
         &self,
-        desc: &GraphResourceDesc,
-    ) -> Result<Self::TransientTexture, RenderGraphError>;
+        members: &[GraphResourceDesc],
+    ) -> Result<Vec<Self::TransientTexture>, RenderGraphError>;
 
     /// Destroy a transient texture.
     fn destroy_transient_texture(texture: Self::TransientTexture);

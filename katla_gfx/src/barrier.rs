@@ -363,6 +363,17 @@ impl ImageBarrier {
             ));
         }
 
+        if old_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+            && new_layout == vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL
+        {
+            return Ok((
+                PipelineStage2Flags::TRANSFER,
+                PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
+                AccessFlags2::TRANSFER_READ,
+                AccessFlags2::COLOR_ATTACHMENT_WRITE | AccessFlags2::COLOR_ATTACHMENT_READ,
+            ));
+        }
+
         // Note: Use COLOR_ATTACHMENT_OUTPUT as src_stage to synchronize with
         // vkAcquireNextImageKHR for swapchain images. Also fixes READ_AFTER_WRITE
         // hazards when LOAD_OP_LOAD is used.

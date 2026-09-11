@@ -15,41 +15,17 @@ impl RenderGraphBackend for MetalRenderer {
     type TransientTexture = MetalTransientTexture;
     type ImageView = crate::metal::texture::MetalTextureView;
 
-    fn create_transient_texture(
+    fn create_transient_slot(
         &self,
-        desc: &GraphResourceDesc,
-    ) -> Result<Self::TransientTexture, RenderGraphError> {
-        let usage = match desc.resource_type {
-            crate::render_graph::resource::GraphResourceType::ColorAttachment { .. } => {
-                TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED
-            }
-            crate::render_graph::resource::GraphResourceType::DepthAttachment {
-                sampled, ..
-            } => {
-                let mut u = TextureUsage::DEPTH_STENCIL_ATTACHMENT;
-                if sampled {
-                    u |= TextureUsage::SAMPLED;
-                }
-                u
-            }
-            crate::render_graph::resource::GraphResourceType::SampledImage => TextureUsage::SAMPLED,
-        };
-
-        let tex_desc =
-            TextureDescriptor::new(desc.width, desc.height, desc.format).with_usage(usage);
-
-        let (texture, view) = self
-            .context
-            .create_texture(&tex_desc)
-            .map_err(|e| RenderGraphError::BackendError(e.to_string()))?;
-
-        Ok(MetalTransientTexture::new(
-            texture,
-            view,
-            desc.format,
-            desc.width,
-            desc.height,
-        ))
+        members: &[GraphResourceDesc],
+    ) -> Result<Vec<Self::TransientTexture>, RenderGraphError> {
+        // Metal heap aliasing is not implemented yet; every slot member
+        // gets a standalone private allocation from the same compiled
+        // grouping.
+        members
+            .iter()
+            .map(|desc| self.create_standalone_transient_texture(desc))
+            .collect()
     }
 
     fn destroy_transient_texture(texture: Self::TransientTexture) {
@@ -117,5 +93,44 @@ impl RenderGraphBackend for MetalRenderer {
 
     fn depth_image_view(&self, _frame_index: usize) -> Option<Self::ImageView> {
         self.depth_stencil_view.clone()
+    }
+}
+
+impl MetalRenderer {
+    fn create_standalone_transient_texture(
+        &self,
+        desc: &GraphResourceDesc,
+    ) -> Result<MetalTransientTexture, RenderGraphError> {
+        let usage = match desc.resource_type {
+            crate::render_graph::resource::GraphResourceType::ColorAttachment { .. } => {
+                TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED
+            }
+            crate::render_graph::resource::GraphResourceType::DepthAttachment {
+                sampled, ..
+            } => {
+                let mut u = TextureUsage::DEPTH_STENCIL_ATTACHMENT;
+                if sampled {
+                    u |= TextureUsage::SAMPLED;
+                }
+                u
+            }
+            crate::render_graph::resource::GraphResourceType::SampledImage => TextureUsage::SAMPLED,
+        };
+
+        let tex_desc =
+            TextureDescriptor::new(desc.width, desc.height, desc.format).with_usage(usage);
+
+        let (texture, view) = self
+            .context
+            .create_texture(&tex_desc)
+            .map_err(|e| RenderGraphError::BackendError(e.to_string()))?;
+
+        Ok(MetalTransientTexture::new(
+            texture,
+            view,
+            desc.format,
+            desc.width,
+            desc.height,
+        ))
     }
 }

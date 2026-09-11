@@ -24,3 +24,6 @@
     [pass 2 (lighting) -> pass 3 (present)] r3 (hdr_color), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> read Sampled @ FragmentShader (hazard Raw)
     [frame start -> frame end] r0 (backbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Present @ Present (imported_final)
     [pass 3 (present) -> frame end] r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> write Present @ Present (imported_final)
+  transient allocation slots:
+    slot 0 (32768 bytes, positions 0-3): r1 (shadow_atlas), r3 (hdr_color)
+    slot 1 (32768 bytes, positions 1-2): r2 (gbuffer)
