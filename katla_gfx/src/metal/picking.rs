@@ -324,9 +324,9 @@ pub(crate) fn render_object_id_pass(
         let Some(material) = materials.get(draw.material) else {
             continue;
         };
-        let Some(ref _pipeline) = material.pipeline else {
+        if material.variants.is_empty() {
             continue;
-        };
+        }
 
         let is_skinned = !draw.skeleton.is_none() && picking_skinned_pipeline.is_some();
 

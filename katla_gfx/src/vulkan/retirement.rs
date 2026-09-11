@@ -75,39 +75,6 @@ impl Drop for RetiredBuffer {
     }
 }
 
-/// A descriptor set layout destroyed with a material; raw handles need their
-/// owning device to be destroyed, so the context is carried along.
-pub(crate) struct RetiredDescriptorSetLayout {
-    layout: Option<vk::DescriptorSetLayout>,
-    context: Rc<VulkanContext>,
-}
-
-impl RetiredDescriptorSetLayout {
-    pub(crate) fn new(layout: vk::DescriptorSetLayout, context: Rc<VulkanContext>) -> Self {
-        Self {
-            layout: Some(layout),
-            context,
-        }
-    }
-
-    /// Native handle identifying this layout in diagnostics.
-    fn handle(&self) -> vk::DescriptorSetLayout {
-        self.layout.unwrap_or(vk::DescriptorSetLayout::null())
-    }
-}
-
-impl Drop for RetiredDescriptorSetLayout {
-    fn drop(&mut self) {
-        if let Some(layout) = self.layout.take() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
-        }
-    }
-}
-
 /// A native GPU resource awaiting deferred destruction.
 ///
 /// Every variant owns its resource: dropping it after the retirement age is
@@ -126,8 +93,6 @@ pub(crate) enum RetiredResource {
     /// hot reload, descriptor-layout invalidation). Boxed: pipelines are the
     /// largest variant by far.
     Pipeline(Box<AnyPipeline>),
-    /// Standalone material descriptor set layout.
-    DescriptorSetLayout(RetiredDescriptorSetLayout),
     /// Destroyed skeleton joint-matrix storage buffer.
     SkeletonBuffer(SkeletonBuffer),
     /// Bindless slot withheld from the free list while in-flight submissions
@@ -141,7 +106,6 @@ impl RetiredResource {
             RetiredResource::Buffer(_) => RetirementKind::Buffer,
             RetiredResource::Texture(_) => RetirementKind::Texture,
             RetiredResource::Pipeline(_) => RetirementKind::Pipeline,
-            RetiredResource::DescriptorSetLayout(_) => RetirementKind::DescriptorSetLayout,
             RetiredResource::SkeletonBuffer(_) => RetirementKind::SkeletonBuffer,
             RetiredResource::BindlessSlot(_) => RetirementKind::BindlessSlot,
         }
@@ -155,9 +119,6 @@ impl RetiredResource {
                 format!("texture view {:?}", texture.image_view().vk())
             }
             RetiredResource::Pipeline(pipeline) => format!("pipeline {:?}", pipeline.vk_pipeline()),
-            RetiredResource::DescriptorSetLayout(layout) => {
-                format!("descriptor set layout {:?}", layout.handle())
-            }
             RetiredResource::SkeletonBuffer(buffer) => {
                 format!("skeleton buffer {:?}", buffer.buffer())
             }
@@ -193,12 +154,6 @@ impl From<AnyPipeline> for RetiredResource {
     }
 }
 
-impl From<RetiredDescriptorSetLayout> for RetiredResource {
-    fn from(layout: RetiredDescriptorSetLayout) -> Self {
-        RetiredResource::DescriptorSetLayout(layout)
-    }
-}
-
 impl From<SkeletonBuffer> for RetiredResource {
     fn from(buffer: SkeletonBuffer) -> Self {
         RetiredResource::SkeletonBuffer(buffer)
@@ -211,7 +166,6 @@ pub enum RetirementKind {
     Buffer,
     Texture,
     Pipeline,
-    DescriptorSetLayout,
     SkeletonBuffer,
     BindlessSlot,
 }
@@ -282,7 +236,6 @@ impl RetirementQueue {
                 RetirementKind::Buffer => out.buffers += 1,
                 RetirementKind::Texture => out.textures += 1,
                 RetirementKind::Pipeline => out.pipelines += 1,
-                RetirementKind::DescriptorSetLayout => out.descriptor_set_layouts += 1,
                 RetirementKind::SkeletonBuffer => out.skeleton_buffers += 1,
                 RetirementKind::BindlessSlot => out.bindless_slots += 1,
             }

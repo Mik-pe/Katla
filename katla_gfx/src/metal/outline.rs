@@ -288,9 +288,9 @@ pub(crate) fn render_stencil_mark(
         let Some(material) = materials.get(draw.material) else {
             continue;
         };
-        let Some(ref _pipeline) = material.pipeline else {
+        if material.variants.is_empty() {
             continue;
-        };
+        }
 
         let is_skinned = !draw.skeleton.is_none() && stencil_pipeline_skinned.is_some();
 
@@ -407,9 +407,9 @@ pub(crate) fn render_outline(
         let Some(material) = materials.get(draw.material) else {
             continue;
         };
-        let Some(ref _pipeline) = material.pipeline else {
+        if material.variants.is_empty() {
             continue;
-        };
+        }
 
         let is_skinned = !draw.skeleton.is_none() && outline_pipeline_skinned.is_some();
 

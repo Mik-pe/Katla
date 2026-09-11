@@ -303,9 +303,9 @@ fn encode_cascade_draws(
         let Some(material) = materials.get(draw.material) else {
             continue;
         };
-        let Some(ref _pipeline) = material.pipeline else {
+        if material.variants.is_empty() {
             continue;
-        };
+        }
 
         let is_skinned = !draw.skeleton.is_none() && shadow_pipeline_skinned.is_some();
         if is_skinned {

@@ -20,8 +20,6 @@ pub struct RetirementSnapshot {
     pub textures: usize,
     /// Pending replaced/destroyed pipelines.
     pub pipelines: usize,
-    /// Pending standalone descriptor set layouts.
-    pub descriptor_set_layouts: usize,
     /// Pending skeleton joint-matrix buffers.
     pub skeleton_buffers: usize,
     /// Pending bindless slot releases.
@@ -36,12 +34,7 @@ pub struct RetirementSnapshot {
 impl RetirementSnapshot {
     /// Total number of pending retirement entries.
     pub fn total(&self) -> usize {
-        self.buffers
-            + self.textures
-            + self.pipelines
-            + self.descriptor_set_layouts
-            + self.skeleton_buffers
-            + self.bindless_slots
+        self.buffers + self.textures + self.pipelines + self.skeleton_buffers + self.bindless_slots
     }
 
     /// Human-readable per-kind summary for logs and diagnostics.
@@ -51,7 +44,6 @@ impl RetirementSnapshot {
             ("buffers", self.buffers),
             ("textures", self.textures),
             ("pipelines", self.pipelines),
-            ("descriptor-set-layouts", self.descriptor_set_layouts),
             ("skeleton-buffers", self.skeleton_buffers),
             ("bindless-slots", self.bindless_slots),
         ] {

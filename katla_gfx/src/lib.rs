@@ -319,6 +319,7 @@ pub use renderer::features::RendererFeature;
 pub use renderer::gpu_renderer::GpuRenderer;
 pub use renderer::pipeline_descriptor::{BlendMode, DepthState, PipelineDescriptor};
 pub use renderer::pipeline_kind::PipelineKind;
+pub use renderer::pipeline_variant::PipelineVariantKey;
 
 // Enum-based renderer dispatch (both backends)
 pub use renderer::any_renderer::AnyRenderer;

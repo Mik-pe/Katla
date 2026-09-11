@@ -11,7 +11,6 @@ use crate::render_graph::RenderGraphError;
 use crate::vulkan::material::builder::Pipeline;
 use crate::vulkan::material::compute_pipeline::ComputePipeline;
 use crate::vulkan::vertex_attribute::AttributeType;
-use crate::vulkan::vertexbinding::VertexBinding;
 use crate::vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 use ash::vk;
 use std::collections::HashMap;
@@ -429,54 +428,33 @@ impl Default for MaterialTextures {
     }
 }
 
-/// Material representation using opaque handles.
-pub struct MaterialAsset {
-    /// Pipeline handle (references pipeline in registry).
-    /// - Some(PipelineHandle) when fully_compiled = true
-    /// - None when fully_compiled = false (deferred compilation)
-    pub pipeline: Option<PipelineHandle>,
-    /// Instanced pipeline handle for UI materials.
-    /// Compiled with `vs_instanced`/`fs_instanced` entry points and UnitQuadVertex format.
-    /// Only set for VertexType::Ui materials.
+/// One compiled pipeline variant of a material.
+#[derive(Clone, Copy, Debug)]
+pub struct MaterialVariant {
+    /// Graphics pipeline compiled for the variant key's target configuration.
+    pub pipeline: PipelineHandle,
+    /// Instanced companion pipeline for UI materials (compiled with
+    /// `vs_instanced`/`fs_instanced` entry points and `UnitQuadVertex` format).
     pub instanced_pipeline: Option<PipelineHandle>,
-    /// Whether this material has been fully compiled.
-    /// When false, the pipeline will be compiled on-demand when first used.
-    pub fully_compiled: bool,
-    /// Shader path for deferred/recompilation.
-    pub shader_path: Option<std::path::PathBuf>,
-    /// Vertex type used when compiling (Pbr, Ui, Skinned, etc.).
-    /// Needed for correct recompilation when descriptor layouts change.
-    pub(crate) vertex_type: crate::vulkan::material::compiler::VertexType,
-    /// Whether this material uses compositing (requires set 2 descriptor set layout).
-    pub is_compositing: bool,
-    /// Whether alpha blending is enabled for this material.
-    /// Must be preserved during recompilation.
-    pub alpha_blended: bool,
-    /// Whether double-sided rendering is enabled.
-    pub double_sided: bool,
-    /// Whether wireframe rendering is enabled.
-    pub wireframe: bool,
-    /// Whether depth testing is enabled for this material.
-    pub depth_test: bool,
-    /// Whether passing fragments write depth.
-    pub depth_write: bool,
-    /// Comparison used when depth testing.
-    pub depth_compare: crate::pipeline::CompareOp,
-    /// Vertex shader entry point (convention: `"vs_main"`).
-    pub vertex_entry: String,
-    /// Fragment shader entry point (convention: `"fs_main"`).
-    pub fragment_entry: String,
-    /// Vertex binding description.
-    pub vertex_binding: VertexBinding,
+}
+
+/// Material representation using opaque handles.
+///
+/// A material owns its compilation identity ([`PipelineDescriptor`]) and a
+/// cache of compiled pipeline variants keyed by
+/// [`PipelineVariantKey`](crate::renderer::pipeline_variant::PipelineVariantKey).
+/// The same material can render to different render-target configurations:
+/// each configuration resolves to its own variant, compiled on first use.
+pub struct MaterialAsset {
+    /// Compilation identity: shader path, entry points, vertex layout,
+    /// render state, specialization, and the declared (possibly `Auto`)
+    /// color format.
+    pub descriptor: crate::renderer::pipeline_descriptor::PipelineDescriptor,
+    /// Compiled pipeline variants by canonical key.
+    pub(crate) variants:
+        HashMap<crate::renderer::pipeline_variant::PipelineVariantKey, MaterialVariant>,
     /// Typed texture bindings for this material.
     pub textures: MaterialTextures,
-    /// Descriptor set containing material uniforms (Set 1).
-    pub material_descriptor_set: Option<vk::DescriptorSet>,
-    /// Descriptor set layout for material uniforms (Set 1).
-    pub material_descriptor_layout: Option<vk::DescriptorSetLayout>,
-    /// Color attachment format this material was compiled for.
-    /// Used for recompilation when descriptor layouts change (e.g., resize).
-    pub color_format: crate::texture::ImageFormat,
 }
 
 /// Registry for GPU assets.
@@ -551,15 +529,54 @@ impl AssetRegistry {
         self.materials.get_mut(handle)
     }
 
-    /// Update a material's pipeline handle (for hot reload).
-    pub fn replace_material_pipeline(
+    /// Look up a compiled pipeline variant by its canonical key.
+    pub fn material_variant(
+        &self,
+        handle: MaterialHandle,
+        key: &crate::renderer::pipeline_variant::PipelineVariantKey,
+    ) -> Option<MaterialVariant> {
+        self.materials.get(handle)?.variants.get(key).copied()
+    }
+
+    /// Store a compiled pipeline variant on a material.
+    ///
+    /// Returns `false` when the material handle is invalid.
+    pub(crate) fn insert_material_variant(
         &mut self,
         handle: MaterialHandle,
-        new_pipeline: PipelineHandle,
-    ) {
-        if let Some(material) = self.materials.get_mut(handle) {
-            material.pipeline = Some(new_pipeline);
+        key: crate::renderer::pipeline_variant::PipelineVariantKey,
+        variant: MaterialVariant,
+    ) -> bool {
+        match self.materials.get_mut(handle) {
+            Some(material) => {
+                material.variants.insert(key, variant);
+                true
+            }
+            None => false,
         }
+    }
+
+    /// Number of compiled pipeline variants across all materials.
+    pub fn material_variant_count(&self) -> usize {
+        self.materials.iter().map(|m| m.variants.len()).sum()
+    }
+
+    /// Drop every variant of one material, returning the pipelines for
+    /// retirement.
+    ///
+    /// Used when a variant key input changed (shader hot reload): the next
+    /// use of the material recompiles the variants it needs.
+    pub(crate) fn take_material_variants(&mut self, handle: MaterialHandle) -> Vec<AnyPipeline> {
+        let Some(material) = self.materials.get_mut(handle) else {
+            return Vec::new();
+        };
+        material
+            .variants
+            .drain()
+            .flat_map(|(_, variant)| [Some(variant.pipeline), variant.instanced_pipeline])
+            .flatten()
+            .filter_map(|handle| self.pipelines.remove(handle))
+            .collect()
     }
 
     /// Get the Vulkan pipeline and layout handles for rendering.
@@ -607,9 +624,9 @@ impl AssetRegistry {
         self.materials
             .iter_enumerated()
             .filter_map(|(handle, mat)| {
-                let sp = mat.shader_path.as_ref()?;
+                let sp = std::path::PathBuf::from(&mat.descriptor.shader_path);
                 if sp.file_name() == file_name {
-                    Some((handle, sp.clone()))
+                    Some((handle, sp))
                 } else {
                     None
                 }
@@ -647,32 +664,28 @@ impl AssetRegistry {
         self.pipelines.remove(handle)
     }
 
-    /// Invalidate all compiled materials and take their pipelines.
+    /// Drop every compiled variant of every material, returning the pipelines
+    /// for retirement.
     ///
-    /// Called after descriptor layout changes (e.g., light culling resize)
-    /// to ensure pipelines reference valid descriptor set layouts.
-    /// Deferred materials are marked for recompilation on next use. The
-    /// removed pipelines are returned so the caller can retire them —
-    /// in-flight submissions may still bind them.
-    pub fn invalidate_compiled_materials(&mut self) -> Vec<AnyPipeline> {
-        // Mark all compiled materials for recompilation and collect their pipeline handles
+    /// Called after descriptor layout changes (e.g., light culling resize):
+    /// every variant key input includes the affected layouts, so no variant
+    /// survives. The next use of each material recompiles the variants it
+    /// needs against the new layouts.
+    pub fn invalidate_all_material_variants(&mut self) -> Vec<AnyPipeline> {
         let mut pipelines_to_destroy = Vec::new();
         for material in self.materials.iter_mut() {
-            if material.fully_compiled && material.shader_path.is_some() {
-                material.fully_compiled = false;
-                if let Some(pipeline_handle) = material.pipeline.take() {
-                    pipelines_to_destroy.push(pipeline_handle);
+            for (_, variant) in material.variants.drain() {
+                if let Some(pipeline) = self.pipelines.remove(variant.pipeline) {
+                    pipelines_to_destroy.push(pipeline);
                 }
-                if let Some(pipeline_handle) = material.instanced_pipeline.take() {
-                    pipelines_to_destroy.push(pipeline_handle);
+                if let Some(instanced) = variant.instanced_pipeline
+                    && let Some(pipeline) = self.pipelines.remove(instanced)
+                {
+                    pipelines_to_destroy.push(pipeline);
                 }
             }
         }
-        // Take only the specific material pipelines, not all pipelines
         pipelines_to_destroy
-            .into_iter()
-            .filter_map(|handle| self.pipelines.remove(handle))
-            .collect()
     }
 
     /// Destroy all registered assets and free GPU resources.

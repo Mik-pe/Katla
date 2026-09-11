@@ -215,6 +215,7 @@ impl Frame<'_, VulkanRenderer> {
         &mut self,
         draw_lists: &[Rc<DrawList>],
         frame_idx: usize,
+        color_format: crate::texture::ImageFormat,
     ) -> Result<Vec<ResolvedDrawCommand>, RenderGraphError> {
         let mut commands = Vec::new();
 
@@ -225,23 +226,29 @@ impl Frame<'_, VulkanRenderer> {
             .unwrap_or_else(|| self.renderer.empty_descriptor_set(frame_idx));
 
         for draw_list in draw_lists {
-            self.ensure_materials_compiled(draw_list)?;
+            self.ensure_materials_compiled(draw_list, color_format)?;
 
             for draw_call in &draw_list.draws {
-                let material = self
+                let variant = self
                     .renderer
-                    .asset_registry
-                    .get_material(draw_call.material)
-                    .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
-
-                let pipeline_handle = material
-                    .pipeline
-                    .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
+                    .material_variant(draw_call.material, color_format)
+                    .map_err(|e| {
+                        RenderGraphError::InvalidConfiguration(format!(
+                            "Material variant lookup failed: {}",
+                            e
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        RenderGraphError::InvalidConfiguration(format!(
+                            "Material {material:?} has no pipeline variant for {color_format:?}",
+                            material = draw_call.material,
+                        ))
+                    })?;
 
                 let (pipeline, layout) = self
                     .renderer
                     .asset_registry
-                    .get_pipeline_handles(pipeline_handle)?;
+                    .get_pipeline_handles(variant.pipeline)?;
 
                 self.renderer.bind_shadow_descriptors(
                     self.renderer.frame_context.command_buffers[frame_idx].vk_command_buffer(),

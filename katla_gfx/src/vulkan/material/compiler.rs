@@ -3,7 +3,6 @@
 //! This module handles the compilation of WGSL shaders into SPIR-V and
 //! the creation of Vulkan graphics pipelines for rendering.
 
-use crate::texture::ImageFormat;
 use crate::vulkan::bindless_texture::BindlessTextureManager;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::shadermodule::ShaderCache;
@@ -16,6 +15,14 @@ use std::{cell::RefCell, path::Path, rc::Rc};
 pub enum MaterialError {
     ShaderCompilation(String),
     PipelineCreation(String),
+    /// A pipeline variant failed to compile; carries the material and the
+    /// resolved variant identity for diagnosis.
+    VariantCompilation {
+        material: crate::handle::MaterialHandle,
+        color_format: crate::texture::ImageFormat,
+        depth_format: Option<crate::texture::ImageFormat>,
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for MaterialError {
@@ -23,80 +30,21 @@ impl std::fmt::Display for MaterialError {
         match self {
             Self::ShaderCompilation(s) => write!(f, "Shader compilation failed: {}", s),
             Self::PipelineCreation(s) => write!(f, "Pipeline creation failed: {}", s),
+            Self::VariantCompilation {
+                material,
+                color_format,
+                depth_format,
+                reason,
+            } => write!(
+                f,
+                "Pipeline variant for material {material:?} (color {color_format:?}, \
+                 depth {depth_format:?}) failed: {reason}"
+            ),
         }
     }
 }
 
 impl std::error::Error for MaterialError {}
-
-/// Material type presets.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum MaterialType {
-    Auto,
-    Pbr,
-    Ui,
-}
-
-/// Vertex type presets.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum VertexType {
-    Pbr,
-    Ui,
-    Simple,
-    Skinned,
-}
-
-/// Options for material creation.
-///
-/// Vulkan-side compilation inputs. Callers build a backend-neutral
-/// [`PipelineDescriptor`](crate::renderer::pipeline_descriptor::PipelineDescriptor)
-/// and call [`GpuRenderer::compile_material`](crate::renderer::GpuRenderer::compile_material);
-/// the trait implementation maps it onto these options.
-#[derive(Clone, Debug)]
-pub(crate) struct MaterialOptions {
-    pub alpha_blended: bool,
-    pub double_sided: bool,
-    pub wireframe: bool,
-    pub vertex_type: VertexType,
-    /// Color attachment format for this material.
-    /// Default is B8G8R8A8Srgb (swapchain format).
-    /// Use R16G16B16A16Sfloat for HDR rendering.
-    pub color_format: ImageFormat,
-    /// Whether this material uses compositing (requires set 2 descriptor set layout).
-    /// Default is false.
-    pub is_compositing: bool,
-    /// Whether depth testing is enabled for this material.
-    /// Default is true. Set to false for overlays, gizmos, and debug rendering
-    /// that should render on top of scene geometry.
-    pub depth_test: bool,
-    /// Whether passing fragments write depth. Default is true.
-    pub depth_write: bool,
-    /// Comparison used when depth testing. Default is GreaterOrEqual
-    /// (reversed depth, matching both backends).
-    pub depth_compare: crate::pipeline::CompareOp,
-    /// Vertex shader entry point (convention: `"vs_main"`).
-    pub vertex_entry: String,
-    /// Fragment shader entry point (convention: `"fs_main"`).
-    pub fragment_entry: String,
-}
-
-impl Default for MaterialOptions {
-    fn default() -> Self {
-        Self {
-            alpha_blended: false,
-            double_sided: false,
-            wireframe: false,
-            vertex_type: VertexType::Pbr,
-            color_format: ImageFormat::B8G8R8A8Srgb,
-            is_compositing: false,
-            depth_test: true,
-            depth_write: true,
-            depth_compare: crate::pipeline::CompareOp::GreaterOrEqual,
-            vertex_entry: "vs_main".to_string(),
-            fragment_entry: "fs_main".to_string(),
-        }
-    }
-}
 
 /// Compiles material definitions into Vulkan pipelines.
 pub(crate) struct MaterialCompiler {
@@ -232,281 +180,166 @@ impl MaterialCompiler {
         })
     }
 
-    /// Compile a material from a shader file.
+    /// Register a material from its compilation descriptor.
     ///
-    /// If `options.color_format` is `ImageFormat::Auto`, creates a deferred material
-    /// that will be compiled on-demand when first used with a specific format.
+    /// The material starts with no compiled variants. A descriptor with a
+    /// concrete color format is compiled for that format immediately;
+    /// `ImageFormat::Auto` defers all compilation to the first use, where
+    /// the pass's target format selects the variant
+    /// (see [`compile_variant`](Self::compile_variant)).
     pub(crate) fn compile(
         &mut self,
         registry: &mut crate::renderer::registry::AssetRegistry,
-        shader_path: &Path,
-        _material_type: MaterialType,
-        options: MaterialOptions,
+        descriptor: &crate::renderer::pipeline_descriptor::PipelineDescriptor,
     ) -> Result<crate::handle::MaterialHandle, MaterialError> {
-        // 1. Determine vertex binding
-        let vertex_binding = self.get_vertex_binding(&options.vertex_type)?;
+        self.validate_layout(&descriptor.vertex)?;
 
-        // Check if this is a deferred material (Auto format)
-        if options.color_format == crate::texture::ImageFormat::Auto {
-            // Create deferred material - pipeline will be compiled on-demand
-            let material_asset = crate::renderer::registry::MaterialAsset {
-                pipeline: None,
-                instanced_pipeline: None,
-                fully_compiled: false,
-                shader_path: Some(shader_path.to_path_buf()),
-                vertex_type: options.vertex_type,
-                is_compositing: options.is_compositing,
-                alpha_blended: options.alpha_blended,
-                double_sided: options.double_sided,
-                wireframe: options.wireframe,
-                depth_test: options.depth_test,
-                depth_write: options.depth_write,
-                depth_compare: options.depth_compare,
-                vertex_entry: options.vertex_entry.clone(),
-                fragment_entry: options.fragment_entry.clone(),
-                vertex_binding,
-                textures: crate::renderer::registry::MaterialTextures::default(),
-                material_descriptor_set: None,
-                material_descriptor_layout: None,
-                color_format: crate::texture::ImageFormat::B8G8R8A8Srgb,
-            };
-            return Ok(registry.register_material(material_asset));
+        let handle = registry.register_material(crate::renderer::registry::MaterialAsset {
+            descriptor: descriptor.clone(),
+            variants: std::collections::HashMap::new(),
+            textures: crate::renderer::registry::MaterialTextures::default(),
+        });
+
+        if descriptor.color_format != crate::texture::ImageFormat::Auto {
+            let key = crate::renderer::pipeline_variant::PipelineVariantKey::resolve(
+                descriptor,
+                descriptor.color_format,
+            );
+            self.compile_variant(registry, handle, &key)?;
         }
 
-        // 2. Load shaders (WGSL file contains both vert and frag), using the
-        // requested entry points.
-        let mut cache = self.shader_cache.borrow_mut();
-        let vert_module = cache
-            .load_shader_with_entry(
-                shader_path,
-                vk::ShaderStageFlags::VERTEX,
-                &options.vertex_entry,
-            )
-            .map_err(|e| MaterialError::ShaderCompilation(format!("Vertex shader: {e:?}")))?;
-        let frag_module = cache
-            .load_shader_with_entry(
-                shader_path,
-                vk::ShaderStageFlags::FRAGMENT,
-                &options.fragment_entry,
-            )
-            .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {e:?}")))?;
-        drop(cache);
-        log::debug!("compile: shaders loaded, building descriptor layouts");
-
-        // 3. Build descriptor layouts
-        let layouts = self.build_descriptor_layouts(&options)?;
-        log::debug!("compile: descriptor layouts built, building pipeline");
-
-        // 4. Build pipeline
-        let pipeline = self.build_pipeline(
-            &options,
-            vert_module,
-            frag_module,
-            &layouts,
-            &vertex_binding,
-        )?;
-        log::debug!("compile: pipeline built");
-
-        // 4b. For UI materials, also compile an instanced pipeline
-        // using vs_instanced/fs_instanced entry points with UnitQuadVertex format.
-        let instanced_pipeline = if matches!(options.vertex_type, VertexType::Ui) {
-            Some(
-                registry
-                    .register_pipeline(self.build_instanced_ui_pipeline(shader_path, &layouts)?),
-            )
-        } else {
-            None
-        };
-
-        // 5. Register and return handle
-        // Store shader_path so invalidate_compiled_materials can recompile
-        // when descriptor layouts change (e.g., light culling resize).
-        let material_asset = crate::renderer::registry::MaterialAsset {
-            pipeline: Some(registry.register_pipeline(pipeline)),
-            instanced_pipeline,
-            fully_compiled: true,
-            shader_path: Some(shader_path.to_path_buf()),
-            vertex_type: options.vertex_type,
-            is_compositing: options.is_compositing,
-            alpha_blended: options.alpha_blended,
-            double_sided: options.double_sided,
-            wireframe: options.wireframe,
-            depth_test: options.depth_test,
-            depth_write: options.depth_write,
-            depth_compare: options.depth_compare,
-            vertex_entry: options.vertex_entry.clone(),
-            fragment_entry: options.fragment_entry.clone(),
-            vertex_binding,
-            textures: crate::renderer::registry::MaterialTextures::default(),
-            material_descriptor_set: None,
-            material_descriptor_layout: None,
-            color_format: options.color_format,
-        };
-
-        Ok(registry.register_material(material_asset))
+        Ok(handle)
     }
 
-    /// Compile a deferred material for a specific format.
+    /// Compile one pipeline variant of a registered material.
     ///
-    /// Takes a material that was created with `ImageFormat::Auto` and compiles
-    /// it for the specified render target format.
-    pub(crate) fn compile_deferred_material(
+    /// The key's resolved formats select the attachments the pipeline is
+    /// built for; the material's descriptor provides every other input.
+    /// The compiled pipelines are cached on the material under the key.
+    pub(crate) fn compile_variant(
         &mut self,
         registry: &mut crate::renderer::registry::AssetRegistry,
         material_handle: crate::handle::MaterialHandle,
-        format: crate::texture::ImageFormat,
-    ) -> Result<(), MaterialError> {
-        // Get the material asset (immutable borrow)
-        let (
-            shader_path,
-            vertex_binding,
-            vertex_type,
-            is_compositing,
-            alpha_blended,
-            double_sided,
-            wireframe,
-            depth_test,
-            depth_write,
-            depth_compare,
-            vertex_entry,
-            fragment_entry,
-        ) = {
-            let material = registry.get_material(material_handle).ok_or_else(|| {
-                MaterialError::ShaderCompilation(format!(
-                    "Material handle {:?} not found",
-                    material_handle
-                ))
-            })?;
-
-            // Check if already compiled
-            if material.fully_compiled {
-                return Ok(());
-            }
-
-            log::info!(
-                "Recompiling deferred material {:?} with format {:?}",
-                material_handle,
-                format
-            );
-
-            let shader_path = material
-                .shader_path
-                .as_ref()
-                .ok_or_else(|| {
-                    MaterialError::ShaderCompilation(
-                        "Deferred material has no shader path".to_string(),
-                    )
-                })?
-                .clone();
-
-            (
-                shader_path,
-                material.vertex_binding.clone(),
-                material.vertex_type,
-                material.is_compositing,
-                material.alpha_blended,
-                material.double_sided,
-                material.wireframe,
-                material.depth_test,
-                material.depth_write,
-                material.depth_compare,
-                material.vertex_entry.clone(),
-                material.fragment_entry.clone(),
-            )
+        key: &crate::renderer::pipeline_variant::PipelineVariantKey,
+    ) -> Result<crate::renderer::registry::MaterialVariant, MaterialError> {
+        let fail = |reason: String| MaterialError::VariantCompilation {
+            material: material_handle,
+            color_format: key.color_format(),
+            depth_format: key.depth_format(),
+            reason,
         };
 
-        // Load shaders with the stored entry points.
+        if registry.get_material(material_handle).is_none() {
+            return Err(fail("material handle not found".to_string()));
+        }
+        // Build from the key's resolved descriptor: its color format is
+        // concrete, so the pipeline targets exactly the key's configuration
+        // even when the material was registered with `Auto`.
+        let descriptor = key.descriptor().clone();
+        let vertex_binding = self.validate_layout(&descriptor.vertex)?;
+
+        let (vertex_entry, fragment_entry) = match &descriptor.stages {
+            crate::renderer::pipeline_descriptor::PipelineStages::Graphics {
+                vertex_entry,
+                fragment_entry,
+            } => (vertex_entry.clone(), fragment_entry.clone()),
+            crate::renderer::pipeline_descriptor::PipelineStages::Compute { .. } => {
+                return Err(fail(
+                    "compute pipelines have no graphics variants".to_string(),
+                ));
+            }
+        };
+
+        let shader_path = std::path::PathBuf::from(&descriptor.shader_path);
         let mut cache = self.shader_cache.borrow_mut();
         let vert_module = cache
             .load_shader_with_entry(&shader_path, vk::ShaderStageFlags::VERTEX, &vertex_entry)
-            .map_err(|e| MaterialError::ShaderCompilation(format!("Vertex shader: {e:?}")))?;
+            .map_err(|e| fail(format!("Vertex shader: {e:?}")))?;
         let frag_module = cache
             .load_shader_with_entry(
                 &shader_path,
                 vk::ShaderStageFlags::FRAGMENT,
                 &fragment_entry,
             )
-            .map_err(|e| MaterialError::ShaderCompilation(format!("Fragment shader: {e:?}")))?;
+            .map_err(|e| fail(format!("Fragment shader: {e:?}")))?;
         drop(cache);
 
-        // Create options preserving original vertex_type and compositing flag
-        let options = MaterialOptions {
-            color_format: format,
-            vertex_type,
-            is_compositing,
-            alpha_blended,
-            double_sided,
-            wireframe,
-            depth_test,
-            depth_write,
-            depth_compare,
-            vertex_entry,
-            fragment_entry,
-        };
+        let layouts = self
+            .build_descriptor_layouts(&descriptor)
+            .map_err(|e| fail(e.to_string()))?;
 
-        // Build descriptor layouts
-        let layouts = self.build_descriptor_layouts(&options)?;
+        let pipeline = self
+            .build_pipeline(
+                &descriptor,
+                vert_module,
+                frag_module,
+                &layouts,
+                &vertex_binding,
+                key.depth_format(),
+            )
+            .map_err(|e| fail(e.to_string()))?;
+        let pipeline_handle = registry.register_pipeline(pipeline);
 
-        // Build pipeline
-        let pipeline = self.build_pipeline(
-            &options,
-            vert_module,
-            frag_module,
-            &layouts,
-            &vertex_binding,
-        )?;
-
-        let instanced_pipeline = if matches!(vertex_type, VertexType::Ui) {
+        // UI materials additionally compile an instanced pipeline using
+        // vs_instanced/fs_instanced entry points with UnitQuadVertex format.
+        let instanced_pipeline = if descriptor.is_ui_layout() {
             Some(
-                registry
-                    .register_pipeline(self.build_instanced_ui_pipeline(&shader_path, &layouts)?),
+                registry.register_pipeline(
+                    self.build_instanced_ui_pipeline(&shader_path, &layouts, key.color_format())
+                        .map_err(|e| fail(e.to_string()))?,
+                ),
             )
         } else {
             None
         };
 
-        // Register the pipeline
-        let pipeline_handle = registry.register_pipeline(pipeline);
+        let variant = crate::renderer::registry::MaterialVariant {
+            pipeline: pipeline_handle,
+            instanced_pipeline,
+        };
 
-        // Update the material asset with the compiled pipeline
-        if let Some(material) = registry.get_material_mut(material_handle) {
-            material.pipeline = Some(pipeline_handle);
-            material.instanced_pipeline = instanced_pipeline;
-            material.fully_compiled = true;
-            material.color_format = format;
+        if !registry.insert_material_variant(material_handle, key.clone(), variant) {
+            return Err(fail("material handle not found".to_string()));
         }
 
-        Ok(())
+        log::debug!(
+            "compile_variant: material {material_handle:?} color {:?} depth {:?}",
+            key.color_format(),
+            key.depth_format()
+        );
+        Ok(variant)
     }
 
-    fn get_vertex_binding(
+    /// Reject vertex layouts no backend can bind, returning the vertex
+    /// binding for the canonical layouts.
+    fn validate_layout(
         &self,
-        vertex_type: &VertexType,
+        layout: &crate::vertex::VertexLayout,
     ) -> Result<crate::vulkan::vertexbinding::VertexBinding, MaterialError> {
         use crate::vertex::VertexLayout;
 
-        Ok(match vertex_type {
-            VertexType::Pbr => {
-                crate::vulkan::vertexbinding::VertexBinding::from(&VertexLayout::pbr())
-            }
-            VertexType::Ui => {
-                crate::vulkan::vertexbinding::VertexBinding::from(&VertexLayout::ui())
-            }
-            VertexType::Simple => {
-                crate::vulkan::vertexbinding::VertexBinding::from(&VertexLayout::position())
-            }
-            VertexType::Skinned => {
-                crate::vulkan::vertexbinding::VertexBinding::from(&VertexLayout::pbr_skinned())
-            }
-        })
+        if layout == &VertexLayout::pbr()
+            || layout == &VertexLayout::ui()
+            || layout == &VertexLayout::position()
+            || layout == &VertexLayout::pbr_skinned()
+        {
+            Ok(crate::vulkan::vertexbinding::VertexBinding::from(layout))
+        } else {
+            Err(MaterialError::ShaderCompilation(format!(
+                "unknown vertex layout ({} attributes, stride {}): Vulkan material \
+                 compilation supports the canonical PBR / UI / position / skinned layouts",
+                layout.len(),
+                layout.stride(),
+            )))
+        }
     }
 
     fn build_descriptor_layouts(
         &mut self,
-        options: &MaterialOptions,
+        descriptor: &crate::renderer::pipeline_descriptor::PipelineDescriptor,
     ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
         // UI materials use a completely different descriptor set layout
-        if matches!(options.vertex_type, VertexType::Ui) {
+        if descriptor.is_ui_layout() {
             return self.build_ui_descriptor_layout();
         }
 
@@ -519,7 +352,9 @@ impl MaterialCompiler {
         // Set 2: skeleton, compositing, or empty placeholder
         // All three are mutually exclusive at set 2 so the pipeline layout
         // indices are consistent for downstream descriptor set binding.
-        if options.is_compositing {
+        let is_skinned = descriptor.vertex == crate::vertex::VertexLayout::pbr_skinned();
+        let is_pbr = descriptor.vertex == crate::vertex::VertexLayout::pbr();
+        if descriptor.native.vulkan.compositing {
             if let Some(layout) = self.compositing_descriptor_set_layout {
                 layouts.push(layout);
             } else {
@@ -529,25 +364,25 @@ impl MaterialCompiler {
                         .expect("empty descriptor layout not initialized"),
                 );
             }
-        } else if matches!(options.vertex_type, VertexType::Skinned) {
+        } else if is_skinned {
             layouts.push(
                 self.skeleton_descriptor_layout
                     .expect("skeleton descriptor layout not initialized"),
             );
-        } else if matches!(options.vertex_type, VertexType::Pbr) {
+        } else if is_pbr {
             layouts.push(self.empty_descriptor_layout.unwrap());
         }
 
         // Add light culling descriptor set layout (Set 3) for PBR materials
         // Both PBR and Skinned materials support Forward+ dynamic lighting
-        if matches!(options.vertex_type, VertexType::Pbr | VertexType::Skinned)
+        if (is_pbr || is_skinned)
             && let Some(layout) = self.light_culling_descriptor_layout
         {
             layouts.push(layout);
         }
 
         // Add shadow descriptor set layout (Set 4) for PBR materials
-        if matches!(options.vertex_type, VertexType::Pbr | VertexType::Skinned)
+        if (is_pbr || is_skinned)
             && let Some(layout) = self.shadow_descriptor_layout
         {
             layouts.push(layout);
@@ -624,36 +459,6 @@ impl MaterialCompiler {
         self.shader_cache.borrow_mut().invalidate(path);
     }
 
-    /// Load a shader module for a specific entry point (see
-    /// [`PipelineDescriptor`](crate::renderer::pipeline_descriptor::PipelineDescriptor)).
-    pub(crate) fn load_shader_with_entry(
-        &self,
-        path: &Path,
-        stage: vk::ShaderStageFlags,
-        entry: &str,
-    ) -> Result<vk::ShaderModule, MaterialError> {
-        self.shader_cache
-            .borrow_mut()
-            .load_shader_with_entry(path, stage, entry)
-            .map_err(|e| MaterialError::ShaderCompilation(format!("{e:?}")))
-    }
-
-    /// Build a pipeline from pre-loaded shader modules.
-    ///
-    /// Combines descriptor layout construction and pipeline building into a
-    /// single call. Used by hot reload to rebuild a pipeline with fresh shaders.
-    pub(crate) fn build_pipeline_from_modules(
-        &mut self,
-        options: &MaterialOptions,
-        _material_type: MaterialType,
-        vert_module: vk::ShaderModule,
-        frag_module: vk::ShaderModule,
-        vertex_binding: &crate::vulkan::vertexbinding::VertexBinding,
-    ) -> Result<crate::vulkan::material::builder::Pipeline, MaterialError> {
-        let layouts = self.build_descriptor_layouts(options)?;
-        self.build_pipeline(options, vert_module, frag_module, &layouts, vertex_binding)
-    }
-
     /// Set the compositing descriptor set layout for compiling compositing materials.
     ///
     /// This must be set before compiling a material with `is_compositing: true`.
@@ -692,6 +497,7 @@ impl MaterialCompiler {
         &self,
         shader_path: &Path,
         layouts: &[vk::DescriptorSetLayout],
+        color_format: crate::texture::ImageFormat,
     ) -> Result<crate::vulkan::material::builder::Pipeline, MaterialError> {
         use crate::pipeline::{CullMode, FrontFace};
         use crate::vulkan::material::builder::PipelineBuilder;
@@ -720,7 +526,7 @@ impl MaterialCompiler {
             .with_entry_points(c"vs_instanced", c"fs_instanced")
             .with_vertex_binding(quad_binding)
             .with_descriptor_layouts(layouts.to_vec())
-            .with_rendering_formats(Some(crate::texture::ImageFormat::B8G8R8A8Srgb), None)
+            .with_rendering_formats(Some(color_format), None)
             .with_depth_test(false, false, crate::pipeline::CompareOp::Always)
             .with_cull_mode(CullMode::None, FrontFace::CounterClockwise)
             .with_alpha_blending()
@@ -735,26 +541,37 @@ impl MaterialCompiler {
 
     fn build_pipeline(
         &self,
-        options: &MaterialOptions,
+        descriptor: &crate::renderer::pipeline_descriptor::PipelineDescriptor,
         vert_module: vk::ShaderModule,
         frag_module: vk::ShaderModule,
         layouts: &[vk::DescriptorSetLayout],
         vertex_binding: &crate::vulkan::vertexbinding::VertexBinding,
+        depth_format: Option<crate::texture::ImageFormat>,
     ) -> Result<crate::vulkan::material::builder::Pipeline, MaterialError> {
-        use crate::pipeline::{CullMode, FrontFace, PolygonMode};
+        use crate::pipeline::PolygonMode;
+        use crate::renderer::pipeline_descriptor::PipelineStages;
         use crate::vulkan::material::builder::PipelineBuilder;
 
         // UI materials use different rendering configuration
-        let is_ui = matches!(options.vertex_type, VertexType::Ui);
+        let is_ui = descriptor.is_ui_layout();
 
-        // Entry points come from the descriptor (defaults: vs_main/fs_main).
-        let vertex_entry = std::ffi::CString::new(options.vertex_entry.as_str()).map_err(|e| {
+        let (vertex_entry, fragment_entry) = match &descriptor.stages {
+            PipelineStages::Graphics {
+                vertex_entry,
+                fragment_entry,
+            } => (vertex_entry, fragment_entry),
+            PipelineStages::Compute { .. } => {
+                return Err(MaterialError::PipelineCreation(
+                    "compute pipelines have no graphics variants".to_string(),
+                ));
+            }
+        };
+        let vertex_entry = std::ffi::CString::new(vertex_entry.as_str()).map_err(|e| {
             MaterialError::PipelineCreation(format!("invalid vertex entry point: {e}"))
         })?;
-        let fragment_entry =
-            std::ffi::CString::new(options.fragment_entry.as_str()).map_err(|e| {
-                MaterialError::PipelineCreation(format!("invalid fragment entry point: {e}"))
-            })?;
+        let fragment_entry = std::ffi::CString::new(fragment_entry.as_str()).map_err(|e| {
+            MaterialError::PipelineCreation(format!("invalid fragment entry point: {e}"))
+        })?;
 
         // SOA vertex bindings for non-UI materials (separate per-attribute buffers)
         // UI materials keep interleaved binding for dynamic mesh updates
@@ -772,47 +589,30 @@ impl MaterialCompiler {
                 .with_descriptor_layouts(layouts.to_vec())
         };
 
-        if is_ui {
-            // UI rendering: no depth buffer, SRGB color format
-            builder = builder.with_rendering_formats(
-                Some(crate::texture::ImageFormat::B8G8R8A8Srgb),
-                None, // No depth buffer for UI
-            );
-        } else if options.is_compositing {
-            // Compositing rendering: no depth buffer (fullscreen pass)
-            builder = builder.with_rendering_formats(
-                Some(options.color_format),
-                None, // No depth buffer for compositing
-            );
-        } else {
-            // Standard rendering with depth buffer
-            builder = builder.with_rendering_formats(
-                Some(options.color_format),
-                Some(crate::texture::ImageFormat::D32SfloatS8Uint),
-            );
-        }
+        // Attachments come from the variant key: the resolved color format
+        // plus the shared depth derivation (None for UI, compositing, and
+        // depth-test-disabled pipelines).
+        builder = builder.with_rendering_formats(Some(descriptor.color_format), depth_format);
 
-        // Configure render state from options.
-        // UI and compositing passes have no depth attachment; a disabled
-        // depth test implies no depth writes or comparison (normalised here
-        // so every entry path shares the same effective state).
-        if is_ui || options.is_compositing || !options.depth_test {
+        // A depth-free pipeline normalises to no test/write and Always so
+        // every entry path shares the same effective state.
+        if depth_format.is_some() {
+            builder =
+                builder.with_depth_test(true, descriptor.depth.write, descriptor.depth.compare);
+        } else {
             builder = builder.with_depth_test(false, false, crate::pipeline::CompareOp::Always);
-        } else {
-            builder = builder.with_depth_test(true, options.depth_write, options.depth_compare);
         }
 
-        if options.double_sided {
-            builder = builder.with_cull_mode(CullMode::None, FrontFace::CounterClockwise);
-        } else {
-            builder = builder.with_cull_mode(CullMode::Back, FrontFace::CounterClockwise);
-        }
+        builder = builder.with_cull_mode(
+            descriptor.cull,
+            crate::pipeline::FrontFace::CounterClockwise,
+        );
 
-        if options.alpha_blended {
+        if descriptor.blend == crate::renderer::pipeline_descriptor::BlendMode::AlphaBlend {
             builder = builder.with_alpha_blending();
         }
 
-        if options.wireframe {
+        if descriptor.wireframe {
             builder = builder.with_polygon_mode(PolygonMode::Line);
         }
 

@@ -545,7 +545,10 @@ impl MetalRenderer {
             encoder.draw(3, 1, 0, 0);
         }
         if !draw_list.draws.is_empty() {
-            Self::draw_objects(self, &mut encoder, &draw_list);
+            let material_format = declared_color
+                .map(|attachment| attachment.format)
+                .unwrap_or(crate::texture::ImageFormat::Auto);
+            Self::draw_objects(self, &mut encoder, &draw_list, material_format);
         }
         encoder.end_encoding();
 
@@ -860,15 +863,10 @@ impl MetalRenderer {
         let material_handle = record.material.ok_or_else(|| {
             RendererError::InvalidOperation("Metal UI record has no declared material".into())
         })?;
-        let pipeline = self
-            .materials
-            .get(material_handle)
-            .and_then(|material| material.pipeline.as_ref())
-            .ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "Metal UI record material has no graphics pipeline".into(),
-                )
-            })?;
+        // The UI record renders to the drawable (sRGB Bgra8).
+        let pipeline =
+            self.material_pipeline(material_handle, crate::texture::ImageFormat::B8G8R8A8Srgb)?;
+        let pipeline = &pipeline;
 
         let load_op = if state.drawable_written {
             LoadOp::Load

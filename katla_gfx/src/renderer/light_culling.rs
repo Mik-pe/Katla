@@ -372,7 +372,7 @@ impl super::VulkanRenderer {
         // Old material pipelines reference the old light culling descriptor set layout,
         // so they must be destroyed first to avoid use-after-free in pipeline layout cleanup.
         if self.light_culling.has_light_culling() {
-            self.recompile_deferred_materials();
+            self.invalidate_compiled_materials();
         }
 
         let mut ctx = super::light_culling::LightInitContext {

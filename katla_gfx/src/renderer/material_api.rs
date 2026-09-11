@@ -1,90 +1,108 @@
 use super::registry::MaterialTextures;
 use super::*;
+use crate::renderer::pipeline_variant::PipelineVariantKey;
 use crate::texture::{
     DEFAULT_ALBEDO_SLOT, DEFAULT_MR_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_OCCLUSION_SLOT,
 };
 
 impl VulkanRenderer {
-    /// Create a PBR material with configurable color format.
+    /// Register a material from a validated compilation descriptor.
     ///
-    /// This is a convenience method for creating standard PBR materials with
-    /// sensible defaults: depth testing enabled, backface culling enabled,
-    /// opaque rendering.
-    ///
-    /// Uses swapchain color format (B8G8R8A8Srgb) by default. Specify HDR format
-    /// for rendering to intermediate textures (e.g., for tonemapping passes).
-    ///
-    /// # Arguments
-    /// * `shader_path` - Path to WGSL shader file
-    /// * `color_format` - Optional color attachment format. None = swapchain format (LDR),
-    ///   Some(ImageFormat::R16G16B16A16Sfloat) = HDR rendering
-    ///
-    /// # Returns
-    /// A MaterialHandle for the created material.
-    ///
-    /// # Example
-    /// ```ignore
-    /// use katla_gfx::{PipelineDescriptor, GpuRenderer};
-    ///
-    /// // PBR material (default settings)
-    /// let pbr = renderer.compile_material(&PipelineDescriptor::pbr("shaders/pbr.wgsl"))?;
-    ///
-    /// // HDR material for intermediate render targets
-    /// let hdr = renderer.compile_material(
-    ///     &PipelineDescriptor::pbr("shaders/pbr.wgsl")
-    ///         .with_color_format(ImageFormat::R16G16B16A16Sfloat),
-    /// )?;
-    /// ```
-    pub(crate) fn compile_material(
+    /// The descriptor is the material's identity. A concrete color format
+    /// compiles that variant immediately; `ImageFormat::Auto` defers all
+    /// compilation until a pass first uses the material, then compiles one
+    /// pipeline variant per render-target configuration on demand.
+    pub(crate) fn compile_material_descriptor(
         &mut self,
-        shader_path: impl AsRef<std::path::Path>,
-        options: crate::vulkan::material::compiler::MaterialOptions,
+        descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
-        use crate::vulkan::material::compiler::MaterialType;
-
-        let material_type = match options.vertex_type {
-            crate::vulkan::material::compiler::VertexType::Pbr => MaterialType::Pbr,
-            crate::vulkan::material::compiler::VertexType::Ui => MaterialType::Ui,
-            _ => MaterialType::Auto,
-        };
-
         self.material_compiler
-            .compile(
-                &mut self.asset_registry,
-                shader_path.as_ref(),
-                material_type,
-                options,
-            )
+            .compile(&mut self.asset_registry, descriptor)
             .map_err(RendererError::from)
     }
 
-    /// Ensure a material is compiled for a specific format.
+    /// Derive the canonical variant key for a material at a requested color
+    /// format.
+    fn material_variant_key(
+        &self,
+        material: MaterialHandle,
+        requested_format: crate::texture::ImageFormat,
+    ) -> Result<PipelineVariantKey, RendererError> {
+        let descriptor = self
+            .asset_registry
+            .get_material(material)
+            .ok_or(RendererError::InvalidOperation(format!(
+                "Material handle {material:?} not found"
+            )))?
+            .descriptor
+            .clone();
+        Ok(PipelineVariantKey::resolve(&descriptor, requested_format))
+    }
+
+    /// Ensure a pipeline variant of the material is compiled for a color
+    /// format.
     ///
-    /// If the material was created with `ImageFormat::Auto`, this will compile
-    /// it for the specified format. If already compiled, this does nothing.
-    ///
-    /// This is called automatically by the frame graph before execution.
+    /// Cached variants return immediately; a miss compiles one new pipeline
+    /// for this exact target configuration. Called before any pass encodes
+    /// draws with the material.
     pub(crate) fn ensure_material_compiled(
         &mut self,
         material: MaterialHandle,
-        format: crate::texture::ImageFormat,
+        requested_format: crate::texture::ImageFormat,
     ) -> Result<(), RendererError> {
+        let key = self.material_variant_key(material, requested_format)?;
+        if self
+            .asset_registry
+            .material_variant(material, &key)
+            .is_some()
+        {
+            return Ok(());
+        }
+
+        log::debug!(
+            "Compiling pipeline variant for material {material:?} (color {:?}, depth {:?})",
+            key.color_format(),
+            key.depth_format()
+        );
         self.material_compiler
-            .compile_deferred_material(&mut self.asset_registry, material, format)
-            .map_err(RendererError::from)
+            .compile_variant(&mut self.asset_registry, material, &key)
+            .map_err(RendererError::from)?;
+        Ok(())
     }
 
-    /// Invalidate all compiled materials, forcing recompilation on next use.
+    /// Look up the compiled variant for a material at a color format.
     ///
-    /// Called after descriptor layout changes (e.g., light culling resize)
-    /// to ensure pipelines reference valid descriptor set layouts.
-    pub(crate) fn recompile_deferred_materials(&mut self) {
-        let count = self.asset_registry.material_count();
+    /// `None` means no variant exists for this configuration yet; callers
+    /// must run [`ensure_material_compiled`](Self::ensure_material_compiled)
+    /// for every pass format before encoding.
+    pub(crate) fn material_variant(
+        &self,
+        material: MaterialHandle,
+        requested_format: crate::texture::ImageFormat,
+    ) -> Result<Option<crate::renderer::registry::MaterialVariant>, RendererError> {
+        if !self.asset_registry.get_material(material).is_some() {
+            return Err(RendererError::InvalidOperation(format!(
+                "Material handle {material:?} not found"
+            )));
+        }
+        let key = self.material_variant_key(material, requested_format)?;
+        Ok(self.asset_registry.material_variant(material, &key))
+    }
+
+    /// Drop every compiled variant of every material and retire the
+    /// pipelines.
+    ///
+    /// Called after descriptor layout changes (e.g., light culling resize):
+    /// each variant key includes the affected layouts, so no variant
+    /// survives and the next use recompiles against the new layouts.
+    pub(crate) fn invalidate_compiled_materials(&mut self) {
+        let variants = self.asset_registry.material_variant_count();
+        let materials = self.asset_registry.material_count();
         log::info!(
-            "Invalidating {} compiled materials for recompilation after descriptor layout change",
-            count
+            "Invalidating {variants} compiled pipeline variants across {materials} materials \
+             after descriptor layout change"
         );
-        for pipeline in self.asset_registry.invalidate_compiled_materials() {
+        for pipeline in self.asset_registry.invalidate_all_material_variants() {
             self.retire(pipeline);
         }
     }
@@ -154,11 +172,11 @@ impl VulkanRenderer {
             .expect("default_material() called before init_default_material()")
     }
 
-    /// Recompile all materials whose shader path matches the given file.
+    /// Drop every compiled variant of materials whose shader matches the
+    /// changed file, invalidating cached shader modules for the path.
     ///
-    /// Invalidates cached shader modules for the path, then recompiles each
-    /// matching material in-place (keeping the same handle/slot index).
-    /// Returns the number of materials recompiled.
+    /// The next use of each affected material recompiles the variants it
+    /// needs from disk. Returns the number of affected materials.
     pub(crate) fn recompile_materials_for_shader(
         &mut self,
         changed_path: &std::path::Path,
@@ -169,139 +187,17 @@ impl VulkanRenderer {
         }
 
         log::info!(
-            "Recompiling {} material(s) for shader: {}",
+            "Invalidating pipeline variants of {} material(s) for shader: {}",
             matches.len(),
             changed_path.display()
         );
 
-        let count = matches.len();
-        for (handle, stored_path) in &matches {
-            // Invalidate cached shader modules so load_shader re-reads from disk
-            self.material_compiler.invalidate_shader_cache(stored_path);
-
-            if let Err(e) = self.recompile_single_material(*handle) {
-                log::warn!(
-                    "Failed to recompile material {:?} for shader '{}': {}",
-                    handle,
-                    stored_path.display(),
-                    e
-                );
+        self.material_compiler.invalidate_shader_cache(changed_path);
+        for (handle, _) in &matches {
+            for pipeline in self.asset_registry.take_material_variants(*handle) {
+                self.retire(pipeline);
             }
         }
-        count
-    }
-
-    /// Recompile a single material in-place using its stored shader path and options.
-    fn recompile_single_material(&mut self, handle: MaterialHandle) -> Result<(), RendererError> {
-        use crate::vulkan::material::compiler::{MaterialOptions, MaterialType};
-
-        // Extract stored material info (immutable borrow of registry)
-        let (
-            shader_path,
-            vertex_type,
-            is_compositing,
-            alpha_blended,
-            double_sided,
-            wireframe,
-            depth_test,
-            depth_write,
-            depth_compare,
-            vertex_entry,
-            fragment_entry,
-            vertex_binding,
-            color_format,
-            old_pipeline_handle,
-            textures,
-        ) = {
-            let mat = self.asset_registry.get_material(handle).ok_or_else(|| {
-                RendererError::InvalidOperation(format!("Material handle {:?} not found", handle))
-            })?;
-
-            let shader_path = mat.shader_path.clone().ok_or_else(|| {
-                RendererError::InvalidOperation(format!("Material {:?} has no shader path", handle))
-            })?;
-
-            (
-                shader_path,
-                mat.vertex_type,
-                mat.is_compositing,
-                mat.alpha_blended,
-                mat.double_sided,
-                mat.wireframe,
-                mat.depth_test,
-                mat.depth_write,
-                mat.depth_compare,
-                mat.vertex_entry.clone(),
-                mat.fragment_entry.clone(),
-                mat.vertex_binding.clone(),
-                mat.color_format,
-                mat.pipeline,
-                mat.textures,
-            )
-        };
-
-        // Load shaders with the stored entry points (cache was invalidated,
-        // so this reads from disk)
-        let vert_module = self.material_compiler.load_shader_with_entry(
-            &shader_path,
-            ash::vk::ShaderStageFlags::VERTEX,
-            &vertex_entry,
-        )?;
-        let frag_module = self.material_compiler.load_shader_with_entry(
-            &shader_path,
-            ash::vk::ShaderStageFlags::FRAGMENT,
-            &fragment_entry,
-        )?;
-
-        let material_type = match vertex_type {
-            crate::vulkan::material::compiler::VertexType::Pbr => MaterialType::Pbr,
-            crate::vulkan::material::compiler::VertexType::Ui => MaterialType::Ui,
-            _ => MaterialType::Auto,
-        };
-
-        let options = MaterialOptions {
-            color_format,
-            vertex_type,
-            is_compositing,
-            alpha_blended,
-            double_sided,
-            wireframe,
-            depth_test,
-            depth_write,
-            depth_compare,
-            vertex_entry,
-            fragment_entry,
-        };
-
-        // Build new pipeline via material_compiler
-        let pipeline = self.material_compiler.build_pipeline_from_modules(
-            &options,
-            material_type,
-            vert_module,
-            frag_module,
-            &vertex_binding,
-        )?;
-
-        // Register new pipeline and update material in-place
-        let new_pipeline_handle = self.asset_registry.register_pipeline(pipeline);
-
-        if let Some(mat) = self.asset_registry.get_material_mut(handle) {
-            mat.pipeline = Some(new_pipeline_handle);
-            mat.fully_compiled = true;
-        }
-
-        // Retire the old pipeline: in-flight submissions may still bind it
-        if let Some(old) =
-            old_pipeline_handle.and_then(|handle| self.asset_registry.remove_pipeline(handle))
-        {
-            self.retire(old);
-        }
-
-        // Restore texture indices
-        if let Some(mat) = self.asset_registry.get_material_mut(handle) {
-            mat.textures = textures;
-        }
-
-        Ok(())
+        matches.len()
     }
 }

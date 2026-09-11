@@ -882,7 +882,57 @@ impl FrameGraph<crate::MetalRenderer> {
         f(&mut frame);
         frame.validate_submissions()?;
 
-        Ok(std::mem::take(&mut frame.pending))
+        let pending = std::mem::take(&mut frame.pending);
+
+        // Compile pipeline variants before encoding (Metal encoding runs on
+        // &self). Geometry draw lists ensure every drawn material for the
+        // pass's declared output format — the same filter as the Vulkan
+        // pre-compilation, so side-lists like the depth prepass (whose
+        // output format is a pick target, not a shader output) compile
+        // nothing. UI pass materials ensure for the drawable format the UI
+        // record renders into. Unknown handles skip with a warning, exactly
+        // like the encoder skips their draws.
+        let ensure_variant = |renderer: &mut crate::MetalRenderer,
+                              material: crate::handle::MaterialHandle,
+                              format: crate::texture::ImageFormat| {
+            if !renderer.has_material_impl(material) {
+                log::warn!("Skipping variant compilation for unknown material {material:?}");
+                return Ok(());
+            }
+            renderer
+                .ensure_material_variant_impl(material, format)
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Pipeline variant pre-compilation failed: {e}"
+                    ))
+                })
+        };
+        for (&pass_index, data) in pending.iter() {
+            let Some(pass) = self.passes.get(pass_index) else {
+                continue;
+            };
+            let is_geometry = pass.kind == Some(crate::render_graph::pass::PassKind::Geometry);
+            let format = pass
+                .output_format
+                .unwrap_or(crate::texture::ImageFormat::Auto);
+            if is_geometry {
+                for draw_list in &data.draw_lists {
+                    for draw in &draw_list.draws {
+                        ensure_variant(renderer, draw.material, format)?;
+                    }
+                }
+            }
+            if let Some(material_handle) = pass.material {
+                let format = if pass.kind == Some(crate::render_graph::pass::PassKind::Ui) {
+                    crate::texture::ImageFormat::B8G8R8A8Srgb
+                } else {
+                    format
+                };
+                ensure_variant(renderer, material_handle, format)?;
+            }
+        }
+
+        Ok(pending)
     }
 }
 
@@ -898,7 +948,7 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
             if let Some(material_handle) = pass.material {
                 let format = pass
                     .output_format
-                    .unwrap_or(crate::texture::ImageFormat::B8G8R8A8Srgb);
+                    .unwrap_or(crate::texture::ImageFormat::Auto);
 
                 log::trace!(
                     "resolve_materials: pass '{}' material={:?} format={:?}",
