@@ -637,14 +637,6 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn set_ui_material(&mut self, material: MaterialHandle) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.set_ui_material(material),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.set_ui_material(material),
-        }
-    }
-
     fn render_ui_pass(&mut self, draw_list: UIDrawList) {
         match self {
             AnyRenderer::Vulkan(r) => r.render_ui_pass(draw_list),

@@ -21,6 +21,7 @@ use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::types::{DrawList, FrameUniforms, UIDrawList};
 use crate::texture::ImageFormat;
 
+use super::MetalBackend;
 use super::command_buffer::MetalCommandBuffer;
 use super::execution_plan::{MetalExecutionPlan, MetalPassRecord};
 use super::metal_renderer::MetalRenderer;
@@ -47,7 +48,6 @@ struct MetalPassTrace {
 struct FrameEncodingState {
     drawable_view: MetalTextureView,
     drawable_written: bool,
-    depth_prepass_ran: bool,
     tonemap_ran: bool,
     drawable_width: f32,
     drawable_height: f32,
@@ -252,7 +252,6 @@ impl MetalRenderer {
         let mut state = FrameEncodingState {
             drawable_view,
             drawable_written: false,
-            depth_prepass_ran: false,
             tonemap_ran: false,
             drawable_width,
             drawable_height,
@@ -270,14 +269,12 @@ impl MetalRenderer {
             let encoded = match record.kind {
                 PassKind::Shadow => self.encode_shadow_record(&mut cmd_buffer, &state, &data)?,
                 PassKind::DepthPrepass => {
-                    let encoded =
-                        self.encode_depth_prepass_record(&mut cmd_buffer, &state, &data)?;
-                    state.depth_prepass_ran |= encoded;
-                    encoded
+                    self.encode_depth_prepass_record(&mut cmd_buffer, &state, &data)?
                 }
                 PassKind::Geometry => self.encode_geometry_record(
                     &mut cmd_buffer,
                     &mut state,
+                    record,
                     &data,
                     has_later_kind(plan, position, PassKind::Fullscreen),
                 )?,
@@ -296,7 +293,12 @@ impl MetalRenderer {
                 }
                 PassKind::Ui => {
                     let ui_draw_list = single_ui_draw_list(record, &data)?;
-                    self.encode_ui_record(&mut cmd_buffer, &mut state, ui_draw_list.as_ref())?
+                    self.encode_ui_record(
+                        &mut cmd_buffer,
+                        &mut state,
+                        record,
+                        ui_draw_list.as_ref(),
+                    )?
                 }
                 PassKind::Particles => self.encode_particle_record(&mut cmd_buffer, &state)?,
                 PassKind::StencilIndicator | PassKind::Compositing => {
@@ -449,24 +451,37 @@ impl MetalRenderer {
         &self,
         cmd_buffer: &mut MetalCommandBuffer,
         state: &mut FrameEncodingState,
+        record: &MetalPassRecord,
         data: &PassExecutionData,
         post_process_later: bool,
     ) -> Result<bool, RendererError> {
         let draw_list = merge_draw_lists(data);
-        let depth_attachment = self
-            .depth_stencil_view
-            .as_ref()
-            .map(|view| DepthAttachmentInfo {
-                view: view.clone(),
-                load_op: if state.depth_prepass_ran {
-                    LoadOp::Load
-                } else {
-                    LoadOp::Clear
+        // The graph's declared attachments drive the encoder: depth is bound
+        // only when the pass declares a depth attachment (with its declared
+        // ops), matching the Vulkan backend. A depth-needing pass kind
+        // without a declared attachment renders without depth, exactly as
+        // the compiled graph describes.
+        let depth_attachment = record
+            .depth_attachment
+            .map(
+                |declared| -> Result<DepthAttachmentInfo<MetalBackend>, RendererError> {
+                    let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+                        RendererError::InvalidOperation(
+                            "Metal Geometry record declares depth but has no depth-stencil target"
+                                .into(),
+                        )
+                    })?;
+                    Ok(DepthAttachmentInfo {
+                        view: depth_view.clone(),
+                        load_op: declared.load_op,
+                        store_op: declared.store_op,
+                        clear_value: declared.clear_value,
+                        format: ImageFormat::D32SfloatS8Uint,
+                    })
                 },
-                store_op: StoreOp::Store,
-                clear_value: ClearValue::depth_stencil(0.0, 0),
-                format: ImageFormat::D32SfloatS8Uint,
-            });
+            )
+            .transpose()?;
+        let declared_color = record.color_attachments.first();
 
         let color_view = if post_process_later {
             self.geometry_hdr_view.clone().ok_or_else(|| {
@@ -480,21 +495,29 @@ impl MetalRenderer {
             state.drawable_view.clone()
         };
 
-        let clear_value = if post_process_later {
-            ClearValue::OPAQUE_BLACK
-        } else {
-            ClearValue::color(
-                CANVAS_CLEAR_COLOR.0 as f32,
-                CANVAS_CLEAR_COLOR.1 as f32,
-                CANVAS_CLEAR_COLOR.2 as f32,
-                CANVAS_CLEAR_COLOR.3 as f32,
-            )
-        };
+        let (load_op, store_op, clear_value) = declared_color
+            .map(|attachment| {
+                (
+                    attachment.load_op,
+                    attachment.store_op,
+                    attachment.clear_value,
+                )
+            })
+            .unwrap_or((
+                LoadOp::Clear,
+                StoreOp::Store,
+                ClearValue::color(
+                    CANVAS_CLEAR_COLOR.0 as f32,
+                    CANVAS_CLEAR_COLOR.1 as f32,
+                    CANVAS_CLEAR_COLOR.2 as f32,
+                    CANVAS_CLEAR_COLOR.3 as f32,
+                ),
+            ));
         let pass_info = RenderPassInfo {
             color_attachments: vec![ColorAttachmentInfo {
                 view: color_view,
-                load_op: LoadOp::Clear,
-                store_op: StoreOp::Store,
+                load_op,
+                store_op,
                 clear_value,
             }],
             depth_attachment,
@@ -820,6 +843,7 @@ impl MetalRenderer {
         &mut self,
         cmd_buffer: &mut MetalCommandBuffer,
         state: &mut FrameEncodingState,
+        record: &MetalPassRecord,
         draw_list: Option<&UIDrawList>,
     ) -> Result<bool, RendererError> {
         let Some(draw_list) = draw_list.filter(|draw_list| !draw_list.is_empty()) else {
@@ -833,8 +857,8 @@ impl MetalRenderer {
                     "Metal UI record failed to upload its draw list: {error}"
                 ))
             })?;
-        let material_handle = self.ui_renderer.ui_material().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal UI record has no material".into())
+        let material_handle = record.material.ok_or_else(|| {
+            RendererError::InvalidOperation("Metal UI record has no declared material".into())
         })?;
         let pipeline = self
             .materials

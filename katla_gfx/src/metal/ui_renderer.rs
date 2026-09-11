@@ -44,7 +44,6 @@ pub(crate) struct MetalUIRenderer {
     vertex_buffer_capacity: u64,
     index_buffer_capacity: u64,
     instance_buffer_capacity: u64,
-    ui_material: Option<crate::handle::MaterialHandle>,
     instanced_pipeline: Option<MetalGraphicsPipeline>,
 }
 
@@ -59,17 +58,8 @@ impl MetalUIRenderer {
             vertex_buffer_capacity: 0,
             index_buffer_capacity: 0,
             instance_buffer_capacity: 0,
-            ui_material: None,
             instanced_pipeline: None,
         }
-    }
-
-    pub(crate) fn ui_material(&self) -> Option<crate::handle::MaterialHandle> {
-        self.ui_material
-    }
-
-    pub(crate) fn set_ui_material(&mut self, handle: crate::handle::MaterialHandle) {
-        self.ui_material = Some(handle);
     }
 
     pub(crate) fn set_instanced_pipeline(&mut self, pipeline: MetalGraphicsPipeline) {

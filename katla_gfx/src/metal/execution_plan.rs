@@ -44,6 +44,7 @@ pub(crate) struct MetalPassRecord {
     pub(crate) color_attachments: Vec<MetalColorAttachmentRecord>,
     pub(crate) uses_depth: bool,
     pub(crate) depth_attachment: Option<MetalDepthAttachmentOps>,
+    pub(crate) material: Option<crate::handle::MaterialHandle>,
 }
 
 impl MetalPassRecord {
@@ -116,6 +117,7 @@ impl MetalPassRecord {
                 store_op: ops.depth.store,
                 clear_value: ops.depth.clear_value,
             }),
+            material: pass.material,
         })
     }
 
@@ -216,9 +218,20 @@ pub(crate) struct MetalExecutionPlan {
 impl MetalExecutionPlan {
     pub(crate) fn compile(
         frame_graph: &FrameGraph<MetalRenderer>,
+        backbuffer_format: ImageFormat,
     ) -> Result<Self, RenderGraphError> {
         let order = frame_graph.execution_order();
-        let format_at = |id: ResourceId| frame_graph.resource_format(id);
+        // Transient resources carry their declared format; the imported
+        // backbuffer is backend-owned and resolves to the drawable's format.
+        let format_at = |id: ResourceId| {
+            frame_graph.resource_format(id).or_else(|| {
+                if frame_graph.resource_name(id) == Some("backbuffer") {
+                    Some(backbuffer_format)
+                } else {
+                    None
+                }
+            })
+        };
         let mut image_sync_ops = Vec::new();
         for &pass_index in &order {
             for op in frame_graph.image_sync_ops(pass_index) {
@@ -296,6 +309,7 @@ impl MetalExecutionPlan {
                             | PassKind::Outline
                     ),
                     depth_attachment: None,
+                    material: None,
                 })
                 .collect(),
         }
