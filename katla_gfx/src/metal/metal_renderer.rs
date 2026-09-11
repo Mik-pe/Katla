@@ -746,6 +746,19 @@ impl MetalRenderer {
         let plan = super::execution_plan::MetalExecutionPlan::compile(frame_graph)
             .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
 
+        // Consume the graph's compiled image sync plan: Metal realizes every
+        // operation through driver-tracked resources (hazards between
+        // encoders) and attachment load/store actions, so no explicit image
+        // barrier is encoded. The records stay observable for frame traces.
+        for record in plan.sync_records() {
+            log::trace!(
+                "[Metal sync] before pass {:?}: resource {} via {:?}",
+                record.pass,
+                record.resource.0,
+                record.coverage
+            );
+        }
+
         self.render_frame(&plan, pending)
     }
 
