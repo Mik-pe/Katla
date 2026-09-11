@@ -457,13 +457,6 @@ pub trait GpuRenderer: Sized + 'static {
     // UI Rendering
     // ========================================================================
 
-    /// Set the UI material handle for backends that render UI directly (Metal).
-    ///
-    /// Required with no default. A backend that renders UI through the frame
-    /// graph instead of a direct pass implements this as an explicit
-    /// documented no-op.
-    fn set_ui_material(&mut self, material: MaterialHandle);
-
     /// Queue a UI draw list for rendering in the next frame.
     ///
     /// Required with no default. Gated by
@@ -927,11 +920,6 @@ impl GpuRenderer for VulkanRenderer {
     }
 
     // -- UI Rendering --
-
-    fn set_ui_material(&mut self, _material: MaterialHandle) {
-        // Vulkan renders UI through the frame graph via frame.submit_ui();
-        // there is no stored direct-pass UI material.
-    }
 
     fn render_ui_pass(&mut self, _draw_list: UIDrawList) {
         // Vulkan renders UI through the frame graph via frame.submit_ui(),

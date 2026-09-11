@@ -46,6 +46,10 @@ pub struct GeometryPass {
     material: Option<crate::handle::MaterialHandle>,
     /// Depth attachment configuration.
     depth_config: Option<DepthStencilAttachmentOps>,
+    /// Whether the pass participates in depth at all. Depth-using passes
+    /// without an explicit depth configuration receive the canonical
+    /// reverse-Z default; depth-free passes bind no depth attachment.
+    uses_depth: bool,
 }
 
 /// Describes a color attachment output.
@@ -72,7 +76,18 @@ impl GeometryPass {
             reads: Vec::new(),
             material: None,
             depth_config: None,
+            uses_depth: true,
         }
+    }
+
+    /// Declare that this pass renders without a depth attachment.
+    ///
+    /// Overrides the template's depth-using default: the compiled pass
+    /// carries no depth contract, so backends bind no depth attachment and
+    /// the builder injects no reverse-Z default.
+    pub fn without_depth(mut self) -> Self {
+        self.uses_depth = false;
+        self
     }
 
     /// Add a color attachment output.
@@ -247,7 +262,7 @@ impl PassBuilder for GeometryPass {
             material: self.material,
             output_format,
             build_fn: Box::new(|_| Ok(Box::new(()))),
-            uses_depth: true,
+            uses_depth: self.uses_depth,
             color_attachments,
             depth_attachment: self.depth_config,
             kind: Some(PassKind::Geometry),

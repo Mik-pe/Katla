@@ -36,6 +36,22 @@ GitHub-hosted macOS runners may expose a virtualized Metal device with fewer cap
 
 Pixel-accurate rendering and performance validation should use a physical, self-hosted Apple Silicon runner when one is available. The hosted `macos-26` job remains the required current-SDK validation environment.
 
+## Cross-backend contract suite
+
+Both jobs run the shared contract suite (`katla_gfx/tests/contract/`) against
+the platform's native backend — Vulkan on lavapipe with the Khronos validation
+layers installed, Metal on Apple Silicon with `MTL_DEBUG_LAYER=1` and
+`METAL_DEVICE_WRAPPER_TYPE=1`:
+
+```bash
+cargo test -p katla_gfx --test contract --locked -- --ignored
+```
+
+The suite asserts the contracts Katla promises above the backend boundary
+(render results, resource lifetime, error semantics) through one
+backend-neutral harness. See `docs/contract-suite.md` for the full guide and
+the harness module docs before adding a scenario.
+
 ## Local equivalents
 
 ```bash
@@ -43,6 +59,7 @@ cargo fmt --all -- --check
 cargo check -p katla_gfx -p katla_app --locked
 cargo test -p katla_gfx --lib --locked
 cargo clippy -p katla_gfx -p katla_app --locked -- -D warnings
+cargo test -p katla_gfx --test contract --locked -- --ignored
 ```
 
 Linux separately validates the graphics library and Vulkan path on Ubuntu 24.04.

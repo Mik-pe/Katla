@@ -1,7 +1,7 @@
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::MeshHandle;
-use crate::renderer::registry::MeshIndexElement;
+use crate::renderer::registry::{MeshIndexElement, MeshUsage};
 
 use super::buffer::MetalBuffer;
 use super::metal_renderer::MetalMesh;
@@ -49,7 +49,6 @@ impl MetalRenderer {
         T: crate::vertex::Vertex,
         U: MeshIndexElement,
     {
-        use crate::renderer::registry::MeshUsage;
         // Validate bytes against the typed layout; the descriptor itself is
         // not stored.
         crate::renderer::registry::MeshDescriptor::describe_typed_upload(
@@ -73,6 +72,7 @@ impl MetalRenderer {
             index_count,
             vertex_count: vertices.len() as u32,
             vertex_stride: std::mem::size_of::<T>() as u32,
+            usage: MeshUsage::Static,
         };
         Ok(self.meshes.insert(mesh))
     }
@@ -131,6 +131,7 @@ impl MetalRenderer {
             index_count,
             vertex_count: descriptor.vertex_count,
             vertex_stride: stride as u32,
+            usage: descriptor.usage,
         };
         Ok(self.meshes.insert(mesh))
     }
@@ -162,6 +163,11 @@ impl MetalRenderer {
                 detail: format!("{mesh:?} in Metal update_mesh_dynamic"),
             });
         };
+        if m.usage != MeshUsage::Dynamic {
+            return Err(RendererError::InvalidOperation(format!(
+                "mesh {mesh:?} is not dynamic; static meshes are immutable"
+            )));
+        }
         crate::renderer::registry::validate_dynamic_update(
             m.vertex_stride as usize,
             vertex_data,

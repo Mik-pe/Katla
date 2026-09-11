@@ -20,7 +20,7 @@ use std::collections::BTreeMap;
 
 use crate::error::RendererError;
 use crate::pipeline::CompareOp;
-use crate::pipeline::CullMode;
+pub use crate::pipeline::CullMode;
 use crate::texture::ImageFormat;
 use crate::vertex::VertexLayout;
 
