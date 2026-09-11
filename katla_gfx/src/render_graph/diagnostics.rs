@@ -8,6 +8,18 @@
 //! mip/layer ranges as `base+count`. A count of `u32::MAX` means all remaining
 //! subresources, matching the typed graph declaration. Read-write accesses have
 //! edges in both directions; dotted edges belong to culled passes.
+//!
+//! Synchronization transitions appear in full in the JSON and text exports:
+//! frame-start seeds, per-pass operations in execution order, and frame-end
+//! contract operations. The DOT graph renders only the frame-boundary
+//! transitions, as dashed edges through `frame start`/`frame end` nodes;
+//! pass-to-pass operations ride the dependency edges that already carry
+//! their hazards.
+//!
+//! Checked-in golden snapshots under `tests/goldens/` pin the canonical
+//! exports of a representative graph. Rerun the golden tests with
+//! `KATLA_BLESS_GOLDENS=1` to regenerate them after an intentional format
+//! or compiler change, and review the diff like code.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Write as _};
@@ -27,7 +39,7 @@ use super::resource::{GraphResourceDesc, GraphResourceType, ImportedImageContrac
 use super::{ImageSyncOp, ImageSyncState, ResourceHazardKind};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 7;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 8;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -266,6 +278,9 @@ pub enum RenderGraphDiagnosticSyncReason {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RenderGraphDiagnosticTransition {
     pub resource: RenderGraphDiagnosticResourceRef,
+    /// Subresources the operation covers (intersection of the producing and
+    /// consuming accesses).
+    pub range: RenderGraphDiagnosticImageSubresourceRange,
     /// Pass that established the `before` state; `None` at frame start.
     pub before_pass: Option<usize>,
     pub before_name: Option<String>,
@@ -558,9 +573,51 @@ impl RenderGraphDiagnostics {
                 .join("\\n");
             let _ = writeln!(
                 output,
-                "  p{} -> p{} [style=dashed,label=\"{}\"];",
-                dependency.from_pass, dependency.to_pass, label
+                "  p{} -> p{} [style=dashed,label=\"{label}\"];",
+                dependency.from_pass, dependency.to_pass
             );
+        }
+
+        let frame_boundary_transitions = self
+            .synchronization
+            .iter()
+            .filter(|transition| transition.before_pass.is_none() || transition.to_pass.is_none())
+            .collect::<Vec<_>>();
+        if !frame_boundary_transitions.is_empty() {
+            let _ = writeln!(
+                output,
+                "  frame_start [shape=box,style=\"rounded,dashed\",label=\"frame start\"];"
+            );
+            let _ = writeln!(
+                output,
+                "  frame_end [shape=box,style=\"rounded,dashed\",label=\"frame end\"];"
+            );
+        }
+        for transition in &frame_boundary_transitions {
+            let label = escape_dot(&transition_body_label(transition));
+            match (transition.before_pass, transition.to_pass) {
+                (None, Some(to_pass)) => {
+                    let _ = writeln!(
+                        output,
+                        "  frame_start -> p{to_pass} [label=\"{label}\",style=\"dashed\",color=\"gray40\"];"
+                    );
+                }
+                (Some(before_pass), None) => {
+                    let _ = writeln!(
+                        output,
+                        "  p{before_pass} -> frame_end [label=\"{label}\",style=\"dashed\",color=\"gray40\"];"
+                    );
+                }
+                // A frame-end op whose contents were never written this
+                // frame runs straight from the contract's arrival state.
+                (None, None) => {
+                    let _ = writeln!(
+                        output,
+                        "  frame_start -> frame_end [label=\"{label}\",style=\"dashed\",color=\"gray40\"];"
+                    );
+                }
+                (Some(_), Some(_)) => {}
+            }
         }
 
         output.push_str("}\n");
@@ -666,6 +723,13 @@ impl fmt::Display for RenderGraphDiagnostics {
             }
         }
 
+        if !self.synchronization.is_empty() {
+            writeln!(f, "  synchronization transitions:")?;
+            for transition in &self.synchronization {
+                writeln!(f, "    {transition}")?;
+            }
+        }
+
         Ok(())
     }
 }
@@ -679,15 +743,75 @@ impl fmt::Display for RenderGraphDiagnosticImageAccess {
         };
         write!(
             f,
-            "{mode} {:?} @ {:?}, {}, mips {}+{}, layers {}+{}",
+            "{mode} {:?} @ {:?}, {}",
             self.usage,
             self.stage,
-            self.range.aspects.join("|"),
-            self.range.base_mip_level,
-            self.range.mip_level_count,
-            self.range.base_array_layer,
-            self.range.array_layer_count
+            subresource_range_label(&self.range)
         )
+    }
+}
+
+impl fmt::Display for RenderGraphDiagnosticTransition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let producer = match (self.before_pass, &self.before_name) {
+            (Some(index), Some(name)) => format!("pass {index} ({name})"),
+            _ => "frame start".to_string(),
+        };
+        let consumer = match (self.to_pass, &self.to_name) {
+            (Some(index), Some(name)) => format!("pass {index} ({name})"),
+            _ => "frame end".to_string(),
+        };
+        write!(
+            f,
+            "[{producer} -> {consumer}] {}",
+            transition_body_label(self)
+        )
+    }
+}
+
+fn transition_body_label(transition: &RenderGraphDiagnosticTransition) -> String {
+    let cause = match transition.reason {
+        RenderGraphDiagnosticSyncReason::InitialUse => "initial_use",
+        RenderGraphDiagnosticSyncReason::Hazard => "hazard",
+        RenderGraphDiagnosticSyncReason::StateChange => "state_change",
+        RenderGraphDiagnosticSyncReason::ImportedFinal => "imported_final",
+    };
+    let hazard = match transition.hazard {
+        Some(kind) => format!("hazard {kind:?}"),
+        None => cause.to_string(),
+    };
+    format!(
+        "r{} ({}), {}: {} -> {} ({hazard})",
+        transition.resource.id,
+        transition.resource.name,
+        subresource_range_label(&transition.range),
+        sync_state_label(&transition.before_state),
+        sync_state_label(&transition.after_state),
+    )
+}
+
+fn subresource_range_label(range: &RenderGraphDiagnosticImageSubresourceRange) -> String {
+    format!(
+        "{}, mips {}+{}, layers {}+{}",
+        range.aspects.join("|"),
+        range.base_mip_level,
+        range.mip_level_count,
+        range.base_array_layer,
+        range.array_layer_count
+    )
+}
+
+fn sync_state_label(state: &RenderGraphDiagnosticSyncState) -> String {
+    match state {
+        RenderGraphDiagnosticSyncState::Undefined => "undefined".to_string(),
+        RenderGraphDiagnosticSyncState::Access { usage, stage, mode } => format!(
+            "{} {usage:?} @ {stage:?}",
+            match mode {
+                RenderGraphDiagnosticImageAccessMode::Read => "read",
+                RenderGraphDiagnosticImageAccessMode::Write => "write",
+                RenderGraphDiagnosticImageAccessMode::ReadWrite => "read_write",
+            }
+        ),
     }
 }
 
@@ -729,13 +853,19 @@ fn diagnostic_image_access(
         mode,
         usage,
         stage,
-        range: RenderGraphDiagnosticImageSubresourceRange {
-            aspects: access.range.aspects.names().map(str::to_string).collect(),
-            base_mip_level: access.range.base_mip_level,
-            mip_level_count: access.range.mip_level_count,
-            base_array_layer: access.range.base_array_layer,
-            array_layer_count: access.range.array_layer_count,
-        },
+        range: diagnostic_subresource_range(access.range),
+    }
+}
+
+fn diagnostic_subresource_range(
+    range: super::access::ImageSubresourceRange,
+) -> RenderGraphDiagnosticImageSubresourceRange {
+    RenderGraphDiagnosticImageSubresourceRange {
+        aspects: range.aspects.names().map(str::to_string).collect(),
+        base_mip_level: range.base_mip_level,
+        mip_level_count: range.mip_level_count,
+        base_array_layer: range.base_array_layer,
+        array_layer_count: range.array_layer_count,
     }
 }
 
@@ -744,12 +874,11 @@ fn transition_diagnostics(
     resources: &[GraphResourceDesc],
     plan: &ExecutionPlan,
 ) -> Vec<RenderGraphDiagnosticTransition> {
-    plan.sync
-        .pass_ops
+    plan.sorted_passes
         .iter()
-        .enumerate()
-        .flat_map(|(pass_index, ops)| {
-            ops.iter()
+        .flat_map(|&pass_index| {
+            plan.sync.pass_ops[pass_index]
+                .iter()
                 .map(move |op| diagnostic_transition(op, passes, resources, Some(pass_index)))
         })
         .chain(
@@ -780,6 +909,7 @@ fn diagnostic_transition(
 
     RenderGraphDiagnosticTransition {
         resource: resource_ref(op.resource, resources),
+        range: diagnostic_subresource_range(op.range),
         before_pass: op.before_pass,
         before_name: op.before_pass.map(|pass| passes[pass].name.clone()),
         to_pass,
@@ -1201,6 +1331,16 @@ mod tests {
 
         assert_eq!(raw.hazard, Some(RenderGraphHazardKind::Raw));
         assert_eq!(raw.reason, RenderGraphDiagnosticSyncReason::Hazard);
+        assert_eq!(
+            raw.range,
+            RenderGraphDiagnosticImageSubresourceRange {
+                aspects: vec!["color".to_string()],
+                base_mip_level: 0,
+                mip_level_count: u32::MAX,
+                base_array_layer: 0,
+                array_layer_count: u32::MAX,
+            }
+        );
         // The fixture's coarse write infers a whole-resource storage access.
         assert_eq!(
             raw.before_state,
@@ -1436,7 +1576,98 @@ mod tests {
     }
 
     #[test]
-    fn dot_output_escapes_unstable_user_names() {
+    fn test_dot_output_escapes_unstable_user_names() {
         assert_eq!(escape_dot("a\\b\"c\nd"), "a\\\\b\\\"c\\nd");
+    }
+
+    /// The canonical graph the golden snapshots pin: a shadow/geometry/
+    /// lighting/present chain over transients, an imported backbuffer with an
+    /// arrival/final contract, RAW hazards, steady-state frame-start seeds,
+    /// and a frame-end contract operation.
+    fn golden_diagnostics() -> RenderGraphDiagnostics {
+        let resources = vec![
+            namespace_resource(BACKBUFFER_NAME),
+            namespace_resource("shadow_atlas"),
+            namespace_resource("gbuffer"),
+            namespace_resource("hdr_color"),
+        ];
+        let transient_resources = vec![
+            transient_resource("shadow_atlas"),
+            transient_resource("gbuffer"),
+            transient_resource("hdr_color"),
+        ];
+        let passes = vec![
+            pass("shadow", Vec::new(), vec![ResourceId(1)]),
+            pass("geometry", vec![ResourceId(1)], vec![ResourceId(2)]),
+            pass("lighting", vec![ResourceId(2)], vec![ResourceId(3)]),
+            pass("present", vec![ResourceId(3)], vec![ResourceId(0)]),
+        ];
+        let exported_resources = BTreeSet::from([ResourceId(0)]);
+        let imported_contracts = BTreeMap::from([(
+            ResourceId(0),
+            ImportedImageContract::arrives_in(ResourceState::ColorAttachment)
+                .must_end_in(ResourceState::PresentSrc),
+        )]);
+        let plan = GraphCompiler::from_pass_descs_with_exports(
+            &passes,
+            exported_resources.iter().copied(),
+            imported_contracts.clone(),
+        )
+        .compile()
+        .unwrap();
+        RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &transient_resources,
+            &exported_resources,
+            &imported_contracts,
+            &plan,
+        )
+    }
+
+    fn bless_or_compare(name: &str, actual: &str) {
+        let golden_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens");
+        let path = format!("{golden_dir}/{name}");
+        if std::env::var_os("KATLA_BLESS_GOLDENS").is_some() {
+            std::fs::create_dir_all(golden_dir).expect("create goldens directory");
+            std::fs::write(&path, actual).expect("write golden snapshot");
+            println!("blessed golden snapshot {path}");
+            return;
+        }
+        let expected = std::fs::read_to_string(&path).unwrap_or_else(|error| {
+            panic!("missing golden snapshot {path} ({error}); run the test suite once with KATLA_BLESS_GOLDENS=1 to write it")
+        });
+        assert_eq!(
+            expected, actual,
+            "golden snapshot {name} drifted; inspect the diff and rerun with KATLA_BLESS_GOLDENS=1 only if the change is intentional"
+        );
+    }
+
+    #[test]
+    fn test_golden_snapshots_pin_the_canonical_exports() {
+        let diagnostics = golden_diagnostics();
+
+        assert!(!diagnostics.synchronization.is_empty());
+        assert!(
+            diagnostics
+                .synchronization
+                .iter()
+                .any(|transition| transition.reason
+                    == RenderGraphDiagnosticSyncReason::ImportedFinal)
+        );
+        assert!(
+            diagnostics
+                .synchronization
+                .iter()
+                .any(|transition| transition.before_pass.is_none())
+        );
+
+        let json = diagnostics.to_json_pretty().unwrap();
+        let text = diagnostics.to_string();
+        let dot = diagnostics.to_dot();
+
+        bless_or_compare("render_graph_diagnostics.json", &json);
+        bless_or_compare("render_graph_diagnostics.text", &text);
+        bless_or_compare("render_graph_diagnostics.dot", &dot);
     }
 }

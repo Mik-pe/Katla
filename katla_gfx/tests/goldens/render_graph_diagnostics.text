@@ -1,0 +1,26 @@
+4 declared passes (4 live, 0 culled), 4 resources, 3 dependency edges, 12 synchronization transitions, 2 transient allocations (98304 logical bytes, 65536 physical bytes, 32768 saved), 4 parallel levels
+  r0 (backbuffer) imported, initial ColorAttachment, required final PresentSrc
+  [0] shadow (level 0, reads 0, writes 1)
+    r1 (shadow_atlas): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
+  [1] geometry (level 1, reads 1, writes 1)
+    r1 (shadow_atlas): read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295
+    r2 (gbuffer): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
+  [2] lighting (level 2, reads 1, writes 1)
+    r2 (gbuffer): read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295
+    r3 (hdr_color): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
+  [3] present (level 3, reads 1, writes 1)
+    r0 (backbuffer): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
+    r3 (hdr_color): read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295
+  synchronization transitions:
+    [frame start -> pass 0 (shadow)] r1 (shadow_atlas), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)
+    [frame start -> pass 1 (geometry)] r1 (shadow_atlas), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)
+    [pass 0 (shadow) -> pass 1 (geometry)] r1 (shadow_atlas), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> read Sampled @ FragmentShader (hazard Raw)
+    [frame start -> pass 1 (geometry)] r2 (gbuffer), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)
+    [frame start -> pass 2 (lighting)] r2 (gbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)
+    [pass 1 (geometry) -> pass 2 (lighting)] r2 (gbuffer), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> read Sampled @ FragmentShader (hazard Raw)
+    [frame start -> pass 2 (lighting)] r3 (hdr_color), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)
+    [frame start -> pass 3 (present)] r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Storage @ AllGraphics (initial_use)
+    [frame start -> pass 3 (present)] r3 (hdr_color), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)
+    [pass 2 (lighting) -> pass 3 (present)] r3 (hdr_color), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> read Sampled @ FragmentShader (hazard Raw)
+    [frame start -> frame end] r0 (backbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Present @ Present (imported_final)
+    [pass 3 (present) -> frame end] r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> write Present @ Present (imported_final)
