@@ -163,7 +163,9 @@ impl MeshManager {
                         upload.index_type,
                         upload.index_count,
                     );
-                    ib.upload_data(upload.index_bytes);
+                    let replaced = ib.upload_data(upload.index_bytes);
+                    // Creation-sized buffers never grow.
+                    debug_assert!(replaced.is_none());
                     Some(ib)
                 };
                 Ok((attribute_buffers, index_buffer))
@@ -222,7 +224,9 @@ impl MeshManager {
 
     fn create_attr_buffer(&self, bytes: &[u8]) -> VertexBuffer {
         let mut vb = VertexBuffer::new(self.context.clone(), bytes.len() as u64, 0);
-        vb.upload_data(bytes);
+        let replaced = vb.upload_data(bytes);
+        // Creation-sized buffers never grow.
+        debug_assert!(replaced.is_none());
         vb
     }
 
@@ -484,7 +488,9 @@ impl MeshManager {
                 IndexType::Uint32,
                 indices.len() as u32,
             );
-            ib.upload_data(index_bytes);
+            let replaced = ib.upload_data(index_bytes);
+            // Creation-sized buffers never grow.
+            debug_assert!(replaced.is_none());
             Some(ib)
         } else {
             None
@@ -568,7 +574,9 @@ impl MeshManager {
             // gradually growing mesh does not reallocate every update.
             let new_capacity = existing.map_or(needed, |old| needed.max(old * 2));
             let mut vb = VertexBuffer::try_new(self.context.clone(), new_capacity, vertex_count)?;
-            vb.upload_data(bytes);
+            let replaced = vb.upload_data(bytes);
+            // The replacement buffer was sized for this payload.
+            debug_assert!(replaced.is_none());
             replaced_attributes.push((*kind, vb));
         }
 
@@ -593,7 +601,9 @@ impl MeshManager {
                     IndexType::Uint32,
                     indices.len() as u32,
                 )?;
-                ib.upload_data(index_bytes);
+                let replaced = ib.upload_data(index_bytes);
+                // The replacement buffer was sized for this payload.
+                debug_assert!(replaced.is_none());
                 Some(ib)
             }
             None if indices.is_empty() => None,
@@ -604,7 +614,9 @@ impl MeshManager {
                     IndexType::Uint32,
                     indices.len() as u32,
                 )?;
-                ib.upload_data(index_bytes);
+                let replaced = ib.upload_data(index_bytes);
+                // The replacement buffer was sized for this payload.
+                debug_assert!(replaced.is_none());
                 Some(ib)
             }
         };
@@ -763,7 +775,7 @@ mod tests {
         }
         assert_eq!(renderer.mesh_vertex_count(mesh), Some(3));
         assert_eq!(renderer.mesh_index_count(mesh), Some(3));
-        assert_eq!(renderer.pending_buffer_retirements(), 0);
+        assert_eq!(renderer.pending_retirements().total(), 0);
 
         // The failure corrupted nothing: the same growth succeeds retrying
         // without injected failures.

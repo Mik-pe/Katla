@@ -313,7 +313,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
     assert_eq!(renderer.mesh_vertex_count(mesh), Some(3));
     assert_eq!(renderer.mesh_index_count(mesh), Some(3));
     assert_eq!(
-        renderer.pending_buffer_retirements(),
+        renderer.pending_retirements().buffers,
         0,
         "shrinking must not reallocate"
     );
@@ -332,7 +332,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
     assert_eq!(renderer.mesh_vertex_count(mesh), Some(12));
     assert_eq!(renderer.mesh_index_count(mesh), Some(12));
     assert!(
-        renderer.pending_buffer_retirements() > 0,
+        renderer.pending_retirements().buffers > 0,
         "growth past capacity must retire the replaced buffers"
     );
     let grown_pixels = render_and_capture(&mut renderer, &mut graph, 3);
@@ -346,7 +346,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
         render_and_capture(&mut renderer, &mut graph, frame);
     }
     assert_eq!(
-        renderer.pending_buffer_retirements(),
+        renderer.pending_retirements().buffers,
         0,
         "retirements must drain once their submissions completed"
     );
@@ -385,7 +385,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
         update(&mut renderer, mesh, &verts, &idx);
         render_and_capture(&mut renderer, &mut graph, 9 + cycle);
     }
-    assert_eq!(renderer.pending_buffer_retirements(), 0);
+    assert_eq!(renderer.pending_retirements().buffers, 0);
 
     graph.cleanup();
     drop(graph);

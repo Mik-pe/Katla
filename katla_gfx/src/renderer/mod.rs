@@ -70,7 +70,10 @@ use crate::vulkan::context::VulkanFrameCtx;
 use crate::vulkan::material::SkeletonDescriptorSet;
 use crate::vulkan::material::compiler::MaterialCompiler;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
-use crate::vulkan::retirement::{BufferRetirementQueue, FrameRetirements, RetiredBuffer};
+use crate::vulkan::retirement::{
+    FrameRetirements, RetiredBuffer, RetiredDescriptorSetLayout, RetiredResource, RetirementQueue,
+    RetirementSnapshot,
+};
 use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 use crate::vulkan::swapdata::SwapData;
 use crate::vulkan::vertex_attribute::AttributeType;
@@ -180,7 +183,7 @@ pub struct VulkanRenderer {
     /// Replaced native buffers waiting for their last in-flight submission
     /// to complete (dynamic mesh growth). Drained after each frame-slot
     /// fence wait; everything frees after the device idle wait in destroy().
-    pub(crate) buffer_retirements: BufferRetirementQueue,
+    pub(crate) retirements: RetirementQueue,
     /// Mesh manager for mesh creation and storage.
     pub(crate) mesh_manager: mesh_manager::MeshManager,
     /// Asset registry for managing GPU resources (materials).
@@ -528,7 +531,7 @@ impl VulkanRenderer {
             context,
             frame_context,
             swap_data,
-            buffer_retirements: BufferRetirementQueue::new(),
+            retirements: RetirementQueue::new(),
             mesh_manager,
             asset_registry: AssetRegistry::new(),
             bindless_manager,
@@ -813,9 +816,9 @@ impl VulkanRenderer {
 
         // Wait for device idle to ensure all GPU operations have completed
         self.wait_for_device();
-        // Every submission has completed: replaced buffers can free now and
+        // Every submission has completed: retired resources can free now and
         // staged uploads release their fences and staging allocations.
-        self.buffer_retirements.drain_all();
+        self.drain_retirements_all();
         self.context.wait_and_drain_all_staged_uploads();
 
         // Destroy output render target (Drop handles cleanup)
@@ -952,7 +955,7 @@ impl VulkanRenderer {
         self.swap_data = swap_data;
         // The new SwapData restarts its frame counter; the device idle wait
         // above completed every old submission, so retirements can free now.
-        self.buffer_retirements.drain_all();
+        self.drain_retirements_all();
 
         let new_extent = self.frame_context.extent;
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
@@ -1242,7 +1245,7 @@ impl VulkanRenderer {
         indices: &[u32],
     ) -> Result<(), RendererError> {
         let mut retirements =
-            FrameRetirements::new(&mut self.buffer_retirements, self.swap_data.frame_counter());
+            FrameRetirements::new(&mut self.retirements, self.swap_data.frame_counter());
         self.mesh_manager.update_mesh_dynamic(
             &mut self.asset_registry,
             &mut retirements,
@@ -1251,6 +1254,29 @@ impl VulkanRenderer {
             vertex_count,
             indices,
         )
+    }
+
+    /// Queue a destroyed or replaced native resource for deferred free.
+    ///
+    /// The logical handle (mesh, material, texture, skeleton) is already
+    /// invalidated by the time this runs; this only keeps the native object
+    /// alive until the submissions that could still reference it have
+    /// completed.
+    pub(crate) fn retire(&mut self, resource: impl Into<RetiredResource>) {
+        let mut retirements =
+            FrameRetirements::new(&mut self.retirements, self.swap_data.frame_counter());
+        retirements.retire(resource);
+    }
+
+    /// Free every pending retirement and release its bindless slots.
+    ///
+    /// Only valid after a device-wide idle wait (`destroy`, swapchain
+    /// recreation): all submissions have completed, so nothing can still
+    /// reference the retired resources.
+    fn drain_retirements_all(&mut self) {
+        for slot in self.retirements.drain_all() {
+            self.bindless_manager.release_texture_slot(slot);
+        }
     }
 
     /// Report the logical vertex count recorded for a mesh.
@@ -1270,10 +1296,12 @@ impl VulkanRenderer {
         self.asset_registry.get_mesh(mesh).map(|m| m.index_count)
     }
 
-    /// Report the number of replaced native buffers still awaiting
-    /// retirement (diagnostics and tests).
-    pub fn pending_buffer_retirements(&self) -> usize {
-        self.buffer_retirements.pending()
+    /// Report pending deferred retirements per resource kind, plus the
+    /// frame counter of the oldest entry (diagnostics and tests). Destroyed
+    /// and replaced native resources stay pending until the submissions
+    /// that can still reference them have completed.
+    pub fn pending_retirements(&self) -> RetirementSnapshot {
+        self.retirements.snapshot()
     }
 
     /// Report the number of staged mesh uploads submitted but not yet

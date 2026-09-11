@@ -18,7 +18,7 @@ impl VulkanRenderer {
             return;
         };
         let mut retirements =
-            FrameRetirements::new(&mut self.buffer_retirements, self.swap_data.frame_counter());
+            FrameRetirements::new(&mut self.retirements, self.swap_data.frame_counter());
         for (_, vertex_buffer) in asset.attribute_buffers.drain() {
             let (buffer, allocation) = vertex_buffer.into_native_parts();
             retirements.retire(RetiredBuffer::new(buffer, allocation, self.context.clone()));
@@ -29,38 +29,48 @@ impl VulkanRenderer {
         }
     }
 
-    /// Destroy a material and release its pipeline resources.
+    /// Destroy a material and retire its pipeline and descriptor layout.
     ///
-    /// After destruction, `get_material(handle)` returns `None` and `material_count()` decreases.
+    /// The handle invalidates immediately (`get_material(handle)` returns
+    /// `None`, `material_count()` decreases). The native pipeline and the
+    /// material descriptor set layout retire instead of freeing right away:
+    /// in-flight frames may still bind them, and the retirement queue frees
+    /// them once those submissions have provably completed.
+    ///
     /// Double-destroy is safe (no-op). Destroying an unowned or `NONE` handle is safe.
     ///
     /// # Arguments
     /// * `handle` - The material handle to destroy
     pub fn destroy_material(&mut self, handle: MaterialHandle) {
-        if let Some(material) = self.asset_registry.remove_material(handle) {
-            // Destroy the material's descriptor set layout if present
-            if let Some(layout) = material.material_descriptor_layout {
-                unsafe {
-                    self.context
-                        .device
-                        .destroy_descriptor_set_layout(layout, None);
-                }
-            }
-            // Destroy the associated pipeline
-            if let Some(pipeline_handle) = material.pipeline {
-                self.asset_registry.remove_pipeline(pipeline_handle);
-            }
-            // Destroy the instanced pipeline if present (UI materials only)
-            if let Some(pipeline_handle) = material.instanced_pipeline {
-                self.asset_registry.remove_pipeline(pipeline_handle);
+        let Some(material) = self.asset_registry.remove_material(handle) else {
+            return;
+        };
+        if let Some(layout) = material.material_descriptor_layout {
+            self.retire(RetiredDescriptorSetLayout::new(
+                layout,
+                self.context.clone(),
+            ));
+        }
+        for pipeline_handle in [material.pipeline, material.instanced_pipeline]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(pipeline) = self.asset_registry.remove_pipeline(pipeline_handle) {
+                self.retire(pipeline);
             }
         }
     }
 
-    /// Destroy a texture and release its GPU image memory and bindless slot.
+    /// Destroy a texture and retire its GPU image and bindless slot.
     ///
-    /// After destruction, `TextureManager::contains(handle)` returns `false` and the
-    /// bindless slot is freed. Default textures are never destroyed.
+    /// The handle invalidates immediately (`TextureManager::contains(handle)`
+    /// returns `false`). The native image (with its view, sampler, and
+    /// allocation) retires instead of freeing right away, and the bindless
+    /// slot stays occupied: in-flight submissions may still sample this
+    /// texture through that slot, so both are released only once those
+    /// submissions have provably completed — a new texture cannot take the
+    /// slot in the meantime. Default textures are never destroyed.
+    ///
     /// Double-destroy is safe (no-op). Destroying an unowned or `NONE` handle is safe.
     ///
     /// # Arguments
@@ -72,23 +82,30 @@ impl VulkanRenderer {
         if self.texture_manager.is_default_texture(handle) {
             return;
         }
-        // Release the bindless slot before removing from texture manager
-        if let Some(slot) = self.texture_manager.get_bindless_slot(handle) {
-            self.bindless_manager.release_texture_slot(slot);
+        let slot = self.texture_manager.get_bindless_slot(handle);
+        if let Some(texture) = self.texture_manager.destroy(handle) {
+            self.retire(texture);
         }
-        self.texture_manager.destroy(handle);
+        if let Some(slot) = slot {
+            self.retire(RetiredResource::BindlessSlot(slot));
+        }
     }
 
-    /// Destroy a skeleton and release its GPU storage buffer and descriptor set.
+    /// Destroy a skeleton and retire its GPU storage buffer.
     ///
-    /// After destruction, `get_skeleton_descriptor(handle)` returns `None`.
+    /// The handle invalidates immediately (`get_skeleton_descriptor(handle)`
+    /// returns `None`); the joint-matrix storage buffer retires until the
+    /// submissions that skin against it have provably completed.
+    ///
     /// Double-destroy is safe (no-op). Destroying an unowned or `NONE` handle is safe.
     ///
     /// # Arguments
     /// * `handle` - The skeleton handle to destroy
     pub fn destroy_skeleton(&mut self, handle: SkeletonHandle) {
         self.skeleton_descriptors.remove(handle);
-        self.skeleton_buffers.remove(handle);
+        if let Some(buffer) = self.skeleton_buffers.remove(handle) {
+            self.retire(buffer);
+        }
     }
 }
 

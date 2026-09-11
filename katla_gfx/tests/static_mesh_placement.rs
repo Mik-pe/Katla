@@ -221,7 +221,7 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
             .expect("empty frame render");
         let _ = frame;
     }
-    assert_eq!(renderer.pending_buffer_retirements(), 0);
+    assert_eq!(renderer.pending_retirements().total(), 0);
     assert_eq!(renderer.pending_staged_uploads(), 0);
 
     graph.cleanup();

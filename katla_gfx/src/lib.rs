@@ -310,6 +310,7 @@ pub use backend::command::IndexType;
 
 // Renderer (Vulkan-specific)
 pub use renderer::VulkanRenderer;
+pub use vulkan::retirement::RetirementSnapshot;
 
 // Renderer (Metal-specific)
 #[cfg(target_os = "macos")]

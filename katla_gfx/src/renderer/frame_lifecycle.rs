@@ -15,11 +15,17 @@ impl VulkanRenderer {
     pub fn wait_for_frame(&mut self) -> Result<(), crate::error::RendererError> {
         self.swap_data.wait_for_fence(&self.context.device)?;
         // This slot's previous submission completed, which retires every
-        // buffer replaced at least FRAMES_IN_FLIGHT frames ago.
-        self.buffer_retirements.drain_completed(
+        // resource replaced at least FRAMES_IN_FLIGHT frames ago. Bindless
+        // slots freed here return to the free list only now, so no new
+        // texture can resolve through a slot an older submission still
+        // references.
+        let expired_slots = self.retirements.drain_completed(
             self.swap_data.frame_counter(),
             self.swap_data.frames_in_flight(),
         );
+        for slot in expired_slots {
+            self.bindless_manager.release_texture_slot(slot);
+        }
         // Release staged mesh uploads whose copy submissions finished.
         self.context.drain_completed_staged_uploads();
         Ok(())
