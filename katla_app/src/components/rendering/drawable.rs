@@ -1,5 +1,5 @@
 use katla_ecs::Component;
-use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle};
+use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use katla_math::{AABB, Color};
 
 #[derive(Component)]
@@ -18,8 +18,9 @@ pub struct DrawableComponent {
     pub roughness: f32,
     /// Ambient occlusion factor (0.0 = full occlusion, 1.0 = none)
     pub ao: f32,
-    /// Emission texture bindless index (0 = no emission)
-    pub emission: f32,
+    /// Emission texture for self-illumination, referenced by handle
+    /// (the backend resolves it to its binding table each frame)
+    pub emission: TextureHandle,
     /// Local-space bounding box for frustum culling
     pub bounds: Option<AABB>,
 }
@@ -35,7 +36,7 @@ impl DrawableComponent {
             metallic: 0.0,
             roughness: 0.5,
             ao: 1.0,
-            emission: 0.0,
+            emission: TextureHandle::NONE,
             bounds: None,
         }
     }
@@ -54,7 +55,7 @@ impl DrawableComponent {
             metallic: 0.0,
             roughness: 0.5,
             ao: 1.0,
-            emission: 0.0,
+            emission: TextureHandle::NONE,
             bounds: None,
         }
     }
@@ -76,7 +77,7 @@ impl DrawableComponent {
             metallic,
             roughness,
             ao,
-            emission: 0.0,
+            emission: TextureHandle::NONE,
             bounds: None,
         }
     }

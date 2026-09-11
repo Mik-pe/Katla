@@ -125,8 +125,9 @@ impl VulkanRenderer {
 
             // Material parameters and texture indices are shared by all
             // instances; handles resolve to slots (with per-role fallback)
-            // here, right before the upload.
-            let emission_idx = draw_call.emission;
+            // here, right before the upload. Emission resolves to 0 for
+            // NONE/stale handles, keeping the shader's no-emission sentinel.
+            let emission_idx = self.resolve_emission_texture_slot(draw_call.emission) as f32;
             let texture_indices = self.resolve_material_texture_slots(draw_call.material);
 
             for (i, instance) in draw_call

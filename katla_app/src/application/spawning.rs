@@ -7,9 +7,9 @@ use crate::scene::entity_source::EntitySource;
 struct GltfTextureUpload {
     /// Typed handles for the four material PBR roles.
     textures: katla_gfx::MaterialTextures,
-    /// Emission bindless index for the draw path (raw; tracked with the
-    /// DrawCall emission field, not material state).
-    emission_index: u32,
+    /// Emission texture for the draw path (a draw field, not material
+    /// state; the backend resolves the handle each frame).
+    emission: katla_gfx::TextureHandle,
     handles: Vec<katla_gfx::TextureHandle>,
 }
 
@@ -486,15 +486,15 @@ impl super::Application {
             ),
         );
 
-        // Set emission texture index on drawable component
+        // Set emission texture handle on drawable component
         if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
-            drawable.emission = texture_upload.emission_index as f32;
+            drawable.emission = texture_upload.emission;
 
-            if texture_upload.emission_index > 0 {
+            if !texture_upload.emission.is_none() {
                 info!(
-                    "Model '{}' has emission texture at bindless index {}",
+                    "Model '{}' has emission texture {:?}",
                     path.as_ref().display(),
-                    texture_upload.emission_index
+                    texture_upload.emission
                 );
             }
         }
@@ -608,12 +608,14 @@ impl super::Application {
         Ok(entity)
     }
 
-    /// Upload textures from a GLTF model and return bindless texture indices.
+    /// Upload textures from a GLTF model and return typed texture handles.
     ///
-    /// Returns [albedo, normal, metallic_roughness, ao, emission] indices.
+    /// Material roles go through [`katla_gfx::MaterialTextures`]; the
+    /// emission texture is returned separately because it rides on the
+    /// draw call, not on material state.
     fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> GltfTextureUpload {
         let mut textures = katla_gfx::MaterialTextures::default();
-        let mut emission_index = 0u32;
+        let mut emission = katla_gfx::TextureHandle::NONE;
         let mut handles = Vec::new();
 
         let material_info = model.materials.first();
@@ -659,18 +661,15 @@ impl super::Application {
                 && let Some(image) = model.images.get(tex_idx)
             {
                 let handle = self.upload_gltf_image(image, false);
-                emission_index = self.get_bindless_index(handle);
+                emission = handle;
                 handles.push(handle);
-                debug!(
-                    "Uploaded emissive texture {} -> bindless {}",
-                    tex_idx, emission_index
-                );
+                debug!("Uploaded emissive texture {} -> {:?}", tex_idx, handle);
             }
         }
 
         GltfTextureUpload {
             textures,
-            emission_index,
+            emission,
             handles,
         }
     }
@@ -723,13 +722,6 @@ impl super::Application {
                 }
             }
         }
-    }
-
-    /// Get the bindless texture index for a texture handle.
-    fn get_bindless_index(&self, handle: katla_gfx::TextureHandle) -> u32 {
-        // The texture manager assigns bindless indices during texture creation
-        // We need to query the texture manager for the bindless slot
-        self.renderer.get_texture_bindless_index(handle)
     }
 
     /// Convert index data from bytes to u32 based on stride.
