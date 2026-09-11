@@ -29,13 +29,13 @@ impl VulkanRenderer {
         }
     }
 
-    /// Destroy a material and retire its pipeline and descriptor layout.
+    /// Destroy a material and retire its compiled pipeline variants.
     ///
     /// The handle invalidates immediately (`get_material(handle)` returns
-    /// `None`, `material_count()` decreases). The native pipeline and the
-    /// material descriptor set layout retire instead of freeing right away:
-    /// in-flight frames may still bind them, and the retirement queue frees
-    /// them once those submissions have provably completed.
+    /// `None`, `material_count()` decreases). Every compiled variant's
+    /// native pipeline retires instead of freeing right away: in-flight
+    /// frames may still bind them, and the retirement queue frees them once
+    /// those submissions have provably completed.
     ///
     /// Double-destroy is safe (no-op). Destroying an unowned or `NONE` handle is safe.
     ///
@@ -45,18 +45,14 @@ impl VulkanRenderer {
         let Some(material) = self.asset_registry.remove_material(handle) else {
             return;
         };
-        if let Some(layout) = material.material_descriptor_layout {
-            self.retire(RetiredDescriptorSetLayout::new(
-                layout,
-                self.context.clone(),
-            ));
-        }
-        for pipeline_handle in [material.pipeline, material.instanced_pipeline]
-            .into_iter()
-            .flatten()
-        {
-            if let Some(pipeline) = self.asset_registry.remove_pipeline(pipeline_handle) {
-                self.retire(pipeline);
+        for variant in material.variants.into_values() {
+            for pipeline_handle in [Some(variant.pipeline), variant.instanced_pipeline]
+                .into_iter()
+                .flatten()
+            {
+                if let Some(pipeline) = self.asset_registry.remove_pipeline(pipeline_handle) {
+                    self.retire(pipeline);
+                }
             }
         }
     }
@@ -112,30 +108,14 @@ impl VulkanRenderer {
 #[cfg(test)]
 mod tests {
     use crate::handle::{MaterialHandle, MeshHandle, TextureHandle};
+    use crate::renderer::pipeline_descriptor::PipelineDescriptor;
     use crate::renderer::registry::{AssetRegistry, MaterialAsset, MaterialTextures, MeshAsset};
-    use crate::vulkan::vertexbinding::VertexBinding;
 
     fn make_material() -> MaterialAsset {
         MaterialAsset {
-            pipeline: None,
-            instanced_pipeline: None,
-            fully_compiled: false,
-            shader_path: None,
-            vertex_type: crate::vulkan::material::compiler::VertexType::Pbr,
-            is_compositing: false,
-            alpha_blended: false,
-            double_sided: false,
-            wireframe: false,
-            depth_test: true,
-            depth_write: true,
-            depth_compare: crate::pipeline::CompareOp::GreaterOrEqual,
-            vertex_entry: "vs_main".to_string(),
-            fragment_entry: "fs_main".to_string(),
-            vertex_binding: VertexBinding { formats: vec![] },
+            descriptor: PipelineDescriptor::pbr("shaders/pbr.wgsl"),
+            variants: std::collections::HashMap::new(),
             textures: MaterialTextures::default(),
-            material_descriptor_set: None,
-            material_descriptor_layout: None,
-            color_format: crate::texture::ImageFormat::R8G8B8A8Srgb,
         }
     }
 

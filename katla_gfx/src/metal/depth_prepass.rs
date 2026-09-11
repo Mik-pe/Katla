@@ -192,9 +192,9 @@ pub(crate) fn render_depth_prepass(
         let Some(material) = materials.get(draw.material) else {
             continue;
         };
-        let Some(ref _pipeline) = material.pipeline else {
+        if material.variants.is_empty() {
             continue;
-        };
+        }
 
         let is_skinned = !draw.skeleton.is_none() && depth_pipeline_skinned.is_some();
         let is_billboard = draw.is_billboard && depth_pipeline_billboard.is_some();

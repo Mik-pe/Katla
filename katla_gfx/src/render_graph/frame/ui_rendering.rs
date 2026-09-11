@@ -23,26 +23,45 @@ impl Frame<'_, VulkanRenderer> {
             "UI pass has no material specified. Use .material() on UIPass.".to_string(),
         ))?;
 
-        let material = self
-            .renderer
-            .asset_registry
-            .get_material(material_handle)
-            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
+        let format = pass
+            .output_format
+            .unwrap_or(crate::texture::ImageFormat::Auto);
+        self.renderer
+            .ensure_material_compiled(material_handle, format)
+            .map_err(|e| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "UI material variant compilation failed: {}",
+                    e
+                ))
+            })?;
 
         // Resolve both pipelines: regular (for vertex-based commands) and
         // instanced (for instanced commands). The instanced pipeline uses
         // vs_instanced/fs_instanced entry points with UnitQuadVertex format.
-        let regular_pipeline_handle = material
-            .pipeline
-            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
+        let variant = self
+            .renderer
+            .material_variant(material_handle, format)
+            .map_err(|e| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "UI material variant lookup failed: {}",
+                    e
+                ))
+            })?
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "UI material {material_handle:?} has no pipeline variant for {format:?}"
+                ))
+            })?;
         let (regular_pipeline, pipeline_layout) = self
             .renderer
             .asset_registry
-            .get_pipeline_handles(regular_pipeline_handle)?;
+            .get_pipeline_handles(variant.pipeline)?;
 
-        let instanced_pipeline_handle = material
-            .instanced_pipeline
-            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
+        let instanced_pipeline_handle = variant.instanced_pipeline.ok_or_else(|| {
+            RenderGraphError::InvalidConfiguration(format!(
+                "UI material {material_handle:?} has no instanced pipeline variant"
+            ))
+        })?;
         let (instanced_pipeline, _) = self
             .renderer
             .asset_registry
@@ -109,7 +128,7 @@ impl Frame<'_, VulkanRenderer> {
         // Both pipelines share the same descriptor set layout, so binding once is sufficient.
         self.bind_ui_descriptor_sets(
             cmd,
-            regular_pipeline_handle,
+            variant.pipeline,
             pipeline_layout,
             ui_draw_list.screen_size,
             instance_buffer,

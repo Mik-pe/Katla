@@ -41,7 +41,14 @@ impl Frame<'_, VulkanRenderer> {
                 pass.name,
                 total_draws
             );
-            Some(self.resolve_draw_commands(&data.draw_lists, self.current_frame())?)
+            Some(
+                self.resolve_draw_commands(
+                    &data.draw_lists,
+                    self.current_frame(),
+                    pass.output_format
+                        .unwrap_or(crate::texture::ImageFormat::Auto),
+                )?,
+            )
         } else {
             None
         };
@@ -100,8 +107,11 @@ impl Frame<'_, VulkanRenderer> {
                 extent.height,
             )]);
 
+            let color_format = pass
+                .output_format
+                .unwrap_or(crate::texture::ImageFormat::Auto);
             for draw_list in &data.draw_lists {
-                self.execute_draw_list(cmd, draw_list)?;
+                self.execute_draw_list(cmd, draw_list, color_format)?;
             }
 
             for ui_draw_list in &data.ui_draw_lists {

@@ -105,7 +105,12 @@ impl MetalRenderer {
         }
     }
 
-    pub(crate) fn draw_objects(&self, encoder: &mut MetalRenderEncoder, draw_list: &DrawList) {
+    pub(crate) fn draw_objects(
+        &self,
+        encoder: &mut MetalRenderEncoder,
+        draw_list: &DrawList,
+        color_format: crate::texture::ImageFormat,
+    ) {
         log::debug!(
             "METAL draw_objects: {} draws, frame_buf={}, object_buf={}",
             draw_list.draws.len(),
@@ -126,8 +131,17 @@ impl MetalRenderer {
                 );
                 continue;
             };
-            let Some(ref pipeline) = material.pipeline else {
-                log::warn!("Draw {}: no pipeline", i);
+            let key = crate::renderer::pipeline_variant::PipelineVariantKey::resolve(
+                &material.descriptor,
+                color_format,
+            );
+            let Some(pipeline) = material.variants.get(&key) else {
+                log::warn!(
+                    "Draw {}: material has no pipeline variant for color {:?} / depth {:?}",
+                    i,
+                    key.color_format(),
+                    key.depth_format()
+                );
                 continue;
             };
 
@@ -142,7 +156,7 @@ impl MetalRenderer {
                     draw.skeleton,
                     mesh.index_count,
                     material.textures,
-                    material.descriptor.as_ref().map(|d| &d.vertex),
+                    material.descriptor.vertex,
                 );
             }
 

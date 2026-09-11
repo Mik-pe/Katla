@@ -16,12 +16,13 @@ impl Frame<'_, VulkanRenderer> {
         &mut self,
         cmd: &CommandBuffer,
         draw_list: &DrawList,
+        color_format: crate::texture::ImageFormat,
     ) -> Result<(), RenderGraphError> {
         if draw_list.draws.is_empty() {
             return Ok(());
         }
 
-        self.ensure_materials_compiled(draw_list)?;
+        self.ensure_materials_compiled(draw_list, color_format)?;
 
         let mut current_pipeline = vk::Pipeline::null();
         let mut current_layout = vk::PipelineLayout::null();
@@ -29,19 +30,25 @@ impl Frame<'_, VulkanRenderer> {
 
         for draw_call in &draw_list.draws {
             let (pipeline, layout) = {
-                let material = self
+                let variant = self
                     .renderer
-                    .asset_registry
-                    .get_material(draw_call.material)
-                    .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
-
-                let pipeline_handle = material
-                    .pipeline
-                    .ok_or(RenderGraphError::InvalidMaterialHandle(draw_call.material))?;
+                    .material_variant(draw_call.material, color_format)
+                    .map_err(|e| {
+                        RenderGraphError::InvalidConfiguration(format!(
+                            "Material variant lookup failed: {}",
+                            e
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        RenderGraphError::InvalidConfiguration(format!(
+                            "Material {material:?} has no pipeline variant for {color_format:?}",
+                            material = draw_call.material,
+                        ))
+                    })?;
 
                 self.renderer
                     .asset_registry
-                    .get_pipeline_handles(pipeline_handle)?
+                    .get_pipeline_handles(variant.pipeline)?
             };
 
             if pipeline != current_pipeline {
@@ -171,33 +178,38 @@ impl Frame<'_, VulkanRenderer> {
         Ok(())
     }
 
-    /// Pre-compile all materials in a draw list.
+    /// Pre-compile the pipeline variant of every material in a draw list
+    /// for the pass's color format.
     pub(super) fn ensure_materials_compiled(
         &mut self,
         draw_list: &DrawList,
+        color_format: crate::texture::ImageFormat,
     ) -> Result<(), RenderGraphError> {
-        let mut materials_to_compile: Vec<(
-            crate::handle::MaterialHandle,
-            crate::texture::ImageFormat,
-        )> = Vec::new();
+        let mut materials_to_compile: Vec<crate::handle::MaterialHandle> = Vec::new();
 
         for draw_call in &draw_list.draws {
-            if let Some(material) = self
+            if self
                 .renderer
-                .asset_registry
-                .get_material(draw_call.material)
-                && !material.fully_compiled
+                .material_variant(draw_call.material, color_format)
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Material variant lookup failed: {}",
+                        e
+                    ))
+                })?
+                .is_none()
+                && !materials_to_compile.contains(&draw_call.material)
             {
-                materials_to_compile.push((draw_call.material, material.color_format));
+                materials_to_compile.push(draw_call.material);
             }
         }
 
-        for (handle, format) in materials_to_compile {
+        for handle in materials_to_compile {
             self.renderer
-                .ensure_material_compiled(handle, format)
+                .ensure_material_compiled(handle, color_format)
                 .map_err(|e| {
                     RenderGraphError::InvalidConfiguration(format!(
-                        "Material recompilation failed: {}",
+                        "Pipeline variant compilation failed: {}",
                         e
                     ))
                 })?;
@@ -206,7 +218,8 @@ impl Frame<'_, VulkanRenderer> {
         Ok(())
     }
 
-    /// Pre-compile all materials from ALL pending draw lists before command buffer recording.
+    /// Pre-compile pipeline variants for all materials from ALL pending
+    /// draw lists before command buffer recording.
     pub(crate) fn pre_compile_materials(&mut self) -> Result<(), RenderGraphError> {
         use std::collections::HashSet;
 
@@ -228,13 +241,7 @@ impl Frame<'_, VulkanRenderer> {
             };
             for draw_list in &data.draw_lists {
                 for draw_call in &draw_list.draws {
-                    if seen.insert(draw_call.material)
-                        && let Some(material) = self
-                            .renderer
-                            .asset_registry
-                            .get_material(draw_call.material)
-                        && !material.fully_compiled
-                    {
+                    if seen.insert((draw_call.material, format)) {
                         materials_to_compile.push((draw_call.material, format));
                     }
                 }
@@ -242,12 +249,12 @@ impl Frame<'_, VulkanRenderer> {
         }
 
         for (handle, format) in materials_to_compile {
-            log::debug!("pre_compile_materials: compiling material {:?}", handle);
+            log::debug!("pre_compile_materials: variant for material {handle:?} in {format:?}");
             self.renderer
                 .ensure_material_compiled(handle, format)
                 .map_err(|e| {
                     RenderGraphError::InvalidConfiguration(format!(
-                        "Material pre-compilation failed: {}",
+                        "Pipeline variant pre-compilation failed: {}",
                         e
                     ))
                 })?;
