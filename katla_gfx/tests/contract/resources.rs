@@ -12,8 +12,8 @@ use katla_gfx::{GpuRenderer, RendererError, UIDrawList, UiDrawCommand};
 use crate::harness::{self, CHANNEL_GREEN, CHANNEL_RED, pixel_offset};
 use harness::ContractRenderer;
 
-/// A full-frame quad submitting a texture color through the UI material.
-fn ui_quad(texture: katla_gfx::TextureHandle, slot: u32, color: [u8; 4]) -> UIDrawList {
+/// A full-frame quad sampling the slot's texture through the UI material.
+fn ui_quad(slot: u32, color: [u8; 4]) -> UIDrawList {
     let mut ui = UIDrawList {
         screen_size: [64.0, 48.0],
         scale_factor: 1.0,
@@ -105,7 +105,7 @@ fn test_contract_stale_texture_handles_never_alias_reused_slots() {
         "updates through a destroyed handle must fail typed"
     );
 
-    let ui = ui_quad(green, green_slot, [255, 255, 255, 255]);
+    let ui = ui_quad(green_slot, [255, 255, 255, 255]);
     let mut graph = single_color_graph(scene.material);
     let pixels = render_ui(&mut renderer, &mut graph, &ui);
     assert_eq!(
@@ -137,7 +137,7 @@ fn test_contract_double_destroy_after_slot_reuse_is_harmless() {
     assert_eq!(renderer.gfx().get_bindless_slot(green), Some(green_slot));
     assert_eq!(renderer.gfx().get_texture_at_slot(green_slot), Some(green));
 
-    let ui = ui_quad(green, green_slot, [255, 255, 255, 255]);
+    let ui = ui_quad(green_slot, [255, 255, 255, 255]);
     let mut graph = single_color_graph(scene.material);
     let pixels = render_ui(&mut renderer, &mut graph, &ui);
     assert_eq!(
@@ -167,7 +167,7 @@ fn test_contract_destroyed_texture_slot_is_withheld_until_frames_drain() {
 
     let red = solid_texture(&mut renderer, [255, 0, 0, 255]);
     let red_slot = renderer.gfx().get_bindless_slot(red).expect("red slot");
-    let ui_red = ui_quad(red, red_slot, [255, 255, 255, 255]);
+    let ui_red = ui_quad(red_slot, [255, 255, 255, 255]);
     let pixels = render_ui(&mut renderer, &mut graph, &ui_red);
     assert_eq!(
         harness::dominant_channel(&pixels, pixel_offset(0.0, 0.0)),
@@ -186,7 +186,7 @@ fn test_contract_destroyed_texture_slot_is_withheld_until_frames_drain() {
     }
 
     let green_slot = renderer.gfx().get_bindless_slot(green).expect("green slot");
-    let ui_green = ui_quad(green, green_slot, [255, 255, 255, 255]);
+    let ui_green = ui_quad(green_slot, [255, 255, 255, 255]);
     let pixels = render_ui(&mut renderer, &mut graph, &ui_green);
     assert_eq!(
         harness::dominant_channel(&pixels, pixel_offset(0.0, 0.0)),

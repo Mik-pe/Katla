@@ -348,7 +348,6 @@ pub fn compile_ui_material(renderer: &mut katla_gfx::AnyRenderer) -> MaterialHan
 /// sample texture with its bindless slot, and the required font atlas.
 pub struct UiScene {
     pub material: MaterialHandle,
-    pub white: TextureHandle,
     pub white_slot: u32,
     _atlas: TextureHandle,
 }
@@ -364,7 +363,6 @@ pub fn init_ui_scene(renderer: &mut katla_gfx::AnyRenderer) -> UiScene {
     let material = compile_ui_material(renderer);
     UiScene {
         material,
-        white,
         white_slot,
         _atlas: atlas,
     }
@@ -401,6 +399,13 @@ pub fn pixel_offset(ndc_x: f32, ndc_y: f32) -> usize {
     let col = ((ndc_x + 1.0) * 0.5 * WIDTH as f32) as usize;
     let row = ((ndc_y + 1.0) * 0.5 * HEIGHT as f32) as usize;
     (row * WIDTH as usize + col) * 4
+}
+
+/// Byte offset of the pixel at UI pixel coordinates. UI space is top-down
+/// pixels on both backends (the UI shader maps it per platform), so this is
+/// the direct row/column mapping.
+pub fn ui_pixel_offset(x: u32, y: u32) -> usize {
+    (y as usize * WIDTH as usize + x as usize) * 4
 }
 
 /// True when no pixel in the frame is dominated by `channel` — a whole-frame

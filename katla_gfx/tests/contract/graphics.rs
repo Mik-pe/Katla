@@ -702,12 +702,12 @@ fn test_contract_declared_load_extends_and_clear_replaces() {
                 frame.submit_ui(ui_pass, &ui);
             });
             assert_eq!(
-                harness::dominant_channel(&pixels, pixel_offset(-0.75, -0.67)),
+                harness::dominant_channel(&pixels, harness::ui_pixel_offset(8, 8)),
                 Some(CHANNEL_GREEN),
                 "the UI quad must draw on the left"
             );
             assert_eq!(
-                harness::dominant_channel(&pixels, pixel_offset(0.25, 0.0)),
+                harness::dominant_channel(&pixels, harness::ui_pixel_offset(40, 24)),
                 Some(preserved),
                 "the UI pass's declared Load op must preserve the first pass"
             );
