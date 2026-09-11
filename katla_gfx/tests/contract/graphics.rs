@@ -113,14 +113,33 @@ fn test_contract_indexed_draw_widths_render_identically() {
         .create_mesh(&vertices, &[0u16, 1, 2], PrimitiveTopology::TriangleList)
         .expect("u16 contract mesh");
     let mesh_u32 = scenario.mesh;
-    assert_eq!(
-        scenario.renderer.gfx().mesh_index_format(mesh_u16),
-        Some(IndexType::Uint16)
-    );
-    assert_eq!(
-        scenario.renderer.gfx().mesh_index_format(mesh_u32),
-        Some(IndexType::Uint32)
-    );
+    if scenario.renderer.caps().preserves_index_width {
+        assert_eq!(
+            scenario.renderer.gfx().mesh_index_format(mesh_u16),
+            Some(IndexType::Uint16)
+        );
+        assert_eq!(
+            scenario.renderer.gfx().mesh_index_format(mesh_u32),
+            Some(IndexType::Uint32)
+        );
+    } else {
+        // Metal normalizes both widths to u32 at upload; the created mesh
+        // must still report a live recorded format.
+        assert!(
+            scenario
+                .renderer
+                .gfx()
+                .mesh_index_format(mesh_u16)
+                .is_some()
+        );
+        assert!(
+            scenario
+                .renderer
+                .gfx()
+                .mesh_index_format(mesh_u32)
+                .is_some()
+        );
+    }
 
     let center = pixel_offset(0.0, 0.0);
     let corner = pixel_offset(-0.9, -0.9);

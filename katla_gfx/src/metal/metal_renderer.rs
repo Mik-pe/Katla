@@ -157,6 +157,7 @@ pub(crate) struct MetalMesh {
     pub(crate) index_count: u32,
     pub(crate) vertex_count: u32,
     pub(crate) vertex_stride: u32,
+    pub(crate) usage: crate::renderer::registry::MeshUsage,
 }
 
 /// A material (pipeline state + texture indices).
@@ -743,8 +744,11 @@ impl MetalRenderer {
         frame_graph: &crate::render_graph::FrameGraph<Self>,
         _frame_idx: usize,
     ) -> Result<(), RendererError> {
-        let plan = super::execution_plan::MetalExecutionPlan::compile(frame_graph)
-            .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
+        let plan = super::execution_plan::MetalExecutionPlan::compile(
+            frame_graph,
+            ImageFormat::B8G8R8A8Srgb,
+        )
+        .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
 
         // Consume the graph's compiled image sync plan: Metal realizes every
         // operation through driver-tracked resources (hazards between

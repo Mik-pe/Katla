@@ -56,6 +56,9 @@ pub struct Capabilities {
     pub api_validation_capture: bool,
     /// `pending_retirements()` snapshots are available.
     pub retirement_diagnostics: bool,
+    /// `mesh_index_format` reports the created width; Metal normalizes u16
+    /// indices to u32 at upload and reports the converted width.
+    pub preserves_index_width: bool,
     /// Expected `supports_feature` answer for every optional feature.
     pub feature_support: fn(RendererFeature) -> bool,
 }
@@ -77,6 +80,7 @@ pub const CAPS: Capabilities = Capabilities {
     backend_name: "vulkan",
     api_validation_capture: true,
     retirement_diagnostics: true,
+    preserves_index_width: true,
     feature_support: platform_features,
 };
 
@@ -85,6 +89,7 @@ pub const CAPS: Capabilities = Capabilities {
     backend_name: "metal",
     api_validation_capture: false,
     retirement_diagnostics: false,
+    preserves_index_width: false,
     feature_support: platform_features,
 };
 
@@ -136,11 +141,12 @@ impl ContractRenderer {
         )
         .expect("headless Vulkan renderer");
 
-        let mut validation_errors = None;
+        // The log always exists; only the Vulkan callback feeds it ( Metal
+        // surfaces API misuse through command-buffer failures instead).
+        let validation_errors = Arc::new(Mutex::new(Vec::new()));
         #[cfg(not(target_os = "macos"))]
         if let Some(vulkan) = renderer.as_vulkan().filter(|_| api_validation) {
-            let errors = Arc::new(Mutex::new(Vec::new()));
-            let captured = errors.clone();
+            let captured = validation_errors.clone();
             vulkan
                 .context()
                 .set_validation_callback(move |message, level| {
@@ -151,12 +157,11 @@ impl ContractRenderer {
                             .push(message.to_owned());
                     }
                 });
-            validation_errors = Some(errors);
         }
 
         Self {
             renderer,
-            validation_errors,
+            validation_errors: Some(validation_errors),
             #[cfg(not(target_os = "macos"))]
             readback_index: 0,
         }
