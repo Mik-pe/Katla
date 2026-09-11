@@ -14,6 +14,7 @@ pub mod features;
 pub mod gpu_renderer;
 pub mod pipeline_descriptor;
 pub mod pipeline_kind;
+pub mod pipeline_variant;
 pub mod retirement;
 
 pub(crate) mod animation_init;
@@ -73,7 +74,7 @@ use crate::vulkan::material::SkeletonDescriptorSet;
 use crate::vulkan::material::compiler::MaterialCompiler;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
 use crate::vulkan::retirement::{
-    FrameRetirements, RetiredBuffer, RetiredDescriptorSetLayout, RetiredResource, RetirementQueue,
+    FrameRetirements, RetiredBuffer, RetiredResource, RetirementQueue,
 };
 use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 use crate::vulkan::swapdata::SwapData;

@@ -732,9 +732,7 @@ impl GpuRenderer for VulkanRenderer {
         &mut self,
         descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
-        use crate::renderer::pipeline_descriptor::{BlendMode, PipelineStages};
-        use crate::vertex::VertexLayout;
-        use crate::vulkan::material::compiler::{MaterialOptions, VertexType};
+        use crate::renderer::pipeline_descriptor::PipelineStages;
 
         descriptor.validate()?;
         if !descriptor.specialization.is_empty() {
@@ -749,52 +747,7 @@ impl GpuRenderer for VulkanRenderer {
             ));
         };
 
-        // Derive the internal routing from canonical layout identity.
-        // No strings, no silent fallback: unknown layouts fail loudly.
-        let vertex_type = if descriptor.vertex == VertexLayout::pbr() {
-            VertexType::Pbr
-        } else if descriptor.vertex == VertexLayout::ui() {
-            VertexType::Ui
-        } else if descriptor.vertex == VertexLayout::position() {
-            VertexType::Simple
-        } else if descriptor.vertex == VertexLayout::pbr_skinned() {
-            VertexType::Skinned
-        } else {
-            return Err(RendererError::InvalidDescriptor {
-                resource: "material".to_string(),
-                reason: format!(
-                    "unknown vertex layout ({} attributes, stride {}): \
-                     Vulkan material compilation supports the canonical \
-                     PBR / UI / position / skinned layouts",
-                    descriptor.vertex.len(),
-                    descriptor.vertex.stride(),
-                ),
-            });
-        };
-
-        // Depth state maps straight through; the compiler normalises
-        // test=false to (false, false, Always) for every entry path.
-        let (vertex_entry, fragment_entry) = match &descriptor.stages {
-            PipelineStages::Graphics {
-                vertex_entry,
-                fragment_entry,
-            } => (vertex_entry.clone(), fragment_entry.clone()),
-            PipelineStages::Compute { .. } => unreachable!("rejected above"),
-        };
-        let options = MaterialOptions {
-            alpha_blended: matches!(descriptor.blend, BlendMode::AlphaBlend),
-            double_sided: matches!(descriptor.cull, crate::pipeline::CullMode::None),
-            wireframe: descriptor.wireframe,
-            vertex_type,
-            color_format: descriptor.color_format,
-            is_compositing: descriptor.native.vulkan.compositing,
-            depth_test: descriptor.depth.test,
-            depth_write: descriptor.depth.write,
-            depth_compare: descriptor.depth.compare,
-            vertex_entry,
-            fragment_entry,
-        };
-        VulkanRenderer::compile_material(self, &descriptor.shader_path, options)
+        VulkanRenderer::compile_material_descriptor(self, descriptor)
     }
 
     fn set_material_textures(

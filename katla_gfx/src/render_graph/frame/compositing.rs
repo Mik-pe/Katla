@@ -126,20 +126,28 @@ impl Frame<'_, VulkanRenderer> {
             extent.height,
         )]);
 
-        let material = self
+        let format = pass
+            .output_format
+            .unwrap_or(crate::texture::ImageFormat::Auto);
+        let variant = self
             .renderer
-            .asset_registry
-            .get_material(material_handle)
-            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
-
-        let pipeline_handle = material
-            .pipeline
-            .ok_or(RenderGraphError::InvalidMaterialHandle(material_handle))?;
+            .material_variant(material_handle, format)
+            .map_err(|e| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "Compositing material variant lookup failed: {}",
+                    e
+                ))
+            })?
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(format!(
+                    "Compositing material {material_handle:?} has no pipeline variant for {format:?}"
+                ))
+            })?;
 
         let (pipeline, layout) = self
             .renderer
             .asset_registry
-            .get_pipeline_handles(pipeline_handle)?;
+            .get_pipeline_handles(variant.pipeline)?;
 
         // Bind graphics pipeline
         unsafe {

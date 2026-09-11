@@ -160,12 +160,20 @@ pub(crate) struct MetalMesh {
     pub(crate) usage: crate::renderer::registry::MeshUsage,
 }
 
-/// A material (pipeline state + texture indices).
+/// A material: compilation identity, compiled pipeline variants, and typed
+/// texture bindings.
+///
+/// Each render-target configuration the material renders into resolves to
+/// one [`PipelineVariantKey`](crate::renderer::pipeline_variant::PipelineVariantKey)
+/// whose native pipeline lives in `variants`; the same identity is shared
+/// with the Vulkan backend.
 pub(crate) struct MetalMaterial {
-    pub(crate) pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
+    pub(crate) descriptor: crate::renderer::pipeline_descriptor::PipelineDescriptor,
+    pub(crate) variants: std::collections::HashMap<
+        crate::renderer::pipeline_variant::PipelineVariantKey,
+        super::pipeline::MetalGraphicsPipeline,
+    >,
     pub(crate) textures: crate::renderer::registry::MaterialTextures,
-    pub(crate) shader_path: Option<String>,
-    pub(crate) descriptor: Option<crate::renderer::pipeline_descriptor::PipelineDescriptor>,
 }
 
 /// A texture stored with its bindless slot.
@@ -512,11 +520,13 @@ impl MetalRenderer {
 
         renderer.tonemap_fence = renderer.context.device.newFence();
 
+        // Sentinel material behind `default_material()` before any real
+        // material is compiled; it has no identity and no variants, so it
+        // draws nothing until the app compiles and sets a real default.
         let default_mat = MetalMaterial {
-            pipeline: None,
+            descriptor: crate::renderer::pipeline_descriptor::PipelineDescriptor::pbr(""),
+            variants: std::collections::HashMap::new(),
             textures: crate::renderer::registry::MaterialTextures::default(),
-            shader_path: None,
-            descriptor: None,
         };
         renderer.default_material = Some(renderer.materials.insert(default_mat));
 
