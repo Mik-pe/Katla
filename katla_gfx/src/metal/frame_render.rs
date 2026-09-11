@@ -457,7 +457,7 @@ impl MetalRenderer {
         // the compiled graph describes.
         let depth_attachment = record
             .depth_attachment
-            .map(|declared| {
+            .map(|declared| -> Result<DepthAttachmentInfo, RendererError> {
                 let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
                     RendererError::InvalidOperation(
                         "Metal Geometry record declares depth but has no depth-stencil target"
