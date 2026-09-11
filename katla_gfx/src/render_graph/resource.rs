@@ -43,6 +43,57 @@ pub struct GraphResourceDesc {
     pub tracks_swapchain_size: bool,
 }
 
+/// Initial and required-final state contract for an imported image.
+///
+/// Imported images exist outside the graph: the graph cannot derive the state
+/// they arrive in, and the importer may require a specific state once the graph
+/// is done (e.g. a swapchain image handed to the presentation engine). The
+/// contract is validated at compile time and surfaced in diagnostics; the
+/// backend synchronization plan consumes it when translating transitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImportedImageContract {
+    /// State of the image when graph execution begins. `Undefined` declares
+    /// that the image's contents are not observable: loading them from a pass
+    /// is a validation error.
+    pub initial: ResourceState,
+    /// State the graph must leave the image in. `None` imposes no requirement.
+    pub required_final: Option<ResourceState>,
+}
+
+impl ImportedImageContract {
+    /// Contract for an image whose contents nobody observes before or after
+    /// the graph.
+    pub const fn undefined() -> Self {
+        Self {
+            initial: ResourceState::Undefined,
+            required_final: None,
+        }
+    }
+
+    /// Contract for an image that arrives in `initial` state with observable
+    /// contents (e.g. a texture the application last used as a render target).
+    pub const fn arrives_in(initial: ResourceState) -> Self {
+        Self {
+            initial,
+            required_final: None,
+        }
+    }
+
+    /// Require the graph to leave the image in `state` (e.g.
+    /// `ResourceState::PresentSrc` for a swapchain image that will be
+    /// presented after the graph).
+    pub const fn must_end_in(mut self, state: ResourceState) -> Self {
+        self.required_final = Some(state);
+        self
+    }
+}
+
+impl Default for ImportedImageContract {
+    fn default() -> Self {
+        Self::undefined()
+    }
+}
+
 /// Opaque handle for graph resources (internal use only).
 ///
 /// Generated from string names at build time.

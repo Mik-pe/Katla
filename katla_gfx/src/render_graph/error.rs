@@ -49,6 +49,17 @@ pub enum GraphValidationError {
     DepthOpsWithoutDepthUse(String),
     /// A depth clear value is outside the [0, 1] range.
     InvalidDepthClearValue { pass: String, depth: f32 },
+    /// A pass loads the contents of an imported image whose contract declares
+    /// them unobservable (initial state `Undefined`).
+    LoadingUndefinedImportedContents { pass: String, resource: String },
+    /// An imported image's required final state is unreachable: no live pass
+    /// accesses the image, so the graph cannot move it from its initial state.
+    UnreachableImportedFinalState {
+        resource: String,
+        required: ResourceState,
+    },
+    /// A state contract was declared for a resource that is not imported.
+    ImportContractOnNonImported { resource: String },
 }
 
 impl fmt::Display for GraphValidationError {
@@ -132,6 +143,23 @@ impl fmt::Display for GraphValidationError {
                 f,
                 "pass '{}' uses depth clear value {} outside [0, 1]",
                 pass, depth
+            ),
+            Self::LoadingUndefinedImportedContents { pass, resource } => write!(
+                f,
+                "pass '{}' loads imported '{}' whose contents are not declared observable \
+                 (import it with a non-Undefined initial state)",
+                pass, resource
+            ),
+            Self::UnreachableImportedFinalState { resource, required } => write!(
+                f,
+                "imported '{}' must end in state {:?} but no live pass accesses it; \
+                 export or read it, or relax the contract",
+                resource, required
+            ),
+            Self::ImportContractOnNonImported { resource } => write!(
+                f,
+                "state contract declared for '{}' which is not an imported image",
+                resource
             ),
         }
     }
