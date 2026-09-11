@@ -63,6 +63,9 @@ jobs:
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --lib --locked --quiet -- -D warnings
 
+      - name: Cross-backend contract suite (Vulkan on lavapipe)
+        run: cargo test -p katla_gfx --test contract --locked -- --ignored
+
   macos-26:
     name: macOS 26 / Metal
     runs-on: macos-26
@@ -91,3 +94,9 @@ jobs:
 
       - name: Lint graphics and application crates
         run: cargo clippy -p katla_gfx -p katla_app --locked --quiet -- -D warnings
+
+      - name: Cross-backend contract suite (Metal with API validation)
+        run: cargo test -p katla_gfx --test contract --locked -- --ignored
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
