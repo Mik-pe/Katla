@@ -22,14 +22,6 @@ const BACKBUFFER_NAME: &str = super::BACKBUFFER_NAME;
 const DEFAULT_BACKBUFFER_CONTRACT: ImportedImageContract =
     ImportedImageContract::arrives_in(ResourceState::ColorAttachment);
 
-#[derive(Debug, Clone, Default)]
-pub(super) struct PassBarrierCache {
-    pub(super) pre_write_resources: Vec<ResourceId>,
-    pub(super) pre_read_resources: Vec<ResourceId>,
-    pub(super) post_write_to_read_resources: Vec<ResourceId>,
-    pub(super) needs_depth_sync: bool,
-}
-
 /// Per-frame parameters for render graph execution.
 ///
 /// These values change every frame and are set before calling `execute()`.
@@ -105,12 +97,6 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// Whether the graph has been compiled.
     compiled: bool,
 
-    /// Whether the barrier cache needs recomputation.
-    barriers_dirty: bool,
-
-    /// Cached barrier info per pass (indexed by pass index).
-    barrier_cache: Vec<PassBarrierCache>,
-
     /// Transient resource descriptors (for lazy GPU resource creation).
     pub(super) transient_resources: Vec<GraphResourceDesc>,
 
@@ -147,8 +133,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             pass_culling_enabled: false,
             execution_plan: None,
             compiled: false,
-            barriers_dirty: true,
-            barrier_cache: Vec::new(),
             transient_resources: Vec::new(),
             transient_textures: Vec::new(),
             ldr_texture_base_index: None,
@@ -164,7 +148,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.passes.push(pass);
         self.compiled = false;
         self.execution_plan = None;
-        self.barriers_dirty = true;
         PassId(index as u32)
     }
 
@@ -177,7 +160,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         }
         self.compiled = false;
         self.execution_plan = None;
-        self.barriers_dirty = true;
     }
 
     /// Create or get a ResourceId for a named resource.
@@ -198,7 +180,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.resource_by_name.insert(name, id);
         self.compiled = false;
         self.execution_plan = None;
-        self.barriers_dirty = true;
         id
     }
 
@@ -219,7 +200,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         if self.exported_resources.insert(id) {
             self.compiled = false;
             self.execution_plan = None;
-            self.barriers_dirty = true;
         }
         Ok(id)
     }
@@ -247,7 +227,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.pass_culling_enabled = true;
         self.compiled = false;
         self.execution_plan = None;
-        self.barriers_dirty = true;
     }
 
     /// Get the name of a resource by its ResourceId.
@@ -261,6 +240,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             GraphCompiler::from_pass_descs_with_exports(
                 &self.passes,
                 self.exported_resources.iter().copied(),
+                self.imported_contracts.clone(),
             )
             .compile()
         } else {
@@ -500,90 +480,6 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         Ok(())
     }
 
-    /// Ensure the barrier cache is up to date.
-    ///
-    /// Recomputes cached per-pass barrier info when the graph structure has changed.
-    /// This avoids re-scanning the execution order and pass dependencies every frame.
-    pub(crate) fn ensure_barrier_cache(&mut self) {
-        if !self.barriers_dirty {
-            return;
-        }
-        let Some(plan) = &self.execution_plan else {
-            return;
-        };
-
-        let mut cache = vec![PassBarrierCache::default(); self.passes.len()];
-        let mut depth_written = false;
-
-        for &pass_idx in &plan.sorted_passes {
-            let pass = &self.passes[pass_idx];
-            let mut pre_writes = Vec::new();
-            let mut pre_reads = Vec::new();
-            let mut post_writes = Vec::new();
-
-            let needs_depth_sync = pass.uses_depth && depth_written;
-
-            for &write_id in &pass.writes {
-                if self.resource_name(write_id) == Some(BACKBUFFER_NAME) {
-                    continue;
-                }
-                pre_writes.push(write_id);
-            }
-
-            for &read_id in &pass.reads {
-                if self.resource_name(read_id) == Some(BACKBUFFER_NAME) {
-                    continue;
-                }
-                if pass.writes.contains(&read_id) {
-                    continue;
-                }
-                pre_reads.push(read_id);
-            }
-
-            let current_pos = plan.sorted_passes.iter().position(|&p| p == pass_idx);
-            if let Some(pos) = current_pos {
-                for &write_id in &pass.writes {
-                    if self.resource_name(write_id) == Some(BACKBUFFER_NAME) {
-                        continue;
-                    }
-                    let next_access = plan.sorted_passes[pos + 1..].iter().find(|&&idx| {
-                        let p = &self.passes[idx];
-                        p.reads.contains(&write_id) || p.writes.contains(&write_id)
-                    });
-                    let next_is_read = match next_access {
-                        Some(&idx) => {
-                            let p = &self.passes[idx];
-                            p.reads.contains(&write_id) && !p.writes.contains(&write_id)
-                        }
-                        None => true,
-                    };
-                    if next_is_read {
-                        post_writes.push(write_id);
-                    }
-                }
-            }
-
-            if pass.uses_depth {
-                depth_written = true;
-            }
-
-            cache[pass_idx] = PassBarrierCache {
-                pre_write_resources: pre_writes,
-                pre_read_resources: pre_reads,
-                post_write_to_read_resources: post_writes,
-                needs_depth_sync,
-            };
-        }
-
-        self.barrier_cache = cache;
-        self.barriers_dirty = false;
-    }
-
-    /// Get cached barrier info for a pass.
-    pub(super) fn barrier_cache(&self, pass_index: usize) -> Option<&PassBarrierCache> {
-        self.barrier_cache.get(pass_index)
-    }
-
     /// Get a pass index by name.
     #[cfg(test)]
     pub(crate) fn pass_index(&self, name: &str) -> Option<usize> {
@@ -683,6 +579,25 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             .as_ref()
             .map(|plan| plan.sorted_passes.clone())
             .unwrap_or_else(|| (0..self.passes.len()).collect())
+    }
+
+    /// Compiled synchronization operations preceding one pass.
+    ///
+    /// Empty when the plan is not compiled or the pass is culled.
+    pub(crate) fn image_sync_ops(&self, pass_index: usize) -> &[super::sync_plan::ImageSyncOp] {
+        self.execution_plan
+            .as_ref()
+            .and_then(|plan| plan.sync.pass_ops.get(pass_index))
+            .map(|ops| ops.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Compiled frame-end operations satisfying imported final-state contracts.
+    pub(crate) fn final_image_sync_ops(&self) -> &[super::sync_plan::ImageSyncOp] {
+        self.execution_plan
+            .as_ref()
+            .map(|plan| plan.sync.final_ops.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get a transient texture by ResourceId for a specific frame.
@@ -1017,8 +932,6 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
         if !self.compiled {
             self.compile()?;
         }
-
-        self.ensure_barrier_cache();
 
         self.initialize_transient_textures(renderer)?;
 
@@ -1467,7 +1380,6 @@ mod tests {
     use super::*;
     use crate::render_graph::backend::RenderGraphBackend;
     use crate::render_graph::resource::ResourceState;
-    use crate::render_graph::resource::TransientTextureOps;
 
     fn rid(n: u32) -> ResourceId {
         ResourceId(n)
@@ -1477,17 +1389,7 @@ mod tests {
     struct MockBackend;
 
     struct MockTexture {
-        state: std::cell::Cell<ResourceState>,
         slot: std::cell::Cell<Option<u32>>,
-    }
-
-    impl TransientTextureOps for MockTexture {
-        fn state(&self) -> ResourceState {
-            self.state.get()
-        }
-        fn set_state(&self, state: ResourceState) {
-            self.state.set(state);
-        }
     }
 
     #[derive(Clone)]
@@ -1505,7 +1407,6 @@ mod tests {
             _desc: &super::super::resource::GraphResourceDesc,
         ) -> Result<Self::TransientTexture, RenderGraphError> {
             Ok(MockTexture {
-                state: std::cell::Cell::new(ResourceState::Undefined),
                 slot: std::cell::Cell::new(None),
             })
         }

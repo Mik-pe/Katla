@@ -141,18 +141,6 @@ impl Default for GraphResourceHandle {
     }
 }
 
-/// Trait for transient texture state tracking.
-///
-/// Implemented by backend-specific transient texture types.
-/// Provides a uniform interface for the render graph to track
-/// and update resource states without knowing backend details.
-pub trait TransientTextureOps {
-    /// Get the current tracked resource state.
-    fn state(&self) -> ResourceState;
-    /// Update the tracked resource state after a transition.
-    fn set_state(&self, state: ResourceState);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

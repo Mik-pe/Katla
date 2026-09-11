@@ -53,6 +53,7 @@ mod handles;
 mod pass;
 mod passes;
 mod resource;
+mod sync_plan;
 
 // Layer 2: Backend interface trait
 mod backend;
@@ -74,14 +75,15 @@ pub use access::{
 pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
 pub use diagnostics::{
-    RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAccess,
-    RenderGraphDiagnosticDependency, RenderGraphDiagnosticHazard, RenderGraphDiagnosticImageAccess,
+    RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticDependency,
+    RenderGraphDiagnosticHazard, RenderGraphDiagnosticImageAccess,
     RenderGraphDiagnosticImageAccessMode, RenderGraphDiagnosticImageStage,
     RenderGraphDiagnosticImageSubresourceRange, RenderGraphDiagnosticImageUsage,
     RenderGraphDiagnosticImportedContract, RenderGraphDiagnosticPass,
     RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
     RenderGraphDiagnosticResourceLifetime, RenderGraphDiagnosticResourceOrigin,
     RenderGraphDiagnosticResourceRef, RenderGraphDiagnosticSummary,
+    RenderGraphDiagnosticSyncReason, RenderGraphDiagnosticSyncState,
     RenderGraphDiagnosticTransition, RenderGraphDiagnostics, RenderGraphHazardKind,
 };
 pub use error::{GraphValidationError, RenderGraphError};
@@ -97,9 +99,9 @@ pub use passes::{
     UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{
-    GraphResourceDesc, GraphResourceHandle, GraphResourceType, ImportedImageContract,
-    ResourceState, TransientTextureOps,
+    GraphResourceDesc, GraphResourceHandle, GraphResourceType, ImportedImageContract, ResourceState,
 };
+pub(crate) use sync_plan::{ImageSyncOp, ImageSyncState, ResourceHazardKind, SyncPlan, SyncReason};
 pub use transient_texture::TransientTexture;
 
 /// Special resource name for the swapchain backbuffer.

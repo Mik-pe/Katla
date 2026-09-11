@@ -18,15 +18,16 @@ use super::BACKBUFFER_NAME;
 use super::access::{ImageAccess, ImageAccessMode, ImagePipelineStage, ImageUsage};
 use super::allocation_plan::TransientAllocationPlan;
 use super::backend::RenderGraphBackend;
-use super::compiler::{ExecutionPlan, ResourceHazardKind, ResourceLifetime, ResourceTransition};
+use super::compiler::{ExecutionPlan, ResourceLifetime};
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::ResourceId;
 use super::pass::{PassDesc, PassType};
 use super::resource::{GraphResourceDesc, GraphResourceType, ImportedImageContract};
+use super::{ImageSyncOp, ImageSyncState, ResourceHazardKind};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 6;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 7;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -239,25 +240,42 @@ pub struct RenderGraphDiagnosticDependency {
     pub hazards: Vec<RenderGraphDiagnosticHazard>,
 }
 
-/// Backend-neutral access mode on one side of a synchronization transition.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RenderGraphDiagnosticAccess {
-    Read,
-    Write,
+/// Synchronization state one side of a transition is in.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum RenderGraphDiagnosticSyncState {
+    Undefined,
+    Access {
+        usage: RenderGraphDiagnosticImageUsage,
+        stage: RenderGraphDiagnosticImageStage,
+        mode: RenderGraphDiagnosticImageAccessMode,
+    },
 }
 
-/// One compiler-owned resource transition between live passes.
+/// Why one compiled synchronization operation exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderGraphDiagnosticSyncReason {
+    InitialUse,
+    Hazard,
+    StateChange,
+    ImportedFinal,
+}
+
+/// One compiled synchronization operation between frame start, live passes,
+/// and frame end.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RenderGraphDiagnosticTransition {
     pub resource: RenderGraphDiagnosticResourceRef,
-    pub from_pass: usize,
-    pub from_name: String,
-    pub to_pass: usize,
-    pub to_name: String,
-    pub source_access: RenderGraphDiagnosticAccess,
-    pub destination_access: RenderGraphDiagnosticAccess,
-    pub hazard: RenderGraphHazardKind,
+    /// Pass that established the `before` state; `None` at frame start.
+    pub before_pass: Option<usize>,
+    pub before_name: Option<String>,
+    /// Pass the operation precedes; `None` at frame end.
+    pub to_pass: Option<usize>,
+    pub to_name: Option<String>,
+    pub before_state: RenderGraphDiagnosticSyncState,
+    pub after_state: RenderGraphDiagnosticSyncState,
+    pub hazard: Option<RenderGraphHazardKind>,
+    pub reason: RenderGraphDiagnosticSyncReason,
 }
 
 impl<B: RenderGraphBackend> FrameGraph<B> {
@@ -405,7 +423,7 @@ impl RenderGraphDiagnostics {
             .collect::<Vec<_>>();
 
         let synchronization = transition_diagnostics(passes, resources, plan);
-        let dependencies = dependency_diagnostics(passes, &synchronization);
+        let dependencies = dependency_diagnostics(passes, resources, plan);
         let summary = RenderGraphDiagnosticSummary {
             declared_passes: passes.len(),
             live_passes: plan.live_passes.iter().filter(|&&live| live).count(),
@@ -726,59 +744,131 @@ fn transition_diagnostics(
     resources: &[GraphResourceDesc],
     plan: &ExecutionPlan,
 ) -> Vec<RenderGraphDiagnosticTransition> {
-    plan.resource_transitions
+    plan.sync
+        .pass_ops
         .iter()
-        .copied()
-        .map(|transition| diagnostic_transition(transition, passes, resources))
+        .enumerate()
+        .flat_map(|(pass_index, ops)| {
+            ops.iter()
+                .map(move |op| diagnostic_transition(op, passes, resources, Some(pass_index)))
+        })
+        .chain(
+            plan.sync
+                .final_ops
+                .iter()
+                .map(|op| diagnostic_transition(op, passes, resources, None)),
+        )
         .collect()
 }
 
 fn diagnostic_transition(
-    transition: ResourceTransition,
+    op: &ImageSyncOp,
     passes: &[PassDesc],
     resources: &[GraphResourceDesc],
+    to_pass: Option<usize>,
 ) -> RenderGraphDiagnosticTransition {
-    let (source_access, destination_access) = match transition.hazard {
-        ResourceHazardKind::ReadAfterWrite => (
-            RenderGraphDiagnosticAccess::Write,
-            RenderGraphDiagnosticAccess::Read,
-        ),
-        ResourceHazardKind::WriteAfterRead => (
-            RenderGraphDiagnosticAccess::Read,
-            RenderGraphDiagnosticAccess::Write,
-        ),
-        ResourceHazardKind::WriteAfterWrite => (
-            RenderGraphDiagnosticAccess::Write,
-            RenderGraphDiagnosticAccess::Write,
-        ),
+    let hazard = match op.reason {
+        super::SyncReason::Hazard(kind) => Some(kind.into()),
+        _ => None,
+    };
+    let reason = match op.reason {
+        super::SyncReason::InitialUse => RenderGraphDiagnosticSyncReason::InitialUse,
+        super::SyncReason::Hazard(_) => RenderGraphDiagnosticSyncReason::Hazard,
+        super::SyncReason::StateChange => RenderGraphDiagnosticSyncReason::StateChange,
+        super::SyncReason::ImportedFinal => RenderGraphDiagnosticSyncReason::ImportedFinal,
     };
 
     RenderGraphDiagnosticTransition {
-        resource: resource_ref(transition.resource, resources),
-        from_pass: transition.from_pass,
-        from_name: passes[transition.from_pass].name.clone(),
-        to_pass: transition.to_pass,
-        to_name: passes[transition.to_pass].name.clone(),
-        source_access,
-        destination_access,
-        hazard: transition.hazard.into(),
+        resource: resource_ref(op.resource, resources),
+        before_pass: op.before_pass,
+        before_name: op.before_pass.map(|pass| passes[pass].name.clone()),
+        to_pass,
+        to_name: to_pass.map(|pass| passes[pass].name.clone()),
+        before_state: diagnostic_sync_state(op.before),
+        after_state: diagnostic_sync_state(op.after),
+        hazard,
+        reason,
+    }
+}
+
+fn diagnostic_sync_state(state: ImageSyncState) -> RenderGraphDiagnosticSyncState {
+    let usage = |usage: super::access::ImageUsage| match usage {
+        ImageUsage::Sampled => RenderGraphDiagnosticImageUsage::Sampled,
+        ImageUsage::ColorAttachment => RenderGraphDiagnosticImageUsage::ColorAttachment,
+        ImageUsage::DepthStencilAttachment => {
+            RenderGraphDiagnosticImageUsage::DepthStencilAttachment
+        }
+        ImageUsage::Storage => RenderGraphDiagnosticImageUsage::Storage,
+        ImageUsage::TransferSource => RenderGraphDiagnosticImageUsage::TransferSource,
+        ImageUsage::TransferDestination => RenderGraphDiagnosticImageUsage::TransferDestination,
+        ImageUsage::Present => RenderGraphDiagnosticImageUsage::Present,
+    };
+    let stage = |stage: super::access::ImagePipelineStage| match stage {
+        ImagePipelineStage::VertexShader => RenderGraphDiagnosticImageStage::VertexShader,
+        ImagePipelineStage::FragmentShader => RenderGraphDiagnosticImageStage::FragmentShader,
+        ImagePipelineStage::ComputeShader => RenderGraphDiagnosticImageStage::ComputeShader,
+        ImagePipelineStage::ColorAttachmentOutput => {
+            RenderGraphDiagnosticImageStage::ColorAttachmentOutput
+        }
+        ImagePipelineStage::DepthStencil => RenderGraphDiagnosticImageStage::DepthStencil,
+        ImagePipelineStage::Transfer => RenderGraphDiagnosticImageStage::Transfer,
+        ImagePipelineStage::Present => RenderGraphDiagnosticImageStage::Present,
+        ImagePipelineStage::AllGraphics => RenderGraphDiagnosticImageStage::AllGraphics,
+    };
+    let mode = |mode: super::access::ImageAccessMode| match mode {
+        ImageAccessMode::Read => RenderGraphDiagnosticImageAccessMode::Read,
+        ImageAccessMode::Write => RenderGraphDiagnosticImageAccessMode::Write,
+        ImageAccessMode::ReadWrite => RenderGraphDiagnosticImageAccessMode::ReadWrite,
+    };
+
+    match state {
+        ImageSyncState::Undefined => RenderGraphDiagnosticSyncState::Undefined,
+        ImageSyncState::Access {
+            usage: u,
+            stage: st,
+            mode: m,
+        } => RenderGraphDiagnosticSyncState::Access {
+            usage: usage(u),
+            stage: stage(st),
+            mode: mode(m),
+        },
     }
 }
 
 fn dependency_diagnostics(
     passes: &[PassDesc],
-    synchronization: &[RenderGraphDiagnosticTransition],
+    resources: &[GraphResourceDesc],
+    plan: &ExecutionPlan,
 ) -> Vec<RenderGraphDiagnosticDependency> {
     let mut grouped = BTreeMap::<(usize, usize), Vec<RenderGraphDiagnosticHazard>>::new();
 
-    for transition in synchronization {
-        grouped
-            .entry((transition.from_pass, transition.to_pass))
-            .or_default()
-            .push(RenderGraphDiagnosticHazard {
-                kind: transition.hazard,
-                resource: transition.resource.clone(),
-            });
+    // The DAG (not the sync plan) enumerates every edge: an intervening
+    // access can subsume a transitive hazard in the sync operations while
+    // the edge still orders the two passes.
+    for node in &plan.dag {
+        for &from_pass in &node.predecessors {
+            let to_pass = node.pass_index;
+            let from = &passes[from_pass];
+            let to = &passes[to_pass];
+            for resource in from.writes.iter().chain(&from.reads).chain(&to.writes) {
+                let raw = from.writes.contains(resource) && to.reads.contains(resource);
+                let war = from.reads.contains(resource) && to.writes.contains(resource);
+                let waw = from.writes.contains(resource) && to.writes.contains(resource);
+                let kinds = [
+                    raw.then_some(RenderGraphHazardKind::Raw),
+                    war.then_some(RenderGraphHazardKind::War),
+                    waw.then_some(RenderGraphHazardKind::Waw),
+                ];
+                for kind in kinds.into_iter().flatten() {
+                    grouped.entry((from_pass, to_pass)).or_default().push(
+                        RenderGraphDiagnosticHazard {
+                            kind,
+                            resource: resource_ref(*resource, resources),
+                        },
+                    );
+                }
+            }
+        }
     }
 
     grouped
@@ -917,6 +1007,7 @@ mod tests {
         let plan = GraphCompiler::from_pass_descs_with_exports(
             &passes,
             exported_resources.iter().copied(),
+            BTreeMap::new(),
         )
         .compile()
         .unwrap();
@@ -958,6 +1049,7 @@ mod tests {
         let plan = GraphCompiler::from_pass_descs_with_exports(
             &passes,
             exported_resources.iter().copied(),
+            BTreeMap::new(),
         )
         .compile()
         .unwrap();
@@ -1007,7 +1099,7 @@ mod tests {
         assert_eq!(json["passes"][0]["image_accesses"][0]["mode"], "write");
         assert_eq!(json["passes"][1]["image_accesses"][0]["usage"], "sampled");
         assert_eq!(json["summary"]["dependency_edges"], 4);
-        assert_eq!(json["summary"]["synchronization_transitions"], 5);
+        assert_eq!(json["summary"]["synchronization_transitions"], 9);
         assert_eq!(json["summary"]["physical_transient_allocations"], 2);
         assert_eq!(json["summary"]["logical_transient_bytes"], 65536);
         assert_eq!(json["summary"]["physical_transient_bytes"], 65536);
@@ -1073,6 +1165,7 @@ mod tests {
         let plan = GraphCompiler::from_pass_descs_with_exports(
             &passes,
             exported_resources.iter().copied(),
+            BTreeMap::new(),
         )
         .compile()
         .unwrap();
@@ -1100,15 +1193,33 @@ mod tests {
             .synchronization
             .iter()
             .find(|transition| {
-                transition.from_pass == 0 && transition.to_pass == 1 && transition.resource.id == 1
+                transition.before_pass == Some(0)
+                    && transition.to_pass == Some(1)
+                    && transition.resource.id == 1
             })
             .unwrap();
 
-        assert_eq!(raw.hazard, RenderGraphHazardKind::Raw);
-        assert_eq!(raw.source_access, RenderGraphDiagnosticAccess::Write);
-        assert_eq!(raw.destination_access, RenderGraphDiagnosticAccess::Read);
-        assert_eq!(raw.from_name, "geometry");
-        assert_eq!(raw.to_name, "post");
+        assert_eq!(raw.hazard, Some(RenderGraphHazardKind::Raw));
+        assert_eq!(raw.reason, RenderGraphDiagnosticSyncReason::Hazard);
+        // The fixture's coarse write infers a whole-resource storage access.
+        assert_eq!(
+            raw.before_state,
+            RenderGraphDiagnosticSyncState::Access {
+                usage: RenderGraphDiagnosticImageUsage::Storage,
+                stage: RenderGraphDiagnosticImageStage::AllGraphics,
+                mode: RenderGraphDiagnosticImageAccessMode::Write,
+            }
+        );
+        assert_eq!(
+            raw.after_state,
+            RenderGraphDiagnosticSyncState::Access {
+                usage: RenderGraphDiagnosticImageUsage::Sampled,
+                stage: RenderGraphDiagnosticImageStage::FragmentShader,
+                mode: RenderGraphDiagnosticImageAccessMode::Read,
+            }
+        );
+        assert_eq!(raw.before_name.as_deref(), Some("geometry"));
+        assert_eq!(raw.to_name.as_deref(), Some("post"));
     }
 
     #[test]
@@ -1175,6 +1286,7 @@ mod tests {
         let plan = GraphCompiler::from_pass_descs_with_exports(
             &passes,
             exported_resources.iter().copied(),
+            BTreeMap::new(),
         )
         .compile()
         .unwrap();
@@ -1242,6 +1354,7 @@ mod tests {
         let plan = GraphCompiler::from_pass_descs_with_exports(
             &passes,
             exported_resources.iter().copied(),
+            BTreeMap::new(),
         )
         .compile()
         .unwrap();
@@ -1285,7 +1398,7 @@ mod tests {
             live,
             pass("unused", vec![], vec![]).with_image_accesses([access]),
         ];
-        let plan = GraphCompiler::from_pass_descs_with_exports(&passes, [])
+        let plan = GraphCompiler::from_pass_descs_with_exports(&passes, [], BTreeMap::new())
             .compile()
             .unwrap();
         let diagnostics = RenderGraphDiagnostics::from_parts(

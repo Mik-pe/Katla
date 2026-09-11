@@ -5,7 +5,8 @@
 //! pipeline from singleton semantic checks.
 
 use crate::render_graph::{
-    FrameGraph, ImageAccess, PassDesc, PassId, PassKind, PassType, RenderGraphError, ResourceId,
+    FrameGraph, ImageAccess, ImageSyncOp, PassDesc, PassId, PassKind, PassType, RenderGraphError,
+    ResourceId,
 };
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -170,10 +171,46 @@ impl MetalPassRecord {
     }
 }
 
+/// How Metal realizes one compiled image synchronization operation.
+///
+/// Metal has no image layouts. Graph transients use private storage with
+/// driver-tracked resources: the driver inserts the hazards between encoders
+/// and attachment load/store actions realize render-target transitions, so
+/// every image sync operation is covered by tracked-resource guarantees —
+/// no explicit image barrier is required. (The hand-placed tonemap→UI fence
+/// in frame_render predates the compiled plan and remains until queue and
+/// encoder boundary requirements are modeled explicitly.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MetalSyncCoverage {
+    /// Driver-tracked hazards between encoders cover the operation.
+    TrackedResource,
+}
+
+/// Classification of one compiled image sync operation for Metal encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MetalSyncRecord {
+    /// Pass the operation precedes; `None` at frame end.
+    pub(crate) pass: Option<usize>,
+    pub(crate) resource: ResourceId,
+    pub(crate) coverage: MetalSyncCoverage,
+}
+
+impl MetalSyncRecord {
+    fn classify(pass: Option<usize>, op: &ImageSyncOp) -> Self {
+        Self {
+            pass,
+            resource: op.resource,
+            coverage: MetalSyncCoverage::TrackedResource,
+        }
+    }
+}
+
 /// Ordered Metal records derived from the graph compiler's canonical execution order.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MetalExecutionPlan {
     passes: Vec<MetalPassRecord>,
+    /// The graph's compiled image sync operations, classified for Metal.
+    sync: Vec<MetalSyncRecord>,
 }
 
 impl MetalExecutionPlan {
@@ -182,13 +219,28 @@ impl MetalExecutionPlan {
     ) -> Result<Self, RenderGraphError> {
         let order = frame_graph.execution_order();
         let format_at = |id: ResourceId| frame_graph.resource_format(id);
-        Self::compile_order(&order, |index| frame_graph.pass(index), &format_at)
+        let mut image_sync_ops = Vec::new();
+        for &pass_index in &order {
+            for op in frame_graph.image_sync_ops(pass_index) {
+                image_sync_ops.push((Some(pass_index), *op));
+            }
+        }
+        for op in frame_graph.final_image_sync_ops() {
+            image_sync_ops.push((None, *op));
+        }
+        Self::compile_order(
+            &order,
+            |index| frame_graph.pass(index),
+            &format_at,
+            &image_sync_ops,
+        )
     }
 
     fn compile_order<'a>(
         order: &[usize],
         mut pass_at: impl FnMut(usize) -> Option<&'a PassDesc>,
         format_at: &impl Fn(ResourceId) -> Option<ImageFormat>,
+        image_sync_ops: &[(Option<usize>, ImageSyncOp)],
     ) -> Result<Self, RenderGraphError> {
         let passes = order
             .iter()
@@ -203,16 +255,26 @@ impl MetalExecutionPlan {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Self { passes })
+        let sync = image_sync_ops
+            .iter()
+            .map(|(pass, op)| MetalSyncRecord::classify(*pass, op))
+            .collect();
+
+        Ok(Self { passes, sync })
     }
 
     pub(crate) fn passes(&self) -> &[MetalPassRecord] {
         &self.passes
     }
 
+    pub(crate) fn sync_records(&self) -> &[MetalSyncRecord] {
+        &self.sync
+    }
+
     #[cfg(test)]
     pub(crate) fn for_test(kinds: &[PassKind]) -> Self {
         Self {
+            sync: Vec::new(),
             passes: kinds
                 .iter()
                 .copied()
@@ -272,7 +334,7 @@ mod tests {
         order: &[usize],
     ) -> Result<MetalExecutionPlan, RenderGraphError> {
         let format_at = |_: crate::render_graph::ResourceId| Some(ImageFormat::R16G16B16A16Sfloat);
-        MetalExecutionPlan::compile_order(order, |index| passes.get(index), &format_at)
+        MetalExecutionPlan::compile_order(order, |index| passes.get(index), &format_at, &[])
     }
 
     #[test]
@@ -422,6 +484,68 @@ mod tests {
                     stencil: 1,
                 },
             })
+        );
+    }
+
+    #[test]
+    fn classifies_compiled_sync_ops_as_tracked_resource_coverage() {
+        let geometry = pass("geometry", PassType::Graphics, Some(PassKind::Geometry));
+        let tonemap = pass("tonemap", PassType::Graphics, Some(PassKind::Fullscreen));
+        let passes = vec![geometry, tonemap];
+
+        // Attachment→sampled RAW before tonemap, plus a frame-end contract op.
+        let attachment_write = ImageSyncOp {
+            resource: ResourceId(3),
+            range: ImageSubresourceRange::WHOLE_COLOR,
+            before: crate::render_graph::ImageSyncState::Access {
+                usage: ImageUsage::ColorAttachment,
+                stage: ImagePipelineStage::ColorAttachmentOutput,
+                mode: ImageAccessMode::Write,
+            },
+            after: crate::render_graph::ImageSyncState::Access {
+                usage: ImageUsage::Sampled,
+                stage: ImagePipelineStage::FragmentShader,
+                mode: ImageAccessMode::Read,
+            },
+            before_pass: Some(0),
+            pass: 1,
+            reason: crate::render_graph::SyncReason::Hazard(
+                crate::render_graph::ResourceHazardKind::ReadAfterWrite,
+            ),
+        };
+        let frame_end = ImageSyncOp {
+            resource: ResourceId(3),
+            range: ImageSubresourceRange::WHOLE_COLOR,
+            before: attachment_write.after,
+            after: attachment_write.before,
+            before_pass: Some(1),
+            pass: usize::MAX,
+            reason: crate::render_graph::SyncReason::ImportedFinal,
+        };
+
+        let format_at = |_: ResourceId| Some(ImageFormat::R16G16B16A16Sfloat);
+        let plan = MetalExecutionPlan::compile_order(
+            &[0, 1],
+            |index| passes.get(index),
+            &format_at,
+            &[(Some(1), attachment_write), (None, frame_end)],
+        )
+        .unwrap();
+
+        assert_eq!(
+            plan.sync_records(),
+            &[
+                MetalSyncRecord {
+                    pass: Some(1),
+                    resource: ResourceId(3),
+                    coverage: MetalSyncCoverage::TrackedResource,
+                },
+                MetalSyncRecord {
+                    pass: None,
+                    resource: ResourceId(3),
+                    coverage: MetalSyncCoverage::TrackedResource,
+                },
+            ]
         );
     }
 

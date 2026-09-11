@@ -383,7 +383,7 @@ impl<'a> Frame<'a, VulkanRenderer> {
             let pass = &self.graph.passes[index];
             let data = self.pending.remove(&index).unwrap_or_default();
 
-            self.insert_barriers(&cmd, index)?;
+            self.insert_sync_barriers(&cmd, index)?;
 
             match pass.pass_type {
                 super::pass::PassType::Graphics => match pass.kind {
@@ -465,12 +465,12 @@ impl<'a> Frame<'a, VulkanRenderer> {
                 }
             }
 
-            self.insert_post_pass_barriers(&cmd, index)?;
-
             if pass.uses_depth {
                 self.depth_buffer_written = true;
             }
         }
+
+        self.insert_final_sync_barriers(&cmd)?;
 
         Ok(())
     }
