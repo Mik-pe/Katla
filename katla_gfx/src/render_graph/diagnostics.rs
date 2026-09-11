@@ -23,10 +23,10 @@ use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::ResourceId;
 use super::pass::{PassDesc, PassType};
-use super::resource::{GraphResourceDesc, GraphResourceType};
+use super::resource::{GraphResourceDesc, GraphResourceType, ImportedImageContract};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 5;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 6;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -75,6 +75,13 @@ pub struct RenderGraphDiagnosticResourceLifetime {
     pub last_pass: usize,
 }
 
+/// Imported-image initial/final state contract.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticImportedContract {
+    pub initial: String,
+    pub required_final: Option<String>,
+}
+
 /// Resource information resolved from the graph namespace.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RenderGraphDiagnosticResource {
@@ -90,6 +97,8 @@ pub struct RenderGraphDiagnosticResource {
     pub lifetime: Option<RenderGraphDiagnosticResourceLifetime>,
     /// Stable backend-neutral physical allocation slot assigned by the alias planner.
     pub physical_allocation_id: Option<u32>,
+    /// Declared initial/final state contract, present for imported images.
+    pub imported_contract: Option<RenderGraphDiagnosticImportedContract>,
 }
 
 /// Pass type without backend-specific command data.
@@ -263,6 +272,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             &self.resources,
             &self.transient_resources,
             &self.exported_resources,
+            &self.imported_contracts,
             &plan,
         ))
     }
@@ -274,6 +284,7 @@ impl RenderGraphDiagnostics {
         resources: &[GraphResourceDesc],
         transient_resources: &[GraphResourceDesc],
         exported_resources: &BTreeSet<ResourceId>,
+        imported_contracts: &BTreeMap<ResourceId, ImportedImageContract>,
         plan: &ExecutionPlan,
     ) -> Self {
         let transient_by_name = transient_resources
@@ -326,6 +337,14 @@ impl RenderGraphDiagnostics {
                         .map(RenderGraphDiagnosticResourceLifetime::from),
                     physical_allocation_id: allocation_plan
                         .physical_allocation_id(ResourceId(index as u32)),
+                    imported_contract: imported_contracts.get(&ResourceId(index as u32)).map(
+                        |contract| RenderGraphDiagnosticImportedContract {
+                            initial: format!("{:?}", contract.initial),
+                            required_final: contract
+                                .required_final
+                                .map(|state| format!("{state:?}")),
+                        },
+                    ),
                 }
             })
             .collect::<Vec<_>>();
@@ -429,16 +448,31 @@ impl RenderGraphDiagnostics {
                 RenderGraphDiagnosticResourceOrigin::Transient => "transient",
             };
             let exported = if resource.exported { "\\nexported" } else { "" };
+            let contract = resource
+                .imported_contract
+                .as_ref()
+                .map(|contract| {
+                    format!(
+                        "\\ninitial {}, final {}",
+                        contract.initial,
+                        contract
+                            .required_final
+                            .as_deref()
+                            .unwrap_or("unconstrained")
+                    )
+                })
+                .unwrap_or_default();
             let peripheries = if resource.exported { 2 } else { 1 };
             let _ = writeln!(
                 output,
-                "  r{} [shape=ellipse,peripheries={},label=\"{}: {}\\n{}{}\"];",
+                "  r{} [shape=ellipse,peripheries={},label=\"{}: {}\\n{}{}{}\"];",
                 resource.id,
                 peripheries,
                 resource.id,
                 escape_dot(&resource.name),
                 origin,
-                exported
+                exported,
+                contract
             );
         }
 
@@ -533,6 +567,25 @@ impl fmt::Display for RenderGraphDiagnostics {
             self.summary.transient_alias_savings_bytes,
             self.summary.parallel_levels
         )?;
+
+        for resource in self
+            .resources
+            .iter()
+            .filter(|resource| resource.imported_contract.is_some())
+        {
+            let contract = resource.imported_contract.as_ref().expect("filtered above");
+            writeln!(
+                f,
+                "  r{} ({}) imported, initial {}, required final {}",
+                resource.id,
+                resource.name,
+                contract.initial,
+                contract
+                    .required_final
+                    .as_deref()
+                    .unwrap_or("unconstrained")
+            )?;
+        }
 
         for &pass_index in &self.execution_order {
             let pass = &self.passes[pass_index];
@@ -818,6 +871,7 @@ mod tests {
 
     use super::*;
     use crate::render_graph::compiler::GraphCompiler;
+    use crate::render_graph::resource::ResourceState;
     use crate::texture::ImageFormat;
 
     fn namespace_resource(name: &str) -> GraphResourceDesc {
@@ -871,6 +925,7 @@ mod tests {
             &resources,
             &transient_resources,
             &exported_resources,
+            &BTreeMap::new(),
             &plan,
         )
     }
@@ -911,6 +966,7 @@ mod tests {
             &resources,
             &transient_resources,
             &exported_resources,
+            &BTreeMap::new(),
             &plan,
         );
 
@@ -943,7 +999,10 @@ mod tests {
         }
 
         let json: Value = serde_json::from_str(&expected_json).unwrap();
-        assert_eq!(json["schema_version"], 5);
+        assert_eq!(
+            json["schema_version"],
+            RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION
+        );
         assert_eq!(json["execution_order"], serde_json::json!([0, 1, 2, 3]));
         assert_eq!(json["passes"][0]["image_accesses"][0]["mode"], "write");
         assert_eq!(json["passes"][1]["image_accesses"][0]["usage"], "sampled");
@@ -1022,6 +1081,7 @@ mod tests {
             &resources,
             &transient_resources,
             &exported_resources,
+            &BTreeMap::new(),
             &plan,
         );
 
@@ -1089,6 +1149,77 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_expose_imported_state_contracts() {
+        let resources = vec![
+            namespace_resource(BACKBUFFER_NAME),
+            namespace_resource("external"),
+            namespace_resource("color"),
+        ];
+        let transient_resources = vec![transient_resource("color")];
+        let passes = vec![
+            pass("paint", Vec::new(), vec![ResourceId(2)]),
+            pass("present", Vec::new(), vec![ResourceId(0)]),
+        ];
+        let exported_resources = BTreeSet::from([ResourceId(0)]);
+        let imported_contracts = BTreeMap::from([
+            (
+                ResourceId(0),
+                ImportedImageContract::arrives_in(ResourceState::ColorAttachment)
+                    .must_end_in(ResourceState::PresentSrc),
+            ),
+            (
+                ResourceId(1),
+                ImportedImageContract::arrives_in(ResourceState::ShaderRead),
+            ),
+        ]);
+        let plan = GraphCompiler::from_pass_descs_with_exports(
+            &passes,
+            exported_resources.iter().copied(),
+        )
+        .compile()
+        .unwrap();
+        let diagnostics = RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &transient_resources,
+            &exported_resources,
+            &imported_contracts,
+            &plan,
+        );
+
+        assert_eq!(
+            diagnostics.resources[0].imported_contract,
+            Some(RenderGraphDiagnosticImportedContract {
+                initial: "ColorAttachment".to_string(),
+                required_final: Some("PresentSrc".to_string()),
+            })
+        );
+        assert_eq!(
+            diagnostics.resources[1].imported_contract,
+            Some(RenderGraphDiagnosticImportedContract {
+                initial: "ShaderRead".to_string(),
+                required_final: None,
+            })
+        );
+        assert_eq!(diagnostics.resources[2].imported_contract, None);
+
+        let json = serde_json::to_value(&diagnostics).unwrap();
+        assert_eq!(
+            json["resources"][0]["imported_contract"]["required_final"],
+            "PresentSrc"
+        );
+
+        let text = diagnostics.to_string();
+        assert!(text.contains("r0 (backbuffer) imported, initial ColorAttachment"));
+        assert!(text.contains("required final PresentSrc"));
+        assert!(text.contains("r1 (external) imported, initial ShaderRead"));
+        assert!(text.contains("required final unconstrained"));
+
+        let dot = diagnostics.to_dot();
+        assert!(dot.contains("initial ColorAttachment, final PresentSrc"));
+    }
+
+    #[test]
     fn diagnostics_expose_live_culled_exported_and_side_effect_state() {
         let resources = vec![
             namespace_resource(BACKBUFFER_NAME),
@@ -1119,6 +1250,7 @@ mod tests {
             &resources,
             &transient_resources,
             &exported_resources,
+            &BTreeMap::new(),
             &plan,
         );
 
@@ -1156,8 +1288,14 @@ mod tests {
         let plan = GraphCompiler::from_pass_descs_with_exports(&passes, [])
             .compile()
             .unwrap();
-        let diagnostics =
-            RenderGraphDiagnostics::from_parts(&passes, &resources, &[], &BTreeSet::new(), &plan);
+        let diagnostics = RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &[],
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &plan,
+        );
         let label = "read_write Storage @ AllGraphics, depth|stencil, mips 2+3, layers 4+5";
         let text = diagnostics.to_string();
         assert_eq!(text.matches(label).count(), 2);

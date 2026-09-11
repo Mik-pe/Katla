@@ -2,11 +2,14 @@
 //!
 //! Post-processing, lighting, and compute-like work.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::handle::PipelineHandle;
 use crate::texture::ImageFormat;
 
+use super::super::access::{
+    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
 use super::super::resource::GraphResourceHandle;
@@ -150,6 +153,31 @@ impl PassBuilder for FullscreenPass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes: Vec<String> = self.writes.iter().map(|(n, _)| n.clone()).collect();
 
+        // Hand-declared typed accesses: inputs are sampled, outputs are
+        // color attachment writes.
+        let image_accesses = self
+            .reads
+            .iter()
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Read,
+                    ImageUsage::Sampled,
+                    ImagePipelineStage::FragmentShader,
+                    ImageAccess::WHOLE_RESOURCE,
+                )
+            })
+            .chain(self.writes.iter().map(|(name, _)| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Write,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            }))
+            .collect();
+
         // Fullscreen draws cover the whole target, but the historical canvas
         // clear is preserved: the first writer leaves [0.1, 0.1, 0.1, 1.0]
         // where nothing was drawn.
@@ -158,7 +186,7 @@ impl PassBuilder for FullscreenPass {
             pass_type: PassType::Graphics,
             reads: self.reads.clone(),
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: self.pipeline,
             tonemap_params: self.tonemap_params,
             overlay_params: None,
@@ -245,13 +273,40 @@ impl PassBuilder for OverlayPass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes: Vec<String> = self.writes.iter().map(|(n, _)| n.clone()).collect();
 
+        // Hand-declared typed accesses: the overlay blends into its target
+        // (read-write color attachment); extra reads are sampled.
+        let write_set = writes.iter().cloned().collect::<HashSet<_>>();
+        let image_accesses = self
+            .reads
+            .iter()
+            .filter(|name| !write_set.contains(*name))
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Read,
+                    ImageUsage::Sampled,
+                    ImagePipelineStage::FragmentShader,
+                    ImageAccess::WHOLE_RESOURCE,
+                )
+            })
+            .chain(self.writes.iter().map(|(name, _)| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::ReadWrite,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            }))
+            .collect();
+
         // The overlay composites over the tonemapped contents of its target.
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
             reads: self.reads.clone(),
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: self.pipeline,
             tonemap_params: None,
             material: None,
@@ -302,6 +357,75 @@ mod tests {
 
         let result = (builder.build_fn)(&resource_map);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn fullscreen_pass_declares_typed_accesses() {
+        use crate::render_graph::access::{
+            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+            NamedImageAccess,
+        };
+
+        let builder = FullscreenPass::new("tonemap")
+            .read("hdr_color")
+            .write("viewport_0", ImageFormat::B8G8R8A8Srgb)
+            .as_builder();
+
+        assert_eq!(
+            builder.image_accesses,
+            vec![
+                NamedImageAccess {
+                    resource: "hdr_color".to_string(),
+                    mode: ImageAccessMode::Read,
+                    usage: ImageUsage::Sampled,
+                    stage: ImagePipelineStage::FragmentShader,
+                    range: ImageAccess::WHOLE_RESOURCE,
+                },
+                NamedImageAccess {
+                    resource: "viewport_0".to_string(),
+                    mode: ImageAccessMode::Write,
+                    usage: ImageUsage::ColorAttachment,
+                    stage: ImagePipelineStage::ColorAttachmentOutput,
+                    range: ImageSubresourceRange::WHOLE_COLOR,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn overlay_pass_declares_a_read_write_access_for_its_target() {
+        use crate::render_graph::access::{
+            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+            NamedImageAccess,
+        };
+
+        let builder = OverlayPass::new("overlay")
+            .read("viewport_0")
+            .read("stencil_indicator")
+            .write("viewport_0", ImageFormat::B8G8R8A8Srgb)
+            .as_builder();
+
+        // The overlay target is declared once as a read-write attachment;
+        // its extra input stays a sampled read.
+        assert_eq!(
+            builder.image_accesses,
+            vec![
+                NamedImageAccess {
+                    resource: "stencil_indicator".to_string(),
+                    mode: ImageAccessMode::Read,
+                    usage: ImageUsage::Sampled,
+                    stage: ImagePipelineStage::FragmentShader,
+                    range: ImageAccess::WHOLE_RESOURCE,
+                },
+                NamedImageAccess {
+                    resource: "viewport_0".to_string(),
+                    mode: ImageAccessMode::ReadWrite,
+                    usage: ImageUsage::ColorAttachment,
+                    stage: ImagePipelineStage::ColorAttachmentOutput,
+                    range: ImageSubresourceRange::WHOLE_COLOR,
+                },
+            ]
+        );
     }
 
     #[test]

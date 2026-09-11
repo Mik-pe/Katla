@@ -3,6 +3,9 @@
 //! Renders each mesh with a flat color encoding its instance index into a R32Uint texture.
 //! Used for GPU-based entity picking via pixel readback.
 
+use super::super::access::{
+    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
 use crate::render_pass::{
@@ -74,12 +77,37 @@ impl PassBuilder for ObjectIdPass {
             stencil: AttachmentOps::dont_care(),
         });
 
+        // Hand-declared typed accesses: object-ID outputs are color
+        // attachment writes; reads (scene depth) are depth-stencil reads.
+        let image_accesses = self
+            .reads
+            .iter()
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Read,
+                    ImageUsage::DepthStencilAttachment,
+                    ImagePipelineStage::DepthStencil,
+                    ImageSubresourceRange::WHOLE_DEPTH,
+                )
+            })
+            .chain(self.writes.iter().map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Write,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            }))
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
             reads: self.reads,
             writes: self.writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,

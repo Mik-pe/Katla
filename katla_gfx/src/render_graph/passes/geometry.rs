@@ -3,6 +3,9 @@
 //! Renders 3D geometry with color outputs. Depth is handled automatically
 //! using the global depth buffer.
 
+use crate::render_graph::access::{
+    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_pass::{AttachmentOps, ClearValue, DepthStencilAttachmentOps, LoadOp};
@@ -195,6 +198,36 @@ impl PassBuilder for GeometryPass {
             .map(|o| (o.name.clone(), o.ops))
             .collect();
 
+        // Hand-declared typed accesses: every color output is an attachment
+        // (read-write when its contents are loaded), every other read is a
+        // sampled access.
+        let image_accesses = self
+            .reads
+            .iter()
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Read,
+                    ImageUsage::Sampled,
+                    ImagePipelineStage::FragmentShader,
+                    ImageAccess::WHOLE_RESOURCE,
+                )
+            })
+            .chain(self.color_outputs.iter().map(|output| {
+                super::named_image_access(
+                    output.name.clone(),
+                    if output.ops.load == LoadOp::Load {
+                        ImageAccessMode::ReadWrite
+                    } else {
+                        ImageAccessMode::Write
+                    },
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            }))
+            .collect();
+
         // Extract output format from first color attachment (for material format inference).
         //
         // Note: When using `ImageFormat::Auto` materials with multiple render targets (MRT),
@@ -207,7 +240,7 @@ impl PassBuilder for GeometryPass {
             pass_type: PassType::Graphics,
             reads,
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -279,6 +312,55 @@ mod tests {
 
         assert_eq!(builder.reads, vec!["color"]);
         assert_eq!(builder.writes, vec!["color"]);
+    }
+
+    #[test]
+    fn geometry_pass_declares_typed_accesses() {
+        use crate::render_graph::access::{
+            ImageAccessMode, ImageAspects, ImageUsage, NamedImageAccess,
+        };
+
+        let builder = GeometryPass::new("geometry")
+            .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+            .write_color_ops(
+                "blended",
+                ImageFormat::R16G16B16A16Sfloat,
+                AttachmentOps::load(),
+            )
+            .read("shadow_atlas")
+            .as_builder();
+
+        assert_eq!(
+            builder.image_accesses,
+            vec![
+                NamedImageAccess {
+                    resource: "shadow_atlas".to_string(),
+                    mode: ImageAccessMode::Read,
+                    usage: ImageUsage::Sampled,
+                    stage: crate::render_graph::access::ImagePipelineStage::FragmentShader,
+                    range: ImageAccess::WHOLE_RESOURCE,
+                },
+                NamedImageAccess {
+                    resource: "color".to_string(),
+                    mode: ImageAccessMode::Write,
+                    usage: ImageUsage::ColorAttachment,
+                    stage: crate::render_graph::access::ImagePipelineStage::ColorAttachmentOutput,
+                    range: ImageSubresourceRange::WHOLE_COLOR,
+                },
+                NamedImageAccess {
+                    resource: "blended".to_string(),
+                    mode: ImageAccessMode::ReadWrite,
+                    usage: ImageUsage::ColorAttachment,
+                    stage: crate::render_graph::access::ImagePipelineStage::ColorAttachmentOutput,
+                    range: ImageSubresourceRange::WHOLE_COLOR,
+                },
+            ]
+        );
+        assert_eq!(
+            builder.image_accesses[0].range.aspects,
+            ImageAspects::ALL,
+            "generic sampled reads must cover every aspect: sampling a depth atlas hazards against the depth write"
+        );
     }
 
     #[test]

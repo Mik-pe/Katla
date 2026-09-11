@@ -1,3 +1,6 @@
+use super::super::access::{
+    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
 use crate::render_pass::{AttachmentOps, ClearValue, DepthStencilAttachmentOps, LoadOp, StoreOp};
@@ -39,12 +42,28 @@ impl PassBuilder for OutlinePass {
             .map(|name| (name.clone(), AttachmentOps::load()))
             .collect();
 
+        // Hand-declared typed accesses: outline shells blend into the HDR
+        // target they load.
+        let image_accesses = self
+            .writes
+            .iter()
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::ReadWrite,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            })
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
             reads,
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -105,12 +124,28 @@ impl PassBuilder for StencilIndicatorPass {
             .map(|name| (name.clone(), AttachmentOps::clear(ClearValue::OPAQUE_BLACK)))
             .collect();
 
+        // Hand-declared typed accesses: the indicator mask is a fresh color
+        // attachment write each frame.
+        let image_accesses = self
+            .writes
+            .iter()
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Write,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            })
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
             reads: Vec::new(),
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
