@@ -669,7 +669,7 @@ fn test_contract_declared_load_extends_and_clear_replaces() {
             texture_index: scene.white_slot,
             clip_rect: [0.0, 0.0, 64.0, 48.0],
         });
-        ui.commands = vec![UiDrawCommand::instanced(0, 1, None, scene.white)];
+        ui.commands = vec![UiDrawCommand::instanced(0, 1, None)];
         ui
     };
 

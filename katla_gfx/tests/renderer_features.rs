@@ -318,10 +318,6 @@ impl GpuRenderer for MockRenderer {
         self.record("set_viewport_bindless_slot");
     }
 
-    fn set_ui_material(&mut self, _material: MaterialHandle) {
-        self.record("set_ui_material");
-    }
-
     fn render_ui_pass(&mut self, _draw_list: UIDrawList) {
         self.record("render_ui_pass");
     }
@@ -394,7 +390,6 @@ fn test_required_operations_reach_explicit_implementations() {
     renderer.update_shadows([0.0, 1.0, 0.0]);
     renderer.upload_shadow_cascades();
     renderer.set_viewport_bindless_slot(3);
-    renderer.set_ui_material(MaterialHandle::from_raw(0, 0));
     renderer.render_ui_pass(UIDrawList::default());
     renderer.set_viewport_panel_rect(None);
     renderer.recreate_scene_render_targets(64, 48);
@@ -408,7 +403,6 @@ fn test_required_operations_reach_explicit_implementations() {
         "update_shadows",
         "upload_shadow_cascades",
         "set_viewport_bindless_slot",
-        "set_ui_material",
         "render_ui_pass",
         "set_viewport_panel_rect",
         "recreate_scene_render_targets",

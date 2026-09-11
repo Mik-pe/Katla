@@ -28,7 +28,7 @@ fn ui_quad(texture: katla_gfx::TextureHandle, slot: u32, color: [u8; 4]) -> UIDr
         texture_index: slot,
         clip_rect: [0.0, 0.0, 64.0, 48.0],
     });
-    ui.commands = vec![UiDrawCommand::instanced(0, 1, None, texture)];
+    ui.commands = vec![UiDrawCommand::instanced(0, 1, None)];
     ui
 }
 
