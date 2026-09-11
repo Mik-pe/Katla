@@ -18,8 +18,8 @@ use std::sync::{Arc, Mutex};
 use katla_gfx::render_graph::{FrameGraph, FrameGraphBuilder, GeometryPass};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::{
-    FrameUniforms, MaterialHandle, MaterialOptions, MeshHandle, PrimitiveTopology, ValidationMode,
-    VertexType, VulkanRenderer,
+    FrameUniforms, GpuRenderer, MaterialHandle, MeshHandle, PipelineDescriptor, PrimitiveTopology,
+    ValidationMode, VulkanRenderer,
 };
 
 const WIDTH: u32 = 64;
@@ -66,17 +66,9 @@ fn uniforms() -> FrameUniforms {
 
 fn compile_ui_material(renderer: &mut VulkanRenderer) -> MaterialHandle {
     renderer
-        .compile_material(
-            shaders().join("ui/ui.wgsl"),
-            MaterialOptions {
-                vertex_type: VertexType::Ui,
-                color_format: ImageFormat::B8G8R8A8Srgb,
-                depth_test: false,
-                alpha_blended: true,
-                double_sided: true,
-                ..Default::default()
-            },
-        )
+        .compile_material(&PipelineDescriptor::ui(
+            shaders().join("ui/ui.wgsl").to_string_lossy().into_owned(),
+        ))
         .unwrap()
 }
 

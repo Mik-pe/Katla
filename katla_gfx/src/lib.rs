@@ -13,6 +13,15 @@
 //! Use [`AnyRenderer`] for runtime backend selection, or use `VulkanRenderer` /
 //! `MetalRenderer` directly for compile-time backend commitment.
 //!
+//! # Portable API vs Native Escape Hatches
+//!
+//! The crate root is the portable API: descriptors, handles, the
+//! [`GpuRenderer`] trait, and the render graph build and run identically on
+//! both backends. Native access is confined to explicitly named escape
+//! hatches — [`VulkanRenderer`] / [`MetalRenderer`], [`VulkanContext`], and
+//! the `vulkan_native` module (validation feature) — each of which commits
+//! the caller to one backend and its native object model.
+//!
 //! # Getting Started
 //!
 //! ## Creating the Renderer
@@ -40,14 +49,12 @@
 //! See [`material::API`](material/API.html) for complete material creation guide.
 //!
 //! ```ignore
-//! // Via GpuRenderer trait (backend-agnostic)
-//! let material = renderer.compile_material("shaders/pbr.wgsl", "pbr")?;
+//! use katla_gfx::{GpuRenderer, PipelineDescriptor};
 //!
-//! // Vulkan-specific options (bypasses trait)
-//! let material = vulkan_renderer.compile_material(
-//!     "shaders/pbr.wgsl",
-//!     MaterialOptions { vertex_type: VertexType::Pbr, ..Default::default() },
-//! )?;
+//! // Via GpuRenderer trait (backend-agnostic)
+//! let descriptor = PipelineDescriptor::pbr("shaders/pbr.wgsl")
+//!     .with_color_format(ImageFormat::R16G16B16A16Sfloat);
+//! let material = renderer.compile_material(&descriptor)?;
 //! ```
 //!
 //! ## Building Frame Graphs
@@ -127,12 +134,11 @@
 //! ## Material System
 //!
 //! - [`GpuRenderer::compile_material()`] - Create materials from shaders (backend-agnostic)
-//! - [`MaterialOptions`] - Configure material properties (Vulkan-specific)
-//! - [`VertexType`] - Select vertex format (PBR, UI, Skinned, Simple)
+//! - [`PipelineDescriptor`] - Portable material/pipeline state (blend, depth, layout, format)
 //!
 //! ## Frame Graph
 //!
-//! - [`FrameGraph`] - Compiled render pipeline
+//! - [`AnyFrameGraph`] - Compiled render pipeline (runtime backend dispatch)
 //! - [`FrameGraphBuilder`] - Builder for creating frame graphs
 //! - [`GeometryPass`] - 3D geometry rendering
 //! - [`FullscreenPass`] - Post-processing effects
@@ -149,7 +155,9 @@
 //! The library is organized into:
 //!
 //! - **Public API** - [`renderer`], [`render_graph`], [`material`], [`texture`]
-//! - **Backends** - `vulkan` (Vulkan via ash), `metal` (Metal via objc2-metal, macOS only)
+//! - **Backends** - `vulkan` and `metal` are internal; native Vulkan types are
+//!   reachable only through [`vulkan_native`] (validation feature) and the
+//!   explicitly named [`VulkanRenderer`] / [`MetalRenderer`] / [`VulkanContext`]
 //! - **Internal** - `pipeline`, `sync`, `animation`, `shadow`, `lighting` (implementation details)
 //!
 //! # Resource Handles
@@ -175,8 +183,7 @@ pub mod vertex;
 pub(crate) mod backend;
 pub(crate) mod pipeline;
 
-// Re-export pipeline state types for validation examples
-#[cfg(feature = "validation")]
+// Portable pipeline-state vocabulary (PipelineDescriptor field types)
 pub use pipeline::{CompareOp, CullMode, FrontFace};
 
 // Primitive mesh generators — use primitives::create_cube() etc. for backend-agnostic mesh creation
@@ -225,28 +232,21 @@ pub(crate) mod viewport;
 // Re-export viewport types (backend-agnostic)
 pub use viewport::{DepthFormat, OutputMode, Viewport, ViewportBuilder, ViewportHandle};
 
-// Re-export ShaderCache for examples and tests
+// Explicit Vulkan-native escape hatch for validation examples and tools.
+//
+// Everything in this module commits to the Vulkan backend and to the native
+// ash object model: command buffers are valid only within their recording
+// scope, and pipelines/shader caches own GPU objects freed by their `Drop`.
+// The portable API lives at the crate root; this module is not covered by
+// cross-backend guarantees.
 #[cfg(feature = "validation")]
-pub use vulkan::material::shadermodule::ShaderCache;
-
-// Re-export compute pipeline types for external compute dispatch
-pub use vulkan::material::compute_pipeline::{
-    ComputePipeline, ComputePipelineBuilder, ComputePipelineError,
-};
-
-// Re-export pipeline builder and types for validation examples
-#[cfg(feature = "validation")]
-pub use vulkan::material::builder::Pipeline;
-#[cfg(feature = "validation")]
-pub use vulkan::material::builder::PipelineBuilder;
-#[cfg(feature = "validation")]
-pub use vulkan::vertexbinding::VertexFormat;
-
-// Re-export for validation examples and advanced compute usage
-#[cfg(feature = "validation")]
-pub use vulkan::commandbuffer::CommandBuffer;
-#[cfg(feature = "validation")]
-pub use vulkan::pipeline_state::ShaderStages;
+pub mod vulkan_native {
+    pub use crate::vulkan::commandbuffer::CommandBuffer;
+    pub use crate::vulkan::material::builder::{Pipeline, PipelineBuilder};
+    pub use crate::vulkan::material::compute_pipeline::{ComputePipeline, ComputePipelineBuilder};
+    pub use crate::vulkan::material::shadermodule::ShaderCache;
+    pub use crate::vulkan::vertexbinding::VertexFormat;
+}
 
 // Size type (Katla-native)
 mod size;
@@ -269,9 +269,6 @@ pub use handle::{
 
 // Material system
 pub use material::MaterialDomain;
-
-// Material creation API (used by application layer)
-pub use vulkan::material::compiler::{MaterialOptions, VertexType};
 
 // Texture management
 pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};
@@ -311,7 +308,7 @@ pub use backend::command::IndexType;
 
 // Renderer (Vulkan-specific)
 pub use renderer::VulkanRenderer;
-pub use vulkan::retirement::RetirementSnapshot;
+pub use renderer::retirement::RetirementSnapshot;
 
 // Renderer (Metal-specific)
 #[cfg(target_os = "macos")]
@@ -320,7 +317,7 @@ pub use metal::metal_renderer::MetalRenderer;
 // Backend-agnostic renderer trait
 pub use renderer::features::RendererFeature;
 pub use renderer::gpu_renderer::GpuRenderer;
-pub use renderer::pipeline_descriptor::{BlendMode, PipelineDescriptor};
+pub use renderer::pipeline_descriptor::{BlendMode, DepthState, PipelineDescriptor};
 pub use renderer::pipeline_kind::PipelineKind;
 
 // Enum-based renderer dispatch (both backends)
@@ -343,15 +340,12 @@ pub use particles::particle_drive::ParticleEmitterDriver;
 
 // Render graph system — pass types and descriptors are backend-agnostic
 pub use render_graph::Frame;
-pub use render_graph::descriptor_sets::CompositingDescriptorSet;
+pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 pub use render_graph::{
     FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType, OutlinePass, OverlayParams,
     OverlayPass, ParticlePass, RenderGraphError, ShadowPass, StencilIndicatorPass, TonemapOperator,
     TonemapParams,
 };
-/// Vulkan-specific frame graph type.
-pub type FrameGraph = render_graph::FrameGraph<renderer::VulkanRenderer>;
-pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 
 /// Low-level Vulkan context - an escape hatch for advanced Vulkan-specific use cases.
 ///
@@ -383,7 +377,7 @@ pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 /// you can use the low-level Vulkan context:
 ///
 /// ```ignore
-/// use katla_gfx::{VulkanContext, MaterialOptions, VertexType};
+/// use katla_gfx::VulkanContext;
 /// use ash::vk;
 ///
 /// // Get the context (escape hatch)

@@ -125,7 +125,7 @@ impl ViewportRect {
 ///
 /// # Features
 ///
-/// - Up to 8 simultaneous viewports (limited by CompositingDescriptorSet)
+/// - Up to 8 simultaneous viewports (limited by the compositing descriptor set)
 /// - Per-viewport positioning via rectangles
 /// - Alpha blending for overlapping viewports
 /// - Writes to backbuffer or transient texture

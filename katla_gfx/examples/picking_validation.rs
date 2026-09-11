@@ -18,7 +18,8 @@
 
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
-use katla_gfx::{ShaderCache, ValidationMode, VulkanContext};
+use katla_gfx::vulkan_native::ShaderCache;
+use katla_gfx::{ValidationMode, VulkanContext};
 use std::ffi::CString;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -42,7 +43,7 @@ fn find_shader_directory() -> PathBuf {
 
 fn submit_and_wait(
     context: &VulkanContext,
-    cmd_buf: &katla_gfx::CommandBuffer,
+    cmd_buf: &katla_gfx::vulkan_native::CommandBuffer,
 ) -> Result<(), String> {
     let cmd = cmd_buf.vk_command_buffer();
     let fence = unsafe {
