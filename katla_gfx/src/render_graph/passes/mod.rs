@@ -29,6 +29,33 @@
 //!
 //! Each pass template uses string-based resource names for convenience.
 //! Names are resolved to handles at graph build time with zero runtime overhead.
+//!
+//! Templates hand-declare their typed image accesses; the coarse read/write
+//! sets are derived from them at graph build.
+
+use crate::render_graph::access::{
+    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage, NamedImageAccess,
+};
+
+/// Declare one typed image access by resource name.
+///
+/// The builder-level counterpart of the typed `ImageAccess` constructors: the
+/// name is resolved to a `ResourceId` when the frame graph is built.
+pub(crate) fn named_image_access(
+    resource: impl Into<String>,
+    mode: ImageAccessMode,
+    usage: ImageUsage,
+    stage: ImagePipelineStage,
+    range: ImageSubresourceRange,
+) -> NamedImageAccess {
+    NamedImageAccess {
+        resource: resource.into(),
+        mode,
+        usage,
+        stage,
+        range,
+    }
+}
 
 mod composite;
 pub(crate) mod depth_prepass;

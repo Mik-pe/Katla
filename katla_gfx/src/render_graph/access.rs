@@ -328,13 +328,18 @@ impl ImageAccess {
         }
     }
 
+    /// Read an image through a shader sampler.
+    ///
+    /// Sampling reads whichever aspect the target image carries; the graph
+    /// level does not know the image format, so the default range covers
+    /// every aspect. Use [`Self::with_range`] for aspect-precise reads.
     pub const fn sampled_read(resource: ResourceId) -> Self {
         Self::new(
             resource,
             ImageAccessMode::Read,
             ImageUsage::Sampled,
             ImagePipelineStage::FragmentShader,
-            ImageSubresourceRange::WHOLE_COLOR,
+            Self::WHOLE_RESOURCE,
         )
     }
 
@@ -363,6 +368,18 @@ impl ImageAccess {
         Self::new(
             resource,
             ImageAccessMode::Write,
+            ImageUsage::ColorAttachment,
+            ImagePipelineStage::ColorAttachmentOutput,
+            ImageSubresourceRange::WHOLE_COLOR,
+        )
+    }
+
+    /// Blend into or preserve a color attachment: reads the existing contents
+    /// and writes the result (whole color aspect).
+    pub const fn color_attachment_read_write(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ImageAccessMode::ReadWrite,
             ImageUsage::ColorAttachment,
             ImagePipelineStage::ColorAttachmentOutput,
             ImageSubresourceRange::WHOLE_COLOR,

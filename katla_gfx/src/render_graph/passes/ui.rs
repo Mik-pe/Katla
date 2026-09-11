@@ -2,9 +2,12 @@
 //!
 //! Renders 2D UI geometry with alpha blending.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::handle::MaterialHandle;
+use crate::render_graph::access::{
+    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_graph::resource::GraphResourceHandle;
@@ -120,6 +123,34 @@ impl PassBuilder for UIPass {
             }
         }
 
+        // Hand-declared typed accesses: UI composites into its target
+        // (read-write color attachment); declared reads (viewport textures,
+        // font atlases) are sampled.
+        let write_set = writes.iter().cloned().collect::<HashSet<_>>();
+        let image_accesses = self
+            .reads
+            .iter()
+            .filter(|name| !write_set.contains(*name))
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Read,
+                    ImageUsage::Sampled,
+                    ImagePipelineStage::FragmentShader,
+                    ImageAccess::WHOLE_RESOURCE,
+                )
+            })
+            .chain(writes.iter().map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::ReadWrite,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            }))
+            .collect();
+
         // Clone material handle
         let material = self.material;
 
@@ -128,7 +159,7 @@ impl PassBuilder for UIPass {
             pass_type: PassType::Graphics,
             reads,
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -174,6 +205,39 @@ mod tests {
         let builder = UIPass::new("ui").write("backbuffer").as_builder();
         assert_eq!(builder.reads, vec!["backbuffer"]);
         assert_eq!(builder.writes, vec!["backbuffer"]);
+    }
+
+    #[test]
+    fn ui_pass_declares_typed_accesses() {
+        use crate::render_graph::access::{
+            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+            NamedImageAccess,
+        };
+
+        let builder = UIPass::new("ui")
+            .write("backbuffer")
+            .read("viewport_0")
+            .as_builder();
+
+        assert_eq!(
+            builder.image_accesses,
+            vec![
+                NamedImageAccess {
+                    resource: "viewport_0".to_string(),
+                    mode: ImageAccessMode::Read,
+                    usage: ImageUsage::Sampled,
+                    stage: ImagePipelineStage::FragmentShader,
+                    range: ImageAccess::WHOLE_RESOURCE,
+                },
+                NamedImageAccess {
+                    resource: "backbuffer".to_string(),
+                    mode: ImageAccessMode::ReadWrite,
+                    usage: ImageUsage::ColorAttachment,
+                    stage: ImagePipelineStage::ColorAttachmentOutput,
+                    range: ImageSubresourceRange::WHOLE_COLOR,
+                },
+            ]
+        );
     }
 
     #[test]

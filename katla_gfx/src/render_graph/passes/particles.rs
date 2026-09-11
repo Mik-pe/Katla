@@ -1,3 +1,6 @@
+use super::super::access::{
+    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
 use crate::render_pass::{AttachmentOps, ClearValue, DepthStencilAttachmentOps, LoadOp};
@@ -41,12 +44,28 @@ impl PassBuilder for ParticlePass {
             .map(|name| (name.clone(), AttachmentOps::load()))
             .collect();
 
+        // Hand-declared typed accesses: particles blend into the HDR target
+        // they load.
+        let image_accesses = self
+            .writes
+            .iter()
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::ReadWrite,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            })
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
             reads,
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,

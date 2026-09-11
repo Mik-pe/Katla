@@ -78,7 +78,8 @@ pub use diagnostics::{
     RenderGraphDiagnosticDependency, RenderGraphDiagnosticHazard, RenderGraphDiagnosticImageAccess,
     RenderGraphDiagnosticImageAccessMode, RenderGraphDiagnosticImageStage,
     RenderGraphDiagnosticImageSubresourceRange, RenderGraphDiagnosticImageUsage,
-    RenderGraphDiagnosticPass, RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
+    RenderGraphDiagnosticImportedContract, RenderGraphDiagnosticPass,
+    RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
     RenderGraphDiagnosticResourceLifetime, RenderGraphDiagnosticResourceOrigin,
     RenderGraphDiagnosticResourceRef, RenderGraphDiagnosticSummary,
     RenderGraphDiagnosticTransition, RenderGraphDiagnostics, RenderGraphHazardKind,
@@ -96,7 +97,8 @@ pub use passes::{
     UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{
-    GraphResourceDesc, GraphResourceHandle, GraphResourceType, ResourceState, TransientTextureOps,
+    GraphResourceDesc, GraphResourceHandle, GraphResourceType, ImportedImageContract,
+    ResourceState, TransientTextureOps,
 };
 pub use transient_texture::TransientTexture;
 

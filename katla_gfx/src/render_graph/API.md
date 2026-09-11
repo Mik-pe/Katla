@@ -173,8 +173,27 @@ Resources created and managed by the frame graph:
 
 ### Importing External Resources
 
+Imported images declare a state contract: the state the image arrives in
+(`initial`) and, optionally, the state the graph must leave it in
+(`required_final`). Loading an imported image's contents requires a
+non-`Undefined` initial state; a required final state differing from the
+initial one requires a live pass to access the image.
+
 ```rust
-.import_resource("external_texture", texture_handle)
+// use katla_gfx::render_graph::{ImportedImageContract, ResourceState};
+
+.import_resource(
+    "external_texture",
+    texture_handle,
+    ImportedImageContract::arrives_in(ResourceState::ShaderRead),
+)
+
+// The built-in backbuffer arrives with observable contents by default;
+// presenting applications declare the final state:
+.backbuffer_contract(
+    ImportedImageContract::arrives_in(ResourceState::ColorAttachment)
+        .must_end_in(ResourceState::PresentSrc),
+)
 ```
 
 ## Resource Lifecycles

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use super::backend::RenderGraphBackend;
 use super::builder::{InternalPassBuilder, PassBuilder};
@@ -7,10 +7,20 @@ use super::compiler::{ExecutionPlan, GraphCompiler};
 use super::error::{GraphValidationError, RenderGraphError};
 use super::handles::{PassId, ResourceId};
 use super::pass::{PassDesc, PassType};
-use super::resource::{GraphResourceDesc, GraphResourceHandle};
+use super::resource::{
+    GraphResourceDesc, GraphResourceHandle, ImportedImageContract, ResourceState,
+};
 use crate::render_pass::{ClearValue, DepthStencilAttachmentOps, LoadOp};
 
 const BACKBUFFER_NAME: &str = super::BACKBUFFER_NAME;
+
+/// Default state contract for the built-in backbuffer: contents from before
+/// the graph (the previously presented frame) are observable, so a pass may
+/// load them without an in-graph producer. Applications that present the
+/// backbuffer override this with `FrameGraphBuilder::backbuffer_contract` to
+/// also require the final `PresentSrc` state.
+const DEFAULT_BACKBUFFER_CONTRACT: ImportedImageContract =
+    ImportedImageContract::arrives_in(ResourceState::ColorAttachment);
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct PassBarrierCache {
@@ -82,6 +92,10 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// Resources whose final values are externally observable after execution.
     pub(crate) exported_resources: BTreeSet<ResourceId>,
 
+    /// State contracts for imported images (including the backbuffer),
+    /// validated at compile time and consumed by synchronization planning.
+    pub(crate) imported_contracts: BTreeMap<ResourceId, ImportedImageContract>,
+
     /// Whether pass liveness analysis is enabled for this graph.
     pub(crate) pass_culling_enabled: bool,
 
@@ -129,6 +143,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             resource_by_name: HashMap::new(),
             pass_names: HashMap::new(),
             exported_resources: BTreeSet::new(),
+            imported_contracts: BTreeMap::new(),
             pass_culling_enabled: false,
             execution_plan: None,
             compiled: false,
@@ -261,8 +276,37 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
 
         let plan = self.build_execution_plan()?;
         self.validate_attachment_ops(&plan)?;
+        self.validate_imported_state_contracts(&plan)?;
         self.execution_plan = Some(plan);
         self.compiled = true;
+        Ok(())
+    }
+
+    /// Validate imported-image state contracts against the compiled plan.
+    ///
+    /// A required final state is reachable when a live pass accesses the image
+    /// (the backend can always transition after the last access). An image no
+    /// live pass touches never leaves its declared initial state, so a
+    /// required final state differing from it is a structural error.
+    fn validate_imported_state_contracts(
+        &self,
+        plan: &ExecutionPlan,
+    ) -> Result<(), RenderGraphError> {
+        for (&resource, contract) in &self.imported_contracts {
+            let Some(required) = contract.required_final else {
+                continue;
+            };
+            if contract.initial != required
+                && !plan.resource_lifetimes.contains_key(&resource)
+                && let Some(name) = self.resource_name(resource)
+            {
+                return Err(GraphValidationError::UnreachableImportedFinalState {
+                    resource: name.to_string(),
+                    required,
+                }
+                .into());
+            }
+        }
         Ok(())
     }
 
@@ -345,16 +389,28 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
                     }
                     .into());
                 }
-                // Imported resources have external contents; transients must
-                // be produced by an earlier live pass before they can load.
-                let imported =
-                    self.write_target_role(*resource) == WriteTargetRole::ImportedBackbuffer;
-                if ops.load == LoadOp::Load && !imported && !produced.contains(resource) {
-                    return Err(GraphValidationError::LoadingUndefinedAttachment {
-                        pass: pass.name.clone(),
-                        resource: name,
+                // Contents may only be loaded when they are observable: an
+                // earlier live pass produced them, or the image is imported
+                // with a non-Undefined initial state.
+                if ops.load == LoadOp::Load && !produced.contains(resource) {
+                    let imported_contents_observable = self
+                        .imported_contracts
+                        .get(resource)
+                        .is_some_and(|contract| contract.initial != ResourceState::Undefined);
+                    if !imported_contents_observable {
+                        let error = if self.imported_contracts.contains_key(resource) {
+                            GraphValidationError::LoadingUndefinedImportedContents {
+                                pass: pass.name.clone(),
+                                resource: name,
+                            }
+                        } else {
+                            GraphValidationError::LoadingUndefinedAttachment {
+                                pass: pass.name.clone(),
+                                resource: name,
+                            }
+                        };
+                        return Err(error.into());
                     }
-                    .into());
                 }
             }
 
@@ -1052,15 +1108,24 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
     }
 }
 
+/// One imported external image, with its state contract.
+#[derive(Debug, Clone)]
+struct ImportedResource {
+    name: String,
+    handle: GraphResourceHandle,
+    contract: ImportedImageContract,
+}
+
 /// Builder for constructing a frame graph.
 ///
 /// Created by [`VulkanRenderer::create_frame_graph()`].
 /// Provides a fluent API for adding passes before building the executable [`FrameGraph`].
 pub struct FrameGraphBuilder {
     pass_builders: Vec<InternalPassBuilder>,
-    resources: Vec<(String, GraphResourceHandle)>,
+    resources: Vec<ImportedResource>,
     transient_resources: Vec<GraphResourceDesc>,
     exported_resources: BTreeSet<String>,
+    backbuffer_contract: ImportedImageContract,
 }
 
 impl FrameGraphBuilder {
@@ -1071,6 +1136,7 @@ impl FrameGraphBuilder {
             resources: Vec::new(),
             transient_resources: Vec::new(),
             exported_resources: BTreeSet::from([BACKBUFFER_NAME.to_string()]),
+            backbuffer_contract: DEFAULT_BACKBUFFER_CONTRACT,
         }
     }
 
@@ -1100,9 +1166,37 @@ impl FrameGraphBuilder {
         self
     }
 
-    /// Import an external resource into the graph.
-    pub fn import_resource(mut self, name: impl Into<String>, handle: GraphResourceHandle) -> Self {
-        self.resources.push((name.into(), handle));
+    /// Import an external image into the graph with an explicit state contract.
+    ///
+    /// `contract.initial` declares the state the image arrives in; loading its
+    /// contents from a pass requires a non-`Undefined` initial state.
+    /// `contract.required_final` declares the state the graph must leave the
+    /// image in (e.g. `ResourceState::PresentSrc` for an image presented
+    /// after the frame). Use `ImportedImageContract::undefined()` when
+    /// neither side of the contract is observable.
+    pub fn import_resource(
+        mut self,
+        name: impl Into<String>,
+        handle: GraphResourceHandle,
+        contract: ImportedImageContract,
+    ) -> Self {
+        self.resources.push(ImportedResource {
+            name: name.into(),
+            handle,
+            contract,
+        });
+        self
+    }
+
+    /// Override the state contract of the built-in backbuffer.
+    ///
+    /// By default the backbuffer is imported with observable contents (the
+    /// previously presented frame), so passes may load it without an in-graph
+    /// producer. Applications that present the backbuffer declare the final
+    /// state here, e.g.
+    /// `backbuffer_contract(ImportedImageContract::arrives_in(ResourceState::ColorAttachment).must_end_in(ResourceState::PresentSrc))`.
+    pub fn backbuffer_contract(mut self, contract: ImportedImageContract) -> Self {
+        self.backbuffer_contract = contract;
         self
     }
 
@@ -1132,15 +1226,19 @@ impl FrameGraphBuilder {
             }
         }
 
-        for (name, handle) in &self.resources {
-            if name.trim().is_empty() {
+        for resource in &self.resources {
+            if resource.name.trim().is_empty() {
                 return Err(GraphValidationError::EmptyResourceName.into());
             }
-            if handle.is_none() {
-                return Err(GraphValidationError::InvalidImportedResource(name.clone()).into());
+            if resource.handle.is_none() {
+                return Err(
+                    GraphValidationError::InvalidImportedResource(resource.name.clone()).into(),
+                );
             }
-            if !resource_names.insert(name.clone()) {
-                return Err(GraphValidationError::DuplicateResourceName(name.clone()).into());
+            if !resource_names.insert(resource.name.clone()) {
+                return Err(
+                    GraphValidationError::DuplicateResourceName(resource.name.clone()).into(),
+                );
             }
         }
 
@@ -1195,6 +1293,7 @@ impl FrameGraphBuilder {
             resources,
             transient_resources,
             exported_resources,
+            backbuffer_contract,
         } = self;
 
         let transient_names = transient_resources
@@ -1207,20 +1306,24 @@ impl FrameGraphBuilder {
 
         // The swapchain backbuffer is the only built-in resource. Every other
         // name has already been declared or imported by the validated builder.
-        graph.create_resource_id(BACKBUFFER_NAME);
+        let backbuffer_id = graph.create_resource_id(BACKBUFFER_NAME);
+        graph
+            .imported_contracts
+            .insert(backbuffer_id, backbuffer_contract);
         for name in transient_names {
             graph.create_resource_id(name);
         }
-        for (name, _) in &resources {
-            graph.create_resource_id(name.clone());
+        for resource in &resources {
+            let id = graph.create_resource_id(resource.name.clone());
+            graph.imported_contracts.insert(id, resource.contract);
         }
 
         let mut global_resource_map = HashMap::new();
         for (name, &resource_id) in &graph.resource_by_name {
             global_resource_map.insert(name.clone(), GraphResourceHandle::new(resource_id.0));
         }
-        for (name, handle) in &resources {
-            global_resource_map.insert(name.clone(), *handle);
+        for resource in &resources {
+            global_resource_map.insert(resource.name.clone(), resource.handle);
         }
 
         let exported_resource_ids = exported_resources
@@ -1515,7 +1618,11 @@ mod tests {
 
     #[test]
     fn test_frame_graph_builder_with_resources() {
-        let builder = FrameGraphBuilder::new().import_resource("ext", GraphResourceHandle::new(42));
+        let builder = FrameGraphBuilder::new().import_resource(
+            "ext",
+            GraphResourceHandle::new(42),
+            ImportedImageContract::undefined(),
+        );
 
         assert_eq!(builder.resources.len(), 1);
     }
@@ -1555,7 +1662,11 @@ mod tests {
         let error = validation_error(
             FrameGraphBuilder::new()
                 .create_resource(validation_resource("color", 1, 1))
-                .import_resource("color", GraphResourceHandle::new(7)),
+                .import_resource(
+                    "color",
+                    GraphResourceHandle::new(7),
+                    ImportedImageContract::undefined(),
+                ),
         );
         assert_eq!(
             error,
@@ -1567,8 +1678,16 @@ mod tests {
     fn builder_rejects_repeated_imports() {
         let error = validation_error(
             FrameGraphBuilder::new()
-                .import_resource("external", GraphResourceHandle::new(1))
-                .import_resource("external", GraphResourceHandle::new(2)),
+                .import_resource(
+                    "external",
+                    GraphResourceHandle::new(1),
+                    ImportedImageContract::undefined(),
+                )
+                .import_resource(
+                    "external",
+                    GraphResourceHandle::new(2),
+                    ImportedImageContract::undefined(),
+                ),
         );
         assert_eq!(
             error,
@@ -1625,9 +1744,11 @@ mod tests {
             }
         );
         assert_eq!(
-            validation_error(
-                FrameGraphBuilder::new().import_resource("external", GraphResourceHandle::NONE)
-            ),
+            validation_error(FrameGraphBuilder::new().import_resource(
+                "external",
+                GraphResourceHandle::NONE,
+                ImportedImageContract::undefined(),
+            )),
             GraphValidationError::InvalidImportedResource("external".to_string())
         );
     }
@@ -2105,6 +2226,145 @@ mod tests {
             RenderGraphError::Validation(
                 GraphValidationError::MissingResourceNamespaceEntry(resource)
             ) if resource == "orphan"
+        ));
+    }
+
+    // --- Typed template declarations keep cross-aspect hazards ordered (#30) ---
+
+    #[test]
+    fn sampling_a_depth_atlas_orders_after_the_shadow_pass_and_keeps_it_live() {
+        use super::super::passes::{FullscreenPass, GeometryPass, ShadowPass};
+        use crate::GraphResourceType;
+        use crate::ImageFormat;
+        use crate::handle::PipelineHandle;
+
+        // Editor-graph shape: sky produces hdr_color, shadow clears the depth
+        // atlas, geometry loads hdr_color and samples the atlas, tonemap
+        // presents through the exported backbuffer. The sampled read covers
+        // every aspect of the atlas (the graph cannot narrow sampling to the
+        // depth aspect without the image format), so the shadow write and the
+        // geometry read must stay RAW-ordered and liveness must keep the
+        // shadow pass.
+        let graph = FrameGraphBuilder::new()
+            .create_resource(GraphResourceDesc {
+                name: "hdr_color".to_string(),
+                resource_type: GraphResourceType::ColorAttachment {
+                    clear_value: Some([0.0; 4]),
+                },
+                format: ImageFormat::R16G16B16A16Sfloat,
+                width: 64,
+                height: 64,
+                tracks_swapchain_size: false,
+            })
+            .create_resource(GraphResourceDesc {
+                name: "shadow_atlas".to_string(),
+                resource_type: GraphResourceType::DepthAttachment {
+                    clear_value: 1.0,
+                    sampled: true,
+                },
+                format: ImageFormat::D32Sfloat,
+                width: 64,
+                height: 64,
+                tracks_swapchain_size: false,
+            })
+            .add_pass(
+                FullscreenPass::new("sky")
+                    .write("hdr_color", ImageFormat::R16G16B16A16Sfloat)
+                    .pipeline(PipelineHandle::from_raw(0, 0)),
+            )
+            .add_pass(ShadowPass::new("shadow").write_depth("shadow_atlas", ImageFormat::D32Sfloat))
+            .add_pass(
+                GeometryPass::new("geometry")
+                    .write_color_ops(
+                        "hdr_color",
+                        ImageFormat::R16G16B16A16Sfloat,
+                        AttachmentOps::load(),
+                    )
+                    .read("shadow_atlas"),
+            )
+            .add_pass(
+                FullscreenPass::new("tonemap")
+                    .read("hdr_color")
+                    .write_backbuffer()
+                    .pipeline(PipelineHandle::from_raw(0, 0)),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+
+        let plan = graph.build_execution_plan().unwrap();
+        assert!(
+            plan.sorted_passes.contains(&1),
+            "shadow pass must stay live: geometry samples its atlas"
+        );
+        assert!(
+            plan.dag[2].predecessors.contains(&1),
+            "geometry must depend on the shadow pass it samples from"
+        );
+    }
+
+    // --- Imported-image state contracts (#30) ---
+
+    #[test]
+    fn imported_contracts_reject_unreachable_final_states() {
+        let error = validation_error(
+            FrameGraphBuilder::new().import_resource(
+                "external",
+                GraphResourceHandle::new(7),
+                ImportedImageContract::arrives_in(ResourceState::ShaderRead)
+                    .must_end_in(ResourceState::TransferSrc),
+            ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::UnreachableImportedFinalState { resource, required }
+                if resource == "external" && required == ResourceState::TransferSrc
+        ));
+    }
+
+    #[test]
+    fn imported_final_state_is_reachable_when_a_live_pass_accesses_the_image() {
+        FrameGraphBuilder::new()
+            .import_resource(
+                "external",
+                GraphResourceHandle::new(7),
+                ImportedImageContract::arrives_in(ResourceState::ShaderRead)
+                    .must_end_in(ResourceState::TransferSrc),
+            )
+            .add_side_effect_pass(
+                super::super::builder::SimplePass::new("readback", PassType::Compute)
+                    .read("external"),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+    }
+
+    #[test]
+    fn backbuffer_loads_rely_on_the_default_contract_and_undefining_it_fails() {
+        // The default backbuffer contract declares observable contents, so a
+        // UI-only graph may load the backbuffer without an in-graph producer.
+        FrameGraphBuilder::new()
+            .add_pass(
+                super::super::builder::SimplePass::new("overlay", PassType::Graphics)
+                    .write(BACKBUFFER_NAME)
+                    .attachment(BACKBUFFER_NAME, AttachmentOps::load()),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+
+        // Overriding the contract to Undefined removes that guarantee.
+        let error = validation_error(
+            FrameGraphBuilder::new()
+                .backbuffer_contract(ImportedImageContract::undefined())
+                .add_pass(
+                    super::super::builder::SimplePass::new("overlay", PassType::Graphics)
+                        .write(BACKBUFFER_NAME)
+                        .attachment(BACKBUFFER_NAME, AttachmentOps::load()),
+                ),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::LoadingUndefinedImportedContents { pass, resource }
+                if pass == "overlay" && resource == BACKBUFFER_NAME
         ));
     }
 }

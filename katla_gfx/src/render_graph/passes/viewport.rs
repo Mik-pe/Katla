@@ -3,6 +3,9 @@
 //! This module provides a pass template for rendering viewports to transient
 //! textures that can be composited together in a CompositePass.
 
+use crate::render_graph::access::{
+    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
@@ -281,12 +284,40 @@ impl PassBuilder for ViewportPass {
             },
         )];
 
+        // Hand-declared typed accesses: declared reads are sampled; the
+        // viewport target is an attachment (read-write when its contents
+        // are loaded).
+        let image_accesses = self
+            .reads
+            .iter()
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Read,
+                    ImageUsage::Sampled,
+                    ImagePipelineStage::FragmentShader,
+                    ImageAccess::WHOLE_RESOURCE,
+                )
+            })
+            .chain(std::iter::once(super::named_image_access(
+                self.name.clone(),
+                if self.load_op == LoadOp::Load {
+                    ImageAccessMode::ReadWrite
+                } else {
+                    ImageAccessMode::Write
+                },
+                ImageUsage::ColorAttachment,
+                ImagePipelineStage::ColorAttachmentOutput,
+                ImageSubresourceRange::WHOLE_COLOR,
+            )))
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
             reads,
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -369,6 +400,45 @@ mod tests {
         assert_eq!(builder.reads, vec!["viewport_0"]);
         assert_eq!(builder.writes, vec!["viewport_0"]);
         assert_eq!(builder.color_attachments[0].1.load, LoadOp::Load);
+    }
+
+    #[test]
+    fn viewport_pass_declares_typed_accesses() {
+        use crate::render_graph::access::{
+            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+            NamedImageAccess,
+        };
+
+        let cleared = ViewportPass::new("viewport_0")
+            .extent(512, 512)
+            .format(ImageFormat::R16G16B16A16Sfloat)
+            .as_builder();
+        assert_eq!(
+            cleared.image_accesses,
+            vec![NamedImageAccess {
+                resource: "viewport_0".to_string(),
+                mode: ImageAccessMode::Write,
+                usage: ImageUsage::ColorAttachment,
+                stage: ImagePipelineStage::ColorAttachmentOutput,
+                range: ImageSubresourceRange::WHOLE_COLOR,
+            }]
+        );
+
+        let loaded = ViewportPass::new("viewport_0")
+            .extent(512, 512)
+            .format(ImageFormat::R16G16B16A16Sfloat)
+            .load_store_ops(LoadOp::Load, StoreOp::Store)
+            .as_builder();
+        assert_eq!(
+            loaded.image_accesses,
+            vec![NamedImageAccess {
+                resource: "viewport_0".to_string(),
+                mode: ImageAccessMode::ReadWrite,
+                usage: ImageUsage::ColorAttachment,
+                stage: ImagePipelineStage::ColorAttachmentOutput,
+                range: ImageSubresourceRange::WHOLE_COLOR,
+            }]
+        );
     }
 
     #[test]

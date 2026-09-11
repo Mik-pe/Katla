@@ -4,6 +4,9 @@
 //! to a R32Uint texture for GPU-based entity picking.
 //! The depth buffer is then reused by the geometry pass via `LoadOp::Load`.
 
+use super::super::access::{
+    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
 use crate::render_pass::{AttachmentOps, ClearValue};
@@ -58,12 +61,37 @@ impl PassBuilder for DepthPrepass {
             })
             .collect();
 
+        // Hand-declared typed accesses: object-ID outputs are color
+        // attachment writes; declared reads are sampled accesses.
+        let image_accesses = self
+            .reads
+            .iter()
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Read,
+                    ImageUsage::Sampled,
+                    ImagePipelineStage::FragmentShader,
+                    ImageAccess::WHOLE_RESOURCE,
+                )
+            })
+            .chain(writes.iter().map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Write,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            }))
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
             reads: self.reads,
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,

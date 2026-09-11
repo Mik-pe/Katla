@@ -8,6 +8,9 @@ use std::collections::HashMap;
 
 use crate::handle::MaterialHandle;
 use crate::render_graph::BACKBUFFER_NAME;
+use crate::render_graph::access::{
+    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+};
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::pass::{PassKind, PassType};
@@ -301,12 +304,36 @@ impl PassBuilder for CompositePass {
             })
             .collect();
 
+        // Hand-declared typed accesses: viewport textures are sampled, the
+        // composited target is a color attachment write.
+        let image_accesses = viewports
+            .iter()
+            .map(|(name, _)| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Read,
+                    ImageUsage::Sampled,
+                    ImagePipelineStage::FragmentShader,
+                    ImageAccess::WHOLE_RESOURCE,
+                )
+            })
+            .chain(writes.iter().map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ImageAccessMode::Write,
+                    ImageUsage::ColorAttachment,
+                    ImagePipelineStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            }))
+            .collect();
+
         InternalPassBuilder {
             name: self.name,
             pass_type: PassType::Graphics,
             reads,
             writes,
-            image_accesses: Vec::new(),
+            image_accesses,
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
