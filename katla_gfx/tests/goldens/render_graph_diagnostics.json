@@ -1,0 +1,829 @@
+{
+  "schema_version": 8,
+  "summary": {
+    "declared_passes": 4,
+    "live_passes": 4,
+    "culled_passes": 0,
+    "resources": 4,
+    "dependency_edges": 3,
+    "synchronization_transitions": 12,
+    "physical_transient_allocations": 2,
+    "logical_transient_bytes": 98304,
+    "physical_transient_bytes": 65536,
+    "transient_alias_savings_bytes": 32768,
+    "parallel_levels": 4
+  },
+  "resources": [
+    {
+      "id": 0,
+      "name": "backbuffer",
+      "origin": "built_in",
+      "kind": null,
+      "format": null,
+      "width": null,
+      "height": null,
+      "tracks_swapchain_size": null,
+      "exported": true,
+      "lifetime": {
+        "first_execution_position": 3,
+        "first_pass": 3,
+        "last_execution_position": 3,
+        "last_pass": 3
+      },
+      "physical_allocation_id": null,
+      "imported_contract": {
+        "initial": "ColorAttachment",
+        "required_final": "PresentSrc"
+      }
+    },
+    {
+      "id": 1,
+      "name": "shadow_atlas",
+      "origin": "transient",
+      "kind": "color_attachment",
+      "format": "R8G8B8A8Unorm",
+      "width": 128,
+      "height": 64,
+      "tracks_swapchain_size": true,
+      "exported": false,
+      "lifetime": {
+        "first_execution_position": 0,
+        "first_pass": 0,
+        "last_execution_position": 1,
+        "last_pass": 1
+      },
+      "physical_allocation_id": 0,
+      "imported_contract": null
+    },
+    {
+      "id": 2,
+      "name": "gbuffer",
+      "origin": "transient",
+      "kind": "color_attachment",
+      "format": "R8G8B8A8Unorm",
+      "width": 128,
+      "height": 64,
+      "tracks_swapchain_size": true,
+      "exported": false,
+      "lifetime": {
+        "first_execution_position": 1,
+        "first_pass": 1,
+        "last_execution_position": 2,
+        "last_pass": 2
+      },
+      "physical_allocation_id": 1,
+      "imported_contract": null
+    },
+    {
+      "id": 3,
+      "name": "hdr_color",
+      "origin": "transient",
+      "kind": "color_attachment",
+      "format": "R8G8B8A8Unorm",
+      "width": 128,
+      "height": 64,
+      "tracks_swapchain_size": true,
+      "exported": false,
+      "lifetime": {
+        "first_execution_position": 2,
+        "first_pass": 2,
+        "last_execution_position": 3,
+        "last_pass": 3
+      },
+      "physical_allocation_id": 0,
+      "imported_contract": null
+    }
+  ],
+  "passes": [
+    {
+      "index": 0,
+      "name": "shadow",
+      "pass_type": "graphics",
+      "kind": null,
+      "reads": [],
+      "writes": [
+        {
+          "id": 1,
+          "name": "shadow_atlas"
+        }
+      ],
+      "image_accesses": [
+        {
+          "resource": {
+            "id": 1,
+            "name": "shadow_atlas"
+          },
+          "mode": "write",
+          "usage": "storage",
+          "stage": "all_graphics",
+          "range": {
+            "aspects": [
+              "color"
+            ],
+            "base_mip_level": 0,
+            "mip_level_count": 4294967295,
+            "base_array_layer": 0,
+            "array_layer_count": 4294967295
+          }
+        }
+      ],
+      "color_attachments": [],
+      "depth_attachment": null,
+      "predecessors": [],
+      "successors": [
+        1
+      ],
+      "execution_position": 0,
+      "parallel_level": 0,
+      "side_effect": false,
+      "live": true,
+      "culled": false
+    },
+    {
+      "index": 1,
+      "name": "geometry",
+      "pass_type": "graphics",
+      "kind": null,
+      "reads": [
+        {
+          "id": 1,
+          "name": "shadow_atlas"
+        }
+      ],
+      "writes": [
+        {
+          "id": 2,
+          "name": "gbuffer"
+        }
+      ],
+      "image_accesses": [
+        {
+          "resource": {
+            "id": 1,
+            "name": "shadow_atlas"
+          },
+          "mode": "read",
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "range": {
+            "aspects": [
+              "color",
+              "depth",
+              "stencil"
+            ],
+            "base_mip_level": 0,
+            "mip_level_count": 4294967295,
+            "base_array_layer": 0,
+            "array_layer_count": 4294967295
+          }
+        },
+        {
+          "resource": {
+            "id": 2,
+            "name": "gbuffer"
+          },
+          "mode": "write",
+          "usage": "storage",
+          "stage": "all_graphics",
+          "range": {
+            "aspects": [
+              "color"
+            ],
+            "base_mip_level": 0,
+            "mip_level_count": 4294967295,
+            "base_array_layer": 0,
+            "array_layer_count": 4294967295
+          }
+        }
+      ],
+      "color_attachments": [],
+      "depth_attachment": null,
+      "predecessors": [
+        0
+      ],
+      "successors": [
+        2
+      ],
+      "execution_position": 1,
+      "parallel_level": 1,
+      "side_effect": false,
+      "live": true,
+      "culled": false
+    },
+    {
+      "index": 2,
+      "name": "lighting",
+      "pass_type": "graphics",
+      "kind": null,
+      "reads": [
+        {
+          "id": 2,
+          "name": "gbuffer"
+        }
+      ],
+      "writes": [
+        {
+          "id": 3,
+          "name": "hdr_color"
+        }
+      ],
+      "image_accesses": [
+        {
+          "resource": {
+            "id": 2,
+            "name": "gbuffer"
+          },
+          "mode": "read",
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "range": {
+            "aspects": [
+              "color",
+              "depth",
+              "stencil"
+            ],
+            "base_mip_level": 0,
+            "mip_level_count": 4294967295,
+            "base_array_layer": 0,
+            "array_layer_count": 4294967295
+          }
+        },
+        {
+          "resource": {
+            "id": 3,
+            "name": "hdr_color"
+          },
+          "mode": "write",
+          "usage": "storage",
+          "stage": "all_graphics",
+          "range": {
+            "aspects": [
+              "color"
+            ],
+            "base_mip_level": 0,
+            "mip_level_count": 4294967295,
+            "base_array_layer": 0,
+            "array_layer_count": 4294967295
+          }
+        }
+      ],
+      "color_attachments": [],
+      "depth_attachment": null,
+      "predecessors": [
+        1
+      ],
+      "successors": [
+        3
+      ],
+      "execution_position": 2,
+      "parallel_level": 2,
+      "side_effect": false,
+      "live": true,
+      "culled": false
+    },
+    {
+      "index": 3,
+      "name": "present",
+      "pass_type": "graphics",
+      "kind": null,
+      "reads": [
+        {
+          "id": 3,
+          "name": "hdr_color"
+        }
+      ],
+      "writes": [
+        {
+          "id": 0,
+          "name": "backbuffer"
+        }
+      ],
+      "image_accesses": [
+        {
+          "resource": {
+            "id": 0,
+            "name": "backbuffer"
+          },
+          "mode": "write",
+          "usage": "storage",
+          "stage": "all_graphics",
+          "range": {
+            "aspects": [
+              "color"
+            ],
+            "base_mip_level": 0,
+            "mip_level_count": 4294967295,
+            "base_array_layer": 0,
+            "array_layer_count": 4294967295
+          }
+        },
+        {
+          "resource": {
+            "id": 3,
+            "name": "hdr_color"
+          },
+          "mode": "read",
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "range": {
+            "aspects": [
+              "color",
+              "depth",
+              "stencil"
+            ],
+            "base_mip_level": 0,
+            "mip_level_count": 4294967295,
+            "base_array_layer": 0,
+            "array_layer_count": 4294967295
+          }
+        }
+      ],
+      "color_attachments": [],
+      "depth_attachment": null,
+      "predecessors": [
+        2
+      ],
+      "successors": [],
+      "execution_position": 3,
+      "parallel_level": 3,
+      "side_effect": false,
+      "live": true,
+      "culled": false
+    }
+  ],
+  "dependencies": [
+    {
+      "from_pass": 0,
+      "from_name": "shadow",
+      "to_pass": 1,
+      "to_name": "geometry",
+      "hazards": [
+        {
+          "kind": "RAW",
+          "resource": {
+            "id": 1,
+            "name": "shadow_atlas"
+          }
+        }
+      ]
+    },
+    {
+      "from_pass": 1,
+      "from_name": "geometry",
+      "to_pass": 2,
+      "to_name": "lighting",
+      "hazards": [
+        {
+          "kind": "RAW",
+          "resource": {
+            "id": 2,
+            "name": "gbuffer"
+          }
+        }
+      ]
+    },
+    {
+      "from_pass": 2,
+      "from_name": "lighting",
+      "to_pass": 3,
+      "to_name": "present",
+      "hazards": [
+        {
+          "kind": "RAW",
+          "resource": {
+            "id": 3,
+            "name": "hdr_color"
+          }
+        }
+      ]
+    }
+  ],
+  "synchronization": [
+    {
+      "resource": {
+        "id": 1,
+        "name": "shadow_atlas"
+      },
+      "range": {
+        "aspects": [
+          "color"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": null,
+      "before_name": null,
+      "to_pass": 0,
+      "to_name": "shadow",
+      "before_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "storage",
+          "stage": "all_graphics",
+          "mode": "write"
+        }
+      },
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 1,
+        "name": "shadow_atlas"
+      },
+      "range": {
+        "aspects": [
+          "depth",
+          "stencil"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": null,
+      "before_name": null,
+      "to_pass": 1,
+      "to_name": "geometry",
+      "before_state": "Undefined",
+      "after_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 1,
+        "name": "shadow_atlas"
+      },
+      "range": {
+        "aspects": [
+          "color"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": 0,
+      "before_name": "shadow",
+      "to_pass": 1,
+      "to_name": "geometry",
+      "before_state": {
+        "Access": {
+          "usage": "storage",
+          "stage": "all_graphics",
+          "mode": "write"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "hazard": "RAW",
+      "reason": "hazard"
+    },
+    {
+      "resource": {
+        "id": 2,
+        "name": "gbuffer"
+      },
+      "range": {
+        "aspects": [
+          "color"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": null,
+      "before_name": null,
+      "to_pass": 1,
+      "to_name": "geometry",
+      "before_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "storage",
+          "stage": "all_graphics",
+          "mode": "write"
+        }
+      },
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 2,
+        "name": "gbuffer"
+      },
+      "range": {
+        "aspects": [
+          "depth",
+          "stencil"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": null,
+      "before_name": null,
+      "to_pass": 2,
+      "to_name": "lighting",
+      "before_state": "Undefined",
+      "after_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 2,
+        "name": "gbuffer"
+      },
+      "range": {
+        "aspects": [
+          "color"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": 1,
+      "before_name": "geometry",
+      "to_pass": 2,
+      "to_name": "lighting",
+      "before_state": {
+        "Access": {
+          "usage": "storage",
+          "stage": "all_graphics",
+          "mode": "write"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "hazard": "RAW",
+      "reason": "hazard"
+    },
+    {
+      "resource": {
+        "id": 3,
+        "name": "hdr_color"
+      },
+      "range": {
+        "aspects": [
+          "color"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": null,
+      "before_name": null,
+      "to_pass": 2,
+      "to_name": "lighting",
+      "before_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "storage",
+          "stage": "all_graphics",
+          "mode": "write"
+        }
+      },
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 0,
+        "name": "backbuffer"
+      },
+      "range": {
+        "aspects": [
+          "color"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": null,
+      "before_name": null,
+      "to_pass": 3,
+      "to_name": "present",
+      "before_state": {
+        "Access": {
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
+          "mode": "read_write"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "storage",
+          "stage": "all_graphics",
+          "mode": "write"
+        }
+      },
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 3,
+        "name": "hdr_color"
+      },
+      "range": {
+        "aspects": [
+          "depth",
+          "stencil"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": null,
+      "before_name": null,
+      "to_pass": 3,
+      "to_name": "present",
+      "before_state": "Undefined",
+      "after_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 3,
+        "name": "hdr_color"
+      },
+      "range": {
+        "aspects": [
+          "color"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": 2,
+      "before_name": "lighting",
+      "to_pass": 3,
+      "to_name": "present",
+      "before_state": {
+        "Access": {
+          "usage": "storage",
+          "stage": "all_graphics",
+          "mode": "write"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "sampled",
+          "stage": "fragment_shader",
+          "mode": "read"
+        }
+      },
+      "hazard": "RAW",
+      "reason": "hazard"
+    },
+    {
+      "resource": {
+        "id": 0,
+        "name": "backbuffer"
+      },
+      "range": {
+        "aspects": [
+          "depth",
+          "stencil"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": null,
+      "before_name": null,
+      "to_pass": null,
+      "to_name": null,
+      "before_state": {
+        "Access": {
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
+          "mode": "read_write"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "present",
+          "stage": "present",
+          "mode": "write"
+        }
+      },
+      "hazard": null,
+      "reason": "imported_final"
+    },
+    {
+      "resource": {
+        "id": 0,
+        "name": "backbuffer"
+      },
+      "range": {
+        "aspects": [
+          "color"
+        ],
+        "base_mip_level": 0,
+        "mip_level_count": 4294967295,
+        "base_array_layer": 0,
+        "array_layer_count": 4294967295
+      },
+      "before_pass": 3,
+      "before_name": "present",
+      "to_pass": null,
+      "to_name": null,
+      "before_state": {
+        "Access": {
+          "usage": "storage",
+          "stage": "all_graphics",
+          "mode": "write"
+        }
+      },
+      "after_state": {
+        "Access": {
+          "usage": "present",
+          "stage": "present",
+          "mode": "write"
+        }
+      },
+      "hazard": null,
+      "reason": "imported_final"
+    }
+  ],
+  "execution_order": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "parallel_groups": [
+    [
+      0
+    ],
+    [
+      1
+    ],
+    [
+      2
+    ],
+    [
+      3
+    ]
+  ]
+}
