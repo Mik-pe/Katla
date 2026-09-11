@@ -70,7 +70,7 @@ fn declared_clear_replaces_and_declared_load_extends_attachments() {
             texture_index: white_slot,
             clip_rect: [0.0, 0.0, 64.0, 48.0],
         });
-        ui.commands = vec![UiDrawCommand::instanced(0, 1, None, white)];
+        ui.commands = vec![UiDrawCommand::instanced(0, 1, None)];
         ui
     };
 

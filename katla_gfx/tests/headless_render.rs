@@ -102,10 +102,10 @@ fn test_headless_render_and_readback_across_frame_slots() {
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
     }
     ui.commands = vec![
-        UiDrawCommand::instanced(0, 1, None, white),
-        UiDrawCommand::vertex(0, 6, None, atlas),
-        UiDrawCommand::instanced(1, 1, Some([36.0, 4.0, 8.0, 16.0]), white),
-        UiDrawCommand::vertex(6, 6, None, white),
+        UiDrawCommand::instanced(0, 1, None),
+        UiDrawCommand::vertex(0, 6, None),
+        UiDrawCommand::instanced(1, 1, Some([36.0, 4.0, 8.0, 16.0])),
+        UiDrawCommand::vertex(6, 6, None),
     ];
     for frame in 0..4 {
         if frame == 2 {

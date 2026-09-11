@@ -9,8 +9,6 @@ use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle};
 use crate::vertex::VertexUI;
 use crate::vertex::VertexUIInstance;
 
-pub use crate::handle::TextureHandle;
-
 /// Frame-level uniforms that are shared across all draw calls.
 ///
 /// These are set once per frame via `renderer.set_frame_uniforms()`.
@@ -542,9 +540,11 @@ pub fn compute_distance_from_camera(model_matrix: &[f32; 16], camera_position: [
 
 /// A single draw command for UI rendering.
 ///
-/// Each command represents a batch of primitives that share the same texture
-/// and clipping rectangle. Commands can be either instanced (for simple quads)
-/// or vertex-based (for complex geometry).
+/// Each command represents a batch of primitives that share the same clipping
+/// rectangle. Commands can be either instanced (for simple quads) or
+/// vertex-based (for complex geometry). Which texture a primitive samples is
+/// carried per instance/vertex in `texture_index`; the command carries no
+/// texture state of its own.
 #[derive(Clone, Debug, Copy)]
 pub struct UiDrawCommand {
     /// Starting offset: index buffer for vertex commands, instance buffer for instanced.
@@ -554,9 +554,6 @@ pub struct UiDrawCommand {
     /// Clipping rectangle in pixels: [x, y, width, height].
     /// None = no clipping (draw to full screen).
     pub clip_rect: Option<[f32; 4]>,
-    /// Texture handle for this batch.
-    /// Use `TextureHandle::NONE` for solid color rendering (no texture).
-    pub texture: TextureHandle,
     /// Whether this is an instanced draw command.
     pub is_instanced: bool,
 }
@@ -567,29 +564,21 @@ impl UiDrawCommand {
         instance_start: u32,
         instance_count: u32,
         clip_rect: Option<[f32; 4]>,
-        texture: TextureHandle,
     ) -> Self {
         Self {
             offset: instance_start,
             count: instance_count,
             clip_rect,
-            texture,
             is_instanced: true,
         }
     }
 
     /// Create a new vertex-based UI draw command.
-    pub fn vertex(
-        index_offset: u32,
-        index_count: u32,
-        clip_rect: Option<[f32; 4]>,
-        texture: TextureHandle,
-    ) -> Self {
+    pub fn vertex(index_offset: u32, index_count: u32, clip_rect: Option<[f32; 4]>) -> Self {
         Self {
             offset: index_offset,
             count: index_count,
             clip_rect,
-            texture,
             is_instanced: false,
         }
     }
