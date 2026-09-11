@@ -13,7 +13,7 @@ use std::ffi::CString;
 
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::{
-    GpuRenderer, MaterialHandle, MaterialOptions, MaterialTextures, ValidationMode, VertexType,
+    GpuRenderer, MaterialHandle, MaterialTextures, PipelineDescriptor, ValidationMode,
     VulkanRenderer,
 };
 
@@ -31,17 +31,9 @@ fn headless_renderer() -> VulkanRenderer {
 fn compile_ui_material(renderer: &mut VulkanRenderer) -> MaterialHandle {
     let shaders = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/shaders");
     renderer
-        .compile_material(
-            shaders.join("ui/ui.wgsl"),
-            MaterialOptions {
-                vertex_type: VertexType::Ui,
-                color_format: ImageFormat::B8G8R8A8Srgb,
-                depth_test: false,
-                alpha_blended: true,
-                double_sided: true,
-                ..Default::default()
-            },
-        )
+        .compile_material(&PipelineDescriptor::ui(
+            shaders.join("ui/ui.wgsl").to_string_lossy().into_owned(),
+        ))
         .unwrap()
 }
 

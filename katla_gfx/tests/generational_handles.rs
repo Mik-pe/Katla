@@ -165,25 +165,16 @@ fn test_skeleton_stale_handle_rejected_after_slot_reuse() {
 #[test]
 #[ignore = "requires a Vulkan device"]
 fn test_material_stale_handle_rejected_after_slot_reuse() {
-    use katla_gfx::texture::ImageFormat;
-    use katla_gfx::{MaterialOptions, VertexType};
+    use katla_gfx::{GpuRenderer, PipelineDescriptor};
 
     let mut renderer = headless_renderer();
     let shaders = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/shaders");
 
     let compile = |renderer: &mut VulkanRenderer| {
         renderer
-            .compile_material(
-                shaders.join("ui/ui.wgsl"),
-                MaterialOptions {
-                    vertex_type: VertexType::Ui,
-                    color_format: ImageFormat::B8G8R8A8Srgb,
-                    depth_test: false,
-                    alpha_blended: true,
-                    double_sided: true,
-                    ..Default::default()
-                },
-            )
+            .compile_material(&PipelineDescriptor::ui(
+                shaders.join("ui/ui.wgsl").to_string_lossy().into_owned(),
+            ))
             .unwrap()
     };
 

@@ -39,7 +39,7 @@ pub(crate) enum MaterialType {
 
 /// Vertex type presets.
 #[derive(Clone, Copy, Debug)]
-pub enum VertexType {
+pub(crate) enum VertexType {
     Pbr,
     Ui,
     Simple,
@@ -48,12 +48,12 @@ pub enum VertexType {
 
 /// Options for material creation.
 ///
-/// Vulkan-side compilation inputs. Public callers should build a
-/// backend-neutral [`PipelineDescriptor`](crate::renderer::pipeline_descriptor::PipelineDescriptor)
+/// Vulkan-side compilation inputs. Callers build a backend-neutral
+/// [`PipelineDescriptor`](crate::renderer::pipeline_descriptor::PipelineDescriptor)
 /// and call [`GpuRenderer::compile_material`](crate::renderer::GpuRenderer::compile_material);
 /// the trait implementation maps it onto these options.
 #[derive(Clone, Debug)]
-pub struct MaterialOptions {
+pub(crate) struct MaterialOptions {
     pub alpha_blended: bool,
     pub double_sided: bool,
     pub wireframe: bool,

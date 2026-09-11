@@ -24,10 +24,10 @@ use std::rc::Rc;
 use ash::vk;
 use log::info;
 
-use crate::ComputePipelineBuilder;
 use crate::renderer::{AssetRegistry, PipelineHandle};
 use crate::sync::{VkBuffer, VkDescriptorSetLayout};
 use crate::vulkan::context::VulkanContext;
+use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
 /// A descriptor binding specification for a compute pass.
 #[derive(Clone, Debug)]

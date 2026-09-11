@@ -192,9 +192,9 @@ impl GpuValidationResources {
         emitter_count: u32,
     ) -> Result<Self, String> {
         use gpu_allocator::vulkan::{AllocationCreateDesc, AllocationScheme};
-        use katla_gfx::ShaderCache;
         use katla_gfx::compute::ComputePass;
         use katla_gfx::sync::VkShaderModule;
+        use katla_gfx::vulkan_native::ShaderCache;
 
         // Validation results buffer (atomic counters, CPU-visible)
         let val_results_info = vk::BufferCreateInfo::default()

@@ -12,7 +12,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use katla_gfx::render_graph::descriptor_sets::CompositingDescriptorSet;
+//! use crate::vulkan::compositing::CompositingDescriptorSet;
 //!
 //! // Create with 2 viewport textures
 //! let textures = vec![viewport0_view, viewport1_view];
@@ -70,8 +70,6 @@ pub struct CompositingDescriptorSet {
     descriptor_set: vk::DescriptorSet,
     /// Device handle for cleanup and updates.
     device: ash::Device,
-    /// Number of currently bound textures (for validation).
-    texture_count: usize,
 }
 
 impl CompositingDescriptorSet {
@@ -197,7 +195,6 @@ impl CompositingDescriptorSet {
             descriptor_layout: VkDescriptorSetLayout::new(descriptor_layout),
             descriptor_set,
             device: context.device.clone(),
-            texture_count: textures.len(),
         };
 
         // Write texture descriptors (this will fill all 8 slots)
@@ -314,7 +311,6 @@ impl CompositingDescriptorSet {
             }
         }
 
-        self.texture_count = textures.len();
         Ok(())
     }
 
@@ -334,36 +330,6 @@ impl CompositingDescriptorSet {
     /// ```
     pub fn vk_set(&self) -> vk::DescriptorSet {
         self.descriptor_set
-    }
-
-    /// Get the descriptor set layout for pipeline creation.
-    ///
-    /// Used when creating pipeline layouts that include the compositing set.
-    ///
-    /// # Example
-    /// ```ignore
-    /// let layouts = [
-    ///     storage_set_layout, // set 0
-    ///     bindless_set_layout, // set 1
-    ///     compositing_set.layout(), // set 2
-    /// ];
-    /// let pipeline_layout = device.create_pipeline_layout(&layouts)?;
-    /// ```
-    pub fn layout(&self) -> vk::DescriptorSetLayout {
-        self.descriptor_layout.vk()
-    }
-
-    /// Get the number of currently bound textures.
-    ///
-    /// Useful for validation and debugging to ensure the expected number
-    /// of viewports are bound.
-    ///
-    /// # Example
-    /// ```ignore
-    /// assert_eq!(compositing_desc.texture_count(), 2);
-    /// ```
-    pub fn texture_count(&self) -> usize {
-        self.texture_count
     }
 }
 

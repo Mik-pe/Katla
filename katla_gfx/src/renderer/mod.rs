@@ -14,6 +14,7 @@ pub mod features;
 pub mod gpu_renderer;
 pub mod pipeline_descriptor;
 pub mod pipeline_kind;
+pub mod retirement;
 
 pub(crate) mod animation_init;
 pub(crate) mod bindless_queries;
@@ -61,6 +62,7 @@ use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 use crate::barrier::ImageBarrier;
 use crate::error::RendererError;
 use crate::handle::{ResourceStorage, SkeletonMarker};
+use crate::renderer::retirement::RetirementSnapshot;
 use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::IndexType;
@@ -72,7 +74,6 @@ use crate::vulkan::material::compiler::MaterialCompiler;
 use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
 use crate::vulkan::retirement::{
     FrameRetirements, RetiredBuffer, RetiredDescriptorSetLayout, RetiredResource, RetirementQueue,
-    RetirementSnapshot,
 };
 use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 use crate::vulkan::swapdata::SwapData;
@@ -318,7 +319,7 @@ impl VulkanRenderer {
     fn create_compositing_descriptor_set_layout(
         device: &ash::Device,
     ) -> Result<vk::DescriptorSetLayout, RendererError> {
-        use crate::render_graph::descriptor_sets::CompositingDescriptorSet;
+        use crate::vulkan::compositing::CompositingDescriptorSet;
         CompositingDescriptorSet::create_layout(device).map_err(|e| {
             error!(
                 "Failed to create compositing descriptor set layout: {:?}",

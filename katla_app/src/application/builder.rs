@@ -453,16 +453,10 @@ impl ApplicationBuilder {
 
         // Compile UI shader for editor UI rendering
         let ui_shader_path = resources.shader_path("ui/ui.wgsl");
+        let ui_descriptor =
+            katla_gfx::PipelineDescriptor::ui(ui_shader_path.to_string_lossy().into_owned());
         let ui_material = renderer
-            .compile_material(
-                ui_shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: katla_gfx::VertexType::Ui,
-                    alpha_blended: true,
-                    double_sided: true,
-                    ..Default::default()
-                },
-            )
+            .compile_material(&ui_descriptor)
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         // Initialize Forward+ light culling system BEFORE compiling PBR materials,
@@ -563,15 +557,10 @@ impl ApplicationBuilder {
         // Compile geometry shader for PBR model rendering
         log::info!("About to compile PBR geometry shader...");
         let geometry_shader_path = resources.shader_path("model_pbr.wgsl");
+        let geometry_descriptor =
+            katla_gfx::PipelineDescriptor::pbr(geometry_shader_path.to_string_lossy().into_owned());
         let geometry_material = renderer
-            .compile_material(
-                geometry_shader_path,
-                katla_gfx::MaterialOptions {
-                    vertex_type: katla_gfx::VertexType::Pbr,
-                    alpha_blended: false,
-                    ..Default::default()
-                },
-            )
+            .compile_material(&geometry_descriptor)
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
         log::info!("PBR geometry shader compiled successfully");

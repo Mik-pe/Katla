@@ -12,7 +12,10 @@ use katla_gfx::render_graph::{FrameGraphBuilder, GeometryPass};
 use katla_gfx::renderer::{DrawCall, DrawList, InstanceData};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::VertexPBR;
-use katla_gfx::{FrameUniforms, MaterialOptions, ValidationMode, VertexType, VulkanRenderer};
+use katla_gfx::{
+    CullMode, DepthState, FrameUniforms, GpuRenderer, PipelineDescriptor, ValidationMode,
+    VulkanRenderer,
+};
 
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
@@ -139,14 +142,15 @@ fn test_instanced_draw_matches_direct_draws() {
         .unwrap();
     let material = renderer
         .compile_material(
-            shaders.join("model_pbr.wgsl"),
-            MaterialOptions {
-                vertex_type: VertexType::Pbr,
-                color_format: ImageFormat::B8G8R8A8Srgb,
-                depth_test: false,
-                double_sided: true,
-                ..Default::default()
-            },
+            &PipelineDescriptor::pbr(
+                shaders
+                    .join("model_pbr.wgsl")
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+            .with_color_format(ImageFormat::B8G8R8A8Srgb)
+            .with_depth(DepthState::disabled())
+            .with_cull(CullMode::None),
         )
         .unwrap();
 

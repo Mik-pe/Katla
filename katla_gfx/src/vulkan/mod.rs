@@ -2,6 +2,7 @@ pub(crate) mod bda;
 pub(crate) mod bindless_texture;
 pub(crate) mod commandbuffer;
 pub(crate) mod commandpool;
+pub(crate) mod compositing;
 pub(crate) mod context;
 pub(crate) mod descriptor_set;
 pub(crate) mod material;
