@@ -97,7 +97,9 @@ impl VulkanRenderer {
             "Invalidating {} compiled materials for recompilation after descriptor layout change",
             count
         );
-        self.asset_registry.invalidate_compiled_materials();
+        for pipeline in self.asset_registry.invalidate_compiled_materials() {
+            self.retire(pipeline);
+        }
     }
 
     /// Set texture indices for a material.
@@ -272,9 +274,11 @@ impl VulkanRenderer {
             mat.fully_compiled = true;
         }
 
-        // Destroy old pipeline
-        if let Some(old) = old_pipeline_handle {
-            self.asset_registry.remove_pipeline(old);
+        // Retire the old pipeline: in-flight submissions may still bind it
+        if let Some(old) =
+            old_pipeline_handle.and_then(|handle| self.asset_registry.remove_pipeline(handle))
+        {
+            self.retire(old);
         }
 
         // Restore texture indices

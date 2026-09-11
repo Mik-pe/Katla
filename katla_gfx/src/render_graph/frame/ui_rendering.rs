@@ -206,8 +206,9 @@ impl Frame<'_, VulkanRenderer> {
 
     /// Update per-frame UI vertex and index buffers with new data.
     ///
-    /// This reuses buffers across frames to avoid memory leaks. Buffers are resized
-    /// if needed to accommodate larger data.
+    /// This reuses buffers across frames to avoid memory leaks. Buffers are
+    /// resized if needed to accommodate larger data; the replaced storage
+    /// retires because in-flight frames may still draw from it.
     pub(super) fn get_or_update_ui_buffers(
         &mut self,
         frame_idx: usize,
@@ -216,20 +217,33 @@ impl Frame<'_, VulkanRenderer> {
         let vertex_bytes = bytemuck::cast_slice(&ui_draw_list.vertices);
         let index_bytes = bytemuck::cast_slice(&ui_draw_list.indices);
 
-        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+        let (vb_handle, ib_handle, replaced_vb, replaced_ib) = {
+            let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
-        let vb = &mut ui_resources.vertex_buffers[frame_idx];
-        vb.upload_data(vertex_bytes);
-        let vb_handle = (vb.object(), vb.count());
+            let vb = &mut ui_resources.vertex_buffers[frame_idx];
+            let replaced_vb = vb.upload_data(vertex_bytes);
+            let vb_handle = (vb.object(), vb.count());
 
-        let ib = &mut ui_resources.index_buffers[frame_idx];
-        ib.upload_data(index_bytes);
-        let ib_handle = ib.object();
+            let ib = &mut ui_resources.index_buffers[frame_idx];
+            let replaced_ib = ib.upload_data(index_bytes);
+            let ib_handle = ib.object();
+
+            (vb_handle, ib_handle, replaced_vb, replaced_ib)
+        };
+        if let Some(retired) = replaced_vb {
+            self.renderer.retire(retired);
+        }
+        if let Some(retired) = replaced_ib {
+            self.renderer.retire(retired);
+        }
 
         Ok((vb_handle, ib_handle))
     }
 
     /// Upload per-frame instance buffer and unit quad index buffer for instanced UI rendering.
+    ///
+    /// Grown buffers retire their replaced storage: in-flight frames may
+    /// still draw from it.
     pub(super) fn get_or_update_ui_instance_buffers(
         &mut self,
         frame_idx: usize,
@@ -238,22 +252,40 @@ impl Frame<'_, VulkanRenderer> {
         let instance_bytes = bytemuck::cast_slice(&ui_draw_list.instances);
         let unit_quad_index_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES);
 
-        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+        let (instance_handle, quad_ib_handle, replaced_instance, replaced_quad) = {
+            let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
-        // Upload instance data
-        let instance_ib = &mut ui_resources.instance_buffers[frame_idx];
-        instance_ib.upload_data(instance_bytes);
-        let instance_handle = (instance_ib.object(), instance_ib.count());
+            // Upload instance data
+            let instance_ib = &mut ui_resources.instance_buffers[frame_idx];
+            let replaced_instance = instance_ib.upload_data(instance_bytes);
+            let instance_handle = (instance_ib.object(), instance_ib.count());
 
-        // Upload unit quad index buffer (same every frame, but simple to re-upload)
-        let quad_ib = &mut ui_resources.unit_quad_index_buffers[frame_idx];
-        quad_ib.upload_data(unit_quad_index_bytes);
-        let quad_ib_handle = quad_ib.object();
+            // Upload unit quad index buffer (same every frame, but simple to re-upload)
+            let quad_ib = &mut ui_resources.unit_quad_index_buffers[frame_idx];
+            let replaced_quad = quad_ib.upload_data(unit_quad_index_bytes);
+            let quad_ib_handle = quad_ib.object();
+
+            (
+                instance_handle,
+                quad_ib_handle,
+                replaced_instance,
+                replaced_quad,
+            )
+        };
+        if let Some(retired) = replaced_instance {
+            self.renderer.retire(retired);
+        }
+        if let Some(retired) = replaced_quad {
+            self.renderer.retire(retired);
+        }
 
         Ok((instance_handle, quad_ib_handle))
     }
 
     /// Get or create the unit quad vertex buffer for instanced UI rendering.
+    ///
+    /// Grown buffers retire their replaced storage: in-flight frames may
+    /// still draw from it.
     pub(super) fn get_or_update_ui_unit_quad(
         &mut self,
         frame_idx: usize,
@@ -261,15 +293,25 @@ impl Frame<'_, VulkanRenderer> {
         let quad_vertex_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_VERTICES);
         let quad_index_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES);
 
-        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+        let (quad_vb_handle, quad_ib_handle, replaced_vb, replaced_ib) = {
+            let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
 
-        let quad_vb = &mut ui_resources.unit_quad_vertex_buffers[frame_idx];
-        quad_vb.upload_data(quad_vertex_bytes);
-        let quad_vb_handle = quad_vb.object();
+            let quad_vb = &mut ui_resources.unit_quad_vertex_buffers[frame_idx];
+            let replaced_vb = quad_vb.upload_data(quad_vertex_bytes);
+            let quad_vb_handle = quad_vb.object();
 
-        let quad_ib = &mut ui_resources.unit_quad_index_buffers[frame_idx];
-        quad_ib.upload_data(quad_index_bytes);
-        let quad_ib_handle = quad_ib.object();
+            let quad_ib = &mut ui_resources.unit_quad_index_buffers[frame_idx];
+            let replaced_ib = quad_ib.upload_data(quad_index_bytes);
+            let quad_ib_handle = quad_ib.object();
+
+            (quad_vb_handle, quad_ib_handle, replaced_vb, replaced_ib)
+        };
+        if let Some(retired) = replaced_vb {
+            self.renderer.retire(retired);
+        }
+        if let Some(retired) = replaced_ib {
+            self.renderer.retire(retired);
+        }
 
         Ok((quad_vb_handle, quad_ib_handle))
     }

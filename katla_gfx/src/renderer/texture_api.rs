@@ -36,8 +36,10 @@ impl VulkanRenderer {
                 Ok(slot) => slot,
                 Err(error) => {
                     // Registration failed after insertion: remove the texture
-                    // so failed creation retains nothing half-created.
-                    self.texture_manager.destroy(handle);
+                    // so failed creation retains nothing half-created. It was
+                    // never exposed to a submission, so freeing immediately
+                    // is correct.
+                    let _ = self.texture_manager.destroy(handle);
                     return Err(error);
                 }
             };
@@ -62,11 +64,13 @@ impl VulkanRenderer {
                 .bindless_manager
                 .register_texture(texture.image_view().vk())
             {
-                Ok(slot) => slot,
                 Err(error) => {
-                    self.texture_manager.destroy(handle);
+                    // Same rollback as `create_texture`: never exposed to a
+                    // submission, so freeing immediately is correct.
+                    let _ = self.texture_manager.destroy(handle);
                     return Err(error);
                 }
+                Ok(slot) => slot,
             };
             self.texture_manager.register_bindless_slot(handle, slot);
         }

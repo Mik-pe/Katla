@@ -1,4 +1,5 @@
 use super::context::VulkanContext;
+use super::retirement::RetiredBuffer;
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
 
@@ -94,7 +95,7 @@ pub struct IndexBuffer {
 }
 
 impl BufferObject {
-    fn resize(&mut self, min_size: vk::DeviceSize) {
+    fn resize(&mut self, min_size: vk::DeviceSize) -> RetiredBuffer {
         let new_size = min_size * 2;
         let create_info = vk::BufferCreateInfo::default()
             .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -107,22 +108,25 @@ impl BufferObject {
             .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
             .expect("Failed to resize buffer");
         let old_allocation = unsafe { ManuallyDrop::take(&mut self.allocation) };
-        self.context.free_buffer(self.buffer, old_allocation);
+        let retired = RetiredBuffer::new(self.buffer, old_allocation, self.context.clone());
         self.buffer = buffer;
         self.allocation = ManuallyDrop::new(allocation);
         self.buf_size = new_size;
+        retired
     }
 
-    fn upload_data(&mut self, data: &[u8]) {
+    fn upload_data(&mut self, data: &[u8]) -> Option<RetiredBuffer> {
         assert!(
             self.location == gpu_allocator::MemoryLocation::CpuToGpu,
             "direct upload requires host-visible memory; device-local mesh \
              buffers are populated through staged copies"
         );
         let data_size = std::mem::size_of_val(data) as vk::DeviceSize;
-        if self.buf_size < data_size {
-            self.resize(data_size);
-        }
+        let retired = if self.buf_size < data_size {
+            Some(self.resize(data_size))
+        } else {
+            None
+        };
         let mapped_ptr = self
             .context
             .map_buffer(&self.allocation)
@@ -130,6 +134,7 @@ impl BufferObject {
         unsafe {
             std::ptr::copy_nonoverlapping(data.as_ptr(), mapped_ptr, data_size as usize);
         }
+        retired
     }
 
     /// Byte capacity of this buffer's storage.
@@ -237,8 +242,12 @@ impl IndexBuffer {
         }
     }
 
-    pub fn upload_data(&mut self, data: &[u8]) {
-        self.buffer.upload_data(data);
+    /// Upload bytes, growing the buffer when the data exceeds capacity.
+    ///
+    /// Returns the replaced storage for retirement when a grow happened,
+    /// `None` when the data fit the existing buffer.
+    pub(crate) fn upload_data(&mut self, data: &[u8]) -> Option<RetiredBuffer> {
+        self.buffer.upload_data(data)
     }
 
     pub fn object(&self) -> vk::Buffer {
@@ -390,8 +399,12 @@ impl VertexBuffer {
         self.buffer.write_host_visible(data)
     }
 
-    pub fn upload_data(&mut self, data: &[u8]) {
-        self.buffer.upload_data(data);
+    /// Upload bytes, growing the buffer when the data exceeds capacity.
+    ///
+    /// Returns the replaced storage for retirement when a grow happened,
+    /// `None` when the data fit the existing buffer.
+    pub(crate) fn upload_data(&mut self, data: &[u8]) -> Option<RetiredBuffer> {
+        self.buffer.upload_data(data)
     }
 
     /// Byte capacity of this buffer's storage.

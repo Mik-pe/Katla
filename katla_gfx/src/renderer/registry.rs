@@ -633,12 +633,14 @@ impl AssetRegistry {
         self.pipelines.remove(handle)
     }
 
-    /// Invalidate all compiled materials and destroy their pipelines.
+    /// Invalidate all compiled materials and take their pipelines.
     ///
     /// Called after descriptor layout changes (e.g., light culling resize)
     /// to ensure pipelines reference valid descriptor set layouts.
-    /// Deferred materials are marked for recompilation on next use.
-    pub fn invalidate_compiled_materials(&mut self) {
+    /// Deferred materials are marked for recompilation on next use. The
+    /// removed pipelines are returned so the caller can retire them —
+    /// in-flight submissions may still bind them.
+    pub fn invalidate_compiled_materials(&mut self) -> Vec<AnyPipeline> {
         // Mark all compiled materials for recompilation and collect their pipeline handles
         let mut pipelines_to_destroy = Vec::new();
         for material in self.materials.iter_mut() {
@@ -652,10 +654,11 @@ impl AssetRegistry {
                 }
             }
         }
-        // Only destroy the specific material pipelines, not all pipelines
-        for handle in pipelines_to_destroy {
-            self.pipelines.remove(handle);
-        }
+        // Take only the specific material pipelines, not all pipelines
+        pipelines_to_destroy
+            .into_iter()
+            .filter_map(|handle| self.pipelines.remove(handle))
+            .collect()
     }
 
     /// Destroy all registered assets and free GPU resources.
