@@ -598,19 +598,21 @@ mod tests {
     fn test_buffer_resize_failure_keeps_buffer_usable() {
         let context = headless_context();
         let mut vertex_buffer = crate::vulkan::VertexBuffer::new(context.clone(), 1024, 0);
-        vertex_buffer.upload_data(&[7u8; 64]);
+        let replaced = vertex_buffer.upload_data(&[7u8; 64]);
+        assert!(replaced.is_none(), "payload fits the initial capacity");
         let baseline = context.allocator.debug_allocation_stats();
 
         // Growth triggers a replacement allocation; the injected failure makes
         // it panic, but the old buffer must survive and stay usable.
         context.allocator.inject_allocation_failures(1);
         let result = catch_unwind(AssertUnwindSafe(|| {
-            vertex_buffer.upload_data(&[7u8; 4096]);
+            let _ = vertex_buffer.upload_data(&[7u8; 4096]);
         }));
         assert!(result.is_err(), "resize under injected failure must panic");
         assert_eq!(context.allocator.debug_allocation_stats(), baseline);
 
-        vertex_buffer.upload_data(&[7u8; 64]);
+        let replaced = vertex_buffer.upload_data(&[7u8; 64]);
+        assert!(replaced.is_none(), "old buffer still fits small payloads");
     }
 
     #[test]

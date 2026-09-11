@@ -475,13 +475,17 @@ impl TextureManager {
     // Lifecycle
     // ========================================================================
 
-    /// Destroy a texture and free its resources.
+    /// Destroy a texture, returning it for deferred retirement.
     ///
-    /// Returns true if the texture was found and destroyed.
-    pub fn destroy(&mut self, handle: TextureHandle) -> bool {
+    /// Removes the handle from storage (invalidating it immediately) and
+    /// drops the bindless slot registration. The returned `Rc<Texture>` is
+    /// the manager's reference: the caller queues it for retirement so the
+    /// native image stays alive until the submissions that can still sample
+    /// it have completed. `None` means the handle was not live.
+    pub fn destroy(&mut self, handle: TextureHandle) -> Option<Rc<Texture>> {
         // Also remove from bindless tracking
         self.bindless_slots.remove(&handle);
-        self.textures.remove(handle).is_some()
+        self.textures.remove(handle)
     }
 
     /// Clear all textures except defaults.
