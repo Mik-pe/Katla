@@ -4,6 +4,7 @@ use objc2_metal::MTLPixelFormat;
 use crate::error::RendererError;
 use crate::handle::MaterialHandle;
 use crate::renderer::pipeline_descriptor::PipelineDescriptor;
+use crate::texture::ImageFormat;
 
 use super::metal_renderer::{MetalMaterial, MetalRenderer, read_shader};
 use super::shader;
@@ -133,12 +134,17 @@ impl MetalRenderer {
             None
         };
 
-        let color_formats = if is_ui {
-            &[MTLPixelFormat::BGRA8Unorm_sRGB]
-        } else {
-            &[MTLPixelFormat::RGBA16Float]
+        // Honor the descriptor's declared attachment formats: `Auto` keeps
+        // the legacy defaults (HDR geometry for the app's tonemap chain,
+        // sRGB UI), while an explicit format compiles the pipeline for that
+        // exact target. Depth-stencil follows the declared depth state
+        // instead of assuming every non-UI pass has depth.
+        let declared_color_format = match descriptor.color_format {
+            ImageFormat::Auto if !is_ui => MTLPixelFormat::RGBA16Float,
+            format => super::format::to_mtl_pixel_format(format),
         };
-        let depth_format = if is_ui {
+        let color_formats = &[declared_color_format];
+        let depth_format = if is_ui || !descriptor.depth.test && !descriptor.depth.write {
             None
         } else {
             Some(MTLPixelFormat::Depth32Float_Stencil8)

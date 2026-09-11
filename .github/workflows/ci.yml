@@ -65,8 +65,10 @@ jobs:
 
       - name: Cross-backend contract suite (Vulkan on lavapipe)
         # Serial: lavapipe's pipe-loader races on concurrent instance
-        # creation inside one process; the suite is fast enough either way.
-        run: cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1
+        # creation inside one process. The PBR pipeline scenarios are
+        # skipped: lavapipe segfaults inside that driver path (the same
+        # tests pass on real Intel Vulkan and run in the macOS Metal job).
+        run: cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1 --skip graphics::pbr
 
   macos-26:
     name: macOS 26 / Metal
