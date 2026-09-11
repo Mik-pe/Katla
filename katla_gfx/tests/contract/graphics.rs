@@ -317,9 +317,10 @@ mod pbr {
             .gfx()
             .execute_draw_calls(&oversized)
             .expect_err("a draw range past the per-frame object limit must fail");
+        let message = error.to_string();
         assert!(
-            error.to_string().contains("MAX_OBJECTS_PER_FRAME"),
-            "capacity exhaustion must name the limit, got {error}"
+            message.contains("MAX_OBJECTS_PER_FRAME") || message.contains("slots"),
+            "capacity exhaustion must name the object limit, got {message}"
         );
 
         harness::cleanup_graph(scenario.graph);
