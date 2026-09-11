@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "summary": {
     "declared_passes": 4,
     "live_passes": 4,
@@ -825,5 +825,35 @@
     [
       3
     ]
+  ],
+  "transient_slots": [
+    {
+      "id": 0,
+      "resources": [
+        {
+          "id": 1,
+          "name": "shadow_atlas"
+        },
+        {
+          "id": 3,
+          "name": "hdr_color"
+        }
+      ],
+      "bytes": 32768,
+      "first_execution_position": 0,
+      "last_execution_position": 3
+    },
+    {
+      "id": 1,
+      "resources": [
+        {
+          "id": 2,
+          "name": "gbuffer"
+        }
+      ],
+      "bytes": 32768,
+      "first_execution_position": 1,
+      "last_execution_position": 2
+    }
   ]
 }

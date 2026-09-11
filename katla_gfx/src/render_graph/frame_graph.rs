@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use super::allocation_plan::TransientAllocationPlan;
 use super::backend::RenderGraphBackend;
 use super::builder::{InternalPassBuilder, PassBuilder};
 use super::compiler::{ExecutionPlan, GraphCompiler};
@@ -105,6 +106,10 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// race conditions where frame N+1 modifies layout tracking while frame N is still executing.
     pub(super) transient_textures: Vec<HashMap<ResourceId, B::TransientTexture>>,
 
+    /// Whether compatible, non-overlapping transient textures share physical
+    /// memory from the compiled allocation plan. Debugging switch.
+    transient_aliasing: bool,
+
     /// Base bindless index for LDR texture (actual index = base + frame_idx).
     ldr_texture_base_index: Option<u32>,
 
@@ -135,6 +140,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             compiled: false,
             transient_resources: Vec::new(),
             transient_textures: Vec::new(),
+            transient_aliasing: true,
             ldr_texture_base_index: None,
             params: FrameParams::default(),
             compositing_descriptor_sets: RefCell::new([None, None]),
@@ -630,40 +636,102 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             .map(B::transient_texture_view)
     }
 
+    /// Disable transient memory aliasing for debugging.
+    ///
+    /// Must be called before [`Self::initialize_transient_textures`]; every
+    /// transient texture then gets a standalone allocation without changing
+    /// graph semantics.
+    pub fn set_transient_aliasing(&mut self, enabled: bool) {
+        self.transient_aliasing = enabled;
+    }
+
+    /// Group transient resources into physical allocation slots.
+    ///
+    /// Driven by the compiled allocation plan: compatible resources whose
+    /// live intervals do not overlap share a slot. Resources without a
+    /// compiled lifetime (culled or unused) become standalone groups in
+    /// declaration order; single-member slots route to the backend's
+    /// standalone creation path.
+    fn transient_allocation_groups(&self) -> Result<Vec<Vec<GraphResourceDesc>>, RenderGraphError> {
+        if !self.transient_aliasing {
+            return Ok(self
+                .transient_resources
+                .iter()
+                .map(|desc| vec![desc.clone()])
+                .collect());
+        }
+
+        let plan = self.build_execution_plan()?;
+        let allocation = TransientAllocationPlan::build(
+            &self.resources,
+            &self.transient_resources,
+            &self.exported_resources,
+            &plan.resource_lifetimes,
+        );
+
+        let mut standalone = Vec::new();
+        let mut by_slot = BTreeMap::<u32, Vec<GraphResourceDesc>>::new();
+        for desc in &self.transient_resources {
+            let resource_id = self
+                .resource_by_name
+                .get(&desc.name)
+                .copied()
+                .ok_or_else(|| {
+                    RenderGraphError::Validation(
+                        GraphValidationError::MissingResourceNamespaceEntry(desc.name.clone()),
+                    )
+                })?;
+            match allocation.physical_allocation_id(resource_id) {
+                Some(slot) => by_slot.entry(slot).or_default().push(desc.clone()),
+                None => standalone.push(vec![desc.clone()]),
+            }
+        }
+
+        Ok(standalone
+            .into_iter()
+            .chain(by_slot.into_values())
+            .collect())
+    }
+
     /// Initialize transient textures using the backend.
     ///
-    /// Creates per-frame sets of textures — one per frame-in-flight.
+    /// Creates per-frame sets of textures — one per frame-in-flight —
+    /// grouped into physical allocation slots by the compiled plan.
     pub fn initialize_transient_textures(&mut self, backend: &B) -> Result<(), RenderGraphError> {
         if !self.transient_textures.is_empty() {
             return Ok(());
         }
 
         let frames = B::transient_texture_frames();
+        let groups = self.transient_allocation_groups()?;
 
         log::info!(
-            "Initializing {} transient textures ({} frames in flight)",
+            "Initializing {} transient textures in {} allocation groups ({} frames in flight, aliasing {})",
             self.transient_resources.len(),
-            frames
+            groups.len(),
+            frames,
+            if self.transient_aliasing { "on" } else { "off" },
         );
 
         for _frame_idx in 0..frames {
             let mut frame_textures = HashMap::new();
 
-            for desc in &self.transient_resources {
-                let resource_id =
-                    self.resource_by_name
-                        .get(&desc.name)
-                        .copied()
-                        .ok_or_else(|| {
-                            RenderGraphError::Validation(
-                                GraphValidationError::MissingResourceNamespaceEntry(
-                                    desc.name.clone(),
-                                ),
-                            )
-                        })?;
-
-                let texture = B::create_transient_texture(backend, desc)?;
-                frame_textures.insert(resource_id, texture);
+            for group in &groups {
+                let textures = B::create_transient_slot(backend, group)?;
+                for (desc, texture) in group.iter().zip(textures) {
+                    let resource_id =
+                        self.resource_by_name
+                            .get(&desc.name)
+                            .copied()
+                            .ok_or_else(|| {
+                                RenderGraphError::Validation(
+                                    GraphValidationError::MissingResourceNamespaceEntry(
+                                        desc.name.clone(),
+                                    ),
+                                )
+                            })?;
+                    frame_textures.insert(resource_id, texture);
+                }
             }
 
             self.transient_textures.push(frame_textures);
@@ -1436,7 +1504,19 @@ mod tests {
     }
 
     /// A trivial mock backend for testing FrameGraph without a GPU.
-    struct MockBackend;
+    #[derive(Clone)]
+    struct MockBackend {
+        /// Member count of each `create_transient_slot` call, in call order.
+        slot_member_counts: std::rc::Rc<std::cell::RefCell<Vec<usize>>>,
+    }
+
+    impl MockBackend {
+        fn new() -> Self {
+            Self {
+                slot_member_counts: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            }
+        }
+    }
 
     struct MockTexture {
         slot: std::cell::Cell<Option<u32>>,
@@ -1452,13 +1532,17 @@ mod tests {
         type TransientTexture = MockTexture;
         type ImageView = MockImageView;
 
-        fn create_transient_texture(
+        fn create_transient_slot(
             &self,
-            _desc: &super::super::resource::GraphResourceDesc,
-        ) -> Result<Self::TransientTexture, RenderGraphError> {
-            Ok(MockTexture {
-                slot: std::cell::Cell::new(None),
-            })
+            members: &[super::super::resource::GraphResourceDesc],
+        ) -> Result<Vec<Self::TransientTexture>, RenderGraphError> {
+            self.slot_member_counts.borrow_mut().push(members.len());
+            Ok(members
+                .iter()
+                .map(|_| MockTexture {
+                    slot: std::cell::Cell::new(None),
+                })
+                .collect())
         }
 
         fn destroy_transient_texture(_texture: Self::TransientTexture) {}
@@ -2073,7 +2157,7 @@ mod tests {
             .build::<MockBackend>()
             .unwrap();
         let dead = graph.pass_id("dead_branch").unwrap();
-        let mut backend = MockBackend;
+        let mut backend = MockBackend::new();
         let mut frame = super::super::frame::Frame::new(&graph, &mut backend, 0, 0);
         frame.submit(dead, &crate::renderer::types::DrawList::new());
 
@@ -2170,7 +2254,7 @@ mod tests {
             .push(validation_resource("orphan", 1, 1));
 
         let error = graph
-            .initialize_transient_textures(&MockBackend)
+            .initialize_transient_textures(&MockBackend::new())
             .unwrap_err();
         assert!(matches!(
             error,
@@ -2178,6 +2262,99 @@ mod tests {
                 GraphValidationError::MissingResourceNamespaceEntry(resource)
             ) if resource == "orphan"
         ));
+    }
+
+    #[test]
+    fn transient_aliasing_groups_non_overlapping_compatible_transients() {
+        let mut graph = TestGraph::new();
+        graph.create_resource_id("early");
+        graph.create_resource_id("late");
+        graph.transient_resources = vec![
+            validation_resource("early", 64, 64),
+            validation_resource("late", 64, 64),
+        ];
+        graph.add_pass(PassDesc::new(
+            "first",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(0)],
+        ));
+        graph.add_pass(PassDesc::new(
+            "second",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(1)],
+        ));
+
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+
+        // One two-member slot per frame in flight.
+        assert_eq!(*backend.slot_member_counts.borrow(), vec![2, 2]);
+    }
+
+    #[test]
+    fn transient_aliasing_keeps_overlapping_transients_separate() {
+        let mut graph = TestGraph::new();
+        graph.create_resource_id("a");
+        graph.create_resource_id("b");
+        graph.transient_resources = vec![
+            validation_resource("a", 64, 64),
+            validation_resource("b", 64, 64),
+        ];
+        graph.add_pass(PassDesc::new(
+            "write_a",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(0)],
+        ));
+        graph.add_pass(PassDesc::new(
+            "write_b",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(1)],
+        ));
+        graph.add_pass(PassDesc::new(
+            "read_a",
+            PassType::Graphics,
+            vec![ResourceId(0)],
+            vec![],
+        ));
+
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+
+        // `a` is live across `b`'s write, so the two never share a slot.
+        assert_eq!(*backend.slot_member_counts.borrow(), vec![1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn transient_aliasing_disabled_creates_standalone_textures() {
+        let mut graph = TestGraph::new();
+        graph.create_resource_id("early");
+        graph.create_resource_id("late");
+        graph.transient_resources = vec![
+            validation_resource("early", 64, 64),
+            validation_resource("late", 64, 64),
+        ];
+        graph.add_pass(PassDesc::new(
+            "first",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(0)],
+        ));
+        graph.add_pass(PassDesc::new(
+            "second",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(1)],
+        ));
+        graph.set_transient_aliasing(false);
+
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+
+        assert_eq!(*backend.slot_member_counts.borrow(), vec![1, 1, 1, 1]);
     }
 
     // --- Typed template declarations keep cross-aspect hazards ordered (#30) ---

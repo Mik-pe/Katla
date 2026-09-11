@@ -175,8 +175,14 @@ fn sync_op_barrier(
     let (dst_stage, dst_access) = state_masks(op.after);
     let (src_stage, src_access) =
         if tracked_layout == vk::ImageLayout::UNDEFINED || op.before == ImageSyncState::Undefined {
-            // Contents are not observable through an undefined source layout.
-            (dst_stage, AccessFlags2::NONE)
+            // Contents are not observable through an undefined source layout,
+            // but the transition itself writes the whole image: it must still
+            // be ordered after every prior write to the physical memory it
+            // occupies — which under aliasing is another member's store.
+            (
+                PipelineStage2Flags::ALL_COMMANDS,
+                AccessFlags2::MEMORY_WRITE,
+            )
         } else {
             state_masks(op.before)
         };
