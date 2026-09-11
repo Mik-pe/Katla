@@ -38,10 +38,10 @@ struct VertexOutput {
     @location(2) @interpolate(flat) texture_index: u32,
 }
 
+// xy: screen size in logical pixels, z: ndc_y_flip (1.0 Vulkan, -1.0 Metal),
+// w: unused. Both backends bind the same vec4 layout.
 struct UiUniforms {
-    screen_size: vec2f,
-    ndc_y_flip: f32,
-    texture_index: u32,
+    params: vec4f,
 }
 
 @group(0) @binding(1) var font_sampler: sampler;
@@ -81,8 +81,9 @@ fn vs_instanced(
     // Transform unit quad: screen_pos = position + local_pos * size
     let screen_pos = inst.position + in.local_pos * inst.size;
 
-    let ndc_x = (screen_pos.x / uniforms.screen_size.x) * 2.0 - 1.0;
-    let ndc_y = ((screen_pos.y / uniforms.screen_size.y) * 2.0 - 1.0) * uniforms.ndc_y_flip;
+    let screen_size = uniforms.params.xy;
+    let ndc_x = (screen_pos.x / screen_size.x) * 2.0 - 1.0;
+    let ndc_y = ((screen_pos.y / screen_size.y) * 2.0 - 1.0) * uniforms.params.z;
 
     out.clip_position = vec4f(ndc_x, ndc_y, 0.0, 1.0);
 
@@ -108,8 +109,9 @@ fn vs_instanced(
 fn vs_main(in: UiVertex) -> VertexOutput {
     var out: VertexOutput;
 
-    let ndc_x = (in.position.x / uniforms.screen_size.x) * 2.0 - 1.0;
-    let ndc_y = ((in.position.y / uniforms.screen_size.y) * 2.0 - 1.0) * uniforms.ndc_y_flip;
+    let screen_size = uniforms.params.xy;
+    let ndc_x = (in.position.x / screen_size.x) * 2.0 - 1.0;
+    let ndc_y = ((in.position.y / screen_size.y) * 2.0 - 1.0) * uniforms.params.z;
 
     out.clip_position = vec4f(ndc_x, ndc_y, 0.0, 1.0);
     out.uv = in.uv;

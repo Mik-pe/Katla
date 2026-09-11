@@ -19,12 +19,15 @@ const INITIAL_VERTEX_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
 const INITIAL_INDEX_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
 const INITIAL_INSTANCE_BUFFER_SIZE: u64 = 1 << 20; // 1 MB
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct UiUniforms {
-    screen_size: [f32; 2],
-    ndc_y_flip: f32,
-    texture_index: u32,
+/// Inline UI uniform bytes: [width, height, ndc_y_flip, unused], matching the
+/// `UiUniforms` vec4 in ui.wgsl (bound at [[buffer(3)]] for both stages).
+fn ui_uniforms(draw_list: &UIDrawList) -> [f32; 4] {
+    [
+        draw_list.screen_size[0],
+        draw_list.screen_size[1],
+        -1.0, // Metal is Y-up
+        0.0,
+    ]
 }
 
 /// Metal-native UI rendering subsystem.
@@ -285,13 +288,8 @@ impl MetalUIRenderer {
                 }
 
                 // Instanced draw: bind instance buffer + unit quad, draw instanced
-                let uniform_data = UiUniforms {
-                    screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],
-                    ndc_y_flip: -1.0,
-                    texture_index: 0,
-                };
                 encoder.set_push_constants(
-                    bytemuck::cast_slice(&[uniform_data]),
+                    bytemuck::cast_slice(&[ui_uniforms(draw_list)]),
                     3,
                     crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
                 );
@@ -329,13 +327,8 @@ impl MetalUIRenderer {
                 }
 
                 // Vertex-based draw: complex geometry
-                let uniform_data = UiUniforms {
-                    screen_size: [draw_list.screen_size[0], draw_list.screen_size[1]],
-                    ndc_y_flip: -1.0,
-                    texture_index: cmd.texture.index(),
-                };
                 encoder.set_push_constants(
-                    bytemuck::cast_slice(&[uniform_data]),
+                    bytemuck::cast_slice(&[ui_uniforms(draw_list)]),
                     3,
                     crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
                 );
