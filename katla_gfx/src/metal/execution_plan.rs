@@ -44,6 +44,7 @@ pub(crate) struct MetalPassRecord {
     pub(crate) color_attachments: Vec<MetalColorAttachmentRecord>,
     pub(crate) uses_depth: bool,
     pub(crate) depth_attachment: Option<MetalDepthAttachmentOps>,
+    pub(crate) material: Option<crate::handle::MaterialHandle>,
 }
 
 impl MetalPassRecord {
@@ -116,6 +117,7 @@ impl MetalPassRecord {
                 store_op: ops.depth.store,
                 clear_value: ops.depth.clear_value,
             }),
+            material: pass.material,
         })
     }
 

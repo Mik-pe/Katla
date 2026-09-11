@@ -59,6 +59,11 @@ pub struct Capabilities {
     /// `mesh_index_format` reports the created width; Metal normalizes u16
     /// indices to u32 at upload and reports the converted width.
     pub preserves_index_width: bool,
+    /// Metal clip space is y-up while Vulkan's is y-down, and the app's
+    /// tonemap pass performs the flip for the drawable. The suite renders
+    /// straight to the drawable with no tonemap, so identical NDC geometry
+    /// lands on vertically mirrored rows: Metal flips the probe mapping.
+    pub flips_direct_ndc_y: bool,
     /// Expected `supports_feature` answer for every optional feature.
     pub feature_support: fn(RendererFeature) -> bool,
 }
@@ -81,6 +86,7 @@ pub const CAPS: Capabilities = Capabilities {
     api_validation_capture: true,
     retirement_diagnostics: true,
     preserves_index_width: true,
+    flips_direct_ndc_y: false,
     feature_support: platform_features,
 };
 
@@ -90,6 +96,7 @@ pub const CAPS: Capabilities = Capabilities {
     api_validation_capture: false,
     retirement_diagnostics: false,
     preserves_index_width: false,
+    flips_direct_ndc_y: true,
     feature_support: platform_features,
 };
 
@@ -383,8 +390,14 @@ pub fn dominant_channel(pixels: &[u8], at: usize) -> Option<usize> {
 }
 
 /// Byte offset of the pixel at NDC coordinates (row 0 is the top row on both
-/// backends' readback).
+/// backends' readback; the mapping accounts for the platform's clip-space
+/// direction via [`Capabilities::flips_direct_ndc_y`]).
 pub fn pixel_offset(ndc_x: f32, ndc_y: f32) -> usize {
+    let ndc_y = if CAPS.flips_direct_ndc_y {
+        -ndc_y
+    } else {
+        ndc_y
+    };
     let col = ((ndc_x + 1.0) * 0.5 * WIDTH as f32) as usize;
     let row = ((ndc_y + 1.0) * 0.5 * HEIGHT as f32) as usize;
     (row * WIDTH as usize + col) * 4

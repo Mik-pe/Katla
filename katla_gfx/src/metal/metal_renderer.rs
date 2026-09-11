@@ -1557,10 +1557,6 @@ impl GpuRenderer for MetalRenderer {
 
     // -- UI Rendering --
 
-    fn set_ui_material(&mut self, material: MaterialHandle) {
-        self.ui_renderer.set_ui_material(material);
-    }
-
     fn render_ui_pass(&mut self, draw_list: crate::renderer::types::UIDrawList) {
         MetalRenderer::render_ui_pass(self, draw_list);
     }

@@ -293,7 +293,12 @@ impl MetalRenderer {
                 }
                 PassKind::Ui => {
                     let ui_draw_list = single_ui_draw_list(record, &data)?;
-                    self.encode_ui_record(&mut cmd_buffer, &mut state, ui_draw_list.as_ref())?
+                    self.encode_ui_record(
+                        &mut cmd_buffer,
+                        &mut state,
+                        record,
+                        ui_draw_list.as_ref(),
+                    )?
                 }
                 PassKind::Particles => self.encode_particle_record(&mut cmd_buffer, &state)?,
                 PassKind::StencilIndicator | PassKind::Compositing => {
@@ -838,6 +843,7 @@ impl MetalRenderer {
         &mut self,
         cmd_buffer: &mut MetalCommandBuffer,
         state: &mut FrameEncodingState,
+        record: &MetalPassRecord,
         draw_list: Option<&UIDrawList>,
     ) -> Result<bool, RendererError> {
         let Some(draw_list) = draw_list.filter(|draw_list| !draw_list.is_empty()) else {
@@ -851,8 +857,8 @@ impl MetalRenderer {
                     "Metal UI record failed to upload its draw list: {error}"
                 ))
             })?;
-        let material_handle = self.ui_renderer.ui_material().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal UI record has no material".into())
+        let material_handle = record.material.ok_or_else(|| {
+            RendererError::InvalidOperation("Metal UI record has no declared material".into())
         })?;
         let pipeline = self
             .materials
