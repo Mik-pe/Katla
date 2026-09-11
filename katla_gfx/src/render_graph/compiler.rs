@@ -12,10 +12,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
+use super::SyncPlan;
 use super::access::{ImageAccess, ImageSubresourceRange};
 use super::error::RenderGraphError;
 use super::handles::ResourceId;
 use super::pass::PassDesc;
+use super::resource::ImportedImageContract;
+use super::sync_plan::build_sync_plan;
 
 /// Node in the pass dependency DAG.
 ///
@@ -46,29 +49,13 @@ pub struct ResourceLifetime {
     pub last_pass: usize,
 }
 
-/// Backend-neutral hazard kind derived from the canonical access DAG.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ResourceHazardKind {
-    ReadAfterWrite,
-    WriteAfterRead,
-    WriteAfterWrite,
-}
-
-/// One compiled resource transition between two live passes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ResourceTransition {
-    pub resource: ResourceId,
-    pub from_pass: usize,
-    pub to_pass: usize,
-    pub hazard: ResourceHazardKind,
-}
-
 /// Compiled execution plan for a render graph.
 ///
 /// Contains:
 /// - topologically sorted pass indices;
 /// - pass dependency DAG with predecessor/successor edges;
-/// - parallel groups of passes that can execute concurrently.
+/// - parallel groups of passes that can execute concurrently;
+/// - the synchronization plan compiled from the same typed accesses.
 #[derive(Debug, Clone)]
 pub struct ExecutionPlan {
     /// Live pass indices in stable topological order.
@@ -83,13 +70,14 @@ pub struct ExecutionPlan {
     pub(super) culled_passes: Vec<usize>,
     /// Live resource intervals in canonical execution-order coordinates.
     pub(super) resource_lifetimes: BTreeMap<ResourceId, ResourceLifetime>,
-    /// Ordered resource hazards consumed by synchronization planning and diagnostics.
-    pub(super) resource_transitions: Vec<ResourceTransition>,
+    /// Synchronization operations derived from the same typed accesses and
+    /// edges that produced the dependency DAG.
+    pub(super) sync: SyncPlan,
 }
 
 /// Dependency graph node.
 #[derive(Debug, Clone, Default)]
-struct DependencyNode {
+pub(crate) struct DependencyNode {
     incoming: BTreeSet<usize>,
     outgoing: BTreeSet<usize>,
 }
@@ -214,12 +202,13 @@ fn add_dependency(graph: &mut [DependencyNode], predecessor: usize, successor: u
 /// Graph compiler that analyzes resource hazards and creates execution plans.
 #[derive(Debug)]
 pub struct GraphCompiler {
-    passes: Vec<PassInfo>,
-    dependency_graph: Vec<DependencyNode>,
-    data_predecessors: Vec<BTreeSet<usize>>,
-    final_writers: HashMap<ResourceId, usize>,
-    exported_resources: BTreeSet<ResourceId>,
-    culling_enabled: bool,
+    pub(crate) passes: Vec<PassInfo>,
+    pub(crate) dependency_graph: Vec<DependencyNode>,
+    pub(crate) data_predecessors: Vec<BTreeSet<usize>>,
+    pub(crate) final_writers: HashMap<ResourceId, usize>,
+    pub(crate) exported_resources: BTreeSet<ResourceId>,
+    pub(crate) imported_contracts: BTreeMap<ResourceId, ImportedImageContract>,
+    pub(crate) culling_enabled: bool,
 }
 
 impl GraphCompiler {
@@ -234,6 +223,7 @@ impl GraphCompiler {
             data_predecessors: Vec::new(),
             final_writers: HashMap::new(),
             exported_resources: BTreeSet::new(),
+            imported_contracts: BTreeMap::new(),
             culling_enabled: false,
         }
     }
@@ -257,11 +247,15 @@ impl GraphCompiler {
     pub fn from_pass_descs_with_exports(
         passes: &[PassDesc],
         exported_resources: impl IntoIterator<Item = ResourceId>,
+        imported_contracts: BTreeMap<ResourceId, ImportedImageContract>,
     ) -> Self {
-        Self::with_exports(
-            passes.iter().map(PassInfo::from).collect(),
-            exported_resources,
-        )
+        Self {
+            imported_contracts,
+            ..Self::with_exports(
+                passes.iter().map(PassInfo::from).collect(),
+                exported_resources,
+            )
+        }
     }
 
     /// Build the canonical dependency graph from declared typed accesses.
@@ -508,82 +502,6 @@ impl GraphCompiler {
         lifetimes
     }
 
-    fn append_resource_transitions(
-        transitions: &mut Vec<ResourceTransition>,
-        left: &[ResourceId],
-        right: &[ResourceId],
-        from_pass: usize,
-        to_pass: usize,
-        hazard: ResourceHazardKind,
-    ) {
-        let right = right.iter().copied().collect::<BTreeSet<_>>();
-        transitions.extend(
-            left.iter()
-                .copied()
-                .filter(|resource| right.contains(resource))
-                .map(|resource| ResourceTransition {
-                    resource,
-                    from_pass,
-                    to_pass,
-                    hazard,
-                }),
-        );
-    }
-
-    fn build_resource_transitions(
-        &self,
-        dependency_graph: &[DependencyNode],
-        sorted_passes: &[usize],
-    ) -> Vec<ResourceTransition> {
-        let mut transitions = Vec::new();
-
-        for &to_pass in sorted_passes {
-            let to = &self.passes[to_pass];
-            for &from_pass in &dependency_graph[to_pass].incoming {
-                let from = &self.passes[from_pass];
-                Self::append_resource_transitions(
-                    &mut transitions,
-                    &from.writes,
-                    &to.reads,
-                    from_pass,
-                    to_pass,
-                    ResourceHazardKind::ReadAfterWrite,
-                );
-                Self::append_resource_transitions(
-                    &mut transitions,
-                    &from.reads,
-                    &to.writes,
-                    from_pass,
-                    to_pass,
-                    ResourceHazardKind::WriteAfterRead,
-                );
-                Self::append_resource_transitions(
-                    &mut transitions,
-                    &from.writes,
-                    &to.writes,
-                    from_pass,
-                    to_pass,
-                    ResourceHazardKind::WriteAfterWrite,
-                );
-            }
-        }
-
-        let mut execution_positions = vec![usize::MAX; self.passes.len()];
-        for (position, &pass_index) in sorted_passes.iter().enumerate() {
-            execution_positions[pass_index] = position;
-        }
-        transitions.sort_by_key(|transition| {
-            (
-                execution_positions[transition.to_pass],
-                execution_positions[transition.from_pass],
-                transition.resource,
-                transition.hazard,
-            )
-        });
-        transitions.dedup();
-        transitions
-    }
-
     fn build_execution_metadata(
         &self,
         dependency_graph: &[DependencyNode],
@@ -665,7 +583,7 @@ impl GraphCompiler {
             .filter_map(|(index, live)| (!live).then_some(index))
             .collect();
         let resource_lifetimes = self.build_resource_lifetimes(&sorted_passes);
-        let resource_transitions = self.build_resource_transitions(&live_graph, &sorted_passes);
+        let sync = build_sync_plan(&self.passes, &sorted_passes, &self.imported_contracts);
 
         Ok(ExecutionPlan {
             sorted_passes,
@@ -674,7 +592,7 @@ impl GraphCompiler {
             live_passes,
             culled_passes,
             resource_lifetimes,
-            resource_transitions,
+            sync,
         })
     }
 }
@@ -720,6 +638,8 @@ mod tests {
     use super::super::access::{
         ImageAccessMode, ImageAspects, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
     };
+    use super::super::sync_plan::ResourceHazardKind;
+    use super::super::sync_plan::{ImageSyncOp, ImageSyncState, SyncReason};
 
     fn access(
         resource: ResourceId,
@@ -1185,7 +1105,7 @@ mod tests {
     }
 
     #[test]
-    fn compiles_resource_hazards_from_the_live_dependency_dag() {
+    fn compiles_sync_ops_from_the_live_dependency_dag() {
         let plan = compile(vec![
             make_pass("write", vec![], vec![rid(0)]),
             make_pass("read", vec![rid(0)], vec![]),
@@ -1193,39 +1113,79 @@ mod tests {
             make_pass("read_replacement", vec![rid(0)], vec![]),
         ]);
 
+        // The steady-state cycle: the write replaces the previous frame's
+        // final sampled state, then each hazard boundary transitions r0.
+        let storage_write = ImageSyncState::Access {
+            usage: ImageUsage::Storage,
+            stage: ImagePipelineStage::AllGraphics,
+            mode: ImageAccessMode::Write,
+        };
+        let sampled_read = ImageSyncState::Access {
+            usage: ImageUsage::Sampled,
+            stage: ImagePipelineStage::FragmentShader,
+            mode: ImageAccessMode::Read,
+        };
+        let op = |pass: usize| plan.sync.pass_ops[pass].as_slice();
         assert_eq!(
-            plan.resource_transitions,
-            vec![
-                ResourceTransition {
-                    resource: rid(0),
-                    from_pass: 0,
-                    to_pass: 1,
-                    hazard: ResourceHazardKind::ReadAfterWrite,
-                },
-                ResourceTransition {
-                    resource: rid(0),
-                    from_pass: 0,
-                    to_pass: 2,
-                    hazard: ResourceHazardKind::WriteAfterWrite,
-                },
-                ResourceTransition {
-                    resource: rid(0),
-                    from_pass: 1,
-                    to_pass: 2,
-                    hazard: ResourceHazardKind::WriteAfterRead,
-                },
-                ResourceTransition {
-                    resource: rid(0),
-                    from_pass: 2,
-                    to_pass: 3,
-                    hazard: ResourceHazardKind::ReadAfterWrite,
-                },
-            ]
+            op(0),
+            &[ImageSyncOp {
+                resource: rid(0),
+                range: ImageSubresourceRange::WHOLE_COLOR,
+                before: sampled_read,
+                after: storage_write,
+                before_pass: None,
+                pass: 0,
+                reason: SyncReason::InitialUse,
+            }]
         );
+        // The whole-resource read also carries an aspect-fragment bootstrap;
+        // the color range itself is the RAW hazard.
+        let raw_at_1: Vec<ImageSyncOp> = op(1)
+            .iter()
+            .copied()
+            .filter(|op| op.range == ImageSubresourceRange::WHOLE_COLOR)
+            .collect();
+        assert_eq!(
+            raw_at_1,
+            vec![ImageSyncOp {
+                resource: rid(0),
+                range: ImageSubresourceRange::WHOLE_COLOR,
+                before: storage_write,
+                after: sampled_read,
+                before_pass: Some(0),
+                pass: 1,
+                reason: SyncReason::Hazard(ResourceHazardKind::ReadAfterWrite),
+            }]
+        );
+        assert_eq!(
+            op(2),
+            &[ImageSyncOp {
+                resource: rid(0),
+                range: ImageSubresourceRange::WHOLE_COLOR,
+                before: sampled_read,
+                after: storage_write,
+                before_pass: Some(1),
+                pass: 2,
+                reason: SyncReason::Hazard(ResourceHazardKind::WriteAfterRead),
+            }]
+        );
+        assert_eq!(
+            op(3),
+            &[ImageSyncOp {
+                resource: rid(0),
+                range: ImageSubresourceRange::WHOLE_COLOR,
+                before: storage_write,
+                after: sampled_read,
+                before_pass: Some(2),
+                pass: 3,
+                reason: SyncReason::Hazard(ResourceHazardKind::ReadAfterWrite),
+            }]
+        );
+        assert!(plan.sync.final_ops.is_empty());
     }
 
     #[test]
-    fn culled_passes_emit_no_resource_transitions() {
+    fn culled_passes_emit_no_sync_ops() {
         let plan = compile_with_exports(
             vec![
                 make_pass("live", vec![], vec![rid(0)]),
@@ -1236,7 +1196,15 @@ mod tests {
         );
 
         assert_eq!(plan.culled_passes, vec![1, 2]);
-        assert!(plan.resource_transitions.is_empty());
+        assert!(plan.sync.pass_ops[1].is_empty());
+        assert!(plan.sync.pass_ops[2].is_empty());
+        // The live pass keeps only its fresh-texture bootstrap operation.
+        assert!(
+            plan.sync.pass_ops[0]
+                .iter()
+                .all(|op| op.reason == SyncReason::InitialUse)
+        );
+        assert!(plan.sync.final_ops.is_empty());
     }
 
     #[test]

@@ -1,7 +1,6 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use crate::render_graph::resource::{ResourceState, TransientTextureOps};
 use crate::sync::VkImageView;
 use crate::vulkan::context::VulkanContext;
 use ash::vk;
@@ -26,18 +25,6 @@ pub struct TransientTexture {
     pub(super) bindless_slot: Option<u32>,
     /// Current GPU layout - tracked to ensure correct barrier old_layout.
     current_layout: Cell<vk::ImageLayout>,
-    /// Current resource state (semantic usage) for barrier decision-making.
-    state: Cell<ResourceState>,
-}
-
-impl TransientTextureOps for TransientTexture {
-    fn state(&self) -> ResourceState {
-        self.state.get()
-    }
-
-    fn set_state(&self, new_state: ResourceState) {
-        self.state.set(new_state);
-    }
 }
 
 impl TransientTexture {
@@ -59,7 +46,6 @@ impl TransientTexture {
             extent,
             bindless_slot: None,
             current_layout: Cell::new(vk::ImageLayout::UNDEFINED),
-            state: Cell::new(ResourceState::Undefined),
         }
     }
 
@@ -71,16 +57,6 @@ impl TransientTexture {
     /// Update the tracked layout after a barrier transition.
     pub(crate) fn set_layout(&self, new_layout: vk::ImageLayout) {
         self.current_layout.set(new_layout);
-    }
-
-    /// Get the current resource state (delegates to TransientTextureOps).
-    pub fn state(&self) -> ResourceState {
-        <Self as TransientTextureOps>::state(self)
-    }
-
-    /// Update the tracked resource state after a transition (delegates to TransientTextureOps).
-    pub(crate) fn set_state(&self, new_state: ResourceState) {
-        <Self as TransientTextureOps>::set_state(self, new_state);
     }
 
     /// Get the raw Vulkan image view handle.

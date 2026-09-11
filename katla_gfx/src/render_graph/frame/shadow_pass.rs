@@ -4,7 +4,6 @@ use crate::render_graph::frame::draw_helpers::{
     DescriptorConfig, DrawParams, draw_meshes_with_skinning,
 };
 use crate::render_graph::pass::PassDesc;
-use crate::render_graph::resource::ResourceState;
 use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
@@ -185,12 +184,6 @@ impl Frame<'_, VulkanRenderer> {
         }
 
         cmd.end_rendering();
-
-        if let Some(&write_id) = pass.writes.first()
-            && let Some(transient) = self.graph.transient_texture_by_id(write_id, frame_idx)
-        {
-            transient.set_state(ResourceState::DepthStencilAttachment);
-        }
 
         Ok(())
     }

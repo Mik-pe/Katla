@@ -5,7 +5,7 @@
 //! to delegate all GPU-specific work to the backend.
 
 use super::error::RenderGraphError;
-use super::resource::{GraphResourceDesc, TransientTextureOps};
+use super::resource::GraphResourceDesc;
 use crate::texture::ImageFormat;
 
 /// Backend interface for render graph execution.
@@ -18,7 +18,7 @@ use crate::texture::ImageFormat;
 /// all GPU-specific details internally.
 pub trait RenderGraphBackend: Sized + 'static {
     /// Backend-specific transient texture type.
-    type TransientTexture: TransientTextureOps;
+    type TransientTexture;
 
     /// Backend-specific image view type for render pass attachments.
     type ImageView: Clone + Send + Sync;
@@ -72,18 +72,4 @@ pub trait RenderGraphBackend: Sized + 'static {
 
     /// Get the depth buffer image view for a specific frame index.
     fn depth_image_view(&self, frame_index: usize) -> Option<Self::ImageView>;
-
-    /// Transition a transient texture's resource state before a pass.
-    fn transition_texture(
-        _texture: &mut Self::TransientTexture,
-        _from: super::resource::ResourceState,
-        _to: super::resource::ResourceState,
-    ) {
-    }
-
-    /// Transition the backbuffer image before a pass.
-    fn transition_backbuffer(&self, _image_index: u32, _to: super::resource::ResourceState) {}
-
-    /// Insert a depth render pass sync barrier between consecutive depth-using passes.
-    fn depth_render_pass_sync(&self, _frame_index: usize) {}
 }
