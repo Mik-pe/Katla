@@ -21,6 +21,7 @@ use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::types::{DrawList, FrameUniforms, UIDrawList};
 use crate::texture::ImageFormat;
 
+use super::MetalBackend;
 use super::command_buffer::MetalCommandBuffer;
 use super::execution_plan::{MetalExecutionPlan, MetalPassRecord};
 use super::metal_renderer::MetalRenderer;
@@ -457,21 +458,23 @@ impl MetalRenderer {
         // the compiled graph describes.
         let depth_attachment = record
             .depth_attachment
-            .map(|declared| -> Result<DepthAttachmentInfo, RendererError> {
-                let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
-                    RendererError::InvalidOperation(
-                        "Metal Geometry record declares depth but has no depth-stencil target"
-                            .into(),
-                    )
-                })?;
-                Ok(DepthAttachmentInfo {
-                    view: depth_view.clone(),
-                    load_op: declared.load_op,
-                    store_op: declared.store_op,
-                    clear_value: declared.clear_value,
-                    format: ImageFormat::D32SfloatS8Uint,
-                })
-            })
+            .map(
+                |declared| -> Result<DepthAttachmentInfo<MetalBackend>, RendererError> {
+                    let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+                        RendererError::InvalidOperation(
+                            "Metal Geometry record declares depth but has no depth-stencil target"
+                                .into(),
+                        )
+                    })?;
+                    Ok(DepthAttachmentInfo {
+                        view: depth_view.clone(),
+                        load_op: declared.load_op,
+                        store_op: declared.store_op,
+                        clear_value: declared.clear_value,
+                        format: ImageFormat::D32SfloatS8Uint,
+                    })
+                },
+            )
             .transpose()?;
         let declared_color = record.color_attachments.first();
 
