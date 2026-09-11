@@ -278,6 +278,7 @@ impl MetalRenderer {
                 PassKind::Geometry => self.encode_geometry_record(
                     &mut cmd_buffer,
                     &mut state,
+                    record,
                     &data,
                     has_later_kind(plan, position, PassKind::Fullscreen),
                 )?,
@@ -449,24 +450,41 @@ impl MetalRenderer {
         &self,
         cmd_buffer: &mut MetalCommandBuffer,
         state: &mut FrameEncodingState,
+        record: &MetalPassRecord,
         data: &PassExecutionData,
         post_process_later: bool,
     ) -> Result<bool, RendererError> {
         let draw_list = merge_draw_lists(data);
-        let depth_attachment = self
-            .depth_stencil_view
-            .as_ref()
-            .map(|view| DepthAttachmentInfo {
-                view: view.clone(),
-                load_op: if state.depth_prepass_ran {
-                    LoadOp::Load
-                } else {
-                    LoadOp::Clear
-                },
-                store_op: StoreOp::Store,
-                clear_value: ClearValue::depth_stencil(0.0, 0),
+        // The graph's declared attachments drive the encoder: depth is bound
+        // only when the pass declares it, and the declared load/store/clear
+        // ops replace the legacy canvas defaults. The prepass heuristic only
+        // fills in ops for records compiled before depth declarations.
+        let depth_attachment = if record.uses_depth {
+            let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
+                RendererError::InvalidOperation(
+                    "Metal Geometry record declares depth but has no depth-stencil target".into(),
+                )
+            })?;
+            let declared = record.depth_attachment;
+            Some(DepthAttachmentInfo {
+                view: depth_view.clone(),
+                load_op: declared
+                    .map(|ops| ops.load_op)
+                    .unwrap_or(if state.depth_prepass_ran {
+                        LoadOp::Load
+                    } else {
+                        LoadOp::Clear
+                    }),
+                store_op: declared.map(|ops| ops.store_op).unwrap_or(StoreOp::Store),
+                clear_value: declared
+                    .map(|ops| ops.clear_value)
+                    .unwrap_or(ClearValue::depth_stencil(0.0, 0)),
                 format: ImageFormat::D32SfloatS8Uint,
-            });
+            })
+        } else {
+            None
+        };
+        let declared_color = record.color_attachments.first();
 
         let color_view = if post_process_later {
             self.geometry_hdr_view.clone().ok_or_else(|| {
@@ -480,21 +498,29 @@ impl MetalRenderer {
             state.drawable_view.clone()
         };
 
-        let clear_value = if post_process_later {
-            ClearValue::OPAQUE_BLACK
-        } else {
-            ClearValue::color(
-                CANVAS_CLEAR_COLOR.0 as f32,
-                CANVAS_CLEAR_COLOR.1 as f32,
-                CANVAS_CLEAR_COLOR.2 as f32,
-                CANVAS_CLEAR_COLOR.3 as f32,
-            )
-        };
+        let (load_op, store_op, clear_value) = declared_color
+            .map(|attachment| {
+                (
+                    attachment.load_op,
+                    attachment.store_op,
+                    attachment.clear_value,
+                )
+            })
+            .unwrap_or((
+                LoadOp::Clear,
+                StoreOp::Store,
+                ClearValue::color(
+                    CANVAS_CLEAR_COLOR.0 as f32,
+                    CANVAS_CLEAR_COLOR.1 as f32,
+                    CANVAS_CLEAR_COLOR.2 as f32,
+                    CANVAS_CLEAR_COLOR.3 as f32,
+                ),
+            ));
         let pass_info = RenderPassInfo {
             color_attachments: vec![ColorAttachmentInfo {
                 view: color_view,
-                load_op: LoadOp::Clear,
-                store_op: StoreOp::Store,
+                load_op,
+                store_op,
                 clear_value,
             }],
             depth_attachment,
