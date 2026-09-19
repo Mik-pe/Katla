@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 10,
   "summary": {
     "declared_passes": 4,
     "live_passes": 4,
@@ -840,6 +840,15 @@
         }
       ],
       "bytes": 32768,
+      "logical_bytes": 65536,
+      "saved_bytes": 32768,
+      "compatibility": {
+        "kind": "color_attachment",
+        "format": "R8G8B8A8Unorm",
+        "width": 128,
+        "height": 64,
+        "tracks_swapchain_size": true
+      },
       "first_execution_position": 0,
       "last_execution_position": 3
     },
@@ -852,6 +861,15 @@
         }
       ],
       "bytes": 32768,
+      "logical_bytes": 32768,
+      "saved_bytes": 0,
+      "compatibility": {
+        "kind": "color_attachment",
+        "format": "R8G8B8A8Unorm",
+        "width": 128,
+        "height": 64,
+        "tracks_swapchain_size": true
+      },
       "first_execution_position": 1,
       "last_execution_position": 2
     }

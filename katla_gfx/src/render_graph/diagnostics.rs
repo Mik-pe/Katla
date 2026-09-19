@@ -17,8 +17,13 @@
 //! their hazards.
 //!
 //! Transient allocation slots list the physical alias groups from the
-//! compiled allocation plan: member resources, allocation size, and the
-//! execution-position span the slot is live for.
+//! compiled allocation plan: member resources in first-use (alias
+//! predecessor → successor) order, the physical allocation size, the
+//! compatibility class every member shares, the execution-position span
+//! the slot is live for, and the estimated bytes aliasing saves. The DOT
+//! graph renders each slot as a physical storage node wired to its member
+//! resources, distinguishing physical allocations from logical graph
+//! resources.
 //!
 //! Checked-in golden snapshots under `tests/goldens/` pin the canonical
 //! exports of a representative graph. Rerun the golden tests with
@@ -43,7 +48,7 @@ use super::resource::{GraphResourceDesc, GraphResourceType, ImportedImageContrac
 use super::{ImageSyncOp, ImageSyncState, ResourceHazardKind};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 9;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 10;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -104,12 +109,30 @@ pub struct RenderGraphDiagnosticImportedContract {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RenderGraphDiagnosticAllocationSlot {
     pub id: u32,
+    /// Slot members in first-use order: each member's alias predecessor
+    /// precedes it and its alias successor follows it in this list.
     pub resources: Vec<RenderGraphDiagnosticResourceRef>,
     /// Byte size of the physical allocation (largest member).
     pub bytes: u64,
+    /// Standalone allocation bytes of the members added up.
+    pub logical_bytes: u64,
+    /// Estimated memory aliasing saves over standalone member allocations.
+    pub saved_bytes: u64,
+    /// Physical memory compatibility class every member shares.
+    pub compatibility: RenderGraphDiagnosticCompatibilityClass,
     /// Inclusive span of execution positions the slot is live for.
     pub first_execution_position: usize,
     pub last_execution_position: usize,
+}
+
+/// Physical memory compatibility class shared by one allocation slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticCompatibilityClass {
+    pub kind: String,
+    pub format: String,
+    pub width: u32,
+    pub height: u32,
+    pub tracks_swapchain_size: bool,
 }
 
 /// Resource information resolved from the graph namespace.
@@ -457,34 +480,34 @@ impl RenderGraphDiagnostics {
         let synchronization = transition_diagnostics(passes, resources, plan);
         let dependencies = dependency_diagnostics(passes, resources, plan);
 
-        let mut slots = BTreeMap::<u32, RenderGraphDiagnosticAllocationSlot>::new();
-        for resource in &diagnostic_resources {
-            let Some(slot_id) = resource.physical_allocation_id else {
-                continue;
-            };
-            let slot =
-                slots
-                    .entry(slot_id)
-                    .or_insert_with(|| RenderGraphDiagnosticAllocationSlot {
-                        id: slot_id,
-                        resources: Vec::new(),
-                        bytes: allocation_plan.slot_bytes(slot_id).unwrap_or(0),
-                        first_execution_position: usize::MAX,
-                        last_execution_position: 0,
-                    });
-            slot.resources.push(RenderGraphDiagnosticResourceRef {
-                id: resource.id,
-                name: resource.name.clone(),
-            });
-            if let Some(lifetime) = &resource.lifetime {
-                slot.first_execution_position = slot
-                    .first_execution_position
-                    .min(lifetime.first_execution_position);
-                slot.last_execution_position = slot
-                    .last_execution_position
-                    .max(lifetime.last_execution_position);
-            }
-        }
+        let transient_slots = allocation_plan
+            .slots()
+            .iter()
+            .map(|slot| {
+                let compatibility = slot.compatibility;
+                let id = slot.id;
+                RenderGraphDiagnosticAllocationSlot {
+                    id,
+                    resources: slot
+                        .members
+                        .iter()
+                        .map(|&member| resource_ref(member, resources))
+                        .collect(),
+                    bytes: slot.bytes,
+                    logical_bytes: allocation_plan.slot_logical_bytes(id).unwrap_or(slot.bytes),
+                    saved_bytes: allocation_plan.slot_saved_bytes(id).unwrap_or(0),
+                    compatibility: RenderGraphDiagnosticCompatibilityClass {
+                        kind: compatibility.kind.label().to_string(),
+                        format: format!("{:?}", compatibility.format),
+                        width: compatibility.width,
+                        height: compatibility.height,
+                        tracks_swapchain_size: compatibility.tracks_swapchain_size,
+                    },
+                    first_execution_position: slot.first_execution_position,
+                    last_execution_position: slot.last_execution_position,
+                }
+            })
+            .collect::<Vec<_>>();
 
         let summary = RenderGraphDiagnosticSummary {
             declared_passes: passes.len(),
@@ -509,7 +532,7 @@ impl RenderGraphDiagnostics {
             synchronization,
             execution_order: plan.sorted_passes.clone(),
             parallel_groups: plan.parallel_groups.clone(),
-            transient_slots: slots.into_values().collect(),
+            transient_slots,
         }
     }
 
@@ -624,6 +647,39 @@ impl RenderGraphDiagnostics {
                 "  p{} -> p{} [style=dashed,label=\"{label}\"];",
                 dependency.from_pass, dependency.to_pass
             );
+        }
+
+        // Physical allocation nodes are rendered apart from the logical
+        // resource ellipses so aliasing is visible without changing the
+        // logical dataflow view.
+        for slot in &self.transient_slots {
+            let compatibility = &slot.compatibility;
+            let _ = writeln!(
+                output,
+                "  a{} [shape=cylinder,style=dashed,label=\"slot {}: {} bytes\\nsaves {} bytes\\n{} {} {}x{} {}\\npositions {}-{}\"];",
+                slot.id,
+                slot.id,
+                slot.bytes,
+                slot.saved_bytes,
+                compatibility.kind,
+                compatibility.format,
+                compatibility.width,
+                compatibility.height,
+                if compatibility.tracks_swapchain_size {
+                    "swapchain-tracked"
+                } else {
+                    "fixed-size"
+                },
+                slot.first_execution_position,
+                slot.last_execution_position
+            );
+            for member in &slot.resources {
+                let _ = writeln!(
+                    output,
+                    "  a{} -> r{} [arrowhead=none,style=dotted,color=gray50,label=\"alias\"];",
+                    slot.id, member.id
+                );
+            }
         }
 
         let frame_boundary_transitions = self
@@ -781,18 +837,29 @@ impl fmt::Display for RenderGraphDiagnostics {
         if !self.transient_slots.is_empty() {
             writeln!(f, "  transient allocation slots:")?;
             for slot in &self.transient_slots {
+                let compatibility = &slot.compatibility;
                 writeln!(
                     f,
-                    "    slot {} ({} bytes, positions {}-{}): {}",
+                    "    slot {} ({} bytes, saves {}, positions {}-{}, {} {} {}x{}, {}): {}",
                     slot.id,
                     slot.bytes,
+                    slot.saved_bytes,
                     slot.first_execution_position,
                     slot.last_execution_position,
+                    compatibility.kind,
+                    compatibility.format,
+                    compatibility.width,
+                    compatibility.height,
+                    if compatibility.tracks_swapchain_size {
+                        "swapchain-tracked"
+                    } else {
+                        "fixed-size"
+                    },
                     slot.resources
                         .iter()
                         .map(|resource| format!("r{} ({})", resource.id, resource.name))
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(" -> ")
                 )?;
             }
         }
@@ -1346,6 +1413,48 @@ mod tests {
 
     #[test]
     fn diagnostics_expose_stable_physical_allocation_ids_and_memory_totals() {
+        let diagnostics = early_late_diagnostics();
+
+        assert_eq!(diagnostics.resources[1].physical_allocation_id, Some(0));
+        assert_eq!(diagnostics.resources[2].physical_allocation_id, Some(0));
+        assert_eq!(diagnostics.summary.physical_transient_allocations, 1);
+        assert_eq!(diagnostics.summary.logical_transient_bytes, 65536);
+        assert_eq!(diagnostics.summary.physical_transient_bytes, 32768);
+        assert_eq!(diagnostics.summary.transient_alias_savings_bytes, 32768);
+
+        assert_eq!(
+            diagnostics.transient_slots,
+            vec![RenderGraphDiagnosticAllocationSlot {
+                id: 0,
+                resources: vec![
+                    RenderGraphDiagnosticResourceRef {
+                        id: 1,
+                        name: "early".to_string(),
+                    },
+                    RenderGraphDiagnosticResourceRef {
+                        id: 2,
+                        name: "late".to_string(),
+                    },
+                ],
+                bytes: 32768,
+                logical_bytes: 65536,
+                saved_bytes: 32768,
+                compatibility: RenderGraphDiagnosticCompatibilityClass {
+                    kind: "color_attachment".to_string(),
+                    format: "R8G8B8A8Unorm".to_string(),
+                    width: 128,
+                    height: 64,
+                    tracks_swapchain_size: true,
+                },
+                first_execution_position: 0,
+                last_execution_position: 3,
+            }]
+        );
+    }
+
+    /// An early and a late transient with disjoint lifetimes sharing one
+    /// physical allocation slot.
+    fn early_late_diagnostics() -> RenderGraphDiagnostics {
         let resources = vec![
             namespace_resource(BACKBUFFER_NAME),
             transient_resource("early"),
@@ -1366,21 +1475,62 @@ mod tests {
         )
         .compile()
         .unwrap();
-        let diagnostics = RenderGraphDiagnostics::from_parts(
+        RenderGraphDiagnostics::from_parts(
             &passes,
             &resources,
             &transient_resources,
             &exported_resources,
             &BTreeMap::new(),
             &plan,
+        )
+    }
+
+    #[test]
+    fn transient_slot_exports_render_compatibility_alias_order_and_savings() {
+        let diagnostics = early_late_diagnostics();
+
+        let text = diagnostics.to_string();
+        assert!(
+            text.contains(
+                "slot 0 (32768 bytes, saves 32768, positions 0-3, color_attachment \
+                 R8G8B8A8Unorm 128x64, swapchain-tracked): r1 (early) -> r2 (late)"
+            ),
+            "text export missing aliasing slot line: {text}"
         );
 
-        assert_eq!(diagnostics.resources[1].physical_allocation_id, Some(0));
-        assert_eq!(diagnostics.resources[2].physical_allocation_id, Some(0));
-        assert_eq!(diagnostics.summary.physical_transient_allocations, 1);
-        assert_eq!(diagnostics.summary.logical_transient_bytes, 65536);
-        assert_eq!(diagnostics.summary.physical_transient_bytes, 32768);
-        assert_eq!(diagnostics.summary.transient_alias_savings_bytes, 32768);
+        let dot = diagnostics.to_dot();
+        assert!(
+            dot.contains(
+                "a0 [shape=cylinder,style=dashed,label=\"slot 0: 32768 bytes\\nsaves \
+                 32768 bytes\\ncolor_attachment R8G8B8A8Unorm 128x64 \
+                 swapchain-tracked\\npositions 0-3\"];"
+            ),
+            "dot export missing physical allocation node: {dot}"
+        );
+        for member in ["r1", "r2"] {
+            assert!(
+                dot.contains(&format!(
+                    "a0 -> {member} [arrowhead=none,style=dotted,color=gray50,label=\"alias\"];"
+                )),
+                "dot export missing alias edge to {member}: {dot}"
+            );
+        }
+
+        let json = serde_json::to_value(&diagnostics).unwrap();
+        assert_eq!(
+            json["transient_slots"][0]["compatibility"],
+            serde_json::json!({
+                "kind": "color_attachment",
+                "format": "R8G8B8A8Unorm",
+                "width": 128,
+                "height": 64,
+                "tracks_swapchain_size": true,
+            })
+        );
+        assert_eq!(json["transient_slots"][0]["bytes"], 32768);
+        assert_eq!(json["transient_slots"][0]["logical_bytes"], 65536);
+        assert_eq!(json["transient_slots"][0]["saved_bytes"], 32768);
+        assert_eq!(json["transient_slots"][0]["resources"][1]["name"], "late");
     }
 
     #[test]
