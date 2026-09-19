@@ -5,6 +5,7 @@
 //! `UINT32`) must reach `vkCmdBindIndexBuffer`.
 
 use std::ffi::CString;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use katla_gfx::render_graph::{FrameGraphBuilder, GeometryPass};
@@ -193,7 +194,7 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
             .unwrap();
         renderer
             .render(&frame_token, &mut graph, |frame_context| {
-                frame_context.submit(geometry_pass, &draw_list);
+                frame_context.submit(geometry_pass, Rc::new(draw_list));
             })
             .unwrap();
         renderer.present(frame_token).unwrap();

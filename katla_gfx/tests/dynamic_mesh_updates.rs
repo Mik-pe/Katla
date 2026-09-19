@@ -12,6 +12,7 @@
 //! (`#[ignore]`, like the other GPU contract tests).
 
 use std::ffi::CString;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use katla_gfx::render_graph::{FrameGraph, FrameGraphBuilder, GeometryPass};
@@ -277,7 +278,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
             .unwrap();
         renderer
             .render(&frame_token, graph, |frame_context| {
-                frame_context.submit(geometry_pass, &draw_list);
+                frame_context.submit(geometry_pass, Rc::new(draw_list));
             })
             .unwrap();
         renderer.present(frame_token).unwrap();

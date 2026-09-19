@@ -303,7 +303,6 @@ pub struct MetalRenderer {
     pub(crate) ui_font_atlas: Option<TextureHandle>,
     pub(crate) last_command_buffer: Option<Retained<ProtocolObject<dyn MTLCommandBuffer>>>,
     pub(crate) texture_uploads: super::texture_upload::TextureUploadQueue,
-    pub(crate) pending_draw_list: Option<DrawList>,
     pub(crate) light_culling: Option<MetalLightCulling>,
     pub(crate) ui_renderer: MetalUIRenderer,
     pub(crate) animation_system: Option<MetalAnimationSystem>,
@@ -467,7 +466,6 @@ impl MetalRenderer {
             ui_font_atlas: None,
             last_command_buffer: None,
             texture_uploads: super::texture_upload::TextureUploadQueue::default(),
-            pending_draw_list: None,
             light_culling: None,
             ui_renderer: MetalUIRenderer::new(),
             animation_system: None,
@@ -868,187 +866,6 @@ impl MetalRenderer {
         );
     }
 
-    /// Render the shadow pass for all cascades.
-    pub fn render_shadow_pass(&mut self) -> Result<(), RendererError> {
-        let Some(shadow_map) = self.shadow.shadow_map_view() else {
-            return Ok(());
-        };
-        let Some(pipeline) = self.shadow.pipeline() else {
-            return Ok(());
-        };
-        let Some(ref draw_list) = self.pending_draw_list else {
-            return Ok(());
-        };
-        let Some(frame_buf) = self.current_frame_uniform_buffer() else {
-            return Ok(());
-        };
-        let Some(object_buf) = self.current_object_storage_buffer() else {
-            return Ok(());
-        };
-        let Some(ref shadow_buf) = self.shadow_cascade_buffer else {
-            return Ok(());
-        };
-
-        let mut cmd_buffer = self
-            .context
-            .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
-        cmd_buffer.begin();
-        {
-            let label =
-                objc2_foundation::NSString::from_str(&format!("shadow_pass.{}", self.frame_index));
-            cmd_buffer.inner.setLabel(Some(&label));
-        }
-
-        super::shadow::render_cascades(
-            &mut cmd_buffer,
-            pipeline,
-            self.shadow.pipeline_skinned(),
-            Some(&self.skeletons),
-            shadow_map,
-            self.shadow.shadow_resolution(),
-            frame_buf,
-            object_buf,
-            shadow_buf,
-            self.buffer_sizes_buffer.as_ref(),
-            self.shadow.cascade_count(),
-            &self.meshes,
-            &self.materials,
-            draw_list,
-        );
-
-        cmd_buffer.end();
-        cmd_buffer.submit(&self.context);
-
-        Ok(())
-    }
-
-    /// Render the depth prepass.
-    pub fn render_depth_prepass(&mut self) -> Result<(), RendererError> {
-        let Some(pipeline) = self.depth_prepass.pipeline() else {
-            return Ok(());
-        };
-        let Some(ref draw_list) = self.pending_draw_list else {
-            return Ok(());
-        };
-        let Some(frame_buf) = self.current_frame_uniform_buffer() else {
-            return Ok(());
-        };
-        let Some(object_buf) = self.current_object_storage_buffer() else {
-            return Ok(());
-        };
-        let Some(ref depth_view) = self.depth_stencil_view else {
-            return Ok(());
-        };
-
-        let width = self.size.width;
-        let height = self.size.height;
-
-        let mut cmd_buffer = self
-            .context
-            .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
-        cmd_buffer.begin();
-        {
-            let label = objc2_foundation::NSString::from_str(&format!(
-                "depth_prepass.{}",
-                self.frame_index
-            ));
-            cmd_buffer.inner.setLabel(Some(&label));
-        }
-
-        super::depth_prepass::render_depth_prepass(
-            &mut cmd_buffer,
-            pipeline,
-            self.depth_prepass.pipeline_skinned(),
-            self.depth_prepass.pipeline_billboard(),
-            depth_view,
-            width,
-            height,
-            frame_buf,
-            object_buf,
-            &self.meshes,
-            &self.materials,
-            draw_list,
-            &self.skeletons,
-            self.bindless_manager.argument_buffer(),
-            self.shared_sampler.as_ref(),
-        );
-
-        cmd_buffer.end();
-        cmd_buffer.submit(&self.context);
-
-        Ok(())
-    }
-
-    /// Render the outline pass for selected objects.
-    pub fn render_outline_pass(&mut self) -> Result<(), RendererError> {
-        let Some(stencil_pipeline) = self.outline.stencil_mark_pipeline() else {
-            return Ok(());
-        };
-        let Some(outline_pipeline) = self.outline.outline_draw_pipeline() else {
-            return Ok(());
-        };
-        let Some(ref draw_list) = self.pending_draw_list else {
-            return Ok(());
-        };
-        let Some(frame_buf) = self.current_frame_uniform_buffer() else {
-            return Ok(());
-        };
-        let Some(object_buf) = self.current_object_storage_buffer() else {
-            return Ok(());
-        };
-        let Some(ref color_view) = self.hdr_color_view else {
-            return Ok(());
-        };
-        let Some(ref depth_view) = self.depth_stencil_view else {
-            return Ok(());
-        };
-
-        let width = self.size.width;
-        let height = self.size.height;
-
-        let mut cmd_buffer = self
-            .context
-            .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
-        cmd_buffer.begin();
-
-        super::outline::render_stencil_mark(
-            &mut cmd_buffer,
-            stencil_pipeline,
-            self.outline.stencil_mark_skinned_pipeline(),
-            color_view,
-            depth_view,
-            width,
-            height,
-            frame_buf,
-            object_buf,
-            &self.meshes,
-            &self.materials,
-            draw_list,
-            &self.skeletons,
-        );
-
-        super::outline::render_outline(
-            &mut cmd_buffer,
-            outline_pipeline,
-            self.outline.outline_draw_skinned_pipeline(),
-            color_view,
-            depth_view,
-            width,
-            height,
-            frame_buf,
-            object_buf,
-            &self.meshes,
-            &self.materials,
-            draw_list,
-            &self.skeletons,
-        );
-
-        cmd_buffer.end();
-        cmd_buffer.submit(&self.context);
-
-        Ok(())
-    }
-
     /// Register a Metal texture with the bindless system (render graph backend).
     pub(crate) fn register_metal_bindless_texture(
         &mut self,
@@ -1153,8 +970,6 @@ impl MetalRenderer {
         }
 
         object_buf.unmap();
-
-        self.pending_draw_list = Some(draw_list.clone());
 
         Ok(())
     }

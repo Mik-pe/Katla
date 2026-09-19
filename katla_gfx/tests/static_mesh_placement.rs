@@ -11,6 +11,7 @@
 //! contract tests).
 
 use std::ffi::CString;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use katla_gfx::render_graph::{FrameGraph, FrameGraphBuilder, GeometryPass};
@@ -187,10 +188,10 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
         .unwrap();
     let geometry_pass = graph.pass_id("geometry").unwrap();
 
-    let mut render_and_capture = |renderer: &mut VulkanRenderer,
-                                  graph: &mut FrameGraph<VulkanRenderer>,
-                                  mesh: MeshHandle,
-                                  frame: usize|
+    let render_and_capture = |renderer: &mut VulkanRenderer,
+                              graph: &mut FrameGraph<VulkanRenderer>,
+                              mesh: MeshHandle,
+                              frame: usize|
      -> Vec<u8> {
         let draw_list = {
             let mut list = DrawList::new();
@@ -206,7 +207,7 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
             .unwrap();
         renderer
             .render(&frame_token, graph, |frame_context| {
-                frame_context.submit(geometry_pass, &draw_list);
+                frame_context.submit(geometry_pass, Rc::new(draw_list));
             })
             .unwrap();
         renderer.present(frame_token).unwrap();
