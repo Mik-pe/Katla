@@ -11,36 +11,97 @@ use crate::Size2D;
 use crate::error::RendererError;
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::renderer::features::RendererFeature;
+use crate::renderer::frame_scope::{FrameAcquisition, FrameToken};
 use crate::renderer::pipeline_descriptor::PipelineDescriptor;
 use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::registry::PrimitiveTopology;
-use crate::renderer::types::{DrawList, FrameUniforms, PointLightGPU, UIDrawList};
+use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, UIDrawList};
 use crate::texture::TextureDescriptor;
 use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
 /// Backend-agnostic renderer interface.
 ///
 /// Covers resource creation (meshes, textures, materials, skeletons, viewports),
-/// frame lifecycle, and teardown. All method signatures use Katla-native types
-/// only — no `vk::`, `ash::`, or Metal types appear in the trait.
+/// the frame-scoped lifecycle, and teardown. All method signatures use
+/// Katla-native types only — no `vk::`, `ash::`, or Metal types appear in the trait.
 ///
-/// # Canonical Frame Lifecycle
+/// # Frame-Scoped Lifecycle
 ///
-/// The recommended frame order (as used by `katla_app`):
+/// Rendering one frame means owning one frame token:
 ///
-/// 1. `wait_for_frame()` — ensure GPU is done with this frame slot
-/// 2. `set_frame_uniforms()` — write camera/lighting data to storage buffer
-/// 3. `execute_draw_calls()` — write per-object data to storage buffer
-/// 4. Render graph `render()` — submit GPU work via `FrameGraph<B>`
-/// 5. (implicit present) — swapchain present is handled by the render graph
+/// 1. [`GpuRenderer::acquire_frame`] — waits for a free frame slot (and, when
+///    windowed, acquires the surface image), returning [`FrameAcquisition`]:
+///    `Ready(token)`, `Unavailable`, or `OutOfDate`.
+/// 2. Frame-local writes take the token: `set_frame_uniforms`,
+///    `execute_draw_calls`/`draw`, `upload_lights`, `upload_shadow_cascades`.
+/// 3. The renderer's inherent `render` method executes the frame graph for the
+///    token's frame.
+/// 4. [`GpuRenderer::present`] consumes the token: submit + present, identical
+///    semantics on Vulkan and Metal.
 ///
-/// **Vulkan** follows this order directly. `render_frame()` is a no-op because
-/// all rendering goes through `VulkanRenderer::render()` with `FrameGraph`.
-///
-/// **Metal** currently uses `render_frame()` for its hardcoded pass sequence.
-/// Once migrated to the shared frame graph, `render_frame()` will become a
-/// no-op on Metal as well and can be removed from the trait.
+/// A token from an abandoned acquisition is aborted at the next `acquire_frame`:
+/// nothing is submitted or presented and no slot is stranded. There is no
+/// implicit call-ordering path beside this one.
 pub trait GpuRenderer: Sized + 'static {
+    // ========================================================================
+    // Frame-Scoped Lifecycle
+    // ========================================================================
+
+    /// Acquire one frame: wait for a free reusable slot and, when windowed,
+    /// acquire the next surface image.
+    ///
+    /// Acquiring implicitly aborts a still-open frame from an earlier
+    /// acquisition (logged at debug level), so an abandoned frame can never
+    /// strand a slot.
+    ///
+    /// - `Ready` — render and finish with `present` (or `abort` to skip).
+    /// - `Unavailable` — the surface cannot produce a frame right now; nothing
+    ///   was touched, skip and retry.
+    /// - `OutOfDate` — the surface is stale; recreate it and acquire again.
+    fn acquire_frame(&mut self) -> Result<FrameAcquisition, RendererError>;
+
+    /// Set per-frame uniforms (camera, lighting) for this frame's slot.
+    fn set_frame_uniforms(
+        &mut self,
+        frame: &FrameToken,
+        uniforms: FrameUniforms,
+    ) -> Result<(), RendererError>;
+
+    /// Write per-object draw data into this frame's slot storage.
+    fn execute_draw_calls(
+        &mut self,
+        frame: &FrameToken,
+        draw_list: &DrawList,
+    ) -> Result<(), RendererError>;
+
+    /// Convenience: set uniforms + write draw calls, return the DrawList.
+    fn draw(
+        &mut self,
+        frame: &FrameToken,
+        uniforms: &FrameUniforms,
+        draw_calls: &[DrawCall],
+    ) -> Result<DrawList, RendererError>;
+
+    /// Upload point light data for this frame's Forward+ culling.
+    fn upload_lights(
+        &mut self,
+        frame: &FrameToken,
+        lights: &[PointLightGPU],
+    ) -> Result<(), RendererError>;
+
+    /// Upload shadow cascade data to this frame's slot storage.
+    fn upload_shadow_cascades(&mut self, frame: &FrameToken) -> Result<(), RendererError>;
+
+    /// Submit this frame's recorded work and present it. Consumes the token.
+    ///
+    /// Identical semantics on Vulkan and Metal: `present` returns after the
+    /// submission is enqueued (Vulkan) or the presenting command buffer is
+    /// committed (Metal), not after the GPU retires.
+    fn present(&mut self, frame: FrameToken) -> Result<(), RendererError>;
+
+    /// Abandon the frame without submitting or presenting. Consumes the token.
+    fn abort(&mut self, frame: FrameToken) -> Result<(), RendererError>;
+
     // ========================================================================
     // Initialization & Queries
     // ========================================================================
@@ -74,44 +135,11 @@ pub trait GpuRenderer: Sized + 'static {
     fn supports_feature(&self, feature: RendererFeature) -> bool;
 
     // ========================================================================
-    // Frame Lifecycle
+    // Frame Queries
     // ========================================================================
-
-    /// Wait for the previous frame's GPU work to complete.
-    fn wait_for_frame(&mut self) -> Result<(), RendererError>;
-
-    /// Set per-frame uniforms (camera, lighting).
-    fn set_frame_uniforms(&mut self, uniforms: FrameUniforms);
-
-    /// Write draw call data into the GPU storage buffer.
-    fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError>;
-
-    /// Convenience: set uniforms + write draw calls, return the DrawList.
-    fn draw(
-        &mut self,
-        uniforms: &FrameUniforms,
-        draw_calls: &[crate::renderer::types::DrawCall],
-    ) -> Result<DrawList, RendererError>;
 
     /// Get the current frame uniforms.
     fn frame_uniforms(&self) -> &FrameUniforms;
-
-    /// Begin the frame (acquire next image, etc.).
-    ///
-    /// **Vulkan**: Delegates to `wait_for_frame()`, returns the current frame index.
-    /// The actual swapchain image acquisition happens inside `render()`.
-    ///
-    /// **Metal**: Acquires the next drawable from the Metal layer. Returns the
-    /// frame index.
-    fn begin_frame(&mut self) -> Result<u32, RendererError>;
-
-    /// End the frame (submit, present).
-    ///
-    /// **Vulkan**: No-op. Presentation happens inside `render()`.
-    ///
-    /// **Metal**: Releases the current drawable reference and increments the
-    /// frame index. The drawable is presented by the Metal command buffer.
-    fn end_frame(&mut self) -> Result<(), RendererError>;
 
     // ========================================================================
     // Mesh Creation
@@ -325,16 +353,6 @@ pub trait GpuRenderer: Sized + 'static {
     fn recreate_scene_render_targets(&mut self, width: u32, height: u32);
 
     // ========================================================================
-    // Lighting
-    // ========================================================================
-
-    /// Upload point light data for Forward+ tile-based culling.
-    ///
-    /// Required: every backend implements this explicitly, even if only to
-    /// record that light upload is owned elsewhere.
-    fn upload_lights(&mut self, lights: &[PointLightGPU]);
-
-    // ========================================================================
     // Shadows
     // ========================================================================
 
@@ -342,11 +360,6 @@ pub trait GpuRenderer: Sized + 'static {
     ///
     /// Required: every backend implements this explicitly.
     fn update_shadows(&mut self, light_direction: [f32; 3]);
-
-    /// Upload shadow cascade data to GPU for the current frame.
-    ///
-    /// Required: every backend implements this explicitly.
-    fn upload_shadow_cascades(&mut self);
 
     /// Get the base bindless index for per-frame depth textures.
     /// Actual index for frame N is `base + N`. Returns `None` if not registered.
@@ -551,6 +564,64 @@ pub trait GpuRenderer: Sized + 'static {
 use crate::renderer::VulkanRenderer;
 
 impl GpuRenderer for VulkanRenderer {
+    fn acquire_frame(&mut self) -> Result<FrameAcquisition, RendererError> {
+        super::frame_lifecycle::acquire_frame(self)
+    }
+
+    fn set_frame_uniforms(
+        &mut self,
+        frame: &FrameToken,
+        uniforms: FrameUniforms,
+    ) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        VulkanRenderer::set_frame_uniforms(self, uniforms);
+        Ok(())
+    }
+
+    fn execute_draw_calls(
+        &mut self,
+        frame: &FrameToken,
+        draw_list: &DrawList,
+    ) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        VulkanRenderer::execute_draw_calls(self, draw_list)
+    }
+
+    fn draw(
+        &mut self,
+        frame: &FrameToken,
+        uniforms: &FrameUniforms,
+        draw_calls: &[DrawCall],
+    ) -> Result<DrawList, RendererError> {
+        self.frame_check(frame)?;
+        VulkanRenderer::draw(self, uniforms, draw_calls)
+    }
+
+    fn upload_lights(
+        &mut self,
+        frame: &FrameToken,
+        lights: &[PointLightGPU],
+    ) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        VulkanRenderer::upload_lights(self, lights);
+        Ok(())
+    }
+
+    fn upload_shadow_cascades(&mut self, frame: &FrameToken) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        VulkanRenderer::upload_shadow_cascades(self);
+        Ok(())
+    }
+
+    fn present(&mut self, frame: FrameToken) -> Result<(), RendererError> {
+        VulkanRenderer::present_frame(self, frame)
+    }
+
+    fn abort(&mut self, frame: FrameToken) -> Result<(), RendererError> {
+        super::frame_lifecycle::abort_frame(self, frame);
+        Ok(())
+    }
+
     fn swapchain_extent(&self) -> Size2D {
         VulkanRenderer::swapchain_extent(self)
     }
@@ -592,37 +663,8 @@ impl GpuRenderer for VulkanRenderer {
         }
     }
 
-    fn wait_for_frame(&mut self) -> Result<(), RendererError> {
-        VulkanRenderer::wait_for_frame(self)
-    }
-
-    fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        VulkanRenderer::set_frame_uniforms(self, uniforms);
-    }
-
-    fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
-        VulkanRenderer::execute_draw_calls(self, draw_list)
-    }
-
-    fn draw(
-        &mut self,
-        uniforms: &FrameUniforms,
-        draw_calls: &[crate::renderer::types::DrawCall],
-    ) -> Result<DrawList, RendererError> {
-        VulkanRenderer::draw(self, uniforms, draw_calls)
-    }
-
     fn frame_uniforms(&self) -> &FrameUniforms {
         VulkanRenderer::frame_uniforms(self)
-    }
-
-    fn begin_frame(&mut self) -> Result<u32, RendererError> {
-        VulkanRenderer::wait_for_frame(self)?;
-        Ok(self.current_frame() as u32)
-    }
-
-    fn end_frame(&mut self) -> Result<(), RendererError> {
-        Ok(())
     }
 
     fn create_mesh<T, U>(
@@ -839,20 +881,10 @@ impl GpuRenderer for VulkanRenderer {
         self.ui_renderer.font_atlas()
     }
 
-    // -- Lighting --
-
-    fn upload_lights(&mut self, lights: &[PointLightGPU]) {
-        VulkanRenderer::upload_lights(self, lights);
-    }
-
     // -- Shadows --
 
     fn update_shadows(&mut self, light_direction: [f32; 3]) {
         VulkanRenderer::update_shadows(self, light_direction);
-    }
-
-    fn upload_shadow_cascades(&mut self) {
-        VulkanRenderer::upload_shadow_cascades(self);
     }
 
     fn depth_texture_base_index(&self) -> Option<u32> {

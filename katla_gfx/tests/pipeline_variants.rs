@@ -26,6 +26,17 @@ use katla_gfx::{
     UiDrawCommand, ValidationMode, VulkanRenderer,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
 
@@ -146,18 +157,21 @@ fn render_once(
         inv_view_proj_matrix: identity(),
         ..Default::default()
     };
-    renderer.wait_for_frame().unwrap();
-    renderer.set_frame_uniforms(uniforms);
+    let frame_token = acquire_frame_token(&mut *renderer);
+    renderer.set_frame_uniforms(&frame_token, uniforms).unwrap();
     if let Some(draw_list) = draw_list {
-        renderer.execute_draw_calls(draw_list).unwrap();
+        renderer
+            .execute_draw_calls(&frame_token, draw_list)
+            .unwrap();
     }
     renderer
-        .render(graph, |frame_context| {
+        .render(&frame_token, graph, |frame_context| {
             if let Some(draw_list) = draw_list {
                 frame_context.submit(pass, draw_list);
             }
         })
         .unwrap();
+    renderer.present(frame_token).unwrap();
     renderer.queue_async_readback(frame).unwrap();
     let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
     assert_eq!(pixels.len(), (WIDTH * HEIGHT * 4) as usize);
@@ -554,12 +568,13 @@ fn test_deferred_material_compiles_pipeline_for_the_declared_format() {
     let ui_pass = graph.pass_id("ui").unwrap();
 
     for frame in 0..2 {
-        renderer.wait_for_frame().unwrap();
+        let frame_token = acquire_frame_token(&mut renderer);
         renderer
-            .render(&mut graph, |frame_context| {
+            .render(&frame_token, &mut graph, |frame_context| {
                 frame_context.submit_ui(ui_pass, &ui);
             })
             .unwrap();
+        renderer.present(frame_token).unwrap();
         renderer.queue_async_readback(frame).unwrap();
         let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
         // The green quad covers the left probe; the right probe stays the

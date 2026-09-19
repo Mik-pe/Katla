@@ -278,6 +278,16 @@ pub struct MetalRenderer {
     pub(crate) current_drawable_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
     pub(crate) drawable_texture_view: Option<MetalTextureView>,
     pub(crate) frame_index: u32,
+    /// The currently open frame-scoped token (see `renderer::frame_scope`).
+    pub(crate) active_frame: Option<crate::renderer::frame_scope::FrameToken>,
+    /// Monotonic counter handed to successive acquired frames.
+    pub(crate) frame_generation: u64,
+    /// Why the open frame is poisoned (a render failure); `present` refuses to submit.
+    pub(crate) frame_poisoned: Option<String>,
+    /// Whether the open frame acquired the current drawable from the surface
+    /// (and must release it when aborted), as opposed to a headless drawable
+    /// installed by `set_headless_drawable`.
+    pub(crate) frame_owns_drawable: bool,
     pub(crate) meshes: ResourceStorage<MetalMesh, MeshMarker>,
     pub(crate) materials: ResourceStorage<MetalMaterial, MaterialMarker>,
     pub(crate) textures: ResourceStorage<MetalTextureEntry, TextureMarker>,
@@ -410,6 +420,7 @@ impl MetalRenderer {
     /// This replaces the normal `acquire_next_drawable()` from CAMetalLayer.
     /// The texture must have Shared storage mode for CPU readback.
     pub fn set_headless_drawable(&mut self, texture: Retained<ProtocolObject<dyn MTLTexture>>) {
+        self.frame_owns_drawable = false;
         self.current_drawable_texture = Some(texture.clone());
         self.drawable_texture_view = Some(super::texture::MetalTextureView::new(
             texture,
@@ -437,6 +448,10 @@ impl MetalRenderer {
             current_drawable_texture: None,
             drawable_texture_view: None,
             frame_index: 0,
+            active_frame: None,
+            frame_generation: 0,
+            frame_poisoned: None,
+            frame_owns_drawable: false,
             meshes: ResourceStorage::new(),
             materials: ResourceStorage::new(),
             textures: ResourceStorage::new(),
@@ -690,28 +705,12 @@ impl MetalRenderer {
         self.tonemap_output_view = Some(view);
     }
 
-    /// Execute the frame graph and present the frame.
-    ///
-    /// Acquires the drawable, dispatches light culling, collects draw lists
-    /// via the frame graph closure, then renders using Metal's internal pipeline.
-    pub fn render<F>(
-        &mut self,
-        frame_graph: &mut crate::render_graph::FrameGraph<Self>,
-        f: F,
-    ) -> Result<(), RendererError>
-    where
-        F: FnOnce(&mut crate::render_graph::Frame<'_, Self>),
-    {
-        self.wait_for_frame()?;
-
-        self.begin_frame()?;
-
-        let pending = frame_graph
-            .collect_draw_lists(self, f)
-            .map_err(|e| RendererError::InvalidOperation(e.to_string()))?;
-
-        let frame_idx = self.frame_index();
-
+    /// Record this frame's compute work: argument-buffer flush, Forward+
+    /// light culling, and particle simulation (emit / simulate / draw-command)
+    /// so the indirect draw command the particle render record consumes is
+    /// written this frame. Called by the frame object between draw-list
+    /// collection and pass execution.
+    pub(crate) fn record_frame_compute(&mut self) {
         // Flush only the argument buffer slots that changed since last frame.
         self.bindless_manager.flush_argument_buffer();
 
@@ -723,9 +722,6 @@ impl MetalRenderer {
             self.dispatch_light_culling(&(), &view_matrix, &proj_matrix);
         }
 
-        // Particle simulation (emit / simulate / draw-command) runs inline
-        // before the render passes so the indirect draw command the particle
-        // render record consumes is written this frame.
         {
             let fi = frame_slot(self.frame_index);
             let (emit_wg, simulate_wg) = self.pending_particle_workgroups[fi];
@@ -740,15 +736,9 @@ impl MetalRenderer {
                 cmd_buffer.submit(&self.context);
             }
         }
-
-        self.execute_metal_passes(pending, frame_graph, frame_idx)?;
-
-        self.end_frame()?;
-
-        Ok(())
     }
 
-    fn execute_metal_passes(
+    pub(crate) fn execute_metal_passes(
         &mut self,
         pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
         frame_graph: &crate::render_graph::FrameGraph<Self>,
@@ -790,7 +780,7 @@ impl MetalRenderer {
     }
 
     /// Upload point light data for the current frame.
-    pub fn upload_lights(&mut self, lights: &[super::light_culling::PointLightGPU]) {
+    pub(crate) fn upload_lights(&mut self, lights: &[super::light_culling::PointLightGPU]) {
         if let Some(ref mut lc) = self.light_culling {
             lc.upload_lights(lights);
         }
@@ -1094,54 +1084,12 @@ impl MetalRenderer {
     }
 }
 
-impl GpuRenderer for MetalRenderer {
-    fn swapchain_extent(&self) -> Size2D {
-        self.drawable_size
-    }
-
-    fn current_frame(&self) -> usize {
-        self.frame_index()
-    }
-
-    fn num_images(&self) -> usize {
-        1
-    }
-
-    fn wait_for_device(&self) {
-        // Metal doesn't have a global device wait.
-        // Per-frame sync is handled via wait_for_frame.
-    }
-
-    fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities {
-        &self.capabilities
-    }
-
-    fn supports_feature(&self, _feature: crate::renderer::features::RendererFeature) -> bool {
-        // Metal implements every optional renderer feature: animation
-        // compute, light culling, pass pipelines, shadow maps, particles,
-        // timestamp queries, in-place texture upload, depth bindless
-        // registration, and the direct UI pass.
-        true
-    }
-
-    fn destroy(&mut self) {
-        self.particle_system = None;
-        self.meshes = ResourceStorage::new();
-        self.materials = ResourceStorage::new();
-        self.textures = ResourceStorage::new();
-        self.skeletons = ResourceStorage::new();
-        self.viewports.clear();
-    }
-
-    fn wait_for_frame(&mut self) -> Result<(), RendererError> {
-        self.wait_for_frame_impl()
-    }
-
-    fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
+impl MetalRenderer {
+    pub(crate) fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
         self.frame_uniforms = uniforms;
     }
 
-    fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
+    pub(crate) fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
         self.ensure_uniform_buffers()?;
 
         {
@@ -1210,7 +1158,7 @@ impl GpuRenderer for MetalRenderer {
         Ok(())
     }
 
-    fn draw(
+    pub(crate) fn draw(
         &mut self,
         uniforms: &FrameUniforms,
         draw_calls: &[crate::renderer::types::DrawCall],
@@ -1224,16 +1172,145 @@ impl GpuRenderer for MetalRenderer {
         Ok(draw_list)
     }
 
-    fn frame_uniforms(&self) -> &FrameUniforms {
-        &self.frame_uniforms
+    pub(crate) fn upload_shadow_cascades(&mut self) {
+        let Some(ref shadow_buf) = self.shadow_cascade_buffer else {
+            return;
+        };
+        let data = self.shadow.gpu_data();
+        let bytes = bytemuck::bytes_of(&data);
+        let ptr = shadow_buf.map();
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast(), bytes.len());
+        }
+        shadow_buf.unmap();
+
+        // The shadow-depth encode projects with Metal's Y-up clip space;
+        // mirror the cascade Y so the atlas content matches the shared
+        // sampler's Vulkan-convention lookup.
+        let flipped = crate::shadow::cascade::flip_projection_y(&data);
+        if let Some(ref encode_buf) = self.shadow_cascade_encode_buffer {
+            let ptr = encode_buf.map();
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    bytemuck::bytes_of(&flipped).as_ptr(),
+                    ptr.cast(),
+                    bytes.len(),
+                );
+            }
+            encode_buf.unmap();
+        }
+    }
+}
+
+impl GpuRenderer for MetalRenderer {
+    fn acquire_frame(
+        &mut self,
+    ) -> Result<crate::renderer::frame_scope::FrameAcquisition, RendererError> {
+        super::frame_lifecycle::acquire_frame(self)
     }
 
-    fn begin_frame(&mut self) -> Result<u32, RendererError> {
-        self.begin_frame_impl()
+    fn set_frame_uniforms(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        uniforms: FrameUniforms,
+    ) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        MetalRenderer::set_frame_uniforms(self, uniforms);
+        Ok(())
     }
 
-    fn end_frame(&mut self) -> Result<(), RendererError> {
-        self.end_frame_impl()
+    fn execute_draw_calls(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        draw_list: &DrawList,
+    ) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        MetalRenderer::execute_draw_calls(self, draw_list)
+    }
+
+    fn draw(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        uniforms: &FrameUniforms,
+        draw_calls: &[crate::renderer::types::DrawCall],
+    ) -> Result<DrawList, RendererError> {
+        self.frame_check(frame)?;
+        MetalRenderer::draw(self, uniforms, draw_calls)
+    }
+
+    fn upload_lights(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        lights: &[crate::renderer::types::PointLightGPU],
+    ) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        MetalRenderer::upload_lights(self, lights);
+        Ok(())
+    }
+
+    fn upload_shadow_cascades(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+    ) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        MetalRenderer::upload_shadow_cascades(self);
+        Ok(())
+    }
+
+    fn present(
+        &mut self,
+        frame: crate::renderer::frame_scope::FrameToken,
+    ) -> Result<(), RendererError> {
+        MetalRenderer::present_frame(self, frame)
+    }
+
+    fn abort(
+        &mut self,
+        frame: crate::renderer::frame_scope::FrameToken,
+    ) -> Result<(), RendererError> {
+        super::frame_lifecycle::abort_frame(self, frame);
+        Ok(())
+    }
+
+    fn swapchain_extent(&self) -> Size2D {
+        self.drawable_size
+    }
+
+    fn current_frame(&self) -> usize {
+        self.frame_index()
+    }
+
+    fn num_images(&self) -> usize {
+        1
+    }
+
+    fn wait_for_device(&self) {
+        // Metal has no device-wide wait; the last committed command buffer is
+        // the frame's submission, so waiting on it is the strongest guarantee.
+        if let Some(ref cmd_buffer) = self.last_command_buffer {
+            cmd_buffer.waitUntilCompleted();
+        }
+    }
+
+    fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities {
+        &self.capabilities
+    }
+
+    fn supports_feature(&self, _feature: crate::renderer::features::RendererFeature) -> bool {
+        // Metal implements every optional renderer feature: animation
+        // compute, light culling, pass pipelines, shadow maps, particles,
+        // timestamp queries, in-place texture upload, depth bindless
+        // registration, and the direct UI pass.
+        true
+    }
+
+    fn destroy(&mut self) {
+        self.particle_system = None;
+        self.meshes = ResourceStorage::new();
+        self.materials = ResourceStorage::new();
+        self.textures = ResourceStorage::new();
+        self.skeletons = ResourceStorage::new();
+        self.viewports.clear();
     }
 
     fn create_mesh<T, U>(
@@ -1438,45 +1515,10 @@ impl GpuRenderer for MetalRenderer {
         self.ui_font_atlas_handle_impl()
     }
 
-    // -- Lighting --
-
-    fn upload_lights(&mut self, lights: &[crate::renderer::types::PointLightGPU]) {
-        MetalRenderer::upload_lights(self, lights);
-    }
-
     // -- Shadows --
 
     fn update_shadows(&mut self, light_direction: [f32; 3]) {
         MetalRenderer::update_shadows(self, light_direction);
-    }
-
-    fn upload_shadow_cascades(&mut self) {
-        let Some(ref shadow_buf) = self.shadow_cascade_buffer else {
-            return;
-        };
-        let data = self.shadow.gpu_data();
-        let bytes = bytemuck::bytes_of(&data);
-        let ptr = shadow_buf.map();
-        unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast(), bytes.len());
-        }
-        shadow_buf.unmap();
-
-        // The shadow-depth encode projects with Metal's Y-up clip space;
-        // mirror the cascade Y so the atlas content matches the shared
-        // sampler's Vulkan-convention lookup.
-        let flipped = crate::shadow::cascade::flip_projection_y(&data);
-        if let Some(ref encode_buf) = self.shadow_cascade_encode_buffer {
-            let ptr = encode_buf.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    bytemuck::bytes_of(&flipped).as_ptr(),
-                    ptr.cast(),
-                    bytes.len(),
-                );
-            }
-            encode_buf.unmap();
-        }
     }
 
     fn depth_texture_base_index(&self) -> Option<u32> {
@@ -2113,8 +2155,6 @@ mod tests {
             overlay: [0.0, 0.0, 0.0, 0.0],
             compositing: [0.0, 0.0, 0.0, 0.0],
         };
-        renderer.set_frame_uniforms(uniforms);
-
         // Build draw list: red cube at origin, green ground plane below
         let plane_transform: [f32; 16] = [
             10.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, -0.5, 0.0, 1.0,
@@ -2133,16 +2173,20 @@ mod tests {
         draw_list.push(plane_draw);
         draw_list.push(cube_draw);
 
-        // Upload uniforms and object data to GPU
-        renderer
-            .execute_draw_calls(&draw_list)
+        // Run the frame lifecycle: acquire the slot, write frame data through
+        // token-gated calls, render, and present.
+        use crate::renderer::frame_scope::FrameAcquisition;
+        let frame = match GpuRenderer::acquire_frame(&mut renderer).expect("acquire_frame failed") {
+            FrameAcquisition::Ready(frame) => frame,
+            FrameAcquisition::Unavailable | FrameAcquisition::OutOfDate => {
+                panic!("headless test renderer must always acquire a frame");
+            }
+        };
+        GpuRenderer::set_frame_uniforms(&mut renderer, &frame, uniforms)
+            .expect("set_frame_uniforms failed");
+        GpuRenderer::execute_draw_calls(&mut renderer, &frame, &draw_list)
             .expect("execute_draw_calls failed");
 
-        // Flush bindless argument buffer (same as MetalRenderer::render())
-        renderer.bindless_manager.flush_argument_buffer();
-
-        // Run the frame lifecycle
-        renderer.begin_frame().expect("begin_frame failed");
         let plan = crate::metal::execution_plan::MetalExecutionPlan::for_test(&[
             crate::render_graph::PassKind::Geometry,
             crate::render_graph::PassKind::Fullscreen,
@@ -2156,12 +2200,14 @@ mod tests {
             },
         );
         renderer
-            .render_frame(&plan, pending)
+            .render_frame_manual(&frame, &plan, pending)
             .expect("render_frame failed");
-        renderer.end_frame().expect("end_frame failed");
+        GpuRenderer::present(&mut renderer, frame).expect("present failed");
 
         // Wait for GPU to finish writing to the tonemap output texture
-        renderer.wait_for_frame().expect("wait_for_frame failed");
+        renderer
+            .wait_for_frame_impl()
+            .expect("wait_for_frame failed");
 
         // Read back pixels from Shared storage texture
         let pixels = readback_texture_bgra8(&readback_tex.inner, W, H);

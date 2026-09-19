@@ -17,10 +17,21 @@ use std::sync::{Arc, Mutex};
 use katla_gfx::render_graph::{FrameGraph, FrameGraphBuilder, GeometryPass, GraphResourceDesc};
 use katla_gfx::render_pass::{AttachmentOps, ClearValue};
 use katla_gfx::texture::ImageFormat;
-use katla_gfx::{ValidationMode, VulkanRenderer};
+use katla_gfx::{GpuRenderer, ValidationMode, VulkanRenderer};
 
 const BLUE: [u8; 4] = [255, 0, 0, 255];
 const RED: [u8; 4] = [0, 0, 255, 255];
+
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
 
 fn headless_renderer(label: &str) -> (VulkanRenderer, Arc<Mutex<Vec<String>>>) {
     let renderer = VulkanRenderer::init_headless(
@@ -113,11 +124,11 @@ fn test_aliased_transients_share_storage_and_render_independently() {
     );
 
     for frame in 0..3 {
-        // render() advances the frame counter, so capture the slot it will
-        // use before rendering.
-        let frame_slot = renderer.current_frame();
-        renderer.render(&mut graph, |_| {}).unwrap();
-        renderer.wait_for_frame().unwrap();
+        // The token owns the frame slot this render uses.
+        let frame_token = acquire_frame_token(&mut renderer);
+        let frame_slot = frame_token.slot();
+        renderer.render(&frame_token, &mut graph, |_| {}).unwrap();
+        renderer.present(frame_token).unwrap();
 
         // The live resource shows its own clear color in every frame.
         let mid_b = readback_pixel(&mut renderer, &graph, "mid_b", frame_slot);
@@ -147,9 +158,10 @@ fn test_aliasing_disabled_keeps_standalone_storage() {
     // because it is set before that happens.
     graph.set_transient_aliasing(false);
 
-    let frame_slot = renderer.current_frame();
-    renderer.render(&mut graph, |_| {}).unwrap();
-    renderer.wait_for_frame().unwrap();
+    let frame_token = acquire_frame_token(&mut renderer);
+    let frame_slot = frame_token.slot();
+    renderer.render(&frame_token, &mut graph, |_| {}).unwrap();
+    renderer.present(frame_token).unwrap();
 
     let mid_b = readback_pixel(&mut renderer, &graph, "mid_b", frame_slot);
     assert_eq!(mid_b, BLUE, "mid_b must hold its clear");

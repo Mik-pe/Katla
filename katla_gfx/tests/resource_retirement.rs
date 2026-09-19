@@ -22,6 +22,17 @@ use katla_gfx::{
     ValidationMode, VulkanRenderer,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
 /// Frames rendered to age retirements past FRAMES_IN_FLIGHT.
@@ -102,9 +113,14 @@ fn render_idle_frames(
     count: usize,
 ) {
     for _ in 0..count {
-        renderer.wait_for_frame().unwrap();
-        renderer.set_frame_uniforms(uniforms.clone());
-        renderer.render(graph, |_| {}).expect("empty frame render");
+        let frame_token = acquire_frame_token(&mut *renderer);
+        renderer
+            .set_frame_uniforms(&frame_token, uniforms.clone())
+            .unwrap();
+        renderer
+            .render(&frame_token, graph, |_| {})
+            .expect("empty frame render");
+        renderer.present(frame_token).unwrap();
     }
 }
 
@@ -260,9 +276,12 @@ fn test_repeated_create_destroy_keeps_retirements_bounded_and_valid() {
         let skeleton = renderer.create_skeleton(4).unwrap();
         let iter_material = compile_ui_material(&mut renderer);
 
-        renderer.wait_for_frame().unwrap();
-        renderer.set_frame_uniforms(frame.clone());
-        renderer.render(&mut graph, |_| {}).unwrap();
+        let frame_token = acquire_frame_token(&mut renderer);
+        renderer
+            .set_frame_uniforms(&frame_token, frame.clone())
+            .unwrap();
+        renderer.render(&frame_token, &mut graph, |_| {}).unwrap();
+        renderer.present(frame_token).unwrap();
 
         // Destroy this iteration's resources; the next iteration's
         // replacements must not collide with any in-flight native object.

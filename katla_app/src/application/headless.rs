@@ -115,9 +115,7 @@ impl Application {
         }
 
         // Wait for GPU to finish the last frame
-        if let Err(e) = self.renderer.wait_for_frame() {
-            log::error!("Failed to wait for frame: {}", e);
-        }
+        self.renderer.wait_for_device();
 
         // Save screenshot from the last frame's offscreen texture (standard mode only)
         if ui_test.is_none() && interaction_test.is_none() {
@@ -230,9 +228,7 @@ impl Application {
         // Wait for the GPU to finish rendering before returning the texture.
         // Without this, getBytes() reads partial/stale data because the command
         // buffer submitted during render_frame is asynchronous.
-        if let Err(e) = self.renderer.wait_for_frame() {
-            log::error!("Failed to wait for GPU frame: {}", e);
-        }
+        self.renderer.wait_for_device();
 
         #[cfg(target_os = "macos")]
         {

@@ -16,8 +16,20 @@ use katla_gfx::{
     GpuRenderer, PipelineDescriptor, UIDrawList, UiDrawCommand, ValidationMode, VulkanRenderer,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 #[test]
 #[ignore = "requires a Vulkan device"]
+
 fn declared_clear_replaces_and_declared_load_extends_attachments() {
     let mut renderer = VulkanRenderer::init_headless(
         64,
@@ -107,12 +119,13 @@ fn declared_clear_replaces_and_declared_load_extends_attachments() {
         let ui_pass = graph.pass_id("ui").unwrap();
 
         for frame in 0..2 {
-            renderer.wait_for_frame().unwrap();
+            let frame_token = acquire_frame_token(&mut renderer);
             renderer
-                .render(&mut graph, |frame| {
+                .render(&frame_token, &mut graph, |frame| {
                     frame.submit_ui(ui_pass, &ui);
                 })
                 .unwrap();
+            renderer.present(frame_token).unwrap();
             renderer.queue_async_readback(frame).unwrap();
             let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
 
