@@ -24,6 +24,17 @@ use katla_gfx::{
     VulkanRenderer, validate_dynamic_update,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
 
@@ -32,6 +43,7 @@ const HEIGHT: u32 = 48;
 // ---------------------------------------------------------------------------
 
 #[test]
+
 fn test_dynamic_update_contract_accepts_consistent_payloads() {
     // Three 4-byte-stride... use a 12-byte position stride for realism.
     let blob = [0u8; 3 * 12];
@@ -256,14 +268,19 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
             list.push(DrawCall::new(mesh, material).with_color([1.0, 0.1, 0.1, 1.0]));
             list
         };
-        renderer.wait_for_frame().unwrap();
-        renderer.set_frame_uniforms(uniforms.clone());
-        renderer.execute_draw_calls(&draw_list).unwrap();
+        let frame_token = acquire_frame_token(&mut *renderer);
         renderer
-            .render(graph, |frame_context| {
+            .set_frame_uniforms(&frame_token, uniforms.clone())
+            .unwrap();
+        renderer
+            .execute_draw_calls(&frame_token, &draw_list)
+            .unwrap();
+        renderer
+            .render(&frame_token, graph, |frame_context| {
                 frame_context.submit(geometry_pass, &draw_list);
             })
             .unwrap();
+        renderer.present(frame_token).unwrap();
         renderer.queue_async_readback(frame).unwrap();
         let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
         pixels

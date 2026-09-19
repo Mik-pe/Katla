@@ -20,6 +20,17 @@ use katla_gfx::{
     VulkanRenderer,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
 
@@ -71,9 +82,12 @@ fn test_representative_frame_compiles_and_renders_portably() {
         .build::<VulkanRenderer>()
         .unwrap();
 
-    renderer.wait_for_frame().unwrap();
-    renderer.set_frame_uniforms(FrameUniforms::default());
+    let frame_token = acquire_frame_token(&mut renderer);
     renderer
-        .render(&mut graph, |_| {})
+        .set_frame_uniforms(&frame_token, FrameUniforms::default())
+        .unwrap();
+    renderer
+        .render(&frame_token, &mut graph, |_| {})
         .expect("backend-neutral frame renders without backend-module imports");
+    renderer.present(frame_token).unwrap();
 }

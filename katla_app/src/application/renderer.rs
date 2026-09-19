@@ -18,19 +18,45 @@ impl Application {
         delta_time: f32,
         frame_count: usize,
     ) {
+        use katla_gfx::renderer::frame_scope::FrameAcquisition;
+
         self.frame_graph.set_delta_time(delta_time);
         self.frame_graph.set_frame_count(frame_count);
         let ui_pass = self.pass_ids.ui;
 
-        if let Err(error) = self.renderer.render(&mut self.frame_graph, |frame| {
-            if let (Some(pass_id), Some(ui_list)) = (ui_pass, ui_draw_list.as_ref()) {
-                frame.submit_ui(pass_id, ui_list);
+        let frame_token = match self.renderer.acquire_frame() {
+            Ok(FrameAcquisition::Ready(token)) => token,
+            Ok(FrameAcquisition::Unavailable) => return,
+            Ok(FrameAcquisition::OutOfDate) => {
+                self.needs_swapchain_recreate = true;
+                return;
             }
-        }) {
+            Err(error) => {
+                log::error!("Failed to acquire frame: {error}");
+                return;
+            }
+        };
+
+        if let Err(error) = self
+            .renderer
+            .render(&frame_token, &mut self.frame_graph, |frame| {
+                if let (Some(pass_id), Some(ui_list)) = (ui_pass, ui_draw_list.as_ref()) {
+                    frame.submit_ui(pass_id, ui_list);
+                }
+            })
+        {
+            log::error!("Application-owned frame graph failed: {error}");
+            if GpuRenderer::abort(&mut self.renderer, frame_token).is_err() {
+                log::error!("Failed to abort frame after render failure");
+            }
+            return;
+        }
+
+        if let Err(error) = self.renderer.present(frame_token) {
             if matches!(&error, katla_gfx::RendererError::SwapchainOutOfDate) {
                 self.needs_swapchain_recreate = true;
             } else {
-                log::error!("Application-owned frame graph failed: {error}");
+                log::error!("Frame present failed: {error}");
             }
         }
     }
@@ -286,9 +312,7 @@ impl Application {
                 sf
             );
 
-            if let Err(e) = self.renderer.wait_for_frame() {
-                log::error!("Failed to wait for GPU before panel RT resize: {}", e);
-            }
+            self.renderer.wait_for_device();
             self.renderer.recreate_scene_render_targets(w, h);
 
             if let Ok(textures) =
@@ -377,12 +401,21 @@ impl Application {
                 .unwrap_or_else(Mat4::identity)
         };
 
-        // Wait for the current frame's previous GPU submission to complete
-        // before writing to per-frame storage buffers.
-        if let Err(e) = self.renderer.wait_for_frame() {
-            log::error!("Failed to wait for frame: {}", e);
-            return;
-        }
+        // Acquire the frame: this waits for the slot's previous GPU submission
+        // to complete before any writes to per-frame storage buffers.
+        use katla_gfx::renderer::frame_scope::FrameAcquisition;
+        let frame_token = match self.renderer.acquire_frame() {
+            Ok(FrameAcquisition::Ready(token)) => token,
+            Ok(FrameAcquisition::Unavailable) => return,
+            Ok(FrameAcquisition::OutOfDate) => {
+                self.needs_swapchain_recreate = true;
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to acquire frame: {}", e);
+                return;
+            }
+        };
 
         // Tile grid dimensions for Forward+ light culling.
         // Tile grid must match the panel-sized scene render targets (set in
@@ -408,7 +441,7 @@ impl Application {
                 4.0,
                 self.renderer
                     .depth_texture_base_index()
-                    .map(|base| base + self.renderer.current_frame() as u32)
+                    .map(|base| base + frame_token.slot() as u32)
                     .unwrap_or(0) as f32,
                 0.0,
                 0.0,
@@ -424,11 +457,23 @@ impl Application {
         self.collect_draws_with_context(&mut frame, &frustum);
 
         // Collect point lights for Forward+ culling
-        self.collect_and_upload_lights();
+        self.collect_lights();
+        if let Err(e) = self
+            .renderer
+            .upload_lights(&frame_token, &self.point_lights_buffer)
+        {
+            log::error!("Failed to upload lights: {}", e);
+        }
 
         // Must be before update_shadows so CSM uses the current frame's view/proj matrices
-        self.renderer
-            .set_frame_uniforms(frame.frame_uniforms().clone());
+        if let Err(e) = self
+            .renderer
+            .set_frame_uniforms(&frame_token, frame.frame_uniforms().clone())
+        {
+            log::error!("Failed to set frame uniforms: {}", e);
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
 
         self.renderer.update_shadows([
             frame_uniforms.light_direction[0],
@@ -436,7 +481,11 @@ impl Application {
             frame_uniforms.light_direction[2],
         ]);
 
-        self.renderer.upload_shadow_cascades();
+        if let Err(e) = self.renderer.upload_shadow_cascades(&frame_token) {
+            log::error!("Failed to upload shadow cascades: {}", e);
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
 
         let mut draw_list = frame.take_draw_list();
         self.last_draw_call_count = draw_list.len();
@@ -444,8 +493,9 @@ impl Application {
 
         let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
 
-        if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {
+        if let Err(e) = self.renderer.execute_draw_calls(&frame_token, &draw_list) {
             log::error!("Failed to execute draw calls: {}", e);
+            let _ = self.renderer.abort(frame_token);
             return; // Skip rendering this frame
         }
 
@@ -511,65 +561,78 @@ impl Application {
             log::warn!("⚠️ No particle system in renderer!");
         }
 
-        if let Err(e) = self.renderer.render(&mut self.frame_graph, |frame| {
-            log::debug!(
-                "Inside render closure: submitting {} draw calls to geometry pass",
-                draw_list.len()
-            );
+        match self
+            .renderer
+            .render(&frame_token, &mut self.frame_graph, |frame| {
+                log::debug!(
+                    "Inside render closure: submitting {} draw calls to geometry pass",
+                    draw_list.len()
+                );
 
-            let ids = &self.pass_ids;
+                let ids = &self.pass_ids;
 
-            if !draw_list.is_empty() {
-                if let Some(pass_id) = ids.depth_prepass {
-                    frame.submit(pass_id, &draw_list);
+                if !draw_list.is_empty() {
+                    if let Some(pass_id) = ids.depth_prepass {
+                        frame.submit(pass_id, &draw_list);
+                    }
+                    if let Some(pass_id) = ids.geometry {
+                        frame.submit(pass_id, &draw_list);
+                    }
+                    if let Some(pass_id) = ids.picking
+                        && Some(pass_id) != ids.depth_prepass
+                        && Some(pass_id) != ids.geometry
+                    {
+                        frame.submit(pass_id, &draw_list);
+                    }
+                    if let Some(pass_id) = ids.shadow {
+                        frame.submit(pass_id, &shadow_draw_list);
+                    }
                 }
-                if let Some(pass_id) = ids.geometry {
-                    frame.submit(pass_id, &draw_list);
-                }
-                if let Some(pass_id) = ids.picking
-                    && Some(pass_id) != ids.depth_prepass
-                    && Some(pass_id) != ids.geometry
+
+                if let Some(ref outline_dl) = outline_draw_list
+                    && !outline_dl.is_empty()
                 {
-                    frame.submit(pass_id, &draw_list);
+                    if let Some(pass_id) = ids.outline {
+                        frame.submit(pass_id, outline_dl);
+                    }
+                    if let Some(pass_id) = ids.stencil_indicator {
+                        frame.submit(pass_id, outline_dl);
+                    }
                 }
-                if let Some(pass_id) = ids.shadow {
-                    frame.submit(pass_id, &shadow_draw_list);
-                }
-            }
 
-            if let Some(ref outline_dl) = outline_draw_list
-                && !outline_dl.is_empty()
-            {
-                if let Some(pass_id) = ids.outline {
-                    frame.submit(pass_id, outline_dl);
+                if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {
+                    log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
+                    frame.submit_ui(pass_id, ui_list);
                 }
-                if let Some(pass_id) = ids.stencil_indicator {
-                    frame.submit(pass_id, outline_dl);
-                }
+            }) {
+            Err(e) => {
+                log::error!("Frame render failed, skipping frame: {}", e);
+                let _ = self.renderer.abort(frame_token);
             }
-
-            if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {
-                log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
-                frame.submit_ui(pass_id, ui_list);
-            }
-        }) {
-            match &e {
-                katla_gfx::error::RendererError::SwapchainOutOfDate => {
-                    log::debug!("Swapchain out of date, triggering recreation on next frame");
-                    // Defer recreation to the next frame to avoid complex re-entrancy.
-                    // The next RedrawRequested will call recreate_swapchain via a flag.
-                    self.needs_swapchain_recreate = true;
-                }
-                _ => {
-                    log::error!("Frame render failed, skipping frame: {}", e);
+            Ok(()) => {
+                if let Err(e) = self.renderer.present(frame_token) {
+                    match &e {
+                        katla_gfx::error::RendererError::SwapchainOutOfDate => {
+                            log::debug!(
+                                "Swapchain out of date, triggering recreation on next frame"
+                            );
+                            // Defer recreation to the next frame to avoid complex re-entrancy.
+                            // The next RedrawRequested will call recreate_swapchain via a flag.
+                            self.needs_swapchain_recreate = true;
+                        }
+                        _ => {
+                            log::error!("Frame present failed: {}", e);
+                        }
+                    }
                 }
             }
         }
     }
 
-    /// Collect point lights from the ECS world and upload to the GPU
-    /// for Forward+ tile-based light culling.
-    fn collect_and_upload_lights(&mut self) {
+    /// Collect point lights from the ECS world for Forward+ tile-based light
+    /// culling. Upload happens through the acquired frame
+    /// (`GpuRenderer::upload_lights`).
+    fn collect_lights(&mut self) {
         use crate::components::{PointLight, TransformComponent};
         use katla_gfx::PointLightGPU;
 
@@ -585,14 +648,6 @@ impl Application {
                 intensity: point_light.intensity,
             });
         }
-
-        if !self.point_lights_buffer.is_empty() {
-            log::debug!(
-                "Uploading {} point lights to GPU for Forward+ culling",
-                self.point_lights_buffer.len()
-            );
-        }
-        self.renderer.upload_lights(&self.point_lights_buffer);
     }
 
     /// Recreate the swapchain and update all dependent resources.
@@ -947,9 +1002,7 @@ impl Application {
                 let w = (inner.width as f32 / self.scale_factor) as u32;
                 let h = (inner.height as f32 / self.scale_factor) as u32;
                 if w > 0 && h > 0 {
-                    if let Err(e) = self.renderer.wait_for_frame() {
-                        log::error!("Failed to wait for GPU before resize: {}", e);
-                    }
+                    self.renderer.wait_for_device();
                     if let Err(e) = self.renderer.resize(w, h) {
                         log::error!("Failed to resize Metal renderer: {}", e);
                     }
@@ -1010,6 +1063,22 @@ impl Application {
                 .unwrap_or_else(Mat4::identity)
         };
 
+        // Acquire the frame: waits for the slot's previous submission (and the
+        // prior drawable) to complete before any per-frame CPU writes.
+        use katla_gfx::renderer::frame_scope::FrameAcquisition;
+        let frame_token = match self.renderer.acquire_frame() {
+            Ok(FrameAcquisition::Ready(token)) => token,
+            Ok(FrameAcquisition::Unavailable) => return,
+            Ok(FrameAcquisition::OutOfDate) => {
+                self.needs_swapchain_recreate = true;
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to acquire frame: {}", e);
+                return;
+            }
+        };
+
         // Tile grid must match the panel-sized scene render targets (set in
         // recreate_panel_rt_resources). Fall back to the swapchain extent before
         // the first layout runs.
@@ -1032,7 +1101,7 @@ impl Application {
                 4.0,
                 self.renderer
                     .depth_texture_base_index()
-                    .map(|base| base + self.renderer.current_frame() as u32)
+                    .map(|base| base + frame_token.slot() as u32)
                     .unwrap_or(0) as f32,
                 0.0,
                 0.0,
@@ -1046,10 +1115,22 @@ impl Application {
 
         self.collect_draws_with_context(&mut frame, &frustum);
 
-        self.collect_and_upload_lights();
+        self.collect_lights();
+        if let Err(e) = self
+            .renderer
+            .upload_lights(&frame_token, &self.point_lights_buffer)
+        {
+            log::error!("Failed to upload lights: {}", e);
+        }
 
-        self.renderer
-            .set_frame_uniforms(frame.frame_uniforms().clone());
+        if let Err(e) = self
+            .renderer
+            .set_frame_uniforms(&frame_token, frame.frame_uniforms().clone())
+        {
+            log::error!("Failed to set frame uniforms: {}", e);
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
 
         self.renderer.update_shadows([
             frame_uniforms.light_direction[0],
@@ -1057,7 +1138,11 @@ impl Application {
             frame_uniforms.light_direction[2],
         ]);
 
-        self.renderer.upload_shadow_cascades();
+        if let Err(e) = self.renderer.upload_shadow_cascades(&frame_token) {
+            log::error!("Failed to upload shadow cascades: {}", e);
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
 
         let mut draw_list = frame.take_draw_list();
         self.last_draw_call_count = draw_list.len();
@@ -1068,8 +1153,9 @@ impl Application {
         // draw references initialized GPU data.
         let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
 
-        if let Err(e) = self.renderer.execute_draw_calls(&draw_list) {
+        if let Err(e) = self.renderer.execute_draw_calls(&frame_token, &draw_list) {
             log::error!("Failed to execute draw calls: {}", e);
+            let _ = self.renderer.abort(frame_token);
             return;
         }
 
@@ -1083,44 +1169,54 @@ impl Application {
         // of its own render() (light-culling pattern).
         self.step_particle_simulation(delta_time);
 
-        if let Err(e) = self.renderer.render(&mut self.frame_graph, |frame| {
-            let ids = &self.pass_ids;
+        match self
+            .renderer
+            .render(&frame_token, &mut self.frame_graph, |frame| {
+                let ids = &self.pass_ids;
 
-            if !draw_list.is_empty() {
-                if let Some(pass_id) = ids.geometry {
-                    frame.submit(pass_id, &draw_list);
+                if !draw_list.is_empty() {
+                    if let Some(pass_id) = ids.geometry {
+                        frame.submit(pass_id, &draw_list);
+                    }
+                    if let Some(pass_id) = ids.picking
+                        && Some(pass_id) != ids.depth_prepass
+                        && Some(pass_id) != ids.geometry
+                    {
+                        frame.submit(pass_id, &draw_list);
+                    }
+                    if let Some(pass_id) = ids.shadow {
+                        frame.submit(pass_id, &shadow_draw_list);
+                    }
+                    if let Some(pass_id) = ids.depth_prepass {
+                        frame.submit(pass_id, &draw_list);
+                    }
                 }
-                if let Some(pass_id) = ids.picking
-                    && Some(pass_id) != ids.depth_prepass
-                    && Some(pass_id) != ids.geometry
+
+                if let Some(ref outline_dl) = outline_draw_list
+                    && !outline_dl.is_empty()
+                    && let Some(pass_id) = ids.outline
                 {
-                    frame.submit(pass_id, &draw_list);
+                    frame.submit(pass_id, outline_dl);
                 }
-                if let Some(pass_id) = ids.shadow {
-                    frame.submit(pass_id, &shadow_draw_list);
-                }
-                if let Some(pass_id) = ids.depth_prepass {
-                    frame.submit(pass_id, &draw_list);
-                }
-            }
 
-            if let Some(ref outline_dl) = outline_draw_list
-                && !outline_dl.is_empty()
-                && let Some(pass_id) = ids.outline
-            {
-                frame.submit(pass_id, outline_dl);
+                if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {
+                    log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
+                    frame.submit_ui(pass_id, ui_list);
+                }
+            }) {
+            Err(e) => {
+                log::error!("Metal frame render failed: {}", e);
+                let _ = self.renderer.abort(frame_token);
             }
-
-            if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {
-                log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
-                frame.submit_ui(pass_id, ui_list);
+            Ok(()) => {
+                if let Err(e) = self.renderer.present(frame_token) {
+                    log::error!("Metal frame present failed: {}", e);
+                }
             }
-        }) {
-            log::error!("Metal frame render failed: {}", e);
         }
     }
 
-    fn collect_and_upload_lights(&mut self) {
+    fn collect_lights(&mut self) {
         use crate::components::{PointLight, TransformComponent};
         use katla_gfx::PointLightGPU;
 
@@ -1136,13 +1232,5 @@ impl Application {
                 intensity: point_light.intensity,
             });
         }
-
-        if !self.point_lights_buffer.is_empty() {
-            log::debug!(
-                "Uploading {} point lights for Metal Forward+ culling",
-                self.point_lights_buffer.len()
-            );
-        }
-        self.renderer.upload_lights(&self.point_lights_buffer);
     }
 }

@@ -1,24 +1,54 @@
-use super::*;
+//! Frame-scoped lifecycle for the Vulkan backend.
+//!
+//! [`acquire_frame`] waits for a free frame slot (fence + retirement drain) and
+//! acquires the next swapchain image when windowed. The returned [`FrameToken`]
+//! owns the slot until [`GpuRenderer::present`] consumes it (submit + present) or
+//! the frame is aborted (no submit, slot not advanced).
 
+use ash::vk;
+
+use crate::barrier::ImageBarrier;
+use crate::error::RendererError;
+use crate::render_graph::Frame;
+use crate::renderer::VulkanRenderer;
+use crate::renderer::frame_scope::{FrameAcquisition, FrameToken};
+use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, InstanceData};
+
+/// Marker methods implementing the frame-scoped contract on Vulkan.
 impl VulkanRenderer {
-    /// Wait for the current frame's previous GPU submission to complete.
+    pub(crate) fn frame_check(&self, frame: &FrameToken) -> Result<(), RendererError> {
+        match &self.active_frame {
+            Some(active) if active == frame => Ok(()),
+            Some(_) => Err(RendererError::InvalidOperation(
+                "stale frame token: the frame was already finished or superseded".into(),
+            )),
+            None => Err(RendererError::InvalidOperation(
+                "no frame is currently acquired; call acquire_frame first".into(),
+            )),
+        }
+    }
+
+    /// Abort any still-open frame, either explicitly (caller aborts) or
+    /// implicitly (a new frame is acquired while this one is still open).
+    pub(crate) fn frame_clear(&mut self) {
+        if self.active_frame.take().is_some() {
+            log::debug!(
+                "Vulkan frame aborted without present (slot {})",
+                self.current_frame()
+            );
+        }
+        self.frame_poisoned = None;
+    }
+
+    /// Wait for the current frame slot's previous GPU submission to complete.
     ///
-    /// This must be called before any CPU writes to per-frame resources
-    /// (storage buffers, uniforms, etc.) to prevent data races where the CPU
-    /// overwrites data that the GPU is still reading from a prior submission.
-    ///
-    /// The recommended frame order is:
-    /// 1. `wait_for_frame()` - ensures GPU is done with this frame slot
-    /// 2. `set_frame_uniforms()` - writes frame data to storage buffer
-    /// 3. `execute_draw_calls()` - writes per-object data to storage buffer
-    /// 4. `render()` - submits GPU work
-    pub fn wait_for_frame(&mut self) -> Result<(), crate::error::RendererError> {
+    /// Called by `acquire_frame` before any CPU writes to per-frame resources.
+    /// This slot's previous submission completing also retires every resource
+    /// replaced at least FRAMES_IN_FLIGHT frames ago; bindless slots freed here
+    /// return to the free list only now, so no new texture can resolve through
+    /// a slot an older submission still references.
+    pub(crate) fn wait_for_frame(&mut self) -> Result<(), RendererError> {
         self.swap_data.wait_for_fence(&self.context.device)?;
-        // This slot's previous submission completed, which retires every
-        // resource replaced at least FRAMES_IN_FLIGHT frames ago. Bindless
-        // slots freed here return to the free list only now, so no new
-        // texture can resolve through a slot an older submission still
-        // references.
         let expired_slots = self.retirements.drain_completed(
             self.swap_data.frame_counter(),
             self.swap_data.frames_in_flight(),
@@ -31,21 +61,8 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    /// Set frame-level uniforms for the current frame.
-    ///
-    /// This should be called once per frame before `render_frame()` or `execute_draw_calls()`.
-    /// The uniforms are used by all draw calls in the frame.
-    ///
-    /// **Important:** `wait_for_frame()` must be called before this method to ensure
-    /// the GPU is done reading from the frame's storage buffer. The recommended order is:
-    /// 1. `wait_for_frame()` - ensures GPU is done with this frame slot
-    /// 2. `set_frame_uniforms()` - writes frame data to storage buffer
-    /// 3. `execute_draw_calls()` - writes per-object data to the same buffer
-    /// 4. `render()` - renders using the prepared data
-    ///
-    /// # Arguments
-    /// * `uniforms` - Frame uniforms containing view/proj matrices, camera position, and lighting
-    pub fn set_frame_uniforms(&mut self, mut uniforms: FrameUniforms) {
+    /// Set frame-level uniforms for the current frame slot.
+    pub(crate) fn set_frame_uniforms(&mut self, mut uniforms: FrameUniforms) {
         // Get frame index from swap_data (the source of truth for frame advancement)
         let frame_idx = self.swap_data.current_frame();
 
@@ -72,54 +89,18 @@ impl VulkanRenderer {
         &self.frame_uniforms
     }
 
-    /// Execute draw calls from FrameContext and prepare them for rendering.
-    ///
-    /// This method writes all per-object data from draw calls to the storage buffer.
-    /// Every instance of an instanced draw is uploaded to its own object slot.
-    /// Frame uniforms should be set separately via `set_frame_uniforms()`.
-    ///
-    /// # Arguments
-    /// * `draw_list` - The DrawList containing draw calls with allocated object slots
-    ///
-    /// # Errors
-    ///
-    /// Returns `RendererError::ObjectLimitExceeded` if any draw call's object slot
-    /// range crosses `MAX_OBJECTS_PER_FRAME`.
-    ///
-    /// # Example
-    /// ```ignore
-    /// // In application render loop
-    /// let mut frame = FrameContext::new();
-    /// frame.set_camera(&view, &proj);
-    /// frame.draw(mesh, material)
-    ///     .with_transform(transform)
-    ///     .submit();
-    ///
-    /// // Set frame uniforms
-    /// renderer.set_frame_uniforms(&frame.frame_uniforms().unwrap());
-    ///
-    /// // Execute draw calls (writes to storage buffer)
-    /// renderer.execute_draw_calls(&frame.draw_list())?;
-    ///
-    /// // Render with frame graph
-    /// renderer.render(&mut frame_graph, |frame| {
-    ///     frame.submit(geometry_pass_id, &frame.draw_list());
-    /// })?;
-    /// ```
-    pub fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
-        // Get current frame index from swap_data (source of truth)
+    /// Write all per-object data from draw calls to this slot's storage buffer.
+    pub(crate) fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
         let frame_idx = self.current_frame();
 
-        // Write all per-object data to storage buffer
         for draw_call in &draw_list.draws {
             let base = draw_call.instance_index as usize;
             let count = draw_call.instance_count().max(1) as usize;
 
-            // Bounds check with clear error message
-            if base + count > MAX_OBJECTS_PER_FRAME as usize {
+            if base + count > super::MAX_OBJECTS_PER_FRAME as usize {
                 return Err(RendererError::ObjectLimitExceeded {
                     index: base,
-                    limit: MAX_OBJECTS_PER_FRAME as usize,
+                    limit: super::MAX_OBJECTS_PER_FRAME as usize,
                 });
             }
 
@@ -155,59 +136,283 @@ impl VulkanRenderer {
         Ok(())
     }
 
-    /// Simple immediate mode draw - the happy path for basic rendering.
-    ///
-    /// This method combines three steps into one:
-    /// 1. Sets frame uniforms (camera, lighting)
-    /// 2. Writes draw call data to GPU storage buffer
-    /// 3. Returns a DrawList for submission to render passes
-    ///
-    /// # Arguments
-    /// * `uniforms` - Frame-level data (view/proj matrices, lighting)
-    /// * `draw_calls` - Slice of DrawCall objects to render
-    ///
-    /// # Returns
-    /// A DrawList that can be passed to `frame.submit()` in the render callback.
-    ///
-    /// # Example
-    /// ```ignore
-    /// // Setup
-    /// let mesh = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0]);
-    /// let material = renderer.default_material();
-    ///
-    /// // Render loop
-    /// let draw_list = renderer.draw(
-    ///     &frame_uniforms,
-    ///     &[DrawCall::new(mesh, material)
-    ///         .with_transform(model_matrix)
-    ///         .with_color([1.0, 0.0, 0.0, 1.0])]
-    /// )?;
-    ///
-    /// renderer.render(&mut frame_graph, |frame| {
-    ///     frame.submit(geometry_pass_id, &draw_list);
-    /// })?;
-    /// ```
-    ///
-    /// # Performance Note
-    /// For complex scenes with >100 draw calls, use `DrawList` directly with
-    /// `set_frame_uniforms()` + `execute_draw_calls()` for better control.
-    pub fn draw(
+    /// Simple immediate mode draw: set uniforms + write draw calls, return the DrawList.
+    pub(crate) fn draw(
         &mut self,
         uniforms: &FrameUniforms,
         draw_calls: &[DrawCall],
     ) -> Result<DrawList, RendererError> {
-        // Set frame uniforms
         self.set_frame_uniforms(uniforms.clone());
 
-        // Build draw list
         let mut draw_list = DrawList::new();
         for draw in draw_calls {
             draw_list.push(draw.clone());
         }
 
-        // Write to storage buffer
         self.execute_draw_calls(&draw_list)?;
 
         Ok(draw_list)
+    }
+
+    /// Execute the frame graph for an open frame: begin the command buffer,
+    /// record all passes, transition the swapchain image for present.
+    ///
+    /// A failure poisons the frame so `present` cannot submit half-encoded work.
+    pub fn render<F>(
+        &mut self,
+        frame: &FrameToken,
+        frame_graph: &mut crate::render_graph::FrameGraph<VulkanRenderer>,
+        f: F,
+    ) -> Result<(), RendererError>
+    where
+        F: FnOnce(&mut Frame<'_, VulkanRenderer>),
+    {
+        self.frame_check(frame)?;
+        if let Some(reason) = &self.frame_poisoned {
+            return Err(RendererError::InvalidOperation(format!(
+                "frame is poisoned by a previous render failure and cannot render again: {reason}"
+            )));
+        }
+
+        let headless = self.frame_context.swapchain.is_none();
+        let image_index = self
+            .last_presented_image_index
+            .unwrap_or(frame.slot() as u32);
+        let frame_idx = self.current_frame();
+        let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
+
+        let begin_info = vk::CommandBufferBeginInfo::default()
+            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
+        unsafe {
+            self.context
+                .device
+                .begin_command_buffer(cmd, &begin_info)
+                .map_err(|e| {
+                    let error =
+                        RendererError::VulkanError("Failed to begin command buffer".into(), e);
+                    self.frame_poisoned = Some(format!("{error:?}"));
+                    error
+                })?;
+        }
+
+        // Transition the surface image to COLOR_ATTACHMENT_OPTIMAL for rendering.
+        // Use transition_from_undefined because after acquire the actual layout
+        // is platform-specific and load_op=CLEAR discards contents. Headless
+        // targets take the same path (their readback expects the final
+        // TRANSFER_SRC_OPTIMAL below).
+        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
+        ImageBarrier::transition_from_undefined(
+            &cmd,
+            &self.context.device,
+            swapchain_image,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+        );
+
+        if let Err(e) = frame_graph.execute(self, image_index, f) {
+            let error = RendererError::RenderGraphError(e);
+            self.frame_poisoned = Some(format!("{error:?}"));
+            return Err(error);
+        }
+
+        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
+        ImageBarrier::transition(
+            &cmd,
+            &self.context.device,
+            swapchain_image,
+            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            if headless {
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+            } else {
+                vk::ImageLayout::PRESENT_SRC_KHR
+            },
+        );
+
+        unsafe {
+            self.context.device.end_command_buffer(cmd).map_err(|e| {
+                let error = RendererError::VulkanError("Failed to end command buffer".into(), e);
+                self.frame_poisoned = Some(format!("{error:?}"));
+                error
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Present implementation: submit the recorded work and present. Consumes
+    /// the open frame; the slot advances and becomes busy until a later
+    /// acquire waits for its fence.
+    pub(crate) fn present_frame(&mut self, frame: FrameToken) -> Result<(), RendererError> {
+        self.frame_check(&frame)?;
+        if let Some(reason) = self.frame_poisoned.take() {
+            self.active_frame = None;
+            return Err(RendererError::InvalidOperation(format!(
+                "frame is poisoned by a previous render failure: {reason}"
+            )));
+        }
+        self.active_frame = None;
+
+        let headless = self.frame_context.swapchain.is_none();
+        let image_index = self
+            .last_presented_image_index
+            .unwrap_or(frame.slot() as u32);
+        let frame_idx = self.current_frame();
+
+        unsafe {
+            self.context
+                .device
+                .reset_fences(&[self.swap_data.in_flight_fence()])
+        }
+        .map_err(|e| RendererError::VulkanError("Failed to reset frame fence".into(), e))?;
+
+        if headless {
+            self.context.gfx_queue.submit(
+                &[&self.frame_context.command_buffers[frame_idx]],
+                &[],
+                &[],
+                self.swap_data.in_flight_fence(),
+            );
+            self.swap_data.wait_for_fence(&self.context.device)?;
+            self.swap_data.step_frame();
+            return Ok(());
+        }
+
+        let swapchain = self
+            .frame_context
+            .swapchain
+            .as_ref()
+            .expect("window swapchain");
+        let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
+        let frame_complete_semaphore = self.swap_data.frame_complete_semaphore();
+        let signal_semaphores = [render_finished_semaphore, frame_complete_semaphore];
+        let swapchains = [swapchain.swapchain];
+        let image_indices = [image_index];
+
+        // On the first frame there's no previous frame to wait on.
+        // After that, wait on the previous frame's completion semaphore at ALL_COMMANDS
+        // to cover TRANSFER/CLEAR from vkCmdUpdateBuffer and TRANSFER_READ from vkCmdCopyBuffer.
+        if self.first_frame_rendered {
+            let wait_semaphores = [
+                self.swap_data.image_available_semaphore(),
+                self.swap_data.previous_frame_complete_semaphore(),
+            ];
+            let wait_stage_masks = [
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::ALL_COMMANDS,
+            ];
+            self.context.gfx_queue.submit_with_stages(
+                &[&self.frame_context.command_buffers[frame_idx]],
+                &wait_semaphores,
+                &signal_semaphores,
+                self.swap_data.in_flight_fence(),
+                &wait_stage_masks,
+            );
+        } else {
+            self.first_frame_rendered = true;
+            let wait_semaphores = [self.swap_data.image_available_semaphore()];
+            self.context.gfx_queue.submit(
+                &[&self.frame_context.command_buffers[frame_idx]],
+                &wait_semaphores,
+                &signal_semaphores,
+                self.swap_data.in_flight_fence(),
+            );
+        }
+
+        let present_wait_semaphores = [render_finished_semaphore];
+        let present_info = vk::PresentInfoKHR::default()
+            .wait_semaphores(&present_wait_semaphores)
+            .swapchains(&swapchains)
+            .image_indices(&image_indices);
+
+        unsafe {
+            let present_result = swapchain
+                .swapchain_loader
+                .queue_present(self.context.gfx_queue.vk_queue(), &present_info);
+
+            match present_result {
+                Ok(is_suboptimal) => {
+                    // Suboptimal is very common on macOS/MoltenVK (especially first frame).
+                    // Still rendered successfully, but signal that swapchain should be recreated.
+                    if is_suboptimal {
+                        log::debug!("Present suboptimal, signaling swapchain recreation");
+                        self.swap_data.step_frame();
+                        return Err(RendererError::SwapchainOutOfDate);
+                    }
+                }
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                    // Frame was presented but swapchain is stale, signal recreation.
+                    log::debug!("Present out of date, signaling swapchain recreation");
+                    self.swap_data.step_frame();
+                    return Err(RendererError::SwapchainOutOfDate);
+                }
+                Err(e) => {
+                    return Err(RendererError::SwapchainError(format!(
+                        "Failed to present: {:?}",
+                        e
+                    )));
+                }
+            }
+        }
+
+        self.swap_data.step_frame();
+        Ok(())
+    }
+}
+
+/// Wait for a free frame slot and acquire the next surface image.
+///
+/// Windowed, `ERROR_OUT_OF_DATE_KHR` at acquire maps to [`FrameAcquisition::OutOfDate`]
+/// with no renderer state touched; the caller recreates the swapchain and retries.
+/// Headless renderers always have a free slot after the fence wait.
+pub(crate) fn acquire_frame(
+    renderer: &mut VulkanRenderer,
+) -> Result<FrameAcquisition, RendererError> {
+    // An unfinished frame from an earlier acquisition is abandoned here.
+    renderer.frame_clear();
+    renderer.wait_for_frame()?;
+
+    match renderer.frame_context.swapchain.as_ref() {
+        Some(swapchain) => {
+            let acquire_result = unsafe {
+                swapchain.swapchain_loader.acquire_next_image(
+                    swapchain.swapchain,
+                    u64::MAX,
+                    renderer.swap_data.image_available_semaphore(),
+                    vk::Fence::null(),
+                )
+            };
+            match acquire_result {
+                Ok((image_index, is_suboptimal)) => {
+                    if is_suboptimal {
+                        log::debug!("Swapchain suboptimal at acquire, will recreate after present");
+                    }
+                    // Store image index for readback debugging
+                    renderer.last_presented_image_index = Some(image_index);
+                }
+                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
+                    log::info!("Swapchain out of date at acquire, signaling recreation");
+                    return Ok(FrameAcquisition::OutOfDate);
+                }
+                Err(e) => {
+                    return Err(RendererError::SwapchainError(format!(
+                        "Failed to acquire swapchain image: {:?}",
+                        e
+                    )));
+                }
+            }
+        }
+        None => renderer.last_presented_image_index = Some(renderer.current_frame() as u32),
+    }
+
+    let token = FrameToken::new(renderer.current_frame(), renderer.frame_generation);
+    renderer.frame_generation += 1;
+    renderer.active_frame = Some(token);
+    Ok(FrameAcquisition::Ready(token))
+}
+
+/// Abort implementation: nothing is submitted or presented, the slot is not
+/// advanced, and the next acquire waits for it as usual.
+pub(crate) fn abort_frame(renderer: &mut VulkanRenderer, frame: FrameToken) {
+    if renderer.frame_check(&frame).is_ok() {
+        renderer.frame_clear();
     }
 }

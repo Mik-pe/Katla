@@ -17,6 +17,17 @@ use katla_gfx::{
     VulkanRenderer,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
 
@@ -178,14 +189,19 @@ fn test_instanced_draw_matches_direct_draws() {
     let mut render_and_capture = |draw_list: &DrawList, frame: usize| -> Vec<u8> {
         // Per-frame-slot storage: uniforms + object data must be refreshed
         // every frame (the recommended wait → uniforms → objects → render order).
-        renderer.wait_for_frame().unwrap();
-        renderer.set_frame_uniforms(uniforms.clone());
-        renderer.execute_draw_calls(draw_list).unwrap();
+        let frame_token = acquire_frame_token(&mut renderer);
         renderer
-            .render(&mut graph, |frame_context| {
+            .set_frame_uniforms(&frame_token, uniforms.clone())
+            .unwrap();
+        renderer
+            .execute_draw_calls(&frame_token, draw_list)
+            .unwrap();
+        renderer
+            .render(&frame_token, &mut graph, |frame_context| {
                 frame_context.submit(geometry_pass, draw_list);
             })
             .unwrap();
+        renderer.present(frame_token).unwrap();
         renderer.queue_async_readback(frame).unwrap();
         let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
         assert_eq!(pixels.len(), (WIDTH * HEIGHT * 4) as usize);
@@ -271,9 +287,9 @@ fn test_instanced_draw_matches_direct_draws() {
         }
         list
     };
-    renderer.wait_for_frame().unwrap();
+    let frame_token = acquire_frame_token(&mut renderer);
     let err = renderer
-        .execute_draw_calls(&oversized)
+        .execute_draw_calls(&frame_token, &oversized)
         .expect_err("a draw range past the per-frame object limit must fail");
     assert!(err.to_string().contains("MAX_OBJECTS_PER_FRAME"));
 

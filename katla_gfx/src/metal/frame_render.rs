@@ -174,6 +174,7 @@ fn validate_frame_submissions(
 impl MetalRenderer {
     pub(crate) fn render_frame(
         &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
         plan: &MetalExecutionPlan,
         mut pending: HashMap<usize, PassExecutionData>,
     ) -> Result<(), RendererError> {
@@ -207,7 +208,7 @@ impl MetalRenderer {
             }
         }
         let upload_list = DrawList::from_draws(draws);
-        GpuRenderer::execute_draw_calls(self, &upload_list)?;
+        GpuRenderer::execute_draw_calls(self, frame, &upload_list)?;
 
         let mut cmd_buffer = self
             .context

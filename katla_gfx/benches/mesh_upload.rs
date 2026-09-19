@@ -8,8 +8,20 @@ use std::ffi::CString;
 use std::time::Instant;
 
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use katla_gfx::GpuRenderer as _;
 use katla_gfx::vertex::VertexPBR;
 use katla_gfx::{PrimitiveTopology, ValidationMode, VulkanRenderer};
+
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
 
 fn vertex(position: [f32; 3], normal: [f32; 3], uv: [f32; 2]) -> VertexPBR {
     VertexPBR {
@@ -103,7 +115,8 @@ fn bench_mesh_upload(c: &mut Criterion) {
                     }
                     // Frame boundary: release completed staged uploads and
                     // retired buffers, like the render loop would.
-                    renderer.wait_for_frame().expect("frame wait");
+                    let frame_token = acquire_frame_token(&mut renderer);
+                    renderer.present(frame_token).expect("frame present");
                 }
                 elapsed
             })
@@ -123,7 +136,8 @@ fn bench_mesh_upload(c: &mut Criterion) {
                         .expect("large static mesh creation");
                     elapsed += start.elapsed();
                     renderer.destroy_mesh(handle);
-                    renderer.wait_for_frame().expect("frame wait");
+                    let frame_token = acquire_frame_token(&mut renderer);
+                    renderer.present(frame_token).expect("frame present");
                 }
                 elapsed
             })

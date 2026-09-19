@@ -15,6 +15,17 @@ use katla_gfx::{
     PipelineDescriptor, ValidationMode, VulkanRenderer,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 fn identity() -> [f32; 16] {
     let mut m = [0.0f32; 16];
     m[0] = 1.0;
@@ -172,15 +183,20 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
     for (frame, mesh) in [(0, mesh_u16), (1, mesh_u32), (2, mesh_u16), (3, mesh_u32)] {
         // Per-frame-slot storage: uniforms + object data must be refreshed
         // every frame (the recommended wait → uniforms → objects → render order).
-        renderer.wait_for_frame().unwrap();
-        renderer.set_frame_uniforms(uniforms.clone());
-        let draw_list = draw_list_for(mesh);
-        renderer.execute_draw_calls(&draw_list).unwrap();
+        let frame_token = acquire_frame_token(&mut renderer);
         renderer
-            .render(&mut graph, |frame_context| {
+            .set_frame_uniforms(&frame_token, uniforms.clone())
+            .unwrap();
+        let draw_list = draw_list_for(mesh);
+        renderer
+            .execute_draw_calls(&frame_token, &draw_list)
+            .unwrap();
+        renderer
+            .render(&frame_token, &mut graph, |frame_context| {
                 frame_context.submit(geometry_pass, &draw_list);
             })
             .unwrap();
+        renderer.present(frame_token).unwrap();
         renderer.queue_async_readback(frame).unwrap();
         let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
         assert_eq!(pixels.len(), 64 * 48 * 4);

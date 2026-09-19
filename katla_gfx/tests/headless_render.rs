@@ -10,8 +10,20 @@ use katla_gfx::{
     GpuRenderer, PipelineDescriptor, UIDrawList, UiDrawCommand, ValidationMode, VulkanRenderer,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 #[test]
 #[ignore = "requires a Vulkan device"]
+
 fn test_headless_render_and_readback_across_frame_slots() {
     let mut renderer = VulkanRenderer::init_headless(
         64,
@@ -37,9 +49,9 @@ fn test_headless_render_and_readback_across_frame_slots() {
 
     let mut previous = None;
     for frame in 0..5 {
-        renderer.wait_for_frame().unwrap();
-        renderer.wait_for_frame().unwrap();
-        renderer.render(&mut graph, |_| {}).unwrap();
+        let frame_token = acquire_frame_token(&mut renderer);
+        renderer.render(&frame_token, &mut graph, |_| {}).unwrap();
+        renderer.present(frame_token).unwrap();
         renderer.queue_async_readback(frame).unwrap();
         let (captured_frame, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
         assert_eq!(captured_frame, frame);
@@ -112,11 +124,13 @@ fn test_headless_render_and_readback_across_frame_slots() {
             // Resizing lighting invalidates material layouts, including both UI pipelines.
             renderer.resize_light_culling(32, 32);
         }
+        let frame_token = acquire_frame_token(&mut renderer);
         renderer
-            .render(&mut graph, |frame| {
+            .render(&frame_token, &mut graph, |frame| {
                 frame.submit_ui(ui_pass, &ui);
             })
             .unwrap();
+        renderer.present(frame_token).unwrap();
         renderer.queue_async_readback(frame).unwrap();
         let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
         for (x, bgra) in [

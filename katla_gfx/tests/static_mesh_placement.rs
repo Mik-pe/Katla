@@ -23,6 +23,17 @@ use katla_gfx::{
     VulkanRenderer,
 };
 
+/// Acquire one frame from the headless renderer (always ready offscreen).
+fn acquire_frame_token(
+    renderer: &mut VulkanRenderer,
+) -> katla_gfx::renderer::frame_scope::FrameToken {
+    use katla_gfx::renderer::frame_scope::FrameAcquisition;
+    match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("headless renderer must acquire a frame, got {other:?}"),
+    }
+}
+
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
 
@@ -186,14 +197,19 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
             list.push(DrawCall::new(mesh, material).with_color([1.0, 0.1, 0.1, 1.0]));
             list
         };
-        renderer.wait_for_frame().unwrap();
-        renderer.set_frame_uniforms(uniforms.clone());
-        renderer.execute_draw_calls(&draw_list).unwrap();
+        let frame_token = acquire_frame_token(&mut *renderer);
         renderer
-            .render(graph, |frame_context| {
+            .set_frame_uniforms(&frame_token, uniforms.clone())
+            .unwrap();
+        renderer
+            .execute_draw_calls(&frame_token, &draw_list)
+            .unwrap();
+        renderer
+            .render(&frame_token, graph, |frame_context| {
                 frame_context.submit(geometry_pass, &draw_list);
             })
             .unwrap();
+        renderer.present(frame_token).unwrap();
         renderer.queue_async_readback(frame).unwrap();
         let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
         pixels
@@ -216,11 +232,14 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
     renderer.destroy_mesh(mesh);
     renderer.destroy_mesh(dynamic);
     for frame in 2..6 {
-        renderer.wait_for_frame().unwrap();
-        renderer.set_frame_uniforms(uniforms.clone());
+        let frame_token = acquire_frame_token(&mut renderer);
         renderer
-            .render(&mut graph, |_| {})
+            .set_frame_uniforms(&frame_token, uniforms.clone())
+            .unwrap();
+        renderer
+            .render(&frame_token, &mut graph, |_| {})
             .expect("empty frame render");
+        renderer.present(frame_token).unwrap();
         let _ = frame;
     }
     assert_eq!(renderer.pending_retirements().total(), 0);
@@ -284,7 +303,9 @@ fn test_many_small_and_large_static_meshes() {
     // proves every submission finished, and the next frame boundary
     // releases the staged uploads.
     renderer.wait_for_device();
-    renderer.wait_for_frame().unwrap();
+    // Crossing the frame boundary drains staged uploads whose submissions
+    // completed; the token itself is not needed here.
+    let _frame = acquire_frame_token(&mut renderer);
     assert_eq!(
         renderer.pending_staged_uploads(),
         0,

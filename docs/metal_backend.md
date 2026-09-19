@@ -32,7 +32,7 @@ All Metal code is `pub(crate)` under `katla_gfx/src/metal/` (declared in `mod.rs
 - `render_encoder.rs`, `compute_encoder.rs`, `blit_encoder.rs` — encoders; deliberately `!Send`/`!Sync` (single-threaded encoding, enforced by const assertions, [#57](https://github.com/Mik-pe/Katla/issues/57)).
 
 **Frame pipeline**
-- `frame_lifecycle.rs` — `wait_for_frame` / `begin_frame` / `end_frame`.
+- `frame_lifecycle.rs` — `acquire_frame` / `present_frame` / `abort_frame`, the Metal side of the frame-scoped contract ([#89](https://github.com/Mik-pe/Katla/issues/89)).
 - `execution_plan.rs` — `MetalExecutionPlan`: ordered executable pass records compiled from the backend-neutral render graph. Metal consumes these records directly; it does not rebuild topology.
 - `frame_render.rs` — record-stream execution; `validate_frame_submissions` runs pure plan/data contract checks **before any encoder is created** (unknown pass submissions, multi-draw-list UI passes, missing depth target → typed `RendererError`, drawable dropped so no partial frame can present).
 - `render_targets.rs`, `depth_prepass.rs`, `draw_helpers.rs` — target management and shared draw encoding.
@@ -65,11 +65,11 @@ All Metal code is `pub(crate)` under `katla_gfx/src/metal/` (declared in `mod.rs
 
 ## 3. Frame Lifecycle
 
-1. `begin_frame` — acquire drawable (windowed: `MetalSurface`; headless: offscreen texture set as current drawable).
+1. `acquire_frame` — waits for the previous submission and acquires the drawable (windowed: `MetalSurface`; headless: offscreen texture already set as the current drawable), returning a frame token.
 2. Application builds/updates the frame graph (application-owned topology; the editor pipeline is one preset among possible graphs — empty, UI-only, custom pass graphs are all valid).
 3. Graph compiler produces the deterministic `MetalExecutionPlan` (dead passes culled; liveness roots are exported resources and side-effect passes).
-4. `render_frame` validates submissions against the plan (typed errors before encoding), then encodes one encoder per pass record — attachments, load/store/clear from graph declarations where defined; some semantic handlers still resolve backend-owned textures (see §6).
-5. Submit with completion handling; `end_frame` presents via the surface.
+4. Frame-local writes (`set_frame_uniforms`, `execute_draw_calls`, light/cascade uploads) take the token; `render` validates submissions against the plan (typed errors before encoding), then encodes one encoder per pass record — attachments, load/store/clear from graph declarations where defined; some semantic handlers still resolve backend-owned textures (see §6).
+5. `present` consumes the token: submit with completion handling, drawable presented via the surface. `abort` abandons the frame instead — nothing is submitted or presented, and the slot is reusable.
 
 **Known limitation:** frames are single-slot serialized — one frame in flight, no per-slot resource ownership yet. [#36](https://github.com/Mik-pe/Katla/issues/36) defines frame-slot lifetimes; [#54](https://github.com/Mik-pe/Katla/issues/54) builds the Metal 4 command model on top.
 

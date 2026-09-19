@@ -22,6 +22,8 @@ use katla_gfx::{
 use crate::harness::{self, CHANNEL_BLUE, CHANNEL_GREEN, CHANNEL_RED, pixel_offset};
 use harness::ContractRenderer;
 
+use katla_gfx::renderer::frame_scope::FrameAcquisition;
+
 /// Scenarios that compile PBR pipelines. They run on every backend locally
 /// and in the macOS CI job, but the Linux CI step skips the whole module:
 /// lavapipe segfaults inside the PBR pipeline path (driver-side; the same
@@ -311,12 +313,21 @@ mod pbr {
                 .map(|_| DrawCall::new(scenario.mesh, scenario.material))
                 .collect(),
         );
-        scenario.renderer.gfx().wait_for_frame().expect("idle");
+        let frame_token = match scenario
+            .renderer
+            .gfx()
+            .acquire_frame()
+            .expect("acquire_frame")
+        {
+            FrameAcquisition::Ready(token) => token,
+            other => panic!("headless harness must acquire a frame, got {other:?}"),
+        };
         let error = scenario
             .renderer
             .gfx()
-            .execute_draw_calls(&oversized)
+            .execute_draw_calls(&frame_token, &oversized)
             .expect_err("a draw range past the per-frame object limit must fail");
+        scenario.renderer.gfx().abort(frame_token).expect("abort");
         let message = error.to_string();
         assert!(
             message.contains("MAX_OBJECTS_PER_FRAME") || message.contains("slots"),

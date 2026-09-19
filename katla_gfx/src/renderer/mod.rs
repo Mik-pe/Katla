@@ -24,6 +24,7 @@ pub(crate) mod depth_prepass;
 pub(crate) mod destroy_api;
 pub(crate) mod font_atlas;
 pub(crate) mod frame_lifecycle;
+pub mod frame_scope;
 pub(crate) mod fullscreen_shader;
 pub(crate) mod light_culling;
 pub(crate) mod material_api;
@@ -264,6 +265,12 @@ pub struct VulkanRenderer {
     /// Tracks whether the first frame has been rendered.
     /// Used to skip the inter-frame semaphore wait on the very first frame.
     first_frame_rendered: bool,
+    /// The currently open frame-scoped token (see `renderer::frame_scope`).
+    active_frame: Option<crate::renderer::frame_scope::FrameToken>,
+    /// Monotonic counter handed to successive acquired frames.
+    frame_generation: u64,
+    /// Why the open frame is poisoned (a render failure); `present` refuses to submit.
+    frame_poisoned: Option<String>,
     /// GPU hardware capabilities and limits.
     pub(crate) capabilities: types::GpuCapabilities,
     /// Whether destroy() has already been called.
@@ -565,6 +572,9 @@ impl VulkanRenderer {
             picking: picking::PickingSubsystem::default(),
             depth_texture_base_index: None,
             first_frame_rendered: false,
+            active_frame: None,
+            frame_generation: 0,
+            frame_poisoned: None,
             capabilities: gpu_capabilities,
             destroyed: false,
         })
@@ -1401,233 +1411,6 @@ impl VulkanRenderer {
 
     pub fn create_frame_graph(&self) -> crate::render_graph::FrameGraphBuilder {
         crate::render_graph::FrameGraphBuilder::new()
-    }
-
-    /// Execute a frame graph with the given submission callback.
-    ///
-    /// This is the main rendering entry point when using frame graphs.
-    /// The callback receives a [`Frame`] for submitting draw lists to passes.
-    ///
-    /// # Arguments
-    /// * `frame_graph` - The compiled frame graph to execute
-    /// * `f` - Callback for submitting work to passes
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// renderer.render(&frame_graph, |frame| {
-    ///     frame.submit(geometry_pass_id, &opaque_draw_list);
-    ///     frame.submit(geometry_pass_id, &transparent_draw_list);
-    ///     // Passes without draw lists (like tonemap) run automatically
-    /// });
-    /// ```
-    pub fn render<F>(
-        &mut self,
-        frame_graph: &mut crate::render_graph::FrameGraph<Self>,
-        f: F,
-    ) -> Result<(), crate::error::RendererError>
-    where
-        F: FnOnce(&mut crate::render_graph::Frame<'_, Self>),
-    {
-        // NOTE: wait_for_fence() is NOT called here — it must be called before
-        // set_frame_uniforms() and execute_draw_calls() to prevent CPU-GPU data races
-        // on per-frame storage buffers. Call wait_for_frame() at the start of each frame.
-
-        // 1. Get frame index (start_frame() was already called in set_frame_uniforms())
-        let frame_idx = self.current_frame();
-
-        // 2. Acquire next swapchain image
-        let acquire_result = if let Some(swapchain) = &self.frame_context.swapchain {
-            unsafe {
-                swapchain.swapchain_loader.acquire_next_image(
-                    swapchain.swapchain,
-                    u64::MAX,
-                    self.swap_data.image_available_semaphore(),
-                    vk::Fence::null(),
-                )
-            }
-        } else {
-            Ok((frame_idx as u32, false))
-        };
-
-        let (image_index, is_suboptimal) = match acquire_result {
-            Ok(pair) => pair,
-            Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                log::info!("Swapchain out of date at acquire, signaling recreation");
-                return Err(crate::error::RendererError::SwapchainOutOfDate);
-            }
-            Err(e) => {
-                return Err(crate::error::RendererError::SwapchainError(format!(
-                    "Failed to acquire swapchain image: {:?}",
-                    e
-                )));
-            }
-        };
-
-        if is_suboptimal {
-            log::debug!("Swapchain suboptimal at acquire, will recreate after present");
-        }
-
-        // Store image index for readback debugging
-        self.last_presented_image_index = Some(image_index);
-
-        // 3. Get command buffer for this frame
-        let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
-
-        // 4. Begin command buffer
-        let begin_info = vk::CommandBufferBeginInfo::default()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-        unsafe {
-            self.context
-                .device
-                .begin_command_buffer(cmd, &begin_info)
-                .map_err(|e| {
-                    crate::error::RendererError::VulkanError(
-                        "Failed to begin command buffer".into(),
-                        e,
-                    )
-                })?;
-        }
-
-        // 5. Transition swapchain image to COLOR_ATTACHMENT_OPTIMAL for rendering
-        // Use transition_from_undefined for swapchain images because:
-        // - After acquire_next_image, the actual layout is platform-specific
-        // - We use load_op=CLEAR so we don't care about preserving contents
-        // - Works correctly after swapchain recreation (images start as UNDEFINED)
-        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        ImageBarrier::transition_from_undefined(
-            &cmd,
-            &self.context.device,
-            swapchain_image,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        );
-
-        // 6. Execute frame graph (records commands into the command buffer)
-        frame_graph
-            .execute(self, image_index, f)
-            .map_err(crate::error::RendererError::RenderGraphError)?;
-
-        // 7. Transition swapchain image from COLOR_ATTACHMENT_OPTIMAL to PRESENT_SRC_KHR
-        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        ImageBarrier::transition(
-            &cmd,
-            &self.context.device,
-            swapchain_image,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            if self.frame_context.swapchain.is_some() {
-                vk::ImageLayout::PRESENT_SRC_KHR
-            } else {
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL
-            },
-        );
-
-        // 8. End command buffer
-        unsafe {
-            self.context.device.end_command_buffer(cmd).map_err(|e| {
-                crate::error::RendererError::VulkanError("Failed to end command buffer".into(), e)
-            })?;
-        }
-
-        unsafe {
-            self.context
-                .device
-                .reset_fences(&[self.swap_data.in_flight_fence()])
-        }
-        .map_err(|e| RendererError::VulkanError("Failed to reset frame fence".into(), e))?;
-        if self.frame_context.swapchain.is_none() {
-            self.context.gfx_queue.submit(
-                &[&self.frame_context.command_buffers[frame_idx]],
-                &[],
-                &[],
-                self.swap_data.in_flight_fence(),
-            );
-            self.swap_data.wait_for_fence(&self.context.device)?;
-            self.swap_data.step_frame();
-            return Ok(());
-        }
-        let swapchain = self
-            .frame_context
-            .swapchain
-            .as_ref()
-            .expect("window swapchain");
-        // 9. Submit command buffer with synchronization
-        let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
-        let frame_complete_semaphore = self.swap_data.frame_complete_semaphore();
-        let signal_semaphores = [render_finished_semaphore, frame_complete_semaphore];
-        let swapchains = [swapchain.swapchain];
-        let image_indices = [image_index];
-
-        // On the first frame there's no previous frame to wait on.
-        // After that, wait on the previous frame's completion semaphore at ALL_COMMANDS
-        // to cover TRANSFER/CLEAR from vkCmdUpdateBuffer and TRANSFER_READ from vkCmdCopyBuffer.
-        if self.first_frame_rendered {
-            let wait_semaphores = [
-                self.swap_data.image_available_semaphore(),
-                self.swap_data.previous_frame_complete_semaphore(),
-            ];
-            let wait_stage_masks = [
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::ALL_COMMANDS,
-            ];
-            self.context.gfx_queue.submit_with_stages(
-                &[&self.frame_context.command_buffers[frame_idx]],
-                &wait_semaphores,
-                &signal_semaphores,
-                self.swap_data.in_flight_fence(),
-                &wait_stage_masks,
-            );
-        } else {
-            self.first_frame_rendered = true;
-            let wait_semaphores = [self.swap_data.image_available_semaphore()];
-            self.context.gfx_queue.submit(
-                &[&self.frame_context.command_buffers[frame_idx]],
-                &wait_semaphores,
-                &signal_semaphores,
-                self.swap_data.in_flight_fence(),
-            );
-        }
-
-        // 10. Present to swapchain
-        let present_wait_semaphores = [render_finished_semaphore];
-        let present_info = vk::PresentInfoKHR::default()
-            .wait_semaphores(&present_wait_semaphores)
-            .swapchains(&swapchains)
-            .image_indices(&image_indices);
-
-        unsafe {
-            let present_result = swapchain
-                .swapchain_loader
-                .queue_present(self.context.gfx_queue.vk_queue(), &present_info);
-
-            match present_result {
-                Ok(is_suboptimal) => {
-                    // Suboptimal is very common on macOS/MoltenVK (especially first frame).
-                    // Still rendered successfully, but signal that swapchain should be recreated.
-                    if is_suboptimal {
-                        log::debug!("Present suboptimal, signaling swapchain recreation");
-                        self.swap_data.step_frame();
-                        return Err(crate::error::RendererError::SwapchainOutOfDate);
-                    }
-                }
-                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    // Frame was presented but swapchain is stale, signal recreation.
-                    log::debug!("Present out of date, signaling swapchain recreation");
-                    self.swap_data.step_frame();
-                    return Err(crate::error::RendererError::SwapchainOutOfDate);
-                }
-                Err(e) => {
-                    return Err(crate::error::RendererError::SwapchainError(format!(
-                        "Failed to present: {:?}",
-                        e
-                    )));
-                }
-            }
-        }
-
-        // 11. Advance to next frame
-        self.swap_data.step_frame();
-
-        Ok(())
     }
 }
 

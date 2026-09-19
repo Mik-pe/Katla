@@ -868,7 +868,7 @@ impl super::VulkanRenderer {
     /// Upload shadow cascade GPU data for the current frame.
     ///
     /// Delegates to [`ShadowSubsystem::upload_shadow_cascades`].
-    pub fn upload_shadow_cascades(&mut self) {
+    pub(crate) fn upload_shadow_cascades(&mut self) {
         self.shadow
             .upload_shadow_cascades(&self.context, self.current_frame());
     }
