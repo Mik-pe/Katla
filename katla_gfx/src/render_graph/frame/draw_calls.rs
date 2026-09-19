@@ -1,13 +1,13 @@
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::renderer::VulkanRenderer;
-use crate::renderer::types::DrawList;
+use crate::renderer::types::PreparedDraws;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 
 impl Frame<'_, VulkanRenderer> {
-    /// Execute a draw list with pipeline state caching.
+    /// Execute prepared draws with pipeline state caching.
     ///
     /// Tracks the currently bound pipeline and skeleton descriptor to skip
     /// redundant Vulkan state changes when consecutive draw calls share the
@@ -15,20 +15,20 @@ impl Frame<'_, VulkanRenderer> {
     pub(super) fn execute_draw_list(
         &mut self,
         cmd: &CommandBuffer,
-        draw_list: &DrawList,
+        draws: PreparedDraws<'_>,
         color_format: crate::texture::ImageFormat,
     ) -> Result<(), RenderGraphError> {
-        if draw_list.draws.is_empty() {
+        if draws.is_empty() {
             return Ok(());
         }
 
-        self.ensure_materials_compiled(draw_list, color_format)?;
+        self.ensure_materials_compiled(draws, color_format)?;
 
         let mut current_pipeline = vk::Pipeline::null();
         let mut current_layout = vk::PipelineLayout::null();
         let mut current_skeleton = vk::DescriptorSet::null();
 
-        for draw_call in &draw_list.draws {
+        for draw_call in draws.iter() {
             let (pipeline, layout) = {
                 let variant = self
                     .renderer
@@ -178,16 +178,16 @@ impl Frame<'_, VulkanRenderer> {
         Ok(())
     }
 
-    /// Pre-compile the pipeline variant of every material in a draw list
-    /// for the pass's color format.
+    /// Pre-compile the pipeline variant of every material referenced by
+    /// prepared draws for the pass's color format.
     pub(super) fn ensure_materials_compiled(
         &mut self,
-        draw_list: &DrawList,
+        draws: PreparedDraws<'_>,
         color_format: crate::texture::ImageFormat,
     ) -> Result<(), RenderGraphError> {
         let mut materials_to_compile: Vec<crate::handle::MaterialHandle> = Vec::new();
 
-        for draw_call in &draw_list.draws {
+        for draw_call in draws.iter() {
             if self
                 .renderer
                 .material_variant(draw_call.material, color_format)

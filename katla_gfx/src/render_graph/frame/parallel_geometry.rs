@@ -1,11 +1,9 @@
-use std::rc::Rc;
-
 use ash::vk;
 
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::renderer::VulkanRenderer;
-use crate::renderer::types::DrawList;
+use crate::renderer::types::PreparedDraws;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use crate::vulkan::vertex_attribute::AttributeType;
 
@@ -213,7 +211,7 @@ impl Frame<'_, VulkanRenderer> {
     /// needing any reference to the renderer.
     pub(super) fn resolve_draw_commands(
         &mut self,
-        draw_lists: &[Rc<DrawList>],
+        draws: PreparedDraws<'_>,
         frame_idx: usize,
         color_format: crate::texture::ImageFormat,
     ) -> Result<Vec<ResolvedDrawCommand>, RenderGraphError> {
@@ -225,108 +223,106 @@ impl Frame<'_, VulkanRenderer> {
             .or_else(|| self.renderer.shadow_fallback_descriptor_set())
             .unwrap_or_else(|| self.renderer.empty_descriptor_set(frame_idx));
 
-        for draw_list in draw_lists {
-            self.ensure_materials_compiled(draw_list, color_format)?;
+        self.ensure_materials_compiled(draws, color_format)?;
 
-            for draw_call in &draw_list.draws {
-                let variant = self
-                    .renderer
-                    .material_variant(draw_call.material, color_format)
-                    .map_err(|e| {
-                        RenderGraphError::InvalidConfiguration(format!(
-                            "Material variant lookup failed: {}",
-                            e
-                        ))
-                    })?
-                    .ok_or_else(|| {
-                        RenderGraphError::InvalidConfiguration(format!(
-                            "Material {material:?} has no pipeline variant for {color_format:?}",
-                            material = draw_call.material,
-                        ))
-                    })?;
+        for draw_call in draws.iter() {
+            let variant = self
+                .renderer
+                .material_variant(draw_call.material, color_format)
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Material variant lookup failed: {}",
+                        e
+                    ))
+                })?
+                .ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Material {material:?} has no pipeline variant for {color_format:?}",
+                        material = draw_call.material,
+                    ))
+                })?;
 
-                let (pipeline, layout) = self
-                    .renderer
-                    .asset_registry
-                    .get_pipeline_handles(variant.pipeline)?;
+            let (pipeline, layout) = self
+                .renderer
+                .asset_registry
+                .get_pipeline_handles(variant.pipeline)?;
 
-                self.renderer.bind_shadow_descriptors(
-                    self.renderer.frame_context.command_buffers[frame_idx].vk_command_buffer(),
-                    layout,
-                );
-                let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-                let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
+            self.renderer.bind_shadow_descriptors(
+                self.renderer.frame_context.command_buffers[frame_idx].vk_command_buffer(),
+                layout,
+            );
+            let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
+            let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
 
-                let is_skinned = !draw_call.skeleton.is_none();
-                let skeleton_ds = if is_skinned {
-                    self.renderer
-                        .get_skeleton_descriptor(draw_call.skeleton)
-                        .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?
-                        .vk_set()
-                } else {
-                    vk::DescriptorSet::null()
-                };
+            let is_skinned = !draw_call.skeleton.is_none();
+            let skeleton_ds = if is_skinned {
+                self.renderer
+                    .get_skeleton_descriptor(draw_call.skeleton)
+                    .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?
+                    .vk_set()
+            } else {
+                vk::DescriptorSet::null()
+            };
 
-                let mesh = self
-                    .renderer
-                    .asset_registry
-                    .get_mesh(draw_call.mesh)
-                    .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
+            let mesh = self
+                .renderer
+                .asset_registry
+                .get_mesh(draw_call.mesh)
+                .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-                let pos_buf = mesh
-                    .get_attribute_buffer(AttributeType::Position)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                let norm_buf = mesh
-                    .get_attribute_buffer(AttributeType::Normal)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                let tang_buf = mesh
-                    .get_attribute_buffer(AttributeType::Tangent)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                let uv_buf = mesh
-                    .get_attribute_buffer(AttributeType::TexCoord0)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
+            let pos_buf = mesh
+                .get_attribute_buffer(AttributeType::Position)
+                .map(|vb| vb.object())
+                .unwrap_or(vk::Buffer::null());
+            let norm_buf = mesh
+                .get_attribute_buffer(AttributeType::Normal)
+                .map(|vb| vb.object())
+                .unwrap_or(vk::Buffer::null());
+            let tang_buf = mesh
+                .get_attribute_buffer(AttributeType::Tangent)
+                .map(|vb| vb.object())
+                .unwrap_or(vk::Buffer::null());
+            let uv_buf = mesh
+                .get_attribute_buffer(AttributeType::TexCoord0)
+                .map(|vb| vb.object())
+                .unwrap_or(vk::Buffer::null());
 
-                let joints_buf = mesh
-                    .get_attribute_buffer(AttributeType::JointIndices)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                let weights_buf = mesh
-                    .get_attribute_buffer(AttributeType::JointWeights)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                let index_buf = mesh
-                    .index_buffer
-                    .as_ref()
-                    .map(|ib| ib.object())
-                    .unwrap_or(vk::Buffer::null());
-                let index_type = mesh.index_format.into();
-                let index_count = mesh.index_count;
+            let joints_buf = mesh
+                .get_attribute_buffer(AttributeType::JointIndices)
+                .map(|vb| vb.object())
+                .unwrap_or(vk::Buffer::null());
+            let weights_buf = mesh
+                .get_attribute_buffer(AttributeType::JointWeights)
+                .map(|vb| vb.object())
+                .unwrap_or(vk::Buffer::null());
+            let index_buf = mesh
+                .index_buffer
+                .as_ref()
+                .map(|ib| ib.object())
+                .unwrap_or(vk::Buffer::null());
+            let index_type = mesh.index_format.into();
+            let index_count = mesh.index_count;
 
-                commands.push(ResolvedDrawCommand {
-                    pipeline,
-                    layout,
-                    storage_ds,
-                    bindless_ds,
-                    skeleton_ds,
-                    is_skinned,
-                    pos_buf,
-                    norm_buf,
-                    tang_buf,
-                    uv_buf,
-                    joints_buf,
-                    weights_buf,
-                    index_buf,
-                    index_type,
-                    index_count,
-                    instance_index: draw_call.instance_index,
-                    instance_count: draw_call.instance_count().max(1),
-                    shadow_ds,
-                });
-            }
+            commands.push(ResolvedDrawCommand {
+                pipeline,
+                layout,
+                storage_ds,
+                bindless_ds,
+                skeleton_ds,
+                is_skinned,
+                pos_buf,
+                norm_buf,
+                tang_buf,
+                uv_buf,
+                joints_buf,
+                weights_buf,
+                index_buf,
+                index_type,
+                index_count,
+                instance_index: draw_call.instance_index,
+                instance_count: draw_call.instance_count().max(1),
+                shadow_ds,
+            });
         }
 
         Ok(commands)

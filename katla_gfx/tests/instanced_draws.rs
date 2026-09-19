@@ -6,6 +6,7 @@
 //! with the assigned base slot (the shader walks `objects[@builtin(instance_index)]`).
 
 use std::ffi::CString;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use katla_gfx::render_graph::{FrameGraphBuilder, GeometryPass};
@@ -198,7 +199,7 @@ fn test_instanced_draw_matches_direct_draws() {
             .unwrap();
         renderer
             .render(&frame_token, &mut graph, |frame_context| {
-                frame_context.submit(geometry_pass, draw_list);
+                frame_context.submit(geometry_pass, Rc::new(draw_list.clone()));
             })
             .unwrap();
         renderer.present(frame_token).unwrap();

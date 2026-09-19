@@ -6,6 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::mem;
+use std::rc::Rc;
 
 use objc2_metal::{MTLCommandBuffer, MTLRenderCommandEncoder, MTLTexture};
 
@@ -18,7 +19,7 @@ use crate::error::RendererError;
 use crate::render_graph::{PassExecutionData, PassId, PassKind};
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::renderer::gpu_renderer::GpuRenderer;
-use crate::renderer::types::{DrawList, FrameUniforms, UIDrawList};
+use crate::renderer::types::{DrawList, FrameUniforms, PreparedDrawCounts, UIDrawList};
 use crate::texture::ImageFormat;
 
 use super::MetalBackend;
@@ -42,6 +43,7 @@ struct MetalPassTrace {
     pass_id: PassId,
     name: String,
     kind: PassKind,
+    draws: PreparedDrawCounts,
     outcome: MetalPassOutcome,
 }
 
@@ -100,21 +102,13 @@ fn has_later_ui_work(plan: &MetalExecutionPlan, position: usize, ui_work: &HashS
         .any(|record| record.kind == PassKind::Ui && ui_work.contains(&record.pass_index))
 }
 
-fn merge_draw_lists(data: &PassExecutionData) -> DrawList {
-    let mut draws = Vec::new();
-    for draw_list in &data.draw_lists {
-        draws.extend(draw_list.draws.iter().cloned());
-    }
-    DrawList::from_draws(draws)
-}
-
-fn single_ui_draw_list(
+fn single_ui_draw_list<'a>(
     record: &MetalPassRecord,
-    data: &PassExecutionData,
-) -> Result<Option<UIDrawList>, RendererError> {
+    data: &'a PassExecutionData,
+) -> Result<Option<&'a UIDrawList>, RendererError> {
     match data.ui_draw_lists.as_slice() {
         [] => Ok(None),
-        [draw_list] => Ok(Some(draw_list.clone())),
+        [draw_list] => Ok(Some(draw_list)),
         lists => Err(RendererError::InvalidOperation(format!(
             "Metal UI pass '{}' ({:?}) received {} UI draw lists; submit one composed list per PassId",
             record.name,
@@ -199,16 +193,20 @@ impl MetalRenderer {
 
         // Per-slot uniform data must exist before the first record encodes:
         // frame uniforms feed every pass, and object storage is bound by draw
-        // at instance-index offsets. Slots were assigned when the submitted
-        // lists were built — preserve them so encoding and upload agree.
-        let mut draws = Vec::new();
+        // at instance-index offsets. Upload borrows the frame-owned submitted
+        // lists directly — no rebuilt merged copy — and shared submissions
+        // upload once, so every slot the frame encodes is initialized.
+        let mut uploaded: Vec<*const DrawList> = Vec::new();
         for data in pending.values() {
             for list in &data.draw_lists {
-                draws.extend(list.draws.iter().cloned());
+                let identity = Rc::as_ptr(list);
+                if uploaded.contains(&identity) {
+                    continue;
+                }
+                uploaded.push(identity);
+                GpuRenderer::execute_draw_calls(self, frame, list)?;
             }
         }
-        let upload_list = DrawList::from_draws(draws);
-        GpuRenderer::execute_draw_calls(self, frame, &upload_list)?;
 
         let mut cmd_buffer = self
             .context
@@ -267,6 +265,7 @@ impl MetalRenderer {
 
         for (position, record) in plan.passes().iter().enumerate() {
             let data = pending.remove(&record.pass_index).unwrap_or_default();
+            let pass_draw_counts = data.prepared_counts();
             let encoded = match record.kind {
                 PassKind::Shadow => self.encode_shadow_record(&mut cmd_buffer, &state, &data)?,
                 PassKind::DepthPrepass => {
@@ -294,12 +293,7 @@ impl MetalRenderer {
                 }
                 PassKind::Ui => {
                     let ui_draw_list = single_ui_draw_list(record, &data)?;
-                    self.encode_ui_record(
-                        &mut cmd_buffer,
-                        &mut state,
-                        record,
-                        ui_draw_list.as_ref(),
-                    )?
+                    self.encode_ui_record(&mut cmd_buffer, &mut state, record, ui_draw_list)?
                 }
                 PassKind::Particles => self.encode_particle_record(&mut cmd_buffer, &state)?,
                 PassKind::StencilIndicator | PassKind::Compositing => {
@@ -311,6 +305,7 @@ impl MetalRenderer {
                 pass_id: record.pass_id,
                 name: record.name.clone(),
                 kind: record.kind,
+                draws: pass_draw_counts,
                 outcome: if encoded {
                     MetalPassOutcome::Encoded
                 } else {
@@ -350,8 +345,8 @@ impl MetalRenderer {
         _state: &FrameEncodingState,
         data: &PassExecutionData,
     ) -> Result<bool, RendererError> {
-        let draw_list = merge_draw_lists(data);
-        if draw_list.draws.is_empty() {
+        let draws = data.prepared();
+        if draws.is_empty() {
             return Ok(false);
         }
 
@@ -390,7 +385,7 @@ impl MetalRenderer {
             self.shadow.cascade_count(),
             &self.meshes,
             &self.materials,
-            &draw_list,
+            draws,
         );
 
         Ok(true)
@@ -402,8 +397,8 @@ impl MetalRenderer {
         state: &FrameEncodingState,
         data: &PassExecutionData,
     ) -> Result<bool, RendererError> {
-        let draw_list = merge_draw_lists(data);
-        if draw_list.draws.is_empty() {
+        let draws = data.prepared();
+        if draws.is_empty() {
             return Ok(false);
         }
 
@@ -440,7 +435,7 @@ impl MetalRenderer {
             object_buf,
             &self.meshes,
             &self.materials,
-            &draw_list,
+            draws,
             &self.skeletons,
             self.bindless_manager.argument_buffer(),
             self.shared_sampler.as_ref(),
@@ -456,7 +451,7 @@ impl MetalRenderer {
         data: &PassExecutionData,
         post_process_later: bool,
     ) -> Result<bool, RendererError> {
-        let draw_list = merge_draw_lists(data);
+        let draws = data.prepared();
         // The graph's declared attachments drive the encoder: depth is bound
         // only when the pass declares a depth attachment (with its declared
         // ops), matching the Vulkan backend. A depth-needing pass kind
@@ -545,11 +540,11 @@ impl MetalRenderer {
             encoder.bind_graphics_pipeline(sky_pipeline);
             encoder.draw(3, 1, 0, 0);
         }
-        if !draw_list.draws.is_empty() {
+        if !draws.is_empty() {
             let material_format = declared_color
                 .map(|attachment| attachment.format)
                 .unwrap_or(crate::texture::ImageFormat::Auto);
-            Self::draw_objects(self, &mut encoder, &draw_list, material_format);
+            Self::draw_objects(self, &mut encoder, material_format, draws);
         }
         encoder.end_encoding();
 
@@ -608,8 +603,8 @@ impl MetalRenderer {
         state: &FrameEncodingState,
         data: &PassExecutionData,
     ) -> Result<bool, RendererError> {
-        let draw_list = merge_draw_lists(data);
-        if draw_list.draws.is_empty() {
+        let draws = data.prepared();
+        if draws.is_empty() {
             return Ok(false);
         }
 
@@ -646,7 +641,7 @@ impl MetalRenderer {
                 object_buf,
                 &self.meshes,
                 &self.materials,
-                &draw_list,
+                draws,
                 &self.skeletons,
             );
             encoded = true;
@@ -664,7 +659,7 @@ impl MetalRenderer {
                 object_buf,
                 &self.meshes,
                 &self.materials,
-                &draw_list,
+                draws,
                 &self.skeletons,
             );
             encoded = true;
@@ -679,8 +674,8 @@ impl MetalRenderer {
         state: &FrameEncodingState,
         data: &PassExecutionData,
     ) -> Result<bool, RendererError> {
-        let draw_list = merge_draw_lists(data);
-        if draw_list.draws.is_empty() {
+        let draws = data.prepared();
+        if draws.is_empty() {
             return Ok(false);
         }
 
@@ -718,7 +713,7 @@ impl MetalRenderer {
             object_buf,
             &self.meshes,
             &self.materials,
-            &draw_list,
+            draws,
             &self.skeletons,
         );
         Ok(true)

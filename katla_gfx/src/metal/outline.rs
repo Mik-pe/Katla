@@ -245,7 +245,7 @@ pub(crate) fn render_stencil_mark(
     object_storage_buffer: &MetalBuffer,
     meshes: &ResourceStorage<MetalMesh, MeshMarker>,
     materials: &ResourceStorage<MetalMaterial, MaterialMarker>,
-    draw_list: &crate::renderer::types::DrawList,
+    draws: crate::renderer::types::PreparedDraws<'_>,
     skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
 ) {
     let render_pass_info = RenderPassInfo {
@@ -277,7 +277,7 @@ pub(crate) fn render_stencil_mark(
 
     let mut current_is_skinned = false;
 
-    for draw in &draw_list.draws {
+    for draw in draws.iter() {
         let Some(mesh) = meshes.get(draw.mesh) else {
             continue;
         };
@@ -351,7 +351,7 @@ pub(crate) fn render_outline(
     object_storage_buffer: &MetalBuffer,
     meshes: &ResourceStorage<MetalMesh, MeshMarker>,
     materials: &ResourceStorage<MetalMaterial, MaterialMarker>,
-    draw_list: &crate::renderer::types::DrawList,
+    draws: crate::renderer::types::PreparedDraws<'_>,
     skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
 ) {
     let outline_width = compute_outline_width(height as f32);
@@ -396,7 +396,7 @@ pub(crate) fn render_outline(
 
     let mut current_is_skinned = false;
 
-    for draw in &draw_list.draws {
+    for draw in draws.iter() {
         let Some(mesh) = meshes.get(draw.mesh) else {
             continue;
         };

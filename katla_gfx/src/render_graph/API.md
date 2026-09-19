@@ -226,17 +226,27 @@ The backbuffer (swapchain) is a special resource:
 
 ## Execution
 
-Submit draw lists to passes during frame execution:
+Rendering one frame starts by acquiring a frame token, and submissions move
+into frame-owned storage so several passes share one copy:
 
 ```rust
-renderer.render(&mut frame_graph, |frame| {
-    // Submit draw lists to named passes
-    frame.submit("geometry", &opaque_draw_list);
-    frame.submit("geometry", &transparent_draw_list);
+let frame = match renderer.acquire_frame()? {
+    FrameAcquisition::Ready(frame) => frame,
+    FrameAcquisition::Unavailable => return Ok(()),
+    FrameAcquisition::OutOfDate => { /* recreate the surface, then retry */ return Ok(()); }
+};
+renderer.set_frame_uniforms(&frame, uniforms)?;
+
+// One prepared copy per list; every pass submission shares it.
+let opaque = std::rc::Rc::new(opaque_draw_list);
+renderer.render(&frame, &mut frame_graph, |frame| {
+    frame.submit("geometry", std::rc::Rc::clone(&opaque));
+    frame.submit("geometry", std::rc::Rc::new(transparent_draw_list));
 
     // Submit UI draw list
     frame.submit_ui("ui", &ui_draw_list);
 })?;
+renderer.present(frame)?;
 ```
 
 Passes without submitted draw lists still execute (useful for fullscreen post-processing passes).

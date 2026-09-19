@@ -5,11 +5,9 @@
 //! iterate draw lists, switch pipeline for skinned or billboard meshes, bind vertex
 //! buffers, bind skeleton descriptors, draw indexed.
 
-use std::rc::Rc;
-
 use crate::render_graph::error::RenderGraphError;
 use crate::renderer::VulkanRenderer;
-use crate::renderer::types::DrawList;
+use crate::renderer::types::PreparedDraws;
 use crate::vulkan::commandbuffer::CommandBuffer;
 use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
@@ -32,7 +30,7 @@ pub(super) struct DescriptorConfig {
 pub(super) struct DrawParams<'a> {
     pub cmd: &'a CommandBuffer,
     pub renderer: &'a mut VulkanRenderer,
-    pub draw_lists: &'a [Rc<DrawList>],
+    pub draw_lists: PreparedDraws<'a>,
     pub pipeline: vk::Pipeline,
     pub layout: vk::PipelineLayout,
     pub skinned_pipeline: Option<vk::Pipeline>,
@@ -101,133 +99,130 @@ pub(super) fn draw_meshes_with_skinning(params: DrawParams<'_>) -> Result<(), Re
 
     let mut current_variant = PipelineVariant::Regular;
 
-    for draw_list in draw_lists {
-        for draw_call in draw_list.iter() {
-            let is_skinned = !draw_call.skeleton.is_none();
+    for draw_call in draw_lists.iter() {
+        let is_skinned = !draw_call.skeleton.is_none();
 
-            if is_skinned && skinned_pipeline.is_none() {
-                continue;
-            }
+        if is_skinned && skinned_pipeline.is_none() {
+            continue;
+        }
 
-            // Determine which mesh this draw call uses
-            let mesh = renderer
-                .asset_registry
-                .get_mesh(draw_call.mesh)
-                .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
+        // Determine which mesh this draw call uses
+        let mesh = renderer
+            .asset_registry
+            .get_mesh(draw_call.mesh)
+            .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-            // Billboard draws are identified by the is_billboard flag on the draw call
-            if exclude_billboards && draw_call.is_billboard {
-                continue;
-            }
-            let is_billboard = draw_call.is_billboard && billboard_pipeline.is_some();
+        // Billboard draws are identified by the is_billboard flag on the draw call
+        if exclude_billboards && draw_call.is_billboard {
+            continue;
+        }
+        let is_billboard = draw_call.is_billboard && billboard_pipeline.is_some();
 
-            let target_variant = if is_skinned {
-                PipelineVariant::Skinned
-            } else if is_billboard {
-                PipelineVariant::Billboard
-            } else {
-                PipelineVariant::Regular
+        let target_variant = if is_skinned {
+            PipelineVariant::Skinned
+        } else if is_billboard {
+            PipelineVariant::Billboard
+        } else {
+            PipelineVariant::Regular
+        };
+
+        // Switch pipeline if needed
+        if target_variant != current_variant {
+            let (new_pipe, new_layout) = match target_variant {
+                PipelineVariant::Skinned => (
+                    skinned_pipeline.expect("skinned pipeline required after is_skinned check"),
+                    skinned_layout.expect("skinned layout required after is_skinned check"),
+                ),
+                PipelineVariant::Billboard => (
+                    billboard_pipeline
+                        .expect("billboard pipeline required after is_billboard check"),
+                    billboard_layout.expect("billboard layout required after is_billboard check"),
+                ),
+                PipelineVariant::Regular => (pipeline, layout),
             };
+            unsafe {
+                renderer.context.device.cmd_bind_pipeline(
+                    cmd.vk_command_buffer(),
+                    vk::PipelineBindPoint::GRAPHICS,
+                    new_pipe,
+                );
+            }
+            let storage_ds = renderer.storage_descriptor_sets[frame_idx].vk_set();
+            cmd.bind_descriptor_sets(new_layout, 0, &[storage_ds], &[]);
 
-            // Switch pipeline if needed
-            if target_variant != current_variant {
-                let (new_pipe, new_layout) = match target_variant {
-                    PipelineVariant::Skinned => (
-                        skinned_pipeline.expect("skinned pipeline required after is_skinned check"),
-                        skinned_layout.expect("skinned layout required after is_skinned check"),
-                    ),
-                    PipelineVariant::Billboard => (
-                        billboard_pipeline
-                            .expect("billboard pipeline required after is_billboard check"),
-                        billboard_layout
-                            .expect("billboard layout required after is_billboard check"),
-                    ),
-                    PipelineVariant::Regular => (pipeline, layout),
-                };
-                unsafe {
-                    renderer.context.device.cmd_bind_pipeline(
-                        cmd.vk_command_buffer(),
-                        vk::PipelineBindPoint::GRAPHICS,
-                        new_pipe,
-                    );
+            // Set 1 binding depends on pipeline variant:
+            // - Billboard: bindless textures for alpha discard
+            // - Skinned: empty descriptor set (pipeline declares empty layout at Set 1)
+            // - Regular with bind_textures: bindless textures
+            // - Regular without bind_textures: may or may not have Set 1 (handled by extra_sets)
+            match target_variant {
+                PipelineVariant::Billboard => {
+                    let bindless_ds = renderer.bindless_manager.descriptor_set().vk();
+                    cmd.bind_descriptor_sets(new_layout, 1, &[bindless_ds], &[]);
                 }
-                let storage_ds = renderer.storage_descriptor_sets[frame_idx].vk_set();
-                cmd.bind_descriptor_sets(new_layout, 0, &[storage_ds], &[]);
-
-                // Set 1 binding depends on pipeline variant:
-                // - Billboard: bindless textures for alpha discard
-                // - Skinned: empty descriptor set (pipeline declares empty layout at Set 1)
-                // - Regular with bind_textures: bindless textures
-                // - Regular without bind_textures: may or may not have Set 1 (handled by extra_sets)
-                match target_variant {
-                    PipelineVariant::Billboard => {
+                PipelineVariant::Skinned => {
+                    let empty_ds = renderer.empty_descriptor_set(frame_idx);
+                    cmd.bind_descriptor_sets(new_layout, 1, &[empty_ds], &[]);
+                }
+                PipelineVariant::Regular => {
+                    if descriptors.bind_textures {
                         let bindless_ds = renderer.bindless_manager.descriptor_set().vk();
                         cmd.bind_descriptor_sets(new_layout, 1, &[bindless_ds], &[]);
                     }
-                    PipelineVariant::Skinned => {
-                        let empty_ds = renderer.empty_descriptor_set(frame_idx);
-                        cmd.bind_descriptor_sets(new_layout, 1, &[empty_ds], &[]);
-                    }
-                    PipelineVariant::Regular => {
-                        if descriptors.bind_textures {
-                            let bindless_ds = renderer.bindless_manager.descriptor_set().vk();
-                            cmd.bind_descriptor_sets(new_layout, 1, &[bindless_ds], &[]);
-                        }
-                    }
                 }
-
-                // Bind extra sets — use skinned-specific sets when in skinned variant,
-                // otherwise use the regular extra sets.
-                let active_extra_sets = if target_variant == PipelineVariant::Skinned
-                    && !descriptors.skinned_extra_sets.is_empty()
-                {
-                    &descriptors.skinned_extra_sets
-                } else {
-                    &descriptors.extra_sets
-                };
-                for &(set, ds) in active_extra_sets {
-                    cmd.bind_descriptor_sets(new_layout, set, &[ds], &[]);
-                }
-                current_variant = target_variant;
             }
 
-            // Bind skeleton descriptor set for skinned meshes
-            if is_skinned {
-                let skel_layout = skinned_layout
-                    .expect("skinned layout required for skeleton descriptor binding");
-                let skeleton_ds = renderer
-                    .get_skeleton_descriptor(draw_call.skeleton)
-                    .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
-                cmd.bind_descriptor_sets(
-                    skel_layout,
-                    descriptors.skeleton_set,
-                    &[skeleton_ds.vk_set()],
-                    &[],
-                );
+            // Bind extra sets — use skinned-specific sets when in skinned variant,
+            // otherwise use the regular extra sets.
+            let active_extra_sets = if target_variant == PipelineVariant::Skinned
+                && !descriptors.skinned_extra_sets.is_empty()
+            {
+                &descriptors.skinned_extra_sets
+            } else {
+                &descriptors.extra_sets
+            };
+            for &(set, ds) in active_extra_sets {
+                cmd.bind_descriptor_sets(new_layout, set, &[ds], &[]);
             }
+            current_variant = target_variant;
+        }
 
-            // Bind mesh vertex buffers
-            bind_vertex_buffers(cmd, mesh, is_skinned, is_billboard);
+        // Bind skeleton descriptor set for skinned meshes
+        if is_skinned {
+            let skel_layout =
+                skinned_layout.expect("skinned layout required for skeleton descriptor binding");
+            let skeleton_ds = renderer
+                .get_skeleton_descriptor(draw_call.skeleton)
+                .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?;
+            cmd.bind_descriptor_sets(
+                skel_layout,
+                descriptors.skeleton_set,
+                &[skeleton_ds.vk_set()],
+                &[],
+            );
+        }
 
-            // An empty dynamic mesh draws nothing: skip instead of encoding a
-            // zero-count indexed draw without a bound index buffer.
-            if mesh.index_count == 0 {
-                continue;
-            }
-            if let Some(ib) = &mesh.index_buffer {
-                cmd.bind_index_buffer(ib.object(), 0, mesh.index_format.into());
-            }
+        // Bind mesh vertex buffers
+        bind_vertex_buffers(cmd, mesh, is_skinned, is_billboard);
 
-            unsafe {
-                renderer.context.device.cmd_draw_indexed(
-                    cmd.vk_command_buffer(),
-                    mesh.index_count,
-                    draw_call.instance_count().max(1),
-                    0,
-                    0,
-                    draw_call.instance_index,
-                );
-            }
+        // An empty dynamic mesh draws nothing: skip instead of encoding a
+        // zero-count indexed draw without a bound index buffer.
+        if mesh.index_count == 0 {
+            continue;
+        }
+        if let Some(ib) = &mesh.index_buffer {
+            cmd.bind_index_buffer(ib.object(), 0, mesh.index_format.into());
+        }
+
+        unsafe {
+            renderer.context.device.cmd_draw_indexed(
+                cmd.vk_command_buffer(),
+                mesh.index_count,
+                draw_call.instance_count().max(1),
+                0,
+                0,
+                draw_call.instance_index,
+            );
         }
     }
 

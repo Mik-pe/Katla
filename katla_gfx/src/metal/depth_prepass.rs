@@ -142,7 +142,7 @@ pub(crate) fn render_depth_prepass(
     object_storage_buffer: &MetalBuffer,
     meshes: &ResourceStorage<MetalMesh, MeshMarker>,
     materials: &ResourceStorage<MetalMaterial, MaterialMarker>,
-    draw_list: &crate::renderer::types::DrawList,
+    draws: crate::renderer::types::PreparedDraws<'_>,
     skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
     bindless_argument_buffer: Option<&objc2::runtime::ProtocolObject<dyn objc2_metal::MTLBuffer>>,
     shared_sampler: Option<&super::sampler::MetalSamplerState>,
@@ -181,7 +181,7 @@ pub(crate) fn render_depth_prepass(
 
     let mut current_variant = PipelineVariant::Regular;
 
-    for draw in &draw_list.draws {
+    for draw in draws.iter() {
         let Some(mesh) = meshes.get(draw.mesh) else {
             continue;
         };

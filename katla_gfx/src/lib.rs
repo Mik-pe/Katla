@@ -69,7 +69,7 @@
 //!     .build()?;
 //!
 //! renderer.render(&mut graph, |frame| {
-//!     frame.submit(geometry_pass_id, &draw_list);
+//!     frame.submit(geometry_pass_id, std::rc::Rc::new(draw_list));
 //! })?;
 //! ```
 //!
@@ -301,6 +301,7 @@ pub use renderer::registry::{
 };
 pub use renderer::{
     DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
+    PreparedDrawCounts, PreparedDraws,
 };
 
 // Backend-neutral resource metadata

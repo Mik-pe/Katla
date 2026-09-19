@@ -52,7 +52,7 @@ pub use pipeline_descriptor::{
 };
 pub use types::{
     DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
-    PointLightGPU, UIDrawList, UiDrawCommand,
+    PointLightGPU, PreparedDrawCounts, PreparedDraws, UIDrawList, UiDrawCommand,
 };
 
 // Vulkan re-exports

@@ -50,6 +50,10 @@ name = "command_buffer_recording"
 harness = false
 
 [[bench]]
+name = "frame_preparation"
+harness = false
+
+[[bench]]
 name = "mesh_upload"
 harness = false
 

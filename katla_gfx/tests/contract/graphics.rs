@@ -8,6 +8,8 @@
 //! left/right probes where possible, so a vertical flip cannot flip the
 //! verdict.
 
+use std::rc::Rc;
+
 use katla_gfx::render_graph::any_frame_graph::AnyFrameGraph;
 use katla_gfx::render_graph::{GeometryPass, PassId, UIPass};
 use katla_gfx::render_pass::{AttachmentOps, ClearValue};
@@ -91,7 +93,7 @@ mod pbr {
             ..
         } = scenario;
         renderer.render_frame(graph, Some(&*uniforms), Some(list), |frame| {
-            frame.submit(*geometry_pass, list);
+            frame.submit(*geometry_pass, Rc::new(list.clone()));
         })
     }
 
@@ -106,7 +108,7 @@ mod pbr {
         scenario
             .renderer
             .render_frame(graph, Some(&uniforms), Some(list), |frame| {
-                frame.submit(pass, list);
+                frame.submit(pass, Rc::new(list.clone()));
             })
     }
 
