@@ -11,6 +11,7 @@
 
 use std::cell::{Cell, RefCell};
 
+use katla_gfx::renderer::frame_scope::{FrameAcquisition, FrameToken};
 use katla_gfx::{
     DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuRenderer, GpuVendor, IndexType,
     MaterialHandle, MeshHandle, MeshIndexElement, PipelineDescriptor, PipelineKind, PointLightGPU,
@@ -27,6 +28,8 @@ struct MockRenderer {
     /// Bumped only by operations that claim to do real work. Optional
     /// operations must fail before touching it.
     generation: Cell<u64>,
+    /// The currently open frame token from `acquire_frame`.
+    active_frame: Option<FrameToken>,
 }
 
 impl MockRenderer {
@@ -43,6 +46,7 @@ impl MockRenderer {
             uniforms: FrameUniforms::default(),
             calls: RefCell::new(Vec::new()),
             generation: Cell::new(0),
+            active_frame: None,
         }
     }
 
@@ -91,23 +95,35 @@ impl GpuRenderer for MockRenderer {
         false
     }
 
-    fn wait_for_frame(&mut self) -> Result<(), RendererError> {
-        self.record("wait_for_frame");
+    fn acquire_frame(&mut self) -> Result<FrameAcquisition, RendererError> {
+        self.record("acquire_frame");
+        let token = FrameToken::new(0, self.generation.get());
+        self.active_frame = Some(token);
+        Ok(FrameAcquisition::Ready(token))
+    }
+
+    fn set_frame_uniforms(
+        &mut self,
+        _frame: &FrameToken,
+        uniforms: FrameUniforms,
+    ) -> Result<(), RendererError> {
+        self.record("set_frame_uniforms");
+        self.uniforms = uniforms;
         Ok(())
     }
 
-    fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        self.record("set_frame_uniforms");
-        self.uniforms = uniforms;
-    }
-
-    fn execute_draw_calls(&mut self, _draw_list: &DrawList) -> Result<(), RendererError> {
+    fn execute_draw_calls(
+        &mut self,
+        _frame: &FrameToken,
+        _draw_list: &DrawList,
+    ) -> Result<(), RendererError> {
         self.record("execute_draw_calls");
         Ok(())
     }
 
     fn draw(
         &mut self,
+        _frame: &FrameToken,
         _uniforms: &FrameUniforms,
         _draw_calls: &[DrawCall],
     ) -> Result<DrawList, RendererError> {
@@ -115,18 +131,34 @@ impl GpuRenderer for MockRenderer {
         Ok(DrawList::default())
     }
 
+    fn upload_lights(
+        &mut self,
+        _frame: &FrameToken,
+        _lights: &[PointLightGPU],
+    ) -> Result<(), RendererError> {
+        self.record("upload_lights");
+        Ok(())
+    }
+
+    fn upload_shadow_cascades(&mut self, _frame: &FrameToken) -> Result<(), RendererError> {
+        self.record("upload_shadow_cascades");
+        Ok(())
+    }
+
+    fn present(&mut self, _frame: FrameToken) -> Result<(), RendererError> {
+        self.record("present");
+        self.active_frame = None;
+        Ok(())
+    }
+
+    fn abort(&mut self, _frame: FrameToken) -> Result<(), RendererError> {
+        self.record("abort");
+        self.active_frame = None;
+        Ok(())
+    }
+
     fn frame_uniforms(&self) -> &FrameUniforms {
         &self.uniforms
-    }
-
-    fn begin_frame(&mut self) -> Result<u32, RendererError> {
-        self.record("begin_frame");
-        Ok(0)
-    }
-
-    fn end_frame(&mut self) -> Result<(), RendererError> {
-        self.record("end_frame");
-        Ok(())
     }
 
     fn create_mesh<T, U>(
@@ -269,16 +301,8 @@ impl GpuRenderer for MockRenderer {
         self.record("recreate_scene_render_targets");
     }
 
-    fn upload_lights(&mut self, _lights: &[PointLightGPU]) {
-        self.record("upload_lights");
-    }
-
     fn update_shadows(&mut self, _light_direction: [f32; 3]) {
         self.record("update_shadows");
-    }
-
-    fn upload_shadow_cascades(&mut self) {
-        self.record("upload_shadow_cascades");
     }
 
     fn create_skeleton(&mut self, _joint_count: usize) -> Result<SkeletonHandle, RendererError> {
@@ -386,9 +410,13 @@ fn test_unsupported_operations_fail_explicitly_without_mutation() {
 fn test_required_operations_reach_explicit_implementations() {
     let mut renderer = MockRenderer::new();
 
-    renderer.upload_lights(&[]);
+    let frame = match renderer.acquire_frame().unwrap() {
+        FrameAcquisition::Ready(token) => token,
+        other => panic!("mock must acquire a frame, got {other:?}"),
+    };
+    renderer.upload_lights(&frame, &[]).unwrap();
     renderer.update_shadows([0.0, 1.0, 0.0]);
-    renderer.upload_shadow_cascades();
+    renderer.upload_shadow_cascades(&frame).unwrap();
     renderer.set_viewport_bindless_slot(3);
     renderer.render_ui_pass(UIDrawList::default());
     renderer.set_viewport_panel_rect(None);

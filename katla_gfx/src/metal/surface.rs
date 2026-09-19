@@ -6,7 +6,7 @@
 //! layer. Enforcement is structural: `MetalSurface` is `!Send`/`!Sync`
 //! (compile-time contract in this file's test module), so no code path can
 //! move or share it; the renderer methods that touch it
-//! (`wait_for_frame`/acquire, `present` during frame submit, `resize`) are
+//! (`acquire_frame`/`present`, `resize`) are
 //! `&mut self` on the renderer, which the app owns on the main thread.
 //! Background pipeline-compilation and upload work therefore never requires
 //! the surface — those paths use only `MetalContext` (Send + Sync).
@@ -80,16 +80,17 @@ impl MetalSurface {
         }
     }
 
-    pub(crate) fn acquire_next_drawable(
+    /// Acquire the next drawable, returning `None` when the layer cannot
+    /// produce one this tick (minimized/occluded) instead of an error.
+    pub(crate) fn try_acquire_next_drawable(
         &mut self,
-    ) -> Result<Retained<ProtocolObject<dyn MTLTexture>>, RendererError> {
-        let drawable = self
-            .layer
-            .nextDrawable()
-            .ok_or_else(|| RendererError::InvalidOperation("No drawable available".into()))?;
+    ) -> Result<Option<Retained<ProtocolObject<dyn MTLTexture>>>, RendererError> {
+        let Some(drawable) = self.layer.nextDrawable() else {
+            return Ok(None);
+        };
         let texture = drawable.texture();
         self.current_drawable = Some(drawable);
-        Ok(texture)
+        Ok(Some(texture))
     }
 
     pub(crate) fn present(&mut self, command_buffer: &ProtocolObject<dyn MTLCommandBuffer>) {

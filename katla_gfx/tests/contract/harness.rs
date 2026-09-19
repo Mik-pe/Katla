@@ -34,6 +34,7 @@ use katla_gfx::render_graph::any_frame::AnyFrame;
 use katla_gfx::render_graph::any_frame_graph::AnyFrameGraph;
 use katla_gfx::render_graph::{FrameGraphBuilder, PassId};
 use katla_gfx::renderer::features::RendererFeature;
+use katla_gfx::renderer::frame_scope::FrameAcquisition;
 use katla_gfx::renderer::pipeline_descriptor::CullMode;
 use katla_gfx::renderer::pipeline_descriptor::{BlendMode, DepthState, PipelineDescriptor};
 use katla_gfx::texture::ImageFormat;
@@ -229,16 +230,6 @@ impl ContractRenderer {
         draw_list: Option<&katla_gfx::DrawList>,
         submit: impl FnOnce(&mut AnyFrame),
     ) -> Vec<u8> {
-        self.renderer.wait_for_frame().expect("wait_for_frame");
-        if let Some(uniforms) = uniforms {
-            self.renderer.set_frame_uniforms(uniforms.clone());
-        }
-        if let Some(draw_list) = draw_list {
-            self.renderer
-                .execute_draw_calls(draw_list)
-                .expect("execute_draw_calls");
-        }
-
         #[cfg(target_os = "macos")]
         let drawable = {
             // A fresh Shared-storage texture per frame, kept alive by this
@@ -251,13 +242,31 @@ impl ContractRenderer {
             keep
         };
 
-        self.renderer.render(graph, submit).expect("render");
+        // Acquire the frame: this waits for the slot's previous GPU submission
+        // to complete before any writes to per-frame storage buffers.
+        let frame_token = match self.renderer.acquire_frame().expect("acquire_frame") {
+            FrameAcquisition::Ready(token) => token,
+            other => panic!("headless harness must acquire a frame, got {other:?}"),
+        };
+        if let Some(uniforms) = uniforms {
+            self.renderer
+                .set_frame_uniforms(&frame_token, uniforms.clone())
+                .expect("set_frame_uniforms");
+        }
+        if let Some(draw_list) = draw_list {
+            self.renderer
+                .execute_draw_calls(&frame_token, draw_list)
+                .expect("execute_draw_calls");
+        }
+
+        self.renderer
+            .render(&frame_token, graph, submit)
+            .expect("render");
+        self.renderer.present(frame_token).expect("present");
 
         #[cfg(target_os = "macos")]
         {
-            self.renderer
-                .wait_for_frame()
-                .expect("wait before headless readback");
+            self.renderer.wait_for_device();
             katla_gfx::AnyRenderer::readback_bgra_texture(&drawable, WIDTH, HEIGHT)
         }
         #[cfg(not(target_os = "macos"))]

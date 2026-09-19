@@ -332,7 +332,7 @@ impl super::VulkanRenderer {
     /// Upload point light data for the current frame.
     ///
     /// Delegates to [`LightSubsystem::upload_lights`].
-    pub fn upload_lights(&mut self, lights: &[crate::lighting::PointLightGPU]) {
+    pub(crate) fn upload_lights(&mut self, lights: &[crate::lighting::PointLightGPU]) {
         self.light_culling.upload_lights(lights);
     }
 

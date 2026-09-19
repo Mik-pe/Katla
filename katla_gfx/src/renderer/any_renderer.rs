@@ -175,6 +175,98 @@ impl AnyRenderer {
 }
 
 impl GpuRenderer for AnyRenderer {
+    fn acquire_frame(
+        &mut self,
+    ) -> Result<crate::renderer::frame_scope::FrameAcquisition, RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => crate::renderer::frame_lifecycle::acquire_frame(r),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => crate::metal::frame_lifecycle::acquire_frame(r),
+        }
+    }
+
+    fn set_frame_uniforms(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        uniforms: FrameUniforms,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::set_frame_uniforms(r, frame, uniforms),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::set_frame_uniforms(r, frame, uniforms),
+        }
+    }
+
+    fn execute_draw_calls(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        draw_list: &DrawList,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::execute_draw_calls(r, frame, draw_list),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::execute_draw_calls(r, frame, draw_list),
+        }
+    }
+
+    fn draw(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        uniforms: &FrameUniforms,
+        draw_calls: &[DrawCall],
+    ) -> Result<DrawList, RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::draw(r, frame, uniforms, draw_calls),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::draw(r, frame, uniforms, draw_calls),
+        }
+    }
+
+    fn upload_lights(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        lights: &[PointLightGPU],
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::upload_lights(r, frame, lights),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::upload_lights(r, frame, lights),
+        }
+    }
+
+    fn upload_shadow_cascades(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::upload_shadow_cascades(r, frame),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::upload_shadow_cascades(r, frame),
+        }
+    }
+
+    fn present(
+        &mut self,
+        frame: crate::renderer::frame_scope::FrameToken,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::present(r, frame),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::present(r, frame),
+        }
+    }
+
+    fn abort(
+        &mut self,
+        frame: crate::renderer::frame_scope::FrameToken,
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::abort(r, frame),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::abort(r, frame),
+        }
+    }
+
     fn swapchain_extent(&self) -> crate::Size2D {
         match self {
             AnyRenderer::Vulkan(r) => r.swapchain_extent(),
@@ -231,63 +323,11 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn wait_for_frame(&mut self) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.wait_for_frame(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.wait_for_frame(),
-        }
-    }
-
-    fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.set_frame_uniforms(uniforms),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.set_frame_uniforms(uniforms),
-        }
-    }
-
-    fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.execute_draw_calls(draw_list),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.execute_draw_calls(draw_list),
-        }
-    }
-
-    fn draw(
-        &mut self,
-        uniforms: &FrameUniforms,
-        draw_calls: &[DrawCall],
-    ) -> Result<DrawList, RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.draw(uniforms, draw_calls),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.draw(uniforms, draw_calls),
-        }
-    }
-
     fn frame_uniforms(&self) -> &FrameUniforms {
         match self {
             AnyRenderer::Vulkan(r) => r.frame_uniforms(),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.frame_uniforms(),
-        }
-    }
-
-    fn begin_frame(&mut self) -> Result<u32, RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.begin_frame(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.begin_frame(),
-        }
-    }
-
-    fn end_frame(&mut self) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.end_frame(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.end_frame(),
         }
     }
 
@@ -558,27 +598,11 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn upload_lights(&mut self, lights: &[PointLightGPU]) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.upload_lights(lights),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.upload_lights(lights),
-        }
-    }
-
     fn update_shadows(&mut self, light_direction: [f32; 3]) {
         match self {
             AnyRenderer::Vulkan(r) => r.update_shadows(light_direction),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.update_shadows(light_direction),
-        }
-    }
-
-    fn upload_shadow_cascades(&mut self) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.upload_shadow_cascades(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.upload_shadow_cascades(),
         }
     }
 
@@ -750,10 +774,12 @@ impl GpuRenderer for AnyRenderer {
 // --- Non-trait methods that both backends implement ---
 
 impl AnyRenderer {
-    /// Execute the frame graph and present the frame.
-    /// The closure receives an `AnyFrame` for submitting draw lists to passes.
+    /// Execute the frame graph for an open frame. The closure receives an
+    /// `AnyFrame` for submitting draw lists to passes. A failure poisons the
+    /// frame so `present` cannot submit half-encoded work.
     pub fn render<F>(
         &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
         frame_graph: &mut crate::render_graph::any_frame_graph::AnyFrameGraph,
         f: F,
     ) -> Result<(), RendererError>
@@ -763,16 +789,18 @@ impl AnyRenderer {
         match self {
             AnyRenderer::Vulkan(r) => {
                 let fg = frame_graph.as_vulkan_mut();
-                r.render(fg, |frame| {
-                    let mut any_frame = crate::render_graph::any_frame::AnyFrame::Vulkan(frame);
+                r.render(frame, fg, |graph_frame| {
+                    let mut any_frame =
+                        crate::render_graph::any_frame::AnyFrame::Vulkan(graph_frame);
                     f(&mut any_frame);
                 })
             }
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => {
                 let fg = frame_graph.as_metal_mut();
-                r.render(fg, |frame| {
-                    let mut any_frame = crate::render_graph::any_frame::AnyFrame::Metal(frame);
+                r.render(frame, fg, |graph_frame| {
+                    let mut any_frame =
+                        crate::render_graph::any_frame::AnyFrame::Metal(graph_frame);
                     f(&mut any_frame);
                 })
             }

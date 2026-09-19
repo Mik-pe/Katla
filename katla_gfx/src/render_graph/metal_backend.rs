@@ -88,7 +88,7 @@ impl RenderGraphBackend for MetalRenderer {
     fn swapchain_image_view(&self, _image_index: u32) -> Self::ImageView {
         self.drawable_texture_view
             .clone()
-            .expect("No drawable texture view — call begin_frame first")
+            .expect("No drawable texture view — render through an acquired frame")
     }
 
     fn depth_image_view(&self, _frame_index: usize) -> Option<Self::ImageView> {
