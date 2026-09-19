@@ -2,6 +2,551 @@
 
 ## Completed Recently
 
+- **Issue #35 slice 1: Vulkan allocates aliased transients from compiled
+  lifetimes (2026-09-11, PR #125 squash-merged as 57f3c3b9, CI green both
+  platforms, main green post-merge)** — the `TransientAllocationPlan`
+  stopped being a diagnostics-only projection: `initialize_transient_textures`
+  builds it (lifetimes from the same compiler pass that schedules/syncs) and
+  routes slot groups through the new `RenderGraphBackend::create_transient_slot`
+  (replaces `create_transient_texture`; returns textures one-to-one with
+  member descs). Vulkan lowers multi-member slots to `ALIAS` images bound at
+  offset 0 of one `VkDeviceMemory` per frame slot sized for the largest
+  member; memory type = intersection of member requirements, preferring
+  LAZILY_ALLOCATED for attachment-only slots (unsampled depth gains
+  TRANSIENT_ATTACHMENT usage) else device-local; `Rc<VkSlotMemory>` keeps
+  slot memory alive until the last member dies (drop-order safe). Metal loops
+  standalone allocations over the same grouping. `set_transient_aliasing(false)`
+  switch keeps standalone allocations without changing semantics.
+  TWO latent sync bugs found by the new device tests: (1) undefined-source
+  bootstrap transitions used srcAccess NONE — under aliasing the image's
+  memory carries the prior member's attachment store, so the transition is a
+  write needing ALL_COMMANDS/MEMORY_WRITE sources (GPU-assisted validation:
+  WRITE_AFTER_WRITE); (2) `ImageBarrier::deduce_transition_masks` had no
+  TRANSFER_SRC→COLOR_ATTACHMENT case — the picking readback's restore
+  transition silently fell back to TOP_OF_PIPE/NONE. Diagnostics schema v9:
+  `transient_slots` (members, bytes, live execution span) in JSON + text.
+  GOTCHAS learned: single-member plan slots must STILL create their textures
+  (an early `.filter(len > 1)` silently skipped them — the backend's
+  standalone path is the right router); headless `render()` steps the frame
+  slot BEFORE returning, so post-frame transient readback must capture the
+  slot pre-render (picking readback via `queue_picking_readback` restores the
+  tracked layout, making it safe mid-graph-lifetime). The editor graph's 5
+  transients are all exported/incompatible → 5 standalone groups (no savings
+  there); the diagnostics golden shows shadow_atlas+hdr_color sharing slot 0.
+  Validation: 455 lib tests; `tests/transient_aliasing.rs` (aliased storage
+  proven by cross-member pixel readback across repeated frames on one frame
+  slot, + disabled-switch contrast, both validation-clean); full device
+  suites; contract 12/12 serial on real Intel; clippy CI-exact (lib +
+  workspace); 100-frame headless 0 graphics errors / 1 WARN, re-init count
+  identical to main.
+- **Issue #37 slice 2: sync transitions in all diagnostics exports + golden
+  snapshots (2026-09-11, PR #124 squash-merged as 0c1da394, CI green both
+  platforms)** — diagnostics schema v7 → v8. `RenderGraphDiagnosticTransition`
+  now carries the sync op's subresource range (producer∩consumer intersection);
+  transitions ordered by execution position in every export (was declared-pass
+  order); text export renders every op (frame-start steady-state seeds,
+  per-pass ops, frame-end `imported_final` contract ops) with
+  `[producer -> consumer] rN (name), aspects, mips a+b, layers c+d: before ->
+  after (reason|hazard H)`; DOT renders frame-boundary ops as dashed edges
+  through `frame_start`/`frame_end` nodes — including the anchor-less
+  `frame_start -> frame_end` edge for contract finals on subresources no live
+  pass wrote — while pass-to-pass ops stay on the dependency edges (no
+  double-render). Golden snapshots `katla_gfx/tests/goldens/
+  render_graph_diagnostics.{json,text,dot}` pin a canonical
+  shadow→geometry→lighting→present chain (backbuffer contract
+  ColorAttachment→PresentSrc, RAW hazards, aspect-fragment bootstraps,
+  prev-frame seeds); bless via `KATLA_BLESS_GOLDENS=1 cargo test -p
+  katla_gfx --lib render_graph::diagnostics`. GOTCHA confirmed: CI runs NO
+  integration tests except `--test contract`, so golden files must be loaded
+  by a `#[cfg(test)]` lib test (CARGO_MANIFEST_DIR path), not a tests/ file.
+  GOTCHA: mid-flight rebase onto #123 (which landed while this branch was
+  validating) — fetched, rebased clean, re-ran lib tests (446 → 452 incl.
+  #123's six) + fmt/clippy + headless gate on the rebased tree before push.
+  Validation: 452 lib tests (12 diagnostics incl. golden), workspace suite
+  green, headless 100-frame exit 0 / 0 ERROR / 1 WARN (= baseline), evidence
+  comment on #37 (issue stays open: encoder/queue boundary → #33 remainder,
+  allocation/aliasing views → #35, frame slots → #36, Metal residency → #55,
+  encoder traces + comparison → #56, CI artifact upload, capture docs).
+- **Issue #98 emission slice: DrawCall emission typed as TextureHandle
+  (2026-09-11, PR #122 squash-merged as a011ec7f, CI green both
+  platforms)** — `DrawCall.emission` and app `DrawableComponent.emission`
+  hold `TextureHandle` (default NONE) instead of a raw f32 bindless slot;
+  both backends resolve at prepare/encode time — Vulkan
+  `resolve_emission_texture_slot` (pub in bindless_queries, mirroring the
+  #117 `resolve_material_texture_slots` pattern), Metal
+  `resolve_emission_texture_slot_impl` at object upload;
+  `DrawCall::material_params` takes the backend-resolved slot, keeping the
+  `material_params.w` ABI (billboard's reuse of w as albedo index intact;
+  no shader edits). NONE/stale resolve to 0 — the shaders'
+  `emission_idx > 0u` sentinel — deliberately not DEFAULT_EMISSION_SLOT
+  (0 skips the sample). App: GLTF loader binds the emission handle
+  directly, billboard path binds the icon handle (app-local
+  `get_bindless_index` helper deleted); write-only
+  `EditorState::stencil_indicator_bindless_index` deleted. New device
+  suite `tests/typed_emission_binding.rs` (registered → own slot,
+  NONE/stale → 0 ≠ withheld slot, later registration unaffected).
+  Validation: 50 katla_gfx device tests, workspace tests, 100-frame
+  headless run 0 ERROR / 1 WARN (baseline), interaction harness 8/8; all
+  re-run after rebasing onto #119's b0f42fc3 mid-flight.
+  GOTCHA: never run `cargo test --workspace --tests -- --ignored` —
+  pre-existing ignored katla_app tests hang forever (transform_hierarchy
+  cycle test spins at 100% CPU; ui hit-testing); scope device suites to
+  `-p katla_gfx --tests -- --ignored`.
+- **Issue #97 CLOSED: one cross-backend graphics contract suite (2026-09-11,
+  PR #119 squash-merged as b0f42fc3, CI green both platforms incl. the
+  suite)** — `katla_gfx/tests/contract/` runs 12 scenarios against the
+  platform backend through a backend-neutral harness: Vulkan on Linux
+  (lavapipe in CI, real Intel locally), Metal on macOS (first real Metal
+  device execution in CI, with MTL_DEBUG_LAYER +
+  METAL_DEVICE_WRAPPER_TYPE). Harness: `ContractRenderer` (headless init,
+  capability table, canonical frame order, per-frame BGRA readback per
+  backend — Vulkan async readback / Metal headless drawable + getBytes),
+  `build_graph` → AnyFrameGraph, `finish()` asserts the captured validation
+  log. Scenarios: u16/u32 indexed draws byte-identical; per-object
+  transform/color swap; instanced == 4 direct draws + mixed lists + late
+  recolor + typed capacity exhaustion; dynamic mesh
+  same-size/shrink/grow/empty/repopulate with retirement draining;
+  material across three alternating graph configs; declared Load extends /
+  Clear replaces; stale handles never alias reused slots; double destroy
+  harmless; destroyed slot withheld until frames drain then returns
+  exactly; frame slots independent; typed invalid-descriptor rejections;
+  capability table + documented direct-UI-pass no-op.
+  FOUND+FIXED four real divergences: Metal honored neither
+  `PipelineDescriptor.color_format` nor `DepthState` (every non-UI
+  pipeline hardcoded RGBA16Float + D32S8 depth) — now honored with Auto
+  keeping the HDR default; Metal skipped the static-mesh-immutable
+  rejection (MetalMesh records MeshUsage now); Metal's geometry/UI record
+  encoders ignored graph-declared attachments (depth bound only when the
+  record declares it + declared color ops honored; UI record renders the
+  PASS's material — set_ui_material trait plumbing removed end-to-end);
+  Metal reports u32 for u16 meshes (upload conversion). Also added
+  `GeometryPass::without_depth()` (builder injects reverse_z_default into
+  every uses_depth pass — depth-free passes must opt out) and
+  `pipeline_descriptor::CullMode` re-export (the descriptor field type was
+  unnameable without the validation feature). CI: Linux runs the suite on
+  lavapipe SERIAL with `--skip graphics::pbr` (lavapipe segfaults in the
+  PBR path and races concurrent instance creation); macOS runs everything
+  under Metal API validation. Capabilities encode the honest backend
+  differences: `api_validation_capture`, `retirement_diagnostics`,
+  `preserves_index_width`, `flips_direct_ndc_y` (direct-to-drawable graphs
+  render y-mirrored on Metal — the app's tonemap does the flip; UI pixel
+  space is unmirrored on both). Verified: gfx lib 445, contract 12/12
+  Linux + 12/12 macOS, existing device suites green, workspace check +
+  suite green. Docs: docs/contract-suite.md.
+
+
+- **Issue #98 UI slice: dead `UiDrawCommand.texture` deleted (2026-09-11,
+  PR #121 squash-merged as 44c64a37, CI green both platforms; issue remains
+  open)** — the field was write-only: Vulkan's `execute_ui_draw_list` never
+  consumed it and Metal pushed `.index()` into a `UiUniforms` push-constant
+  member no shader entry point reads (headless_render's device test already
+  proved inertness — commands carry mismatched textures while pixel assertions
+  depend solely on baked indices). `UiUniforms` collapsed to one `vec4f`
+  `[width, height, ndc_y_flip, unused]` (WGSL uniform structs need a 16-byte
+  stride), making Metal's inline `setVertexBytes` push byte-identical to the
+  layout Vulkan already wrote; the app `UIRenderer` stops fabricating
+  `TextureHandle::from_raw(bindless_slot, 0)`. Per-instance/per-vertex
+  `texture_index` remains the shader-visible ABI, resolved per frame through
+  `GpuRenderer::get_bindless_slot`.
+
+- **Issue #33 slice 1: compiled synchronization plan (2026-09-11, PR
+  #118 squash-merged as 922778f9, CI green both platforms; issue remains
+  open)** — `ExecutionPlan` now carries a backend-neutral `SyncPlan`
+  (new `render_graph/sync_plan.rs`): ordered per-pass image sync ops with
+  subresource ranges, before/after states (`ImageSyncState`:
+  usage/pipeline-stage/access-mode), hazard reasons (RAW/WAR/WAW), and
+  imported-contract initial seeding plus frame-end final ops — all derived
+  from the same typed accesses that build the dependency DAG. Computed by
+  one forward scan run twice: a discovery pass, then a seeded pass where
+  each transient starts in its previous-frame end state (frame-periodic
+  steady state); imports always seed from their contract's initial state.
+  Fresh textures get discard-safe Undefined→target bootstrap ops
+  (frame-start state == target) that the backend coalesces once the
+  tracked layout matches; same-state cross-pass hazards encode same-layout
+  ordering barriers (render-pass instances may overlap without one).
+  Vulkan (`frame/barriers.rs`, rewritten) translates states directly to
+  sync2 masks/layouts/aspect-intersected ranges — no layout-pair
+  inference, no TOP_OF_PIPE fallback, tracked layout is ground truth
+  (oldLayout=tracked; UNDEFINED source → srcStage=dstStage/srcAccess=0).
+  Frame-end contract ops run after the last live pass. Deleted:
+  PassBarrierCache + ensure_barrier_cache + barrier_cache(),
+  insert_post_pass_barriers, the shadow-pass `set_state` poke, the three
+  dead `RenderGraphBackend` transition hooks, `ResourceState::
+  to_vk_stage_flags/to_vk_access_flags` (+ test), and
+  `TransientTextureOps` state()/set_state() with both backends' Cells
+  (Vulkan keeps only the layout Cell for the bootstrap guard). Metal
+  consumes the same plan: `MetalExecutionPlan` records per-op
+  `MetalSyncCoverage::TrackedResource` classification (private-storage
+  tracked textures; load/store realize attachments; tonemap fence
+  documented as pre-plan), observable via trace logs, pinned by unit
+  test. Diagnostics schema v7: synchronization entries carry
+  before/after states + reason + frame-start/frame-end anchors
+  (before_pass/to_pass are Options); dependencies now derive from live
+  DAG edges + coarse set intersection (an intervening access subsumes a
+  transitive hazard in the sync ops while the edge still orders the
+  passes). Tests: 12 sync-plan compiler tests incl. steady-state cycle,
+  bootstrap, import contracts, subresource ranges, RAR coalescing,
+  same-state WAW; 445 gfx lib tests; all 35 device-suite tests on Intel
+  Vulkan; full workspace suite; 100-frame headless editor run exit 0
+  with ZERO validation errors and ERROR/WARN parity with main (an
+  earlier iteration rendered single-write transients from UNDEFINED on
+  frame 0 — VUID-09592 x10, caught ONLY by this run); capture
+  pixel-diff vs main 60,735 px vs main-vs-main noise floor 62,625 px
+  (same bbox — timing-driven fire); interaction harness 8/8. Remaining
+  #33 slices in the issue comment: backbuffer contract consumption
+  (renderer acquire/present barriers remain), out-of-graph barrier
+  callers keep deduce_transition_masks until #31, scene depth keeps
+  depth_render_pass_sync while backend-owned, queue/encoder boundary
+  modeling (semaphores, Metal fence).
+
+- **Issue #98 core slice: typed material texture bindings (2026-09-11, PR
+  #117 squash-merged as 6da53d3c, CI green both platforms; issue remains
+  open for follow-up slices)** — `MaterialTextures` is now four
+  `TextureHandle` roles (albedo/normal/metallic_roughness/occlusion,
+  default all-NONE) instead of a raw `[u32; 4]` of bindless slots.
+  `set_material_textures(material, MaterialTextures)` replaces
+  `set_material_texture_indices` on the GpuRenderer trait, AnyRenderer,
+  Vulkan, Metal, and the renderer_features mock. Each backend resolves
+  handles to slots at exactly one point — Vulkan in `execute_draw_calls`
+  via pub `resolve_material_texture_slots` (public so tests can validate
+  the binding table), Metal at object upload via
+  `resolve_material_texture_slots_impl` — with one shared fallback
+  policy: NONE and stale handles resolve to per-role default slots
+  (`DEFAULT_*_SLOT`, now pub in `katla_gfx::texture`). A stale handle can
+  never sample whatever occupies a recycled slot (composes with #83
+  generations + #84 slot withholding — device-verified). App: the GLTF
+  loader binds handles directly and its per-role bindless-index derivation
+  is deleted (emission stays a raw DrawCall field, tracked in #98).
+  Device suite `tests/typed_material_textures.rs`: defaults resolve to
+  [0,1,2,3]; per-role handles resolve to their exact registered slots;
+  destroyed-texture handle falls back to the role default and NOT the
+  destroyed slot; shared texture across materials resolves identically.
+  Verified: 423 gfx lib tests, workspace suites, all 35 device-suite
+  tests, CI-exact clippy both gates, fmt, 100-frame headless game run
+  (DamagedHelmet GLTF exercises the typed path; ERROR/WARN count matches
+  main), interaction harness 7/8 on this branch (the
+  viewport_click_picks_object failure was the pre-#116 shadow-cull
+  regression — this branch predates #116; corrected on the PR). Metal
+  diff hand-audited (type-level only; argument buffer default-fill keeps
+  the unified occlusion fallback safe). Remaining #98 slices listed in
+  the issue evidence comment: UiDrawCommand fabricated handles + Metal
+  vertex-UI `.index()` pass-through, viewport transient TextureIds +
+  `set_overlay_texture_indices`, `DrawCall.emission`, `Texture::resize`
+  replacement retirement.
+
+- **Issue #30 CLOSED: typed template accesses + imported-image state contracts
+  (2026-09-11, PR #116 squash-merged as 09573dcf, CI green both platforms,
+  main green post-merge)** — Also REPAIRED MAIN: since slice 1 (c3500878,
+  2026-09-10) every editor frame failed with `Pass 'shadow' was culled` and
+  rendered black. Root cause: `refine_inferred_image_accesses` narrowed the
+  shadow pass's write to a DEPTH-only range while the geometry pass's
+  generic read stayed a COLOR-only `sampled_read`; disjoint aspects
+  produced no RAW edge, so liveness culled the shadow pass and its
+  submission was rejected mid-frame (stuck command buffer, black 17 KB
+  capture vs healthy 586 KB). CI and the gfx device suites never exercise
+  the editor graph — only the game binary did. Fix: generic sampled reads
+  declare the whole-resource range (ALL aspects — sampling reads whichever
+  aspect the image carries; the graph cannot narrow it without the format;
+  `.with_range` for precision). The interaction harness's recorded 7/8
+  `viewport_click_picks_object` "pre-existing" failure was this same
+  regression; 8/8 after. Contracts: `ImportedImageContract {initial,
+  required_final}` with `undefined()`/`arrives_in(state)`/`.must_end_in(state)`;
+  `import_resource(name, handle, contract)`; `backbuffer_contract(...)`
+  overriding the built-in backbuffer default (observable contents — the
+  old load exemption, now declarative); compile validation
+  (`LoadingUndefinedImportedContents` when loading imported contents with
+  Undefined initial state, `UnreachableImportedFinalState` when a required
+  final state has no live accessing pass and differs from initial);
+  diagnostics expose contracts per imported resource in JSON/text/DOT
+  (schema v6; #33's sync plan consumes them later). Templates: all 11
+  built-ins hand-declare `NamedImageAccess` via `named_image_access`
+  (passes/mod.rs) — attachment targets as ColorAttachment/
+  DepthStencilAttachment accesses (read-write when loading/blending),
+  generic reads as all-aspect sampled accesses; per-template tests pin the
+  declarations; `refine_inferred_image_accesses` remains only for the
+  low-level `PassDesc`/`SimplePass` API (ResourceId-based). New
+  `color_attachment_read_write` constructor. Regression test
+  `sampling_a_depth_atlas_orders_after_the_shadow_pass_and_keeps_it_live`
+  pins the editor-shape hazard. Verified: 430 gfx lib tests, full
+  workspace suite, device suites (attachment_semantics incl. --ignored,
+  render_graph_test, viewport_pass_test, headless_render), headless
+  editor capture pixel-verified with cast shadows, interaction harness
+  8/8, fmt clean, both CI clippy gates clean, metal/ audited (no touched
+  API referenced). Buffer resources → #31; sync-plan consumption → #33.
+
+- **Issue #84: deferred native-resource retirement generalized (2026-09-11,
+  PR #115 squash-merged as 126312ce, CI green both platforms, issue
+  closed)** — `BufferRetirementQueue` became `RetirementQueue` whose
+  `RetiredResource` variants own their native object and free it by Drop at
+  drain: Buffer, Texture (`Rc<Texture>` — frees image/view/sampler at last
+  reference), Pipeline (`Box<AnyPipeline>`), DescriptorSetLayout,
+  SkeletonBuffer, and BindlessSlot (returned by drains so the caller
+  releases it through `BindlessTextureManager`). Converted paths:
+  `destroy_texture` (Rc AND its bindless slot retire — the slot stays
+  withheld from the free list until expiry, so new textures can never
+  resolve through a slot an in-flight submission still reads; released at
+  `wait_for_frame` drain, `drain_all` in destroy/recreate_swapchain),
+  `destroy_material` (descriptor layout + both pipelines),
+  `destroy_skeleton` (joint buffer), material hot reload
+  (`reload_material_shader` old pipeline) and descriptor-layout
+  invalidation (`invalidate_compiled_materials` now returns the removed
+  pipelines for retirement), and UI auto-grow (`BufferObject::resize`
+  returns a `RetiredBuffer`; `upload_data` returns `Option<RetiredBuffer>`;
+  all 6 UI upload sites in ui_rendering.rs retire; mesh creation-sized
+  uploads `debug_assert!` none). `TextureManager::destroy` returns
+  `Option<Rc<Texture>>`. Diagnostics: public
+  `pending_retirements() -> RetirementSnapshot` (per-kind counts,
+  knowable device bytes via `Allocation::size`, oldest pending frame,
+  `summary()` string; root-exported next to VulkanRenderer) replaces
+  `pending_buffer_retirements`; drains debug-log each retired resource.
+  Device suite `tests/resource_retirement.rs`: slot withhold → different
+  slot allocated → exact slot released at expiry → reusable after
+  (bindless free list is a LIFO stack, so the released slot is popped by
+  the next registration); material+skeleton retire+drain (graph keeps a
+  separate live material — empty-submission renders still validate pass
+  materials, a destroyed graph material errors every later frame);
+  12-iteration create/destroy stress bounded + fully drained with
+  validation callback clean. Sabotage-verified: restoring immediate
+  free/release fails the slot-withholding test. Verified: 422 gfx lib
+  tests, full workspace suites (katla_audio flake re-ran green), ALL
+  device suites, CI-exact clippy both gates, fmt (CI caught one post-fmt
+  formatting drift — rerun fmt immediately before pushing), 100-frame
+  headless game exit 0 with ERROR/WARN count identical to clean main
+  (124/124), interaction harness 7/8 (only the known pre-existing
+  viewport_click_picks_object failure). Deferred: `Texture::resize` image
+  replacement (#98 — queue unreachable from Texture internals); Metal
+  needs no equivalent (MTLCommandBuffer retains referenced resources,
+  extending native lifetime past destroy through in-flight submissions).
+
+- **Issue #37 slice 1: typed image accesses in text and DOT diagnostics
+  (2026-09-11, PR #113 squash-merged as bd5e9a1f, CI green both
+  platforms)** — Parallel session's work, finished and landed here: export
+  access labels now carry mode, usage, stage, aspects, and base/count mip
+  and layer ranges; read-write declarations emit both edge directions;
+  culled accesses keep dotted styling and stay visible. JSON already
+  contained these fields. Regression coverage compares an explicit nonzero
+  depth/stencil range across text, DOT, and JSON and checks quoted
+  resource-name escaping. No compiler or backend semantics changed — the
+  branch was rebased onto post-#114 main (its macOS CI failure was the
+  pre-existing private-handles-module breakage #114 fixed) and its leaked
+  memory-bank hunks were stripped before merge. 419 gfx lib tests, strict
+  clippy green. Remaining #37 scope: synchronization transition details
+  (#33), physical allocation/aliasing views (#35), frame-slot ownership
+  (#36), Metal argument-table/residency fields (#55), runtime encoder
+  traces and compiled-vs-emitted comparison (#56), golden snapshots, CI
+  artifact upload, capture/compare documentation.
+
+- **Issue #83: generational resource handles (2026-09-10, PR #114
+  squash-merged as 18959760, CI green both platforms)** —
+  `Handle<T>` identifies `(slot, generation)`; `ResourceStorage<T, M>` is
+  marker-keyed, bumps a slot's generation on every removal, and validates
+  both parts on every get/get_mut/remove/contains (`live_slot`; wrapping
+  generation skips 0 so a slot's initial generation is never re-issued).
+  `Handle::new(index)` deleted repo-wide; `from_raw(index, generation)` is
+  the only raw constructor. Copy/Clone are manual impls (derive adds a
+  `T: Copy` bound generic code can't prove for markers). Migrated: Vulkan
+  AssetRegistry (mesh/material/pipeline), TextureManager, the parallel
+  skeleton descriptor+buffer storages (insert back-to-back, one handle
+  addresses both, debug_assert), Metal meshes/materials/textures/skeletons
+  storages and all encode paths, and BOTH particle emitter pools (shared
+  pool lifecycle refactored onto `ParticleEmitterPool` for pure testing;
+  bespoke `particles::types::EmitterHandle` deleted for the shared alias).
+  App layer: GpuResourceTracker refcounts by full handle; skeleton copy
+  commands carry SkeletonHandle through the frame graph (tuple typed);
+  collider scene descriptors persist mesh_handle_generation;
+  asset-browser `TextureId::from_handle(index, generation)` packs both;
+  UIRenderer bindless map keyed by full handle. Two latent bugs fixed:
+  `TextureManager::list_unregistered_textures` derived handles from
+  enumerate position over live slots; tracker index-keyed refcounts let a
+  stale release destroy a slot's replacement. Tests: storage lifecycle
+  suite in handle.rs (stale-after-reuse, double-remove, generation
+  cycling, iter_enumerated, NONE/out-of-range), emitter pool pure suite,
+  tracker stale-release test, device suite
+  `tests/generational_handles.rs` (mesh/texture/skeleton/material/emitter
+  destroy→reuse→stale, replacement survives stale destroys;
+  mutation-verified). Verified: 418 gfx lib tests, 2094 workspace tests,
+  all 8 device suites, 100-frame headless run exits 0, interaction
+  harness 7/8 (viewport_click_picks_object fails IDENTICALLY on clean
+  main — pre-existing, not this change), exact CI clippy/fmt/check gates.
+  ALSO REPAIRED MAIN: macOS CI had been red since #95's merge
+  (61ad68e9) — metal/execution_plan.rs test referenced the private
+  `render_graph::handles` module; test-only cfg code compiles only in
+  the macOS `cargo test --lib` step. Deferred: raw bindless-slot
+  pass-through in UiDrawCommand.texture + viewport transient TextureIds
+  (#98); deferred native retirement (#84).
+
+- **Issue #30 slice 1: range-aware dependency analysis (2026-09-10, main as
+  c3500878)** — Compiler analyzes typed `ImageAccess` declarations
+  (`PassInfo.image_accesses`) instead of coarse read/write lists.
+  `ResourceAccessState` tracks outstanding writer/reader VERSIONS WITH
+  RANGES; overlapping ranges → minimal RAW/WAR/WAW edges, disjoint
+  mips/layers/aspects independent (same parallel level). A writer replaces
+  only the subresources it covers — `ImageSubresourceRange::subtract`
+  (which already existed for exactly this) keeps partial versions alive on
+  the remainder, so later reads of untouched ranges still bind to the
+  original version. RMW never self-depends. Convenience ImageAccess
+  constructors added (attachment/transfer/present). 7 new compiler tests
+  (disjoint mips/layers/aspects, overlap WAW, subrange RAW, partial
+  overwrite retention, RMW). Whole-range graphs compile identically to the
+  previous analysis (all 409 gfx lib tests + device suites + workspace
+  check + fmt + clippy green). Remaining on #30: imported-image
+  initial/final state contracts; explicit typed declarations in built-in
+  templates.
+
+- **Issue #95: Vulkan attachments obey declared graph ops (2026-09-10,
+  merged to main as 61ad68e9 + 098456cd)** —
+  New `AttachmentOps` + `DepthStencilAttachmentOps` (render_pass/types.rs);
+  `PassDesc.color_attachments` became `Vec<(ResourceId, AttachmentOps)>`,
+  `depth_attachment` per-aspect (depth+stencil). All pass templates declare
+  their attachment semantics (write_color_ops / depth_config two-arg APIs;
+  UIPass/OverlayLoad, fullscreen+composite Clear canvas, shadow Clear 1.0,
+  object-id Clear uint0). Builder resolves name→resource generically,
+  normalizes the reverse-Z depth default, and validates pre-encode:
+  missing/stray ops, clear-value aspect, Load-without-producer (imported
+  backbuffer exempt), compute rejection, uses_depth contradictions, depth
+  range. Deleted backbuffer_written + transient-state heuristics and every
+  hardcoded clear; per-aspect exec resolution shared via
+  resolve_color_attachments / resolve_frame_depth_attachments +
+  depth_attachment_info (DontCare→NONE_EXT). Diagnostics Display +
+  RenderGraphDiagnosticPass carry declared ops; Metal execution plan reads
+  the same decls (format via new FrameGraph::resource_format). Tests: 11
+  pure validation/normalization + trace test + device
+  tests/attachment_semantics.rs (Clear replaces / Load extends,
+  sabotage-verified: flipping UI Load→Clear fails it). GOTCHAS: validation
+  runs on live passes post-culling (unobserved test graphs need
+  export_resource); GeometryPass::write_color_with renamed
+  write_color_ops(ops struct), depth_config now (AttachmentOps,
+  AttachmentOps); game bench `performance_benchmark.rs` missing `rand` is a
+  pre-existing workspace-check failure. Verified: 401 gfx lib tests, all
+  workspace suites, 6 device suites incl. headless_render (backbuffer now
+  asserts DECLARED opaque black), clippy clean on touched files, fmt clean,
+  100-frame headless editor run with VK validation exits 0, screenshot
+  pixel-checked (shadows/particles/sky/UI intact).
+
+- **Issue #96: static meshes staged into device-local memory (2026-09-09,
+  PR #111 merged as deb7dd7a)** —
+  Every mesh lived in CpuToGpu streaming memory regardless of mutability.
+  Fix: `MeshUsage::Static` → `GpuOnly` buffers populated by new
+  `vulkan/staged_upload.rs` `StagedUploadBatch` (one staging allocation +
+  one copy submission per creation; post-copy buffer barrier
+  TRANSFER_WRITE→VERTEX_INPUT; queue submission order makes the data
+  visible to any later draw); `MeshUsage::Dynamic` keeps direct
+  host-visible writes (#86 path unchanged). Submission completion is
+  deferred: fence + command buffer + staging parked in
+  `VulkanContext::pending_staged_uploads`, released at frame-slot waits
+  and after device-idle in destroy/recreate_swapchain — a blocking
+  submit_and_wait per creation measured 74x slower on many small meshes
+  (~215 µs fence round-trip on Intel iGPU); deferred lands at ~26 µs/mesh.
+  Device-local allocation failure falls back to host-visible + direct
+  write + warn; placement observable via `mesh_memory_report` (per-buffer
+  location counts + index class) and `pending_staged_uploads`.
+  `destroy_mesh` retires buffers through the #86 retirement queue (staged
+  copies / in-flight frames may still reference them — first slice of
+  #84). Buffers gained `from_native` wrappers, fallible
+  `try_new`/`try_with_usage`, and a loud guard against direct uploads to
+  device-local memory. Bench `benches/mesh_upload.rs`: 64 small meshes
+  191 µs→1.69 ms, one 48.6k-vertex mesh 1.25 ms→1.45 ms (creation pays one
+  submission per mesh; steady-state encoding unchanged). Tests:
+  `tests/static_mesh_placement.rs` (staged render parity + placement
+  reports + retirement draining across rendered frames; 50 small + 48k
+  mesh with bounded staging/retirement release), in-crate fallback +
+  typed exhaustion via the inject hook, placement pure test; all existing
+  render device suites pass through the staged path (mesh_index_format
+  u16/u32 byte-identical, instanced_draws byte-exact). Verified: 55
+  workspace suites green (audio flake excluded), CI-style clippy clean,
+  fmt clean, headless 100-frame game run clean. CI FIX included: removed
+  the runner's preinstalled google-chrome apt source before apt-get
+  update (dl.google.com served hash-mismatched metadata from 17:16 UTC;
+  file is deb822 `.sources`, glob must not stop at `.list`).
+  Exclusions: cross-call batching into one submission per frame needs
+  #89's frame-scoped flush; general retirement (#84) beyond meshes.
+
+- **Issue #86: consistent, atomic dynamic mesh updates (2026-09-09, PR #110
+  merged as 71077a92)** —
+  Vulkan's update ignored vertex_count, copied the interleaved blob into the
+  Position-only SOA buffer (other attributes stale), never updated logical
+  counts, dropped index payloads when no index buffer existed, and grew via
+  `expect()`-panicking realloc that freed old buffers under in-flight
+  submissions; Metal failed typed on any growth and ignored vertex_count.
+  Fix: shared `validate_dynamic_update` (root-exported) gates updates on
+  both backends; `MeshAsset` records `index_count` + `attributes`, MetalMesh
+  records `vertex_count`/`vertex_stride`; all Vulkan draw sites encode
+  `mesh.index_count` and skip empty meshes (Metal guards added to 6 sites);
+  updates deinterleave every attribute via shared `split_attribute_bytes`;
+  growth uses fallible `VertexBuffer/IndexBuffer::try_new` replacements
+  committed atomically (allocation failure → typed error, mesh intact —
+  proven with the #94 inject hook); replaced Vulkan buffers retire through
+  new `vulkan/retirement.rs` `BufferRetirementQueue` (monotonic
+  `SwapData::frame_counter`, drain age >= frames_in_flight in
+  wait_for_frame, drain-all after device-idle in destroy/recreate_swapchain);
+  Metal growth relies on MTLCommandBuffer resource retention; empty ↔
+  populated transitions and u32 index width preserved; new
+  mesh_vertex_count/mesh_index_count/pending_buffer_retirements queries.
+  Tests: 3 pure contract tests + `tests/dynamic_mesh_updates.rs` device
+  suite (render-level grow/shrink/same-size/empty round-trip/repeated
+  interleaved updates/retirement draining, typed rejections) + in-crate
+  allocation-failure atomicity + extended Metal unit test (macOS CI).
+  Verified on Intel Vulkan: all gfx test targets green incl. mesh
+  device suites, 54 workspace suites green (katla_audio known flake
+  excluded), CI-style clippy clean, fmt clean, headless 100-frame game
+  run exits 0. Exclusions: BufferObject::resize (UI auto-grow) and
+  destroy_mesh still free immediately — #84 should reuse this retirement
+  queue. GOTCHA: headless capture "background" is lit gray [89,89,89],
+  not the clear color, and readback bytes are B8G8R8A8 (red = byte 2);
+  pixel probes need a distinct tint + channel-aware comparison.
+
+- **Issue #90: typed mesh descriptors, no Pod guessing (2026-09-09, PR #107
+  merged as c266c367)** —
+  `create_mesh<T: Vertex, U: MeshIndexElement>` + explicit topology replaces
+  `Pod`+`TypeId` guessing and the blob-as-position fallback (deleted with
+  both hand-rolled deinterleaves); new `MeshDescriptor`/`PrimitiveTopology`/
+  `MeshUsage` recorded on `MeshAsset` and `MetalMesh`; validation (empty,
+  attribute/format agreement, stride, index range, Position, topology)
+  before upload; all mesh creation returns `Result` (SOA, dynamic,
+  primitives included); callers migrated (init propagate,
+  spawn fallbacks, serialization strings). Tests: `mesh_descriptors.rs`
+  (4 pure + 5 device, sabotage-verified); `mesh_index_format` +
+  `instanced_draws` device tests byte-identical through the new generic
+  deinterleave. Verified: workspace check (pre-existing bench failure only),
+  380 lib tests, clippy clean. Exclusions: per-topology encoding (feeds
+  #100); stacks on #106, rebases to main on merge.
+
+- **Issue #99: typed gfx errors, loud texture creation (2026-09-09, PR #106
+  on fix/99-typed-gfx-errors, CI running)** —
+  New `InvalidDescriptor`/`AllocationFailed`/`UploadFailed`/`StaleHandle`
+  variants with structured context; pure `TextureDescriptor::validate_data`
+  gate; `create_texture`/`create_texture_solid`/`create_ui_font_atlas`
+  fallible on Vulkan + Metal + `AnyRenderer` (Metal placeholder masquerade
+  removed; Vulkan bindless panics typed with rollback); update paths return
+  `UploadFailed`/`StaleHandle` instead of warn-and-Ok; replacement-first
+  font-atlas updates; explicit logged asset-layer fallbacks (GLTF default
+  texture, thumbnail skip, icon skip); Metal mesh-update truncation now
+  fails typed. Tests: `texture_errors.rs` (4 pure + 3 device, all green on
+  Intel Vulkan; sabotage-verified). Verified: workspace check, 380 lib
+  tests, clippy clean, headless_render device test green. Exclusions: mesh
+  creation Result-ification moves with #90; RenderGraphBackend + capability
+  branching with #92/#93. Stacks on merged #105.
+
+- **Issue #91: required renderer operations have no silent no-op defaults
+  (2026-09-09, PR #105 MERGED as e7659517)** —
+  `GpuRenderer` had successful no-op defaults (`init_light_culling`,
+  `init_shadow_resources`, `init_pass_pipeline` returned `Ok(())`; nine more
+  methods were silent no-ops) plus guidance recommending new ones. Fix: new
+  `RendererFeature` capability vocabulary (`renderer/features.rs`) with a
+  required default-free `supports_feature` query; 9 required ops lost their
+  defaults (Vulkan gained 3 explicit documented no-ops; `AnyRenderer` gained
+  a real `set_viewport_bindless_slot` dispatch — it had inherited the no-op);
+  6 optional ops fail with `UnsupportedFeature` before mutating state
+  (3 aligned from `InvalidOperation`); timestamp hooks keep documented
+  no-op-when-unsupported semantics. Vulkan reports all but `DirectUiPass`,
+  Metal reports all; app call sites untouched (all handle `Err` generically).
+  Mock-backend contract test `katla_gfx/tests/renderer_features.rs` (5 tests;
+  sabotage run FAILED as required against restored defaults, passes with the
+  fix). Verified: workspace check, 380 lib tests, clippy clean on touched
+  files, fmt on touched files only. Exclusions: app capability-branching
+  (#92/#93), `RenderGraphBackend`'s 2 empty defaults (noted for #93),
+  `katla_gfx/AGENTS.md` text needs maintainer approval (protected file).
+
 - **Issue #87: geometry instancing allocates and encodes every submitted
   instance (2026-09-09, branch fix/87-instanced-draw-allocation)** —
   Instanced draws uploaded only `instances.first()` and every Vulkan/Metal
@@ -608,3 +1153,278 @@ STILL OPEN:
   logical; katla_ui 640 + katla_app 252 tests green; clippy clean (my
   crates). Only my files committed at the time; the collaborator WIP
   (gfx bridge, RCP palette, layout.rs viewport hunk) has since landed.
+- 2026-09-10: #100 done via PR #112 (squash 392d8075): compile_material takes
+  typed PipelineDescriptor (pbr/ui/skinned/billboard/simple/compute ctors),
+  Metal routes on layout identity, trait callers migrated, descriptor tests
+  green; Linux+macOS CI passed before merge. Worktree ../Katla-100 removed.
+
+## 2026-09-11 — Issue #92 core slice: backend-neutral public API (PR #120, squash 47a66ff5)
+
+- katla_gfx root API is backend-neutral: implicit `pub use vulkan::…` re-exports
+  removed; example-facing native types moved behind feature-gated
+  `katla_gfx::vulkan_native` (with lifetime/safety doc); root `FrameGraph`
+  alias (Vulkan-selecting, zero users) deleted; `MaterialOptions`/`VertexType`
+  crate-internal, inherent `VulkanRenderer::compile_material(path, options)`
+  demoted to `pub(crate)` — public path is `GpuRenderer::compile_material(&PipelineDescriptor)`.
+- Re-homed: `RetirementSnapshot` → `renderer::retirement` (portable diagnostics);
+  `CompositingDescriptorSet` → `vulkan::compositing` (was Vulkan-typed in the
+  neutral render_graph tree, root-exported). `CompareOp`/`CullMode`/`FrontFace`/
+  `DepthState` unconditionally public (PipelineDescriptor field types — previously
+  nameable only under `validation`).
+- App migrated: gizmo + billboard dropped their `AnyRenderer::Vulkan` vs `Metal`
+  material branches (the Metal fallbacks compiled different effective materials —
+  no HDR format / no depth-off). Builder UI/geometry materials on descriptors.
+  UI/billboard semantics unchanged (compiler already normalized UI to depth-off;
+  `PipelineDescriptor::ui/billboard` encode that state exactly). 9 device suites +
+  6 validation examples migrated to the descriptor / vulkan_native paths.
+- Validation: fmt/clippy clean, workspace tests green, 10 GPU device suites
+  (incl. new `backend_neutral_api.rs` — representative frame through the portable
+  surface only), 100-frame headless 0 ERROR / 1 WARN (= baseline), harness 8/8,
+  metal/ hand-audited then confirmed by macOS CI.
+- Gotchas hit: (1) `backend_neutral_api` SIGSEGV'd until `init_shadow_resources`
+  was called before PBR material compile — PBR descriptor layouts need the shadow
+  init like the other suites; (2) grepping test files with `| head -N` truncated
+  the migration list — 5 more suites surfaced via the workspace build; grep
+  without head when enumerating migration sites; (3) the `compute` module +
+  `PoseCompute*` stay Vulkan-native (→ #32); app per-backend graph presets stay
+  (→ #56; `AnyRenderer` is not a `RenderGraphBackend`). #92 remains open for both.
+
+## 2026-09-11 — Issue #98 UI slice: dead UI command texture state (PR #121, squash 44c64a37)
+
+- `UiDrawCommand.texture` deleted (write-only on both backends) plus the app-side
+  `TextureHandle::from_raw(bindless_slot, 0)` fabrication in
+  `katla_app/src/ui/renderer.rs`; `types.rs` also dropped its now-unused
+  `TextureHandle` re-export. Metal `UiUniforms` struct replaced by a free
+  `ui_uniforms(draw_list) -> [f32; 4]` (16 bytes preserved: old struct was
+  8+4+4). `ui.wgsl` `UiUniforms` is one `params: vec4f`; `vs_main`/`vs_instanced`
+  read `.xy`/`.z`. Vulkan's `update_ui_descriptor_set` already wrote
+  `[w, h, 1.0, 0.0]` — unchanged.
+- Validation: fmt/clippy clean, workspace 2122 passed, Vulkan device suites all
+  pass (incl. headless_render + attachment_semantics, which compile the edited
+  ui.wgsl and assert pixel-exact red/white sampling), 100-frame headless 0
+  ERROR / 1 WARN (= baseline), interaction harness 8/8. The 4 validation-layer
+  WRITE_AFTER_READ/WRITE_AFTER_WRITE hazards in interaction-test mode are
+  byte-identical to an origin/main baseline run (verified via stash + rebuild).
+- Gotchas: (1) `cargo test -p katla_gfx -- --ignored` fails the pre-existing
+  `bda.rs` ` ```ignore ` doctest (doctests marked ignore get RUN under
+  `--ignored` and that fragment cannot compile) — invocation artifact, not a
+  regression; (2) macOS CI flaked on
+  `pipeline_archive::test_pipeline_archive_rebuilds_on_metadata_mismatch`
+  (assert `opened_from_disk` after register+flush+reopen) — green rerun on the
+  identical commit; rerun before debugging, main has been red on this area once
+  before; (3) the `game` binary is `cargo build -p game` (not katla_app).
+
+## 2026-09-11 — Issue #88 closed: pipeline variants from a canonical key (PR #123, ded9c091)
+
+- Design: `PipelineVariantKey::resolve(descriptor, requested)` — requested concrete
+  format wins over the descriptor's declaration; `Auto` falls back to declared, then
+  B8G8R8A8Srgb. `derive_depth_format` is ONE shared function both backends build from
+  (unified Vulkan's `is_compositing || !depth_test` with Metal's `!test && !write`;
+  divergence only for test=false/write=true, which no real descriptor uses).
+  `MaterialAsset { descriptor, variants, textures }`; variant lookup is a plain map get.
+- Pass-format plumbing (Vulkan): `execute_draw_list(cmd, list, format)` and
+  `resolve_draw_commands(lists, frame, format)` take the pass's output_format; UI and
+  compositing resolve per pass; all fallbacks are `unwrap_or(ImageFormat::Auto)` so a
+  concrete-declared material keeps its declared variant when a pass declares no format.
+- Metal: `collect_draw_lists` ensures variants per pending pass — draw lists ONLY for
+  `PassKind::Geometry` (depth-prepass lists have R32Uint output_format; compiling for
+  them would build float4-output pipelines against an integer target and fail under
+  Metal validation), UI pass materials at drawable B8G8R8A8Srgb; unknown handles skip
+  with a warn (`has_material_impl`) instead of failing the frame. `draw_objects` and
+  the UI record resolve through the variant map. Materials register only after every
+  pipeline (declared variant + UI instanced) builds.
+- Deleted: `MaterialOptions`/`MaterialType`, `MaterialCompiler::compile_deferred_material`
+  and `build_pipeline_from_modules`, write-only `material_descriptor_set/layout`,
+  `RetiredDescriptorSetLayout` + `RetirementKind::DescriptorSetLayout` + snapshot field
+  (destroy_material no longer had any layout to retire).
+- Validation: new `tests/pipeline_variants.rs` (6 tests). Full workspace suite green
+  (65 result lines). Headless 100-frame caught the one real bug: deferred variants
+  built from the RAW descriptor (color = Auto → VK_FORMAT_UNDEFINED in
+  VkPipelineRenderingCreateInfo, 21 VUID-08963/08910 errors on frame ~1); fix =
+  compile_variant builds from `key.descriptor()`. The bug was invisible to the new
+  device suite's GPU tests because validation is Disabled there (PBR-under-system-
+  validation-layer segfaults the local Intel driver) — only the validation-Enabled UI
+  regression test and the game run catch it.
+- Readback gotcha: `queue_async_readback` copies the headless DRAWABLE (always BGRA),
+  normalizing byte order — device tests cannot assert attachment byte order through
+  it (same red lands in byte 2 regardless of the declared target format).
+- CI gotchas: macOS clippy is lib-only `-D warnings` for katla_gfx AND katla_app —
+  test-only pub methods on crate-reachable types die there (`material_variant_count`
+  had to be used in prod logging); `&mut` extraction traps: splitting a `&mut self`
+  method body into a `&self` helper silently breaks if the body mutates any field
+  (bindless init E0596); clippy flags `let Some(ref x) = opt_ref` (double ref) and
+  &expr` in log args. `cargo check --target aarch64-apple-darwin` originally failed on
+  this Linux box because `objc2-exception-helper` shelled out to `cc` with `-arch`;
+  overriding the C compiler fixes it (see the 2026-09-19 entry) — later sessions
+  should use that instead of hand-auditing. Two macOS CI cycles were spent on
+  E0596 + two needless-ref lints.
+- Workflow note: origin/main moved mid-session (#122 from the live Katla-98
+  worktree) — `git diff origin/main` then showed reverse-#122 hunks in MY tree;
+  check `git merge-base HEAD origin/main` before interpreting diffs, commit then
+  `rebase origin/main` (clean), push. A NEW worktree (Katla-37) appeared mid-session
+  from another parallel session; never touched.
+- `particle_stress_tests::test_frame_rate_stability` failed once in a full workspace
+  run ("frame time degradation 547.9%") and passes in isolation — load-flaky timing
+  test, rerun before debugging.
+
+---
+
+## 2026-09-19 — Issues #89, #101 closed; #37 slice 3 landed
+
+Main went `57f3c3b9` → `4a784180`. Three PRs, all with Linux + macOS 26 CI green:
+
+| PR | Issue | Squash | What |
+|---|---|---|---|
+| #126 | #37 (slice 3) | `b6f7b447` | Transient aliasing slots in diagnostics exports (schema v9→v10) |
+| #127 | #89 (closed) | `0f442ca5` | Frame-scoped rendering API (`FrameToken`) |
+| #128 | #101 (closed) | `4a784180` | Prepared frame draw data (`PreparedDraws`) |
+
+### #89 — frame-scoped rendering API (closed)
+
+`GpuRenderer::acquire_frame() -> Result<FrameAcquisition>`:
+
+- `Ready(FrameToken)` — owns one reusable frame slot (and, when windowed, one
+  surface image). **Acquisition waits for that slot's previous submission**, so
+  frame-local CPU writes can never race a slot still in flight.
+- `Unavailable` — surface produced no drawable this tick; nothing touched.
+- `OutOfDate` — stale surface; recreate and re-acquire.
+
+Every frame-local op takes the token and validates it against the renderer's
+open frame: `set_frame_uniforms`, `execute_draw_calls`, `draw`, `upload_lights`,
+`upload_shadow_cascades`, and `render`. `present(token)` consumes it with one
+semantic on both backends (submit + present, returns after enqueue/commit).
+`abort(token)` abandons it — nothing submitted or presented, slot reusable. A
+failed `render` **poisons** the frame so `present` cannot submit half-encoded
+work.
+
+Deleted outright (no wrapper): `begin_frame`/`end_frame`, `wait_for_frame`, and
+the untokened `set_frame_uniforms`/`execute_draw_calls`/`upload_lights`/
+`upload_shadow_cascades`. `katla_app` renders through the token on both
+platforms; Metal's `render` moved off implicit acquire/release onto the
+compiled-pass path behind an open token.
+
+Two things worth remembering:
+
+- **`FrameToken` is `Copy`, so "dropping a token" cannot be the abandonment
+  signal.** Documentation that claimed a destructor was wrong and was fixed.
+  Abandonment is simply the next acquisition (which calls `frame_clear`).
+- **A slot only advances on `present`, not on acquire.** Two successive
+  acquisitions for an unfinished frame land on the SAME slot; ownership is per
+  acquisition (generation counter), not per slot index. A test asserting
+  "successive acquisitions own successive slots" was wrong — `present` is what
+  rotates slots, so a slot cycles only across *finished* frames.
+
+Real bug found and fixed mid-slice: the new Vulkan `render` initially gated both
+surface-image transitions on `swapchain.is_some()`, dropping the headless
+`COLOR_ATTACHMENT_OPTIMAL -> TRANSFER_SRC_OPTIMAL` transition that readback
+depends on (`main` did both unconditionally). Now unconditional with the
+headless case targeting `TRANSFER_SRC_OPTIMAL`.
+
+Device suite `katla_gfx/tests/frame_scope.rs` (6 tests, all green on Intel
+Vulkan): normal frame; frame-local calls with no open frame fail typed;
+finished and superseded tokens rejected; abort leaves the slot reusable;
+abandoned acquisition reuses the slot; slots cycle with work in flight and
+readback matches the presenting frame. Surface-unavailable/out-of-date need a
+real presentation surface, so they are covered by the app's
+swapchain-recreation path instead.
+
+### #101 — prepared frame draw data (closed)
+
+`PreparedDraws<'a>` (`renderer/types.rs`) borrows one pass's submitted draw
+lists from frame-owned storage; `iter()` walks submissions in submit order and
+object slots stay exactly as `DrawList::push` assigned them.
+`PreparedDrawCounts` gives per-pass draw/instance totals.
+`Frame::submit`/`AnyFrame::submit` now take **`Rc<DrawList>`** — the list moves
+into frame-owned storage once, so submitting one list to several passes costs a
+refcount bump instead of a deep clone.
+
+All consumers switched to the borrowed view: Vulkan geometry/draw calls,
+parallel geometry, outline scissor; Metal geometry, depth-prepass, outline,
+shadow, object-id. The per-pass `merge_draw_lists` rebuild and Metal's rebuilt
+frame-level upload list are **deleted**; Metal uploads each unique submission
+once (`Rc::as_ptr` identity), so shared lists are not re-uploaded while every
+encoded slot is still initialized. Metal pass traces carry the prepared counts,
+making prepared work attributable to a `PassId`.
+
+Measured (`katla_gfx/benches/frame_preparation.rs`, CPU-only, counting global
+allocator — measured, not estimated):
+
+| scenario | legacy | prepared |
+|---|---|---|
+| 64 lists × 8 draws | 395 µs, 430 allocs/frame | 9.7 µs, 21 allocs/frame |
+| 1 list × 2000 draws | 1.73 ms, 16 allocs/frame | 7.9 µs, 5 allocs/frame |
+
+### #37 slice 3 — aliasing diagnostics (schema v9 → v10)
+
+`transient_slots` entries now carry the slot's physical compatibility class
+(kind/format/extent/swapchain tracking), the summed standalone bytes of its
+members, and the estimated bytes aliasing saves; members render in first-use
+order so each entry reads as the alias chain (predecessor → successor). DOT
+renders each slot as a dashed `cylinder` physical-storage node wired to its
+member resources with dotted `alias` edges, distinguishing physical allocations
+from logical graph resources. The allocation plan retains chronological
+membership, per-resource bytes, and slot start positions to feed those views.
+Goldens re-blessed; two focused tests pin the JSON fields, the text line, and
+the DOT nodes/edges. #37 remains open.
+
+### Process findings (important)
+
+- **macOS `cfg` code IS checkable on this Linux box.** The blocker was that
+  `objc2-exception-helper` shells out to `cc` with `-arch`; overriding the C
+  compiler makes the whole cross-check work:
+  ```
+  CC="clang --target=arm64-apple-macos11" CXX="clang++ --target=arm64-apple-macos11" \
+    cargo check -p katla_gfx --tests --target aarch64-apple-darwin --locked
+  ```
+  This compiles the Metal module *and* the integration tests (`--tests`), and it
+  caught three macOS-only errors that would each have cost a CI cycle:
+  1. `MetalRenderer::frame_uniforms` dropped from the trait impl while moving
+     lifecycle methods (E0046) — a `grep` for `fn frame_uniforms` across the file
+     missed that the macOS-only impl had lost it.
+  2. `GpuRenderer::execute_draw_calls(self, &upload_list)` left untokened in
+     `metal/frame_render.rs` (E0061).
+  3. `self.renderer.wait_for_device().expect(...)` in
+     `tests/contract/harness.rs` — `wait_for_device` returns `()`, so the
+     `expect` on `main` had been reachable only in macOS builds (E0599).
+  Verify the check is real by injecting a deliberate type error and confirming it
+  fails — it does. **`katla_app` still cannot be cross-checked** (mlua/ring C++
+  build scripts need a real Apple SDK); its macOS path stays a line-by-line
+  audit.
+
+- **`git commit --amend` without `-a` silently drops unstaged edits.** Edited the
+  file, ran `git commit -q --amend --no-edit` (no `-a`), so only the index was
+  committed and CI tested the *old* tree — twice. Always `git add -A` (or
+  `git commit -am`) before amending. `git show HEAD:<path>` confirms what was
+  actually committed; `git status` after the amend shows the forgotten edit.
+
+- **PR-body heredocs with backticks execute as shell.** `gh pr create --body
+  "$(cat <<'EOF' ... EOF)"` still let backticked identifiers run as commands and
+  truncated the body. Write the body to a file, then `gh pr edit <n>
+  --body-file`.
+
+- **Stacked PRs get no CI here.** CI only runs for PRs whose base is `main`, so a
+  PR targeting another feature branch reports "no checks reported" forever, even
+  after retargeting (retargeting does not re-trigger). The working sequence:
+  land the base PR first (both its jobs green), rebase the child onto the new
+  `main`, force-push, and its CI starts.
+
+- Squash-merge + `--delete-branch=false` matches this repo's history; issues are
+  closed with the DoD checklist in a comment.
+
+### Validation commands used
+
+- `cargo test -p katla_gfx --lib --locked` (455 → 459 tests as slices landed)
+- `TMPDIR=$HOME/tmp cargo test -p katla_gfx --tests --locked -- --ignored --test-threads=1`
+  (full device suite; serial because lavapipe races, but this box has real Intel
+  Vulkan so no skips)
+- `cargo fmt --all -- --check` and
+  `cargo clippy -p katla_gfx -p katla_app --lib --locked -- -D warnings`
+- `TMPDIR=$HOME/tmp cargo run -p game --release -- --headless --screenshot X.png -s`
+  (100 frames; 0 errors, 1 pre-existing WARN for `fox1` normals)
+- Pixel-diffing headless captures: both slices landed within the same-build
+  run-to-run noise floor (measured 2.787% by rendering the *same* commit twice),
+  so "differs from main by 2.7%" was equivalent output, not a regression.
+  There is no PNG decoder in the toolchain — a ~40-line pure-Python
+  zlib/struct PNG reader handled it.
+- `game/benches/performance_benchmark.rs` fails to compile on `main` too
+  (missing `rand` dev-dependency) — pre-existing, unrelated; ignore it.
