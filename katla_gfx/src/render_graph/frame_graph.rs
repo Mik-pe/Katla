@@ -2159,7 +2159,10 @@ mod tests {
         let dead = graph.pass_id("dead_branch").unwrap();
         let mut backend = MockBackend::new();
         let mut frame = super::super::frame::Frame::new(&graph, &mut backend, 0, 0);
-        frame.submit(dead, &crate::renderer::types::DrawList::new());
+        frame.submit(
+            dead,
+            std::rc::Rc::new(crate::renderer::types::DrawList::new()),
+        );
 
         assert!(matches!(
             frame.validate_submissions(),

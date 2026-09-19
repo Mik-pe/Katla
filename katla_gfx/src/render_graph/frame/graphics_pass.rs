@@ -29,7 +29,7 @@ impl Frame<'_, VulkanRenderer> {
             data.ui_draw_lists.len()
         );
 
-        let total_draws: usize = data.draw_lists.iter().map(|dl| dl.draws.len()).sum();
+        let total_draws = data.prepared_counts().draw_calls;
         let use_parallel = pass.kind == Some(PassKind::Geometry)
             && data.ui_draw_lists.is_empty()
             && total_draws >= PARALLEL_DRAW_THRESHOLD;
@@ -43,7 +43,7 @@ impl Frame<'_, VulkanRenderer> {
             );
             Some(
                 self.resolve_draw_commands(
-                    &data.draw_lists,
+                    data.prepared(),
                     self.current_frame(),
                     pass.output_format
                         .unwrap_or(crate::texture::ImageFormat::Auto),
@@ -110,9 +110,7 @@ impl Frame<'_, VulkanRenderer> {
             let color_format = pass
                 .output_format
                 .unwrap_or(crate::texture::ImageFormat::Auto);
-            for draw_list in &data.draw_lists {
-                self.execute_draw_list(cmd, draw_list, color_format)?;
-            }
+            self.execute_draw_list(cmd, data.prepared(), color_format)?;
 
             for ui_draw_list in &data.ui_draw_lists {
                 self.execute_ui_draw_list(cmd, pass, ui_draw_list)?;

@@ -14,13 +14,22 @@
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 
+use std::rc::Rc;
+
 use katla_gfx::handle::PipelineHandle;
+
 use katla_gfx::render_graph::PassId;
+
 use katla_gfx::render_graph::{FrameGraph, FrameGraphBuilder, GeometryPass, UIPass};
+
 use katla_gfx::renderer::pipeline_variant::PipelineVariantKey;
+
 use katla_gfx::renderer::{DrawCall, DrawList};
+
 use katla_gfx::texture::ImageFormat;
+
 use katla_gfx::vertex::{VertexPBR, VertexUIInstance};
+
 use katla_gfx::{
     CullMode, DepthState, FrameUniforms, GpuRenderer, PipelineDescriptor, UIDrawList,
     UiDrawCommand, ValidationMode, VulkanRenderer,
@@ -167,7 +176,7 @@ fn render_once(
     renderer
         .render(&frame_token, graph, |frame_context| {
             if let Some(draw_list) = draw_list {
-                frame_context.submit(pass, draw_list);
+                frame_context.submit(pass, Rc::new(draw_list.clone()));
             }
         })
         .unwrap();

@@ -198,7 +198,7 @@ pub(crate) fn render_cascades(
         super::metal_renderer::MetalMaterial,
         crate::handle::MaterialMarker,
     >,
-    draw_list: &crate::renderer::types::DrawList,
+    draws: crate::renderer::types::PreparedDraws<'_>,
 ) {
     let render_pass_info = RenderPassInfo {
         color_attachments: vec![],
@@ -264,7 +264,7 @@ pub(crate) fn render_cascades(
             object_storage_buffer,
             meshes,
             materials,
-            draw_list,
+            draws,
         );
     }
 
@@ -283,9 +283,9 @@ fn encode_cascade_draws(
         super::metal_renderer::MetalMaterial,
         crate::handle::MaterialMarker,
     >,
-    draw_list: &crate::renderer::types::DrawList,
+    draws: crate::renderer::types::PreparedDraws<'_>,
 ) {
-    for draw in &draw_list.draws {
+    for draw in draws.iter() {
         // Billboard icons are camera-facing editor gizmos: the regular shadow
         // vertex shader has no billboarding math, so drawing them here would
         // rasterize the quads flat in world space (thin dark slivers in

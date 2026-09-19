@@ -129,7 +129,7 @@ impl Frame<'_, VulkanRenderer> {
         draw_meshes_with_skinning(DrawParams {
             cmd,
             renderer: self.renderer,
-            draw_lists: &data.draw_lists,
+            draw_lists: data.prepared(),
             pipeline,
             layout,
             skinned_pipeline,

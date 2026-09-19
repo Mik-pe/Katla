@@ -20,7 +20,7 @@ use super::frame_graph::FrameGraph;
 use super::handles::PassId;
 use super::pass::PassDesc;
 use crate::handle::SkeletonHandle;
-use crate::renderer::types::{DrawList, UIDrawList};
+use crate::renderer::types::{DrawList, PreparedDrawCounts, PreparedDraws, UIDrawList};
 
 /// Frame context for submitting work to passes.
 ///
@@ -50,6 +50,19 @@ pub(crate) struct PassExecutionData {
     pub(crate) dispatch: Option<(u32, u32, u32)>,
 
     pub(crate) uniform_data: Vec<u8>,
+}
+
+impl PassExecutionData {
+    /// The pass's prepared draws: its submitted lists borrowed from frame-owned
+    /// storage, addressable without rebuilding merged lists.
+    pub(crate) fn prepared(&self) -> PreparedDraws<'_> {
+        PreparedDraws::from_lists(&self.draw_lists)
+    }
+
+    /// Prepared draw/instance totals for this pass, for diagnostics.
+    pub(crate) fn prepared_counts(&self) -> PreparedDrawCounts {
+        self.prepared().counts()
+    }
 }
 
 impl<'a, B: RenderGraphBackend> Frame<'a, B> {
@@ -114,14 +127,32 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     }
 
     /// Submit a draw list to a pass.
-    pub fn submit(&mut self, pass_id: PassId, draw_list: &DrawList) -> &mut Self {
+    ///
+    /// The list moves into frame-owned storage for the frame's lifetime, so
+    /// submitting the same list to several passes shares one reference-counted
+    /// copy instead of deep-cloning per submission. Callers keep building and
+    /// uploading through `DrawList`/`execute_draw_calls` unchanged.
+    pub fn submit(&mut self, pass_id: PassId, draw_list: Rc<DrawList>) -> &mut Self {
         let index = pass_id.0 as usize;
+
+        let counts = draw_list
+            .draws
+            .iter()
+            .map(|draw| draw.instance_count().max(1))
+            .sum::<u32>();
+        log::debug!(
+            "submit: pass_id={:?}, index={}, draws={}, instances={}",
+            pass_id,
+            index,
+            draw_list.draws.len(),
+            counts
+        );
 
         self.pending
             .entry(index)
             .or_default()
             .draw_lists
-            .push(Rc::new(draw_list.clone()));
+            .push(draw_list);
         self
     }
 

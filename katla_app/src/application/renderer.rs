@@ -561,6 +561,12 @@ impl Application {
             log::warn!("⚠️ No particle system in renderer!");
         }
 
+        // One frame-owned copy of each prepared list: every pass submission
+        // shares the same reference-counted data instead of deep-cloning.
+        let draw_list = std::rc::Rc::new(draw_list);
+        let shadow_draw_list = std::rc::Rc::new(shadow_draw_list);
+        let outline_draw_list = outline_draw_list.map(std::rc::Rc::new);
+
         match self
             .renderer
             .render(&frame_token, &mut self.frame_graph, |frame| {
@@ -573,19 +579,19 @@ impl Application {
 
                 if !draw_list.is_empty() {
                     if let Some(pass_id) = ids.depth_prepass {
-                        frame.submit(pass_id, &draw_list);
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
                     }
                     if let Some(pass_id) = ids.geometry {
-                        frame.submit(pass_id, &draw_list);
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
                     }
                     if let Some(pass_id) = ids.picking
                         && Some(pass_id) != ids.depth_prepass
                         && Some(pass_id) != ids.geometry
                     {
-                        frame.submit(pass_id, &draw_list);
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
                     }
                     if let Some(pass_id) = ids.shadow {
-                        frame.submit(pass_id, &shadow_draw_list);
+                        frame.submit(pass_id, std::rc::Rc::clone(&shadow_draw_list));
                     }
                 }
 
@@ -593,10 +599,10 @@ impl Application {
                     && !outline_dl.is_empty()
                 {
                     if let Some(pass_id) = ids.outline {
-                        frame.submit(pass_id, outline_dl);
+                        frame.submit(pass_id, std::rc::Rc::clone(outline_dl));
                     }
                     if let Some(pass_id) = ids.stencil_indicator {
-                        frame.submit(pass_id, outline_dl);
+                        frame.submit(pass_id, std::rc::Rc::clone(outline_dl));
                     }
                 }
 
@@ -1169,6 +1175,12 @@ impl Application {
         // of its own render() (light-culling pattern).
         self.step_particle_simulation(delta_time);
 
+        // One frame-owned copy of each prepared list: every pass submission
+        // shares the same reference-counted data instead of deep-cloning.
+        let draw_list = std::rc::Rc::new(draw_list);
+        let shadow_draw_list = std::rc::Rc::new(shadow_draw_list);
+        let outline_draw_list = outline_draw_list.map(std::rc::Rc::new);
+
         match self
             .renderer
             .render(&frame_token, &mut self.frame_graph, |frame| {
@@ -1176,27 +1188,27 @@ impl Application {
 
                 if !draw_list.is_empty() {
                     if let Some(pass_id) = ids.geometry {
-                        frame.submit(pass_id, &draw_list);
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
                     }
                     if let Some(pass_id) = ids.picking
                         && Some(pass_id) != ids.depth_prepass
                         && Some(pass_id) != ids.geometry
                     {
-                        frame.submit(pass_id, &draw_list);
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
                     }
                     if let Some(pass_id) = ids.shadow {
-                        frame.submit(pass_id, &shadow_draw_list);
+                        frame.submit(pass_id, std::rc::Rc::clone(&shadow_draw_list));
                     }
                     if let Some(pass_id) = ids.depth_prepass {
-                        frame.submit(pass_id, &draw_list);
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
                     }
                 }
 
-                if let Some(ref outline_dl) = outline_draw_list
+                if let Some(outline_dl) = &outline_draw_list
                     && !outline_dl.is_empty()
                     && let Some(pass_id) = ids.outline
                 {
-                    frame.submit(pass_id, outline_dl);
+                    frame.submit(pass_id, std::rc::Rc::clone(outline_dl));
                 }
 
                 if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {

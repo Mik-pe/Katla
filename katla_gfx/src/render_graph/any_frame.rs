@@ -1,5 +1,7 @@
 //! Enum-based frame dispatch for dynamic backend selection.
 
+use std::rc::Rc;
+
 use super::handles::PassId;
 use crate::renderer::types::{DrawList, UIDrawList};
 
@@ -19,7 +21,7 @@ pub enum AnyFrame<'a, 'b> {
 
 impl<'a, 'b> AnyFrame<'a, 'b> {
     /// Submit a draw list to a pass.
-    pub fn submit(&mut self, pass_id: PassId, draw_list: &DrawList) -> &mut Self {
+    pub fn submit(&mut self, pass_id: PassId, draw_list: Rc<DrawList>) -> &mut Self {
         match self {
             AnyFrame::Vulkan(f) => {
                 f.submit(pass_id, draw_list);

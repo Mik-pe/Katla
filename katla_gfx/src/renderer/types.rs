@@ -3,6 +3,8 @@
 //! This module provides types that avoid exposing ash::vk to the application layer.
 //! Mesh and material data is registered with the renderer and referenced via opaque handles.
 
+use std::rc::Rc;
+
 use smallvec::{SmallVec, smallvec};
 
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
@@ -472,6 +474,60 @@ impl Default for DrawList {
     }
 }
 
+/// Prepared draw data for one pass: the pass's submitted draw lists, borrowed
+/// from frame-owned storage.
+///
+/// Submissions are prepared once per frame — `Frame::submit` moves them into
+/// frame-owned `Rc<DrawList>` storage — and pass execution consumes this view
+/// by reference instead of rebuilding merged `DrawList`s per pass. Iteration
+/// walks the submissions in submit order, matching the semantics the previous
+/// per-pass merge produced, and object slots stay exactly as assigned by
+/// `DrawList::push`.
+#[derive(Clone, Copy)]
+pub struct PreparedDraws<'a> {
+    lists: &'a [Rc<DrawList>],
+}
+
+impl<'a> PreparedDraws<'a> {
+    /// Borrow submitted draw lists as prepared pass data.
+    pub fn from_lists(lists: &'a [Rc<DrawList>]) -> Self {
+        Self { lists }
+    }
+
+    /// Iterate every draw call across all submissions, in submit order.
+    pub fn iter(self) -> impl Iterator<Item = &'a DrawCall> + 'a {
+        self.lists.iter().flat_map(|list| list.draws.iter())
+    }
+
+    /// True when no submission carries any draw call.
+    pub fn is_empty(self) -> bool {
+        self.lists.iter().all(|list| list.draws.is_empty())
+    }
+
+    /// Prepared draw/instance counts for diagnostics.
+    pub fn counts(self) -> PreparedDrawCounts {
+        PreparedDrawCounts {
+            draw_calls: self.lists.iter().map(|list| list.draws.len()).sum(),
+            instances: self
+                .lists
+                .iter()
+                .flat_map(|list| list.draws.iter())
+                .map(|draw| draw.instance_count().max(1) as usize)
+                .sum(),
+        }
+    }
+}
+
+/// Per-pass prepared-draw totals, attributable to a `PassId`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PreparedDrawCounts {
+    /// Number of prepared draw calls across all submissions.
+    pub draw_calls: usize,
+    /// Number of object-storage slots the draws cover (`instance_count` per
+    /// draw, minimum one).
+    pub instances: usize,
+}
+
 impl IntoIterator for DrawList {
     type Item = DrawCall;
     type IntoIter = std::vec::IntoIter<DrawCall>;
@@ -693,6 +749,80 @@ mod tests {
 
         assert_eq!(draw.mesh, mesh);
         assert_eq!(draw.material, material);
+    }
+
+    #[test]
+    fn test_prepared_draws_iterates_submissions_in_order() {
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
+        let mut first = DrawList::new();
+        first.push(DrawCall::new(mesh, material).with_color([1.0, 0.0, 0.0, 1.0]));
+        first.push(DrawCall::new(mesh, material).with_color([0.0, 1.0, 0.0, 1.0]));
+        let mut second = DrawList::new();
+        second.push(DrawCall::new(mesh, material).with_color([0.0, 0.0, 1.0, 1.0]));
+
+        let lists = vec![Rc::new(first), Rc::new(second)];
+        let prepared = PreparedDraws::from_lists(&lists);
+
+        let colors = prepared
+            .iter()
+            .map(|draw| draw.instances[0].color)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            colors,
+            vec![
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0, 1.0],
+            ],
+            "flattened iteration must preserve submission order"
+        );
+    }
+
+    #[test]
+    fn test_prepared_draws_preserves_assigned_slots() {
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
+        let mut list = DrawList::new();
+        let base = list.push(DrawCall::new(mesh, material));
+
+        let lists = vec![Rc::new(list)];
+        let prepared = PreparedDraws::from_lists(&lists);
+
+        assert_eq!(prepared.iter().next().unwrap().base_object_slot(), base);
+    }
+
+    #[test]
+    fn test_prepared_draws_counts_and_emptiness() {
+        let mesh = MeshHandle::from_raw(0, 0);
+        let material = MaterialHandle::from_raw(0, 0);
+        let mut single = DrawList::new();
+        single.push(DrawCall::new(mesh, material));
+        let mut instanced = DrawList::new();
+        instanced.push(DrawCall::instanced(
+            mesh,
+            material,
+            vec![InstanceData::default(); 3],
+        ));
+        let empty = DrawList::new();
+
+        assert!(PreparedDraws::from_lists(&[]).is_empty());
+        assert!(PreparedDraws::from_lists(&[Rc::new(empty)]).is_empty());
+
+        let lists = vec![
+            Rc::new(single),
+            Rc::new(instanced),
+            Rc::new(DrawList::new()),
+        ];
+        let prepared = PreparedDraws::from_lists(&lists);
+        assert!(!prepared.is_empty());
+        assert_eq!(
+            prepared.counts(),
+            PreparedDrawCounts {
+                draw_calls: 2,
+                instances: 4,
+            }
+        );
     }
 
     #[test]

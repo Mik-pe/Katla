@@ -1,7 +1,7 @@
 use objc2_metal::MTLRenderCommandEncoder;
 
 use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
-use crate::renderer::types::DrawList;
+use crate::renderer::types::PreparedDraws;
 
 use super::metal_renderer::{MetalRenderer, OBJECT_UNIFORM_SIZE};
 use super::render_encoder::MetalRenderEncoder;
@@ -108,17 +108,18 @@ impl MetalRenderer {
     pub(crate) fn draw_objects(
         &self,
         encoder: &mut MetalRenderEncoder,
-        draw_list: &DrawList,
         color_format: crate::texture::ImageFormat,
+        draws: PreparedDraws<'_>,
     ) {
         log::debug!(
             "METAL draw_objects: {} draws, frame_buf={}, object_buf={}",
-            draw_list.draws.len(),
+            draws.counts().draw_calls,
             self.current_frame_uniform_buffer().is_some(),
             self.current_object_storage_buffer().is_some(),
         );
         let stages = ShaderStages::VERTEX_FRAGMENT;
-        for (i, draw) in draw_list.draws.iter().enumerate() {
+        let last_draw = draws.counts().draw_calls.saturating_sub(1);
+        for (i, draw) in draws.iter().enumerate() {
             let Some(mesh) = self.meshes.get(draw.mesh) else {
                 log::warn!("Draw {}: mesh index {} not found", i, draw.mesh.index());
                 continue;
@@ -145,7 +146,7 @@ impl MetalRenderer {
                 continue;
             };
 
-            if i < 3 || i == draw_list.draws.len() - 1 {
+            if i < 3 || i == last_draw {
                 log::debug!(
                     "METAL draw_objects[{}]: mesh_idx={}, mat_idx={}, instance_index={}, \
                      skeleton={:?}, index_count={}, tex_indices={:?}, vertex_type={:?}",

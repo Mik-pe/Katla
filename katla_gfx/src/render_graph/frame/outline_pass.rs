@@ -40,7 +40,7 @@ impl Frame<'_, VulkanRenderer> {
         // tile-based GPUs (Apple Silicon), which is the main cause of the framerate
         // drop when an entity is selected.
         let scissor_rect =
-            compute_outline_scissor(&data.draw_lists, &self.renderer.frame_uniforms, extent);
+            compute_outline_scissor(data.prepared(), &self.renderer.frame_uniforms, extent);
 
         let render_area = scissor_rect;
 
@@ -250,7 +250,7 @@ impl Frame<'_, VulkanRenderer> {
         draw_meshes_with_skinning(DrawParams {
             cmd,
             renderer: self.renderer,
-            draw_lists: &data.draw_lists,
+            draw_lists: data.prepared(),
             pipeline,
             layout,
             skinned_pipeline,
@@ -338,7 +338,7 @@ impl Frame<'_, VulkanRenderer> {
         }
 
         let indicator_scissor =
-            compute_outline_scissor(&data.draw_lists, &self.renderer.frame_uniforms, extent);
+            compute_outline_scissor(data.prepared(), &self.renderer.frame_uniforms, extent);
 
         // Viewport must match the geometry pass (full swapchain extent) so the
         // projection matrix maps clip coords to the same pixel positions.
@@ -391,7 +391,7 @@ impl Frame<'_, VulkanRenderer> {
 /// then projects to screen. Adds padding for the outline width.
 /// Falls back to full extent if projection fails.
 fn compute_outline_scissor(
-    draw_lists: &[std::rc::Rc<crate::renderer::types::DrawList>],
+    draws: crate::renderer::types::PreparedDraws<'_>,
     frame_uniforms: &crate::renderer::FrameUniforms,
     extent: vk::Extent2D,
 ) -> vk::Rect2D {
@@ -406,53 +406,51 @@ fn compute_outline_scissor(
     let w = extent.width as f32;
     let h = extent.height as f32;
 
-    for draw_list in draw_lists {
-        for draw_call in draw_list.iter() {
-            let Some(m) = draw_call.instances.first().map(|i| i.model_matrix) else {
+    for draw_call in draws.iter() {
+        let Some(m) = draw_call.instances.first().map(|i| i.model_matrix) else {
+            continue;
+        };
+
+        for &(dx, dy, dz) in &[
+            (-1.0, -1.0, -1.0),
+            (1.0, -1.0, -1.0),
+            (-1.0, 1.0, -1.0),
+            (-1.0, -1.0, 1.0),
+            (1.0, 1.0, -1.0),
+            (1.0, -1.0, 1.0),
+            (-1.0, 1.0, 1.0),
+            (1.0, 1.0, 1.0),
+        ] {
+            // Transform corner through the full model matrix (M * corner).
+            // The model matrix includes rotation, scale, and translation.
+            let wx = m[0] * dx + m[4] * dy + m[8] * dz + m[12];
+            let wy = m[1] * dx + m[5] * dy + m[9] * dz + m[13];
+            let wz = m[2] * dx + m[6] * dy + m[10] * dz + m[14];
+
+            // proj * view * world_pos (combined into one step)
+            let vx = view[0] * wx + view[4] * wy + view[8] * wz + view[12];
+            let vy = view[1] * wx + view[5] * wy + view[9] * wz + view[13];
+            let vz = view[2] * wx + view[6] * wy + view[10] * wz + view[14];
+            let vw = view[3] * wx + view[7] * wy + view[11] * wz + view[15];
+
+            let clip_x = proj[0] * vx + proj[4] * vy + proj[8] * vz + proj[12] * vw;
+            let clip_y = proj[1] * vx + proj[5] * vy + proj[9] * vz + proj[13] * vw;
+            let clip_w = proj[3] * vx + proj[7] * vy + proj[11] * vz + proj[15] * vw;
+
+            if clip_w <= 1e-6 {
                 continue;
-            };
-
-            for &(dx, dy, dz) in &[
-                (-1.0, -1.0, -1.0),
-                (1.0, -1.0, -1.0),
-                (-1.0, 1.0, -1.0),
-                (-1.0, -1.0, 1.0),
-                (1.0, 1.0, -1.0),
-                (1.0, -1.0, 1.0),
-                (-1.0, 1.0, 1.0),
-                (1.0, 1.0, 1.0),
-            ] {
-                // Transform corner through the full model matrix (M * corner).
-                // The model matrix includes rotation, scale, and translation.
-                let wx = m[0] * dx + m[4] * dy + m[8] * dz + m[12];
-                let wy = m[1] * dx + m[5] * dy + m[9] * dz + m[13];
-                let wz = m[2] * dx + m[6] * dy + m[10] * dz + m[14];
-
-                // proj * view * world_pos (combined into one step)
-                let vx = view[0] * wx + view[4] * wy + view[8] * wz + view[12];
-                let vy = view[1] * wx + view[5] * wy + view[9] * wz + view[13];
-                let vz = view[2] * wx + view[6] * wy + view[10] * wz + view[14];
-                let vw = view[3] * wx + view[7] * wy + view[11] * wz + view[15];
-
-                let clip_x = proj[0] * vx + proj[4] * vy + proj[8] * vz + proj[12] * vw;
-                let clip_y = proj[1] * vx + proj[5] * vy + proj[9] * vz + proj[13] * vw;
-                let clip_w = proj[3] * vx + proj[7] * vy + proj[11] * vz + proj[15] * vw;
-
-                if clip_w <= 1e-6 {
-                    continue;
-                }
-
-                let ndc_x = clip_x / clip_w;
-                let ndc_y = clip_y / clip_w;
-
-                let screen_x = (ndc_x * 0.5 + 0.5) * w;
-                let screen_y = (ndc_y * 0.5 + 0.5) * h;
-
-                min_x = min_x.min(screen_x);
-                min_y = min_y.min(screen_y);
-                max_x = max_x.max(screen_x);
-                max_y = max_y.max(screen_y);
             }
+
+            let ndc_x = clip_x / clip_w;
+            let ndc_y = clip_y / clip_w;
+
+            let screen_x = (ndc_x * 0.5 + 0.5) * w;
+            let screen_y = (ndc_y * 0.5 + 0.5) * h;
+
+            min_x = min_x.min(screen_x);
+            min_y = min_y.min(screen_y);
+            max_x = max_x.max(screen_x);
+            max_y = max_y.max(screen_y);
         }
     }
 
