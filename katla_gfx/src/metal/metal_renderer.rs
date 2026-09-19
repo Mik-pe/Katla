@@ -740,6 +740,7 @@ impl MetalRenderer {
 
     pub(crate) fn execute_metal_passes(
         &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
         pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
         frame_graph: &crate::render_graph::FrameGraph<Self>,
         _frame_idx: usize,
@@ -763,7 +764,7 @@ impl MetalRenderer {
             );
         }
 
-        self.render_frame(&plan, pending)
+        self.render_frame(frame, &plan, pending)
     }
 
     /// Initialize the Forward+ light culling system.
@@ -1270,6 +1271,10 @@ impl GpuRenderer for MetalRenderer {
     ) -> Result<(), RendererError> {
         super::frame_lifecycle::abort_frame(self, frame);
         Ok(())
+    }
+
+    fn frame_uniforms(&self) -> &FrameUniforms {
+        &self.frame_uniforms
     }
 
     fn swapchain_extent(&self) -> Size2D {

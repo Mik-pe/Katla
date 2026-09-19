@@ -127,7 +127,7 @@ impl MetalRenderer {
 
         self.record_frame_compute();
 
-        if let Err(e) = self.execute_metal_passes(pending, frame_graph, frame_idx) {
+        if let Err(e) = self.execute_metal_passes(frame, pending, frame_graph, frame_idx) {
             self.frame_poisoned = Some(format!("{e:?}"));
             return Err(e);
         }
@@ -224,7 +224,7 @@ impl MetalRenderer {
             )));
         }
         self.bindless_manager.flush_argument_buffer();
-        match self.render_frame(plan, pending) {
+        match self.render_frame(frame, plan, pending) {
             Ok(()) => Ok(()),
             Err(e) => {
                 self.frame_poisoned = Some(format!("{e:?}"));

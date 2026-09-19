@@ -266,9 +266,7 @@ impl ContractRenderer {
 
         #[cfg(target_os = "macos")]
         {
-            self.renderer
-                .wait_for_device()
-                .expect("wait before headless readback");
+            self.renderer.wait_for_device();
             katla_gfx::AnyRenderer::readback_bgra_texture(&drawable, WIDTH, HEIGHT)
         }
         #[cfg(not(target_os = "macos"))]

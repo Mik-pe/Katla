@@ -471,6 +471,7 @@ impl Application {
             .set_frame_uniforms(&frame_token, frame.frame_uniforms().clone())
         {
             log::error!("Failed to set frame uniforms: {}", e);
+            let _ = self.renderer.abort(frame_token);
             return;
         }
 
@@ -482,6 +483,7 @@ impl Application {
 
         if let Err(e) = self.renderer.upload_shadow_cascades(&frame_token) {
             log::error!("Failed to upload shadow cascades: {}", e);
+            let _ = self.renderer.abort(frame_token);
             return;
         }
 
@@ -1126,6 +1128,7 @@ impl Application {
             .set_frame_uniforms(&frame_token, frame.frame_uniforms().clone())
         {
             log::error!("Failed to set frame uniforms: {}", e);
+            let _ = self.renderer.abort(frame_token);
             return;
         }
 
@@ -1137,6 +1140,7 @@ impl Application {
 
         if let Err(e) = self.renderer.upload_shadow_cascades(&frame_token) {
             log::error!("Failed to upload shadow cascades: {}", e);
+            let _ = self.renderer.abort(frame_token);
             return;
         }
 
