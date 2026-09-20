@@ -54,6 +54,7 @@ use super::frame_graph::FrameGraph;
 use super::handles::ResourceId;
 use super::pass::{PassDesc, PassType};
 use super::resource::{GraphResourceDesc, GraphResourceType, ImportedImageContract};
+use super::sync_plan::BufferSyncState;
 use super::{ImageSyncOp, ImageSyncState, ResourceHazardKind};
 
 /// Schema version for serialized render-graph diagnostics.
@@ -68,9 +69,29 @@ pub struct RenderGraphDiagnostics {
     pub passes: Vec<RenderGraphDiagnosticPass>,
     pub dependencies: Vec<RenderGraphDiagnosticDependency>,
     pub synchronization: Vec<RenderGraphDiagnosticTransition>,
+    /// Compiled buffer synchronization operations, in execution order. Buffer
+    /// ops carry byte ranges rather than layouts, so they are a separate list.
+    pub buffer_synchronization: Vec<RenderGraphDiagnosticBufferSyncOp>,
     pub execution_order: Vec<usize>,
     pub parallel_groups: Vec<Vec<usize>>,
     pub transient_slots: Vec<RenderGraphDiagnosticAllocationSlot>,
+}
+
+/// One compiled buffer synchronization operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticBufferSyncOp {
+    pub resource: RenderGraphDiagnosticResourceRef,
+    pub range: RenderGraphDiagnosticBufferByteRange,
+    pub before: String,
+    pub after: String,
+    /// Pass that established `before`; absent at frame start.
+    pub before_pass: Option<usize>,
+    pub before_name: Option<String>,
+    /// Pass the operation precedes.
+    pub pass: usize,
+    pub pass_name: String,
+    pub hazard: Option<RenderGraphHazardKind>,
+    pub reason: String,
 }
 
 /// Aggregate counts for a diagnostics snapshot.
@@ -82,6 +103,8 @@ pub struct RenderGraphDiagnosticSummary {
     pub resources: usize,
     pub dependency_edges: usize,
     pub synchronization_transitions: usize,
+    /// Compiled buffer synchronization operations.
+    pub buffer_synchronization_ops: usize,
     pub physical_transient_allocations: usize,
     pub logical_transient_bytes: u64,
     pub physical_transient_bytes: u64,
@@ -539,6 +562,7 @@ impl RenderGraphDiagnostics {
             .collect::<Vec<_>>();
 
         let synchronization = transition_diagnostics(passes, resources, plan);
+        let buffer_synchronization = buffer_sync_diagnostics(passes, resources, plan);
         let dependencies = dependency_diagnostics(passes, resources, plan);
 
         let transient_slots = allocation_plan
@@ -581,6 +605,7 @@ impl RenderGraphDiagnostics {
             resources: diagnostic_resources.len(),
             dependency_edges: dependencies.len(),
             synchronization_transitions: synchronization.len(),
+            buffer_synchronization_ops: buffer_synchronization.len(),
             physical_transient_allocations: allocation_plan.physical_allocation_count(),
             logical_transient_bytes: allocation_plan.logical_bytes(),
             physical_transient_bytes: allocation_plan.physical_bytes(),
@@ -596,6 +621,7 @@ impl RenderGraphDiagnostics {
             passes: diagnostic_passes,
             dependencies,
             synchronization,
+            buffer_synchronization,
             execution_order: plan.sorted_passes.clone(),
             parallel_groups: plan.parallel_groups.clone(),
             transient_slots,
@@ -947,6 +973,13 @@ impl fmt::Display for RenderGraphDiagnostics {
             }
         }
 
+        if !self.buffer_synchronization.is_empty() {
+            writeln!(f, "  buffer synchronization operations:")?;
+            for op in &self.buffer_synchronization {
+                writeln!(f, "    {op}")?;
+            }
+        }
+
         if !self.transient_slots.is_empty() {
             writeln!(f, "  transient allocation slots:")?;
             for slot in &self.transient_slots {
@@ -999,6 +1032,34 @@ impl fmt::Display for RenderGraphDiagnosticImageAccess {
             self.usage,
             self.stage,
             subresource_range_label(&self.range)
+        )
+    }
+}
+
+impl fmt::Display for RenderGraphDiagnosticBufferSyncOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let producer = match (self.before_pass, &self.before_name) {
+            (Some(index), Some(name)) => format!("pass {index} ({name})"),
+            _ => "frame start".to_string(),
+        };
+        let range = if self.range.size == u64::MAX {
+            format!("bytes {}+unbounded", self.range.offset)
+        } else {
+            format!("bytes {}+{}", self.range.offset, self.range.size)
+        };
+        let cause = match self.hazard {
+            Some(kind) => format!("hazard {kind:?}"),
+            None => self.reason.clone(),
+        };
+        write!(
+            f,
+            "[{producer} -> pass {} ({})] r{} ({}), {range}: {} -> {} ({cause})",
+            self.pass,
+            self.pass_name,
+            self.resource.id,
+            self.resource.name,
+            self.before,
+            self.after,
         )
     }
 }
@@ -1201,6 +1262,67 @@ fn transition_diagnostics(
                 .map(|op| diagnostic_transition(op, passes, resources, None)),
         )
         .collect()
+}
+
+fn buffer_sync_diagnostics(
+    passes: &[PassDesc],
+    resources: &[GraphResourceDesc],
+    plan: &ExecutionPlan,
+) -> Vec<RenderGraphDiagnosticBufferSyncOp> {
+    plan.sorted_passes
+        .iter()
+        .flat_map(|&pass_index| {
+            plan.sync.pass_buffer_ops[pass_index].iter().map(move |op| {
+                RenderGraphDiagnosticBufferSyncOp {
+                    resource: resource_ref(op.resource, resources),
+                    range: RenderGraphDiagnosticBufferByteRange {
+                        offset: op.range.offset,
+                        size: op.range.size,
+                    },
+                    before: buffer_sync_state_label(op.before),
+                    after: buffer_sync_state_label(op.after),
+                    before_pass: op.before_pass,
+                    before_name: op
+                        .before_pass
+                        .and_then(|index| passes.get(index))
+                        .map(|pass| pass.name.clone()),
+                    pass: pass_index,
+                    pass_name: passes
+                        .get(pass_index)
+                        .map(|pass| pass.name.clone())
+                        .unwrap_or_default(),
+                    hazard: match op.reason {
+                        super::SyncReason::Hazard(kind) => Some(kind.into()),
+                        _ => None,
+                    },
+                    reason: sync_reason_label(op.reason).to_string(),
+                }
+            })
+        })
+        .collect()
+}
+
+fn buffer_sync_state_label(state: BufferSyncState) -> String {
+    match state {
+        BufferSyncState::Undefined => "undefined".to_string(),
+        BufferSyncState::Access { usage, stage, mode } => format!(
+            "{} {usage:?} @ {stage:?}",
+            match mode {
+                ResourceAccessMode::Read => "read",
+                ResourceAccessMode::Write => "write",
+                ResourceAccessMode::ReadWrite => "read_write",
+            }
+        ),
+    }
+}
+
+fn sync_reason_label(reason: super::SyncReason) -> &'static str {
+    match reason {
+        super::SyncReason::InitialUse => "initial_use",
+        super::SyncReason::Hazard(_) => "hazard",
+        super::SyncReason::StateChange => "state_change",
+        super::SyncReason::ImportedFinal => "imported_final",
+    }
 }
 
 fn diagnostic_transition(
@@ -2062,6 +2184,99 @@ mod tests {
         assert_eq!(
             json["passes"][1]["buffer_accesses"][0]["range"],
             serde_json::json!({ "offset": 512, "size": u64::MAX })
+        );
+    }
+
+    #[test]
+    fn test_buffer_synchronization_exports_byte_ranges_and_hazards() {
+        use crate::render_graph::access::{
+            BufferAccess, BufferByteRange, BufferUsage, ResourceAccessStage,
+        };
+
+        let resources = vec![namespace_resource("particles")];
+        let write = BufferAccess::new(
+            ResourceId(0),
+            ResourceAccessMode::Write,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::new(0, 64),
+        );
+        let read = BufferAccess::new(
+            ResourceId(0),
+            ResourceAccessMode::Read,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::new(0, 64),
+        );
+        // Both passes are liveness roots: a buffer-only pass has no exported
+        // resource to anchor it, so without a side effect culling removes it.
+        let mut simulate = pass("simulate", vec![], vec![]).with_buffer_accesses([write]);
+        simulate.side_effect = true;
+        let mut draw = pass("draw", vec![], vec![]).with_buffer_accesses([read]);
+        draw.side_effect = true;
+        let passes = vec![simulate, draw];
+        let plan = GraphCompiler::from_pass_descs_with_exports(&passes, [], BTreeMap::new())
+            .compile()
+            .unwrap();
+        let diagnostics = RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &[],
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &plan,
+        );
+
+        // Two operations: the writer's first use of its bytes, and the
+        // reader's RAW hazard against that write.
+        assert_eq!(diagnostics.summary.buffer_synchronization_ops, 2);
+        let op = diagnostics
+            .buffer_synchronization
+            .iter()
+            .find(|op| op.hazard.is_some())
+            .expect("hazard op");
+        assert_eq!(op.pass, 1);
+        assert_eq!(op.pass_name, "draw");
+        assert_eq!(op.before_pass, Some(0));
+        assert_eq!(op.before_name.as_deref(), Some("simulate"));
+        assert_eq!(op.hazard, Some(RenderGraphHazardKind::Raw));
+        assert_eq!(op.range.offset, 0);
+        assert_eq!(op.range.size, 64);
+
+        let text = diagnostics.to_string();
+        assert!(
+            text.contains("buffer synchronization operations:"),
+            "text export missing the buffer section: {text}"
+        );
+        assert!(
+            text.contains(
+                "[pass 0 (simulate) -> pass 1 (draw)] r0 (particles), bytes 0+64: write \
+                 Storage @ ComputeShader -> read Storage @ ComputeShader (hazard Raw)"
+            ),
+            "text export missing the buffer op line: {text}"
+        );
+
+        let json: Value = serde_json::from_str(&diagnostics.to_json_pretty().unwrap()).unwrap();
+        let hazard_index = diagnostics
+            .buffer_synchronization
+            .iter()
+            .position(|op| op.hazard.is_some())
+            .expect("hazard op index");
+        assert_eq!(
+            json["buffer_synchronization"][hazard_index]["range"],
+            serde_json::json!({ "offset": 0, "size": 64 })
+        );
+        assert_eq!(
+            json["buffer_synchronization"][hazard_index]["reason"],
+            "hazard"
+        );
+        assert_eq!(
+            json["buffer_synchronization"][0]["reason"], "initial_use",
+            "the writer's first use is recorded before the reader's hazard"
+        );
+        assert_eq!(
+            json["summary"]["buffer_synchronization_ops"],
+            serde_json::json!(2)
         );
     }
 

@@ -101,6 +101,7 @@ pub use passes::{
 pub use resource::{
     GraphResourceDesc, GraphResourceHandle, GraphResourceType, ImportedImageContract, ResourceState,
 };
+pub use sync_plan::{BufferSyncOp, BufferSyncState};
 pub(crate) use sync_plan::{ImageSyncOp, ImageSyncState, ResourceHazardKind, SyncPlan, SyncReason};
 pub use trace::{
     EmittedPassOutcome, FRAME_DEPTH_TARGET, ResourceExecutionTrace, ResourceExecutionTraceEntry,
