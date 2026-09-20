@@ -1842,6 +1842,19 @@ mod tests {
         )
     }
 
+    /// Directory failed render-graph tests leave their actual exports in, so CI can
+    /// upload them as an artifact. Honors `CARGO_TARGET_DIR` like cargo itself.
+    fn diagnostics_artifact_dir() -> std::path::PathBuf {
+        let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| {
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join("target")
+            });
+        target_dir.join("render-graph-diagnostics")
+    }
+
     fn bless_or_compare(name: &str, actual: &str) {
         let golden_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/goldens");
         let path = format!("{golden_dir}/{name}");
@@ -1854,9 +1867,21 @@ mod tests {
         let expected = std::fs::read_to_string(&path).unwrap_or_else(|error| {
             panic!("missing golden snapshot {path} ({error}); run the test suite once with KATLA_BLESS_GOLDENS=1 to write it")
         });
+        if expected != actual {
+            let artifact_dir = diagnostics_artifact_dir();
+            if std::fs::create_dir_all(&artifact_dir).is_ok() {
+                let _ = std::fs::write(artifact_dir.join(name), format!("{actual}\n"));
+                println!(
+                    "wrote actual export for comparison to {}",
+                    artifact_dir.join(name).display()
+                );
+            }
+        }
         assert_eq!(
-            expected, actual,
-            "golden snapshot {name} drifted; inspect the diff and rerun with KATLA_BLESS_GOLDENS=1 only if the change is intentional"
+            expected,
+            actual,
+            "golden snapshot {name} drifted; the actual export is under {}/ and CI uploads it on failure; rerun with KATLA_BLESS_GOLDENS=1 only if the change is intentional",
+            diagnostics_artifact_dir().display()
         );
     }
 

@@ -129,6 +129,9 @@ impl Application {
         // Layout dump (if both --headless and --dump-layout are set)
         self.dump_layout_if_needed();
 
+        // Render-graph dump (if --dump-render-graph[-file] is set)
+        self.dump_render_graph_if_needed();
+
         // Cleanup
         self.cleanup_on_exit();
 

@@ -5,6 +5,45 @@ use katla_gfx::GpuRenderer;
 use crate::application::Application;
 
 impl Application {
+    /// Serialize the compiled render-graph diagnostics and write them to stdout or a file.
+    ///
+    /// Only runs once, after the first frame, so the graph reflects the frame's
+    /// live resources. The compiler is pure, so this needs no GPU work and the
+    /// dump is identical on every backend for the same declared graph.
+    pub(crate) fn dump_render_graph_if_needed(&mut self) {
+        if self.render_graph_dumped {
+            return;
+        }
+
+        let Some(target) = &self.info.dump_render_graph else {
+            return;
+        };
+
+        let output = match self.frame_graph.diagnostics() {
+            Ok(diagnostics) => diagnostics.to_string(),
+            Err(error) => {
+                log::error!("Failed to compile render-graph diagnostics: {error}");
+                self.render_graph_dumped = true;
+                return;
+            }
+        };
+
+        match target {
+            super::DumpLayoutTarget::Stdout => {
+                println!("{output}");
+            }
+            super::DumpLayoutTarget::File(path) => {
+                if let Err(error) = std::fs::write(path, &output) {
+                    log::error!("Failed to write render-graph dump to {path}: {error}");
+                } else {
+                    log::info!("Render-graph dump written to {path}");
+                }
+            }
+        }
+
+        self.render_graph_dumped = true;
+    }
+
     /// Cleanup resources on exit.
     /// Called both from exiting() and directly before event_loop.exit() for max_frames mode.
     pub(crate) fn cleanup_on_exit(&mut self) {
@@ -192,6 +231,9 @@ impl Application {
 
         // Layout dump: if requested, serialize the UI tree and write to stdout/file, then exit.
         self.dump_layout_if_needed();
+
+        // Render-graph dump: if requested, serialize the compiled graph, then exit.
+        self.dump_render_graph_if_needed();
 
         // Asynchronous black frame checking:
         // - On frame N: Queue async readback (non-blocking)
