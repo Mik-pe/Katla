@@ -1493,6 +1493,7 @@ dependencies = [
  "katla_ecs",
  "katla_script",
  "log",
+ "rand 0.8.6",
 ]
 
 [[package]]

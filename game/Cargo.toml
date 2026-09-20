@@ -11,6 +11,9 @@ default = []
 name = "katla"
 path = "src/main.rs"
 
+[dev-dependencies]
+rand = { workspace = true }
+
 [dependencies]
 katla_app = { workspace = true }
 katla_ecs = { workspace = true }
