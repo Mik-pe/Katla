@@ -110,6 +110,14 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// memory from the compiled allocation plan. Debugging switch.
     transient_aliasing: bool,
 
+    /// Whether each execution records the encoders it emitted. Off by default
+    /// so the steady-state path pays nothing; see
+    /// [`FrameGraph::set_execution_trace`].
+    trace_enabled: bool,
+
+    /// Encoders emitted by the most recent execution, when tracing is enabled.
+    last_execution_trace: super::trace::ResourceExecutionTrace,
+
     /// Base bindless index for LDR texture (actual index = base + frame_idx).
     ldr_texture_base_index: Option<u32>,
 
@@ -141,6 +149,8 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             transient_resources: Vec::new(),
             transient_textures: Vec::new(),
             transient_aliasing: true,
+            trace_enabled: false,
+            last_execution_trace: super::trace::ResourceExecutionTrace::new(),
             ldr_texture_base_index: None,
             params: FrameParams::default(),
             compositing_descriptor_sets: RefCell::new([None, None]),
@@ -645,6 +655,53 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.transient_aliasing = enabled;
     }
 
+    /// Enable or disable recording of the emitted encoder trace.
+    ///
+    /// Validation mode for render graph execution: enabled turns on one trace
+    /// entry per pass the backend dispatches, which
+    /// [`Self::compare_execution_trace`] then checks against the compiled plan.
+    pub fn set_execution_trace(&mut self, enabled: bool) {
+        self.trace_enabled = enabled;
+    }
+
+    /// Whether execution currently records an emitted encoder trace.
+    pub fn execution_trace_enabled(&self) -> bool {
+        self.trace_enabled
+    }
+
+    /// Encoders emitted by the most recent execution.
+    pub fn last_execution_trace(&self) -> &super::trace::ResourceExecutionTrace {
+        &self.last_execution_trace
+    }
+
+    /// Store an emitted encoder trace produced by a backend that drives
+    /// execution itself (Metal encodes from its own compiled pass records).
+    #[cfg(target_os = "macos")]
+    pub(crate) fn store_last_execution_trace(
+        &mut self,
+        trace: super::trace::ResourceExecutionTrace,
+    ) {
+        if self.trace_enabled {
+            self.last_execution_trace = trace;
+        }
+    }
+
+    /// Compare the most recent execution's emitted trace against the compiled
+    /// plan, returning every divergence found.
+    ///
+    /// An empty result means the backend emitted exactly the compiled passes, in
+    /// order, against the declared attachment contract. Requires tracing to be
+    /// enabled; otherwise the trace is empty and every live pass reports as
+    /// missing.
+    pub fn compare_execution_trace(&self) -> Vec<super::trace::TraceDivergence> {
+        super::trace::compare_with_compiled(
+            &self.resources,
+            &self.passes,
+            &self.execution_order(),
+            &self.last_execution_trace,
+        )
+    }
+
     /// Group transient resources into physical allocation slots.
     ///
     /// Driven by the compiled allocation plan: compatible resources whose
@@ -1116,10 +1173,17 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
         self.resolve_materials(renderer)?;
 
         let mut frame = super::frame::Frame::new(self, renderer, image_index, frame_idx);
+        if self.trace_enabled {
+            frame.enable_execution_trace();
+        }
         f(&mut frame);
         frame.validate_submissions()?;
         frame.pre_compile_materials()?;
         frame.execute_passes()?;
+
+        if self.trace_enabled {
+            self.last_execution_trace = frame.execution_trace().clone();
+        }
 
         Ok(())
     }
