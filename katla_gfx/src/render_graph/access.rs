@@ -1,9 +1,15 @@
-//! Backend-neutral image access declarations.
+//! Backend-neutral resource access declarations.
 //!
-//! Accesses describe what a pass does to an image, where in the pipeline the
-//! access occurs, and which subresources participate. The compiler can retain
-//! this vocabulary across Vulkan and Metal instead of reconstructing intent from
-//! coarse read/write lists or native image layouts.
+//! Accesses describe what a pass does to a resource, where in the pipeline the
+//! access occurs, and which part of the resource participates. The compiler can
+//! retain this vocabulary across Vulkan and Metal instead of reconstructing
+//! intent from coarse read/write lists or native layouts.
+//!
+//! Images range over aspects, mip levels, and array layers
+//! ([`ImageSubresourceRange`]); buffers range over bytes ([`BufferByteRange`]).
+//! Both use the same access vocabulary ([`ResourceAccessMode`],
+//! [`ResourceAccessStage`]) so the compiler runs one range-aware hazard analysis
+//! for either resource kind.
 
 use std::fmt;
 use std::ops::{BitAnd, BitOr, BitOrAssign};
@@ -265,15 +271,136 @@ impl ImageSubresourceRange {
     }
 }
 
+/// Half-open byte range `[offset, offset + size)` within a buffer.
+///
+/// A size of [`u32::MAX`] means "all remaining bytes", matching the
+/// subresource-range convention for images.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BufferByteRange {
+    pub offset: u64,
+    pub size: u64,
+}
+
+impl BufferByteRange {
+    /// Every byte of the buffer.
+    pub const WHOLE: Self = Self {
+        offset: 0,
+        size: u64::MAX,
+    };
+
+    pub const fn new(offset: u64, size: u64) -> Self {
+        Self { offset, size }
+    }
+
+    /// A range covering all bytes from `offset` to the end of the buffer.
+    pub const fn from(offset: u64) -> Self {
+        Self {
+            offset,
+            size: u64::MAX,
+        }
+    }
+
+    #[inline]
+    pub const fn is_empty(self) -> bool {
+        self.size == 0
+    }
+
+    /// Exclusive end of the range. A size of [`u64::MAX`] is represented as
+    /// [`u64::MAX`] rather than wrapping to zero.
+    #[inline]
+    pub const fn end(self) -> u64 {
+        match self.offset.checked_add(self.size) {
+            Some(end) => end,
+            None => u64::MAX,
+        }
+    }
+
+    /// Whether this range covers every byte of a buffer of `len` bytes.
+    #[inline]
+    pub const fn covers_whole_buffer(self, len: u64) -> bool {
+        self.offset == 0 && self.size >= len
+    }
+
+    #[inline]
+    pub const fn overlaps(self, other: Self) -> bool {
+        !self.is_empty()
+            && !other.is_empty()
+            && self.offset < other.end()
+            && other.offset < self.end()
+    }
+
+    /// Overlapping portion of two ranges, if any.
+    pub const fn intersection(self, other: Self) -> Option<Self> {
+        if !self.overlaps(other) {
+            return None;
+        }
+
+        let start = if self.offset > other.offset {
+            self.offset
+        } else {
+            other.offset
+        };
+        let self_end = self.end();
+        let other_end = other.end();
+        let end = if self_end < other_end {
+            self_end
+        } else {
+            other_end
+        };
+
+        Some(Self {
+            offset: start,
+            size: end - start,
+        })
+    }
+
+    /// The non-overlapping pieces of `self` after removing `other`.
+    ///
+    /// Used by range-aware dependency analysis to stop walking older buffer
+    /// versions only for the bytes a newer writer covered. Returns at most two
+    /// pieces (below and above the intersection), preserving order.
+    pub fn subtract(self, other: Self) -> Vec<Self> {
+        let Some(intersection) = self.intersection(other) else {
+            return vec![self];
+        };
+
+        let mut result = Vec::with_capacity(2);
+        if self.offset < intersection.offset {
+            result.push(Self {
+                offset: self.offset,
+                size: intersection.offset - self.offset,
+            });
+        }
+        let self_end = self.end();
+        if intersection.end() < self_end {
+            result.push(Self {
+                offset: intersection.end(),
+                size: self_end - intersection.end(),
+            });
+        }
+        result
+    }
+
+    /// Intersect with a buffer's length, resolving the unbounded `u64::MAX`
+    /// size into a concrete range.
+    pub fn clamp_to_len(self, len: u64) -> Self {
+        let size = self.size.min(len.saturating_sub(self.offset));
+        Self {
+            offset: self.offset,
+            size,
+        }
+    }
+}
+
 /// Whether an image access reads, writes, or updates an existing value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ImageAccessMode {
+pub enum ResourceAccessMode {
     Read,
     Write,
     ReadWrite,
 }
 
-impl ImageAccessMode {
+impl ResourceAccessMode {
     #[inline]
     pub const fn reads(self) -> bool {
         matches!(self, Self::Read | Self::ReadWrite)
@@ -287,7 +414,7 @@ impl ImageAccessMode {
 
 /// Backend-neutral image usage selected by a pass.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ImageUsage {
+pub enum ResourceAccessUsage {
     Sampled,
     ColorAttachment,
     DepthStencilAttachment,
@@ -299,7 +426,7 @@ pub enum ImageUsage {
 
 /// Backend-neutral pipeline visibility for an image access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ImagePipelineStage {
+pub enum ResourceAccessStage {
     VertexShader,
     FragmentShader,
     ComputeShader,
@@ -314,9 +441,9 @@ pub enum ImagePipelineStage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ImageAccess {
     pub resource: ResourceId,
-    pub mode: ImageAccessMode,
-    pub usage: ImageUsage,
-    pub stage: ImagePipelineStage,
+    pub mode: ResourceAccessMode,
+    pub usage: ResourceAccessUsage,
+    pub stage: ResourceAccessStage,
     pub range: ImageSubresourceRange,
 }
 
@@ -327,9 +454,9 @@ impl ImageAccess {
 
     pub const fn new(
         resource: ResourceId,
-        mode: ImageAccessMode,
-        usage: ImageUsage,
-        stage: ImagePipelineStage,
+        mode: ResourceAccessMode,
+        usage: ResourceAccessUsage,
+        stage: ResourceAccessStage,
         range: ImageSubresourceRange,
     ) -> Self {
         Self {
@@ -349,9 +476,9 @@ impl ImageAccess {
     pub const fn sampled_read(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::Read,
-            ImageUsage::Sampled,
-            ImagePipelineStage::FragmentShader,
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::Sampled,
+            ResourceAccessStage::FragmentShader,
             Self::WHOLE_RESOURCE,
         )
     }
@@ -359,9 +486,9 @@ impl ImageAccess {
     pub const fn storage_write(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::Write,
-            ImageUsage::Storage,
-            ImagePipelineStage::AllGraphics,
+            ResourceAccessMode::Write,
+            ResourceAccessUsage::Storage,
+            ResourceAccessStage::AllGraphics,
             ImageSubresourceRange::WHOLE_COLOR,
         )
     }
@@ -369,9 +496,9 @@ impl ImageAccess {
     pub const fn storage_read_write(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::ReadWrite,
-            ImageUsage::Storage,
-            ImagePipelineStage::AllGraphics,
+            ResourceAccessMode::ReadWrite,
+            ResourceAccessUsage::Storage,
+            ResourceAccessStage::AllGraphics,
             ImageSubresourceRange::WHOLE_COLOR,
         )
     }
@@ -380,9 +507,9 @@ impl ImageAccess {
     pub const fn color_attachment_write(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::Write,
-            ImageUsage::ColorAttachment,
-            ImagePipelineStage::ColorAttachmentOutput,
+            ResourceAccessMode::Write,
+            ResourceAccessUsage::ColorAttachment,
+            ResourceAccessStage::ColorAttachmentOutput,
             ImageSubresourceRange::WHOLE_COLOR,
         )
     }
@@ -392,9 +519,9 @@ impl ImageAccess {
     pub const fn color_attachment_read_write(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::ReadWrite,
-            ImageUsage::ColorAttachment,
-            ImagePipelineStage::ColorAttachmentOutput,
+            ResourceAccessMode::ReadWrite,
+            ResourceAccessUsage::ColorAttachment,
+            ResourceAccessStage::ColorAttachmentOutput,
             ImageSubresourceRange::WHOLE_COLOR,
         )
     }
@@ -403,9 +530,9 @@ impl ImageAccess {
     pub const fn depth_attachment_read(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::Read,
-            ImageUsage::DepthStencilAttachment,
-            ImagePipelineStage::DepthStencil,
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::DepthStencilAttachment,
+            ResourceAccessStage::DepthStencil,
             ImageSubresourceRange::WHOLE_DEPTH,
         )
     }
@@ -414,9 +541,9 @@ impl ImageAccess {
     pub const fn depth_attachment_write(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::Write,
-            ImageUsage::DepthStencilAttachment,
-            ImagePipelineStage::DepthStencil,
+            ResourceAccessMode::Write,
+            ResourceAccessUsage::DepthStencilAttachment,
+            ResourceAccessStage::DepthStencil,
             ImageSubresourceRange::WHOLE_DEPTH_STENCIL,
         )
     }
@@ -425,9 +552,9 @@ impl ImageAccess {
     pub const fn transfer_read(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::Read,
-            ImageUsage::TransferSource,
-            ImagePipelineStage::Transfer,
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::TransferSource,
+            ResourceAccessStage::Transfer,
             Self::WHOLE_RESOURCE,
         )
     }
@@ -436,9 +563,9 @@ impl ImageAccess {
     pub const fn transfer_write(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::Write,
-            ImageUsage::TransferDestination,
-            ImagePipelineStage::Transfer,
+            ResourceAccessMode::Write,
+            ResourceAccessUsage::TransferDestination,
+            ResourceAccessStage::Transfer,
             Self::WHOLE_RESOURCE,
         )
     }
@@ -447,9 +574,9 @@ impl ImageAccess {
     pub const fn present_write(resource: ResourceId) -> Self {
         Self::new(
             resource,
-            ImageAccessMode::Write,
-            ImageUsage::Present,
-            ImagePipelineStage::Present,
+            ResourceAccessMode::Write,
+            ResourceAccessUsage::Present,
+            ResourceAccessStage::Present,
             Self::WHOLE_RESOURCE,
         )
     }
@@ -464,15 +591,186 @@ impl ImageAccess {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NamedImageAccess {
     pub resource: String,
-    pub mode: ImageAccessMode,
-    pub usage: ImageUsage,
-    pub stage: ImagePipelineStage,
+    pub mode: ResourceAccessMode,
+    pub usage: ResourceAccessUsage,
+    pub stage: ResourceAccessStage,
     pub range: ImageSubresourceRange,
 }
 
 impl NamedImageAccess {
     pub(crate) fn resolve(&self, resource: ResourceId) -> ImageAccess {
         ImageAccess::new(resource, self.mode, self.usage, self.stage, self.range)
+    }
+}
+
+/// Backend-neutral buffer usage selected by a pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BufferUsage {
+    /// Uniform buffer read by a shader.
+    Uniform,
+    /// Storage buffer read or written by a shader.
+    Storage,
+    /// Vertex attribute or index data consumed by the input assembler.
+    Vertex,
+    /// Index data consumed by the input assembler.
+    Index,
+    /// Dispatch dimensions or draw counts read indirectly by the GPU.
+    Indirect,
+    /// Read as a transfer source (copy from).
+    TransferSource,
+    /// Written as a transfer destination (copy to, fill).
+    TransferDestination,
+    /// Read back to the host.
+    Readback,
+}
+
+/// One typed buffer access declared by a render-graph pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BufferAccess {
+    pub resource: ResourceId,
+    pub mode: ResourceAccessMode,
+    pub usage: BufferUsage,
+    pub stage: ResourceAccessStage,
+    /// Byte range the access touches.
+    pub range: BufferByteRange,
+}
+
+impl BufferAccess {
+    pub const fn new(
+        resource: ResourceId,
+        mode: ResourceAccessMode,
+        usage: BufferUsage,
+        stage: ResourceAccessStage,
+        range: BufferByteRange,
+    ) -> Self {
+        Self {
+            resource,
+            mode,
+            usage,
+            stage,
+            range,
+        }
+    }
+
+    pub const fn uniform_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Read,
+            BufferUsage::Uniform,
+            ResourceAccessStage::AllGraphics,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn storage_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Read,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn storage_write(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Write,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn storage_read_write(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::ReadWrite,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn vertex_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Read,
+            BufferUsage::Vertex,
+            ResourceAccessStage::VertexShader,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn index_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Read,
+            BufferUsage::Index,
+            ResourceAccessStage::VertexShader,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn indirect_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Read,
+            BufferUsage::Indirect,
+            ResourceAccessStage::AllGraphics,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn transfer_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Read,
+            BufferUsage::TransferSource,
+            ResourceAccessStage::Transfer,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn transfer_write(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Write,
+            BufferUsage::TransferDestination,
+            ResourceAccessStage::Transfer,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn readback_read(resource: ResourceId) -> Self {
+        Self::new(
+            resource,
+            ResourceAccessMode::Read,
+            BufferUsage::Readback,
+            ResourceAccessStage::Transfer,
+            BufferByteRange::WHOLE,
+        )
+    }
+
+    pub const fn with_range(mut self, range: BufferByteRange) -> Self {
+        self.range = range;
+        self
+    }
+}
+
+/// String-addressed buffer access resolved by [`super::FrameGraphBuilder`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NamedBufferAccess {
+    pub resource: String,
+    pub mode: ResourceAccessMode,
+    pub usage: BufferUsage,
+    pub stage: ResourceAccessStage,
+    pub range: BufferByteRange,
+}
+
+impl NamedBufferAccess {
+    pub(crate) fn resolve(&self, resource: ResourceId) -> BufferAccess {
+        BufferAccess::new(resource, self.mode, self.usage, self.stage, self.range)
     }
 }
 

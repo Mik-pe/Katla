@@ -17,7 +17,8 @@
 use std::collections::BTreeMap;
 
 use super::access::{
-    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
 };
 use super::handles::ResourceId;
 use super::resource::{ImportedImageContract, ResourceState};
@@ -43,9 +44,9 @@ pub enum ImageSyncState {
     Undefined,
     /// The state a typed access leaves the subresources in.
     Access {
-        usage: ImageUsage,
-        stage: ImagePipelineStage,
-        mode: ImageAccessMode,
+        usage: ResourceAccessUsage,
+        stage: ResourceAccessStage,
+        mode: ResourceAccessMode,
     },
 }
 
@@ -66,39 +67,39 @@ impl ImageSyncState {
         match state {
             S::Undefined => Self::Undefined,
             S::ColorAttachment => Self::Access {
-                usage: ImageUsage::ColorAttachment,
-                stage: ImagePipelineStage::ColorAttachmentOutput,
-                mode: ImageAccessMode::ReadWrite,
+                usage: ResourceAccessUsage::ColorAttachment,
+                stage: ResourceAccessStage::ColorAttachmentOutput,
+                mode: ResourceAccessMode::ReadWrite,
             },
             S::DepthStencilAttachment => Self::Access {
-                usage: ImageUsage::DepthStencilAttachment,
-                stage: ImagePipelineStage::DepthStencil,
-                mode: ImageAccessMode::ReadWrite,
+                usage: ResourceAccessUsage::DepthStencilAttachment,
+                stage: ResourceAccessStage::DepthStencil,
+                mode: ResourceAccessMode::ReadWrite,
             },
             S::ShaderRead => Self::Access {
-                usage: ImageUsage::Sampled,
-                stage: ImagePipelineStage::FragmentShader,
-                mode: ImageAccessMode::Read,
+                usage: ResourceAccessUsage::Sampled,
+                stage: ResourceAccessStage::FragmentShader,
+                mode: ResourceAccessMode::Read,
             },
             S::ShaderWrite => Self::Access {
-                usage: ImageUsage::Storage,
-                stage: ImagePipelineStage::AllGraphics,
-                mode: ImageAccessMode::Write,
+                usage: ResourceAccessUsage::Storage,
+                stage: ResourceAccessStage::AllGraphics,
+                mode: ResourceAccessMode::Write,
             },
             S::TransferSrc => Self::Access {
-                usage: ImageUsage::TransferSource,
-                stage: ImagePipelineStage::Transfer,
-                mode: ImageAccessMode::Read,
+                usage: ResourceAccessUsage::TransferSource,
+                stage: ResourceAccessStage::Transfer,
+                mode: ResourceAccessMode::Read,
             },
             S::TransferDst => Self::Access {
-                usage: ImageUsage::TransferDestination,
-                stage: ImagePipelineStage::Transfer,
-                mode: ImageAccessMode::Write,
+                usage: ResourceAccessUsage::TransferDestination,
+                stage: ResourceAccessStage::Transfer,
+                mode: ResourceAccessMode::Write,
             },
             S::PresentSrc => Self::Access {
-                usage: ImageUsage::Present,
-                stage: ImagePipelineStage::Present,
-                mode: ImageAccessMode::Write,
+                usage: ResourceAccessUsage::Present,
+                stage: ResourceAccessStage::Present,
+                mode: ResourceAccessMode::Write,
             },
         }
     }
@@ -391,7 +392,8 @@ fn build_final_ops(
 mod tests {
     use super::*;
     use crate::render_graph::access::{
-        ImageAccessMode, ImageAspects, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+        ImageAspects, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+        ResourceAccessUsage,
     };
     use crate::render_graph::compiler::{ExecutionPlan, GraphCompiler, PassInfo};
     use crate::render_graph::handles::ResourceId;
@@ -419,9 +421,9 @@ mod tests {
 
     fn access(
         resource: ResourceId,
-        mode: ImageAccessMode,
-        usage: ImageUsage,
-        stage: ImagePipelineStage,
+        mode: ResourceAccessMode,
+        usage: ResourceAccessUsage,
+        stage: ResourceAccessStage,
         range: ImageSubresourceRange,
     ) -> ImageAccess {
         ImageAccess::new(resource, mode, usage, stage, range)
@@ -445,14 +447,15 @@ mod tests {
             reads,
             writes,
             image_accesses: accesses,
+            buffer_accesses: Vec::new(),
             side_effect: false,
         }
     }
 
     fn state(
-        usage: ImageUsage,
-        stage: ImagePipelineStage,
-        mode: ImageAccessMode,
+        usage: ResourceAccessUsage,
+        stage: ResourceAccessStage,
+        mode: ResourceAccessMode,
     ) -> ImageSyncState {
         ImageSyncState::Access { usage, stage, mode }
     }
@@ -460,9 +463,9 @@ mod tests {
     fn attachment_write(resource: ResourceId) -> ImageAccess {
         access(
             resource,
-            ImageAccessMode::Write,
-            ImageUsage::ColorAttachment,
-            ImagePipelineStage::ColorAttachmentOutput,
+            ResourceAccessMode::Write,
+            ResourceAccessUsage::ColorAttachment,
+            ResourceAccessStage::ColorAttachmentOutput,
             ImageSubresourceRange::WHOLE_COLOR,
         )
     }
@@ -494,17 +497,17 @@ mod tests {
         assert_eq!(
             ops[0].before,
             state(
-                ImageUsage::DepthStencilAttachment,
-                ImagePipelineStage::DepthStencil,
-                ImageAccessMode::Write,
+                ResourceAccessUsage::DepthStencilAttachment,
+                ResourceAccessStage::DepthStencil,
+                ResourceAccessMode::Write,
             )
         );
         assert_eq!(
             ops[0].after,
             state(
-                ImageUsage::Sampled,
-                ImagePipelineStage::FragmentShader,
-                ImageAccessMode::Read,
+                ResourceAccessUsage::Sampled,
+                ResourceAccessStage::FragmentShader,
+                ResourceAccessMode::Read,
             )
         );
     }
@@ -525,9 +528,9 @@ mod tests {
         assert_eq!(
             ops[0].after,
             state(
-                ImageUsage::ColorAttachment,
-                ImagePipelineStage::ColorAttachmentOutput,
-                ImageAccessMode::Write,
+                ResourceAccessUsage::ColorAttachment,
+                ResourceAccessStage::ColorAttachmentOutput,
+                ResourceAccessMode::Write,
             )
         );
     }
@@ -544,17 +547,17 @@ mod tests {
         assert_eq!(
             ops[0].before,
             state(
-                ImageUsage::TransferDestination,
-                ImagePipelineStage::Transfer,
-                ImageAccessMode::Write,
+                ResourceAccessUsage::TransferDestination,
+                ResourceAccessStage::Transfer,
+                ResourceAccessMode::Write,
             )
         );
         assert_eq!(
             ops[0].after,
             state(
-                ImageUsage::TransferSource,
-                ImagePipelineStage::Transfer,
-                ImageAccessMode::Read,
+                ResourceAccessUsage::TransferSource,
+                ResourceAccessStage::Transfer,
+                ResourceAccessMode::Read,
             )
         );
     }
@@ -652,9 +655,9 @@ mod tests {
         assert_eq!(
             ops[0].before,
             state(
-                ImageUsage::Sampled,
-                ImagePipelineStage::FragmentShader,
-                ImageAccessMode::Read,
+                ResourceAccessUsage::Sampled,
+                ResourceAccessStage::FragmentShader,
+                ResourceAccessMode::Read,
             )
         );
     }
@@ -676,9 +679,9 @@ mod tests {
         assert_eq!(
             ops[0].before,
             state(
-                ImageUsage::TransferDestination,
-                ImagePipelineStage::Transfer,
-                ImageAccessMode::Write,
+                ResourceAccessUsage::TransferDestination,
+                ResourceAccessStage::Transfer,
+                ResourceAccessMode::Write,
             )
         );
     }
@@ -700,9 +703,9 @@ mod tests {
         assert_eq!(
             op.after,
             state(
-                ImageUsage::Present,
-                ImagePipelineStage::Present,
-                ImageAccessMode::Write
+                ResourceAccessUsage::Present,
+                ResourceAccessStage::Present,
+                ResourceAccessMode::Write
             )
         );
     }

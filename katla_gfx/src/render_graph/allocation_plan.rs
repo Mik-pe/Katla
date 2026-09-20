@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::access::{ImageAccess, ImageUsage};
+use super::access::{ImageAccess, ResourceAccessUsage};
 use super::compiler::ResourceLifetime;
 use super::handles::ResourceId;
 use super::resource::{GraphResourceDesc, GraphResourceType};
@@ -95,12 +95,14 @@ fn member_tile_eligibility(
 
     for access in accesses.iter().filter(|access| access.resource == resource) {
         match access.usage {
-            ImageUsage::ColorAttachment | ImageUsage::DepthStencilAttachment => {}
-            ImageUsage::Sampled
-            | ImageUsage::Storage
-            | ImageUsage::TransferSource
-            | ImageUsage::TransferDestination
-            | ImageUsage::Present => return TileMemoryEligibility::AccessedOutsideAttachment,
+            ResourceAccessUsage::ColorAttachment | ResourceAccessUsage::DepthStencilAttachment => {}
+            ResourceAccessUsage::Sampled
+            | ResourceAccessUsage::Storage
+            | ResourceAccessUsage::TransferSource
+            | ResourceAccessUsage::TransferDestination
+            | ResourceAccessUsage::Present => {
+                return TileMemoryEligibility::AccessedOutsideAttachment;
+            }
         }
 
         if !access.range.covers_whole_resource() {
@@ -319,7 +321,7 @@ impl TransientAllocationPlan {
 #[cfg(test)]
 mod tests {
     use super::super::access::{
-        ImageAccessMode, ImageAspects, ImagePipelineStage, ImageSubresourceRange,
+        ImageAspects, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
     };
     use super::*;
 
@@ -489,9 +491,9 @@ mod tests {
             &lifetimes,
             &[ImageAccess::new(
                 ResourceId(0),
-                ImageAccessMode::Read,
-                ImageUsage::ColorAttachment,
-                ImagePipelineStage::ColorAttachmentOutput,
+                ResourceAccessMode::Read,
+                ResourceAccessUsage::ColorAttachment,
+                ResourceAccessStage::ColorAttachmentOutput,
                 ImageSubresourceRange::WHOLE_COLOR,
             )],
         );

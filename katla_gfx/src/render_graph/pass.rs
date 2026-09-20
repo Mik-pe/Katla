@@ -4,7 +4,8 @@ use std::collections::BTreeSet;
 
 use crate::render_graph::ViewportRect;
 use crate::render_graph::access::{
-    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    BufferAccess, ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
 };
 use crate::render_graph::handles::ResourceId;
 use crate::render_graph::resource::GraphResourceHandle;
@@ -70,6 +71,9 @@ pub struct PassDesc {
     pub writes: Vec<ResourceId>,
     /// Typed image accesses. These preserve usage, pipeline visibility, and subresources.
     pub image_accesses: Vec<ImageAccess>,
+    /// Typed buffer accesses. These preserve usage, pipeline visibility, and
+    /// byte ranges, and drive the same range-aware hazard analysis as images.
+    pub buffer_accesses: Vec<BufferAccess>,
     /// Pass type (graphics, compute, transfer).
     pub pass_type: PassType,
     /// Optional pipeline handle (for fullscreen/compute passes).
@@ -124,6 +128,7 @@ impl PassDesc {
             reads,
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pass_type,
             pipeline: None,
             tonemap_params: None,
@@ -187,6 +192,18 @@ impl PassDesc {
         self
     }
 
+    /// Set the pass's typed buffer-access contract.
+    ///
+    /// Buffer accesses are additive to the coarse read/write sets: the builder
+    /// that declares them by name keeps both in sync, so this only stores them.
+    pub fn with_buffer_accesses(
+        mut self,
+        accesses: impl IntoIterator<Item = BufferAccess>,
+    ) -> Self {
+        self.buffer_accesses = accesses.into_iter().collect();
+        self
+    }
+
     /// Refine compatibility accesses using the pass semantic and attachment operations.
     pub(crate) fn refine_inferred_image_accesses(&mut self) {
         for access in &mut self.image_accesses {
@@ -197,32 +214,32 @@ impl PassDesc {
 
             if let Some((_, ops)) = color_attachment {
                 access.mode = if ops.load == LoadOp::Load || access.mode.reads() {
-                    ImageAccessMode::ReadWrite
+                    ResourceAccessMode::ReadWrite
                 } else {
-                    ImageAccessMode::Write
+                    ResourceAccessMode::Write
                 };
-                access.usage = ImageUsage::ColorAttachment;
-                access.stage = ImagePipelineStage::ColorAttachmentOutput;
+                access.usage = ResourceAccessUsage::ColorAttachment;
+                access.stage = ResourceAccessStage::ColorAttachmentOutput;
                 access.range = ImageSubresourceRange::WHOLE_COLOR;
                 continue;
             }
 
             if self.pass_type == PassType::Graphics && access.mode.writes() {
                 if self.kind == Some(PassKind::Shadow) {
-                    access.usage = ImageUsage::DepthStencilAttachment;
-                    access.stage = ImagePipelineStage::DepthStencil;
+                    access.usage = ResourceAccessUsage::DepthStencilAttachment;
+                    access.stage = ResourceAccessStage::DepthStencil;
                     access.range = ImageSubresourceRange::WHOLE_DEPTH;
                 } else {
-                    access.usage = ImageUsage::ColorAttachment;
-                    access.stage = ImagePipelineStage::ColorAttachmentOutput;
+                    access.usage = ResourceAccessUsage::ColorAttachment;
+                    access.stage = ResourceAccessStage::ColorAttachmentOutput;
                     access.range = ImageSubresourceRange::WHOLE_COLOR;
                 }
                 continue;
             }
 
             if self.kind == Some(PassKind::ObjectId) && access.mode.reads() {
-                access.usage = ImageUsage::DepthStencilAttachment;
-                access.stage = ImagePipelineStage::DepthStencil;
+                access.usage = ResourceAccessUsage::DepthStencilAttachment;
+                access.stage = ResourceAccessStage::DepthStencil;
                 access.range = ImageSubresourceRange::WHOLE_DEPTH_STENCIL;
             }
         }
@@ -314,9 +331,9 @@ mod tests {
         let mut desc = PassDesc::new("test", PassType::Graphics, vec![rid(1)], vec![rid(2)]);
         desc.set_image_accesses(vec![ImageAccess::new(
             rid(3),
-            ImageAccessMode::ReadWrite,
-            ImageUsage::Storage,
-            ImagePipelineStage::FragmentShader,
+            ResourceAccessMode::ReadWrite,
+            ResourceAccessUsage::Storage,
+            ResourceAccessStage::FragmentShader,
             ImageSubresourceRange::new(ImageAspects::COLOR, 2, 1, 0, 1),
         )]);
 
@@ -333,8 +350,11 @@ mod tests {
         desc.refine_inferred_image_accesses();
 
         assert_eq!(desc.image_accesses.len(), 1);
-        assert_eq!(desc.image_accesses[0].mode, ImageAccessMode::ReadWrite);
-        assert_eq!(desc.image_accesses[0].usage, ImageUsage::ColorAttachment);
+        assert_eq!(desc.image_accesses[0].mode, ResourceAccessMode::ReadWrite);
+        assert_eq!(
+            desc.image_accesses[0].usage,
+            ResourceAccessUsage::ColorAttachment
+        );
         assert!(desc.reads_from(rid(1)));
         assert!(desc.writes_to(rid(1)));
     }

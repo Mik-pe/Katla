@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::handle::MaterialHandle;
 use crate::render_graph::access::{
-    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
 };
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::{PassKind, PassType};
@@ -134,18 +135,18 @@ impl PassBuilder for UIPass {
             .map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Read,
-                    ImageUsage::Sampled,
-                    ImagePipelineStage::FragmentShader,
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::Sampled,
+                    ResourceAccessStage::FragmentShader,
                     ImageAccess::WHOLE_RESOURCE,
                 )
             })
             .chain(writes.iter().map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::ReadWrite,
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessMode::ReadWrite,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 )
             }))
@@ -160,6 +161,7 @@ impl PassBuilder for UIPass {
             reads,
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -210,8 +212,8 @@ mod tests {
     #[test]
     fn ui_pass_declares_typed_accesses() {
         use crate::render_graph::access::{
-            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
-            NamedImageAccess,
+            ImageSubresourceRange, NamedImageAccess, ResourceAccessMode, ResourceAccessStage,
+            ResourceAccessUsage,
         };
 
         let builder = UIPass::new("ui")
@@ -224,16 +226,16 @@ mod tests {
             vec![
                 NamedImageAccess {
                     resource: "viewport_0".to_string(),
-                    mode: ImageAccessMode::Read,
-                    usage: ImageUsage::Sampled,
-                    stage: ImagePipelineStage::FragmentShader,
+                    mode: ResourceAccessMode::Read,
+                    usage: ResourceAccessUsage::Sampled,
+                    stage: ResourceAccessStage::FragmentShader,
                     range: ImageAccess::WHOLE_RESOURCE,
                 },
                 NamedImageAccess {
                     resource: "backbuffer".to_string(),
-                    mode: ImageAccessMode::ReadWrite,
-                    usage: ImageUsage::ColorAttachment,
-                    stage: ImagePipelineStage::ColorAttachmentOutput,
+                    mode: ResourceAccessMode::ReadWrite,
+                    usage: ResourceAccessUsage::ColorAttachment,
+                    stage: ResourceAccessStage::ColorAttachmentOutput,
                     range: ImageSubresourceRange::WHOLE_COLOR,
                 },
             ]
