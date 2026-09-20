@@ -608,6 +608,33 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             .unwrap_or(&[])
     }
 
+    /// Compiled buffer operations to execute before a pass.
+    ///
+    /// Byte-range dependencies, so a backend realizes each as a memory barrier
+    /// over `range` rather than a layout transition. Public so a backend (and
+    /// the diagnostics view) consumes the same plan the compiler produced.
+    pub fn buffer_sync_ops(&self, pass_index: usize) -> &[super::sync_plan::BufferSyncOp] {
+        self.execution_plan
+            .as_ref()
+            .and_then(|plan| plan.sync.pass_buffer_ops.get(pass_index))
+            .map(|ops| ops.as_slice())
+            .unwrap_or(&[])
+    }
+
+    /// Every compiled buffer synchronization operation, in pass order.
+    pub fn all_buffer_sync_ops(&self) -> Vec<&super::sync_plan::BufferSyncOp> {
+        self.execution_plan
+            .as_ref()
+            .map(|plan| {
+                plan.sync
+                    .pass_buffer_ops
+                    .iter()
+                    .flat_map(|ops| ops.iter())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Compiled frame-end operations satisfying imported final-state contracts.
     pub(crate) fn final_image_sync_ops(&self) -> &[super::sync_plan::ImageSyncOp] {
         self.execution_plan
