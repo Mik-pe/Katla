@@ -8,7 +8,8 @@ use std::any::Any;
 use std::collections::HashMap;
 
 use super::access::{
-    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage, NamedImageAccess,
+    BufferByteRange, BufferUsage, ImageSubresourceRange, NamedBufferAccess, NamedImageAccess,
+    ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
 use super::error::RenderGraphError;
 use super::pass::{PassKind, PassType};
@@ -75,6 +76,9 @@ pub struct InternalPassBuilder {
     /// Explicit typed image accesses. Empty means infer compatibility accesses.
     pub(crate) image_accesses: Vec<NamedImageAccess>,
 
+    /// Explicit typed buffer accesses.
+    pub(crate) buffer_accesses: Vec<NamedBufferAccess>,
+
     /// Optional pipeline handle (for fullscreen/compute passes).
     pub pipeline: Option<crate::handle::PipelineHandle>,
 
@@ -122,6 +126,7 @@ pub struct SimplePass {
     reads: Vec<String>,
     writes: Vec<String>,
     image_accesses: Vec<NamedImageAccess>,
+    buffer_accesses: Vec<NamedBufferAccess>,
     color_attachments: Vec<(String, crate::render_pass::AttachmentOps)>,
     depth_attachment: Option<crate::render_pass::DepthStencilAttachmentOps>,
     kind: Option<PassKind>,
@@ -136,6 +141,7 @@ impl SimplePass {
             reads: Vec::new(),
             writes: Vec::new(),
             image_accesses: Vec::new(),
+            buffer_accesses: Vec::new(),
             color_attachments: Vec::new(),
             depth_attachment: None,
             kind: None,
@@ -181,9 +187,9 @@ impl SimplePass {
     pub fn image_access(
         mut self,
         name: impl Into<String>,
-        mode: ImageAccessMode,
-        usage: ImageUsage,
-        stage: ImagePipelineStage,
+        mode: ResourceAccessMode,
+        usage: ResourceAccessUsage,
+        stage: ResourceAccessStage,
         range: ImageSubresourceRange,
     ) -> Self {
         let name = name.into();
@@ -194,6 +200,32 @@ impl SimplePass {
             self.writes.push(name.clone());
         }
         self.image_accesses.push(NamedImageAccess {
+            resource: name,
+            mode,
+            usage,
+            stage,
+            range,
+        });
+        self
+    }
+
+    /// Declare a typed buffer access while keeping compatibility read/write sets synchronized.
+    pub fn buffer_access(
+        mut self,
+        name: impl Into<String>,
+        mode: ResourceAccessMode,
+        usage: BufferUsage,
+        stage: ResourceAccessStage,
+        range: BufferByteRange,
+    ) -> Self {
+        let name = name.into();
+        if mode.reads() && !self.reads.contains(&name) {
+            self.reads.push(name.clone());
+        }
+        if mode.writes() && !self.writes.contains(&name) {
+            self.writes.push(name.clone());
+        }
+        self.buffer_accesses.push(NamedBufferAccess {
             resource: name,
             mode,
             usage,
@@ -222,6 +254,7 @@ impl PassBuilder for SimplePass {
             reads: self.reads,
             writes: self.writes,
             image_accesses: self.image_accesses,
+            buffer_accesses: self.buffer_accesses,
             color_attachments: self.color_attachments,
             depth_attachment: self.depth_attachment,
             pipeline: None,
@@ -275,6 +308,7 @@ mod tests {
                 reads: self.reads,
                 writes: self.writes,
                 image_accesses: Vec::new(),
+                buffer_accesses: Vec::new(),
                 pipeline: None,
                 tonemap_params: None,
                 material: None,
@@ -308,9 +342,9 @@ mod tests {
         let builder = SimplePass::new("sample", PassType::Graphics)
             .image_access(
                 "history",
-                ImageAccessMode::ReadWrite,
-                ImageUsage::Storage,
-                ImagePipelineStage::FragmentShader,
+                ResourceAccessMode::ReadWrite,
+                ResourceAccessUsage::Storage,
+                ResourceAccessStage::FragmentShader,
                 ImageSubresourceRange::new(super::super::access::ImageAspects::COLOR, 2, 1, 0, 1),
             )
             .as_builder();

@@ -8,7 +8,8 @@ use crate::handle::PipelineHandle;
 use crate::texture::ImageFormat;
 
 use super::super::access::{
-    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
 };
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
@@ -161,18 +162,18 @@ impl PassBuilder for FullscreenPass {
             .map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Read,
-                    ImageUsage::Sampled,
-                    ImagePipelineStage::FragmentShader,
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::Sampled,
+                    ResourceAccessStage::FragmentShader,
                     ImageAccess::WHOLE_RESOURCE,
                 )
             })
             .chain(self.writes.iter().map(|(name, _)| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Write,
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessMode::Write,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 )
             }))
@@ -187,6 +188,7 @@ impl PassBuilder for FullscreenPass {
             reads: self.reads.clone(),
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: self.pipeline,
             tonemap_params: self.tonemap_params,
             overlay_params: None,
@@ -283,18 +285,18 @@ impl PassBuilder for OverlayPass {
             .map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Read,
-                    ImageUsage::Sampled,
-                    ImagePipelineStage::FragmentShader,
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::Sampled,
+                    ResourceAccessStage::FragmentShader,
                     ImageAccess::WHOLE_RESOURCE,
                 )
             })
             .chain(self.writes.iter().map(|(name, _)| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::ReadWrite,
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessMode::ReadWrite,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 )
             }))
@@ -307,6 +309,7 @@ impl PassBuilder for OverlayPass {
             reads: self.reads.clone(),
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: self.pipeline,
             tonemap_params: None,
             material: None,
@@ -362,8 +365,8 @@ mod tests {
     #[test]
     fn fullscreen_pass_declares_typed_accesses() {
         use crate::render_graph::access::{
-            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
-            NamedImageAccess,
+            ImageSubresourceRange, NamedImageAccess, ResourceAccessMode, ResourceAccessStage,
+            ResourceAccessUsage,
         };
 
         let builder = FullscreenPass::new("tonemap")
@@ -376,16 +379,16 @@ mod tests {
             vec![
                 NamedImageAccess {
                     resource: "hdr_color".to_string(),
-                    mode: ImageAccessMode::Read,
-                    usage: ImageUsage::Sampled,
-                    stage: ImagePipelineStage::FragmentShader,
+                    mode: ResourceAccessMode::Read,
+                    usage: ResourceAccessUsage::Sampled,
+                    stage: ResourceAccessStage::FragmentShader,
                     range: ImageAccess::WHOLE_RESOURCE,
                 },
                 NamedImageAccess {
                     resource: "viewport_0".to_string(),
-                    mode: ImageAccessMode::Write,
-                    usage: ImageUsage::ColorAttachment,
-                    stage: ImagePipelineStage::ColorAttachmentOutput,
+                    mode: ResourceAccessMode::Write,
+                    usage: ResourceAccessUsage::ColorAttachment,
+                    stage: ResourceAccessStage::ColorAttachmentOutput,
                     range: ImageSubresourceRange::WHOLE_COLOR,
                 },
             ]
@@ -395,8 +398,8 @@ mod tests {
     #[test]
     fn overlay_pass_declares_a_read_write_access_for_its_target() {
         use crate::render_graph::access::{
-            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
-            NamedImageAccess,
+            ImageSubresourceRange, NamedImageAccess, ResourceAccessMode, ResourceAccessStage,
+            ResourceAccessUsage,
         };
 
         let builder = OverlayPass::new("overlay")
@@ -412,16 +415,16 @@ mod tests {
             vec![
                 NamedImageAccess {
                     resource: "stencil_indicator".to_string(),
-                    mode: ImageAccessMode::Read,
-                    usage: ImageUsage::Sampled,
-                    stage: ImagePipelineStage::FragmentShader,
+                    mode: ResourceAccessMode::Read,
+                    usage: ResourceAccessUsage::Sampled,
+                    stage: ResourceAccessStage::FragmentShader,
                     range: ImageAccess::WHOLE_RESOURCE,
                 },
                 NamedImageAccess {
                     resource: "viewport_0".to_string(),
-                    mode: ImageAccessMode::ReadWrite,
-                    usage: ImageUsage::ColorAttachment,
-                    stage: ImagePipelineStage::ColorAttachmentOutput,
+                    mode: ResourceAccessMode::ReadWrite,
+                    usage: ResourceAccessUsage::ColorAttachment,
+                    stage: ResourceAccessStage::ColorAttachmentOutput,
                     range: ImageSubresourceRange::WHOLE_COLOR,
                 },
             ]

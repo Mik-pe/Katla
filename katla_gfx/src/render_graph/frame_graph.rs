@@ -1420,6 +1420,24 @@ impl FrameGraphBuilder {
                 .collect::<Result<Vec<_>, _>>()?;
             let has_explicit_image_accesses = !explicit_image_accesses.is_empty();
 
+            let explicit_buffer_accesses = pass_builder
+                .buffer_accesses
+                .iter()
+                .map(|access| {
+                    graph
+                        .resource_by_name
+                        .get(&access.resource)
+                        .copied()
+                        .map(|resource| access.resolve(resource))
+                        .ok_or_else(|| {
+                            RenderGraphError::Validation(GraphValidationError::UndeclaredResource {
+                                pass: pass_name.clone(),
+                                resource: access.resource.clone(),
+                            })
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
             let mut pass = PassDesc::new(
                 pass_builder.name,
                 pass_builder.pass_type,
@@ -1430,6 +1448,7 @@ impl FrameGraphBuilder {
             if has_explicit_image_accesses {
                 pass.set_image_accesses(explicit_image_accesses);
             }
+            pass.buffer_accesses = explicit_buffer_accesses;
 
             pass.pipeline = pass_builder.pipeline;
             pass.tonemap_params = pass_builder.tonemap_params;

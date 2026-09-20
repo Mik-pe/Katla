@@ -325,7 +325,7 @@ impl MetalExecutionPlan {
 mod tests {
     use super::*;
     use crate::render_graph::{
-        ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+        ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
     };
 
     fn pass(name: &str, pass_type: PassType, kind: Option<PassKind>) -> PassDesc {
@@ -428,9 +428,9 @@ mod tests {
             ImageAccess::sampled_read(ResourceId(4)),
             ImageAccess::new(
                 ResourceId(7),
-                ImageAccessMode::ReadWrite,
-                ImageUsage::ColorAttachment,
-                ImagePipelineStage::ColorAttachmentOutput,
+                ResourceAccessMode::ReadWrite,
+                ResourceAccessUsage::ColorAttachment,
+                ResourceAccessStage::ColorAttachmentOutput,
                 ImageSubresourceRange::WHOLE_COLOR,
             ),
         ]);
@@ -471,9 +471,9 @@ mod tests {
                 ImageAccess::sampled_read(ResourceId(4)),
                 ImageAccess::new(
                     ResourceId(7),
-                    ImageAccessMode::ReadWrite,
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessMode::ReadWrite,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 ),
             ]
@@ -512,14 +512,14 @@ mod tests {
             resource: ResourceId(3),
             range: ImageSubresourceRange::WHOLE_COLOR,
             before: crate::render_graph::ImageSyncState::Access {
-                usage: ImageUsage::ColorAttachment,
-                stage: ImagePipelineStage::ColorAttachmentOutput,
-                mode: ImageAccessMode::Write,
+                usage: ResourceAccessUsage::ColorAttachment,
+                stage: ResourceAccessStage::ColorAttachmentOutput,
+                mode: ResourceAccessMode::Write,
             },
             after: crate::render_graph::ImageSyncState::Access {
-                usage: ImageUsage::Sampled,
-                stage: ImagePipelineStage::FragmentShader,
-                mode: ImageAccessMode::Read,
+                usage: ResourceAccessUsage::Sampled,
+                stage: ResourceAccessStage::FragmentShader,
+                mode: ResourceAccessMode::Read,
             },
             before_pass: Some(0),
             pass: 1,

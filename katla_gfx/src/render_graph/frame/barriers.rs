@@ -10,7 +10,9 @@
 //! render-pass-instance boundary barrier.
 
 use crate::barrier::ImageBarrier;
-use crate::render_graph::access::{ImageAccessMode, ImageAspects, ImagePipelineStage, ImageUsage};
+use crate::render_graph::access::{
+    ImageAspects, ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
+};
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::render_graph::{ImageSyncOp, ImageSyncState};
@@ -226,13 +228,15 @@ fn state_layout(state: ImageSyncState) -> vk::ImageLayout {
     match state {
         ImageSyncState::Undefined => vk::ImageLayout::UNDEFINED,
         ImageSyncState::Access { usage, .. } => match usage {
-            ImageUsage::Sampled => vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            ImageUsage::ColorAttachment => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            ImageUsage::DepthStencilAttachment => vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            ImageUsage::Storage => vk::ImageLayout::GENERAL,
-            ImageUsage::TransferSource => vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-            ImageUsage::TransferDestination => vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            ImageUsage::Present => vk::ImageLayout::PRESENT_SRC_KHR,
+            ResourceAccessUsage::Sampled => vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            ResourceAccessUsage::ColorAttachment => vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            ResourceAccessUsage::DepthStencilAttachment => {
+                vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+            }
+            ResourceAccessUsage::Storage => vk::ImageLayout::GENERAL,
+            ResourceAccessUsage::TransferSource => vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            ResourceAccessUsage::TransferDestination => vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            ResourceAccessUsage::Present => vk::ImageLayout::PRESENT_SRC_KHR,
         },
     }
 }
@@ -247,28 +251,28 @@ fn state_masks(state: ImageSyncState) -> (PipelineStage2Flags, AccessFlags2) {
     }
 }
 
-fn stage_mask(stage: ImagePipelineStage) -> PipelineStage2Flags {
+fn stage_mask(stage: ResourceAccessStage) -> PipelineStage2Flags {
     match stage {
-        ImagePipelineStage::VertexShader => PipelineStage2Flags::VERTEX_SHADER,
-        ImagePipelineStage::FragmentShader => PipelineStage2Flags::FRAGMENT_SHADER,
-        ImagePipelineStage::ComputeShader => PipelineStage2Flags::COMPUTE_SHADER,
-        ImagePipelineStage::ColorAttachmentOutput => PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
-        ImagePipelineStage::DepthStencil => {
+        ResourceAccessStage::VertexShader => PipelineStage2Flags::VERTEX_SHADER,
+        ResourceAccessStage::FragmentShader => PipelineStage2Flags::FRAGMENT_SHADER,
+        ResourceAccessStage::ComputeShader => PipelineStage2Flags::COMPUTE_SHADER,
+        ResourceAccessStage::ColorAttachmentOutput => PipelineStage2Flags::COLOR_ATTACHMENT_OUTPUT,
+        ResourceAccessStage::DepthStencil => {
             PipelineStage2Flags::EARLY_FRAGMENT_TESTS | PipelineStage2Flags::LATE_FRAGMENT_TESTS
         }
-        ImagePipelineStage::Transfer => PipelineStage2Flags::TRANSFER,
+        ResourceAccessStage::Transfer => PipelineStage2Flags::TRANSFER,
         // The presentation engine reads the image after submission completes;
         // the present semaphore orders the hand-off, not a pipeline stage.
-        ImagePipelineStage::Present => PipelineStage2Flags::BOTTOM_OF_PIPE,
-        ImagePipelineStage::AllGraphics => PipelineStage2Flags::ALL_GRAPHICS,
+        ResourceAccessStage::Present => PipelineStage2Flags::BOTTOM_OF_PIPE,
+        ResourceAccessStage::AllGraphics => PipelineStage2Flags::ALL_GRAPHICS,
     }
 }
 
-fn usage_access_mask(usage: ImageUsage, mode: ImageAccessMode) -> AccessFlags2 {
+fn usage_access_mask(usage: ResourceAccessUsage, mode: ResourceAccessMode) -> AccessFlags2 {
     let read = mode.reads();
     let write = mode.writes();
     match usage {
-        ImageUsage::Sampled => {
+        ResourceAccessUsage::Sampled => {
             let mut access = AccessFlags2::empty();
             if read {
                 access |= AccessFlags2::SHADER_READ;
@@ -278,7 +282,7 @@ fn usage_access_mask(usage: ImageUsage, mode: ImageAccessMode) -> AccessFlags2 {
             }
             access
         }
-        ImageUsage::ColorAttachment => {
+        ResourceAccessUsage::ColorAttachment => {
             let mut access = AccessFlags2::empty();
             if read {
                 access |= AccessFlags2::COLOR_ATTACHMENT_READ;
@@ -288,7 +292,7 @@ fn usage_access_mask(usage: ImageUsage, mode: ImageAccessMode) -> AccessFlags2 {
             }
             access
         }
-        ImageUsage::DepthStencilAttachment => {
+        ResourceAccessUsage::DepthStencilAttachment => {
             let mut access = AccessFlags2::empty();
             if read {
                 access |= AccessFlags2::DEPTH_STENCIL_ATTACHMENT_READ;
@@ -298,7 +302,7 @@ fn usage_access_mask(usage: ImageUsage, mode: ImageAccessMode) -> AccessFlags2 {
             }
             access
         }
-        ImageUsage::Storage => {
+        ResourceAccessUsage::Storage => {
             let mut access = AccessFlags2::empty();
             if read {
                 access |= AccessFlags2::SHADER_READ;
@@ -308,10 +312,12 @@ fn usage_access_mask(usage: ImageUsage, mode: ImageAccessMode) -> AccessFlags2 {
             }
             access
         }
-        ImageUsage::TransferSource if read => AccessFlags2::TRANSFER_READ,
-        ImageUsage::TransferDestination if write => AccessFlags2::TRANSFER_WRITE,
-        ImageUsage::TransferSource | ImageUsage::TransferDestination => AccessFlags2::NONE,
+        ResourceAccessUsage::TransferSource if read => AccessFlags2::TRANSFER_READ,
+        ResourceAccessUsage::TransferDestination if write => AccessFlags2::TRANSFER_WRITE,
+        ResourceAccessUsage::TransferSource | ResourceAccessUsage::TransferDestination => {
+            AccessFlags2::NONE
+        }
         // The presentation engine's read is ordered by the present semaphore.
-        ImageUsage::Present => AccessFlags2::NONE,
+        ResourceAccessUsage::Present => AccessFlags2::NONE,
     }
 }

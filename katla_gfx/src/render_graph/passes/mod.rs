@@ -34,7 +34,8 @@
 //! sets are derived from them at graph build.
 
 use crate::render_graph::access::{
-    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage, NamedImageAccess,
+    ImageSubresourceRange, NamedImageAccess, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
 };
 
 /// Declare one typed image access by resource name.
@@ -43,9 +44,9 @@ use crate::render_graph::access::{
 /// name is resolved to a `ResourceId` when the frame graph is built.
 pub(crate) fn named_image_access(
     resource: impl Into<String>,
-    mode: ImageAccessMode,
-    usage: ImageUsage,
-    stage: ImagePipelineStage,
+    mode: ResourceAccessMode,
+    usage: ResourceAccessUsage,
+    stage: ResourceAccessStage,
     range: ImageSubresourceRange,
 ) -> NamedImageAccess {
     NamedImageAccess {

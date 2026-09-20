@@ -4,7 +4,8 @@
 //! using the global depth buffer.
 
 use crate::render_graph::access::{
-    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
 };
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::{PassKind, PassType};
@@ -222,9 +223,9 @@ impl PassBuilder for GeometryPass {
             .map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Read,
-                    ImageUsage::Sampled,
-                    ImagePipelineStage::FragmentShader,
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::Sampled,
+                    ResourceAccessStage::FragmentShader,
                     ImageAccess::WHOLE_RESOURCE,
                 )
             })
@@ -232,12 +233,12 @@ impl PassBuilder for GeometryPass {
                 super::named_image_access(
                     output.name.clone(),
                     if output.ops.load == LoadOp::Load {
-                        ImageAccessMode::ReadWrite
+                        ResourceAccessMode::ReadWrite
                     } else {
-                        ImageAccessMode::Write
+                        ResourceAccessMode::Write
                     },
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 )
             }))
@@ -256,6 +257,7 @@ impl PassBuilder for GeometryPass {
             reads,
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -332,7 +334,7 @@ mod tests {
     #[test]
     fn geometry_pass_declares_typed_accesses() {
         use crate::render_graph::access::{
-            ImageAccessMode, ImageAspects, ImageUsage, NamedImageAccess,
+            ImageAspects, NamedImageAccess, ResourceAccessMode, ResourceAccessUsage,
         };
 
         let builder = GeometryPass::new("geometry")
@@ -350,23 +352,23 @@ mod tests {
             vec![
                 NamedImageAccess {
                     resource: "shadow_atlas".to_string(),
-                    mode: ImageAccessMode::Read,
-                    usage: ImageUsage::Sampled,
-                    stage: crate::render_graph::access::ImagePipelineStage::FragmentShader,
+                    mode: ResourceAccessMode::Read,
+                    usage: ResourceAccessUsage::Sampled,
+                    stage: crate::render_graph::access::ResourceAccessStage::FragmentShader,
                     range: ImageAccess::WHOLE_RESOURCE,
                 },
                 NamedImageAccess {
                     resource: "color".to_string(),
-                    mode: ImageAccessMode::Write,
-                    usage: ImageUsage::ColorAttachment,
-                    stage: crate::render_graph::access::ImagePipelineStage::ColorAttachmentOutput,
+                    mode: ResourceAccessMode::Write,
+                    usage: ResourceAccessUsage::ColorAttachment,
+                    stage: crate::render_graph::access::ResourceAccessStage::ColorAttachmentOutput,
                     range: ImageSubresourceRange::WHOLE_COLOR,
                 },
                 NamedImageAccess {
                     resource: "blended".to_string(),
-                    mode: ImageAccessMode::ReadWrite,
-                    usage: ImageUsage::ColorAttachment,
-                    stage: crate::render_graph::access::ImagePipelineStage::ColorAttachmentOutput,
+                    mode: ResourceAccessMode::ReadWrite,
+                    usage: ResourceAccessUsage::ColorAttachment,
+                    stage: crate::render_graph::access::ResourceAccessStage::ColorAttachmentOutput,
                     range: ImageSubresourceRange::WHOLE_COLOR,
                 },
             ]
