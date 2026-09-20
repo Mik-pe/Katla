@@ -79,13 +79,14 @@ pub struct ApplicationInfo {
     check_black_frames: bool,
     scene_path: Option<String>, // Override scene to load on startup
     dump_layout_path: Option<DumpLayoutTarget>,
-    screenshot_path: Option<String>, // Headless screenshot output path
-    headless: bool,                  // Running without a window
-    pub(crate) ui_test_path: Option<String>, // UI test mode: output directory for screenshots
+    dump_render_graph: Option<DumpLayoutTarget>, // Render-graph diagnostics capture
+    screenshot_path: Option<String>,             // Headless screenshot output path
+    headless: bool,                              // Running without a window
+    pub(crate) ui_test_path: Option<String>,     // UI test mode: output directory for screenshots
     pub(crate) interaction_test_path: Option<String>, // Interaction test mode: output directory
 }
 
-/// Where to write the layout dump.
+/// Where to write a serialized dump.
 #[derive(Clone)]
 pub(crate) enum DumpLayoutTarget {
     Stdout,
@@ -421,6 +422,8 @@ pub struct Application {
     pub(crate) asset_watcher: Option<crate::util::AssetWatcher>,
     /// Whether the layout dump has already been performed.
     layout_dumped: bool,
+    /// Whether the render-graph diagnostics dump has already been performed.
+    render_graph_dumped: bool,
 }
 
 impl Application {

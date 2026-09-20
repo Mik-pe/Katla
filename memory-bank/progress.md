@@ -2,6 +2,46 @@
 
 ## Completed Recently
 
+- **Issue #37 slice 4: render-graph diagnostics capture + CI artifacts
+  (2026-09-20, branch `fix/37-capture-docs`, main at `159c82aa`)** — the two
+  remaining #37 DoD items that needed no new backend data, so the issue's
+  evidence trail is complete for everything already compiled.
+  `AnyFrameGraph::diagnostics()` exposes the pure, backend-neutral compiler
+  snapshot through the enum dispatch (works with zero GPU resources).
+  The application can now capture a frame's compiled graph:
+  `ApplicationBuilder::dump_render_graph_to_stdout/to_file`, driven by the
+  `game` flags `--dump-render-graph` and `--dump-render-graph-file PATH`
+  (both imply `max_frames(3)`). The implementation is ONE ungated
+  `Application::dump_render_graph_if_needed` in `frame_loop.rs` — deliberately
+  not duplicated across the editor/non-editor cfg split, because the logic
+  only reads `frame_graph`/`info` and both cfg variants would compile the same
+  body.
+  CI artifact upload: both jobs upload `target/render-graph-diagnostics/`
+  (`actions/upload-artifact@v4`, `if: failure()`, 7-day retention,
+  `if-no-files-found: ignore`). `bless_or_compare` writes the actual export
+  into that directory before asserting, so a drifting golden ships the
+  disagreeing artifact instead of forcing a local re-run. The path honors
+  `CARGO_TARGET_DIR` and falls back to `<manifest>/../target`.
+  Docs: `docs/render_graph_capture.md` (formats, local capture, diffing two
+  captures, blessing goldens, explicit known-gaps list) indexed from
+  `docs/README.md`, plus a "Failed render-graph artifacts" section in
+  `docs/ci.md`.
+  Verified on real Intel Vulkan: the editor graph dumps 58 deterministic
+  lines (15 passes, 19 sync transitions, 5 allocation slots), byte-identical
+  across repeated runs; `--dump-render-graph` and `--dump-render-graph-file`
+  produce the same bytes (file mode appends the trailing newline).
+  GOTCHA: `cargo build -p game` produces `target/release/katla`, not `game`.
+  GOTCHA CONFIRMED: `cargo check -p katla_app --no-default-features` fails on
+  `main` too with E0592 (`on_viewport_texture_recreated` defined twice) — a
+  pre-existing non-editor-build breakage, unrelated to this slice; do not
+  mistake it for a regression.
+  REMAINING #37 (each gated on backend data): encoder/queue boundary identity
+  (#33), frame-slot ownership (#36), Metal argument-table/residency fields
+  (#55), runtime encoder traces + compiled-vs-emitted comparison report (#56).
+  Validation: 460 gfx lib tests (includes the new `any_frame_graph` accessor
+  test), `cargo fmt --all -- --check` clean, CI-exact clippy clean, 100-frame
+  headless run 0 ERROR / 1 WARN (= baseline).
+
 - **Issue #35 slice 1: Vulkan allocates aliased transients from compiled
   lifetimes (2026-09-11, PR #125 squash-merged as 57f3c3b9, CI green both
   platforms, main green post-merge)** — the `TransientAllocationPlan`

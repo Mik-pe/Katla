@@ -1,6 +1,7 @@
 //! Enum-based frame graph dispatch for dynamic backend selection.
 
 use super::backend::RenderGraphBackend;
+use super::diagnostics::RenderGraphDiagnostics;
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::{PassId, ResourceId};
@@ -173,6 +174,18 @@ impl AnyFrameGraph {
         }
     }
 
+    /// Build a deterministic diagnostics snapshot of the declared graph.
+    ///
+    /// The compiler is pure, so this works before any GPU resource exists and
+    /// is independent of the selected backend.
+    pub fn diagnostics(&self) -> Result<RenderGraphDiagnostics, RenderGraphError> {
+        match self {
+            AnyFrameGraph::Vulkan(fg) => fg.diagnostics(),
+            #[cfg(target_os = "macos")]
+            AnyFrameGraph::Metal(fg) => fg.diagnostics(),
+        }
+    }
+
     /// Get the transient texture bindless slot for a named texture.
     /// Returns None if the texture doesn't exist or has no bindless slot.
     pub fn transient_texture_bindless_slot(&self, name: &str, frame_idx: usize) -> Option<u32> {
@@ -281,5 +294,36 @@ impl AnyFrameGraph {
 impl Default for AnyFrameGraph {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render_graph::{
+        FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassType, SimplePass,
+    };
+    use crate::texture::ImageFormat;
+
+    #[test]
+    fn test_diagnostics_export_through_any_frame_graph() {
+        let graph = FrameGraphBuilder::new()
+            .create_resource(GraphResourceDesc {
+                name: "color".to_string(),
+                resource_type: GraphResourceType::ColorAttachment { clear_value: None },
+                format: ImageFormat::R8G8B8A8Unorm,
+                width: 64,
+                height: 64,
+                tracks_swapchain_size: false,
+            })
+            .add_pass(SimplePass::new("geometry", PassType::Graphics).write("color"))
+            .build::<crate::renderer::VulkanRenderer>()
+            .expect("build graph");
+        let graph = AnyFrameGraph::from_vulkan(graph);
+
+        let diagnostics = graph.diagnostics().expect("diagnostics");
+        let json = diagnostics.to_json_pretty().expect("json export");
+        assert_eq!(diagnostics.summary.declared_passes, 1);
+        assert!(json.contains("\"transient_slots\""));
     }
 }
