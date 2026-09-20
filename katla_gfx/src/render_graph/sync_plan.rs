@@ -17,8 +17,8 @@
 use std::collections::BTreeMap;
 
 use super::access::{
-    ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
-    ResourceAccessUsage,
+    BufferAccess, BufferByteRange, BufferUsage, ImageAccess, ImageSubresourceRange,
+    ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
 use super::handles::ResourceId;
 use super::resource::{ImportedImageContract, ResourceState};
@@ -152,15 +152,75 @@ pub struct ImageSyncOp {
     pub reason: SyncReason,
 }
 
+/// The synchronization state one buffer access leaves a byte range in.
+///
+/// Buffers have no layouts, so a state is just the usage, stage, and mode the
+/// access needs. Equal states need no barrier unless a hazard orders them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BufferSyncState {
+    /// Bytes no live pass has written this frame: contents discardable.
+    Undefined,
+    /// The state a typed buffer access leaves the bytes in.
+    Access {
+        usage: BufferUsage,
+        stage: ResourceAccessStage,
+        mode: ResourceAccessMode,
+    },
+}
+
+impl BufferSyncState {
+    fn of_access(access: &BufferAccess) -> Self {
+        Self::Access {
+            usage: access.usage,
+            stage: access.stage,
+            mode: access.mode,
+        }
+    }
+
+    fn reads(self) -> bool {
+        matches!(self, Self::Access { mode, .. } if mode.reads())
+    }
+
+    fn writes(self) -> bool {
+        matches!(self, Self::Access { mode, .. } if mode.writes())
+    }
+}
+
+/// One compiled synchronization operation on a byte range of a buffer.
+///
+/// A buffer state change is purely an execution/memory dependency: there is no
+/// layout to transition, so a backend realizes every operation as a memory
+/// barrier over `range` (or skips it when the hazard cannot reach the GPU).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BufferSyncOp {
+    pub resource: ResourceId,
+    /// Bytes the operation covers (intersection of the previous access's range
+    /// and the next access's range).
+    pub range: BufferByteRange,
+    /// State the bytes are in before the operation.
+    pub before: BufferSyncState,
+    /// State the access requires.
+    pub after: BufferSyncState,
+    /// Pass that established `before`; `None` at frame start.
+    pub before_pass: Option<usize>,
+    /// Pass the operation precedes.
+    pub pass: usize,
+    pub reason: SyncReason,
+}
+
 /// Compiled synchronization plan.
 ///
 /// `pass_ops` holds the operations to execute before each pass (indexed by
 /// declared pass index; culled passes have none). `final_ops` runs after the
-/// last live pass to satisfy imported final-state contracts.
+/// last live pass to satisfy imported final-state contracts. Buffer operations
+/// are held in the parallel `pass_buffer_ops` list.
 #[derive(Debug, Clone, Default)]
 pub struct SyncPlan {
     pub pass_ops: Vec<Vec<ImageSyncOp>>,
     pub final_ops: Vec<ImageSyncOp>,
+    /// Buffer operations to execute before each pass, indexed by declared pass
+    /// index, matching `pass_ops`.
+    pub pass_buffer_ops: Vec<Vec<BufferSyncOp>>,
 }
 
 /// One tracked state piece of a resource.
@@ -206,10 +266,141 @@ pub(crate) fn build_sync_plan(
         Some(&first_cycle_end_states),
     );
     let final_ops = build_final_ops(&end_states, imported_contracts);
+    let pass_buffer_ops = scan_buffer_passes(passes, sorted_passes);
 
     SyncPlan {
         pass_ops,
         final_ops,
+        pass_buffer_ops,
+    }
+}
+
+/// One tracked byte range of a buffer.
+#[derive(Debug, Clone, Copy)]
+struct BufferStatePiece {
+    range: BufferByteRange,
+    state: BufferSyncState,
+    /// Pass that established the state; `None` for frame-start states.
+    pass: Option<usize>,
+}
+
+/// One forward scan over the sorted live passes, tracking buffer byte ranges.
+///
+/// Buffers have no layout, so the scan emits an operation only when a hazard
+/// orders two accesses (RAW/WAR/WAW) or when an access replaces bytes no
+/// earlier access covered this frame (an initial use). Buffers are never
+/// imported in the current graph, so there is no frame-end contract pass, and
+/// frame-start state needs no seeding: unlike images, a buffer has no layout to
+/// bootstrap, so a first use emits nothing.
+fn scan_buffer_passes(
+    passes: &[super::compiler::PassInfo],
+    sorted_passes: &[usize],
+) -> Vec<Vec<BufferSyncOp>> {
+    let mut pass_ops: Vec<Vec<BufferSyncOp>> = vec![Vec::new(); passes.len()];
+    let mut states: BTreeMap<ResourceId, Vec<BufferStatePiece>> = BTreeMap::new();
+
+    for &pass_index in sorted_passes {
+        for access in &passes[pass_index].buffer_accesses {
+            let target = BufferSyncState::of_access(access);
+            let pieces = states.entry(access.resource).or_default();
+
+            let mut access_ops = Vec::new();
+            let mut covered = Vec::new();
+            for piece in pieces.iter().copied() {
+                let Some(range) = piece.range.intersection(access.range) else {
+                    continue;
+                };
+                covered.push(piece.range);
+
+                // Same bytes, same state: nothing to do without a hazard.
+                let hazard = match piece.pass {
+                    Some(before_pass) if before_pass != pass_index => {
+                        buffer_hazard_between(piece.state, target)
+                    }
+                    _ => None,
+                };
+                if piece.state == target && hazard.is_none() {
+                    continue;
+                }
+
+                access_ops.push(BufferSyncOp {
+                    resource: access.resource,
+                    range,
+                    before: piece.state,
+                    after: target,
+                    before_pass: piece.pass,
+                    pass: pass_index,
+                    reason: match hazard {
+                        Some(kind) => SyncReason::Hazard(kind),
+                        None if piece.pass.is_none() => SyncReason::InitialUse,
+                        None => SyncReason::StateChange,
+                    },
+                });
+            }
+
+            // Bytes no earlier access or frame-start state covered arrive
+            // undefined with discardable contents: record an initial use so the
+            // plan is complete, but a backend needs no barrier for it.
+            let mut remainder = vec![access.range];
+            for covered_range in covered {
+                remainder = remainder
+                    .iter()
+                    .flat_map(|range| range.subtract(covered_range))
+                    .collect();
+            }
+            for range in remainder {
+                if range.is_empty() {
+                    continue;
+                }
+                access_ops.push(BufferSyncOp {
+                    resource: access.resource,
+                    range,
+                    before: BufferSyncState::Undefined,
+                    after: target,
+                    before_pass: None,
+                    pass: pass_index,
+                    reason: SyncReason::InitialUse,
+                });
+            }
+
+            pass_ops[pass_index].extend(access_ops);
+
+            // Replace the bytes this access covers.
+            let mut remaining_pieces = Vec::with_capacity(pieces.len() + 1);
+            for piece in pieces.iter().copied() {
+                for fragment in piece.range.subtract(access.range) {
+                    if !fragment.is_empty() {
+                        remaining_pieces.push(BufferStatePiece {
+                            range: fragment,
+                            ..piece
+                        });
+                    }
+                }
+            }
+            remaining_pieces.push(BufferStatePiece {
+                range: access.range,
+                state: target,
+                pass: Some(pass_index),
+            });
+            *pieces = remaining_pieces;
+        }
+    }
+
+    pass_ops
+}
+
+fn buffer_hazard_between(
+    before: BufferSyncState,
+    after: BufferSyncState,
+) -> Option<ResourceHazardKind> {
+    if before.writes() && after.reads() {
+        Some(ResourceHazardKind::ReadAfterWrite)
+    } else if before.reads() && after.writes() {
+        Some(ResourceHazardKind::WriteAfterRead)
+    } else if before.writes() && after.writes() {
+        Some(ResourceHazardKind::WriteAfterWrite)
+    } else {
+        None
     }
 }
 
@@ -401,6 +592,39 @@ mod tests {
 
     fn rid(n: u32) -> ResourceId {
         ResourceId(n)
+    }
+
+    fn buf(resource: ResourceId, mode: ResourceAccessMode, offset: u64, size: u64) -> BufferAccess {
+        BufferAccess::new(
+            resource,
+            mode,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::new(offset, size),
+        )
+    }
+
+    fn buffer_pass(name: &str, accesses: Vec<BufferAccess>) -> PassInfo {
+        let (reads, writes) = accesses.iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut reads, mut writes), access| {
+                if access.mode.reads() {
+                    reads.push(access.resource);
+                }
+                if access.mode.writes() {
+                    writes.push(access.resource);
+                }
+                (reads, writes)
+            },
+        );
+        PassInfo {
+            name: name.to_string(),
+            reads,
+            writes,
+            image_accesses: Vec::new(),
+            buffer_accesses: accesses,
+            side_effect: false,
+        }
     }
 
     fn compile(passes: Vec<PassInfo>) -> ExecutionPlan {
@@ -737,5 +961,159 @@ mod tests {
                 .iter()
                 .any(|op| op.reason == SyncReason::Hazard(ResourceHazardKind::ReadAfterWrite))
         );
+    }
+    // --- Buffer synchronization ops (#31) ---
+
+    #[test]
+    fn buffer_raw_hazard_emits_one_op_over_the_overlap() {
+        let passes = vec![
+            buffer_pass("write", vec![buf(rid(0), ResourceAccessMode::Write, 0, 64)]),
+            buffer_pass("read", vec![buf(rid(0), ResourceAccessMode::Read, 32, 64)]),
+        ];
+        let plan = compile(passes);
+
+        let ops = &plan.sync.pass_buffer_ops[1];
+        // The writer covered 0..64 and the reader touches 32..96, so the
+        // operation splits: a RAW hazard over the shared 32..64 bytes, and a
+        // first use for the untouched 64..96 tail.
+        assert_eq!(ops.len(), 2);
+
+        let hazard = ops
+            .iter()
+            .find(|op| op.reason == SyncReason::Hazard(ResourceHazardKind::ReadAfterWrite))
+            .expect("RAW hazard op");
+        assert_eq!(hazard.resource, rid(0));
+        assert_eq!(hazard.range, BufferByteRange::new(32, 32));
+        assert_eq!(hazard.before_pass, Some(0));
+
+        let untouched = ops
+            .iter()
+            .find(|op| op.reason == SyncReason::InitialUse)
+            .expect("initial use for the uncovered tail");
+        assert_eq!(untouched.range, BufferByteRange::new(64, 32));
+        assert_eq!(untouched.before, BufferSyncState::Undefined);
+    }
+
+    #[test]
+    fn disjoint_buffer_ranges_emit_no_ops() {
+        let passes = vec![
+            buffer_pass("write", vec![buf(rid(0), ResourceAccessMode::Write, 0, 64)]),
+            buffer_pass("read", vec![buf(rid(0), ResourceAccessMode::Read, 64, 64)]),
+        ];
+        let plan = compile(passes);
+
+        // The second pass's range is disjoint from the first's, so it is a
+        // first use (`initial_use`), never a hazard against the writer.
+        assert!(
+            plan.sync.pass_buffer_ops[1]
+                .iter()
+                .all(|op| op.reason == SyncReason::InitialUse)
+        );
+    }
+
+    #[test]
+    fn buffer_war_and_waw_hazards_are_named() {
+        let war = compile(vec![
+            buffer_pass("read", vec![buf(rid(0), ResourceAccessMode::Read, 0, 64)]),
+            buffer_pass("write", vec![buf(rid(0), ResourceAccessMode::Write, 0, 64)]),
+        ]);
+        assert_eq!(
+            war.sync.pass_buffer_ops[1][0].reason,
+            SyncReason::Hazard(ResourceHazardKind::WriteAfterRead)
+        );
+
+        let waw = compile(vec![
+            buffer_pass("w1", vec![buf(rid(0), ResourceAccessMode::Write, 0, 64)]),
+            buffer_pass("w2", vec![buf(rid(0), ResourceAccessMode::Write, 0, 64)]),
+        ]);
+        assert_eq!(
+            waw.sync.pass_buffer_ops[1][0].reason,
+            SyncReason::Hazard(ResourceHazardKind::WriteAfterWrite)
+        );
+    }
+
+    #[test]
+    fn a_first_buffer_use_needs_no_barrier_but_is_recorded() {
+        let passes = vec![buffer_pass(
+            "only",
+            vec![buf(rid(0), ResourceAccessMode::Write, 0, 64)],
+        )];
+        let plan = compile(passes);
+
+        let ops = &plan.sync.pass_buffer_ops[0];
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].before, BufferSyncState::Undefined);
+        assert_eq!(ops[0].reason, SyncReason::InitialUse);
+        assert_eq!(ops[0].before_pass, None);
+    }
+
+    #[test]
+    fn same_state_buffer_accesses_without_a_hazard_emit_nothing() {
+        // Two reads of the same bytes in the same state: no ordering, no op.
+        let passes = vec![
+            buffer_pass("r1", vec![buf(rid(0), ResourceAccessMode::Read, 0, 64)]),
+            buffer_pass("r2", vec![buf(rid(0), ResourceAccessMode::Read, 0, 64)]),
+        ];
+        let plan = compile(passes);
+
+        assert!(plan.sync.pass_buffer_ops[1].is_empty());
+    }
+
+    #[test]
+    fn a_partial_rewrite_leaves_the_untouched_bytes_unordered() {
+        // w1 writes 0..64; w2 rewrites 0..32 and reads 32..64. Only the
+        // overlapping 0..32 is a hazard; the rest is unchanged.
+        let passes = vec![
+            buffer_pass("w1", vec![buf(rid(0), ResourceAccessMode::Write, 0, 64)]),
+            buffer_pass("w2", vec![buf(rid(0), ResourceAccessMode::Write, 0, 32)]),
+        ];
+        let plan = compile(passes);
+
+        let ops = &plan.sync.pass_buffer_ops[1];
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].range, BufferByteRange::new(0, 32));
+    }
+
+    #[test]
+    fn buffer_ops_are_per_pass_and_empty_for_untouched_passes() {
+        let passes = vec![
+            buffer_pass("w", vec![buf(rid(0), ResourceAccessMode::Write, 0, 16)]),
+            buffer_pass(
+                "unrelated",
+                vec![buf(rid(1), ResourceAccessMode::Write, 0, 16)],
+            ),
+        ];
+        let plan = compile(passes);
+
+        assert_eq!(plan.sync.pass_buffer_ops[0].len(), 1);
+        assert_eq!(plan.sync.pass_buffer_ops[0][0].resource, rid(0));
+        assert_eq!(plan.sync.pass_buffer_ops[1].len(), 1);
+        assert_eq!(plan.sync.pass_buffer_ops[1][0].resource, rid(1));
+    }
+
+    #[test]
+    fn buffer_sync_ops_do_not_disturb_the_image_plan() {
+        let image = pass(
+            "image",
+            vec![access(
+                rid(0),
+                ResourceAccessMode::Write,
+                ResourceAccessUsage::Storage,
+                ResourceAccessStage::ComputeShader,
+                ImageSubresourceRange::WHOLE_COLOR,
+            )],
+        );
+        let buffer = buffer_pass(
+            "buffer",
+            vec![buf(rid(0), ResourceAccessMode::Write, 0, 16)],
+        );
+        let plan = compile(vec![image, buffer]);
+
+        // Pass 0 is the image pass and pass 1 the buffer pass, so each has
+        // exactly one operation in its own list and none in the other.
+        assert_eq!(plan.sync.pass_ops[0].len(), 1);
+        assert!(plan.sync.pass_buffer_ops[0].is_empty());
+        assert!(plan.sync.pass_ops[1].is_empty());
+        assert_eq!(plan.sync.pass_buffer_ops[1].len(), 1);
     }
 }

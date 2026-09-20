@@ -7,6 +7,7 @@
     "resources": 4,
     "dependency_edges": 3,
     "synchronization_transitions": 12,
+    "buffer_synchronization_ops": 0,
     "physical_transient_allocations": 2,
     "logical_transient_bytes": 98304,
     "physical_transient_bytes": 65536,
@@ -811,6 +812,7 @@
       "reason": "imported_final"
     }
   ],
+  "buffer_synchronization": [],
   "execution_order": [
     0,
     1,
