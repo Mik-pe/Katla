@@ -667,6 +667,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             &self.transient_resources,
             &self.exported_resources,
             &plan.resource_lifetimes,
+            &plan.live_image_accesses,
         );
 
         let mut standalone = Vec::new();

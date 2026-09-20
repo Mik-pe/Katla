@@ -2,9 +2,10 @@
 
 Render-graph diagnostics are a deterministic, backend-neutral snapshot of the
 compiled graph: passes, dependencies, typed accesses, synchronization
-transitions, culled passes, resource lifetimes, and physical transient
-allocation slots. They are the artifact to attach when a rendering change
-needs explaining, and the artifact CI uploads when a render-graph test fails.
+transitions, culled passes, resource lifetimes, physical transient allocation
+slots, and each slot's tile-memory eligibility. They are the artifact to attach
+when a rendering change needs explaining, and the artifact CI uploads when a
+render-graph test fails.
 
 The export contains no pointers, driver IDs, or file-system paths, so a capture
 taken on one machine compares byte-for-byte with a capture on another.
@@ -81,6 +82,20 @@ A drifting golden *without* `KATLA_BLESS_GOLDENS=1` writes the actual export to
 `target/render-graph-diagnostics/` and fails the test. CI uploads that directory
 as an artifact when a job fails, so a failing run does not require re-running
 locally to see what changed.
+
+## Tile-memory eligibility
+
+Each allocation slot reports whether every member's compiled accesses allow
+tile-resident storage. A slot is eligible only when all its members are written
+and read as whole-resource attachments, never sampled, stored, transferred,
+presented, or exported, and written by a live pass. The reason string names the
+first fact that disqualified it; the summary reports the physical bytes held in
+eligible slots.
+
+This is a fact about the compiled graph, not a backend decision: a tile-based
+backend may act on an eligible slot by keeping it in tile memory, while memoryless
+or lazily allocated storage uses the same verdict. Eligibility is derived from the
+`image_accesses` the graph compiled from, so it cannot disagree with scheduling.
 
 ## Known gaps
 

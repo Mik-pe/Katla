@@ -25,6 +25,12 @@
 //! resources, distinguishing physical allocations from logical graph
 //! resources.
 //!
+//! Each slot also carries its compiled tile-memory verdict: whether every
+//! member's typed accesses are whole-resource attachment accesses that the
+//! graph never samples, transfers, presents, or exports. The reason string
+//! names the first fact that disqualified the slot, and the summary reports
+//! the physical bytes held in eligible slots.
+//!
 //! Checked-in golden snapshots under `tests/goldens/` pin the canonical
 //! exports of a representative graph. Rerun the golden tests with
 //! `KATLA_BLESS_GOLDENS=1` to regenerate them after an intentional format
@@ -77,6 +83,9 @@ pub struct RenderGraphDiagnosticSummary {
     pub logical_transient_bytes: u64,
     pub physical_transient_bytes: u64,
     pub transient_alias_savings_bytes: u64,
+    /// Physical bytes in slots whose compiled accesses allow tile-resident
+    /// storage, i.e. bytes that could avoid main-memory storage entirely.
+    pub tile_memory_eligible_bytes: u64,
     pub parallel_levels: usize,
 }
 
@@ -120,9 +129,19 @@ pub struct RenderGraphDiagnosticAllocationSlot {
     pub saved_bytes: u64,
     /// Physical memory compatibility class every member shares.
     pub compatibility: RenderGraphDiagnosticCompatibilityClass,
+    /// Whether every member's compiled accesses allow tile-resident storage,
+    /// with the reason for a negative verdict.
+    pub tile_memory: RenderGraphDiagnosticTileMemory,
     /// Inclusive span of execution positions the slot is live for.
     pub first_execution_position: usize,
     pub last_execution_position: usize,
+}
+
+/// Compiled tile-memory verdict for one physical allocation slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticTileMemory {
+    pub eligible: bool,
+    pub reason: String,
 }
 
 /// Physical memory compatibility class shared by one allocation slot.
@@ -375,6 +394,7 @@ impl RenderGraphDiagnostics {
             transient_resources,
             exported_resources,
             &plan.resource_lifetimes,
+            &plan.live_image_accesses,
         );
 
         let diagnostic_resources = resources
@@ -503,6 +523,10 @@ impl RenderGraphDiagnostics {
                         height: compatibility.height,
                         tracks_swapchain_size: compatibility.tracks_swapchain_size,
                     },
+                    tile_memory: RenderGraphDiagnosticTileMemory {
+                        eligible: slot.tile_memory.is_eligible(),
+                        reason: slot.tile_memory.reason().to_string(),
+                    },
                     first_execution_position: slot.first_execution_position,
                     last_execution_position: slot.last_execution_position,
                 }
@@ -520,6 +544,7 @@ impl RenderGraphDiagnostics {
             logical_transient_bytes: allocation_plan.logical_bytes(),
             physical_transient_bytes: allocation_plan.physical_bytes(),
             transient_alias_savings_bytes: allocation_plan.saved_bytes(),
+            tile_memory_eligible_bytes: allocation_plan.tile_memory_eligible_bytes(),
             parallel_levels: plan.parallel_groups.len(),
         };
 
@@ -654,9 +679,14 @@ impl RenderGraphDiagnostics {
         // logical dataflow view.
         for slot in &self.transient_slots {
             let compatibility = &slot.compatibility;
+            let tile_memory = if slot.tile_memory.eligible {
+                "tile memory: eligible".to_string()
+            } else {
+                format!("tile memory: no ({})", slot.tile_memory.reason)
+            };
             let _ = writeln!(
                 output,
-                "  a{} [shape=cylinder,style=dashed,label=\"slot {}: {} bytes\\nsaves {} bytes\\n{} {} {}x{} {}\\npositions {}-{}\"];",
+                "  a{} [shape=cylinder,style=dashed,label=\"slot {}: {} bytes\\nsaves {} bytes\\n{} {} {}x{} {}\\n{}\\npositions {}-{}\"];",
                 slot.id,
                 slot.id,
                 slot.bytes,
@@ -670,6 +700,7 @@ impl RenderGraphDiagnostics {
                 } else {
                     "fixed-size"
                 },
+                escape_dot(&tile_memory),
                 slot.first_execution_position,
                 slot.last_execution_position
             );
@@ -733,7 +764,7 @@ impl fmt::Display for RenderGraphDiagnostics {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
-            "{} declared passes ({} live, {} culled), {} resources, {} dependency edges, {} synchronization transitions, {} transient allocations ({} logical bytes, {} physical bytes, {} saved), {} parallel levels",
+            "{} declared passes ({} live, {} culled), {} resources, {} dependency edges, {} synchronization transitions, {} transient allocations ({} logical bytes, {} physical bytes, {} saved, {} tile-memory eligible), {} parallel levels",
             self.summary.declared_passes,
             self.summary.live_passes,
             self.summary.culled_passes,
@@ -744,6 +775,7 @@ impl fmt::Display for RenderGraphDiagnostics {
             self.summary.logical_transient_bytes,
             self.summary.physical_transient_bytes,
             self.summary.transient_alias_savings_bytes,
+            self.summary.tile_memory_eligible_bytes,
             self.summary.parallel_levels
         )?;
 
@@ -840,7 +872,7 @@ impl fmt::Display for RenderGraphDiagnostics {
                 let compatibility = &slot.compatibility;
                 writeln!(
                     f,
-                    "    slot {} ({} bytes, saves {}, positions {}-{}, {} {} {}x{}, {}): {}",
+                    "    slot {} ({} bytes, saves {}, positions {}-{}, {} {} {}x{}, {}, tile memory: {}): {}",
                     slot.id,
                     slot.bytes,
                     slot.saved_bytes,
@@ -854,6 +886,11 @@ impl fmt::Display for RenderGraphDiagnostics {
                         "swapchain-tracked"
                     } else {
                         "fixed-size"
+                    },
+                    if slot.tile_memory.eligible {
+                        "eligible".to_string()
+                    } else {
+                        format!("no ({})", slot.tile_memory.reason)
                     },
                     slot.resources
                         .iter()
@@ -1446,6 +1483,10 @@ mod tests {
                     height: 64,
                     tracks_swapchain_size: true,
                 },
+                tile_memory: RenderGraphDiagnosticTileMemory {
+                    eligible: false,
+                    reason: "resource is sampled, stored, transferred, or presented outside an attachment".to_string(),
+                },
                 first_execution_position: 0,
                 last_execution_position: 3,
             }]
@@ -1493,7 +1534,9 @@ mod tests {
         assert!(
             text.contains(
                 "slot 0 (32768 bytes, saves 32768, positions 0-3, color_attachment \
-                 R8G8B8A8Unorm 128x64, swapchain-tracked): r1 (early) -> r2 (late)"
+                 R8G8B8A8Unorm 128x64, swapchain-tracked, tile memory: no (resource is \
+                 sampled, stored, transferred, or presented outside an attachment)): \
+                 r1 (early) -> r2 (late)"
             ),
             "text export missing aliasing slot line: {text}"
         );
@@ -1503,7 +1546,8 @@ mod tests {
             dot.contains(
                 "a0 [shape=cylinder,style=dashed,label=\"slot 0: 32768 bytes\\nsaves \
                  32768 bytes\\ncolor_attachment R8G8B8A8Unorm 128x64 \
-                 swapchain-tracked\\npositions 0-3\"];"
+                 swapchain-tracked\\ntile memory: no (resource is sampled, stored, \
+                 transferred, or presented outside an attachment)\\npositions 0-3\"];"
             ),
             "dot export missing physical allocation node: {dot}"
         );
@@ -1531,6 +1575,13 @@ mod tests {
         assert_eq!(json["transient_slots"][0]["logical_bytes"], 65536);
         assert_eq!(json["transient_slots"][0]["saved_bytes"], 32768);
         assert_eq!(json["transient_slots"][0]["resources"][1]["name"], "late");
+        assert_eq!(
+            json["transient_slots"][0]["tile_memory"],
+            serde_json::json!({
+                "eligible": false,
+                "reason": "resource is sampled, stored, transferred, or presented outside an attachment",
+            })
+        );
     }
 
     #[test]

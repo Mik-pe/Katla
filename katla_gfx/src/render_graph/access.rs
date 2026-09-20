@@ -126,6 +126,19 @@ impl ImageSubresourceRange {
         self.aspects.is_empty() || self.mip_level_count == 0 || self.array_layer_count == 0
     }
 
+    /// Whether this range covers every subresource of its resource.
+    ///
+    /// A count of [`u32::MAX`] means "all remaining", matching the typed
+    /// declaration convention, so it is a whole-resource range exactly when it
+    /// also starts at zero.
+    #[inline]
+    pub const fn covers_whole_resource(self) -> bool {
+        self.base_mip_level == 0
+            && self.mip_level_count == u32::MAX
+            && self.base_array_layer == 0
+            && self.array_layer_count == u32::MAX
+    }
+
     #[inline]
     fn mip_end(self) -> u64 {
         u64::from(self.base_mip_level) + u64::from(self.mip_level_count)

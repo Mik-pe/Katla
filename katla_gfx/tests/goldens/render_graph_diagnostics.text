@@ -1,4 +1,4 @@
-4 declared passes (4 live, 0 culled), 4 resources, 3 dependency edges, 12 synchronization transitions, 2 transient allocations (98304 logical bytes, 65536 physical bytes, 32768 saved), 4 parallel levels
+4 declared passes (4 live, 0 culled), 4 resources, 3 dependency edges, 12 synchronization transitions, 2 transient allocations (98304 logical bytes, 65536 physical bytes, 32768 saved, 0 tile-memory eligible), 4 parallel levels
   r0 (backbuffer) imported, initial ColorAttachment, required final PresentSrc
   [0] shadow (level 0, reads 0, writes 1)
     r1 (shadow_atlas): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
@@ -25,5 +25,5 @@
     [frame start -> frame end] r0 (backbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Present @ Present (imported_final)
     [pass 3 (present) -> frame end] r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> write Present @ Present (imported_final)
   transient allocation slots:
-    slot 0 (32768 bytes, saves 32768, positions 0-3, color_attachment R8G8B8A8Unorm 128x64, swapchain-tracked): r1 (shadow_atlas) -> r3 (hdr_color)
-    slot 1 (32768 bytes, saves 0, positions 1-2, color_attachment R8G8B8A8Unorm 128x64, swapchain-tracked): r2 (gbuffer)
+    slot 0 (32768 bytes, saves 32768, positions 0-3, color_attachment R8G8B8A8Unorm 128x64, swapchain-tracked, tile memory: no (resource is sampled, stored, transferred, or presented outside an attachment)): r1 (shadow_atlas) -> r3 (hdr_color)
+    slot 1 (32768 bytes, saves 0, positions 1-2, color_attachment R8G8B8A8Unorm 128x64, swapchain-tracked, tile memory: no (resource is sampled, stored, transferred, or presented outside an attachment)): r2 (gbuffer)
