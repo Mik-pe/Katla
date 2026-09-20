@@ -11,6 +11,7 @@
     "logical_transient_bytes": 98304,
     "physical_transient_bytes": 65536,
     "transient_alias_savings_bytes": 32768,
+    "tile_memory_eligible_bytes": 0,
     "parallel_levels": 4
   },
   "resources": [
@@ -849,6 +850,10 @@
         "height": 64,
         "tracks_swapchain_size": true
       },
+      "tile_memory": {
+        "eligible": false,
+        "reason": "resource is sampled, stored, transferred, or presented outside an attachment"
+      },
       "first_execution_position": 0,
       "last_execution_position": 3
     },
@@ -869,6 +874,10 @@
         "width": 128,
         "height": 64,
         "tracks_swapchain_size": true
+      },
+      "tile_memory": {
+        "eligible": false,
+        "reason": "resource is sampled, stored, transferred, or presented outside an attachment"
       },
       "first_execution_position": 1,
       "last_execution_position": 2
