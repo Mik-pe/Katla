@@ -22,6 +22,7 @@ Active design documents and API references:
 | `metal_backend.md` | Native Metal backend architecture reference |
 | `archive/metal_backend_implementation.md` | Superseded pre-implementation Metal plan (historical) |
 | `backend_agnostic_render_graph.md` | Backend-agnostic render graph design |
+| `render_graph_capture.md` | Capturing, diffing, and blessing render-graph diagnostics |
 | `declarative_ui_design.md` | Declarative UI system architecture |
 | `katla_script_architecture.md` | Luau scripting system design |
 | `physics-engine-adr.md` | ADR: Why Rapier3D was chosen |

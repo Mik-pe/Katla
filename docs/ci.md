@@ -52,6 +52,16 @@ The suite asserts the contracts Katla promises above the backend boundary
 backend-neutral harness. See `docs/contract-suite.md` for the full guide and
 the harness module docs before adding a scenario.
 
+## Failed render-graph artifacts
+
+Both jobs upload `target/render-graph-diagnostics/` as an artifact when the job
+fails (`actions/upload-artifact`, 7-day retention, no `if-no-files-found`
+error). A drifting golden snapshot writes the actual export there before
+asserting, so a failing run ships the export that disagreed with the checked-in
+snapshot — no local re-run needed to see the difference. Capture the same
+artifact locally with `--dump-render-graph-file`; see
+`docs/render_graph_capture.md`.
+
 ## Local equivalents
 
 ```bash

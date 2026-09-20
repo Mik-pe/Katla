@@ -37,6 +37,14 @@ struct Args {
     #[arg(long = "dump-layout-file", value_name = "PATH")]
     dump_layout_file: Option<String>,
 
+    /// Dump compiled render-graph diagnostics to stdout after first frame, then exit
+    #[arg(long = "dump-render-graph")]
+    dump_render_graph: bool,
+
+    /// Dump compiled render-graph diagnostics to a file after first frame, then exit
+    #[arg(long = "dump-render-graph-file", value_name = "PATH")]
+    dump_render_graph_file: Option<String>,
+
     /// Run in headless mode (no window, offscreen rendering, save screenshot)
     #[arg(long)]
     headless: bool,
@@ -232,6 +240,21 @@ fn main() {
     if let Some(ref path) = args.dump_layout_file {
         builder = builder.max_frames(3).dump_layout_to_file(path.clone());
         info!("Layout dump mode: will write widget tree to {}", path);
+    }
+
+    if args.dump_render_graph {
+        builder = builder.max_frames(3).dump_render_graph_to_stdout();
+        info!("Render-graph dump mode: will print compiled graph after first frame");
+    }
+
+    if let Some(ref path) = args.dump_render_graph_file {
+        builder = builder
+            .max_frames(3)
+            .dump_render_graph_to_file(path.clone());
+        info!(
+            "Render-graph dump mode: will write compiled graph to {}",
+            path
+        );
     }
 
     if args.headless || args.ui_test.is_some() || args.interaction_test.is_some() {

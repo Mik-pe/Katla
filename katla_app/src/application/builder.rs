@@ -70,6 +70,7 @@ pub struct ApplicationBuilder {
     world: World,
     scene_path: Option<String>,
     dump_layout_path: Option<super::DumpLayoutTarget>,
+    dump_render_graph: Option<super::DumpLayoutTarget>,
     headless: bool,
     screenshot_path: Option<String>,
     ui_test_path: Option<String>,
@@ -154,6 +155,18 @@ impl ApplicationBuilder {
     /// Dump the UI layout tree to a file after the first frame, then exit.
     pub fn dump_layout_to_file(mut self, path: impl Into<String>) -> Self {
         self.dump_layout_path = Some(super::DumpLayoutTarget::File(path.into()));
+        self
+    }
+
+    /// Dump the compiled render-graph diagnostics to stdout after the first frame, then exit.
+    pub fn dump_render_graph_to_stdout(mut self) -> Self {
+        self.dump_render_graph = Some(super::DumpLayoutTarget::Stdout);
+        self
+    }
+
+    /// Dump the compiled render-graph diagnostics to a file after the first frame, then exit.
+    pub fn dump_render_graph_to_file(mut self, path: impl Into<String>) -> Self {
+        self.dump_render_graph = Some(super::DumpLayoutTarget::File(path.into()));
         self
     }
 
@@ -876,6 +889,7 @@ impl ApplicationBuilder {
             check_black_frames: false,
             scene_path: self.scene_path.clone(),
             dump_layout_path: self.dump_layout_path.clone(),
+            dump_render_graph: self.dump_render_graph.clone(),
             screenshot_path: Some(screenshot_path),
             headless: true,
             ui_test_path: self.ui_test_path.clone(),
@@ -1051,6 +1065,7 @@ impl ApplicationBuilder {
             #[cfg(feature = "editor")]
             asset_watcher: None,
             layout_dumped: false,
+            render_graph_dumped: false,
         };
 
         #[cfg(feature = "editor")]
@@ -1103,6 +1118,7 @@ impl ApplicationBuilder {
             check_black_frames: self.check_black_frames,
             scene_path: self.scene_path,
             dump_layout_path: self.dump_layout_path,
+            dump_render_graph: self.dump_render_graph,
             screenshot_path: None,
             headless: false,
             ui_test_path: None,
@@ -1347,6 +1363,7 @@ impl ApplicationBuilder {
             #[cfg(feature = "editor")]
             asset_watcher: Self::create_asset_watcher(),
             layout_dumped: false,
+            render_graph_dumped: false,
         };
 
         Ok((app, event_loop))
