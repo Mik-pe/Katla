@@ -70,6 +70,10 @@ pub struct ExecutionPlan {
     pub(super) culled_passes: Vec<usize>,
     /// Live resource intervals in canonical execution-order coordinates.
     pub(super) resource_lifetimes: BTreeMap<ResourceId, ResourceLifetime>,
+    /// Typed image accesses of the live passes, in declaration order. The
+    /// allocation planner classifies tile-memory eligibility from these, so
+    /// culled passes never influence it.
+    pub(super) live_image_accesses: Vec<ImageAccess>,
     /// Synchronization operations derived from the same typed accesses and
     /// edges that produced the dependency DAG.
     pub(super) sync: SyncPlan,
@@ -583,6 +587,13 @@ impl GraphCompiler {
             .filter_map(|(index, live)| (!live).then_some(index))
             .collect();
         let resource_lifetimes = self.build_resource_lifetimes(&sorted_passes);
+        let live_image_accesses = self
+            .passes
+            .iter()
+            .zip(&live_passes)
+            .filter(|(_, live)| **live)
+            .flat_map(|(pass, _)| pass.image_accesses.iter().copied())
+            .collect();
         let sync = build_sync_plan(&self.passes, &sorted_passes, &self.imported_contracts);
 
         Ok(ExecutionPlan {
@@ -592,6 +603,7 @@ impl GraphCompiler {
             live_passes,
             culled_passes,
             resource_lifetimes,
+            live_image_accesses,
             sync,
         })
     }
