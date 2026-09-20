@@ -1469,3 +1469,32 @@ the DOT nodes/edges. #37 remains open.
   zlib/struct PNG reader handled it.
 - `game/benches/performance_benchmark.rs` fails to compile on `main` too
   (missing `rand` dev-dependency) — pre-existing, unrelated; ignore it.
+
+- **Headless capture recipes (2026-09-20).** The release binary is
+  `target/release/katla`, not `.../game` (the crate is named `game` but the
+  binary is `katla`). The useful capture matrix is:
+  `--headless --screenshot OUT.png [--scene assets/scenes/X.katla]
+  [--camera yaw_deg,pitch_deg,distance] --single-frame` for the editor, and
+  `--interaction-test DIR` for 13 driven UI states + 8 programmatic checks.
+  `--single-frame` is what gives 100 frames; a bare `--headless` renders only
+  10 and the scene is still converging.
+- **`--camera` pitch is SIGNED and inverts which side of the floor you see.**
+  The value is assigned straight to `OrbitCameraController`'s `pitch`, whose
+  default is `-0.45`. A POSITIVE pitch puts the camera under the ground plane;
+  because `Ground` is a single-sided `Plane` with `CullMode::Back`, the floor
+  then disappears entirely (measured: dark-pixel fraction 0.53 at default
+  pitch vs 0.01 at `+20`). That is a capture-pose mistake, not a rendering bug
+  — negative pitches are the above-ground ones.
+- **Do not "fix" the white bar under flame icons.** It is part of the
+  ForkAwesome `FIRE` glyph itself (verified by rasterizing U+F06D with
+  ImageMagick — the glyph carries a 1408x128-unit rule beneath the flame).
+  Only the `Lightbulb` icon is bar-free.
+- Comparing captures to a known-good reference is cheap and decisive here:
+  `.zcode/vulkan-captures/` holds 2026-09-05 PNGs, and the default view was
+  pixel-identical, which is how the four issues above were classified as
+  pre-existing rather than regressions.
+- Measure, don't eyeball: `magick IMG -crop WxH+X+Y +repage -format
+  "%[pixel:p{X,Y}]" info:` for exact colors and `-colorspace gray
+  -threshold 40% -format "%[fx:1-mean]"` for "how much of the frame is dark".
+  Both were needed to turn "the sky looks washed out" into "mean luma 0.72,
+  horizon = sRGB 194-217".

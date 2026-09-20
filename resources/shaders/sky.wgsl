@@ -17,9 +17,11 @@ struct VertexOutput {
     @location(0) ndc_pos: vec2f,
 }
 
-const ZENITH_COLOR = vec3f(0.3, 0.55, 1.2);
-const HORIZON_COLOR = vec3f(0.9, 0.95, 1.1);
-const GROUND_COLOR = vec3f(0.4, 0.45, 0.5);
+// Sky gradient, linear HDR (tonemapped with exposure 0.4 + ACES below), so
+// values are deliberately dark: blue horizon haze, near-black below ground.
+const ZENITH_COLOR = vec3f(0.07, 0.14, 0.32);
+const HORIZON_COLOR = vec3f(0.30, 0.40, 0.56);
+const GROUND_COLOR = vec3f(0.03, 0.035, 0.045);
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VertexOutput {
@@ -56,11 +58,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         sky_color = mix(HORIZON_COLOR, GROUND_COLOR, t);
     }
 
+    // Sun disc as an explicit step plus a wide halo; never a full-screen glow.
     let sun_dir = normalize(frame_data.light_direction.xyz);
     let sun_dot = max(0.0, dot(world_dir, sun_dir));
-    let sun_glow = pow(sun_dot, 256.0) * 8.0;
-    let sun_halo = pow(sun_dot, 8.0) * 0.5;
-    sky_color = sky_color + frame_data.light_color.rgb * (sun_glow + sun_halo) * frame_data.light_intensity.x;
+    let sun_disc = smoothstep(0.9992, 0.9997, sun_dot);
+    let sun_halo = pow(sun_dot, 32.0) * 0.12 + pow(sun_dot, 4.0) * 0.04;
+    sky_color = sky_color + frame_data.light_color.rgb * (sun_disc + sun_halo) * frame_data.light_intensity.x;
 
     return vec4f(sky_color, 1.0);
 }
