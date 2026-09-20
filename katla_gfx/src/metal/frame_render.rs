@@ -171,7 +171,8 @@ impl MetalRenderer {
         frame: &crate::renderer::frame_scope::FrameToken,
         plan: &MetalExecutionPlan,
         mut pending: HashMap<usize, PassExecutionData>,
-    ) -> Result<(), RendererError> {
+        trace_enabled: bool,
+    ) -> Result<crate::render_graph::ResourceExecutionTrace, RendererError> {
         if let Err(err) =
             validate_frame_submissions(plan, &pending, self.depth_stencil_view.is_some())
         {
@@ -260,6 +261,7 @@ impl MetalRenderer {
             viewport_height,
         };
         let mut trace = Vec::with_capacity(plan.passes().len());
+        let mut execution_trace = crate::render_graph::ResourceExecutionTrace::new();
 
         log::debug!("Metal execution plan: {}", plan.trace().join(" -> "));
 
@@ -301,17 +303,46 @@ impl MetalRenderer {
                 }
             };
 
+            let outcome = if encoded {
+                MetalPassOutcome::Encoded
+            } else {
+                MetalPassOutcome::SkippedNoWork
+            };
             trace.push(MetalPassTrace {
                 pass_id: record.pass_id,
                 name: record.name.clone(),
                 kind: record.kind,
                 draws: pass_draw_counts,
-                outcome: if encoded {
-                    MetalPassOutcome::Encoded
-                } else {
-                    MetalPassOutcome::SkippedNoWork
-                },
+                outcome,
             });
+
+            // The neutral trace is only built when the graph asked for it, so
+            // the steady-state path allocates nothing. Metal drives encoding
+            // from these records, so their declared targets are the targets the
+            // encoder was given.
+            if trace_enabled {
+                execution_trace.push(crate::render_graph::ResourceExecutionTraceEntry {
+                    pass_index: record.pass_index,
+                    name: record.name.clone(),
+                    pass_type: crate::render_graph::PassType::Graphics,
+                    encode_position: position,
+                    outcome: if encoded {
+                        crate::render_graph::EmittedPassOutcome::Encoded
+                    } else {
+                        crate::render_graph::EmittedPassOutcome::SkippedNoWork
+                    },
+                    draw_calls: pass_draw_counts.draw_calls,
+                    instances: pass_draw_counts.instances,
+                    color_targets: record
+                        .color_attachments
+                        .iter()
+                        .map(|attachment| attachment.name.clone())
+                        .collect(),
+                    depth_target: record
+                        .uses_depth
+                        .then(|| crate::render_graph::FRAME_DEPTH_TARGET.to_string()),
+                });
+            }
         }
 
         if !state.drawable_written {
@@ -336,7 +367,7 @@ impl MetalRenderer {
         self.last_command_buffer = Some(cmd_buffer.inner.clone());
         cmd_buffer.submit(&self.context);
 
-        Ok(())
+        Ok(execution_trace)
     }
 
     fn encode_shadow_record(

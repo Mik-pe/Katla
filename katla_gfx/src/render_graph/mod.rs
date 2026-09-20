@@ -53,6 +53,7 @@ mod pass;
 mod passes;
 mod resource;
 mod sync_plan;
+mod trace;
 
 // Layer 2: Backend interface trait
 mod backend;
@@ -101,6 +102,10 @@ pub use resource::{
     GraphResourceDesc, GraphResourceHandle, GraphResourceType, ImportedImageContract, ResourceState,
 };
 pub(crate) use sync_plan::{ImageSyncOp, ImageSyncState, ResourceHazardKind, SyncPlan, SyncReason};
+pub use trace::{
+    EmittedPassOutcome, FRAME_DEPTH_TARGET, ResourceExecutionTrace, ResourceExecutionTraceEntry,
+    TraceDivergence, compare_with_compiled,
+};
 pub use transient_texture::TransientTexture;
 
 /// Special resource name for the swapchain backbuffer.

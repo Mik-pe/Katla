@@ -742,7 +742,7 @@ impl MetalRenderer {
         pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
         frame_graph: &crate::render_graph::FrameGraph<Self>,
         _frame_idx: usize,
-    ) -> Result<(), RendererError> {
+    ) -> Result<crate::render_graph::ResourceExecutionTrace, RendererError> {
         let plan = super::execution_plan::MetalExecutionPlan::compile(
             frame_graph,
             ImageFormat::B8G8R8A8Srgb,
@@ -762,7 +762,7 @@ impl MetalRenderer {
             );
         }
 
-        self.render_frame(frame, &plan, pending)
+        self.render_frame(frame, &plan, pending, frame_graph.execution_trace_enabled())
     }
 
     /// Initialize the Forward+ light culling system.

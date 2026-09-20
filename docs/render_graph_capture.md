@@ -97,14 +97,48 @@ backend may act on an eligible slot by keeping it in tile memory, while memoryle
 or lazily allocated storage uses the same verdict. Eligibility is derived from the
 `image_accesses` the graph compiled from, so it cannot disagree with scheduling.
 
+## Emitted encoder traces
+
+Diagnostics above describe the *compiled* plan. To see what a backend *actually
+encoded*, enable the execution trace:
+
+```rust
+graph.set_execution_trace(true);
+renderer.render(&token, &mut graph, |frame| { /* ... */ });
+println!("{}", graph.last_execution_trace());
+let divergences = graph.compare_execution_trace();
+```
+
+`ResourceExecutionTrace` records one entry per pass the backend dispatched, in
+encode order: pass index and name, outcome (`encoded` /
+`skipped_no_work`), draw and instance counts, and the color and depth targets
+the encoder bound. `compare_execution_trace()` is the point of it — it returns
+every divergence from the compiled plan:
+
+| Divergence | Meaning |
+|---|---|
+| `MissingPass` | a live compiled pass produced no encoder |
+| `UnknownPass` | an encoder exists for a pass the plan does not know |
+| `OrderMismatch` | encoded passes are out of compiled execution order |
+| `ColorTargetsMismatch` | the encoder bound different color targets |
+| `DepthTargetMismatch` | the encoder bound depth differently than declared |
+
+Tracing is off by default so the steady-state path pays nothing. A pass the
+backend deliberately skips for lack of work is recorded as `skipped_no_work`
+but is *not* an ordering divergence.
+
+The trace is backend-neutral: the graph-level dispatch records it for both
+Vulkan and Metal, and the text export is deterministic across runs.
+
 ## Known gaps
 
 Tracked on [#37](https://github.com/Mik-pe/Katla/issues/37):
 
-- Backend encoder traces and a compiled-vs-emitted comparison report.
 - Metal argument-table layout, residency-set membership, and commit-feedback
   identity.
 - Frame-slot ownership on transient allocations.
+- Encoder-internal sub-pass detail (compute and blit encoder boundaries are
+  recorded as pass-level entries, not per-instruction).
 
 These fields need the backend stages that produce them; the export deliberately
 does not invent them.

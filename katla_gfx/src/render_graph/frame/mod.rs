@@ -18,7 +18,7 @@ use super::backend::RenderGraphBackend;
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::PassId;
-use super::pass::PassDesc;
+use super::pass::{PassDesc, PassKind, PassType};
 use crate::handle::SkeletonHandle;
 use crate::renderer::types::{DrawList, PreparedDrawCounts, PreparedDraws, UIDrawList};
 
@@ -38,6 +38,15 @@ pub struct Frame<'a, B: RenderGraphBackend> {
     pub(super) depth_buffer_written: bool,
     /// Whether the particle emit compute pass ran this frame.
     pub particle_emit_ran: bool,
+    /// What this frame's backend actually encoded, in encode order.
+    ///
+    /// Populated by the backend as it creates encoders; the graph-level
+    /// dispatch records pass identity and declared attachment contract, so a
+    /// trace can be compared with the compiled plan.
+    pub(super) execution_trace: super::trace::ResourceExecutionTrace,
+    /// Whether to record [`Self::execution_trace`]. Off unless a caller asks,
+    /// so the steady-state path pays nothing.
+    pub(super) trace_enabled: bool,
 }
 
 /// Data for a single pass execution.
@@ -65,6 +74,22 @@ impl PassExecutionData {
     }
 }
 
+/// Whether the dispatch in [`Frame::execute_passes`] creates an encoder for a
+/// pass.
+///
+/// Every graphics arm encodes except a fullscreen pass with no pipeline, and a
+/// compute pass encodes only with a pipeline or a legacy callback. Recording
+/// this keeps the trace's `SkippedNoWork` outcome honest rather than inferred
+/// from draw counts.
+fn dispatch_encodes(pass: &PassDesc) -> bool {
+    match pass.pass_type {
+        PassType::Graphics => {
+            !matches!(pass.kind, Some(PassKind::Fullscreen)) || pass.pipeline.is_some()
+        }
+        PassType::Compute => pass.compute_fn.is_some() || pass.pipeline.is_some(),
+    }
+}
+
 impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     /// Create a new frame context.
     pub(crate) fn new(
@@ -80,7 +105,19 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
             pending: HashMap::new(),
             depth_buffer_written: false,
             particle_emit_ran: false,
+            execution_trace: super::trace::ResourceExecutionTrace::new(),
+            trace_enabled: false,
         }
+    }
+
+    /// Enable recording of the emitted encoder trace for this frame.
+    pub(crate) fn enable_execution_trace(&mut self) {
+        self.trace_enabled = true;
+    }
+
+    /// The encoders this frame emitted, in encode order.
+    pub(crate) fn execution_trace(&self) -> &super::trace::ResourceExecutionTrace {
+        &self.execution_trace
     }
 
     pub(super) fn validate_submissions(&self) -> Result<(), RenderGraphError> {
@@ -416,6 +453,8 @@ impl<'a> Frame<'a, VulkanRenderer> {
 
             self.insert_sync_barriers(&cmd, index)?;
 
+            let counts = data.prepared_counts();
+
             match pass.pass_type {
                 super::pass::PassType::Graphics => match pass.kind {
                     Some(super::pass::PassKind::Shadow) => {
@@ -498,6 +537,33 @@ impl<'a> Frame<'a, VulkanRenderer> {
 
             if pass.uses_depth {
                 self.depth_buffer_written = true;
+            }
+
+            if self.trace_enabled {
+                let encode_position = self.execution_trace.entries().len();
+                let pass_type = pass.pass_type;
+                let outcome = if dispatch_encodes(pass) {
+                    super::trace::EmittedPassOutcome::Encoded
+                } else {
+                    super::trace::EmittedPassOutcome::SkippedNoWork
+                };
+                let entry = super::trace::ResourceExecutionTraceEntry {
+                    pass_index: index,
+                    name: pass.name.clone(),
+                    pass_type,
+                    encode_position,
+                    outcome,
+                    draw_calls: counts.draw_calls,
+                    instances: counts.instances,
+                    color_targets: if pass_type == super::pass::PassType::Graphics {
+                        super::trace::color_target_names(&self.graph.resources, pass)
+                    } else {
+                        Vec::new()
+                    },
+                    depth_target: (pass_type == super::pass::PassType::Graphics && pass.uses_depth)
+                        .then(|| super::trace::FRAME_DEPTH_TARGET.to_string()),
+                };
+                self.execution_trace.push(entry);
             }
         }
 
