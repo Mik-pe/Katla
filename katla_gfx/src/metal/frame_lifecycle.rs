@@ -127,12 +127,16 @@ impl MetalRenderer {
 
         self.record_frame_compute();
 
-        if let Err(e) = self.execute_metal_passes(frame, pending, frame_graph, frame_idx) {
-            self.frame_poisoned = Some(format!("{e:?}"));
-            return Err(e);
+        match self.execute_metal_passes(frame, pending, frame_graph, frame_idx) {
+            Ok(trace) => {
+                frame_graph.store_last_execution_trace(trace);
+                Ok(())
+            }
+            Err(e) => {
+                self.frame_poisoned = Some(format!("{e:?}"));
+                Err(e)
+            }
         }
-
-        Ok(())
     }
 
     /// Present implementation: the passes encoded by `render` presented their
@@ -224,8 +228,8 @@ impl MetalRenderer {
             )));
         }
         self.bindless_manager.flush_argument_buffer();
-        match self.render_frame(frame, plan, pending) {
-            Ok(()) => Ok(()),
+        match self.render_frame(frame, plan, pending, false) {
+            Ok(_trace) => Ok(()),
             Err(e) => {
                 self.frame_poisoned = Some(format!("{e:?}"));
                 Err(e)

@@ -656,6 +656,78 @@ mod pbr {
         Dark,
         Blue,
     }
+    /// The emitted encoder trace must agree with the compiled plan.
+    ///
+    /// This is the contract the trace exists for: a backend that reorders passes or
+    /// binds different attachment targets than the graph declared is a divergence a
+    /// plan-only view cannot show. Both backends must report none.
+    #[test]
+    #[ignore = "requires a graphics device"]
+    fn test_contract_emitted_trace_matches_the_compiled_plan() {
+        let mut scenario = geometry_scenario("contract: emitted trace");
+
+        let list = draw_list_of(vec![
+            DrawCall::new(scenario.mesh, scenario.material).with_color([1.0, 0.0, 0.0, 1.0]),
+        ]);
+
+        scenario.graph.set_execution_trace(true);
+        assert!(scenario.graph.execution_trace_enabled());
+
+        let GeometryScenario {
+            renderer,
+            graph,
+            geometry_pass,
+            uniforms,
+            ..
+        } = &mut scenario;
+
+        renderer.render_frame(graph, Some(&*uniforms), Some(&list), |frame| {
+            frame.submit(*geometry_pass, Rc::new(list.clone()));
+        });
+
+        let trace = graph.last_execution_trace();
+        assert!(
+            !trace.is_empty(),
+            "tracing must record at least the geometry pass"
+        );
+        assert!(
+            trace.encoded_passes().count() >= 1,
+            "geometry must be encoded, trace: {trace}"
+        );
+
+        let divergences = graph.compare_execution_trace();
+        assert!(
+            divergences.is_empty(),
+            "emitted trace diverged from the compiled plan: {divergences:?}\ntrace: {trace}"
+        );
+
+        // The trace is deterministic: a second frame with the same graph produces
+        // the same encoded pass sequence and the same text.
+        let first: Vec<usize> = trace.encoded_passes().map(|e| e.pass_index).collect();
+        let first_text = trace.to_string();
+        let list2 = list.clone();
+        renderer.render_frame(graph, Some(&*uniforms), Some(&list2), |frame| {
+            frame.submit(*geometry_pass, Rc::new(list2.clone()));
+        });
+        let second: Vec<usize> = graph
+            .last_execution_trace()
+            .encoded_passes()
+            .map(|e| e.pass_index)
+            .collect();
+        assert_eq!(
+            first, second,
+            "encoded pass order must be stable across frames"
+        );
+        assert_eq!(
+            first_text,
+            graph.last_execution_trace().to_string(),
+            "the trace text must be stable across frames"
+        );
+
+        graph.set_execution_trace(false);
+        harness::cleanup_graph(scenario.graph);
+        scenario.renderer.finish();
+    }
 } // mod pbr (PBR pipeline scenarios)
 
 /// Declared attachment semantics are the only source of attachment behavior:

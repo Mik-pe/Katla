@@ -14,9 +14,12 @@ use crate::texture::ImageFormat;
 use super::metal_renderer::MetalRenderer;
 
 /// Graph-declared color attachment copied into a Metal executable record.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MetalColorAttachmentRecord {
     pub(crate) resource: ResourceId,
+    /// Resource name, so the emitted trace names the same targets the
+    /// compiled plan declares instead of opaque ids.
+    pub(crate) name: String,
     pub(crate) format: ImageFormat,
     pub(crate) load_op: LoadOp,
     pub(crate) store_op: StoreOp,
@@ -52,6 +55,7 @@ impl MetalPassRecord {
         pass_index: usize,
         pass: &PassDesc,
         format_at: &impl Fn(ResourceId) -> Option<ImageFormat>,
+        name_at: &impl Fn(ResourceId) -> Option<String>,
     ) -> Result<Self, RenderGraphError> {
         if pass.pass_type == PassType::Compute {
             return Err(RenderGraphError::BackendError(format!(
@@ -104,6 +108,7 @@ impl MetalPassRecord {
                     })?;
                     Ok(MetalColorAttachmentRecord {
                         resource,
+                        name: name_at(resource).unwrap_or_else(|| resource.0.to_string()),
                         format,
                         load_op: ops.load,
                         store_op: ops.store,
@@ -245,6 +250,7 @@ impl MetalExecutionPlan {
             &order,
             |index| frame_graph.pass(index),
             &format_at,
+            &|id| frame_graph.resource_name(id).map(str::to_string),
             &image_sync_ops,
         )
     }
@@ -253,6 +259,7 @@ impl MetalExecutionPlan {
         order: &[usize],
         mut pass_at: impl FnMut(usize) -> Option<&'a PassDesc>,
         format_at: &impl Fn(ResourceId) -> Option<ImageFormat>,
+        name_at: &impl Fn(ResourceId) -> Option<String>,
         image_sync_ops: &[(Option<usize>, ImageSyncOp)],
     ) -> Result<Self, RenderGraphError> {
         let passes = order
@@ -264,7 +271,7 @@ impl MetalExecutionPlan {
                         "Metal execution plan references missing pass index {pass_index}"
                     ))
                 })?;
-                MetalPassRecord::from_pass(pass_index, pass, format_at)
+                MetalPassRecord::from_pass(pass_index, pass, format_at, name_at)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -348,7 +355,13 @@ mod tests {
         order: &[usize],
     ) -> Result<MetalExecutionPlan, RenderGraphError> {
         let format_at = |_: crate::render_graph::ResourceId| Some(ImageFormat::R16G16B16A16Sfloat);
-        MetalExecutionPlan::compile_order(order, |index| passes.get(index), &format_at, &[])
+        MetalExecutionPlan::compile_order(
+            order,
+            |index| passes.get(index),
+            &format_at,
+            &|id| Some(format!("r{}", id.0)),
+            &[],
+        )
     }
 
     #[test]
@@ -482,6 +495,7 @@ mod tests {
             record.color_attachments,
             vec![MetalColorAttachmentRecord {
                 resource: ResourceId(7),
+                name: "r7".to_string(),
                 format: ImageFormat::R16G16B16A16Sfloat,
                 load_op: LoadOp::Load,
                 store_op: StoreOp::Store,
@@ -538,10 +552,12 @@ mod tests {
         };
 
         let format_at = |_: ResourceId| Some(ImageFormat::R16G16B16A16Sfloat);
+        let name_at = |id: ResourceId| Some(format!("r{}", id.0));
         let plan = MetalExecutionPlan::compile_order(
             &[0, 1],
             |index| passes.get(index),
             &format_at,
+            &name_at,
             &[(Some(1), attachment_write), (None, frame_end)],
         )
         .unwrap();

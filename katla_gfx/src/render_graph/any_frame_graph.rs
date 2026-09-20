@@ -6,6 +6,7 @@ use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::{PassId, ResourceId};
 use super::pass::PassDesc;
+use super::trace::{ResourceExecutionTrace as RenderExecutionTrace, TraceDivergence};
 
 #[cfg(target_os = "macos")]
 use crate::metal::metal_renderer::MetalRenderer;
@@ -171,6 +172,43 @@ impl AnyFrameGraph {
         match self {
             AnyFrameGraph::Vulkan(_) => panic!("Expected Metal frame graph"),
             AnyFrameGraph::Metal(fg) => fg,
+        }
+    }
+
+    /// Enable or disable recording of the emitted encoder trace.
+    pub fn set_execution_trace(&mut self, enabled: bool) {
+        match self {
+            AnyFrameGraph::Vulkan(fg) => fg.set_execution_trace(enabled),
+            #[cfg(target_os = "macos")]
+            AnyFrameGraph::Metal(fg) => fg.set_execution_trace(enabled),
+        }
+    }
+
+    /// Whether execution currently records an emitted encoder trace.
+    pub fn execution_trace_enabled(&self) -> bool {
+        match self {
+            AnyFrameGraph::Vulkan(fg) => fg.execution_trace_enabled(),
+            #[cfg(target_os = "macos")]
+            AnyFrameGraph::Metal(fg) => fg.execution_trace_enabled(),
+        }
+    }
+
+    /// Encoders emitted by the most recent execution.
+    pub fn last_execution_trace(&self) -> &RenderExecutionTrace {
+        match self {
+            AnyFrameGraph::Vulkan(fg) => fg.last_execution_trace(),
+            #[cfg(target_os = "macos")]
+            AnyFrameGraph::Metal(fg) => fg.last_execution_trace(),
+        }
+    }
+
+    /// Compare the most recent execution's emitted trace against the compiled
+    /// plan, returning every divergence found.
+    pub fn compare_execution_trace(&self) -> Vec<TraceDivergence> {
+        match self {
+            AnyFrameGraph::Vulkan(fg) => fg.compare_execution_trace(),
+            #[cfg(target_os = "macos")]
+            AnyFrameGraph::Metal(fg) => fg.compare_execution_trace(),
         }
     }
 
