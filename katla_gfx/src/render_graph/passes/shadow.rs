@@ -1,7 +1,7 @@
 //! Shadow mapping pass template for directional (CSM) shadow mapping.
 
 use crate::render_graph::access::{
-    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
 use crate::render_pass::{ClearValue, DepthStencilAttachmentOps};
 use crate::texture::ImageFormat;
@@ -73,9 +73,9 @@ impl PassBuilder for ShadowPass {
             .map(|(name, _)| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Write,
-                    ImageUsage::DepthStencilAttachment,
-                    ImagePipelineStage::DepthStencil,
+                    ResourceAccessMode::Write,
+                    ResourceAccessUsage::DepthStencilAttachment,
+                    ResourceAccessStage::DepthStencil,
                     ImageSubresourceRange::WHOLE_DEPTH,
                 )
             })
@@ -87,6 +87,7 @@ impl PassBuilder for ShadowPass {
             reads: Vec::new(),
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -128,8 +129,8 @@ mod tests {
     #[test]
     fn shadow_pass_declares_a_depth_attachment_write() {
         use crate::render_graph::access::{
-            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
-            NamedImageAccess,
+            ImageSubresourceRange, NamedImageAccess, ResourceAccessMode, ResourceAccessStage,
+            ResourceAccessUsage,
         };
 
         let builder = ShadowPass::new("shadows")
@@ -140,9 +141,9 @@ mod tests {
             builder.image_accesses,
             vec![NamedImageAccess {
                 resource: "shadow_map".to_string(),
-                mode: ImageAccessMode::Write,
-                usage: ImageUsage::DepthStencilAttachment,
-                stage: ImagePipelineStage::DepthStencil,
+                mode: ResourceAccessMode::Write,
+                usage: ResourceAccessUsage::DepthStencilAttachment,
+                stage: ResourceAccessStage::DepthStencil,
                 range: ImageSubresourceRange::WHOLE_DEPTH,
             }]
         );

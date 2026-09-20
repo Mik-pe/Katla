@@ -9,7 +9,8 @@ use std::collections::HashMap;
 use crate::handle::MaterialHandle;
 use crate::render_graph::BACKBUFFER_NAME;
 use crate::render_graph::access::{
-    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
 };
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::error::RenderGraphError;
@@ -311,18 +312,18 @@ impl PassBuilder for CompositePass {
             .map(|(name, _)| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Read,
-                    ImageUsage::Sampled,
-                    ImagePipelineStage::FragmentShader,
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::Sampled,
+                    ResourceAccessStage::FragmentShader,
                     ImageAccess::WHOLE_RESOURCE,
                 )
             })
             .chain(writes.iter().map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Write,
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessMode::Write,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 )
             }))
@@ -334,6 +335,7 @@ impl PassBuilder for CompositePass {
             reads,
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,

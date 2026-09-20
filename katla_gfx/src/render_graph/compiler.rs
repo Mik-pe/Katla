@@ -9,11 +9,18 @@
 //! writes wait for all readers of the version they replace. This produces the
 //! minimal RAW, WAR, and WAW ordering constraints without introducing backwards
 //! dependencies from future writers.
+//!
+//! The same analysis serves images and buffers, differing only in the range
+//! type: image accesses version subresource ranges, buffer accesses version byte
+//! ranges, and the two axes are independent so an access to one never orders an
+//! access to the other.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 use super::SyncPlan;
-use super::access::{ImageAccess, ImageSubresourceRange};
+use super::access::{
+    BufferAccess, BufferByteRange, ImageAccess, ImageSubresourceRange, ResourceAccessMode,
+};
 use super::error::RenderGraphError;
 use super::handles::ResourceId;
 use super::pass::PassDesc;
@@ -87,70 +94,120 @@ pub(crate) struct DependencyNode {
 }
 
 /// Access state for the current declaration-order version of a resource.
-/// One outstanding typed access on a resource version, with its subresources.
+/// A resource range the dependency analysis can compare, subtract, and test
+/// for emptiness.
+///
+/// Images and buffers both version their accesses by declaration order, and
+/// both only order accesses that touch overlapping ranges. Implementing this
+/// trait for a range type is what lets one state machine serve both.
+trait AccessRange: Copy {
+    fn overlaps_with(self, other: Self) -> bool;
+    /// The pieces of `self` outside `other`, for version replacement.
+    fn subtract_range(self, other: Self) -> Vec<Self>;
+    fn is_empty_range(self) -> bool;
+}
+
+impl AccessRange for ImageSubresourceRange {
+    fn overlaps_with(self, other: Self) -> bool {
+        self.overlaps(other)
+    }
+
+    fn subtract_range(self, other: Self) -> Vec<Self> {
+        self.subtract(other)
+    }
+
+    fn is_empty_range(self) -> bool {
+        self.is_empty()
+    }
+}
+
+impl AccessRange for BufferByteRange {
+    fn overlaps_with(self, other: Self) -> bool {
+        self.overlaps(other)
+    }
+
+    fn subtract_range(self, other: Self) -> Vec<Self> {
+        self.subtract(other)
+    }
+
+    fn is_empty_range(self) -> bool {
+        self.is_empty()
+    }
+}
+
+/// One outstanding typed access on a resource version, with its range.
 #[derive(Debug, Clone, Copy)]
-struct OutstandingAccess {
+struct OutstandingAccess<R> {
     pass: usize,
-    range: ImageSubresourceRange,
+    range: R,
 }
 
 /// Outstanding resource versions seen so far in declaration order.
 ///
-/// Writers hold the current version of the subresources they wrote; readers
-/// hold the subresources they consumed. A later writer only replaces the
-/// subresources it actually covers, so accesses to disjoint ranges of one
-/// resource stay independent while overlapping ranges keep producing the
-/// minimal RAW, WAR, and WAW ordering constraints.
-#[derive(Default)]
-struct ResourceAccessState {
-    writers: Vec<OutstandingAccess>,
-    readers: Vec<OutstandingAccess>,
+/// Writers hold the current version of the ranges they wrote; readers hold the
+/// ranges they consumed. A later writer only replaces the ranges it actually
+/// covers, so accesses to disjoint ranges of one resource stay independent
+/// while overlapping ranges keep producing the minimal RAW, WAR, and WAW
+/// ordering constraints.
+struct ResourceAccessState<R> {
+    writers: Vec<OutstandingAccess<R>>,
+    readers: Vec<OutstandingAccess<R>>,
     last_writer: Option<usize>,
 }
 
-impl ResourceAccessState {
-    /// RAW: earlier writers of overlapping subresources produce this read.
+impl<R: AccessRange> Default for ResourceAccessState<R> {
+    fn default() -> Self {
+        Self {
+            writers: Vec::new(),
+            readers: Vec::new(),
+            last_writer: None,
+        }
+    }
+}
+
+impl<R: AccessRange> ResourceAccessState<R> {
+    /// RAW: earlier writers of overlapping ranges produce this read.
     fn raw_edges(
         &self,
         pass: usize,
-        range: ImageSubresourceRange,
+        range: R,
         graph: &mut [DependencyNode],
         data_predecessors: &mut [BTreeSet<usize>],
     ) {
         for writer in &self.writers {
-            if writer.range.overlaps(range) {
+            if writer.range.overlaps_with(range) {
                 add_dependency(graph, writer.pass, pass);
                 data_predecessors[pass].insert(writer.pass);
             }
         }
     }
 
-    /// WAR: earlier readers of overlapping subresources must finish first.
-    fn war_edges(&self, pass: usize, range: ImageSubresourceRange, graph: &mut [DependencyNode]) {
+    /// WAR: earlier readers of overlapping ranges must finish first.
+    fn war_edges(&self, pass: usize, range: R, graph: &mut [DependencyNode]) {
         for reader in &self.readers {
-            if reader.pass != pass && reader.range.overlaps(range) {
+            if reader.pass != pass && reader.range.overlaps_with(range) {
                 add_dependency(graph, reader.pass, pass);
             }
         }
     }
 
-    /// WAW: earlier writers of overlapping subresources must finish first.
-    fn waw_edges(&self, pass: usize, range: ImageSubresourceRange, graph: &mut [DependencyNode]) {
+    /// WAW: earlier writers of overlapping ranges must finish first.
+    fn waw_edges(&self, pass: usize, range: R, graph: &mut [DependencyNode]) {
         for writer in &self.writers {
-            if writer.pass != pass && writer.range.overlaps(range) {
+            if writer.pass != pass && writer.range.overlaps_with(range) {
                 add_dependency(graph, writer.pass, pass);
             }
         }
     }
 
     /// Replace the versions a write covers; partially covered versions
-    /// survive on their remaining subresources.
-    fn replace_version(&mut self, pass: usize, range: ImageSubresourceRange) {
+    /// survive on their remaining ranges.
+    fn replace_version(&mut self, pass: usize, range: R) {
         for versions in [&mut self.writers, &mut self.readers] {
             let mut remaining = Vec::new();
             for access in versions.drain(..) {
-                for piece in access.range.subtract(range) {
-                    if !piece.is_empty() {
+                for piece in access.range.subtract_range(range) {
+                    if !piece.is_empty_range() {
                         remaining.push(OutstandingAccess {
                             pass: access.pass,
                             range: piece,
@@ -164,8 +221,34 @@ impl ResourceAccessState {
         self.last_writer = Some(pass);
     }
 
-    fn add_reader(&mut self, pass: usize, range: ImageSubresourceRange) {
+    fn add_reader(&mut self, pass: usize, range: R) {
         self.readers.push(OutstandingAccess { pass, range });
+    }
+}
+
+/// Record one typed access against a resource's version state.
+///
+/// The same hazard rules apply to image subresource ranges and buffer byte
+/// ranges: RAW orders readers after overlapping writers, WAR and WAW order a
+/// writer after overlapping readers and writers, and a write replaces only the
+/// range it covers.
+fn apply_access<R: AccessRange>(
+    state: &mut ResourceAccessState<R>,
+    pass: usize,
+    mode: ResourceAccessMode,
+    range: R,
+    graph: &mut [DependencyNode],
+    data_predecessors: &mut [BTreeSet<usize>],
+) {
+    if mode.reads() {
+        state.raw_edges(pass, range, graph, data_predecessors);
+    }
+    if mode.writes() {
+        state.waw_edges(pass, range, graph);
+        state.war_edges(pass, range, graph);
+        state.replace_version(pass, range);
+    } else if mode.reads() {
+        state.add_reader(pass, range);
     }
 }
 
@@ -178,6 +261,9 @@ pub struct PassInfo {
     /// Typed image accesses: the authoritative dependency-analysis input.
     /// The coarse `reads`/`writes` sets are derived from these.
     pub image_accesses: Vec<ImageAccess>,
+    /// Typed buffer accesses, analyzed against byte ranges exactly as image
+    /// accesses are analyzed against subresource ranges.
+    pub buffer_accesses: Vec<BufferAccess>,
     pub side_effect: bool,
 }
 
@@ -188,6 +274,7 @@ impl From<&PassDesc> for PassInfo {
             reads: desc.reads.clone(),
             writes: desc.writes.clone(),
             image_accesses: desc.image_accesses.clone(),
+            buffer_accesses: desc.buffer_accesses.clone(),
             side_effect: desc.side_effect,
         }
     }
@@ -283,30 +370,57 @@ impl GraphCompiler {
     pub fn analyze_dependencies(&mut self) {
         let mut graph = vec![DependencyNode::default(); self.passes.len()];
         let mut data_predecessors = vec![BTreeSet::new(); self.passes.len()];
-        let mut resources: HashMap<ResourceId, ResourceAccessState> = HashMap::new();
+
+        // Images and buffers version their ranges separately: an access to one
+        // never orders an access to the other, even when both are declared by
+        // the same pass.
+        let mut image_states: HashMap<ResourceId, ResourceAccessState<ImageSubresourceRange>> =
+            HashMap::new();
+        let mut buffer_states: HashMap<ResourceId, ResourceAccessState<BufferByteRange>> =
+            HashMap::new();
 
         for (pass_index, pass) in self.passes.iter().enumerate() {
             for access in &pass.image_accesses {
-                let state = resources.entry(access.resource).or_default();
-                let range = access.range;
+                let state = image_states.entry(access.resource).or_default();
+                apply_access(
+                    state,
+                    pass_index,
+                    access.mode,
+                    access.range,
+                    &mut graph,
+                    &mut data_predecessors,
+                );
+            }
 
-                if access.mode.reads() {
-                    state.raw_edges(pass_index, range, &mut graph, &mut data_predecessors);
-                }
-                if access.mode.writes() {
-                    state.waw_edges(pass_index, range, &mut graph);
-                    state.war_edges(pass_index, range, &mut graph);
-                    state.replace_version(pass_index, range);
-                } else if access.mode.reads() {
-                    state.add_reader(pass_index, range);
-                }
+            for access in &pass.buffer_accesses {
+                let state = buffer_states.entry(access.resource).or_default();
+                apply_access(
+                    state,
+                    pass_index,
+                    access.mode,
+                    access.range,
+                    &mut graph,
+                    &mut data_predecessors,
+                );
             }
         }
 
-        self.final_writers = resources
+        // A buffer write also supersedes any image write to the same resource
+        // id and vice versa; the namespace is shared, so a resource a pass
+        // writes as both keeps the later declaration as its final writer.
+        self.final_writers = image_states
             .into_iter()
             .filter_map(|(resource, state)| state.last_writer.map(|writer| (resource, writer)))
             .collect();
+        for (resource, state) in buffer_states {
+            if let Some(writer) = state.last_writer {
+                self.final_writers
+                    .entry(resource)
+                    .and_modify(|existing| *existing = (*existing).max(writer))
+                    .or_insert(writer);
+            }
+        }
+
         self.data_predecessors = data_predecessors;
         self.dependency_graph = graph;
     }
@@ -641,6 +755,7 @@ mod tests {
             reads,
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             side_effect: false,
         }
     }
@@ -648,21 +763,22 @@ mod tests {
     // --- Range-aware dependency analysis (#30) ---
 
     use super::super::access::{
-        ImageAccessMode, ImageAspects, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+        BufferByteRange, BufferUsage, ImageAspects, ImageSubresourceRange, ResourceAccessMode,
+        ResourceAccessStage, ResourceAccessUsage,
     };
     use super::super::sync_plan::ResourceHazardKind;
     use super::super::sync_plan::{ImageSyncOp, ImageSyncState, SyncReason};
 
     fn access(
         resource: ResourceId,
-        mode: ImageAccessMode,
+        mode: ResourceAccessMode,
         range: ImageSubresourceRange,
     ) -> ImageAccess {
         ImageAccess::new(
             resource,
             mode,
-            ImageUsage::Storage,
-            ImagePipelineStage::FragmentShader,
+            ResourceAccessUsage::Storage,
+            ResourceAccessStage::FragmentShader,
             range,
         )
     }
@@ -685,6 +801,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             image_accesses: accesses,
+            buffer_accesses: Vec::new(),
             side_effect: false,
         }
     }
@@ -693,15 +810,215 @@ mod tests {
         ImageSubresourceRange::new(ImageAspects::COLOR, base, count, 0, 1)
     }
 
+    // --- Range-aware buffer dependencies (#31) ---
+
+    fn buffer_access(
+        resource: ResourceId,
+        mode: ResourceAccessMode,
+        offset: u64,
+        size: u64,
+    ) -> BufferAccess {
+        BufferAccess::new(
+            resource,
+            mode,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::new(offset, size),
+        )
+    }
+
+    fn buffer_pass(name: &str, accesses: Vec<BufferAccess>) -> PassInfo {
+        PassInfo {
+            name: name.to_string(),
+            reads: accesses
+                .iter()
+                .filter(|a| a.mode.reads())
+                .map(|a| a.resource)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            writes: accesses
+                .iter()
+                .filter(|a| a.mode.writes())
+                .map(|a| a.resource)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            image_accesses: Vec::new(),
+            buffer_accesses: accesses,
+            side_effect: false,
+        }
+    }
+
+    #[test]
+    fn disjoint_buffer_writes_are_independent() {
+        let a = buffer_pass(
+            "a",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 64)],
+        );
+        let b = buffer_pass(
+            "b",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 64, 64)],
+        );
+
+        let plan = GraphCompiler::new(vec![a, b]).compile().unwrap();
+
+        assert!(plan.dag[0].successors.is_empty());
+        assert!(plan.dag[1].predecessors.is_empty());
+        assert_eq!(plan.dag[1].level, 0);
+    }
+
+    #[test]
+    fn overlapping_buffer_writes_stay_waw_ordered() {
+        let a = buffer_pass(
+            "a",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 128)],
+        );
+        let b = buffer_pass(
+            "b",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 64, 64)],
+        );
+
+        let plan = GraphCompiler::new(vec![a, b]).compile().unwrap();
+
+        assert!(plan.dag[1].predecessors.contains(&0));
+    }
+
+    #[test]
+    fn buffer_read_of_a_written_range_is_raw_ordered() {
+        let writer = buffer_pass(
+            "writer",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 64)],
+        );
+        let reader = buffer_pass(
+            "reader",
+            vec![buffer_access(rid(1), ResourceAccessMode::Read, 32, 32)],
+        );
+
+        let plan = GraphCompiler::new(vec![writer, reader]).compile().unwrap();
+
+        assert!(plan.dag[1].predecessors.contains(&0));
+    }
+
+    #[test]
+    fn buffer_read_of_a_disjoint_range_needs_no_ordering() {
+        let writer = buffer_pass(
+            "writer",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 64)],
+        );
+        let reader = buffer_pass(
+            "reader",
+            vec![buffer_access(rid(1), ResourceAccessMode::Read, 128, 64)],
+        );
+
+        let plan = GraphCompiler::new(vec![writer, reader]).compile().unwrap();
+
+        assert!(plan.dag[1].predecessors.is_empty());
+    }
+
+    #[test]
+    fn a_later_buffer_write_waits_for_an_overlapping_reader() {
+        let reader = buffer_pass(
+            "reader",
+            vec![buffer_access(rid(1), ResourceAccessMode::Read, 0, 64)],
+        );
+        let writer = buffer_pass(
+            "writer",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 32, 64)],
+        );
+
+        let plan = GraphCompiler::new(vec![reader, writer]).compile().unwrap();
+
+        assert!(plan.dag[1].predecessors.contains(&0));
+    }
+
+    #[test]
+    fn a_partial_buffer_write_leaves_the_untouched_range_reusable() {
+        // Pass A writes bytes 0..64, pass B writes 64..128, then pass C reads
+        // 0..64. Only A must precede C; B covers a disjoint range.
+        let a = buffer_pass(
+            "a",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 64)],
+        );
+        let b = buffer_pass(
+            "b",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 64, 64)],
+        );
+        let c = buffer_pass(
+            "c",
+            vec![buffer_access(rid(1), ResourceAccessMode::Read, 0, 64)],
+        );
+
+        let plan = GraphCompiler::new(vec![a, b, c]).compile().unwrap();
+
+        assert!(plan.dag[2].predecessors.contains(&0));
+        assert!(!plan.dag[2].predecessors.contains(&1));
+    }
+
+    #[test]
+    fn buffer_read_modify_write_orders_both_directions_without_a_self_edge() {
+        let rmw = buffer_pass(
+            "rmw",
+            vec![buffer_access(rid(1), ResourceAccessMode::ReadWrite, 0, 64)],
+        );
+
+        let plan = GraphCompiler::new(vec![rmw]).compile().unwrap();
+
+        assert!(plan.dag[0].predecessors.is_empty());
+        assert!(plan.dag[0].successors.is_empty());
+    }
+
+    #[test]
+    fn an_unbounded_buffer_range_covers_every_later_access() {
+        let whole = buffer_pass(
+            "whole",
+            vec![buffer_access(
+                rid(1),
+                ResourceAccessMode::Write,
+                8,
+                u64::MAX,
+            )],
+        );
+        let tail = buffer_pass(
+            "tail",
+            vec![buffer_access(rid(1), ResourceAccessMode::Read, 4096, 16)],
+        );
+
+        let plan = GraphCompiler::new(vec![whole, tail]).compile().unwrap();
+
+        assert!(plan.dag[1].predecessors.contains(&0));
+    }
+
+    #[test]
+    fn buffer_and_image_accesses_to_one_id_do_not_order_each_other() {
+        // The resource-id namespace is shared, but byte ranges and subresource
+        // ranges are different axes: a buffer access cannot order an image
+        // access to the same id.
+        let buffer_write = buffer_pass(
+            "buffer_write",
+            vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 64)],
+        );
+        let image_read = typed_pass(
+            "image_read",
+            vec![access(rid(1), ResourceAccessMode::Read, mips(0, 1))],
+        );
+
+        let plan = GraphCompiler::new(vec![buffer_write, image_read])
+            .compile()
+            .unwrap();
+
+        assert!(plan.dag[1].predecessors.is_empty());
+    }
+
     #[test]
     fn disjoint_mip_writes_are_independent() {
         let a = typed_pass(
             "a",
-            vec![access(rid(1), ImageAccessMode::Write, mips(0, 1))],
+            vec![access(rid(1), ResourceAccessMode::Write, mips(0, 1))],
         );
         let b = typed_pass(
             "b",
-            vec![access(rid(1), ImageAccessMode::Write, mips(1, 1))],
+            vec![access(rid(1), ResourceAccessMode::Write, mips(1, 1))],
         );
         let plan = GraphCompiler::new(vec![a, b]).compile().unwrap();
         assert!(plan.dag[0].successors.is_empty());
@@ -715,11 +1032,11 @@ mod tests {
     fn overlapping_mip_writes_stay_waw_ordered() {
         let a = typed_pass(
             "a",
-            vec![access(rid(1), ImageAccessMode::Write, mips(0, 2))],
+            vec![access(rid(1), ResourceAccessMode::Write, mips(0, 2))],
         );
         let b = typed_pass(
             "b",
-            vec![access(rid(1), ImageAccessMode::Write, mips(1, 1))],
+            vec![access(rid(1), ResourceAccessMode::Write, mips(1, 1))],
         );
         let plan = GraphCompiler::new(vec![a, b]).compile().unwrap();
         assert_eq!(plan.dag[0].successors, vec![1]);
@@ -730,15 +1047,15 @@ mod tests {
     fn raw_reaches_only_overlapping_subresources() {
         let writer = typed_pass(
             "writer",
-            vec![access(rid(1), ImageAccessMode::Write, mips(0, 2))],
+            vec![access(rid(1), ResourceAccessMode::Write, mips(0, 2))],
         );
         let reader_low = typed_pass(
             "reader_low",
-            vec![access(rid(1), ImageAccessMode::Read, mips(0, 1))],
+            vec![access(rid(1), ResourceAccessMode::Read, mips(0, 1))],
         );
         let reader_high = typed_pass(
             "reader_high",
-            vec![access(rid(1), ImageAccessMode::Read, mips(2, 1))],
+            vec![access(rid(1), ResourceAccessMode::Read, mips(2, 1))],
         );
         let plan = GraphCompiler::new(vec![writer, reader_low, reader_high])
             .compile()
@@ -755,7 +1072,7 @@ mod tests {
             "color",
             vec![access(
                 rid(1),
-                ImageAccessMode::Write,
+                ResourceAccessMode::Write,
                 ImageSubresourceRange::WHOLE_COLOR,
             )],
         );
@@ -763,7 +1080,7 @@ mod tests {
             "depth",
             vec![access(
                 rid(1),
-                ImageAccessMode::Read,
+                ResourceAccessMode::Read,
                 ImageSubresourceRange::WHOLE_DEPTH,
             )],
         );
@@ -776,11 +1093,11 @@ mod tests {
     fn read_modify_write_never_self_depends() {
         let start = typed_pass(
             "start",
-            vec![access(rid(1), ImageAccessMode::Write, mips(0, 2))],
+            vec![access(rid(1), ResourceAccessMode::Write, mips(0, 2))],
         );
         let rmw = typed_pass(
             "rmw",
-            vec![access(rid(1), ImageAccessMode::ReadWrite, mips(0, 2))],
+            vec![access(rid(1), ResourceAccessMode::ReadWrite, mips(0, 2))],
         );
         let plan = GraphCompiler::new(vec![start, rmw]).compile().unwrap();
         // RAW from the producer, no self edge, ordered chain.
@@ -793,15 +1110,15 @@ mod tests {
     fn partial_overwrite_keeps_versions_for_the_remaining_range() {
         let reader = typed_pass(
             "reader",
-            vec![access(rid(1), ImageAccessMode::Read, mips(0, 2))],
+            vec![access(rid(1), ResourceAccessMode::Read, mips(0, 2))],
         );
         let overwriter = typed_pass(
             "overwriter",
-            vec![access(rid(1), ImageAccessMode::Write, mips(0, 1))],
+            vec![access(rid(1), ResourceAccessMode::Write, mips(0, 1))],
         );
         let late_reader = typed_pass(
             "late_reader",
-            vec![access(rid(1), ImageAccessMode::Read, mips(1, 1))],
+            vec![access(rid(1), ResourceAccessMode::Read, mips(1, 1))],
         );
         let plan = GraphCompiler::new(vec![reader, overwriter, late_reader])
             .compile()
@@ -821,7 +1138,7 @@ mod tests {
             "layer0",
             vec![access(
                 rid(1),
-                ImageAccessMode::Write,
+                ResourceAccessMode::Write,
                 ImageSubresourceRange::new(ImageAspects::COLOR, 0, 1, 0, 1),
             )],
         );
@@ -829,7 +1146,7 @@ mod tests {
             "layer1",
             vec![access(
                 rid(1),
-                ImageAccessMode::Write,
+                ResourceAccessMode::Write,
                 ImageSubresourceRange::new(ImageAspects::COLOR, 0, 1, 1, 1),
             )],
         );
@@ -843,11 +1160,11 @@ mod tests {
     fn explicit_subrange_reads_order_after_the_writing_pass() {
         let writer = typed_pass(
             "writer",
-            vec![access(rid(1), ImageAccessMode::Write, mips(0, 4))],
+            vec![access(rid(1), ResourceAccessMode::Write, mips(0, 4))],
         );
         let mip_reader = typed_pass(
             "mip_reader",
-            vec![access(rid(1), ImageAccessMode::Read, mips(3, 1))],
+            vec![access(rid(1), ResourceAccessMode::Read, mips(3, 1))],
         );
         let plan = GraphCompiler::new(vec![writer, mip_reader])
             .compile()
@@ -1128,14 +1445,14 @@ mod tests {
         // The steady-state cycle: the write replaces the previous frame's
         // final sampled state, then each hazard boundary transitions r0.
         let storage_write = ImageSyncState::Access {
-            usage: ImageUsage::Storage,
-            stage: ImagePipelineStage::AllGraphics,
-            mode: ImageAccessMode::Write,
+            usage: ResourceAccessUsage::Storage,
+            stage: ResourceAccessStage::AllGraphics,
+            mode: ResourceAccessMode::Write,
         };
         let sampled_read = ImageSyncState::Access {
-            usage: ImageUsage::Sampled,
-            stage: ImagePipelineStage::FragmentShader,
-            mode: ImageAccessMode::Read,
+            usage: ResourceAccessUsage::Sampled,
+            stage: ResourceAccessStage::FragmentShader,
+            mode: ResourceAccessMode::Read,
         };
         let op = |pass: usize| plan.sync.pass_ops[pass].as_slice();
         assert_eq!(

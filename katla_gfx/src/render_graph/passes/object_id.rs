@@ -4,7 +4,7 @@
 //! Used for GPU-based entity picking via pixel readback.
 
 use super::super::access::{
-    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ResourceAccessMode, ResourceAccessStage, ImageSubresourceRange, ResourceAccessUsage,
 };
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
@@ -85,18 +85,18 @@ impl PassBuilder for ObjectIdPass {
             .map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Read,
-                    ImageUsage::DepthStencilAttachment,
-                    ImagePipelineStage::DepthStencil,
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::DepthStencilAttachment,
+                    ResourceAccessStage::DepthStencil,
                     ImageSubresourceRange::WHOLE_DEPTH,
                 )
             })
             .chain(self.writes.iter().map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Write,
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessMode::Write,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 )
             }))
@@ -108,6 +108,7 @@ impl PassBuilder for ObjectIdPass {
             reads: self.reads,
             writes: self.writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,

@@ -4,7 +4,8 @@
 //! textures that can be composited together in a CompositePass.
 
 use crate::render_graph::access::{
-    ImageAccess, ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
 };
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::{PassKind, PassType};
@@ -293,21 +294,21 @@ impl PassBuilder for ViewportPass {
             .map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Read,
-                    ImageUsage::Sampled,
-                    ImagePipelineStage::FragmentShader,
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::Sampled,
+                    ResourceAccessStage::FragmentShader,
                     ImageAccess::WHOLE_RESOURCE,
                 )
             })
             .chain(std::iter::once(super::named_image_access(
                 self.name.clone(),
                 if self.load_op == LoadOp::Load {
-                    ImageAccessMode::ReadWrite
+                    ResourceAccessMode::ReadWrite
                 } else {
-                    ImageAccessMode::Write
+                    ResourceAccessMode::Write
                 },
-                ImageUsage::ColorAttachment,
-                ImagePipelineStage::ColorAttachmentOutput,
+                ResourceAccessUsage::ColorAttachment,
+                ResourceAccessStage::ColorAttachmentOutput,
                 ImageSubresourceRange::WHOLE_COLOR,
             )))
             .collect();
@@ -318,6 +319,7 @@ impl PassBuilder for ViewportPass {
             reads,
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -405,8 +407,8 @@ mod tests {
     #[test]
     fn viewport_pass_declares_typed_accesses() {
         use crate::render_graph::access::{
-            ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
-            NamedImageAccess,
+            ImageSubresourceRange, NamedImageAccess, ResourceAccessMode, ResourceAccessStage,
+            ResourceAccessUsage,
         };
 
         let cleared = ViewportPass::new("viewport_0")
@@ -417,9 +419,9 @@ mod tests {
             cleared.image_accesses,
             vec![NamedImageAccess {
                 resource: "viewport_0".to_string(),
-                mode: ImageAccessMode::Write,
-                usage: ImageUsage::ColorAttachment,
-                stage: ImagePipelineStage::ColorAttachmentOutput,
+                mode: ResourceAccessMode::Write,
+                usage: ResourceAccessUsage::ColorAttachment,
+                stage: ResourceAccessStage::ColorAttachmentOutput,
                 range: ImageSubresourceRange::WHOLE_COLOR,
             }]
         );
@@ -433,9 +435,9 @@ mod tests {
             loaded.image_accesses,
             vec![NamedImageAccess {
                 resource: "viewport_0".to_string(),
-                mode: ImageAccessMode::ReadWrite,
-                usage: ImageUsage::ColorAttachment,
-                stage: ImagePipelineStage::ColorAttachmentOutput,
+                mode: ResourceAccessMode::ReadWrite,
+                usage: ResourceAccessUsage::ColorAttachment,
+                stage: ResourceAccessStage::ColorAttachmentOutput,
                 range: ImageSubresourceRange::WHOLE_COLOR,
             }]
         );

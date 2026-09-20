@@ -1,5 +1,5 @@
 use super::super::access::{
-    ImageAccessMode, ImagePipelineStage, ImageSubresourceRange, ImageUsage,
+    ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
 use super::super::builder::{InternalPassBuilder, PassBuilder};
 use super::super::pass::{PassKind, PassType};
@@ -50,9 +50,9 @@ impl PassBuilder for OutlinePass {
             .map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::ReadWrite,
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessMode::ReadWrite,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 )
             })
@@ -64,6 +64,7 @@ impl PassBuilder for OutlinePass {
             reads,
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,
@@ -132,9 +133,9 @@ impl PassBuilder for StencilIndicatorPass {
             .map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ImageAccessMode::Write,
-                    ImageUsage::ColorAttachment,
-                    ImagePipelineStage::ColorAttachmentOutput,
+                    ResourceAccessMode::Write,
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
                 )
             })
@@ -146,6 +147,7 @@ impl PassBuilder for StencilIndicatorPass {
             reads: Vec::new(),
             writes,
             image_accesses,
+            buffer_accesses: Vec::new(),
             pipeline: None,
             tonemap_params: None,
             overlay_params: None,

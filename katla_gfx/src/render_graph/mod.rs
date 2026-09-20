@@ -68,19 +68,18 @@ mod vulkan_backend;
 
 // Public API
 pub use access::{
-    ImageAccess, ImageAccessMode, ImageAspects, ImagePipelineStage, ImageSubresourceRange,
-    ImageUsage,
+    BufferAccess, BufferByteRange, BufferUsage, ImageAccess, ImageAspects, ImageSubresourceRange,
+    ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
 pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
 pub use diagnostics::{
     RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAllocationSlot,
     RenderGraphDiagnosticCompatibilityClass, RenderGraphDiagnosticDependency,
-    RenderGraphDiagnosticHazard, RenderGraphDiagnosticImageAccess,
-    RenderGraphDiagnosticImageAccessMode, RenderGraphDiagnosticImageStage,
-    RenderGraphDiagnosticImageSubresourceRange, RenderGraphDiagnosticImageUsage,
-    RenderGraphDiagnosticImportedContract, RenderGraphDiagnosticPass,
-    RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
+    RenderGraphDiagnosticHazard, RenderGraphDiagnosticImageAccess, RenderGraphDiagnosticImageStage,
+    RenderGraphDiagnosticImageSubresourceRange, RenderGraphDiagnosticImportedContract,
+    RenderGraphDiagnosticPass, RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
+    RenderGraphDiagnosticResourceAccessMode, RenderGraphDiagnosticResourceAccessUsage,
     RenderGraphDiagnosticResourceLifetime, RenderGraphDiagnosticResourceOrigin,
     RenderGraphDiagnosticResourceRef, RenderGraphDiagnosticSummary,
     RenderGraphDiagnosticSyncReason, RenderGraphDiagnosticSyncState,

@@ -42,7 +42,10 @@ use std::fmt::{self, Write as _};
 use serde::Serialize;
 
 use super::BACKBUFFER_NAME;
-use super::access::{ImageAccess, ImageAccessMode, ImagePipelineStage, ImageUsage};
+use super::access::{
+    BufferAccess, BufferUsage, ImageAccess, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
+};
 use super::allocation_plan::TransientAllocationPlan;
 use super::backend::RenderGraphBackend;
 use super::compiler::{ExecutionPlan, ResourceLifetime};
@@ -191,7 +194,7 @@ pub struct RenderGraphDiagnosticResourceRef {
 /// Stable typed image access mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RenderGraphDiagnosticImageAccessMode {
+pub enum RenderGraphDiagnosticResourceAccessMode {
     Read,
     Write,
     ReadWrite,
@@ -200,7 +203,7 @@ pub enum RenderGraphDiagnosticImageAccessMode {
 /// Stable typed image usage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RenderGraphDiagnosticImageUsage {
+pub enum RenderGraphDiagnosticResourceAccessUsage {
     Sampled,
     ColorAttachment,
     DepthStencilAttachment,
@@ -238,10 +241,40 @@ pub struct RenderGraphDiagnosticImageSubresourceRange {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RenderGraphDiagnosticImageAccess {
     pub resource: RenderGraphDiagnosticResourceRef,
-    pub mode: RenderGraphDiagnosticImageAccessMode,
-    pub usage: RenderGraphDiagnosticImageUsage,
+    pub mode: RenderGraphDiagnosticResourceAccessMode,
+    pub usage: RenderGraphDiagnosticResourceAccessUsage,
     pub stage: RenderGraphDiagnosticImageStage,
     pub range: RenderGraphDiagnosticImageSubresourceRange,
+}
+
+/// Byte range of one buffer access.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticBufferByteRange {
+    pub offset: u64,
+    pub size: u64,
+}
+
+/// One typed buffer access declared by a pass.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticBufferAccess {
+    pub resource: RenderGraphDiagnosticResourceRef,
+    pub mode: RenderGraphDiagnosticResourceAccessMode,
+    pub usage: RenderGraphDiagnosticBufferUsage,
+    pub stage: RenderGraphDiagnosticImageStage,
+    pub range: RenderGraphDiagnosticBufferByteRange,
+}
+
+/// Backend-neutral buffer usage of one declared access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum RenderGraphDiagnosticBufferUsage {
+    Uniform,
+    Storage,
+    Vertex,
+    Index,
+    Indirect,
+    TransferSource,
+    TransferDestination,
+    Readback,
 }
 
 /// Pass information with canonical DAG metadata.
@@ -254,6 +287,8 @@ pub struct RenderGraphDiagnosticPass {
     pub reads: Vec<RenderGraphDiagnosticResourceRef>,
     pub writes: Vec<RenderGraphDiagnosticResourceRef>,
     pub image_accesses: Vec<RenderGraphDiagnosticImageAccess>,
+    /// Typed buffer accesses with their byte ranges.
+    pub buffer_accesses: Vec<RenderGraphDiagnosticBufferAccess>,
     /// Declared load/store operations per color target, in declaration order.
     pub color_attachments: Vec<RenderGraphDiagnosticAttachmentOps>,
     /// Declared depth/stencil operations, when the pass has a depth contract.
@@ -316,9 +351,9 @@ pub struct RenderGraphDiagnosticDependency {
 pub enum RenderGraphDiagnosticSyncState {
     Undefined,
     Access {
-        usage: RenderGraphDiagnosticImageUsage,
+        usage: RenderGraphDiagnosticResourceAccessUsage,
         stage: RenderGraphDiagnosticImageStage,
-        mode: RenderGraphDiagnosticImageAccessMode,
+        mode: RenderGraphDiagnosticResourceAccessMode,
     },
 }
 
@@ -462,6 +497,12 @@ impl RenderGraphDiagnostics {
                         .iter()
                         .copied()
                         .map(|access| diagnostic_image_access(access, resources))
+                        .collect(),
+                    buffer_accesses: pass
+                        .buffer_accesses
+                        .iter()
+                        .copied()
+                        .map(|access| diagnostic_buffer_access(access, resources))
                         .collect(),
                     color_attachments: pass
                         .color_attachments
@@ -637,8 +678,8 @@ impl RenderGraphDiagnostics {
                 let label = escape_dot(&access.to_string());
                 if matches!(
                     access.mode,
-                    RenderGraphDiagnosticImageAccessMode::Read
-                        | RenderGraphDiagnosticImageAccessMode::ReadWrite
+                    RenderGraphDiagnosticResourceAccessMode::Read
+                        | RenderGraphDiagnosticResourceAccessMode::ReadWrite
                 ) {
                     let _ = writeln!(
                         output,
@@ -648,8 +689,34 @@ impl RenderGraphDiagnostics {
                 }
                 if matches!(
                     access.mode,
-                    RenderGraphDiagnosticImageAccessMode::Write
-                        | RenderGraphDiagnosticImageAccessMode::ReadWrite
+                    RenderGraphDiagnosticResourceAccessMode::Write
+                        | RenderGraphDiagnosticResourceAccessMode::ReadWrite
+                ) {
+                    let _ = writeln!(
+                        output,
+                        "  p{} -> r{} [label=\"{}\"{}];",
+                        pass.index, access.resource.id, label, edge_style
+                    );
+                }
+            }
+
+            for access in &pass.buffer_accesses {
+                let label = escape_dot(&access.to_string());
+                if matches!(
+                    access.mode,
+                    RenderGraphDiagnosticResourceAccessMode::Read
+                        | RenderGraphDiagnosticResourceAccessMode::ReadWrite
+                ) {
+                    let _ = writeln!(
+                        output,
+                        "  r{} -> p{} [label=\"{}\"{}];",
+                        access.resource.id, pass.index, label, edge_style
+                    );
+                }
+                if matches!(
+                    access.mode,
+                    RenderGraphDiagnosticResourceAccessMode::Write
+                        | RenderGraphDiagnosticResourceAccessMode::ReadWrite
                 ) {
                     let _ = writeln!(
                         output,
@@ -846,11 +913,25 @@ impl fmt::Display for RenderGraphDiagnostics {
                     access.resource.id, access.resource.name
                 )?;
             }
+            for access in &pass.buffer_accesses {
+                writeln!(
+                    f,
+                    "    r{} ({}): {access}",
+                    access.resource.id, access.resource.name
+                )?;
+            }
         }
 
         for pass in self.passes.iter().filter(|pass| pass.culled) {
             writeln!(f, "  [{}] {} (culled)", pass.index, pass.name)?;
             for access in &pass.image_accesses {
+                writeln!(
+                    f,
+                    "    r{} ({}): {access}",
+                    access.resource.id, access.resource.name
+                )?;
+            }
+            for access in &pass.buffer_accesses {
                 writeln!(
                     f,
                     "    r{} ({}): {access}",
@@ -908,9 +989,9 @@ impl fmt::Display for RenderGraphDiagnostics {
 impl fmt::Display for RenderGraphDiagnosticImageAccess {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mode = match self.mode {
-            RenderGraphDiagnosticImageAccessMode::Read => "read",
-            RenderGraphDiagnosticImageAccessMode::Write => "write",
-            RenderGraphDiagnosticImageAccessMode::ReadWrite => "read_write",
+            RenderGraphDiagnosticResourceAccessMode::Read => "read",
+            RenderGraphDiagnosticResourceAccessMode::Write => "write",
+            RenderGraphDiagnosticResourceAccessMode::ReadWrite => "read_write",
         };
         write!(
             f,
@@ -919,6 +1000,24 @@ impl fmt::Display for RenderGraphDiagnosticImageAccess {
             self.stage,
             subresource_range_label(&self.range)
         )
+    }
+}
+
+impl fmt::Display for RenderGraphDiagnosticBufferAccess {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mode = match self.mode {
+            RenderGraphDiagnosticResourceAccessMode::Read => "read",
+            RenderGraphDiagnosticResourceAccessMode::Write => "write",
+            RenderGraphDiagnosticResourceAccessMode::ReadWrite => "read_write",
+        };
+        // A size of u64::MAX means "all remaining bytes", matching the
+        // subresource convention (`count == u32::MAX`).
+        let range = if self.range.size == u64::MAX {
+            format!("bytes {}+unbounded", self.range.offset)
+        } else {
+            format!("bytes {}+{}", self.range.offset, self.range.size)
+        };
+        write!(f, "{mode} {:?} @ {:?}, {range}", self.usage, self.stage)
     }
 }
 
@@ -978,9 +1077,9 @@ fn sync_state_label(state: &RenderGraphDiagnosticSyncState) -> String {
         RenderGraphDiagnosticSyncState::Access { usage, stage, mode } => format!(
             "{} {usage:?} @ {stage:?}",
             match mode {
-                RenderGraphDiagnosticImageAccessMode::Read => "read",
-                RenderGraphDiagnosticImageAccessMode::Write => "write",
-                RenderGraphDiagnosticImageAccessMode::ReadWrite => "read_write",
+                RenderGraphDiagnosticResourceAccessMode::Read => "read",
+                RenderGraphDiagnosticResourceAccessMode::Write => "write",
+                RenderGraphDiagnosticResourceAccessMode::ReadWrite => "read_write",
             }
         ),
     }
@@ -990,34 +1089,25 @@ fn diagnostic_image_access(
     access: ImageAccess,
     resources: &[GraphResourceDesc],
 ) -> RenderGraphDiagnosticImageAccess {
-    let mode = match access.mode {
-        ImageAccessMode::Read => RenderGraphDiagnosticImageAccessMode::Read,
-        ImageAccessMode::Write => RenderGraphDiagnosticImageAccessMode::Write,
-        ImageAccessMode::ReadWrite => RenderGraphDiagnosticImageAccessMode::ReadWrite,
-    };
+    let mode = diagnostic_access_mode(access.mode);
     let usage = match access.usage {
-        ImageUsage::Sampled => RenderGraphDiagnosticImageUsage::Sampled,
-        ImageUsage::ColorAttachment => RenderGraphDiagnosticImageUsage::ColorAttachment,
-        ImageUsage::DepthStencilAttachment => {
-            RenderGraphDiagnosticImageUsage::DepthStencilAttachment
+        ResourceAccessUsage::Sampled => RenderGraphDiagnosticResourceAccessUsage::Sampled,
+        ResourceAccessUsage::ColorAttachment => {
+            RenderGraphDiagnosticResourceAccessUsage::ColorAttachment
         }
-        ImageUsage::Storage => RenderGraphDiagnosticImageUsage::Storage,
-        ImageUsage::TransferSource => RenderGraphDiagnosticImageUsage::TransferSource,
-        ImageUsage::TransferDestination => RenderGraphDiagnosticImageUsage::TransferDestination,
-        ImageUsage::Present => RenderGraphDiagnosticImageUsage::Present,
-    };
-    let stage = match access.stage {
-        ImagePipelineStage::VertexShader => RenderGraphDiagnosticImageStage::VertexShader,
-        ImagePipelineStage::FragmentShader => RenderGraphDiagnosticImageStage::FragmentShader,
-        ImagePipelineStage::ComputeShader => RenderGraphDiagnosticImageStage::ComputeShader,
-        ImagePipelineStage::ColorAttachmentOutput => {
-            RenderGraphDiagnosticImageStage::ColorAttachmentOutput
+        ResourceAccessUsage::DepthStencilAttachment => {
+            RenderGraphDiagnosticResourceAccessUsage::DepthStencilAttachment
         }
-        ImagePipelineStage::DepthStencil => RenderGraphDiagnosticImageStage::DepthStencil,
-        ImagePipelineStage::Transfer => RenderGraphDiagnosticImageStage::Transfer,
-        ImagePipelineStage::Present => RenderGraphDiagnosticImageStage::Present,
-        ImagePipelineStage::AllGraphics => RenderGraphDiagnosticImageStage::AllGraphics,
+        ResourceAccessUsage::Storage => RenderGraphDiagnosticResourceAccessUsage::Storage,
+        ResourceAccessUsage::TransferSource => {
+            RenderGraphDiagnosticResourceAccessUsage::TransferSource
+        }
+        ResourceAccessUsage::TransferDestination => {
+            RenderGraphDiagnosticResourceAccessUsage::TransferDestination
+        }
+        ResourceAccessUsage::Present => RenderGraphDiagnosticResourceAccessUsage::Present,
     };
+    let stage = diagnostic_access_stage(access.stage);
 
     RenderGraphDiagnosticImageAccess {
         resource: resource_ref(access.resource, resources),
@@ -1025,6 +1115,58 @@ fn diagnostic_image_access(
         usage,
         stage,
         range: diagnostic_subresource_range(access.range),
+    }
+}
+
+fn diagnostic_access_mode(mode: ResourceAccessMode) -> RenderGraphDiagnosticResourceAccessMode {
+    match mode {
+        ResourceAccessMode::Read => RenderGraphDiagnosticResourceAccessMode::Read,
+        ResourceAccessMode::Write => RenderGraphDiagnosticResourceAccessMode::Write,
+        ResourceAccessMode::ReadWrite => RenderGraphDiagnosticResourceAccessMode::ReadWrite,
+    }
+}
+
+fn diagnostic_access_stage(stage: ResourceAccessStage) -> RenderGraphDiagnosticImageStage {
+    match stage {
+        ResourceAccessStage::VertexShader => RenderGraphDiagnosticImageStage::VertexShader,
+        ResourceAccessStage::FragmentShader => RenderGraphDiagnosticImageStage::FragmentShader,
+        ResourceAccessStage::ComputeShader => RenderGraphDiagnosticImageStage::ComputeShader,
+        ResourceAccessStage::ColorAttachmentOutput => {
+            RenderGraphDiagnosticImageStage::ColorAttachmentOutput
+        }
+        ResourceAccessStage::DepthStencil => RenderGraphDiagnosticImageStage::DepthStencil,
+        ResourceAccessStage::Transfer => RenderGraphDiagnosticImageStage::Transfer,
+        ResourceAccessStage::Present => RenderGraphDiagnosticImageStage::Present,
+        ResourceAccessStage::AllGraphics => RenderGraphDiagnosticImageStage::AllGraphics,
+    }
+}
+
+fn diagnostic_buffer_access(
+    access: BufferAccess,
+    resources: &[GraphResourceDesc],
+) -> RenderGraphDiagnosticBufferAccess {
+    let mode = diagnostic_access_mode(access.mode);
+    let usage = match access.usage {
+        BufferUsage::Uniform => RenderGraphDiagnosticBufferUsage::Uniform,
+        BufferUsage::Storage => RenderGraphDiagnosticBufferUsage::Storage,
+        BufferUsage::Vertex => RenderGraphDiagnosticBufferUsage::Vertex,
+        BufferUsage::Index => RenderGraphDiagnosticBufferUsage::Index,
+        BufferUsage::Indirect => RenderGraphDiagnosticBufferUsage::Indirect,
+        BufferUsage::TransferSource => RenderGraphDiagnosticBufferUsage::TransferSource,
+        BufferUsage::TransferDestination => RenderGraphDiagnosticBufferUsage::TransferDestination,
+        BufferUsage::Readback => RenderGraphDiagnosticBufferUsage::Readback,
+    };
+    let stage = diagnostic_access_stage(access.stage);
+
+    RenderGraphDiagnosticBufferAccess {
+        resource: resource_ref(access.resource, resources),
+        mode,
+        usage,
+        stage,
+        range: RenderGraphDiagnosticBufferByteRange {
+            offset: access.range.offset,
+            size: access.range.size,
+        },
     }
 }
 
@@ -1093,33 +1235,39 @@ fn diagnostic_transition(
 }
 
 fn diagnostic_sync_state(state: ImageSyncState) -> RenderGraphDiagnosticSyncState {
-    let usage = |usage: super::access::ImageUsage| match usage {
-        ImageUsage::Sampled => RenderGraphDiagnosticImageUsage::Sampled,
-        ImageUsage::ColorAttachment => RenderGraphDiagnosticImageUsage::ColorAttachment,
-        ImageUsage::DepthStencilAttachment => {
-            RenderGraphDiagnosticImageUsage::DepthStencilAttachment
+    let usage = |usage: super::access::ResourceAccessUsage| match usage {
+        ResourceAccessUsage::Sampled => RenderGraphDiagnosticResourceAccessUsage::Sampled,
+        ResourceAccessUsage::ColorAttachment => {
+            RenderGraphDiagnosticResourceAccessUsage::ColorAttachment
         }
-        ImageUsage::Storage => RenderGraphDiagnosticImageUsage::Storage,
-        ImageUsage::TransferSource => RenderGraphDiagnosticImageUsage::TransferSource,
-        ImageUsage::TransferDestination => RenderGraphDiagnosticImageUsage::TransferDestination,
-        ImageUsage::Present => RenderGraphDiagnosticImageUsage::Present,
+        ResourceAccessUsage::DepthStencilAttachment => {
+            RenderGraphDiagnosticResourceAccessUsage::DepthStencilAttachment
+        }
+        ResourceAccessUsage::Storage => RenderGraphDiagnosticResourceAccessUsage::Storage,
+        ResourceAccessUsage::TransferSource => {
+            RenderGraphDiagnosticResourceAccessUsage::TransferSource
+        }
+        ResourceAccessUsage::TransferDestination => {
+            RenderGraphDiagnosticResourceAccessUsage::TransferDestination
+        }
+        ResourceAccessUsage::Present => RenderGraphDiagnosticResourceAccessUsage::Present,
     };
-    let stage = |stage: super::access::ImagePipelineStage| match stage {
-        ImagePipelineStage::VertexShader => RenderGraphDiagnosticImageStage::VertexShader,
-        ImagePipelineStage::FragmentShader => RenderGraphDiagnosticImageStage::FragmentShader,
-        ImagePipelineStage::ComputeShader => RenderGraphDiagnosticImageStage::ComputeShader,
-        ImagePipelineStage::ColorAttachmentOutput => {
+    let stage = |stage: super::access::ResourceAccessStage| match stage {
+        ResourceAccessStage::VertexShader => RenderGraphDiagnosticImageStage::VertexShader,
+        ResourceAccessStage::FragmentShader => RenderGraphDiagnosticImageStage::FragmentShader,
+        ResourceAccessStage::ComputeShader => RenderGraphDiagnosticImageStage::ComputeShader,
+        ResourceAccessStage::ColorAttachmentOutput => {
             RenderGraphDiagnosticImageStage::ColorAttachmentOutput
         }
-        ImagePipelineStage::DepthStencil => RenderGraphDiagnosticImageStage::DepthStencil,
-        ImagePipelineStage::Transfer => RenderGraphDiagnosticImageStage::Transfer,
-        ImagePipelineStage::Present => RenderGraphDiagnosticImageStage::Present,
-        ImagePipelineStage::AllGraphics => RenderGraphDiagnosticImageStage::AllGraphics,
+        ResourceAccessStage::DepthStencil => RenderGraphDiagnosticImageStage::DepthStencil,
+        ResourceAccessStage::Transfer => RenderGraphDiagnosticImageStage::Transfer,
+        ResourceAccessStage::Present => RenderGraphDiagnosticImageStage::Present,
+        ResourceAccessStage::AllGraphics => RenderGraphDiagnosticImageStage::AllGraphics,
     };
-    let mode = |mode: super::access::ImageAccessMode| match mode {
-        ImageAccessMode::Read => RenderGraphDiagnosticImageAccessMode::Read,
-        ImageAccessMode::Write => RenderGraphDiagnosticImageAccessMode::Write,
-        ImageAccessMode::ReadWrite => RenderGraphDiagnosticImageAccessMode::ReadWrite,
+    let mode = |mode: super::access::ResourceAccessMode| match mode {
+        ResourceAccessMode::Read => RenderGraphDiagnosticResourceAccessMode::Read,
+        ResourceAccessMode::Write => RenderGraphDiagnosticResourceAccessMode::Write,
+        ResourceAccessMode::ReadWrite => RenderGraphDiagnosticResourceAccessMode::ReadWrite,
     };
 
     match state {
@@ -1613,17 +1761,17 @@ mod tests {
         assert_eq!(
             raw.before_state,
             RenderGraphDiagnosticSyncState::Access {
-                usage: RenderGraphDiagnosticImageUsage::Storage,
+                usage: RenderGraphDiagnosticResourceAccessUsage::Storage,
                 stage: RenderGraphDiagnosticImageStage::AllGraphics,
-                mode: RenderGraphDiagnosticImageAccessMode::Write,
+                mode: RenderGraphDiagnosticResourceAccessMode::Write,
             }
         );
         assert_eq!(
             raw.after_state,
             RenderGraphDiagnosticSyncState::Access {
-                usage: RenderGraphDiagnosticImageUsage::Sampled,
+                usage: RenderGraphDiagnosticResourceAccessUsage::Sampled,
                 stage: RenderGraphDiagnosticImageStage::FragmentShader,
-                mode: RenderGraphDiagnosticImageAccessMode::Read,
+                mode: RenderGraphDiagnosticResourceAccessMode::Read,
             }
         );
         assert_eq!(raw.before_name.as_deref(), Some("geometry"));
@@ -1841,6 +1989,80 @@ mod tests {
             })
         );
         assert_eq!(diagnostics.execution_order, vec![0]);
+    }
+
+    #[test]
+    fn test_buffer_access_exports_preserve_byte_ranges() {
+        use crate::render_graph::access::{
+            BufferAccess, BufferByteRange, BufferUsage, ResourceAccessStage,
+        };
+
+        let resources = vec![namespace_resource("tiles")];
+        let bounded = BufferAccess::new(
+            ResourceId(0),
+            ResourceAccessMode::ReadWrite,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::new(4096, 256),
+        );
+        let unbounded = BufferAccess::new(
+            ResourceId(0),
+            ResourceAccessMode::Read,
+            BufferUsage::Storage,
+            ResourceAccessStage::ComputeShader,
+            BufferByteRange::from(512),
+        );
+        let mut live = pass("cull", vec![], vec![]).with_buffer_accesses([bounded]);
+        live.side_effect = true;
+        let passes = vec![
+            live,
+            pass("trace", vec![], vec![]).with_buffer_accesses([unbounded]),
+        ];
+        let plan = GraphCompiler::from_pass_descs_with_exports(&passes, [], BTreeMap::new())
+            .compile()
+            .unwrap();
+        let diagnostics = RenderGraphDiagnostics::from_parts(
+            &passes,
+            &resources,
+            &[],
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &plan,
+        );
+
+        let text = diagnostics.to_string();
+        assert!(
+            text.contains("read_write Storage @ ComputeShader, bytes 4096+256"),
+            "text export missing bounded buffer range: {text}"
+        );
+        assert!(
+            text.contains("read Storage @ ComputeShader, bytes 512+unbounded"),
+            "text export missing unbounded buffer range: {text}"
+        );
+
+        let dot = diagnostics.to_dot();
+        for edge in ["r0 -> p0", "p0 -> r0"] {
+            assert!(
+                dot.contains(&format!(
+                    "{edge} [label=\"read_write Storage @ ComputeShader, bytes 4096+256\"];"
+                )),
+                "dot export missing buffer edge {edge}: {dot}"
+            );
+        }
+
+        let json: Value = serde_json::from_str(&diagnostics.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(
+            json["passes"][0]["buffer_accesses"][0]["range"],
+            serde_json::json!({ "offset": 4096, "size": 256 })
+        );
+        assert_eq!(
+            json["passes"][0]["buffer_accesses"][0]["usage"],
+            serde_json::json!("Storage")
+        );
+        assert_eq!(
+            json["passes"][1]["buffer_accesses"][0]["range"],
+            serde_json::json!({ "offset": 512, "size": u64::MAX })
+        );
     }
 
     #[test]
