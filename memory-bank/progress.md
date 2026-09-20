@@ -3,7 +3,8 @@
 ## Completed Recently
 
 - **Issue #37 slice 4: render-graph diagnostics capture + CI artifacts
-  (2026-09-20, branch `fix/37-capture-docs`, main at `159c82aa`)** — the two
+  (2026-09-20, PR #129 squash-merged as `98600cb6`, CI green both platforms,
+  main CI green post-merge)** — the two
   remaining #37 DoD items that needed no new backend data, so the issue's
   evidence trail is complete for everything already compiled.
   `AnyFrameGraph::diagnostics()` exposes the pure, backend-neutral compiler
