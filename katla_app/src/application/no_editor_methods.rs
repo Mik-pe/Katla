@@ -4,12 +4,9 @@
 //! Editor implementations live in `editor_methods.rs`.
 
 use super::Application;
-use katla_gfx::GpuRenderer;
 use katla_math::Vec2;
 
 impl Application {
-    pub(crate) fn on_viewport_texture_recreated(&mut self, _slot: u32) {}
-
     pub(crate) fn on_viewport_texture_recreated(&mut self, _slot: u32) {}
 
     pub(crate) fn filter_scroll_for_editor(&self, wheel_y: f32) -> f32 {
@@ -53,18 +50,9 @@ impl Application {
     pub(crate) fn poll_background_loader(&mut self) {}
 
     pub(crate) fn render_editor_frame(&mut self, dt: f32) {
-        let _ = dt;
-
-        {
-            log::debug!("Rendering frame...");
-            self.render_frame(None, dt, self.frame_count);
-            log::debug!("Frame rendered");
-        }
-
-        #[cfg(target_os = "macos")]
-        {
-            self.render_frame(None, dt, self.frame_count);
-        }
+        log::debug!("Rendering frame...");
+        self.render_frame(None, dt, self.frame_count);
+        log::debug!("Frame rendered");
     }
 
     /// No-op in non-editor builds (no UI tree to dump).
