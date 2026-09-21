@@ -1499,41 +1499,66 @@ the DOT nodes/edges. #37 remains open.
   Both were needed to turn "the sky looks washed out" into "mean luma 0.72,
   horizon = sRGB 194-217".
 
-## 2026-09-20 — grid restored as editor chrome (`feat/grid-pass`)
+## 2026-09-20 — two audit fixes landed (`b8248b63`, `e37fd0e2`)
 
-The audit found the grid UI to be a lie: `resources/shaders/grid.wgsl` had zero
-Rust references since `1eafd64d` (2026-03-02), yet View → "Grid (on)" and the
-Preferences toggle still existed.
+The headless screenshot audit produced four pre-existing findings. Two are
+fixed and merged, both with Linux + macOS 26 CI green:
 
-Restored as **editor chrome geometry** rather than a fullscreen pass:
+| PR | Squash | What |
+|---|---|---|
+| #136 | `b8248b63` | Sky gradient + sun glow (`sky.wgsl`) |
+| #137 | `e37fd0e2` | Editor grid restored as chrome geometry |
 
-- `katla_app/src/rendering/grid.rs`: 42 instanced shaft-mesh lines, two draw
-  calls (minor + major color). Same draw-call pattern as physics-debug.
-  Depth-tested, depth-write OFF, so geometry occludes the grid and the grid
-  never occludes anything.
-- `Application::ground_height()` queries `EntitySource::Plane` entities and
-  takes the highest Y, so the grid lies on the scene's floor (default scene:
-  y=-1). Falls back to 0.0.
-- `grid.wgsl` deleted. The old procedural-shader path is gone outright.
+### Sky (#136)
 
-**Why not the fullscreen pass:** that route needs the Metal second-fullscreen
-infrastructure (`encode_fullscreen_record` is hardwired to `self.tonemap_pipeline`;
-`MetalPassRecord` carries no pipeline). That cost belongs to TAA, which is
-deferred. Chrome geometry works on both backends today with no renderer change.
+`HORIZON_COLOR` was linear HDR `(0.9, 0.95, 1.1)`, which ACES tonemapped to
+~194-217 — a flat near-white sky whose below-horizon band (175,180,188) was
+*brighter* than the ground mesh (60,62,77), inverting the composition. New
+constants are linear-HDR-honest. The sun glow `pow(dot,256)*8.0` at intensity
+4.0 clipped to 255 across a large soft region; it is now an explicit
+`smoothstep` disc plus a tight two-term halo.
 
-**Metal bug fixed:** `build_pipeline_for_key` (katla_gfx/src/metal/material_api.rs)
-hardcoded `depth_write_enabled = true` + `CompareOp::GreaterOrEqual` for every
-non-UI material, ignoring the descriptor's declared `DepthState`. Vulkan honors
-the declaration, so any depth-test-on/depth-write-off material (like the grid)
-would have written depth on Metal only. Both now read `descriptor.depth.{write,compare}`;
-behavior-preserving for `pbr`/`skinned`/`billboard`, which all use the default.
+Measured: sky-top 184,188,196 -> 105,125,150; below-horizon 162,167,176 ->
+64,79,99; viewport gray-luma 0.717 -> 0.659 (0.49-0.52 from yaw 45/135 and
+low-pitch poses).
 
-**Gotcha (cost a build cycle):** the shared shaft mesh from `create_cylinder` spans
-local `y = 0..1`, NOT centered on the origin. Scaling "length along Y" without
-offsetting by half a length puts every line one half-length off; the first
-capture showed the grid as giant diagonal bands.
+### Grid (#137)
+
+`resources/shaders/grid.wgsl` had zero Rust references since `1eafd64d`
+(2026-03-02) while the View menu and Preferences toggle still advertised it.
+Restored as **editor chrome geometry** (the physics-debug overlay pattern),
+not as a fullscreen pass: 42 instanced shaft-mesh lines in two draw calls,
+depth-tested with depth-write off, placed on the scene's ground plane height.
+
+Deleting the shader rather than reviving it is deliberate — see below.
+
+**Why geometry, not a fullscreen pass.** The historical grid was a fullscreen
+ray-plane shader, but restoring that needs Metal's second-fullscreen-pass
+infrastructure: `encode_fullscreen_record` is hardwired to
+`self.tonemap_pipeline` and never receives the pass record, and
+`MetalPassRecord` carries no pipeline. That is TAA's cost, not the grid's.
+Chrome geometry works on both backends with zero renderer changes.
+
+**Metal bug found and fixed.** `build_pipeline_for_key`
+(`katla_gfx/src/metal/material_api.rs`) hardcoded `depth_write_enabled = true`
+and `CompareOp::GreaterOrEqual` for every non-UI material, ignoring the
+descriptor's declared `DepthState`, while Vulkan honors it. Any depth-test-on /
+depth-write-off material — like the grid — would have written depth on Metal
+only. Both now read `descriptor.depth.{write, compare}`; behavior-preserving
+for `pbr`/`skinned`/`billboard`, which all use `DepthState::default()`. The
+`pbr` contract module compiles real PBR pipelines on macOS CI, so that job
+exercises the change.
+
+**Gotcha (cost one build cycle):** the shaft mesh from `create_cylinder` spans
+local `y = 0..1`, not centered. Scaling length along Y without offsetting by
+half a length put every grid line half a length off; the first capture showed
+giant diagonal bands instead of a floor grid.
 
 **Verification:** 5 `--lib` tests in `rendering::grid` (CI-gated, unlike new
-`tests/*.rs`); `cargo test -p katla_gfx --lib` 493 green; fmt + clippy clean on
-both crates; macOS cross-check compiles; headless captures at default/low/top
-poses show 0 render errors; grid-on vs grid-off differ by ~14.5k pixels.
+`tests/*.rs` files); 493 gfx lib tests; fmt + clippy clean on both crates;
+macOS cross-check compiles; headless captures from default/low/top poses with
+0 render errors; grid on/off differ by ~14.5k pixels.
+
+**Still open from the audit:** no antialiasing anywhere (TAA/BL deferred by
+request — the headline item), and the single-sided `Ground` plane is culled
+when orbiting below the horizon.
