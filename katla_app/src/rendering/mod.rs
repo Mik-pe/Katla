@@ -5,6 +5,8 @@
 pub mod frame_context;
 
 #[cfg(feature = "editor")]
+pub mod grid;
+#[cfg(feature = "editor")]
 pub mod physics_debug;
 #[cfg(feature = "editor")]
 pub(crate) mod reverb_debug;

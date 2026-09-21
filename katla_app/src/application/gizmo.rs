@@ -73,6 +73,12 @@ impl Application {
             material,
         );
 
+        crate::rendering::grid::init_grid_resources(
+            &mut self.renderer,
+            &mut self.editor.grid_resources,
+            &unlit_shader_path,
+        );
+
         info!("Gizmo GPU resources initialized");
     }
 
