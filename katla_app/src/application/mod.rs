@@ -128,6 +128,8 @@ pub(crate) struct EditorState {
     pub(crate) gizmo_resources: crate::gizmo::GizmoResources,
     /// Physics debug GPU resources (wireframe meshes, material).
     pub(crate) physics_debug_resources: crate::rendering::physics_debug::PhysicsDebugResources,
+    /// Reference grid GPU resources (line mesh, material).
+    pub(crate) grid_resources: crate::rendering::grid::GridResources,
     /// Billboard GPU resources (mesh, material, icon textures).
     pub(crate) billboard_resources: crate::billboard::BillboardResources,
     /// Previous frame's mouse screen position (for gizmo rotation drag delta).
@@ -204,6 +206,7 @@ impl EditorState {
             gizmo_resources: crate::gizmo::GizmoResources::default(),
             physics_debug_resources:
                 crate::rendering::physics_debug::PhysicsDebugResources::default(),
+            grid_resources: crate::rendering::grid::GridResources::default(),
             billboard_resources: crate::billboard::BillboardResources::default(),
             prev_mouse_screen: None,
             component_registry,

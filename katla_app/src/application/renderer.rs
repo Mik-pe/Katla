@@ -706,6 +706,7 @@ impl Application {
         Option<katla_gfx::renderer::DrawList>,
     ) {
         self.collect_gizmo_draw_calls(draw_list);
+        self.collect_grid_draw_calls(draw_list);
         self.collect_physics_debug_draw_calls(draw_list);
         self.collect_reverb_debug_draw_calls(draw_list);
 
@@ -717,6 +718,7 @@ impl Application {
             self.editor.billboard_resources.material,
             self.editor.gizmo_resources.material,
             self.editor.physics_debug_resources.material,
+            self.editor.grid_resources.material,
         ];
         let shadow_draw_list = {
             let draws = draw_list
@@ -852,6 +854,37 @@ impl Application {
         for draw in gizmo_draws {
             draw_list.push(draw);
         }
+    }
+
+    /// Generate reference grid draw calls if the grid is enabled.
+    fn collect_grid_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        if !self.editor.editor_ui.show_grid || !self.editor.grid_resources.initialized {
+            return;
+        }
+
+        let ground_height = self.ground_height();
+        for draw in
+            crate::rendering::grid::generate_grid_draws(&self.editor.grid_resources, ground_height)
+        {
+            draw_list.push(draw);
+        }
+    }
+
+    /// Height of the scene's ground plane, so the grid lies on the floor
+    /// instead of floating above or below it. Falls back to world zero, the
+    /// conventional editor ground level, when the scene has no ground plane.
+    fn ground_height(&mut self) -> f32 {
+        use crate::components::TransformComponent;
+        use crate::scene::EntitySource;
+
+        self.world
+            .query::<(&EntitySource, &TransformComponent)>()
+            .filter_map(|(_, source, transform)| {
+                matches!(source, EntitySource::Plane { .. })
+                    .then_some(transform.transform.position.y())
+            })
+            .reduce(f32::max)
+            .unwrap_or(0.0)
     }
 
     /// Generate physics debug wireframe draw calls if the overlay is enabled.

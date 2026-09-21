@@ -1498,3 +1498,42 @@ the DOT nodes/edges. #37 remains open.
   -threshold 40% -format "%[fx:1-mean]"` for "how much of the frame is dark".
   Both were needed to turn "the sky looks washed out" into "mean luma 0.72,
   horizon = sRGB 194-217".
+
+## 2026-09-20 — grid restored as editor chrome (`feat/grid-pass`)
+
+The audit found the grid UI to be a lie: `resources/shaders/grid.wgsl` had zero
+Rust references since `1eafd64d` (2026-03-02), yet View → "Grid (on)" and the
+Preferences toggle still existed.
+
+Restored as **editor chrome geometry** rather than a fullscreen pass:
+
+- `katla_app/src/rendering/grid.rs`: 42 instanced shaft-mesh lines, two draw
+  calls (minor + major color). Same draw-call pattern as physics-debug.
+  Depth-tested, depth-write OFF, so geometry occludes the grid and the grid
+  never occludes anything.
+- `Application::ground_height()` queries `EntitySource::Plane` entities and
+  takes the highest Y, so the grid lies on the scene's floor (default scene:
+  y=-1). Falls back to 0.0.
+- `grid.wgsl` deleted. The old procedural-shader path is gone outright.
+
+**Why not the fullscreen pass:** that route needs the Metal second-fullscreen
+infrastructure (`encode_fullscreen_record` is hardwired to `self.tonemap_pipeline`;
+`MetalPassRecord` carries no pipeline). That cost belongs to TAA, which is
+deferred. Chrome geometry works on both backends today with no renderer change.
+
+**Metal bug fixed:** `build_pipeline_for_key` (katla_gfx/src/metal/material_api.rs)
+hardcoded `depth_write_enabled = true` + `CompareOp::GreaterOrEqual` for every
+non-UI material, ignoring the descriptor's declared `DepthState`. Vulkan honors
+the declaration, so any depth-test-on/depth-write-off material (like the grid)
+would have written depth on Metal only. Both now read `descriptor.depth.{write,compare}`;
+behavior-preserving for `pbr`/`skinned`/`billboard`, which all use the default.
+
+**Gotcha (cost a build cycle):** the shared shaft mesh from `create_cylinder` spans
+local `y = 0..1`, NOT centered on the origin. Scaling "length along Y" without
+offsetting by half a length puts every line one half-length off; the first
+capture showed the grid as giant diagonal bands.
+
+**Verification:** 5 `--lib` tests in `rendering::grid` (CI-gated, unlike new
+`tests/*.rs`); `cargo test -p katla_gfx --lib` 493 green; fmt + clippy clean on
+both crates; macOS cross-check compiles; headless captures at default/low/top
+poses show 0 render errors; grid-on vs grid-off differ by ~14.5k pixels.
