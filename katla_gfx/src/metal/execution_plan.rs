@@ -5,8 +5,8 @@
 //! pipeline from singleton semantic checks.
 
 use crate::render_graph::{
-    FrameGraph, ImageAccess, ImageSyncOp, PassDesc, PassId, PassKind, PassType, RenderGraphError,
-    ResourceId,
+    BufferAccess, BufferByteRange, BufferSyncOp, FrameGraph, ImageAccess, ImageSyncOp, PassDesc,
+    PassId, PassKind, PassType, RenderGraphError, ResourceId,
 };
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -44,6 +44,7 @@ pub(crate) struct MetalPassRecord {
     pub(crate) reads: Vec<ResourceId>,
     pub(crate) writes: Vec<ResourceId>,
     pub(crate) image_accesses: Vec<ImageAccess>,
+    pub(crate) buffer_accesses: Vec<BufferAccess>,
     pub(crate) color_attachments: Vec<MetalColorAttachmentRecord>,
     pub(crate) uses_depth: bool,
     pub(crate) depth_attachment: Option<MetalDepthAttachmentOps>,
@@ -96,6 +97,7 @@ impl MetalPassRecord {
             reads: pass.reads.clone(),
             writes: pass.writes.clone(),
             image_accesses: pass.image_accesses.clone(),
+            buffer_accesses: pass.buffer_accesses.clone(),
             color_attachments: pass
                 .color_attachments
                 .iter()
@@ -178,27 +180,29 @@ impl MetalPassRecord {
     }
 }
 
-/// How Metal realizes one compiled image synchronization operation.
+/// How Metal realizes one compiled image or buffer synchronization operation.
 ///
-/// Metal has no image layouts. Graph transients use private storage with
-/// driver-tracked resources: the driver inserts the hazards between encoders
-/// and attachment load/store actions realize render-target transitions, so
-/// every image sync operation is covered by tracked-resource guarantees —
-/// no explicit image barrier is required. (The hand-placed tonemap→UI fence
-/// in frame_render predates the compiled plan and remains until queue and
-/// encoder boundary requirements are modeled explicitly.)
+/// Metal has no image layouts. Encoder load/store actions realize render-target
+/// transitions, while driver-tracked resources cover image and buffer hazards
+/// between encoders. The hand-placed tonemap→UI fence predates this plan and
+/// remains until queue and encoder boundary requirements are modeled explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MetalSyncCoverage {
     /// Driver-tracked hazards between encoders cover the operation.
     TrackedResource,
+    /// The first use has no prior GPU access to order.
+    NoPriorAccess,
 }
 
-/// Classification of one compiled image sync operation for Metal encoding.
+/// Classification of one compiled synchronization operation for Metal encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct MetalSyncRecord {
     /// Pass the operation precedes; `None` at frame end.
     pub(crate) pass: Option<usize>,
     pub(crate) resource: ResourceId,
+    /// Present for buffer synchronization records; images cover their full
+    /// tracked resource and therefore have no byte range.
+    pub(crate) buffer_range: Option<BufferByteRange>,
     pub(crate) coverage: MetalSyncCoverage,
 }
 
@@ -207,7 +211,21 @@ impl MetalSyncRecord {
         Self {
             pass,
             resource: op.resource,
+            buffer_range: None,
             coverage: MetalSyncCoverage::TrackedResource,
+        }
+    }
+
+    fn classify_buffer(pass: usize, op: &BufferSyncOp) -> Self {
+        Self {
+            pass: Some(pass),
+            resource: op.resource,
+            buffer_range: Some(op.range),
+            coverage: if op.before == crate::render_graph::BufferSyncState::Undefined {
+                MetalSyncCoverage::NoPriorAccess
+            } else {
+                MetalSyncCoverage::TrackedResource
+            },
         }
     }
 }
@@ -238,9 +256,13 @@ impl MetalExecutionPlan {
             })
         };
         let mut image_sync_ops = Vec::new();
+        let mut buffer_sync_ops = Vec::new();
         for &pass_index in &order {
             for op in frame_graph.image_sync_ops(pass_index) {
                 image_sync_ops.push((Some(pass_index), *op));
+            }
+            for op in frame_graph.buffer_sync_ops(pass_index) {
+                buffer_sync_ops.push((pass_index, *op));
             }
         }
         for op in frame_graph.final_image_sync_ops() {
@@ -252,6 +274,7 @@ impl MetalExecutionPlan {
             &format_at,
             &|id| frame_graph.resource_name(id).map(str::to_string),
             &image_sync_ops,
+            &buffer_sync_ops,
         )
     }
 
@@ -261,6 +284,7 @@ impl MetalExecutionPlan {
         format_at: &impl Fn(ResourceId) -> Option<ImageFormat>,
         name_at: &impl Fn(ResourceId) -> Option<String>,
         image_sync_ops: &[(Option<usize>, ImageSyncOp)],
+        buffer_sync_ops: &[(usize, BufferSyncOp)],
     ) -> Result<Self, RenderGraphError> {
         let passes = order
             .iter()
@@ -275,10 +299,16 @@ impl MetalExecutionPlan {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
-        let sync = image_sync_ops
+        let mut sync = image_sync_ops
             .iter()
             .map(|(pass, op)| MetalSyncRecord::classify(*pass, op))
-            .collect();
+            .collect::<Vec<_>>();
+        sync.extend(
+            buffer_sync_ops
+                .iter()
+                .map(|(pass, op)| MetalSyncRecord::classify_buffer(*pass, op)),
+        );
+        sync.sort_by_key(|record| (record.pass.unwrap_or(usize::MAX), record.resource.0));
 
         Ok(Self { passes, sync })
     }
@@ -307,6 +337,7 @@ impl MetalExecutionPlan {
                     reads: Vec::new(),
                     writes: Vec::new(),
                     image_accesses: Vec::new(),
+                    buffer_accesses: Vec::new(),
                     color_attachments: Vec::new(),
                     uses_depth: matches!(
                         kind,
@@ -360,6 +391,7 @@ mod tests {
             |index| passes.get(index),
             &format_at,
             &|id| Some(format!("r{}", id.0)),
+            &[],
             &[],
         )
     }
@@ -559,6 +591,7 @@ mod tests {
             &format_at,
             &name_at,
             &[(Some(1), attachment_write), (None, frame_end)],
+            &[],
         )
         .unwrap();
 
@@ -568,11 +601,13 @@ mod tests {
                 MetalSyncRecord {
                     pass: Some(1),
                     resource: ResourceId(3),
+                    buffer_range: None,
                     coverage: MetalSyncCoverage::TrackedResource,
                 },
                 MetalSyncRecord {
                     pass: None,
                     resource: ResourceId(3),
+                    buffer_range: None,
                     coverage: MetalSyncCoverage::TrackedResource,
                 },
             ]

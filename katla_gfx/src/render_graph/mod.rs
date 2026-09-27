@@ -64,6 +64,7 @@ pub mod any_frame_graph;
 mod frame;
 #[cfg(target_os = "macos")]
 mod metal_backend;
+pub(crate) mod transient_buffer;
 mod transient_texture;
 mod vulkan_backend;
 
@@ -99,7 +100,8 @@ pub use passes::{
     UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{
-    GraphResourceDesc, GraphResourceHandle, GraphResourceType, ImportedImageContract, ResourceState,
+    BufferDesc, BufferMemoryPolicy, BufferUsages, GraphBufferDesc, GraphResourceDesc,
+    GraphResourceHandle, GraphResourceType, ImportedImageContract, ResourceState,
 };
 pub use sync_plan::{BufferSyncOp, BufferSyncState};
 pub(crate) use sync_plan::{ImageSyncOp, ImageSyncState, ResourceHazardKind, SyncPlan, SyncReason};

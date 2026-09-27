@@ -2,6 +2,8 @@
 
 ## Completed Recently
 
+- **Issue #31 slice 4: graph-owned and imported buffer execution (2026-09-27, uncommitted on `main` at `6de43dd9`)** — added `BufferDesc`/`BufferUsages`, per-frame transient buffers, imported `BufferHandle` resources, renderer create/destroy APIs, graph buffer lookup, and validation for resource kind, usage, access mode, and byte ranges. Vulkan now resolves imported and transient handles for range-scoped synchronization2 buffer barriers. Metal execution plans retain buffer ranges and classify driver-tracked coverage. Buffer accesses no longer become inferred image accesses through the compatibility read/write sets. Validation: `cargo fmt --all`, `cargo check --all-targets`, and `git diff --check` pass; tests were not run. **Issue #31 is still open:** built-in animation/light-culling/particle buffer migrations and transient buffer aliasing remain.
+
 - **Issue #37 slice 4: render-graph diagnostics capture + CI artifacts
   (2026-09-20, PR #129 squash-merged as `98600cb6`, CI green both platforms,
   main CI green post-merge)** — the two

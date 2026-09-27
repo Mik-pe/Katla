@@ -19,6 +19,7 @@ pub mod retirement;
 
 pub(crate) mod animation_init;
 pub(crate) mod bindless_queries;
+pub(crate) mod buffer_api;
 pub(crate) mod compositing;
 pub(crate) mod depth_prepass;
 pub(crate) mod destroy_api;
@@ -63,7 +64,7 @@ use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
 use crate::barrier::ImageBarrier;
 use crate::error::RendererError;
-use crate::handle::{ResourceStorage, SkeletonMarker};
+use crate::handle::{BufferMarker, ResourceStorage, SkeletonMarker};
 use crate::renderer::retirement::RetirementSnapshot;
 use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::texture::{TextureDescriptor, TextureManager};
@@ -213,6 +214,9 @@ pub struct VulkanRenderer {
     /// Kept slot-aligned with `skeleton_descriptors`: both storages see the
     /// same insert/remove sequence so one SkeletonHandle addresses both.
     pub(crate) skeleton_buffers: ResourceStorage<SkeletonBuffer, SkeletonMarker>,
+    /// Backend-neutral buffer resources addressable from render graphs.
+    pub(crate) graph_buffers:
+        ResourceStorage<crate::render_graph::transient_buffer::VulkanGraphBuffer, BufferMarker>,
     /// Compositing descriptor set layout for multi-viewport compositing.
     /// Created during initialization and used when compiling compositing materials.
     pub(crate) compositing_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -549,6 +553,7 @@ impl VulkanRenderer {
             storage_descriptor_sets,
             skeleton_descriptors: ResourceStorage::new(),
             skeleton_buffers: ResourceStorage::new(),
+            graph_buffers: ResourceStorage::new(),
             compositing_descriptor_set_layout,
             frame_uniforms: FrameUniforms::default(),
             last_presented_image_index: None,

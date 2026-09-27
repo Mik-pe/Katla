@@ -2,23 +2,23 @@
 //!
 //! Each backend-neutral sync operation translates to one synchronization2
 //! image barrier whose stage, access, layout, and subresource range come from
-//! the typed access states — never from layout-pair inference. Only graph
-//! transient textures are realized here: the imported backbuffer keeps its
-//! renderer-local acquire/present barriers until backbuffer contract
-//! consumption lands, and the backend-owned depth texture is not a graph
-//! resource yet, so consecutive depth-using passes keep the explicit
-//! render-pass-instance boundary barrier.
+//! the typed access states — never from layout-pair inference. Buffer barriers
+//! resolve both graph-owned and imported handles. Imported images still keep
+//! their renderer-local acquire/present barriers, and backend-owned depth is
+//! not a graph resource yet, so consecutive depth-using passes keep the
+//! explicit render-pass-instance boundary barrier.
 
 use crate::barrier::ImageBarrier;
 use crate::render_graph::access::{
-    ImageAspects, ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
+    BufferUsage, ImageAspects, ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
-use crate::render_graph::{ImageSyncOp, ImageSyncState};
+use crate::render_graph::{BufferSyncState, ImageSyncOp, ImageSyncState};
 use crate::renderer::VulkanRenderer;
 use crate::sync::{
-    AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage,
+    AccessFlags2, BufferMemoryBarrier2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags,
+    VkBuffer, VkImage,
 };
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
@@ -53,8 +53,9 @@ impl Frame<'_, VulkanRenderer> {
             }
         }
 
-        let ops = self.graph.image_sync_ops(pass_index);
-        if ops.is_empty() {
+        let image_ops = self.graph.image_sync_ops(pass_index);
+        let buffer_ops = self.graph.buffer_sync_ops(pass_index);
+        if image_ops.is_empty() && buffer_ops.is_empty() {
             return Ok(());
         }
         let Some(pass) = self.graph.pass(pass_index) else {
@@ -62,8 +63,8 @@ impl Frame<'_, VulkanRenderer> {
         };
         let frame_idx = self.current_frame();
 
-        let mut barriers = Vec::with_capacity(ops.len());
-        for op in ops {
+        let mut image_barriers = Vec::with_capacity(image_ops.len());
+        for op in image_ops {
             let Some(transient) = self.graph.transient_texture_by_id(op.resource, frame_idx) else {
                 log::debug!(
                     "[SYNC] Pass '{}' op on non-transient '{}': realized by the importer",
@@ -75,17 +76,63 @@ impl Frame<'_, VulkanRenderer> {
 
             let barrier = sync_op_barrier(op, transient);
             if let Some(barrier) = barrier {
-                barriers.push(barrier);
+                image_barriers.push(barrier);
             }
         }
 
-        if barriers.is_empty() {
+        let mut buffer_barriers = Vec::with_capacity(buffer_ops.len());
+        for op in buffer_ops {
+            let Some(buffer) = self
+                .graph
+                .buffer_by_id(self.renderer, op.resource, frame_idx)
+            else {
+                return Err(RenderGraphError::BackendError(format!(
+                    "Pass '{}' cannot resolve graph buffer '{}' for synchronization",
+                    pass.name,
+                    self.graph.resource_name(op.resource).unwrap_or("?")
+                )));
+            };
+            if op.before == BufferSyncState::Undefined {
+                continue;
+            }
+            let buffer_size = buffer.size();
+            if op.range.offset >= buffer_size {
+                continue;
+            }
+            let range_size = if op.range.size == u64::MAX {
+                buffer_size - op.range.offset
+            } else {
+                op.range.size.min(buffer_size - op.range.offset)
+            };
+            if range_size == 0 {
+                continue;
+            }
+
+            let (src_stage, src_access) = buffer_state_masks(op.before);
+            let (dst_stage, dst_access) = buffer_state_masks(op.after);
+            buffer_barriers.push(
+                BufferMemoryBarrier2::new(
+                    VkBuffer::new(buffer.buffer),
+                    op.range.offset,
+                    range_size,
+                )
+                .src_stage(src_stage)
+                .dst_stage(dst_stage)
+                .src_access(src_access)
+                .dst_access(dst_access),
+            );
+        }
+
+        if image_barriers.is_empty() && buffer_barriers.is_empty() {
             return Ok(());
         }
 
         let mut dependency = DependencyInfo::new();
-        for barrier in barriers {
+        for barrier in image_barriers {
             dependency = dependency.add_image_barrier(barrier);
+        }
+        for barrier in buffer_barriers {
+            dependency = dependency.add_buffer_barrier2(barrier);
         }
         dependency.build(|dependency| unsafe {
             device.cmd_pipeline_barrier2(cmd_vk, dependency);
@@ -141,6 +188,36 @@ impl Frame<'_, VulkanRenderer> {
 
         Ok(())
     }
+}
+
+fn buffer_state_masks(state: BufferSyncState) -> (PipelineStage2Flags, AccessFlags2) {
+    match state {
+        BufferSyncState::Undefined => (PipelineStage2Flags::empty(), AccessFlags2::NONE),
+        BufferSyncState::Access { usage, stage, mode } => {
+            (stage_mask(stage), buffer_access_mask(usage, mode))
+        }
+    }
+}
+
+fn buffer_access_mask(usage: BufferUsage, mode: ResourceAccessMode) -> AccessFlags2 {
+    let mut access = AccessFlags2::empty();
+    match usage {
+        BufferUsage::Uniform | BufferUsage::Storage => {
+            if mode.reads() {
+                access |= AccessFlags2::SHADER_READ;
+            }
+            if mode.writes() {
+                access |= AccessFlags2::SHADER_WRITE;
+            }
+        }
+        BufferUsage::Vertex => access |= AccessFlags2::VERTEX_ATTRIBUTE_READ,
+        BufferUsage::Index => access |= AccessFlags2::INDEX_READ,
+        BufferUsage::Indirect => access |= AccessFlags2::INDIRECT_COMMAND_READ,
+        BufferUsage::TransferSource => access |= AccessFlags2::TRANSFER_READ,
+        BufferUsage::TransferDestination => access |= AccessFlags2::TRANSFER_WRITE,
+        BufferUsage::Readback => access |= AccessFlags2::TRANSFER_READ,
+    }
+    access
 }
 
 /// Translate one sync operation into a synchronization2 image barrier.

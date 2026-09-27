@@ -264,7 +264,7 @@ pub use error::ValidationMode;
 
 // Handles
 pub use handle::{
-    EmitterHandle, Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle,
+    BufferHandle, EmitterHandle, Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle,
 };
 
 // Material system
@@ -342,12 +342,15 @@ pub use particles::particle_drive::ParticleEmitterDriver;
 
 // Render graph system — pass types and descriptors are backend-agnostic
 pub use render_graph::Frame;
-pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 pub use render_graph::{
-    FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType, OutlinePass, OverlayParams,
-    OverlayPass, ParticlePass, RenderGraphError, ShadowPass, StencilIndicatorPass, TonemapOperator,
+    BufferAccess, BufferByteRange, BufferDesc, BufferMemoryPolicy, BufferUsage, BufferUsages,
+    FullscreenPass, GeometryPass, GraphBufferDesc, GraphResourceDesc, GraphResourceType,
+    ImageAccess, ImageAspects, ImageSubresourceRange, ImportedImageContract, OutlinePass,
+    OverlayParams, OverlayPass, ParticlePass, RenderGraphError, ResourceAccessMode,
+    ResourceAccessStage, ResourceAccessUsage, ShadowPass, StencilIndicatorPass, TonemapOperator,
     TonemapParams,
 };
+pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 
 /// Low-level Vulkan context - an escape hatch for advanced Vulkan-specific use cases.
 ///

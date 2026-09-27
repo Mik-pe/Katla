@@ -8,7 +8,10 @@ use std::rc::Rc;
 
 use super::backend::RenderGraphBackend;
 use super::error::RenderGraphError;
-use super::resource::{GraphResourceDesc, GraphResourceType};
+use super::resource::{
+    BufferDesc, BufferMemoryPolicy, BufferUsages, GraphResourceDesc, GraphResourceType,
+};
+use super::transient_buffer::VulkanGraphBuffer;
 use super::transient_texture::{TransientTexture, VkSlotMemory};
 use crate::renderer::VulkanRenderer;
 use ash::vk;
@@ -16,6 +19,7 @@ use ash::vk;
 impl RenderGraphBackend for VulkanRenderer {
     type TransientTexture = TransientTexture;
     type ImageView = crate::sync::VkImageView;
+    type TransientBuffer = VulkanGraphBuffer;
 
     fn create_transient_slot(
         &self,
@@ -27,8 +31,54 @@ impl RenderGraphBackend for VulkanRenderer {
         create_aliased_transient_textures(self, members)
     }
 
+    fn create_transient_buffer(
+        &self,
+        desc: BufferDesc,
+    ) -> Result<Self::TransientBuffer, RenderGraphError> {
+        let usage = vk_buffer_usages(desc.usages);
+
+        let info = vk::BufferCreateInfo::default()
+            .size(desc.size)
+            .usage(usage)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+        let memory = match desc.memory {
+            BufferMemoryPolicy::DeviceLocal => gpu_allocator::MemoryLocation::GpuOnly,
+            BufferMemoryPolicy::CpuVisible => gpu_allocator::MemoryLocation::CpuToGpu,
+            BufferMemoryPolicy::Readback => gpu_allocator::MemoryLocation::GpuToCpu,
+        };
+        let (buffer, allocation) = self
+            .context
+            .allocate_buffer_named(&info, memory, "Render Graph Buffer")
+            .map_err(|error| RenderGraphError::BackendError(error.to_string()))?;
+        Ok(VulkanGraphBuffer::new(
+            self.context.clone(),
+            buffer,
+            allocation,
+            desc,
+        ))
+    }
+
     fn destroy_transient_texture(texture: Self::TransientTexture) {
         drop(texture);
+    }
+
+    fn destroy_transient_buffer(buffer: Self::TransientBuffer) {
+        drop(buffer);
+    }
+
+    fn transient_buffer_size(buffer: &Self::TransientBuffer) -> u64 {
+        buffer.size()
+    }
+
+    fn buffer_desc(buffer: &Self::TransientBuffer) -> BufferDesc {
+        buffer.desc
+    }
+
+    fn buffer_by_handle(
+        &self,
+        handle: crate::handle::BufferHandle,
+    ) -> Option<&Self::TransientBuffer> {
+        self.graph_buffers.get(handle)
     }
 
     fn current_frame(&self) -> usize {
@@ -93,6 +143,34 @@ impl RenderGraphBackend for VulkanRenderer {
             .get(frame_index)
             .map(|dt| dt.image_view)
     }
+}
+
+pub(crate) fn vk_buffer_usages(usages: BufferUsages) -> vk::BufferUsageFlags {
+    let mut flags = vk::BufferUsageFlags::empty();
+    if usages.contains(BufferUsages::UNIFORM) {
+        flags |= vk::BufferUsageFlags::UNIFORM_BUFFER;
+    }
+    if usages.contains(BufferUsages::STORAGE) {
+        flags |= vk::BufferUsageFlags::STORAGE_BUFFER;
+    }
+    if usages.contains(BufferUsages::VERTEX) {
+        flags |= vk::BufferUsageFlags::VERTEX_BUFFER;
+    }
+    if usages.contains(BufferUsages::INDEX) {
+        flags |= vk::BufferUsageFlags::INDEX_BUFFER;
+    }
+    if usages.contains(BufferUsages::INDIRECT) {
+        flags |= vk::BufferUsageFlags::INDIRECT_BUFFER;
+    }
+    if usages.contains(BufferUsages::TRANSFER_SOURCE) {
+        flags |= vk::BufferUsageFlags::TRANSFER_SRC;
+    }
+    if usages.contains(BufferUsages::TRANSFER_DESTINATION)
+        || usages.contains(BufferUsages::READBACK)
+    {
+        flags |= vk::BufferUsageFlags::TRANSFER_DST;
+    }
+    flags
 }
 
 /// Whether a resource's contents are only ever attachment data within a

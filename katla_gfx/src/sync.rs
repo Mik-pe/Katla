@@ -398,6 +398,21 @@ pub struct BufferMemoryBarrier2 {
 }
 
 impl BufferMemoryBarrier2 {
+    /// Create a buffer barrier over a byte range.
+    pub(crate) fn new(buffer: VkBuffer, offset: u64, size: u64) -> Self {
+        Self {
+            src_stage_mask: PipelineStage2Flags::TOP_OF_PIPE,
+            dst_stage_mask: PipelineStage2Flags::BOTTOM_OF_PIPE,
+            src_access_mask: AccessFlags2::NONE,
+            dst_access_mask: AccessFlags2::NONE,
+            src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+            buffer,
+            offset,
+            size,
+        }
+    }
+
     /// Set source stage mask.
     pub fn src_stage(mut self, stage: PipelineStage2Flags) -> Self {
         self.src_stage_mask = stage;

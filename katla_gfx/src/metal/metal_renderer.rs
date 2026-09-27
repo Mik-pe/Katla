@@ -13,8 +13,8 @@ use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::{
-    MaterialHandle, MaterialMarker, MeshHandle, MeshMarker, ResourceStorage, SkeletonHandle,
-    SkeletonMarker, TextureHandle, TextureMarker,
+    BufferHandle, BufferMarker, MaterialHandle, MaterialMarker, MeshHandle, MeshMarker,
+    ResourceStorage, SkeletonHandle, SkeletonMarker, TextureHandle, TextureMarker,
 };
 
 use crate::renderer::MAX_OBJECTS_PER_FRAME;
@@ -292,6 +292,7 @@ pub struct MetalRenderer {
     pub(crate) materials: ResourceStorage<MetalMaterial, MaterialMarker>,
     pub(crate) textures: ResourceStorage<MetalTextureEntry, TextureMarker>,
     pub(crate) skeletons: ResourceStorage<MetalBuffer, SkeletonMarker>,
+    pub(crate) graph_buffers: ResourceStorage<super::buffer::MetalGraphBuffer, BufferMarker>,
     pub(crate) viewports: Vec<Viewport>,
     pub(crate) bindless_manager: MetalBindlessTextureManager,
     pub(crate) default_texture: Option<TextureHandle>,
@@ -455,6 +456,7 @@ impl MetalRenderer {
             materials: ResourceStorage::new(),
             textures: ResourceStorage::new(),
             skeletons: ResourceStorage::new(),
+            graph_buffers: ResourceStorage::new(),
             viewports: Vec::new(),
             bindless_manager,
             default_texture: None,
@@ -749,15 +751,15 @@ impl MetalRenderer {
         )
         .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
 
-        // Consume the graph's compiled image sync plan: Metal realizes every
-        // operation through driver-tracked resources (hazards between
-        // encoders) and attachment load/store actions, so no explicit image
-        // barrier is encoded. The records stay observable for frame traces.
+        // Metal realizes tracked image and buffer operations through driver
+        // hazard tracking and attachment load/store actions. Keep the
+        // classifications observable for frame traces.
         for record in plan.sync_records() {
             log::trace!(
-                "[Metal sync] before pass {:?}: resource {} via {:?}",
+                "[Metal sync] before pass {:?}: resource {} bytes {:?} via {:?}",
                 record.pass,
                 record.resource.0,
+                record.buffer_range,
                 record.coverage
             );
         }
@@ -1112,6 +1114,33 @@ impl GpuRenderer for MetalRenderer {
         }
     }
 
+    fn create_buffer(
+        &mut self,
+        desc: crate::render_graph::BufferDesc,
+    ) -> Result<BufferHandle, RendererError> {
+        if desc.size == 0 || desc.usages.is_empty() {
+            return Err(RendererError::InvalidOperation(
+                "Buffer size and usage must be non-empty".into(),
+            ));
+        }
+        let cpu_accessible = matches!(
+            desc.memory,
+            crate::render_graph::BufferMemoryPolicy::CpuVisible
+                | crate::render_graph::BufferMemoryPolicy::Readback
+        );
+        let buffer = self.context.create_buffer(desc.size, cpu_accessible)?;
+        Ok(self
+            .graph_buffers
+            .insert(super::buffer::MetalGraphBuffer::new(buffer, desc)))
+    }
+
+    fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError> {
+        self.wait_for_device();
+        self.graph_buffers.remove(handle).map(drop).ok_or_else(|| {
+            RendererError::InvalidOperation(format!("Unknown buffer handle {}", handle.index()))
+        })
+    }
+
     fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities {
         &self.capabilities
     }
@@ -1130,6 +1159,7 @@ impl GpuRenderer for MetalRenderer {
         self.materials = ResourceStorage::new();
         self.textures = ResourceStorage::new();
         self.skeletons = ResourceStorage::new();
+        self.graph_buffers = ResourceStorage::new();
         self.viewports.clear();
     }
 

@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
+use super::access::{BufferByteRange, BufferUsage, ResourceAccessMode};
 use super::allocation_plan::TransientAllocationPlan;
 use super::backend::RenderGraphBackend;
 use super::builder::{InternalPassBuilder, PassBuilder};
@@ -9,8 +10,10 @@ use super::error::{GraphValidationError, RenderGraphError};
 use super::handles::{PassId, ResourceId};
 use super::pass::{PassDesc, PassType};
 use super::resource::{
-    GraphResourceDesc, GraphResourceHandle, ImportedImageContract, ResourceState,
+    BufferDesc, BufferMemoryPolicy, BufferUsages, GraphBufferDesc, GraphResourceDesc,
+    GraphResourceHandle, ImportedImageContract, ResourceState,
 };
+use crate::handle::BufferHandle;
 use crate::render_pass::{ClearValue, DepthStencilAttachmentOps, LoadOp};
 
 const BACKBUFFER_NAME: &str = super::BACKBUFFER_NAME;
@@ -22,6 +25,73 @@ const BACKBUFFER_NAME: &str = super::BACKBUFFER_NAME;
 /// also require the final `PresentSrc` state.
 const DEFAULT_BACKBUFFER_CONTRACT: ImportedImageContract =
     ImportedImageContract::arrives_in(ResourceState::ColorAttachment);
+
+fn validate_buffer_access_descriptor(
+    pass: &str,
+    resource: &str,
+    mode: ResourceAccessMode,
+    usage: BufferUsage,
+    range: BufferByteRange,
+    desc: BufferDesc,
+) -> Result<(), RenderGraphError> {
+    if range.is_empty()
+        || range.offset >= desc.size
+        || (range.size != u64::MAX && range.end() > desc.size)
+    {
+        return Err(GraphValidationError::InvalidBufferAccessRange {
+            pass: pass.to_string(),
+            resource: resource.to_string(),
+            offset: range.offset,
+            size: range.size,
+            capacity: desc.size,
+        }
+        .into());
+    }
+
+    let (required, usage_name) = match usage {
+        BufferUsage::Uniform => (BufferUsages::UNIFORM, "uniform"),
+        BufferUsage::Storage => (BufferUsages::STORAGE, "storage"),
+        BufferUsage::Vertex => (BufferUsages::VERTEX, "vertex"),
+        BufferUsage::Index => (BufferUsages::INDEX, "index"),
+        BufferUsage::Indirect => (BufferUsages::INDIRECT, "indirect"),
+        BufferUsage::TransferSource => (BufferUsages::TRANSFER_SOURCE, "transfer-source"),
+        BufferUsage::TransferDestination => {
+            (BufferUsages::TRANSFER_DESTINATION, "transfer-destination")
+        }
+        BufferUsage::Readback => (BufferUsages::READBACK, "readback"),
+    };
+    let usage_declared = desc.usages.contains(required)
+        && (usage != BufferUsage::Readback || desc.memory == BufferMemoryPolicy::Readback);
+    if !usage_declared {
+        return Err(GraphValidationError::BufferUsageNotDeclared {
+            pass: pass.to_string(),
+            resource: resource.to_string(),
+            usage: usage_name.to_string(),
+        }
+        .into());
+    }
+
+    let mode_valid = match usage {
+        BufferUsage::Uniform
+        | BufferUsage::Vertex
+        | BufferUsage::Index
+        | BufferUsage::Indirect
+        | BufferUsage::TransferSource
+        | BufferUsage::Readback => mode == ResourceAccessMode::Read,
+        BufferUsage::TransferDestination => mode == ResourceAccessMode::Write,
+        BufferUsage::Storage => true,
+    };
+    if !mode_valid {
+        return Err(GraphValidationError::InvalidBufferAccessMode {
+            pass: pass.to_string(),
+            resource: resource.to_string(),
+            usage: usage_name.to_string(),
+        }
+        .into());
+    }
+
+    Ok(())
+}
 
 /// Per-frame parameters for render graph execution.
 ///
@@ -89,6 +159,12 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// validated at compile time and consumed by synchronization planning.
     pub(crate) imported_contracts: BTreeMap<ResourceId, ImportedImageContract>,
 
+    /// External renderer-owned buffers imported by this graph.
+    imported_buffers: HashMap<ResourceId, BufferHandle>,
+
+    /// Descriptors for all graph-visible buffers, keyed by graph resource id.
+    buffer_desc_by_id: HashMap<ResourceId, BufferDesc>,
+
     /// Whether pass liveness analysis is enabled for this graph.
     pub(crate) pass_culling_enabled: bool,
 
@@ -101,10 +177,16 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// Transient resource descriptors (for lazy GPU resource creation).
     pub(super) transient_resources: Vec<GraphResourceDesc>,
 
+    /// Graph-owned transient buffer descriptors.
+    pub(super) transient_buffers: Vec<GraphBufferDesc>,
+
     /// Created transient textures (frame_idx -> ResourceId -> texture).
     /// Per-frame transient textures. One set per frame-in-flight to prevent
     /// race conditions where frame N+1 modifies layout tracking while frame N is still executing.
     pub(super) transient_textures: Vec<HashMap<ResourceId, B::TransientTexture>>,
+
+    /// Per-frame graph-owned buffer allocations.
+    pub(super) transient_buffers_by_frame: Vec<HashMap<ResourceId, B::TransientBuffer>>,
 
     /// Whether compatible, non-overlapping transient textures share physical
     /// memory from the compiled allocation plan. Debugging switch.
@@ -143,11 +225,15 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             pass_names: HashMap::new(),
             exported_resources: BTreeSet::new(),
             imported_contracts: BTreeMap::new(),
+            imported_buffers: HashMap::new(),
+            buffer_desc_by_id: HashMap::new(),
             pass_culling_enabled: false,
             execution_plan: None,
             compiled: false,
             transient_resources: Vec::new(),
+            transient_buffers: Vec::new(),
             transient_textures: Vec::new(),
+            transient_buffers_by_frame: Vec::new(),
             transient_aliasing: true,
             trace_enabled: false,
             last_execution_trace: super::trace::ResourceExecutionTrace::new(),
@@ -270,6 +356,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             return Ok(());
         }
 
+        self.validate_declared_buffer_accesses()?;
         let plan = self.build_execution_plan()?;
         self.validate_attachment_ops(&plan)?;
         self.validate_imported_state_contracts(&plan)?;
@@ -559,6 +646,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         let total_textures: usize = self.transient_textures.iter().map(|m| m.len()).sum();
         log::info!("  Total textures to clean up: {}", total_textures);
         self.transient_textures.clear();
+        self.transient_buffers_by_frame.clear();
         self.compositing_descriptor_sets
             .borrow_mut()
             .iter_mut()
@@ -659,6 +747,141 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         frame_idx: usize,
     ) -> Option<&mut B::TransientTexture> {
         self.transient_textures.get_mut(frame_idx)?.get_mut(&id)
+    }
+
+    /// Get a graph-owned buffer by resource id for one frame slot.
+    pub fn transient_buffer_by_id(
+        &self,
+        id: ResourceId,
+        frame_idx: usize,
+    ) -> Option<&B::TransientBuffer> {
+        self.transient_buffers_by_frame.get(frame_idx)?.get(&id)
+    }
+
+    /// Get a graph-owned buffer by name for one frame slot.
+    pub fn transient_buffer(&self, name: &str, frame_idx: usize) -> Option<&B::TransientBuffer> {
+        let id = self.resource_by_name.get(name)?;
+        self.transient_buffer_by_id(*id, frame_idx)
+    }
+
+    /// Resolve either a transient allocation or an imported buffer handle.
+    pub fn buffer_by_id<'a>(
+        &'a self,
+        backend: &'a B,
+        id: ResourceId,
+        frame_idx: usize,
+    ) -> Option<&'a B::TransientBuffer> {
+        self.transient_buffer_by_id(id, frame_idx).or_else(|| {
+            self.imported_buffers
+                .get(&id)
+                .and_then(|handle| B::buffer_by_handle(backend, *handle))
+        })
+    }
+
+    /// Buffer descriptor declared for a named graph resource.
+    pub fn buffer_desc(&self, name: &str) -> Option<BufferDesc> {
+        let id = self.resource_by_name.get(name)?;
+        self.buffer_desc_by_id.get(id).copied()
+    }
+
+    fn validate_declared_buffer_accesses(&self) -> Result<(), RenderGraphError> {
+        for pass in &self.passes {
+            let declared_buffers = pass
+                .buffer_accesses
+                .iter()
+                .map(|access| access.resource)
+                .collect::<BTreeSet<_>>();
+
+            for &resource in pass.reads.iter().chain(&pass.writes) {
+                if self.buffer_desc_by_id.contains_key(&resource)
+                    && !declared_buffers.contains(&resource)
+                {
+                    return Err(GraphValidationError::MissingTypedBufferAccess {
+                        pass: pass.name.clone(),
+                        resource: self.resource_name(resource).unwrap_or("?").to_string(),
+                    }
+                    .into());
+                }
+            }
+
+            for access in &pass.image_accesses {
+                if self.buffer_desc_by_id.contains_key(&access.resource) {
+                    return Err(GraphValidationError::ImageAccessOnNonImage {
+                        pass: pass.name.clone(),
+                        resource: self
+                            .resource_name(access.resource)
+                            .unwrap_or("?")
+                            .to_string(),
+                    }
+                    .into());
+                }
+            }
+
+            for access in &pass.buffer_accesses {
+                let resource_name = self.resource_name(access.resource).unwrap_or("?");
+                let Some(desc) = self.buffer_desc_by_id.get(&access.resource).copied() else {
+                    return Err(GraphValidationError::BufferAccessOnNonBuffer {
+                        pass: pass.name.clone(),
+                        resource: resource_name.to_string(),
+                    }
+                    .into());
+                };
+                validate_buffer_access_descriptor(
+                    &pass.name,
+                    resource_name,
+                    access.mode,
+                    access.usage,
+                    access.range,
+                    desc,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Allocate the graph's declared transient buffers for every frame slot.
+    pub fn initialize_transient_buffers(&mut self, backend: &B) -> Result<(), RenderGraphError> {
+        if !self.transient_buffers_by_frame.is_empty() {
+            return Ok(());
+        }
+
+        for (&resource, &handle) in &self.imported_buffers {
+            let Some(buffer) = B::buffer_by_handle(backend, handle) else {
+                return Err(RenderGraphError::InvalidConfiguration(format!(
+                    "Imported buffer '{}' has a stale handle",
+                    self.resource_name(resource).unwrap_or("?")
+                )));
+            };
+            let expected = self.buffer_desc_by_id.get(&resource).copied();
+            if expected != Some(B::buffer_desc(buffer)) {
+                return Err(RenderGraphError::InvalidConfiguration(format!(
+                    "Imported buffer '{}' descriptor does not match its handle",
+                    self.resource_name(resource).unwrap_or("?")
+                )));
+            }
+        }
+
+        let mut frame_slots = Vec::with_capacity(B::transient_texture_frames());
+        for _ in 0..B::transient_texture_frames() {
+            let mut frame_buffers = HashMap::with_capacity(self.transient_buffers.len());
+            for desc in &self.transient_buffers {
+                let id = self
+                    .resource_by_name
+                    .get(&desc.name)
+                    .copied()
+                    .ok_or_else(|| {
+                        RenderGraphError::Validation(
+                            GraphValidationError::MissingResourceNamespaceEntry(desc.name.clone()),
+                        )
+                    })?;
+                let buffer = B::create_transient_buffer(backend, desc.buffer)?;
+                frame_buffers.insert(id, buffer);
+            }
+            frame_slots.push(frame_buffers);
+        }
+        self.transient_buffers_by_frame = frame_slots;
+
+        Ok(())
     }
 
     /// Get a transient texture by name for a specific frame.
@@ -1029,6 +1252,7 @@ impl FrameGraph<crate::MetalRenderer> {
         }
 
         self.initialize_transient_textures(renderer)?;
+        self.initialize_transient_buffers(renderer)?;
 
         let frame_idx = renderer.frame_index();
         let mut frame = super::frame::Frame::new(self, renderer, 0, frame_idx);
@@ -1137,6 +1361,7 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
         }
 
         self.initialize_transient_textures(renderer)?;
+        self.initialize_transient_buffers(renderer)?;
 
         let frame_idx = renderer.current_frame();
 
@@ -1239,6 +1464,14 @@ struct ImportedResource {
     contract: ImportedImageContract,
 }
 
+/// One external renderer-owned buffer imported into the graph namespace.
+#[derive(Debug, Clone)]
+struct ImportedBuffer {
+    name: String,
+    handle: BufferHandle,
+    desc: BufferDesc,
+}
+
 /// Builder for constructing a frame graph.
 ///
 /// Created by [`VulkanRenderer::create_frame_graph()`].
@@ -1246,7 +1479,9 @@ struct ImportedResource {
 pub struct FrameGraphBuilder {
     pass_builders: Vec<InternalPassBuilder>,
     resources: Vec<ImportedResource>,
+    buffers: Vec<ImportedBuffer>,
     transient_resources: Vec<GraphResourceDesc>,
+    transient_buffers: Vec<GraphBufferDesc>,
     exported_resources: BTreeSet<String>,
     backbuffer_contract: ImportedImageContract,
 }
@@ -1257,7 +1492,9 @@ impl FrameGraphBuilder {
         Self {
             pass_builders: Vec::new(),
             resources: Vec::new(),
+            buffers: Vec::new(),
             transient_resources: Vec::new(),
+            transient_buffers: Vec::new(),
             exported_resources: BTreeSet::from([BACKBUFFER_NAME.to_string()]),
             backbuffer_contract: DEFAULT_BACKBUFFER_CONTRACT,
         }
@@ -1311,6 +1548,21 @@ impl FrameGraphBuilder {
         self
     }
 
+    /// Import a renderer-owned typed buffer into the graph under a name.
+    pub fn import_buffer(
+        mut self,
+        name: impl Into<String>,
+        handle: BufferHandle,
+        desc: BufferDesc,
+    ) -> Self {
+        self.buffers.push(ImportedBuffer {
+            name: name.into(),
+            handle,
+            desc,
+        });
+        self
+    }
+
     /// Override the state contract of the built-in backbuffer.
     ///
     /// By default the backbuffer is imported with observable contents (the
@@ -1327,6 +1579,75 @@ impl FrameGraphBuilder {
     pub fn create_resource(mut self, desc: GraphResourceDesc) -> Self {
         self.transient_resources.push(desc);
         self
+    }
+
+    /// Create a graph-owned transient buffer.
+    pub fn create_buffer(mut self, desc: GraphBufferDesc) -> Self {
+        self.transient_buffers.push(desc);
+        self
+    }
+
+    fn validate_buffer_accesses(&self) -> Result<(), RenderGraphError> {
+        let buffer_names = self
+            .transient_buffers
+            .iter()
+            .map(|buffer| buffer.name.as_str())
+            .chain(self.buffers.iter().map(|buffer| buffer.name.as_str()))
+            .collect::<HashSet<_>>();
+        for pass in &self.pass_builders {
+            let typed_buffer_names = pass
+                .buffer_accesses
+                .iter()
+                .map(|access| access.resource.as_str())
+                .collect::<HashSet<_>>();
+            for resource in pass.reads.iter().chain(&pass.writes) {
+                if buffer_names.contains(resource.as_str())
+                    && !typed_buffer_names.contains(resource.as_str())
+                {
+                    return Err(GraphValidationError::MissingTypedBufferAccess {
+                        pass: pass.name.clone(),
+                        resource: resource.clone(),
+                    }
+                    .into());
+                }
+            }
+            for access in &pass.image_accesses {
+                if buffer_names.contains(access.resource.as_str()) {
+                    return Err(GraphValidationError::ImageAccessOnNonImage {
+                        pass: pass.name.clone(),
+                        resource: access.resource.clone(),
+                    }
+                    .into());
+                }
+            }
+            for access in &pass.buffer_accesses {
+                let desc = self
+                    .transient_buffers
+                    .iter()
+                    .find(|buffer| buffer.name == access.resource)
+                    .map(|buffer| buffer.buffer)
+                    .or_else(|| {
+                        self.buffers
+                            .iter()
+                            .find(|buffer| buffer.name == access.resource)
+                            .map(|buffer| buffer.desc)
+                    })
+                    .ok_or_else(|| GraphValidationError::BufferAccessOnNonBuffer {
+                        pass: pass.name.clone(),
+                        resource: access.resource.clone(),
+                    })?;
+
+                validate_buffer_access_descriptor(
+                    &pass.name,
+                    &access.resource,
+                    access.mode,
+                    access.usage,
+                    access.range,
+                    desc,
+                )?;
+            }
+        }
+        Ok(())
     }
 
     fn validate(&self) -> Result<(), RenderGraphError> {
@@ -1346,6 +1667,45 @@ impl FrameGraphBuilder {
             }
             if !resource_names.insert(desc.name.clone()) {
                 return Err(GraphValidationError::DuplicateResourceName(desc.name.clone()).into());
+            }
+        }
+
+        for desc in &self.transient_buffers {
+            if desc.name.trim().is_empty() {
+                return Err(GraphValidationError::EmptyResourceName.into());
+            }
+            if desc.buffer.size == 0 || desc.buffer.usages.is_empty() {
+                return Err(GraphValidationError::InvalidBufferDescriptor {
+                    resource: desc.name.clone(),
+                    size: desc.buffer.size,
+                }
+                .into());
+            }
+            if !resource_names.insert(desc.name.clone()) {
+                return Err(GraphValidationError::DuplicateResourceName(desc.name.clone()).into());
+            }
+        }
+
+        for buffer in &self.buffers {
+            if buffer.name.trim().is_empty() {
+                return Err(GraphValidationError::EmptyResourceName.into());
+            }
+            if buffer.handle.is_none() {
+                return Err(
+                    GraphValidationError::InvalidImportedBuffer(buffer.name.clone()).into(),
+                );
+            }
+            if buffer.desc.size == 0 || buffer.desc.usages.is_empty() {
+                return Err(GraphValidationError::InvalidBufferDescriptor {
+                    resource: buffer.name.clone(),
+                    size: buffer.desc.size,
+                }
+                .into());
+            }
+            if !resource_names.insert(buffer.name.clone()) {
+                return Err(
+                    GraphValidationError::DuplicateResourceName(buffer.name.clone()).into(),
+                );
             }
         }
 
@@ -1387,6 +1747,7 @@ impl FrameGraphBuilder {
                 .iter()
                 .chain(&pass.writes)
                 .chain(pass.image_accesses.iter().map(|access| &access.resource))
+                .chain(pass.buffer_accesses.iter().map(|access| &access.resource))
             {
                 if resource.trim().is_empty() {
                     return Err(GraphValidationError::EmptyPassResource {
@@ -1404,6 +1765,8 @@ impl FrameGraphBuilder {
             }
         }
 
+        self.validate_buffer_accesses()?;
+
         Ok(())
     }
 
@@ -1414,7 +1777,9 @@ impl FrameGraphBuilder {
         let FrameGraphBuilder {
             pass_builders,
             resources,
+            buffers,
             transient_resources,
+            transient_buffers,
             exported_resources,
             backbuffer_contract,
         } = self;
@@ -1423,9 +1788,15 @@ impl FrameGraphBuilder {
             .iter()
             .map(|desc| desc.name.clone())
             .collect::<Vec<_>>();
+        let buffer_names = transient_buffers
+            .iter()
+            .map(|desc| desc.name.clone())
+            .chain(buffers.iter().map(|buffer| buffer.name.clone()))
+            .collect::<Vec<_>>();
 
         let mut graph = FrameGraph::new();
         graph.transient_resources = transient_resources;
+        graph.transient_buffers = transient_buffers;
 
         // The swapchain backbuffer is the only built-in resource. Every other
         // name has already been declared or imported by the validated builder.
@@ -1436,9 +1807,21 @@ impl FrameGraphBuilder {
         for name in transient_names {
             graph.create_resource_id(name);
         }
+        for name in buffer_names {
+            graph.create_resource_id(name);
+        }
         for resource in &resources {
             let id = graph.create_resource_id(resource.name.clone());
             graph.imported_contracts.insert(id, resource.contract);
+        }
+        for buffer in buffers {
+            let id = graph.create_resource_id(buffer.name);
+            graph.buffer_desc_by_id.insert(id, buffer.desc);
+            graph.imported_buffers.insert(id, buffer.handle);
+        }
+        for buffer in &graph.transient_buffers {
+            let id = graph.resource_by_name[&buffer.name];
+            graph.buffer_desc_by_id.insert(id, buffer.buffer);
         }
 
         let mut global_resource_map = HashMap::new();
@@ -1539,7 +1922,7 @@ impl FrameGraphBuilder {
             if has_explicit_image_accesses {
                 pass.set_image_accesses(explicit_image_accesses);
             }
-            pass.buffer_accesses = explicit_buffer_accesses;
+            pass.set_buffer_accesses(explicit_buffer_accesses);
 
             pass.pipeline = pass_builder.pipeline;
             pass.tonemap_params = pass_builder.tonemap_params;
@@ -1633,6 +2016,10 @@ mod tests {
         slot: std::cell::Cell<Option<u32>>,
     }
 
+    struct MockBuffer {
+        desc: BufferDesc,
+    }
+
     #[derive(Clone)]
     struct MockImageView;
 
@@ -1642,6 +2029,7 @@ mod tests {
     impl RenderGraphBackend for MockBackend {
         type TransientTexture = MockTexture;
         type ImageView = MockImageView;
+        type TransientBuffer = MockBuffer;
 
         fn create_transient_slot(
             &self,
@@ -1656,7 +2044,31 @@ mod tests {
                 .collect())
         }
 
+        fn create_transient_buffer(
+            &self,
+            desc: BufferDesc,
+        ) -> Result<Self::TransientBuffer, RenderGraphError> {
+            Ok(MockBuffer { desc })
+        }
+
         fn destroy_transient_texture(_texture: Self::TransientTexture) {}
+
+        fn destroy_transient_buffer(_buffer: Self::TransientBuffer) {}
+
+        fn transient_buffer_size(buffer: &Self::TransientBuffer) -> u64 {
+            buffer.desc.size
+        }
+
+        fn buffer_desc(buffer: &Self::TransientBuffer) -> BufferDesc {
+            buffer.desc
+        }
+
+        fn buffer_by_handle(
+            &self,
+            _handle: crate::handle::BufferHandle,
+        ) -> Option<&Self::TransientBuffer> {
+            None
+        }
 
         fn current_frame(&self) -> usize {
             0

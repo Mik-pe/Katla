@@ -4,16 +4,18 @@
 //! concrete transient texture creation, bindless management, and
 //! frame indexing using Metal GPU resources.
 
+use crate::metal::buffer::MetalGraphBuffer;
 use crate::metal::metal_renderer::{FRAMES_IN_FLIGHT, MetalRenderer};
 use crate::metal::metal_transient_texture::MetalTransientTexture;
 use crate::render_graph::backend::RenderGraphBackend;
 use crate::render_graph::error::RenderGraphError;
-use crate::render_graph::resource::GraphResourceDesc;
+use crate::render_graph::resource::{BufferDesc, BufferMemoryPolicy, GraphResourceDesc};
 use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
 impl RenderGraphBackend for MetalRenderer {
     type TransientTexture = MetalTransientTexture;
     type ImageView = crate::metal::texture::MetalTextureView;
+    type TransientBuffer = MetalGraphBuffer;
 
     fn create_transient_slot(
         &self,
@@ -28,8 +30,42 @@ impl RenderGraphBackend for MetalRenderer {
             .collect()
     }
 
+    fn create_transient_buffer(
+        &self,
+        desc: BufferDesc,
+    ) -> Result<Self::TransientBuffer, RenderGraphError> {
+        let cpu_accessible = matches!(
+            desc.memory,
+            BufferMemoryPolicy::CpuVisible | BufferMemoryPolicy::Readback
+        );
+        let buffer = self
+            .context
+            .create_buffer(desc.size, cpu_accessible)
+            .map_err(|error| RenderGraphError::BackendError(error.to_string()))?;
+        Ok(MetalGraphBuffer::new(buffer, desc))
+    }
+
     fn destroy_transient_texture(texture: Self::TransientTexture) {
         drop(texture);
+    }
+
+    fn destroy_transient_buffer(buffer: Self::TransientBuffer) {
+        drop(buffer);
+    }
+
+    fn transient_buffer_size(buffer: &Self::TransientBuffer) -> u64 {
+        buffer.size()
+    }
+
+    fn buffer_desc(buffer: &Self::TransientBuffer) -> BufferDesc {
+        buffer.desc
+    }
+
+    fn buffer_by_handle(
+        &self,
+        handle: crate::handle::BufferHandle,
+    ) -> Option<&Self::TransientBuffer> {
+        self.graph_buffers.get(handle)
     }
 
     fn current_frame(&self) -> usize {

@@ -162,22 +162,31 @@ impl PassDesc {
     }
 
     fn synchronize_resource_sets(&mut self) {
-        self.reads = self
+        let reads = self
             .image_accesses
             .iter()
             .filter(|access| access.mode.reads())
             .map(|access| access.resource)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
-        self.writes = self
+            .chain(
+                self.buffer_accesses
+                    .iter()
+                    .filter(|access| access.mode.reads())
+                    .map(|access| access.resource),
+            );
+        self.reads = reads.collect::<BTreeSet<_>>().into_iter().collect();
+
+        let writes = self
             .image_accesses
             .iter()
             .filter(|access| access.mode.writes())
             .map(|access| access.resource)
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect();
+            .chain(
+                self.buffer_accesses
+                    .iter()
+                    .filter(|access| access.mode.writes())
+                    .map(|access| access.resource),
+            );
+        self.writes = writes.collect::<BTreeSet<_>>().into_iter().collect();
     }
 
     /// Replace the pass image-access contract and synchronize coarse compatibility sets.
@@ -200,8 +209,20 @@ impl PassDesc {
         mut self,
         accesses: impl IntoIterator<Item = BufferAccess>,
     ) -> Self {
-        self.buffer_accesses = accesses.into_iter().collect();
+        self.set_buffer_accesses(accesses.into_iter().collect());
         self
+    }
+
+    /// Replace the typed buffer-access contract and synchronize compatibility sets.
+    pub fn set_buffer_accesses(&mut self, accesses: Vec<BufferAccess>) {
+        let buffer_resources = accesses
+            .iter()
+            .map(|access| access.resource)
+            .collect::<BTreeSet<_>>();
+        self.image_accesses
+            .retain(|access| !buffer_resources.contains(&access.resource));
+        self.buffer_accesses = accesses;
+        self.synchronize_resource_sets();
     }
 
     /// Refine compatibility accesses using the pass semantic and attachment operations.

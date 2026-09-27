@@ -281,6 +281,26 @@ impl AnyFrameGraph {
         }
     }
 
+    /// Initialize graph-owned buffers for every frame slot.
+    pub fn initialize_transient_buffers(
+        &mut self,
+        renderer: &mut crate::renderer::any_renderer::AnyRenderer,
+    ) -> Result<(), RenderGraphError> {
+        match (self, renderer) {
+            (AnyFrameGraph::Vulkan(fg), crate::renderer::any_renderer::AnyRenderer::Vulkan(r)) => {
+                fg.initialize_transient_buffers(r)
+            }
+            #[cfg(target_os = "macos")]
+            (AnyFrameGraph::Metal(fg), crate::renderer::any_renderer::AnyRenderer::Metal(r)) => {
+                fg.initialize_transient_buffers(r)
+            }
+            #[cfg(target_os = "macos")]
+            _ => Err(RenderGraphError::BackendError(
+                "Backend mismatch between frame graph and renderer".into(),
+            )),
+        }
+    }
+
     /// Register a transient texture with the bindless system.
     pub fn register_transient_texture_bindless(
         &mut self,

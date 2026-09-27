@@ -4,12 +4,32 @@ use objc2_foundation::NSRange;
 use objc2_metal::{MTLBuffer, MTLResource, MTLStorageMode};
 
 use crate::backend::resource::GpuBuffer;
+use crate::render_graph::BufferDesc;
 
 #[derive(Clone)]
 pub(crate) struct MetalBuffer {
     pub(crate) inner: Retained<ProtocolObject<dyn MTLBuffer>>,
     size: u64,
     storage_mode: MTLStorageMode,
+}
+
+pub struct MetalGraphBuffer {
+    pub(crate) buffer: MetalBuffer,
+    pub(crate) desc: BufferDesc,
+}
+
+impl MetalGraphBuffer {
+    pub(crate) fn new(buffer: MetalBuffer, desc: BufferDesc) -> Self {
+        Self { buffer, desc }
+    }
+
+    pub(crate) fn size(&self) -> u64 {
+        self.desc.size
+    }
+
+    pub fn native_buffer(&self) -> &ProtocolObject<dyn MTLBuffer> {
+        &self.buffer.inner
+    }
 }
 
 impl MetalBuffer {

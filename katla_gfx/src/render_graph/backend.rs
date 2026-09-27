@@ -5,7 +5,7 @@
 //! to delegate all GPU-specific work to the backend.
 
 use super::error::RenderGraphError;
-use super::resource::GraphResourceDesc;
+use super::resource::{BufferDesc, GraphResourceDesc};
 use crate::texture::ImageFormat;
 
 /// Backend interface for render graph execution.
@@ -23,6 +23,9 @@ pub trait RenderGraphBackend: Sized + 'static {
     /// Backend-specific image view type for render pass attachments.
     type ImageView: Clone + Send + Sync;
 
+    /// Backend-specific buffer allocation type.
+    type TransientBuffer;
+
     /// Create transient textures for one physical allocation slot.
     ///
     /// The graph compiler assigns compatible, non-overlapping transient
@@ -37,8 +40,29 @@ pub trait RenderGraphBackend: Sized + 'static {
         members: &[GraphResourceDesc],
     ) -> Result<Vec<Self::TransientTexture>, RenderGraphError>;
 
+    /// Create one graph-owned buffer allocation.
+    fn create_transient_buffer(
+        &self,
+        desc: BufferDesc,
+    ) -> Result<Self::TransientBuffer, RenderGraphError>;
+
     /// Destroy a transient texture.
     fn destroy_transient_texture(texture: Self::TransientTexture);
+
+    /// Destroy a graph-owned buffer allocation.
+    fn destroy_transient_buffer(buffer: Self::TransientBuffer);
+
+    /// Return the byte capacity of a backend buffer.
+    fn transient_buffer_size(buffer: &Self::TransientBuffer) -> u64;
+
+    /// Return the declared allocation properties of a backend buffer.
+    fn buffer_desc(buffer: &Self::TransientBuffer) -> BufferDesc;
+
+    /// Resolve an externally created buffer handle for graph imports.
+    fn buffer_by_handle(
+        &self,
+        handle: crate::handle::BufferHandle,
+    ) -> Option<&Self::TransientBuffer>;
 
     /// Current frame index (for double-buffered resources).
     fn current_frame(&self) -> usize;

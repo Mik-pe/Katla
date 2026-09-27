@@ -9,7 +9,8 @@
 
 use crate::Size2D;
 use crate::error::RendererError;
-use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+use crate::handle::{BufferHandle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+use crate::render_graph::BufferDesc;
 use crate::renderer::features::RendererFeature;
 use crate::renderer::frame_scope::{FrameAcquisition, FrameToken};
 use crate::renderer::pipeline_descriptor::PipelineDescriptor;
@@ -117,6 +118,12 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Block until the GPU is idle.
     fn wait_for_device(&self);
+
+    /// Create a typed, backend-owned buffer that a render graph can import.
+    fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle, RendererError>;
+
+    /// Destroy a buffer after all submitted work using it has completed.
+    fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError>;
 
     /// Destroy all GPU resources. Must be called before dropping.
     fn destroy(&mut self);
@@ -566,6 +573,14 @@ use crate::renderer::VulkanRenderer;
 impl GpuRenderer for VulkanRenderer {
     fn acquire_frame(&mut self) -> Result<FrameAcquisition, RendererError> {
         super::frame_lifecycle::acquire_frame(self)
+    }
+
+    fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle, RendererError> {
+        VulkanRenderer::create_buffer(self, desc)
+    }
+
+    fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError> {
+        VulkanRenderer::destroy_buffer(self, handle)
     }
 
     fn set_frame_uniforms(

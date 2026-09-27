@@ -5,7 +5,8 @@
 //! side-by-side and be selected at runtime.
 
 use crate::error::RendererError;
-use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+use crate::handle::{BufferHandle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+use crate::render_graph::BufferDesc;
 use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::pipeline_descriptor::PipelineDescriptor;
 use crate::renderer::pipeline_kind::PipelineKind;
@@ -296,6 +297,22 @@ impl GpuRenderer for AnyRenderer {
             AnyRenderer::Vulkan(r) => r.wait_for_device(),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.wait_for_device(),
+        }
+    }
+
+    fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle, RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::create_buffer(r, desc),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::create_buffer(r, desc),
+        }
+    }
+
+    fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => GpuRenderer::destroy_buffer(r, handle),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => GpuRenderer::destroy_buffer(r, handle),
         }
     }
 

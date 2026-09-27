@@ -797,6 +797,9 @@ impl ApplicationBuilder {
         frame_graph
             .initialize_transient_textures(renderer)
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
+        frame_graph
+            .initialize_transient_buffers(renderer)
+            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
 
         match renderer {
             katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {

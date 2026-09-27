@@ -273,7 +273,7 @@ impl ImageSubresourceRange {
 
 /// Half-open byte range `[offset, offset + size)` within a buffer.
 ///
-/// A size of [`u32::MAX`] means "all remaining bytes", matching the
+/// A size of [`u64::MAX`] means "all remaining bytes", matching the
 /// subresource-range convention for images.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BufferByteRange {

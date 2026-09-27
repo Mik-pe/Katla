@@ -17,8 +17,38 @@ pub enum GraphValidationError {
         width: u32,
         height: u32,
     },
+    /// A transient buffer has no allocation size or capabilities.
+    InvalidBufferDescriptor { resource: String, size: u64 },
+    /// A typed buffer access names an image resource.
+    BufferAccessOnNonBuffer { pass: String, resource: String },
+    /// A typed image access names a buffer resource.
+    ImageAccessOnNonImage { pass: String, resource: String },
+    /// A pass refers to a buffer through coarse read/write sets without a typed access.
+    MissingTypedBufferAccess { pass: String, resource: String },
+    /// A typed buffer access exceeds the declared buffer capacity.
+    InvalidBufferAccessRange {
+        pass: String,
+        resource: String,
+        offset: u64,
+        size: u64,
+        capacity: u64,
+    },
+    /// A typed buffer access requires a capability absent from its descriptor.
+    BufferUsageNotDeclared {
+        pass: String,
+        resource: String,
+        usage: String,
+    },
+    /// A typed buffer usage is incompatible with its declared access mode.
+    InvalidBufferAccessMode {
+        pass: String,
+        resource: String,
+        usage: String,
+    },
     /// An imported resource uses the sentinel NONE handle.
     InvalidImportedResource(String),
+    /// An imported buffer uses the sentinel NONE handle.
+    InvalidImportedBuffer(String),
     /// A pass has an empty name.
     EmptyPassName,
     /// A pass name is declared more than once.
@@ -78,11 +108,63 @@ impl fmt::Display for GraphValidationError {
                 "resource '{}' has invalid extent {}x{}",
                 resource, width, height
             ),
+            Self::InvalidBufferDescriptor { resource, size } => write!(
+                f,
+                "buffer resource '{}' has invalid descriptor (size {})",
+                resource, size
+            ),
+            Self::BufferAccessOnNonBuffer { pass, resource } => write!(
+                f,
+                "pass '{}' declares a buffer access for non-buffer resource '{}'",
+                pass, resource
+            ),
+            Self::ImageAccessOnNonImage { pass, resource } => write!(
+                f,
+                "pass '{}' declares an image access for buffer resource '{}'",
+                pass, resource
+            ),
+            Self::MissingTypedBufferAccess { pass, resource } => write!(
+                f,
+                "pass '{}' references buffer '{}' without a typed buffer access",
+                pass, resource
+            ),
+            Self::InvalidBufferAccessRange {
+                pass,
+                resource,
+                offset,
+                size,
+                capacity,
+            } => write!(
+                f,
+                "pass '{}' accesses bytes {}+{} of '{}' (capacity {})",
+                pass, offset, size, resource, capacity
+            ),
+            Self::BufferUsageNotDeclared {
+                pass,
+                resource,
+                usage,
+            } => write!(
+                f,
+                "pass '{}' uses '{}' as a {} buffer without that declared capability",
+                pass, resource, usage
+            ),
+            Self::InvalidBufferAccessMode {
+                pass,
+                resource,
+                usage,
+            } => write!(
+                f,
+                "pass '{}' declares '{}' as {} with an incompatible access mode",
+                pass, resource, usage
+            ),
             Self::InvalidImportedResource(name) => write!(
                 f,
                 "imported resource '{}' uses GraphResourceHandle::NONE",
                 name
             ),
+            Self::InvalidImportedBuffer(name) => {
+                write!(f, "imported buffer '{}' uses BufferHandle::NONE", name)
+            }
             Self::EmptyPassName => write!(f, "pass names must not be empty"),
             Self::DuplicatePassName(name) => {
                 write!(f, "pass '{}' is declared more than once", name)

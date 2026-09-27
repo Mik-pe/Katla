@@ -409,6 +409,11 @@ impl Application {
             .map_err(|e| AppError::RendererInitFailed {
                 reason: format!("Failed to initialize transient textures: {e}"),
             })?;
+        self.frame_graph
+            .initialize_transient_buffers(&mut self.renderer)
+            .map_err(|e| AppError::RendererInitFailed {
+                reason: format!("Failed to initialize transient buffers: {e}"),
+            })?;
 
         let hdr_bindless_index =
             if let Some(name) = self.frame_graph_bindings.resources.hdr_color.as_deref() {

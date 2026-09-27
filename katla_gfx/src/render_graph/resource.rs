@@ -5,6 +5,89 @@ use std::marker::PhantomData;
 pub use crate::render_pass::ResourceState;
 use crate::texture::ImageFormat;
 
+/// Backend-neutral buffer memory placement policy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BufferMemoryPolicy {
+    /// GPU-local memory for resources written and read by the GPU.
+    DeviceLocal,
+    /// CPU-visible memory for frequently updated data.
+    CpuVisible,
+    /// CPU-visible memory intended for GPU-to-CPU readback.
+    Readback,
+}
+
+/// Capabilities requested when creating a buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct BufferUsages(u16);
+
+impl BufferUsages {
+    pub const NONE: Self = Self(0);
+    pub const UNIFORM: Self = Self(1 << 0);
+    pub const STORAGE: Self = Self(1 << 1);
+    pub const VERTEX: Self = Self(1 << 2);
+    pub const INDEX: Self = Self(1 << 3);
+    pub const INDIRECT: Self = Self(1 << 4);
+    pub const TRANSFER_SOURCE: Self = Self(1 << 5);
+    pub const TRANSFER_DESTINATION: Self = Self(1 << 6);
+    pub const READBACK: Self = Self(1 << 7);
+
+    pub const fn contains(self, usage: Self) -> bool {
+        self.0 & usage.0 == usage.0
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl std::ops::BitOr for BufferUsages {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Self(self.0 | rhs.0)
+    }
+}
+
+impl std::ops::BitOrAssign for BufferUsages {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+/// Backend-neutral buffer allocation descriptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BufferDesc {
+    pub size: u64,
+    pub usages: BufferUsages,
+    pub memory: BufferMemoryPolicy,
+}
+
+impl BufferDesc {
+    pub const fn new(size: u64, usages: BufferUsages, memory: BufferMemoryPolicy) -> Self {
+        Self {
+            size,
+            usages,
+            memory,
+        }
+    }
+}
+
+/// Named transient buffer resource declared by a render graph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GraphBufferDesc {
+    pub name: String,
+    pub buffer: BufferDesc,
+}
+
+impl GraphBufferDesc {
+    pub fn new(name: impl Into<String>, buffer: BufferDesc) -> Self {
+        Self {
+            name: name.into(),
+            buffer,
+        }
+    }
+}
+
 /// Transient resource types for render graph.
 #[derive(Clone, Debug, PartialEq)]
 pub enum GraphResourceType {

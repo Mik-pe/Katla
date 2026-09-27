@@ -138,6 +138,17 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
         self.renderer.current_frame()
     }
 
+    /// Resolve a graph-declared buffer by name for the current frame slot.
+    ///
+    /// The returned backend buffer can be used by a backend-specific compute
+    /// callback after its native handle is extracted. Imported renderer-owned
+    /// buffers and graph-owned transient buffers share this lookup path.
+    pub fn buffer(&self, name: &str) -> Option<&B::TransientBuffer> {
+        let id = self.graph.resource_id(name)?;
+        self.graph
+            .buffer_by_id(self.renderer, id, self.current_frame())
+    }
+
     /// Get mutable access to the renderer.
     pub fn renderer_mut(&mut self) -> &mut B {
         self.renderer
