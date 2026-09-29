@@ -6,21 +6,15 @@
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{MTLFunction, MTLRenderCommandEncoder};
 
-use crate::backend::command::{
-    DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType, RenderPassInfo,
-    ShaderStages,
-};
+use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::error::RendererError;
 use crate::handle::{MaterialMarker, MeshMarker, ResourceStorage, SkeletonMarker};
 use crate::pipeline::CompareOp;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-use crate::texture::ImageFormat;
 
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
 use super::metal_renderer::{MetalMaterial, MetalMesh};
 use super::pipeline::MetalGraphicsPipeline;
-use super::texture::MetalTextureView;
 
 /// Metal depth prepass subsystem.
 ///
@@ -131,11 +125,10 @@ impl MetalDepthPrepass {
 /// Switches between non-skinned, skinned, and billboard pipelines based on draw call properties.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_depth_prepass(
-    cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
+    encoder: &mut super::render_encoder::MetalRenderEncoder,
     depth_pipeline: &MetalGraphicsPipeline,
     depth_pipeline_skinned: Option<&MetalGraphicsPipeline>,
     depth_pipeline_billboard: Option<&MetalGraphicsPipeline>,
-    depth_view: &MetalTextureView,
     width: u32,
     height: u32,
     frame_uniform_buffer: &MetalBuffer,
@@ -147,23 +140,6 @@ pub(crate) fn render_depth_prepass(
     bindless_argument_buffer: Option<&objc2::runtime::ProtocolObject<dyn objc2_metal::MTLBuffer>>,
     shared_sampler: Option<&super::sampler::MetalSamplerState>,
 ) {
-    let render_pass_info = RenderPassInfo {
-        color_attachments: vec![],
-        depth_attachment: Some(DepthAttachmentInfo {
-            view: depth_view.clone(),
-            load_op: LoadOp::Clear,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::DepthStencil {
-                depth: 0.0,
-                stencil: 0,
-            },
-            format: ImageFormat::D32SfloatS8Uint,
-        }),
-        debug_label: Some("depth_prepass"),
-    };
-
-    let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
-
     encoder.bind_graphics_pipeline(depth_pipeline);
     encoder.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
 
@@ -273,8 +249,6 @@ pub(crate) fn render_depth_prepass(
 
         encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
-
-    encoder.end_encoding();
 }
 
 #[cfg(test)]

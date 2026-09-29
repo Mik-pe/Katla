@@ -73,14 +73,6 @@ impl MetalRenderer {
             encoder.bind_storage_buffer(shadow_buf, 0, 7, stages);
         }
 
-        if let Some(shadow_view) = self.shadow.shadow_map_view() {
-            unsafe {
-                encoder
-                    .inner
-                    .setFragmentTexture_atIndex(Some(&shadow_view.inner), 1);
-            }
-        }
-
         if let Some(ref sampler) = self.shadow_sampler {
             unsafe {
                 encoder

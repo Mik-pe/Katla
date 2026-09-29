@@ -29,6 +29,9 @@ pub(crate) struct MetalColorAttachmentRecord {
 /// Graph-declared depth behavior copied into a Metal executable record.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct MetalDepthAttachmentOps {
+    pub(crate) resource: ResourceId,
+    pub(crate) format: ImageFormat,
+    pub(crate) stencil_ops: crate::render_pass::AttachmentOps,
     pub(crate) load_op: LoadOp,
     pub(crate) store_op: StoreOp,
     pub(crate) clear_value: ClearValue,
@@ -49,6 +52,7 @@ pub(crate) struct MetalPassRecord {
     pub(crate) uses_depth: bool,
     pub(crate) depth_attachment: Option<MetalDepthAttachmentOps>,
     pub(crate) material: Option<crate::handle::MaterialHandle>,
+    pub(crate) tonemap_params: Option<crate::render_graph::TonemapParams>,
 }
 
 impl MetalPassRecord {
@@ -119,12 +123,49 @@ impl MetalPassRecord {
                 })
                 .collect::<Result<Vec<_>, RenderGraphError>>()?,
             uses_depth: pass.uses_depth,
-            depth_attachment: pass.depth_attachment.map(|ops| MetalDepthAttachmentOps {
-                load_op: ops.depth.load,
-                store_op: ops.depth.store,
-                clear_value: ops.depth.clear_value,
-            }),
+            depth_attachment: if pass.uses_depth {
+                let resource = pass.depth_target.ok_or_else(|| {
+                    RenderGraphError::BackendError(format!(
+                        "Metal pass '{}' uses depth without a declared graph depth target",
+                        pass.name
+                    ))
+                })?;
+                let format = format_at(resource).ok_or_else(|| {
+                    RenderGraphError::BackendError(format!(
+                        "Metal pass '{}' has unresolved depth resource {}",
+                        pass.name, resource.0
+                    ))
+                })?;
+                if !matches!(
+                    format,
+                    ImageFormat::D32Sfloat
+                        | ImageFormat::D32SfloatS8Uint
+                        | ImageFormat::D24UnormS8Uint
+                ) {
+                    return Err(RenderGraphError::BackendError(format!(
+                        "Metal pass '{}' has non-depth target {}",
+                        pass.name, resource.0
+                    )));
+                }
+                let ops = pass.depth_attachment.ok_or_else(|| {
+                    RenderGraphError::BackendError(format!(
+                        "Metal pass '{}' has no depth attachment operations",
+                        pass.name
+                    ))
+                })?;
+                Some(MetalDepthAttachmentOps {
+                    resource,
+                    format,
+                    stencil_ops: ops.stencil,
+                    load_op: ops.depth.load,
+                    store_op: ops.depth.store,
+                    clear_value: ops.depth.clear_value,
+                })
+            } else {
+                None
+            },
             material: pass.material,
+            tonemap_params: pass.tonemap_params,
         })
     }
 
@@ -348,6 +389,7 @@ impl MetalExecutionPlan {
                     ),
                     depth_attachment: None,
                     material: None,
+                    tonemap_params: None,
                 })
                 .collect(),
         }
@@ -378,6 +420,7 @@ mod tests {
                     | PassKind::Outline
             )
         );
+        pass.uses_depth = false;
         pass
     }
 
@@ -385,7 +428,13 @@ mod tests {
         passes: &[PassDesc],
         order: &[usize],
     ) -> Result<MetalExecutionPlan, RenderGraphError> {
-        let format_at = |_: crate::render_graph::ResourceId| Some(ImageFormat::R16G16B16A16Sfloat);
+        let format_at = |id: crate::render_graph::ResourceId| {
+            Some(if id == ResourceId(99) {
+                ImageFormat::D32SfloatS8Uint
+            } else {
+                ImageFormat::R16G16B16A16Sfloat
+            })
+        };
         MetalExecutionPlan::compile_order(
             order,
             |index| passes.get(index),
@@ -408,7 +457,7 @@ mod tests {
         assert_eq!(
             plan.trace(),
             vec![
-                "0:geometry:Geometry:reads=[]:writes=[]:colors=[]:uses_depth=true:depth=none",
+                "0:geometry:Geometry:reads=[]:writes=[]:colors=[]:uses_depth=false:depth=none",
                 "1:tonemap:Fullscreen:reads=[]:writes=[]:colors=[]:uses_depth=false:depth=none",
                 "2:ui:Ui:reads=[]:writes=[]:colors=[]:uses_depth=false:depth=none",
             ]
@@ -487,6 +536,8 @@ mod tests {
                 clear_value: ClearValue::OPAQUE_BLACK,
             },
         ));
+        geometry.uses_depth = true;
+        geometry.depth_target = Some(ResourceId(99));
         geometry.depth_attachment = Some(crate::render_pass::DepthStencilAttachmentOps {
             depth: crate::render_pass::AttachmentOps {
                 load: LoadOp::Load,
@@ -537,6 +588,16 @@ mod tests {
         assert_eq!(
             record.depth_attachment,
             Some(MetalDepthAttachmentOps {
+                resource: ResourceId(99),
+                format: ImageFormat::D32SfloatS8Uint,
+                stencil_ops: crate::render_pass::AttachmentOps {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                    clear_value: ClearValue::DepthStencil {
+                        depth: 0.0,
+                        stencil: 1
+                    }
+                },
                 load_op: LoadOp::Load,
                 store_op: StoreOp::Store,
                 clear_value: ClearValue::DepthStencil {

@@ -34,7 +34,7 @@ impl fmt::Display for EmittedPassOutcome {
 }
 
 /// One encoder a backend emitted for one compiled pass.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ResourceExecutionTraceEntry {
     /// Declared pass index, so trace entries join the compiled plan directly.
     pub pass_index: usize,
@@ -51,10 +51,14 @@ pub struct ResourceExecutionTraceEntry {
     pub color_targets: Vec<String>,
     /// Depth target the encoder actually bound, if any.
     pub depth_target: Option<String>,
+    /// Operations supplied to the native color attachments, in binding order.
+    pub color_attachment_ops: Vec<crate::render_pass::AttachmentOps>,
+    /// Operations supplied to the native depth and stencil attachments.
+    pub depth_attachment_ops: Option<crate::render_pass::DepthStencilAttachmentOps>,
 }
 
 /// A frame's emitted encoder trace.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ResourceExecutionTrace {
     entries: Vec<ResourceExecutionTraceEntry>,
 }
@@ -103,6 +107,14 @@ pub enum TraceDivergence {
         compiled: Vec<String>,
         emitted: Vec<String>,
     },
+    /// Native load/store/clear operations differ from the compiled contract.
+    AttachmentOpsMismatch {
+        pass_index: usize,
+        name: String,
+        aspect: &'static str,
+        compiled: String,
+        emitted: String,
+    },
     /// An encoded pass bound a different depth target than declared.
     DepthTargetMismatch {
         pass_index: usize,
@@ -140,6 +152,16 @@ impl fmt::Display for TraceDivergence {
                 emitted.join(", "),
                 compiled.join(", ")
             ),
+            Self::AttachmentOpsMismatch {
+                pass_index,
+                name,
+                aspect,
+                compiled,
+                emitted,
+            } => write!(
+                f,
+                "pass {pass_index} ('{name}') encoded {aspect} operations {emitted} but declared {compiled}"
+            ),
             Self::DepthTargetMismatch {
                 pass_index,
                 name,
@@ -157,9 +179,8 @@ impl fmt::Display for TraceDivergence {
 
 /// Label for the backend-owned frame depth texture.
 ///
-/// A pass's depth contract names operations, not a graph resource: the depth
-/// attachment is the frame's depth texture on both backends. The trace records
-/// this stable label so an emitted depth binding is distinguishable from none.
+/// Used when a pass targets Vulkan's backend-owned frame depth. Explicit
+/// graph depth targets are traced with their declared resource names.
 pub const FRAME_DEPTH_TARGET: &str = "depth";
 
 /// Resource names for a pass's declared color targets, in declaration order.
@@ -265,9 +286,37 @@ pub fn compare_with_compiled(
             });
         }
 
+        let color_ops = pass
+            .color_attachments
+            .iter()
+            .map(|(_, ops)| *ops)
+            .collect::<Vec<_>>();
+        if color_ops != entry.color_attachment_ops {
+            divergences.push(TraceDivergence::AttachmentOpsMismatch {
+                pass_index: entry.pass_index,
+                name: pass.name.clone(),
+                aspect: "color",
+                compiled: format!("{color_ops:?}"),
+                emitted: format!("{:?}", entry.color_attachment_ops),
+            });
+        }
+        if pass.depth_attachment != entry.depth_attachment_ops {
+            divergences.push(TraceDivergence::AttachmentOpsMismatch {
+                pass_index: entry.pass_index,
+                name: pass.name.clone(),
+                aspect: "depth/stencil",
+                compiled: format!("{:?}", pass.depth_attachment),
+                emitted: format!("{:?}", entry.depth_attachment_ops),
+            });
+        }
         // The declared depth fact is the pass's contract, not a graph
         // resource name: the depth attachment is the frame's depth texture.
-        let compiled_depth = pass.uses_depth.then(|| FRAME_DEPTH_TARGET.to_string());
+        let compiled_depth = pass.uses_depth.then(|| {
+            pass.depth_target
+                .and_then(|id| resources.get(id.0 as usize))
+                .map(|r| r.name.clone())
+                .unwrap_or_else(|| FRAME_DEPTH_TARGET.to_string())
+        });
         if compiled_depth != entry.depth_target {
             divergences.push(TraceDivergence::DepthTargetMismatch {
                 pass_index: entry.pass_index,
@@ -306,6 +355,11 @@ impl fmt::Display for ResourceExecutionTrace {
                 entry.depth_target.as_deref().unwrap_or("none"),
                 entry.draw_calls,
                 entry.instances,
+            )?;
+            writeln!(
+                f,
+                "      color ops {:?} depth/stencil ops {:?}",
+                entry.color_attachment_ops, entry.depth_attachment_ops,
             )?;
         }
         Ok(())
@@ -354,6 +408,8 @@ mod tests {
             instances: 1,
             color_targets: Vec::new(),
             depth_target: None,
+            color_attachment_ops: vec![AttachmentOps::load()],
+            depth_attachment_ops: None,
         }
     }
 
@@ -370,6 +426,24 @@ mod tests {
             compare_with_compiled(&resources, &passes, &[0], &trace),
             vec![]
         );
+    }
+
+    #[test]
+    fn test_native_attachment_operations_diverge_even_when_targets_match() {
+        let resources = vec![resource("color")];
+        let passes = vec![graphics_pass("only", vec![ResourceId(0)])];
+        let mut emitted = entry(0, "only", 0);
+        emitted.color_targets = vec!["color".into()];
+        emitted.color_attachment_ops[0].store = crate::render_pass::StoreOp::DontCare;
+        let mut trace = ResourceExecutionTrace::new();
+        trace.push(emitted);
+        assert!(matches!(
+            compare_with_compiled(&resources, &passes, &[0], &trace).as_slice(),
+            [TraceDivergence::AttachmentOpsMismatch {
+                aspect: "color",
+                ..
+            }]
+        ));
     }
 
     #[test]

@@ -130,7 +130,8 @@ let divergences = graph.compare_execution_trace();
 `ResourceExecutionTrace` records one entry per pass the backend dispatched, in
 encode order: pass index and name, outcome (`encoded` /
 `skipped_no_work`), draw and instance counts, and the color and depth targets
-the encoder bound. `compare_execution_trace()` is the point of it — it returns
+the encoder bound, together with the load/store/clear operations supplied to
+the native descriptor. `compare_execution_trace()` is the point of it — it returns
 every divergence from the compiled plan:
 
 | Divergence | Meaning |
@@ -140,6 +141,7 @@ every divergence from the compiled plan:
 | `OrderMismatch` | encoded passes are out of compiled execution order |
 | `ColorTargetsMismatch` | the encoder bound different color targets |
 | `DepthTargetMismatch` | the encoder bound depth differently than declared |
+| `AttachmentOpsMismatch` | native color or depth/stencil operations differ from the declaration |
 
 Tracing is off by default so the steady-state path pays nothing. A pass the
 backend deliberately skips for lack of work is recorded as `skipped_no_work`
@@ -147,6 +149,14 @@ but is *not* an ordering divergence.
 
 The trace is backend-neutral: the graph-level dispatch records it for both
 Vulkan and Metal, and the text export is deterministic across runs.
+
+Metal resolves each live pass's color and explicit `.depth_target("name")`
+resources for the active frame slot before creating any render encoder. The
+backbuffer resolves to the acquired drawable through the same path. Missing
+allocations, incompatible formats or extents, and unsupported built-in pipeline
+attachments return typed errors before encoding. Clear operations still execute
+when a live graphics pass has no draws; an empty graph emits no hidden canvas
+pass. Fullscreen inputs and parameters belong to each compiled pass record.
 
 ## Known gaps
 

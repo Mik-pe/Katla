@@ -116,6 +116,7 @@ impl PassBuilder for ObjectIdPass {
             output_format: Some(ImageFormat::R32Uint),
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
+            depth_target: None,
             color_attachments,
             depth_attachment: Some(depth_attachment),
             kind: Some(PassKind::ObjectId),

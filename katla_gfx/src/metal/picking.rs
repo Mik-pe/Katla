@@ -3,22 +3,23 @@
 //! Renders instance indices to an R32Uint texture, then reads back a single
 //! pixel via a blit encoder + Shared buffer for CPU-side entity resolution.
 
+#[cfg(test)]
+use crate::backend::command::{ColorAttachmentInfo, RenderPassInfo};
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_foundation::NSString;
+use objc2_metal::MTLTexture;
 use objc2_metal::{
     MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLOrigin, MTLPixelFormat,
     MTLRenderCommandEncoder, MTLSize,
 };
 
-use crate::backend::command::{
-    ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
-    RenderPassInfo, ShaderStages,
-};
+use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::{MaterialMarker, MeshMarker, ResourceStorage, SkeletonMarker};
 use crate::pipeline::CompareOp;
+#[cfg(test)]
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
@@ -77,8 +78,10 @@ impl MetalPickingSubsystem {
         self.pipeline_skinned.as_ref()
     }
 
-    pub(crate) fn object_id_texture(&self) -> Option<&MetalTextureView> {
-        self.object_id_texture.as_ref()
+    pub(crate) fn set_render_target(&mut self, view: MetalTextureView) {
+        self.texture_width = view.inner.width() as u32;
+        self.texture_height = view.inner.height() as u32;
+        self.object_id_texture = Some(view);
     }
 
     /// Create or recreate the object-ID texture.
@@ -271,11 +274,9 @@ impl MetalPickingSubsystem {
 /// Reuses depth from the depth prepass for correct occlusion.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_object_id_pass(
-    cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
+    encoder: &mut super::render_encoder::MetalRenderEncoder,
     picking_pipeline: &MetalGraphicsPipeline,
     picking_skinned_pipeline: Option<&MetalGraphicsPipeline>,
-    object_id_view: &MetalTextureView,
-    depth_view: &MetalTextureView,
     width: u32,
     height: u32,
     frame_uniform_buffer: &MetalBuffer,
@@ -285,25 +286,6 @@ pub(crate) fn render_object_id_pass(
     draws: crate::renderer::types::PreparedDraws<'_>,
     skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
 ) {
-    let render_pass_info = RenderPassInfo {
-        color_attachments: vec![ColorAttachmentInfo {
-            view: object_id_view.clone(),
-            load_op: LoadOp::Clear,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::TRANSPARENT_BLACK,
-        }],
-        depth_attachment: Some(DepthAttachmentInfo {
-            view: depth_view.clone(),
-            load_op: LoadOp::Load,
-            store_op: StoreOp::DontCare,
-            clear_value: ClearValue::DEFAULT_DEPTH,
-            format: ImageFormat::D32SfloatS8Uint,
-        }),
-        debug_label: Some("picking"),
-    };
-
-    let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
-
     encoder.bind_graphics_pipeline(picking_pipeline);
     encoder.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
 
@@ -365,8 +347,6 @@ pub(crate) fn render_object_id_pass(
 
         encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
-
-    encoder.end_encoding();
 }
 
 #[cfg(test)]

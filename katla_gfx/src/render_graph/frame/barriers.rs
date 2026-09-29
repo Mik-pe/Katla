@@ -39,7 +39,7 @@ impl Frame<'_, VulkanRenderer> {
         if self
             .graph
             .pass(pass_index)
-            .is_some_and(|pass| pass.uses_depth)
+            .is_some_and(|pass| pass.uses_depth && pass.depth_target.is_none())
             && self.depth_buffer_written
         {
             let frame_idx = self.current_frame();

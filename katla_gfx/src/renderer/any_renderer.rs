@@ -876,22 +876,9 @@ impl AnyRenderer {
     // --- Metal-specific methods (take Metal types, not in trait) ---
 
     #[cfg(target_os = "macos")]
-    pub fn set_geometry_hdr_view(
-        &mut self,
-        view: crate::metal::texture::MetalTextureView,
-        bindless_slot: u32,
-    ) {
-        match self {
-            AnyRenderer::Vulkan(_) => {}
-            AnyRenderer::Metal(r) => r.set_geometry_hdr_view(view, bindless_slot),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn set_tonemap_output_view(&mut self, view: crate::metal::texture::MetalTextureView) {
-        match self {
-            AnyRenderer::Vulkan(_) => {}
-            AnyRenderer::Metal(r) => r.set_tonemap_output_view(view),
+    pub fn set_geometry_hdr_bindless_slot(&mut self, slot: u32) {
+        if let AnyRenderer::Metal(renderer) = self {
+            renderer.set_geometry_hdr_bindless_slot(slot);
         }
     }
 

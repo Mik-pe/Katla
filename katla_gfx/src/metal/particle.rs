@@ -952,44 +952,17 @@ mod tests {
 /// draw command the draw-command dispatch wrote earlier this frame.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_particles(
-    cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
+    encoder: &mut super::render_encoder::MetalRenderEncoder,
     pipeline: &super::pipeline::MetalGraphicsPipeline,
-    color_view: &super::texture::MetalTextureView,
-    depth_view: &super::texture::MetalTextureView,
     width: u32,
     height: u32,
     frame_uniforms: &MetalBuffer,
     system: &MetalParticleSubsystem,
     frame_index: u32,
 ) {
-    use crate::backend::command::{
-        ColorAttachmentInfo, DepthAttachmentInfo, GpuRenderEncoder, RenderPassInfo, ShaderStages,
-    };
-    use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-    use crate::texture::ImageFormat;
+    use crate::backend::command::{GpuRenderEncoder, ShaderStages};
 
     let fi = frame_slot(frame_index);
-    let pass_info = RenderPassInfo {
-        color_attachments: vec![ColorAttachmentInfo {
-            view: color_view.clone(),
-            load_op: LoadOp::Load,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::OPAQUE_BLACK,
-        }],
-        depth_attachment: Some(DepthAttachmentInfo {
-            view: depth_view.clone(),
-            load_op: LoadOp::Load,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::DepthStencil {
-                depth: 0.0,
-                stencil: 0,
-            },
-            format: ImageFormat::D32SfloatS8Uint,
-        }),
-        debug_label: Some("particles"),
-    };
-
-    let mut encoder = cmd_buffer.begin_render_pass(pass_info);
     encoder.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
     encoder.set_scissor(0, 0, width, height);
 
@@ -1022,5 +995,4 @@ pub(crate) fn render_particles(
 
     encoder.bind_graphics_pipeline(pipeline);
     encoder.draw_indirect(&system._indirect_draw_buffers[fi], 0);
-    encoder.end_encoding();
 }

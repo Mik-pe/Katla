@@ -153,8 +153,13 @@ impl Application {
 
         #[cfg(target_os = "macos")]
         {
-            if let Some(vp_slot) = self.renderer.viewport_bindless_index() {
-                self.editor.editor_ui.set_viewport_bindless_index(vp_slot);
+            if let Some(name) = self.frame_graph_bindings.resources.viewport.as_deref()
+                && let Some(slot) = self
+                    .frame_graph
+                    .transient_texture_metal(name, self.renderer.current_frame())
+                    .and_then(|texture| texture.bindless_slot)
+            {
+                self.editor.editor_ui.set_viewport_bindless_index(slot);
             }
 
             log::debug!("Generating UI draw list (Metal)...");

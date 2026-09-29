@@ -98,30 +98,13 @@ impl Application {
 
     #[cfg(target_os = "macos")]
     fn refresh_metal_transient_views(&mut self) {
-        if let Some(hdr_resource) = self.frame_graph_bindings.resources.hdr_color.clone()
-            && let Some(view) = self
+        if let Some(name) = self.frame_graph_bindings.resources.hdr_color.as_deref()
+            && let Some(slot) = self
                 .frame_graph
-                .transient_image_view_metal(&hdr_resource, 0)
-        {
-            if let Some(slot) = self
-                .frame_graph
-                .transient_texture_metal(&hdr_resource, 0)
+                .transient_texture_metal(name, 0)
                 .and_then(|texture| texture.bindless_slot)
-            {
-                self.renderer.set_geometry_hdr_view(view, slot);
-            } else {
-                log::error!(
-                    "Metal HDR resource '{hdr_resource}' lost its bindless slot after recreation"
-                );
-            }
-        }
-
-        if let Some(viewport_resource) = self.frame_graph_bindings.resources.viewport.clone()
-            && let Some(view) = self
-                .frame_graph
-                .transient_image_view_metal(&viewport_resource, 0)
         {
-            self.renderer.set_tonemap_output_view(view);
+            self.renderer.set_geometry_hdr_bindless_slot(slot);
         }
     }
 

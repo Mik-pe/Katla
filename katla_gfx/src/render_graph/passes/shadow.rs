@@ -95,6 +95,7 @@ impl PassBuilder for ShadowPass {
             output_format: None,
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
+            depth_target: None,
             color_attachments: Vec::new(),
             depth_attachment,
             kind: Some(PassKind::Shadow),

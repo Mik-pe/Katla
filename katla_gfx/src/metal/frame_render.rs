@@ -1,166 +1,45 @@
-//! Metal command encoding driven directly by compiled render-graph pass records.
-//!
-//! Every record keeps its stable [`PassId`](crate::render_graph::PassId), consumes
-//! only submissions addressed to that pass, and is encoded in the graph compiler's
-//! canonical order. Metal-specific encoder implementations remain private here.
+//! Native encoders consume resolved graph attachments and pass-local commands.
 
-use std::collections::{HashMap, HashSet};
-use std::mem;
-use std::rc::Rc;
-
-use objc2_metal::{MTLCommandBuffer, MTLRenderCommandEncoder, MTLTexture};
-
-use crate::backend::command::{
-    ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
-    RenderPassInfo, ShaderStages,
-};
-use crate::backend::resource::GpuBuffer;
-use crate::error::RendererError;
-use crate::render_graph::{PassExecutionData, PassId, PassKind};
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-use crate::renderer::gpu_renderer::GpuRenderer;
-use crate::renderer::types::{DrawList, FrameUniforms, PreparedDrawCounts, UIDrawList};
-use crate::texture::ImageFormat;
-
-use super::MetalBackend;
-use super::command_buffer::MetalCommandBuffer;
+use super::attachments::ResolvedMetalAttachments;
 use super::execution_plan::{MetalExecutionPlan, MetalPassRecord};
 use super::metal_renderer::MetalRenderer;
-use super::particle::render_particles;
+use super::render_encoder::MetalRenderEncoder;
 use super::texture::{MetalTexture, MetalTextureView};
+use crate::backend::command::{GpuCommandBuffer, GpuRenderEncoder, IndexType, ShaderStages};
+use crate::error::RendererError;
+use crate::render_graph::{FrameGraph, PassExecutionData, PassKind};
+use crate::renderer::gpu_renderer::GpuRenderer;
+use crate::renderer::types::{DrawList, UIDrawList};
+use objc2_metal::{MTLCommandBuffer, MTLCommandEncoder, MTLRenderCommandEncoder};
+use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
-/// Canvas clear color that appears as #1E1E1E on an sRGB framebuffer.
-const CANVAS_CLEAR_COLOR: (f64, f64, f64, f64) = (0.022, 0.022, 0.022, 1.0);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MetalPassOutcome {
-    Encoded,
-    SkippedNoWork,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct MetalPassTrace {
-    pass_id: PassId,
-    name: String,
-    kind: PassKind,
-    draws: PreparedDrawCounts,
-    outcome: MetalPassOutcome,
-}
-
-struct FrameEncodingState {
-    drawable_view: MetalTextureView,
-    drawable_written: bool,
-    tonemap_ran: bool,
-    drawable_width: f32,
-    drawable_height: f32,
-    viewport_x: f32,
-    viewport_y: f32,
-    viewport_width: f32,
-    viewport_height: f32,
-}
-
-fn tonemap_viewport(
-    drawable_height: f32,
-    panel_x: f32,
-    panel_y: f32,
-    panel_width: f32,
-    panel_height: f32,
-    offscreen: bool,
-) -> (f32, f32, f32, f32) {
-    if offscreen {
-        (0.0, 0.0, panel_width, panel_height)
-    } else {
-        (
-            panel_x,
-            drawable_height - (panel_y + panel_height),
-            panel_width,
-            panel_height,
-        )
-    }
-}
-
-fn plan_requires_scene_depth(plan: &MetalExecutionPlan) -> bool {
-    plan.passes().iter().any(|record| {
-        matches!(
-            record.kind,
-            PassKind::DepthPrepass | PassKind::Geometry | PassKind::ObjectId | PassKind::Outline
-        )
-    })
-}
-
-fn has_later_kind(plan: &MetalExecutionPlan, position: usize, kind: PassKind) -> bool {
-    plan.passes()
-        .iter()
-        .skip(position + 1)
-        .any(|record| record.kind == kind)
-}
-
-fn has_later_ui_work(plan: &MetalExecutionPlan, position: usize, ui_work: &HashSet<usize>) -> bool {
-    plan.passes()
-        .iter()
-        .skip(position + 1)
-        .any(|record| record.kind == PassKind::Ui && ui_work.contains(&record.pass_index))
-}
-
-fn single_ui_draw_list<'a>(
-    record: &MetalPassRecord,
-    data: &'a PassExecutionData,
-) -> Result<Option<&'a UIDrawList>, RendererError> {
-    match data.ui_draw_lists.as_slice() {
-        [] => Ok(None),
-        [draw_list] => Ok(Some(draw_list)),
-        lists => Err(RendererError::InvalidOperation(format!(
-            "Metal UI pass '{}' ({:?}) received {} UI draw lists; submit one composed list per PassId",
-            record.name,
-            record.pass_id,
-            lists.len()
-        ))),
-    }
-}
-
-/// Validate frame submissions against the compiled plan before any GPU
-/// encoding begins. Pure plan/data checks so the failure contracts hold
-/// without a renderer instance.
 fn validate_frame_submissions(
     plan: &MetalExecutionPlan,
     pending: &HashMap<usize, PassExecutionData>,
-    has_scene_depth: bool,
 ) -> Result<(), RendererError> {
-    let scheduled_passes = plan
+    let scheduled = plan
         .passes()
         .iter()
         .map(|record| record.pass_index)
         .collect::<HashSet<_>>();
-    if let Some(pass_index) = pending
-        .keys()
-        .copied()
-        .find(|pass_index| !scheduled_passes.contains(pass_index))
-    {
+    if let Some(index) = pending.keys().find(|index| !scheduled.contains(index)) {
         return Err(RendererError::InvalidOperation(format!(
-            "Metal received submissions for pass index {pass_index}, which is absent from the compiled execution plan"
+            "Metal received submissions for pass index {index}, which is absent from the compiled execution plan"
         )));
     }
-    for record in plan
-        .passes()
-        .iter()
-        .filter(|record| record.kind == PassKind::Ui)
-    {
-        if let Some(data) = pending.get(&record.pass_index)
-            && data.ui_draw_lists.len() > 1
+    for record in plan.passes() {
+        if record.kind == PassKind::Ui
+            && pending
+                .get(&record.pass_index)
+                .is_some_and(|data| data.ui_draw_lists.len() > 1)
         {
             return Err(RendererError::InvalidOperation(format!(
-                "Metal UI pass '{}' ({:?}) received {} UI draw lists; submit one composed list per PassId",
+                "Metal UI pass '{}' received {} UI draw lists; submit one composed list per PassId",
                 record.name,
-                record.pass_id,
-                data.ui_draw_lists.len()
+                pending[&record.pass_index].ui_draw_lists.len()
             )));
         }
-    }
-
-    if plan_requires_scene_depth(plan) && !has_scene_depth {
-        return Err(RendererError::InvalidOperation(
-            "Metal execution plan requires a depth-stencil target".into(),
-        ));
     }
     Ok(())
 }
@@ -171,656 +50,461 @@ impl MetalRenderer {
         frame: &crate::renderer::frame_scope::FrameToken,
         plan: &MetalExecutionPlan,
         mut pending: HashMap<usize, PassExecutionData>,
+        graph: &FrameGraph<Self>,
         trace_enabled: bool,
     ) -> Result<crate::render_graph::ResourceExecutionTrace, RendererError> {
-        if let Err(err) =
-            validate_frame_submissions(plan, &pending, self.depth_stencil_view.is_some())
-        {
-            if plan_requires_scene_depth(plan) {
-                // Drop the drawable so a retry cannot present a partial frame.
-                self.current_drawable_texture = None;
-            }
-            return Err(err);
-        }
-
-        let drawable_texture = self
+        validate_frame_submissions(plan, &pending)?;
+        let texture = self
             .current_drawable_texture
             .take()
             .ok_or_else(|| RendererError::InvalidOperation("No drawable texture".into()))?;
-        let drawable_view = MetalTextureView::new(
-            drawable_texture.clone(),
-            MetalTexture::new(drawable_texture, ImageFormat::B8G8R8A8Srgb),
+        let drawable = MetalTextureView::new(
+            texture.clone(),
+            MetalTexture::new(texture, crate::texture::ImageFormat::B8G8R8A8Srgb),
         );
-
-        // Per-slot uniform data must exist before the first record encodes:
-        // frame uniforms feed every pass, and object storage is bound by draw
-        // at instance-index offsets. Upload borrows the frame-owned submitted
-        // lists directly — no rebuilt merged copy — and shared submissions
-        // upload once, so every slot the frame encodes is initialized.
+        let slot = <Self as crate::render_graph::RenderGraphBackend>::current_frame(self);
+        let resolved = plan
+            .passes()
+            .iter()
+            .map(|record| {
+                let attachments =
+                    ResolvedMetalAttachments::resolve(record, graph, &drawable, slot)?;
+                validate_builtin_attachments(record, &attachments)?;
+                if record.kind == PassKind::Fullscreen { self.fullscreen_input(record, graph, slot)?; }
+                if record.kind == PassKind::Geometry {
+                    if record.color_attachments[0].load_op == crate::render_pass::LoadOp::Clear && self.sky_pipeline.is_some()
+                        && (record.color_attachments[0].format != crate::texture::ImageFormat::R16G16B16A16Sfloat || record.depth_attachment.is_none()) {
+                        return Err(RendererError::InvalidOperation(format!("Geometry pass '{}' has attachments incompatible with its sky pipeline", record.name)));
+                    }
+                    if let Some(data) = pending.get(&record.pass_index) {
+                        for draw in data.prepared().iter() {
+                            if let Some(material) = self.materials.get(draw.material) {
+                                let key = crate::renderer::pipeline_variant::PipelineVariantKey::resolve(&material.descriptor, record.color_attachments[0].format);
+                                if key.depth_format() != record.depth_attachment.map(|attachment| attachment.format) {
+                                    return Err(RendererError::InvalidOperation(format!("Geometry pass '{}' has depth incompatible with its material", record.name)));
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(attachments)
+            })
+            .collect::<Result<Vec<_>, RendererError>>()?;
         let mut uploaded: Vec<*const DrawList> = Vec::new();
         for data in pending.values() {
             for list in &data.draw_lists {
                 let identity = Rc::as_ptr(list);
-                if uploaded.contains(&identity) {
-                    continue;
+                if !uploaded.contains(&identity) {
+                    uploaded.push(identity);
+                    GpuRenderer::execute_draw_calls(self, frame, list)?;
                 }
-                uploaded.push(identity);
-                GpuRenderer::execute_draw_calls(self, frame, list)?;
             }
         }
-
         let mut cmd_buffer = self
             .context
             .create_command_buffer_with_diagnostics(self.gpu_diagnostics_mode);
         cmd_buffer.begin();
-        {
-            let label = objc2_foundation::NSString::from_str(&format!(
+        cmd_buffer
+            .inner
+            .setLabel(Some(&objc2_foundation::NSString::from_str(&format!(
                 "render_graph_frame.{}",
                 self.frame_index
-            ));
-            cmd_buffer.inner.setLabel(Some(&label));
-        }
-
-        // Encode staged texture uploads before any consumer pass.
+            ))));
         if self.texture_uploads.has_pending() {
             use crate::backend::command::GpuBlitEncoder;
             let mut blit = cmd_buffer.begin_blit_pass_with_label("texture_upload");
             self.texture_uploads.encode_into(&mut blit);
             blit.end_encoding();
         }
-
-        let drawable_width = self.drawable_size.width as f32;
-        let drawable_height = self.drawable_size.height as f32;
-        let panel = self.viewport_panel_rect;
-        let viewport_x = panel.map_or(0.0, |rect| rect.min[0]);
-        let viewport_y = panel.map_or(0.0, |rect| rect.min[1]);
-        let viewport_width = panel.map_or(drawable_width, |rect| rect.width());
-        let viewport_height = panel.map_or(drawable_height, |rect| rect.height());
-
-        let ui_work = plan
-            .passes()
-            .iter()
-            .filter(|record| record.kind == PassKind::Ui)
-            .filter_map(|record| {
-                pending
-                    .get(&record.pass_index)
-                    .is_some_and(|data| data.ui_draw_lists.iter().any(|list| !list.is_empty()))
-                    .then_some(record.pass_index)
-            })
-            .collect::<HashSet<_>>();
-
-        let mut state = FrameEncodingState {
-            drawable_view,
-            drawable_written: false,
-            tonemap_ran: false,
-            drawable_width,
-            drawable_height,
-            viewport_x,
-            viewport_y,
-            viewport_width,
-            viewport_height,
-        };
-        let mut trace = Vec::with_capacity(plan.passes().len());
-        let mut execution_trace = crate::render_graph::ResourceExecutionTrace::new();
-
         log::debug!("Metal execution plan: {}", plan.trace().join(" -> "));
-
-        for (position, record) in plan.passes().iter().enumerate() {
+        let mut execution_trace = crate::render_graph::ResourceExecutionTrace::new();
+        for (position, (record, attachments)) in plan.passes().iter().zip(resolved).enumerate() {
             let data = pending.remove(&record.pass_index).unwrap_or_default();
-            let pass_draw_counts = data.prepared_counts();
-            let encoded = match record.kind {
-                PassKind::Shadow => self.encode_shadow_record(&mut cmd_buffer, &state, &data)?,
-                PassKind::DepthPrepass => {
-                    self.encode_depth_prepass_record(&mut cmd_buffer, &state, &data)?
-                }
-                PassKind::Geometry => self.encode_geometry_record(
-                    &mut cmd_buffer,
-                    &mut state,
-                    record,
-                    &data,
-                    has_later_kind(plan, position, PassKind::Fullscreen),
-                )?,
-                PassKind::ObjectId => {
-                    self.encode_object_id_record(&mut cmd_buffer, &state, &data)?
-                }
-                PassKind::Outline => self.encode_outline_record(&mut cmd_buffer, &state, &data)?,
-                PassKind::Fullscreen => {
-                    let encoded = self.encode_fullscreen_record(
-                        &mut cmd_buffer,
-                        &mut state,
-                        has_later_ui_work(plan, position, &ui_work),
-                    )?;
-                    state.tonemap_ran |= encoded;
-                    encoded
-                }
-                PassKind::Ui => {
-                    let ui_draw_list = single_ui_draw_list(record, &data)?;
-                    self.encode_ui_record(&mut cmd_buffer, &mut state, record, ui_draw_list)?
-                }
-                PassKind::Particles => self.encode_particle_record(&mut cmd_buffer, &state)?,
-                PassKind::StencilIndicator | PassKind::Compositing => {
-                    unreachable!("unsupported records are rejected while compiling the Metal plan")
-                }
-            };
-
-            let outcome = if encoded {
-                MetalPassOutcome::Encoded
-            } else {
-                MetalPassOutcome::SkippedNoWork
-            };
-            trace.push(MetalPassTrace {
-                pass_id: record.pass_id,
-                name: record.name.clone(),
-                kind: record.kind,
-                draws: pass_draw_counts,
-                outcome,
+            let counts = data.prepared_counts();
+            let width = attachments.width;
+            let height = attachments.height;
+            // Picking observes the attachment selected by this pass, including its frame slot.
+            if record.kind == PassKind::ObjectId {
+                self.picking
+                    .set_render_target(attachments.info.color_attachments[0].view.clone());
+            }
+            let color_attachment_ops = trace_enabled.then(|| {
+                attachments
+                    .info
+                    .color_attachments
+                    .iter()
+                    .map(|attachment| crate::render_pass::AttachmentOps {
+                        load: attachment.load_op,
+                        store: attachment.store_op,
+                        clear_value: attachment.clear_value,
+                    })
+                    .collect::<Vec<_>>()
             });
-
-            // The neutral trace is only built when the graph asked for it, so
-            // the steady-state path allocates nothing. Metal drives encoding
-            // from these records, so their declared targets are the targets the
-            // encoder was given.
+            let depth_attachment_ops = trace_enabled
+                .then(|| {
+                    attachments
+                        .info
+                        .depth_attachment
+                        .as_ref()
+                        .map(|attachment| crate::render_pass::DepthStencilAttachmentOps {
+                            depth: crate::render_pass::AttachmentOps {
+                                load: attachment.load_op,
+                                store: attachment.store_op,
+                                clear_value: attachment.clear_value,
+                            },
+                            stencil: attachment.stencil_ops,
+                        })
+                })
+                .flatten();
+            let mut encoder = cmd_buffer.begin_render_pass(attachments.info);
+            encoder
+                .inner
+                .setLabel(Some(&objc2_foundation::NSString::from_str(&record.name)));
+            encoder.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
+            encoder.set_scissor(0, 0, width, height);
+            match record.kind {
+                PassKind::Shadow => {
+                    self.encode_shadow_record(&mut encoder, record, &data, width)?
+                }
+                PassKind::DepthPrepass => {
+                    self.encode_depth_prepass_record(&mut encoder, record, &data, width, height)?
+                }
+                PassKind::Geometry => {
+                    self.encode_geometry_record(&mut encoder, record, &data, graph, slot)?
+                }
+                PassKind::ObjectId => {
+                    self.encode_object_id_record(&mut encoder, record, &data, width, height)?
+                }
+                PassKind::Outline => {
+                    self.encode_outline_record(&mut encoder, record, &data, width, height)?
+                }
+                PassKind::Fullscreen => {
+                    self.encode_fullscreen_record(&mut encoder, record, graph, slot)?
+                }
+                PassKind::Ui => self.encode_ui_record(
+                    &mut encoder,
+                    record,
+                    data.ui_draw_lists.first(),
+                    width,
+                    height,
+                )?,
+                PassKind::Particles => {
+                    self.encode_particle_record(&mut encoder, record, width, height)?
+                }
+                PassKind::StencilIndicator | PassKind::Compositing => {
+                    unreachable!("unsupported Metal handler")
+                }
+            }
+            encoder.end_encoding();
             if trace_enabled {
                 execution_trace.push(crate::render_graph::ResourceExecutionTraceEntry {
                     pass_index: record.pass_index,
                     name: record.name.clone(),
                     pass_type: crate::render_graph::PassType::Graphics,
                     encode_position: position,
-                    outcome: if encoded {
-                        crate::render_graph::EmittedPassOutcome::Encoded
-                    } else {
-                        crate::render_graph::EmittedPassOutcome::SkippedNoWork
-                    },
-                    draw_calls: pass_draw_counts.draw_calls,
-                    instances: pass_draw_counts.instances,
-                    color_targets: record
-                        .color_attachments
-                        .iter()
-                        .map(|attachment| attachment.name.clone())
-                        .collect(),
-                    depth_target: record
-                        .uses_depth
-                        .then(|| crate::render_graph::FRAME_DEPTH_TARGET.to_string()),
+                    outcome: crate::render_graph::EmittedPassOutcome::Encoded,
+                    draw_calls: counts.draw_calls,
+                    instances: counts.instances,
+                    color_attachment_ops: color_attachment_ops.unwrap_or_default(),
+                    depth_attachment_ops,
+                    color_targets: attachments.color_targets,
+                    depth_target: attachments.depth_target,
                 });
             }
         }
-
-        if !state.drawable_written {
-            let clear_pass_info = RenderPassInfo {
-                color_attachments: vec![ColorAttachmentInfo {
-                    view: state.drawable_view.clone(),
-                    load_op: LoadOp::Clear,
-                    store_op: StoreOp::Store,
-                    clear_value: ClearValue::OPAQUE_BLACK,
-                }],
-                depth_attachment: None,
-                debug_label: Some("canvas_clear"),
-            };
-            let encoder = cmd_buffer.begin_render_pass(clear_pass_info);
-            encoder.end_encoding();
-        }
-
-        log::debug!("Metal encoder trace: {trace:?}");
-
         cmd_buffer.end();
         self.context.surface.present(&cmd_buffer.inner);
         self.last_command_buffer = Some(cmd_buffer.inner.clone());
         cmd_buffer.submit(&self.context);
-
         Ok(execution_trace)
-    }
-
-    fn encode_shadow_record(
-        &self,
-        cmd_buffer: &mut MetalCommandBuffer,
-        _state: &FrameEncodingState,
-        data: &PassExecutionData,
-    ) -> Result<bool, RendererError> {
-        let draws = data.prepared();
-        if draws.is_empty() {
-            return Ok(false);
-        }
-
-        let shadow_pipeline = self.shadow.pipeline().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal Shadow record requires an initialized shadow pipeline".into(),
-            )
-        })?;
-        let shadow_map_view = self.shadow.shadow_map_view().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal Shadow record requires a shadow-map target".into(),
-            )
-        })?;
-        let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal Shadow record requires frame uniforms".into())
-        })?;
-        let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal Shadow record requires object storage".into())
-        })?;
-        let shadow_buf = self.shadow_cascade_encode_buffer.as_ref().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal Shadow record requires cascade data".into())
-        })?;
-        let shadow_resolution = self.shadow.shadow_resolution();
-
-        super::shadow::render_cascades(
-            cmd_buffer,
-            shadow_pipeline,
-            self.shadow.pipeline_skinned(),
-            Some(&self.skeletons),
-            shadow_map_view,
-            shadow_resolution,
-            frame_buf,
-            object_buf,
-            shadow_buf,
-            self.buffer_sizes_buffer.as_ref(),
-            self.shadow.cascade_count(),
-            &self.meshes,
-            &self.materials,
-            draws,
-        );
-
-        Ok(true)
-    }
-
-    fn encode_depth_prepass_record(
-        &self,
-        cmd_buffer: &mut MetalCommandBuffer,
-        state: &FrameEncodingState,
-        data: &PassExecutionData,
-    ) -> Result<bool, RendererError> {
-        let draws = data.prepared();
-        if draws.is_empty() {
-            return Ok(false);
-        }
-
-        let pipeline = self.depth_prepass.pipeline().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal DepthPrepass record requires an initialized pipeline".into(),
-            )
-        })?;
-        let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal DepthPrepass record requires a depth-stencil target".into(),
-            )
-        })?;
-        let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal DepthPrepass record requires frame uniforms".into(),
-            )
-        })?;
-        let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal DepthPrepass record requires object storage".into(),
-            )
-        })?;
-
-        super::depth_prepass::render_depth_prepass(
-            cmd_buffer,
-            pipeline,
-            self.depth_prepass.pipeline_skinned(),
-            self.depth_prepass.pipeline_billboard(),
-            depth_view,
-            state.viewport_width as u32,
-            state.viewport_height as u32,
-            frame_buf,
-            object_buf,
-            &self.meshes,
-            &self.materials,
-            draws,
-            &self.skeletons,
-            self.bindless_manager.argument_buffer(),
-            self.shared_sampler.as_ref(),
-        );
-        Ok(true)
     }
 
     fn encode_geometry_record(
         &self,
-        cmd_buffer: &mut MetalCommandBuffer,
-        state: &mut FrameEncodingState,
+        encoder: &mut MetalRenderEncoder,
         record: &MetalPassRecord,
         data: &PassExecutionData,
-        post_process_later: bool,
-    ) -> Result<bool, RendererError> {
-        let draws = data.prepared();
-        // The graph's declared attachments drive the encoder: depth is bound
-        // only when the pass declares a depth attachment (with its declared
-        // ops), matching the Vulkan backend. A depth-needing pass kind
-        // without a declared attachment renders without depth, exactly as
-        // the compiled graph describes.
-        let depth_attachment = record
-            .depth_attachment
-            .map(
-                |declared| -> Result<DepthAttachmentInfo<MetalBackend>, RendererError> {
-                    let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
-                        RendererError::InvalidOperation(
-                            "Metal Geometry record declares depth but has no depth-stencil target"
-                                .into(),
-                        )
-                    })?;
-                    Ok(DepthAttachmentInfo {
-                        view: depth_view.clone(),
-                        load_op: declared.load_op,
-                        store_op: declared.store_op,
-                        clear_value: declared.clear_value,
-                        format: ImageFormat::D32SfloatS8Uint,
-                    })
-                },
-            )
-            .transpose()?;
-        let declared_color = record.color_attachments.first();
-
-        let color_view = if post_process_later {
-            self.geometry_hdr_view.clone().ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "Metal Geometry record feeding a later Fullscreen record requires an HDR target"
-                        .into(),
-                )
-            })?
-        } else {
-            state.drawable_written = true;
-            state.drawable_view.clone()
-        };
-
-        let (load_op, store_op, clear_value) = declared_color
-            .map(|attachment| {
-                (
-                    attachment.load_op,
-                    attachment.store_op,
-                    attachment.clear_value,
-                )
-            })
-            .unwrap_or((
-                LoadOp::Clear,
-                StoreOp::Store,
-                ClearValue::color(
-                    CANVAS_CLEAR_COLOR.0 as f32,
-                    CANVAS_CLEAR_COLOR.1 as f32,
-                    CANVAS_CLEAR_COLOR.2 as f32,
-                    CANVAS_CLEAR_COLOR.3 as f32,
-                ),
-            ));
-        let pass_info = RenderPassInfo {
-            color_attachments: vec![ColorAttachmentInfo {
-                view: color_view,
-                load_op,
-                store_op,
-                clear_value,
-            }],
-            depth_attachment,
-            debug_label: Some("geometry"),
-        };
-
-        let mut encoder = cmd_buffer.begin_render_pass(pass_info);
-
-        // Set viewport to match the HDR render target (panel-sized).
-        // Metal has no guaranteed default viewport for a new render encoder.
-        if post_process_later && let Some(ref hdr_view) = self.geometry_hdr_view {
-            let w = hdr_view.inner.width() as f32;
-            let h = hdr_view.inner.height() as f32;
-            encoder.set_viewport(0.0, 0.0, w, h, 0.0, 1.0);
-            encoder.set_scissor(0, 0, w as u32, h as u32);
-        }
-
-        Self::bind_common_resources(self, &mut encoder);
-
-        if let Some(ref sky_pipeline) = self.sky_pipeline {
-            if let Some(ref dummy_vertex_buffer) = self.dummy_vertex_buffer {
-                encoder.bind_vertex_buffer(dummy_vertex_buffer, 0, 10);
+        graph: &FrameGraph<Self>,
+        slot: usize,
+    ) -> Result<(), RendererError> {
+        Self::bind_common_resources(self, encoder);
+        for access in &record.image_accesses {
+            if access.usage == crate::render_graph::ResourceAccessUsage::Sampled
+                && let Some(texture) = graph.transient_texture_by_id(access.resource, slot)
+                && matches!(texture.format, crate::texture::ImageFormat::D32Sfloat)
+            {
+                unsafe {
+                    encoder
+                        .inner
+                        .setFragmentTexture_atIndex(Some(&texture.view.inner), 1);
+                }
+                encoder.use_texture(
+                    &texture.view.inner,
+                    objc2_metal::MTLResourceUsage::Read,
+                    objc2_metal::MTLRenderStages::Fragment,
+                );
             }
-            encoder.bind_graphics_pipeline(sky_pipeline);
+        }
+        if record.color_attachments[0].load_op == crate::render_pass::LoadOp::Clear
+            && let Some(ref pipeline) = self.sky_pipeline
+        {
+            if let Some(ref buffer) = self.dummy_vertex_buffer {
+                encoder.bind_vertex_buffer(buffer, 0, 10);
+            }
+            encoder.bind_graphics_pipeline(pipeline);
             encoder.draw(3, 1, 0, 0);
         }
-        if !draws.is_empty() {
-            let material_format = declared_color
-                .map(|attachment| attachment.format)
-                .unwrap_or(crate::texture::ImageFormat::Auto);
-            Self::draw_objects(self, &mut encoder, material_format, draws);
-        }
-        encoder.end_encoding();
-
-        Ok(true)
-    }
-
-    fn encode_particle_record(
-        &self,
-        cmd_buffer: &mut MetalCommandBuffer,
-        state: &FrameEncodingState,
-    ) -> Result<bool, RendererError> {
-        let particle_system = match self.particle_system.as_ref() {
-            Some(ps) if ps.render_pipeline().is_some() => ps,
-            _ => return Ok(false),
-        };
-
-        let color_view = self.geometry_hdr_view.as_ref().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal Particles record requires an HDR color target".into(),
-            )
-        })?;
-        let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal Particles record requires a depth-stencil target".into(),
-            )
-        })?;
-        let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal Particles record requires frame uniforms".into())
-        })?;
-
-        // The render pipeline is always Some() when the system exists (created
-        // in init_particle_system); the guard above keeps the type checker
-        // happy and encodes nothing if pipeline creation ever fails soft.
-        let pipeline = particle_system.render_pipeline().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal Particles pipeline missing".into())
-        })?;
-
-        render_particles(
-            cmd_buffer,
-            pipeline,
-            color_view,
-            depth_view,
-            state.viewport_width as u32,
-            state.viewport_height as u32,
-            frame_buf,
-            particle_system,
-            self.frame_index,
+        Self::draw_objects(
+            self,
+            encoder,
+            record.color_attachments[0].format,
+            data.prepared(),
         );
-
-        Ok(true)
+        Ok(())
     }
 
-    fn encode_outline_record(
+    fn encode_shadow_record(
         &self,
-        cmd_buffer: &mut MetalCommandBuffer,
-        state: &FrameEncodingState,
+        encoder: &mut MetalRenderEncoder,
+        _record: &MetalPassRecord,
         data: &PassExecutionData,
-    ) -> Result<bool, RendererError> {
-        let draws = data.prepared();
-        if draws.is_empty() {
-            return Ok(false);
+        resolution: u32,
+    ) -> Result<(), RendererError> {
+        if data.prepared().is_empty() {
+            return Ok(());
         }
+        let pipeline = self
+            .shadow
+            .pipeline()
+            .ok_or_else(|| RendererError::InvalidOperation("Shadow pipeline missing".into()))?;
+        super::shadow::render_cascades(
+            encoder,
+            pipeline,
+            self.shadow.pipeline_skinned(),
+            Some(&self.skeletons),
+            resolution,
+            self.current_frame_uniform_buffer()
+                .ok_or_else(|| RendererError::InvalidOperation("Frame uniforms missing".into()))?,
+            self.current_object_storage_buffer()
+                .ok_or_else(|| RendererError::InvalidOperation("Object storage missing".into()))?,
+            self.shadow_cascade_encode_buffer
+                .as_ref()
+                .ok_or_else(|| RendererError::InvalidOperation("Cascade data missing".into()))?,
+            self.buffer_sizes_buffer.as_ref(),
+            self.shadow.cascade_count(),
+            &self.meshes,
+            &self.materials,
+            data.prepared(),
+        );
+        Ok(())
+    }
 
-        let color_view = self.geometry_hdr_view.as_ref().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal Outline record requires an HDR color target".into(),
-            )
-        })?;
-        let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal Outline record requires a depth-stencil target".into(),
-            )
-        })?;
-        let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal Outline record requires frame uniforms".into())
-        })?;
-        let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal Outline record requires object storage".into())
-        })?;
-        let width = state.viewport_width as u32;
-        let height = state.viewport_height as u32;
-        let mut encoded = false;
-
-        if let Some(pipeline) = self.outline.stencil_mark_pipeline() {
-            super::outline::render_stencil_mark(
-                cmd_buffer,
-                pipeline,
-                self.outline.stencil_mark_skinned_pipeline(),
-                color_view,
-                depth_view,
-                width,
-                height,
-                frame_buf,
-                object_buf,
-                &self.meshes,
-                &self.materials,
-                draws,
-                &self.skeletons,
-            );
-            encoded = true;
+    fn encode_depth_prepass_record(
+        &self,
+        encoder: &mut MetalRenderEncoder,
+        _record: &MetalPassRecord,
+        data: &PassExecutionData,
+        width: u32,
+        height: u32,
+    ) -> Result<(), RendererError> {
+        if data.prepared().is_empty() {
+            return Ok(());
         }
-        if let Some(pipeline) = self.outline.outline_draw_pipeline() {
-            super::outline::render_outline(
-                cmd_buffer,
-                pipeline,
-                self.outline.outline_draw_skinned_pipeline(),
-                color_view,
-                depth_view,
-                width,
-                height,
-                frame_buf,
-                object_buf,
-                &self.meshes,
-                &self.materials,
-                draws,
-                &self.skeletons,
-            );
-            encoded = true;
-        }
-
-        Ok(encoded)
+        let pipeline = self
+            .depth_prepass
+            .pipeline()
+            .ok_or_else(|| RendererError::InvalidOperation("Depth pipeline missing".into()))?;
+        super::depth_prepass::render_depth_prepass(
+            encoder,
+            pipeline,
+            self.depth_prepass.pipeline_skinned(),
+            self.depth_prepass.pipeline_billboard(),
+            width,
+            height,
+            self.current_frame_uniform_buffer()
+                .ok_or_else(|| RendererError::InvalidOperation("Frame uniforms missing".into()))?,
+            self.current_object_storage_buffer()
+                .ok_or_else(|| RendererError::InvalidOperation("Object storage missing".into()))?,
+            &self.meshes,
+            &self.materials,
+            data.prepared(),
+            &self.skeletons,
+            self.bindless_manager.argument_buffer(),
+            self.shared_sampler.as_ref(),
+        );
+        Ok(())
     }
 
     fn encode_object_id_record(
         &self,
-        cmd_buffer: &mut MetalCommandBuffer,
-        state: &FrameEncodingState,
+        encoder: &mut MetalRenderEncoder,
+        _record: &MetalPassRecord,
         data: &PassExecutionData,
-    ) -> Result<bool, RendererError> {
-        let draws = data.prepared();
-        if draws.is_empty() {
-            return Ok(false);
+        width: u32,
+        height: u32,
+    ) -> Result<(), RendererError> {
+        if data.prepared().is_empty() {
+            return Ok(());
         }
-
-        let Some(pipeline) = self.picking.pipeline() else {
-            return Err(RendererError::InvalidOperation(
-                "Metal ObjectId record requires an initialized picking pipeline".into(),
-            ));
-        };
-        let id_view = self.picking.object_id_texture().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal ObjectId record requires an object-ID target".into(),
-            )
-        })?;
-        let depth_view = self.depth_stencil_view.as_ref().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal ObjectId record requires a depth-stencil target".into(),
-            )
-        })?;
-        let frame_buf = self.current_frame_uniform_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal ObjectId record requires frame uniforms".into())
-        })?;
-        let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
-            RendererError::InvalidOperation("Metal ObjectId record requires object storage".into())
-        })?;
-
+        let pipeline = self
+            .picking
+            .pipeline()
+            .ok_or_else(|| RendererError::InvalidOperation("Picking pipeline missing".into()))?;
         super::picking::render_object_id_pass(
-            cmd_buffer,
+            encoder,
             pipeline,
             self.picking.pipeline_skinned(),
-            id_view,
-            depth_view,
-            state.viewport_width as u32,
-            state.viewport_height as u32,
-            frame_buf,
-            object_buf,
+            width,
+            height,
+            self.current_frame_uniform_buffer()
+                .ok_or_else(|| RendererError::InvalidOperation("Frame uniforms missing".into()))?,
+            self.current_object_storage_buffer()
+                .ok_or_else(|| RendererError::InvalidOperation("Object storage missing".into()))?,
             &self.meshes,
             &self.materials,
-            draws,
+            data.prepared(),
             &self.skeletons,
         );
-        Ok(true)
+        Ok(())
+    }
+
+    fn encode_outline_record(
+        &self,
+        encoder: &mut MetalRenderEncoder,
+        _record: &MetalPassRecord,
+        data: &PassExecutionData,
+        width: u32,
+        height: u32,
+    ) -> Result<(), RendererError> {
+        if data.prepared().is_empty() {
+            return Ok(());
+        }
+        let frame = self
+            .current_frame_uniform_buffer()
+            .ok_or_else(|| RendererError::InvalidOperation("Frame uniforms missing".into()))?;
+        let objects = self
+            .current_object_storage_buffer()
+            .ok_or_else(|| RendererError::InvalidOperation("Object storage missing".into()))?;
+        if let Some(pipeline) = self.outline.stencil_mark_pipeline() {
+            super::outline::render_stencil_mark(
+                encoder,
+                pipeline,
+                self.outline.stencil_mark_skinned_pipeline(),
+                width,
+                height,
+                frame,
+                objects,
+                &self.meshes,
+                &self.materials,
+                data.prepared(),
+                &self.skeletons,
+            );
+        }
+        if let Some(pipeline) = self.outline.outline_draw_pipeline() {
+            super::outline::render_outline(
+                encoder,
+                pipeline,
+                self.outline.outline_draw_skinned_pipeline(),
+                width,
+                height,
+                frame,
+                objects,
+                &self.meshes,
+                &self.materials,
+                data.prepared(),
+                &self.skeletons,
+            );
+        }
+        Ok(())
+    }
+
+    fn encode_particle_record(
+        &self,
+        encoder: &mut MetalRenderEncoder,
+        _record: &MetalPassRecord,
+        width: u32,
+        height: u32,
+    ) -> Result<(), RendererError> {
+        if let Some(system) = &self.particle_system
+            && let Some(pipeline) = system.render_pipeline()
+        {
+            super::particle::render_particles(
+                encoder,
+                pipeline,
+                width,
+                height,
+                self.current_frame_uniform_buffer().ok_or_else(|| {
+                    RendererError::InvalidOperation("Frame uniforms missing".into())
+                })?,
+                system,
+                self.frame_index,
+            );
+        }
+        Ok(())
+    }
+
+    fn fullscreen_input<'a>(
+        &self,
+        record: &MetalPassRecord,
+        graph: &'a FrameGraph<Self>,
+        slot: usize,
+    ) -> Result<&'a super::metal_transient_texture::MetalTransientTexture, RendererError> {
+        let inputs = record
+            .image_accesses
+            .iter()
+            .filter(|access| access.usage == crate::render_graph::ResourceAccessUsage::Sampled)
+            .collect::<Vec<_>>();
+        if inputs.len() != 1 {
+            return Err(RendererError::InvalidOperation(format!(
+                "Fullscreen pass '{}' requires exactly one declared sampled input",
+                record.name
+            )));
+        }
+        let input = graph
+            .transient_texture_by_id(inputs[0].resource, slot)
+            .ok_or_else(|| {
+                RendererError::InvalidOperation(format!(
+                    "Fullscreen pass '{}' has an unresolved sampled input",
+                    record.name
+                ))
+            })?;
+        if input.bindless_slot.is_none() || self.tonemap_pipeline.is_none() {
+            return Err(RendererError::InvalidOperation(format!(
+                "Fullscreen pass '{}' has no sampling slot or tonemap pipeline",
+                record.name
+            )));
+        }
+        Ok(input)
     }
 
     fn encode_fullscreen_record(
-        &mut self,
-        cmd_buffer: &mut MetalCommandBuffer,
-        state: &mut FrameEncodingState,
-        composite_to_later_ui: bool,
-    ) -> Result<bool, RendererError> {
-        let tonemap_pipeline = self.tonemap_pipeline.as_ref().ok_or_else(|| {
+        &self,
+        encoder: &mut MetalRenderEncoder,
+        record: &MetalPassRecord,
+        graph: &FrameGraph<Self>,
+        slot: usize,
+    ) -> Result<(), RendererError> {
+        let tonemap_pipeline = self
+            .tonemap_pipeline
+            .as_ref()
+            .ok_or_else(|| RendererError::InvalidOperation("Tonemap pipeline missing".into()))?;
+        let input = self.fullscreen_input(record, graph, slot)?;
+        let hdr_slot = input.bindless_slot.ok_or_else(|| {
             RendererError::InvalidOperation(
-                "Metal Fullscreen record requires an initialized tonemap pipeline".into(),
+                "Fullscreen input is not registered for sampling".into(),
             )
         })?;
-        let hdr_view = self.geometry_hdr_view.clone().ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "Metal Fullscreen record requires an HDR input target".into(),
-            )
-        })?;
-
-        if let Some(hdr_slot) = self.geometry_hdr_bindless_slot {
-            self.frame_uniforms.tonemap[3] = hdr_slot as f32;
-            if let Some(frame_buf) = self.current_frame_uniform_buffer() {
-                let ptr = frame_buf.map();
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        &self.frame_uniforms as *const FrameUniforms as *const u8,
-                        ptr,
-                        mem::size_of::<FrameUniforms>(),
-                    );
-                }
-                frame_buf.unmap();
-            }
-        }
-
-        let (target, load_op, offscreen) = if composite_to_later_ui {
-            let target = self.tonemap_output_view.clone().ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "Metal Fullscreen record feeding a later UI record requires an output texture"
-                        .into(),
-                )
-            })?;
-            (target, LoadOp::Clear, true)
+        let mut uniforms = self.frame_uniforms.clone();
+        if let Some(params) = record.tonemap_params {
+            uniforms.tonemap = [
+                params.exposure,
+                params.gamma,
+                params.mode as u32 as f32,
+                hdr_slot as f32,
+            ];
         } else {
-            state.drawable_written = true;
-            (state.drawable_view.clone(), LoadOp::Clear, false)
-        };
-        let (x, y, width, height) = tonemap_viewport(
-            state.drawable_height,
-            state.viewport_x,
-            state.viewport_y,
-            state.viewport_width,
-            state.viewport_height,
-            offscreen,
-        );
-
-        let pass_info = RenderPassInfo {
-            color_attachments: vec![ColorAttachmentInfo {
-                view: target,
-                load_op,
-                store_op: StoreOp::Store,
-                clear_value: ClearValue::color(
-                    CANVAS_CLEAR_COLOR.0 as f32,
-                    CANVAS_CLEAR_COLOR.1 as f32,
-                    CANVAS_CLEAR_COLOR.2 as f32,
-                    CANVAS_CLEAR_COLOR.3 as f32,
-                ),
-            }],
-            depth_attachment: None,
-            debug_label: Some("geometry_hdr"),
-        };
-        let mut encoder = cmd_buffer.begin_render_pass(pass_info);
-        encoder.set_viewport(x, y, width, height, 0.0, 1.0);
-        encoder.set_scissor(x as u32, y as u32, width as u32, height as u32);
+            uniforms.tonemap[3] = hdr_slot as f32;
+        }
         if let Some(argument_buffer) = self.bindless_manager.argument_buffer() {
             unsafe {
                 encoder
@@ -849,92 +533,46 @@ impl MetalRenderer {
         if let Some(ref dummy_vertex_buffer) = self.dummy_vertex_buffer {
             encoder.bind_vertex_buffer(dummy_vertex_buffer, 0, 10);
         }
-        if let Some(frame_buf) = self.current_frame_uniform_buffer() {
-            encoder.bind_storage_buffer(frame_buf, 0, 0, ShaderStages::VERTEX_FRAGMENT);
-        }
+        encoder.set_push_constants(
+            unsafe {
+                // FrameUniforms is repr(C) and consists of initialized scalar arrays.
+                std::slice::from_raw_parts(
+                    &uniforms as *const crate::renderer::types::FrameUniforms as *const u8,
+                    std::mem::size_of_val(&uniforms),
+                )
+            },
+            0,
+            ShaderStages::VERTEX_FRAGMENT,
+        );
         encoder.use_texture(
-            &hdr_view.inner,
+            &input.view.inner,
             objc2_metal::MTLResourceUsage::Read,
             objc2_metal::MTLRenderStages::Fragment,
         );
         encoder.bind_graphics_pipeline(tonemap_pipeline);
         encoder.draw(3, 1, 0, 0);
 
-        if let Some(ref fence) = self.tonemap_fence {
-            encoder
-                .inner
-                .updateFence_afterStages(fence, objc2_metal::MTLRenderStages::Fragment);
-        }
-        encoder.end_encoding();
-        Ok(true)
+        Ok(())
     }
 
     fn encode_ui_record(
         &mut self,
-        cmd_buffer: &mut MetalCommandBuffer,
-        state: &mut FrameEncodingState,
+        encoder: &mut MetalRenderEncoder,
         record: &MetalPassRecord,
         draw_list: Option<&UIDrawList>,
-    ) -> Result<bool, RendererError> {
-        let Some(draw_list) = draw_list.filter(|draw_list| !draw_list.is_empty()) else {
-            return Ok(false);
+        width: u32,
+        height: u32,
+    ) -> Result<(), RendererError> {
+        let Some(draw_list) = draw_list.filter(|list| !list.is_empty()) else {
+            return Ok(());
         };
-
         self.ui_renderer
-            .upload_draw_list(&self.context, draw_list)
-            .map_err(|error| {
-                RendererError::InvalidOperation(format!(
-                    "Metal UI record failed to upload its draw list: {error}"
-                ))
-            })?;
-        let material_handle = record.material.ok_or_else(|| {
-            RendererError::InvalidOperation("Metal UI record has no declared material".into())
-        })?;
-        // The UI record renders to the drawable (sRGB Bgra8).
-        let pipeline =
-            self.material_pipeline(material_handle, crate::texture::ImageFormat::B8G8R8A8Srgb)?;
-        let pipeline = &pipeline;
-
-        let load_op = if state.drawable_written {
-            LoadOp::Load
-        } else {
-            LoadOp::Clear
-        };
-        state.drawable_written = true;
-        let pass_info = RenderPassInfo {
-            color_attachments: vec![ColorAttachmentInfo {
-                view: state.drawable_view.clone(),
-                load_op,
-                store_op: StoreOp::Store,
-                clear_value: ClearValue::color(
-                    CANVAS_CLEAR_COLOR.0 as f32,
-                    CANVAS_CLEAR_COLOR.1 as f32,
-                    CANVAS_CLEAR_COLOR.2 as f32,
-                    CANVAS_CLEAR_COLOR.3 as f32,
-                ),
-            }],
-            depth_attachment: None,
-            debug_label: Some("present"),
-        };
-        let mut encoder = cmd_buffer.begin_render_pass(pass_info);
-
-        if state.tonemap_ran
-            && let Some(ref fence) = self.tonemap_fence
-        {
-            encoder
-                .inner
-                .waitForFence_beforeStages(fence, objc2_metal::MTLRenderStages::Fragment);
-        }
-        encoder.set_viewport(
-            0.0,
-            0.0,
-            state.drawable_width,
-            state.drawable_height,
-            0.0,
-            1.0,
-        );
-        encoder.bind_graphics_pipeline(pipeline);
-
+            .upload_draw_list(&self.context, draw_list)?;
+        let material = record
+            .material
+            .ok_or_else(|| RendererError::InvalidOperation("UI pass has no material".into()))?;
+        let pipeline = self.material_pipeline(material, record.color_attachments[0].format)?;
+        encoder.bind_graphics_pipeline(&pipeline);
         if let Some(argument_buffer) = self.bindless_manager.argument_buffer() {
             unsafe {
                 encoder
@@ -973,36 +611,64 @@ impl MetalRenderer {
         if let Some(ref buffer_sizes) = self.buffer_sizes_buffer {
             encoder.bind_storage_buffer(buffer_sizes, 0, 8, ShaderStages::VERTEX_FRAGMENT);
         }
-        self.ui_renderer.render_ui_commands(
-            &mut encoder,
-            draw_list,
-            pipeline,
-            self.drawable_size.width,
-            self.drawable_size.height,
-        );
-        encoder.end_encoding();
-        Ok(true)
+        self.ui_renderer
+            .render_ui_commands(encoder, draw_list, &pipeline, width, height);
+        Ok(())
+    }
+}
+
+fn validate_builtin_attachments(
+    record: &MetalPassRecord,
+    attachments: &ResolvedMetalAttachments,
+) -> Result<(), RendererError> {
+    use crate::texture::ImageFormat;
+    let formats = record
+        .color_attachments
+        .iter()
+        .map(|attachment| attachment.format)
+        .collect::<Vec<_>>();
+    let depth = record.depth_attachment.map(|attachment| attachment.format);
+    let ds = ImageFormat::D32SfloatS8Uint;
+    let valid = match record.kind {
+        PassKind::Shadow => {
+            formats.is_empty()
+                && depth == Some(ImageFormat::D32Sfloat)
+                && attachments.width == attachments.height
+        }
+        PassKind::DepthPrepass => formats.is_empty() && depth == Some(ds),
+        PassKind::ObjectId => formats == [ImageFormat::R32Uint] && depth == Some(ds),
+        PassKind::Particles | PassKind::Outline => {
+            formats == [ImageFormat::R16G16B16A16Sfloat] && depth == Some(ds)
+        }
+        PassKind::Geometry => formats.len() == 1 && (depth.is_none() || depth == Some(ds)),
+        PassKind::Fullscreen => formats == [ImageFormat::B8G8R8A8Srgb] && depth.is_none(),
+        PassKind::Ui => formats == [ImageFormat::B8G8R8A8Srgb] && depth.is_none(),
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(RendererError::InvalidOperation(format!(
+            "Metal pass '{}' has attachments incompatible with its built-in encoder ({:?})",
+            record.name, record.kind
+        )))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        has_later_kind, plan_requires_scene_depth, tonemap_viewport, validate_frame_submissions,
-    };
+    use super::validate_frame_submissions;
     use crate::metal::execution_plan::MetalExecutionPlan;
-    use crate::render_graph::PassExecutionData;
-    use crate::render_graph::PassKind;
+    use crate::render_graph::{PassExecutionData, PassKind};
     use std::collections::HashMap;
-
     #[test]
     fn test_submission_to_unknown_pass_index_is_rejected() {
         let plan = MetalExecutionPlan::for_test(&[PassKind::Ui]);
         let mut pending = HashMap::new();
         pending.insert(7usize, PassExecutionData::default());
 
-        let err = validate_frame_submissions(&plan, &pending, true)
-            .expect_err("unknown pass index must fail");
+        let err =
+            validate_frame_submissions(&plan, &pending).expect_err("unknown pass index must fail");
         let message = err.to_string();
         assert!(
             message.contains("pass index 7"),
@@ -1029,8 +695,8 @@ mod tests {
             },
         );
 
-        let err = validate_frame_submissions(&plan, &pending, true)
-            .expect_err("two UI draw lists must fail");
+        let err =
+            validate_frame_submissions(&plan, &pending).expect_err("two UI draw lists must fail");
         let message = err.to_string();
         assert!(
             message.contains("received 2 UI draw lists"),
@@ -1054,65 +720,7 @@ mod tests {
             },
         );
 
-        validate_frame_submissions(&plan, &pending, true)
+        validate_frame_submissions(&plan, &pending)
             .expect("one composed UI draw list is the contract");
-    }
-
-    #[test]
-    fn test_scene_depth_plan_requires_depth_target() {
-        let plan = MetalExecutionPlan::for_test(&[PassKind::Geometry]);
-        let err = validate_frame_submissions(&plan, &HashMap::new(), false)
-            .expect_err("depth-requiring plan without depth target must fail");
-        let message = err.to_string();
-        assert!(
-            message.contains("depth-stencil target"),
-            "error must name the missing resource: {message}"
-        );
-    }
-
-    #[test]
-    fn test_ui_only_plan_does_not_require_depth_target() {
-        let plan = MetalExecutionPlan::for_test(&[PassKind::Ui]);
-        validate_frame_submissions(&plan, &HashMap::new(), false)
-            .expect("UI-only plan needs no scene depth");
-    }
-
-    #[test]
-    fn ui_only_plan_does_not_require_scene_depth() {
-        let plan = MetalExecutionPlan::for_test(&[PassKind::Ui]);
-        assert!(!plan_requires_scene_depth(&plan));
-    }
-
-    #[test]
-    fn object_id_plan_requires_scene_depth() {
-        let plan = MetalExecutionPlan::for_test(&[PassKind::ObjectId]);
-        assert!(plan_requires_scene_depth(&plan));
-    }
-
-    #[test]
-    fn later_post_process_is_position_sensitive() {
-        let plan = MetalExecutionPlan::for_test(&[
-            PassKind::Fullscreen,
-            PassKind::Geometry,
-            PassKind::Fullscreen,
-        ]);
-        assert!(has_later_kind(&plan, 1, PassKind::Fullscreen));
-        assert!(!has_later_kind(&plan, 2, PassKind::Fullscreen));
-    }
-
-    #[test]
-    fn offscreen_tonemap_uses_local_target_coordinates() {
-        assert_eq!(
-            tonemap_viewport(1080.0, 100.0, 200.0, 640.0, 360.0, true),
-            (0.0, 0.0, 640.0, 360.0)
-        );
-    }
-
-    #[test]
-    fn drawable_tonemap_flips_panel_y_for_metal() {
-        assert_eq!(
-            tonemap_viewport(1080.0, 100.0, 200.0, 640.0, 360.0, false),
-            (100.0, 520.0, 640.0, 360.0)
-        );
     }
 }

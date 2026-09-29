@@ -6,21 +6,15 @@ use objc2_metal::{
     MTLVertexStepFunction,
 };
 
-use crate::backend::command::{
-    DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType, RenderPassInfo,
-    ShaderStages,
-};
+use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::error::RendererError;
 use crate::handle::{ResourceStorage, SkeletonMarker};
 use crate::pipeline::CompareOp;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::shadow::{CascadeParams, CascadeShadowMap};
-use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
 
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
 use super::pipeline::MetalGraphicsPipeline;
-use super::texture::MetalTextureView;
 
 const DEFAULT_SHADOW_RESOLUTION: u32 = 2048;
 
@@ -30,29 +24,21 @@ const DEFAULT_SHADOW_RESOLUTION: u32 = 2048;
 /// by the shared [`CascadeShadowMap`] so Metal and Vulkan consume identical
 /// cascade data.
 pub(crate) struct MetalShadowSubsystem {
-    shadow_map_texture: Option<MetalTextureView>,
     shadow_pipeline: Option<MetalGraphicsPipeline>,
     shadow_pipeline_skinned: Option<MetalGraphicsPipeline>,
     cascades: CascadeShadowMap,
-    shadow_resolution: u32,
 }
 
 impl MetalShadowSubsystem {
     pub(crate) fn new() -> Self {
         Self {
-            shadow_map_texture: None,
             shadow_pipeline: None,
             shadow_pipeline_skinned: None,
             cascades: CascadeShadowMap::new(CascadeParams {
                 shadow_map_size: DEFAULT_SHADOW_RESOLUTION,
                 ..CascadeParams::default()
             }),
-            shadow_resolution: DEFAULT_SHADOW_RESOLUTION,
         }
-    }
-
-    pub(crate) fn shadow_map_view(&self) -> Option<&MetalTextureView> {
-        self.shadow_map_texture.as_ref()
     }
 
     pub(crate) fn pipeline(&self) -> Option<&MetalGraphicsPipeline> {
@@ -65,27 +51,6 @@ impl MetalShadowSubsystem {
 
     pub(crate) fn cascade_count(&self) -> u32 {
         self.cascades.cascade_count() as u32
-    }
-
-    pub(crate) fn shadow_resolution(&self) -> u32 {
-        self.shadow_resolution
-    }
-
-    /// Create the shadow map depth texture.
-    pub(crate) fn create_shadow_map(
-        &mut self,
-        context: &MetalContext,
-    ) -> Result<(), RendererError> {
-        let desc = TextureDescriptor::new(
-            self.shadow_resolution,
-            self.shadow_resolution,
-            ImageFormat::D32Sfloat,
-        )
-        .with_usage(TextureUsage::DEPTH_STENCIL_ATTACHMENT | TextureUsage::SAMPLED);
-
-        let (_texture, view) = context.create_texture(&desc)?;
-        self.shadow_map_texture = Some(view);
-        Ok(())
     }
 
     /// Create the shadow depth-only pipeline.
@@ -182,11 +147,10 @@ impl MetalShadowSubsystem {
 /// four cascades always sampled the clear value.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_cascades(
-    cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
+    encoder: &mut super::render_encoder::MetalRenderEncoder,
     shadow_pipeline: &MetalGraphicsPipeline,
     shadow_pipeline_skinned: Option<&MetalGraphicsPipeline>,
     skeleton_buffers: Option<&ResourceStorage<MetalBuffer, SkeletonMarker>>,
-    shadow_map_view: &MetalTextureView,
     shadow_resolution: u32,
     frame_uniform_buffer: &MetalBuffer,
     object_storage_buffer: &MetalBuffer,
@@ -200,23 +164,6 @@ pub(crate) fn render_cascades(
     >,
     draws: crate::renderer::types::PreparedDraws<'_>,
 ) {
-    let render_pass_info = RenderPassInfo {
-        color_attachments: vec![],
-        depth_attachment: Some(DepthAttachmentInfo {
-            view: shadow_map_view.clone(),
-            load_op: LoadOp::Clear,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::DepthStencil {
-                depth: 1.0,
-                stencil: 0,
-            },
-            format: ImageFormat::D32Sfloat,
-        }),
-        debug_label: Some("shadow_cascade"),
-    };
-
-    let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
-
     encoder.bind_graphics_pipeline(shadow_pipeline);
 
     let stages = ShaderStages::VERTEX;
@@ -257,7 +204,7 @@ pub(crate) fn render_cascades(
         );
 
         encode_cascade_draws(
-            &mut encoder,
+            encoder,
             shadow_pipeline,
             shadow_pipeline_skinned,
             skeleton_buffers,
@@ -267,8 +214,6 @@ pub(crate) fn render_cascades(
             draws,
         );
     }
-
-    encoder.end_encoding();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -350,7 +295,6 @@ mod tests {
     fn test_shadow_subsystem_creation() {
         let subsystem = MetalShadowSubsystem::new();
         assert!(subsystem.shadow_pipeline.is_none());
-        assert!(subsystem.shadow_map_texture.is_none());
         assert_eq!(subsystem.cascade_count(), 4);
     }
 

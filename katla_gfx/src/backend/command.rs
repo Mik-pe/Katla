@@ -78,6 +78,7 @@ pub struct DepthAttachmentInfo<B: GpuBackend> {
     pub store_op: StoreOp,
     pub clear_value: ClearValue,
     pub format: ImageFormat,
+    pub stencil_ops: crate::render_pass::AttachmentOps,
 }
 
 pub struct RenderPassInfo<B: GpuBackend> {

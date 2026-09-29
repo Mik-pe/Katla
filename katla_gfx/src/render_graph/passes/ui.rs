@@ -12,6 +12,7 @@ use crate::render_graph::access::{
 use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
 use crate::render_graph::pass::{PassKind, PassType};
 use crate::render_graph::resource::GraphResourceHandle;
+use crate::render_pass::{AttachmentOps, LoadOp};
 
 /// UI render pass template.
 ///
@@ -51,6 +52,7 @@ pub struct UIPass {
 struct ColorOutput {
     /// Resource name.
     name: String,
+    ops: AttachmentOps,
 }
 
 impl UIPass {
@@ -84,7 +86,19 @@ impl UIPass {
     ///
     /// * `name` - Resource name for graph reference.
     pub fn write(mut self, name: impl Into<String>) -> Self {
-        self.color_output = Some(ColorOutput { name: name.into() });
+        self.color_output = Some(ColorOutput {
+            name: name.into(),
+            ops: AttachmentOps::load(),
+        });
+        self
+    }
+
+    /// Write a UI target with explicit load/store/clear operations.
+    pub fn write_ops(mut self, name: impl Into<String>, ops: AttachmentOps) -> Self {
+        self.color_output = Some(ColorOutput {
+            name: name.into(),
+            ops,
+        });
         self
     }
 
@@ -118,10 +132,11 @@ impl PassBuilder for UIPass {
 
         // UI alpha-composites over the existing target contents.
         let mut reads = self.reads.clone();
-        for output in &writes {
-            if !reads.contains(output) {
-                reads.push(output.clone());
-            }
+        if let Some(output) = &self.color_output
+            && output.ops.load == LoadOp::Load
+            && !reads.contains(&output.name)
+        {
+            reads.push(output.name.clone());
         }
 
         // Hand-declared typed accesses: UI composites into its target
@@ -144,7 +159,15 @@ impl PassBuilder for UIPass {
             .chain(writes.iter().map(|name| {
                 super::named_image_access(
                     name.clone(),
-                    ResourceAccessMode::ReadWrite,
+                    if self
+                        .color_output
+                        .as_ref()
+                        .is_some_and(|output| output.ops.load == LoadOp::Load)
+                    {
+                        ResourceAccessMode::ReadWrite
+                    } else {
+                        ResourceAccessMode::Write
+                    },
                     ResourceAccessUsage::ColorAttachment,
                     ResourceAccessStage::ColorAttachmentOutput,
                     ImageSubresourceRange::WHOLE_COLOR,
@@ -171,11 +194,12 @@ impl PassBuilder for UIPass {
                 move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
             uses_depth: false,
+            depth_target: None,
             // UI alpha-composites over the existing target contents.
             color_attachments: self
                 .color_output
                 .iter()
-                .map(|o| (o.name.clone(), crate::render_pass::AttachmentOps::load()))
+                .map(|o| (o.name.clone(), o.ops))
                 .collect(),
             depth_attachment: None,
             kind: Some(PassKind::Ui),

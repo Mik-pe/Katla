@@ -326,7 +326,8 @@ impl PassBuilder for ViewportPass {
             material,
             output_format,
             build_fn: Box::new(|_| Ok(Box::new(()))),
-            uses_depth: true, // Viewports use the global depth buffer
+            uses_depth: true,
+            depth_target: None,
             color_attachments,
             depth_attachment: None,
             kind: Some(PassKind::Geometry),

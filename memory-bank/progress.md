@@ -2,6 +2,8 @@
 
 ## Completed Recently
 
+- **Issue #56: native Metal attachment authority (2026-09-29)** — live compiled records resolve graph color/depth resources for the active frame slot before encoding. Built-in helpers only draw into the supplied encoder; renderer target fallbacks, geometry/fullscreen look-ahead, and frame semantic flags are removed. The editor declares scene depth and shadow atlas resources, independent depth/stencil operations, viewport tonemapping, and UI canvas clearing. Per-pass fullscreen uniforms and sampled inputs support repeated passes. Native execution traces compare resolved targets and actual descriptor operations with the compiled contract. GPU regressions verify clear/load preservation, different geometry/fullscreen destinations, depth/stencil descriptors, active frame slots, UI-only and empty graphs, culling, and rejection before encoding. Local validation: 635 graphics library tests passed (9 ignored), 13 Metal contract scenarios passed under API validation, and the editor rendered 130 validated frames with a reviewed screenshot. Arbitrary imported native textures, compute migration, and Vulkan implicit scene depth remain separate work.
+
 - **Issues #31/#33: typed buffer execution stages and image hazard realization (2026-09-29, `753a30a5`)** — buffers distinguish vertex/index input, indirect commands, shader stages, transfer, and host readback. Builder validation and recompilation reject incompatible usage/stage pairs with a typed error. Vulkan lowers uniform and host reads to their dedicated access masks and preserves same-layout image memory hazards and cross-stage ordering. Regression tests reproduced the invalid vertex declaration and dropped storage write-to-read barrier before the fixes. Both issues remain open for their larger migration/boundary work.
 
 - **Issue #37: buffer resource diagnostics (2026-09-29)** — schema 11 exports transient/imported buffer origins, declared byte sizes, usage capabilities, memory policies, and live intervals in JSON/text/DOT. JSON buffer usage names are consistently snake-case. Golden snapshots include imported uniforms, storage-to-indirect synchronization, and an unused scratch-buffer branch. Physical allocation/aliasing totals still describe images; native buffer identities and per-slot ownership remain unimplemented. The issue remains open.
@@ -48,7 +50,8 @@
   mistake it for a regression.
   REMAINING #37 (each gated on backend data): encoder/queue boundary identity
   (#33), frame-slot ownership (#36), Metal argument-table/residency fields
-  (#55), runtime encoder traces + compiled-vs-emitted comparison report (#56).
+  (#55). Native attachment traces and compiled-versus-emitted comparison have
+  since landed with #56; finer encoder/queue identities remain open.
   Validation: 460 gfx lib tests (includes the new `any_frame_graph` accessor
   test), `cargo fmt --all -- --check` clean, CI-exact clippy clean, 100-frame
   headless run 0 ERROR / 1 WARN (= baseline).

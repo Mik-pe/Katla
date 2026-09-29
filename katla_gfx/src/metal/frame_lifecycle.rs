@@ -220,6 +220,7 @@ impl MetalRenderer {
         frame: &FrameToken,
         plan: &super::execution_plan::MetalExecutionPlan,
         pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
+        graph: &crate::render_graph::FrameGraph<Self>,
     ) -> Result<(), RendererError> {
         self.frame_check(frame)?;
         if let Some(reason) = &self.frame_poisoned {
@@ -228,7 +229,7 @@ impl MetalRenderer {
             )));
         }
         self.bindless_manager.flush_argument_buffer();
-        match self.render_frame(frame, plan, pending, false) {
+        match self.render_frame(frame, plan, pending, graph, false) {
             Ok(_trace) => Ok(()),
             Err(e) => {
                 self.frame_poisoned = Some(format!("{e:?}"));

@@ -9,21 +9,15 @@ use objc2_metal::{
     MTLCompareFunction, MTLFunction, MTLPixelFormat, MTLRenderCommandEncoder, MTLStencilOperation,
 };
 
-use crate::backend::command::{
-    ColorAttachmentInfo, DepthAttachmentInfo, GpuCommandBuffer, GpuRenderEncoder, IndexType,
-    RenderPassInfo, ShaderStages,
-};
+use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::error::RendererError;
 use crate::handle::{MaterialMarker, MeshMarker, ResourceStorage, SkeletonMarker};
 use crate::pipeline::CompareOp;
-use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-use crate::texture::ImageFormat;
 
 use super::buffer::MetalBuffer;
 use super::context::{MetalContext, StencilFaceOps};
 use super::metal_renderer::{MetalMaterial, MetalMesh};
 use super::pipeline::MetalGraphicsPipeline;
-use super::texture::MetalTextureView;
 
 const DEFAULT_OUTLINE_WIDTH: f32 = 0.004;
 const DEFAULT_OUTLINE_COLOR: [f32; 4] = [1.0, 0.55, 0.0, 1.0];
@@ -234,11 +228,9 @@ impl MetalOutlineSubsystem {
 /// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_stencil_mark(
-    cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
+    encoder: &mut super::render_encoder::MetalRenderEncoder,
     stencil_pipeline: &MetalGraphicsPipeline,
     stencil_pipeline_skinned: Option<&MetalGraphicsPipeline>,
-    color_view: &MetalTextureView,
-    depth_view: &MetalTextureView,
     width: u32,
     height: u32,
     frame_uniform_buffer: &MetalBuffer,
@@ -248,25 +240,6 @@ pub(crate) fn render_stencil_mark(
     draws: crate::renderer::types::PreparedDraws<'_>,
     skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
 ) {
-    let render_pass_info = RenderPassInfo {
-        color_attachments: vec![ColorAttachmentInfo {
-            view: color_view.clone(),
-            load_op: LoadOp::Load,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::OPAQUE_BLACK,
-        }],
-        depth_attachment: Some(DepthAttachmentInfo {
-            view: depth_view.clone(),
-            load_op: LoadOp::Load,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::DEFAULT_DEPTH,
-            format: ImageFormat::D32SfloatS8Uint,
-        }),
-        debug_label: Some("outline"),
-    };
-
-    let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
-
     encoder.bind_graphics_pipeline(stencil_pipeline);
     encoder.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
     encoder.set_stencil_reference_value(1);
@@ -329,8 +302,6 @@ pub(crate) fn render_stencil_mark(
 
         encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
-
-    encoder.end_encoding();
 }
 
 /// Render the outline draw pass.
@@ -340,11 +311,9 @@ pub(crate) fn render_stencil_mark(
 /// Switches between non-skinned and skinned pipelines based on draw call skeleton state.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn render_outline(
-    cmd_buffer: &mut super::command_buffer::MetalCommandBuffer,
+    encoder: &mut super::render_encoder::MetalRenderEncoder,
     outline_pipeline: &MetalGraphicsPipeline,
     outline_pipeline_skinned: Option<&MetalGraphicsPipeline>,
-    color_view: &MetalTextureView,
-    depth_view: &MetalTextureView,
     width: u32,
     height: u32,
     frame_uniform_buffer: &MetalBuffer,
@@ -359,25 +328,6 @@ pub(crate) fn render_outline(
         outline_width,
         ..OutlinePushConstants::default()
     };
-
-    let render_pass_info = RenderPassInfo {
-        color_attachments: vec![ColorAttachmentInfo {
-            view: color_view.clone(),
-            load_op: LoadOp::Load,
-            store_op: StoreOp::Store,
-            clear_value: ClearValue::OPAQUE_BLACK,
-        }],
-        depth_attachment: Some(DepthAttachmentInfo {
-            view: depth_view.clone(),
-            load_op: LoadOp::Load,
-            store_op: StoreOp::DontCare,
-            clear_value: ClearValue::DEFAULT_DEPTH,
-            format: ImageFormat::D32SfloatS8Uint,
-        }),
-        debug_label: Some("outline"),
-    };
-
-    let mut encoder = cmd_buffer.begin_render_pass(render_pass_info);
 
     encoder.bind_graphics_pipeline(outline_pipeline);
     encoder.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
@@ -460,8 +410,6 @@ pub(crate) fn render_outline(
 
         encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
-
-    encoder.end_encoding();
 }
 
 #[cfg(test)]

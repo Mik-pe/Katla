@@ -285,6 +285,8 @@ impl MetalRenderer {
         let fragment_fn = compiled.module.entry_points.get("fs_main").ok_or_else(|| {
             RendererError::InvalidOperation("Tonemap fragment entry point not found".into())
         })?;
+        self.bindless_manager
+            .initialize_from_function(fragment_fn.as_ref())?;
         let pipeline = self
             .context
             .create_graphics_pipeline_with_vertex_descriptor(

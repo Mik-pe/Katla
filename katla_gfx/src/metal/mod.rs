@@ -1,5 +1,8 @@
 pub(crate) mod animation;
 pub(crate) mod argument_buffer;
+#[cfg(test)]
+mod attachment_tests;
+pub(crate) mod attachments;
 pub(crate) mod blit_encoder;
 pub(crate) mod buffer;
 pub(crate) mod command_buffer;

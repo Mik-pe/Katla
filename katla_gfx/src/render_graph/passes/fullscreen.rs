@@ -31,7 +31,7 @@ pub enum TonemapOperator {
 }
 
 /// Tonemap parameters for fullscreen passes.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TonemapParams {
     /// HDR exposure multiplier
     pub exposure: f32,
@@ -198,6 +198,7 @@ impl PassBuilder for FullscreenPass {
                 move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
             uses_depth: false,
+            depth_target: None,
             color_attachments: self
                 .writes
                 .iter()
@@ -318,6 +319,7 @@ impl PassBuilder for OverlayPass {
                 move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
             ),
             uses_depth: false,
+            depth_target: None,
             color_attachments: self
                 .writes
                 .iter()

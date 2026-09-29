@@ -74,7 +74,7 @@ pub use access::{
     ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
 pub use backend::RenderGraphBackend;
-pub use builder::SimplePass;
+pub use builder::{PassBuilder, SimplePass};
 pub use diagnostics::{
     RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAllocationSlot,
     RenderGraphDiagnosticBufferAccess, RenderGraphDiagnosticBufferByteRange,

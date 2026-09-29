@@ -265,6 +265,7 @@ impl PassBuilder for GeometryPass {
             output_format,
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: self.uses_depth,
+            depth_target: None,
             color_attachments,
             depth_attachment: self.depth_config,
             kind: Some(PassKind::Geometry),

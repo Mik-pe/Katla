@@ -7,7 +7,7 @@ use std::mem;
 
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLTexture};
+use objc2_metal::{MTLCommandBuffer, MTLTexture};
 
 use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
 use crate::backend::resource::GpuBuffer;
@@ -330,13 +330,10 @@ pub struct MetalRenderer {
     #[expect(dead_code)]
     pub(crate) scene_color_view: Option<MetalTextureView>,
     pub(crate) viewport_bindless_slot: Option<u32>,
-    pub(crate) tonemap_output_view: Option<MetalTextureView>,
-    pub(crate) geometry_hdr_view: Option<MetalTextureView>,
     pub(crate) geometry_hdr_bindless_slot: Option<u32>,
     pub(crate) tonemap_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     pub(crate) sky_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
     pub(crate) dummy_vertex_buffer: Option<MetalBuffer>,
-    pub(crate) tonemap_fence: Option<Retained<ProtocolObject<dyn objc2_metal::MTLFence>>>,
     pub(crate) capabilities: crate::renderer::types::GpuCapabilities,
     pub(crate) timestamp_queries: Option<super::timestamp_queries::MetalTimestampQueries>,
     pub(crate) viewport_panel_rect: Option<crate::rect::Rect>,
@@ -488,13 +485,10 @@ impl MetalRenderer {
             buffer_sizes_buffer: None,
             scene_color_view: None,
             viewport_bindless_slot: None,
-            tonemap_output_view: None,
-            geometry_hdr_view: None,
             geometry_hdr_bindless_slot: None,
             tonemap_pipeline: None,
             sky_pipeline: None,
             dummy_vertex_buffer: None,
-            tonemap_fence: None,
             capabilities: {
                 use crate::renderer::types::{GpuCapabilities, GpuVendor};
                 GpuCapabilities {
@@ -532,8 +526,6 @@ impl MetalRenderer {
                 .bindless_manager
                 .set_default_texture(&entry._view.inner);
         }
-
-        renderer.tonemap_fence = renderer.context.device.newFence();
 
         // Sentinel material behind `default_material()` before any real
         // material is compiled; it has no identity and no variants, so it
@@ -689,20 +681,14 @@ impl MetalRenderer {
         self.object_storage_buffers[idx].as_ref()
     }
 
-    /// Set the geometry HDR view and bindless slot from an external source (frame graph).
-    pub fn set_geometry_hdr_view(&mut self, view: MetalTextureView, bindless_slot: u32) {
-        self.geometry_hdr_view = Some(view);
+    /// Set the application's HDR bindless resource role.
+    pub fn set_geometry_hdr_bindless_slot(&mut self, bindless_slot: u32) {
         self.geometry_hdr_bindless_slot = Some(bindless_slot);
     }
 
     /// Set the viewport bindless slot from the frame graph.
     pub fn set_viewport_bindless_slot(&mut self, slot: u32) {
         self.viewport_bindless_slot = Some(slot);
-    }
-
-    /// Set the tonemap output target (viewport_0 LDR texture view).
-    pub fn set_tonemap_output_view(&mut self, view: MetalTextureView) {
-        self.tonemap_output_view = Some(view);
     }
 
     /// Record this frame's compute work: argument-buffer flush, Forward+
@@ -764,7 +750,13 @@ impl MetalRenderer {
             );
         }
 
-        self.render_frame(frame, &plan, pending, frame_graph.execution_trace_enabled())
+        self.render_frame(
+            frame,
+            &plan,
+            pending,
+            frame_graph,
+            frame_graph.execution_trace_enabled(),
+        )
     }
 
     /// Initialize the Forward+ light culling system.
@@ -838,7 +830,7 @@ impl MetalRenderer {
         &mut self,
         _shadow_atlas_view: Option<()>,
     ) -> Result<(), RendererError> {
-        self.shadow.create_shadow_map(&self.context)
+        Ok(())
     }
 
     pub fn queue_picking_readback(
@@ -1411,7 +1403,7 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
-        self.shadow.create_shadow_map(&self.context)
+        Ok(())
     }
 
     fn init_pass_pipeline(
@@ -1962,7 +1954,7 @@ mod tests {
         // Create Shared BGRA8 texture as tonemap output (CPU-readable via getBytes)
         let readback_desc = TextureDescriptor::new(W, H, ImageFormat::B8G8R8A8Srgb)
             .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
-        let (readback_tex, readback_view) = renderer
+        let (readback_tex, _readback_view) = renderer
             .context
             .create_texture_shared(&readback_desc)
             .expect("Failed to create readback texture");
@@ -1970,22 +1962,6 @@ mod tests {
         // Use the CPU-readable texture as that drawable so the test reads the
         // attachment that was actually rendered.
         renderer.set_headless_drawable(readback_tex.inner.clone());
-
-        // Create HDR texture for geometry pass, register with bindless
-        let hdr_desc = TextureDescriptor::new(W, H, ImageFormat::R16G16B16A16Sfloat)
-            .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
-        let (hdr_tex, hdr_view) = renderer
-            .context
-            .create_texture(&hdr_desc)
-            .expect("Failed to create HDR texture");
-        let hdr_slot = renderer
-            .bindless_manager
-            .register_texture(&hdr_tex.inner)
-            .expect("Failed to register HDR texture in bindless");
-
-        // Wire up the transient textures the same way the frame graph does
-        renderer.set_geometry_hdr_view(hdr_view, hdr_slot);
-        renderer.set_tonemap_output_view(readback_view);
 
         // Set up camera and frame uniforms
         let view = look_at([3.0, 3.0, 3.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
@@ -2001,7 +1977,7 @@ mod tests {
             light_color: [1.0, 0.98, 0.95, 0.0],
             light_intensity: [3.0, 0.0, 0.0, 0.0],
             tiles: [W / 16, H / 16, 0, 0],
-            tonemap: [1.0, 2.2, 0.0, hdr_slot as f32],
+            tonemap: [1.0, 2.2, 0.0, 0.0],
             overlay: [0.0, 0.0, 0.0, 0.0],
             compositing: [0.0, 0.0, 0.0, 0.0],
         };
@@ -2037,7 +2013,8 @@ mod tests {
         GpuRenderer::execute_draw_calls(&mut renderer, &frame, &draw_list)
             .expect("execute_draw_calls failed");
 
-        let graph = crate::render_graph::FrameGraphBuilder::new()
+        use crate::render_graph::PassBuilder;
+        let mut graph = crate::render_graph::FrameGraphBuilder::new()
             .create_resource(crate::render_graph::GraphResourceDesc {
                 name: "hdr".to_string(),
                 resource_type: crate::render_graph::GraphResourceType::ColorAttachment {
@@ -2048,10 +2025,22 @@ mod tests {
                 height: H,
                 tracks_swapchain_size: false,
             })
+            .create_resource(crate::render_graph::GraphResourceDesc {
+                name: "depth".into(),
+                resource_type: crate::render_graph::GraphResourceType::DepthAttachment {
+                    clear_value: 0.0,
+                    sampled: false,
+                },
+                format: ImageFormat::D32SfloatS8Uint,
+                width: W,
+                height: H,
+                tracks_swapchain_size: false,
+            })
             .export_resource("backbuffer")
             .add_pass(
                 crate::render_graph::GeometryPass::new("geometry")
-                    .write_color("hdr", ImageFormat::R16G16B16A16Sfloat),
+                    .write_color("hdr", ImageFormat::R16G16B16A16Sfloat)
+                    .depth_target("depth"),
             )
             .add_pass(
                 crate::render_graph::FullscreenPass::new("tonemap")
@@ -2060,6 +2049,13 @@ mod tests {
             )
             .build::<MetalRenderer>()
             .expect("compile scene graph");
+        graph
+            .initialize_transient_textures(&renderer)
+            .expect("initialize graph textures");
+        graph
+            .register_transient_texture_bindless(&mut renderer, "hdr")
+            .expect("register graph HDR");
+        renderer.bindless_manager.flush_argument_buffer();
         let plan = crate::metal::execution_plan::MetalExecutionPlan::compile(
             &graph,
             ImageFormat::B8G8R8A8Srgb,
@@ -2074,7 +2070,7 @@ mod tests {
             },
         );
         renderer
-            .render_frame_manual(&frame, &plan, pending)
+            .render_frame_manual(&frame, &plan, pending, &graph)
             .expect("render_frame failed");
         GpuRenderer::present(&mut renderer, frame).expect("present failed");
 

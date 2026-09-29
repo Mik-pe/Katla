@@ -578,12 +578,18 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
                 let loads_depth =
                     ops.depth.load == LoadOp::Load || ops.stencil.load == LoadOp::Load;
                 if loads_depth {
-                    let depth_transient =
+                    let depth_transient = pass.depth_target.or_else(|| {
                         pass.writes.iter().copied().find(|&id| {
                             self.write_target_role(id) == WriteTargetRole::TransientDepth
-                        });
+                        })
+                    });
                     let has_producer = match depth_transient {
-                        Some(id) => produced.contains(&id),
+                        Some(id) => {
+                            produced.contains(&id)
+                                || self.imported_contracts.get(&id).is_some_and(|contract| {
+                                    contract.initial != ResourceState::Undefined
+                                })
+                        }
                         None => frame_depth_written,
                     };
                     if !has_producer {
@@ -694,13 +700,20 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
     ///
     /// `None` for imported resources (the backbuffer and external textures),
     /// whose formats are backend-owned.
-    #[cfg(target_os = "macos")]
-    pub(crate) fn resource_format(&self, id: ResourceId) -> Option<crate::texture::ImageFormat> {
+    pub(crate) fn resource_format_for_target(
+        &self,
+        id: ResourceId,
+    ) -> Option<crate::texture::ImageFormat> {
         let name = self.resource_name(id)?;
         self.transient_resources
             .iter()
             .find(|desc| desc.name == name)
             .map(|desc| desc.format)
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn resource_format(&self, id: ResourceId) -> Option<crate::texture::ImageFormat> {
+        self.resource_format_for_target(id)
     }
 
     /// Get the execution order for passes.
@@ -1958,6 +1971,15 @@ impl FrameGraphBuilder {
             pass.material = pass_builder.material;
             pass.output_format = pass_builder.output_format;
             pass.uses_depth = pass_builder.uses_depth;
+            pass.depth_target = pass_builder
+                .depth_target
+                .as_ref()
+                .map(|name| {
+                    graph
+                        .resource_id(name)
+                        .ok_or_else(|| RenderGraphError::ResourceNotFound(name.clone()))
+                })
+                .transpose()?;
             pass.depth_attachment = pass_builder.depth_attachment;
             pass.kind = pass_builder.kind;
             pass.side_effect = pass_builder.side_effect;
@@ -1992,6 +2014,31 @@ impl FrameGraphBuilder {
 
             if !has_explicit_image_accesses {
                 pass.refine_inferred_image_accesses();
+            }
+            if let Some(resource) = pass.depth_target {
+                let ops = pass.depth_attachment.ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Pass '{}' declares a depth target without attachment operations",
+                        pass.name
+                    ))
+                })?;
+                let mut access = super::access::ImageAccess::depth_attachment_write(resource);
+                if ops.depth.load == LoadOp::Load || ops.stencil.load == LoadOp::Load {
+                    access.mode = ResourceAccessMode::ReadWrite;
+                }
+                pass.image_accesses.retain(|existing| {
+                    existing.resource != resource
+                        || existing.usage
+                            != super::access::ResourceAccessUsage::DepthStencilAttachment
+                });
+                if graph
+                    .resource_format_for_target(resource)
+                    .is_some_and(|format| matches!(format, crate::texture::ImageFormat::D32Sfloat))
+                {
+                    access.range = super::access::ImageSubresourceRange::WHOLE_DEPTH;
+                }
+                pass.image_accesses.push(access);
+                pass.set_image_accesses(pass.image_accesses.clone());
             }
 
             if let Some(comp_data) =

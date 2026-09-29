@@ -316,79 +316,134 @@ impl ApplicationBuilder {
     /// Metal owns its encoder implementations, but pass presence and order are
     /// validated against this compiled graph before command encoding starts.
     #[cfg(target_os = "macos")]
-    fn build_metal_frame_graph(renderer: &mut katla_gfx::MetalRenderer) -> AppResult<FrameGraph> {
+    fn build_metal_frame_graph(
+        renderer: &mut katla_gfx::MetalRenderer,
+        resources: &ResourceManager,
+    ) -> AppResult<FrameGraph> {
         use katla_gfx::render_graph::{
-            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassKind, PassType, SimplePass,
+            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassBuilder, PassKind,
+            PassType, SimplePass,
         };
-        use katla_gfx::texture::ImageFormat;
-
+        use katla_gfx::{AttachmentOps, ClearValue, ImageFormat};
+        let ui_material = renderer
+            .compile_material(&katla_gfx::PipelineDescriptor::ui(
+                resources
+                    .shader_path("ui/ui.wgsl")
+                    .to_string_lossy()
+                    .into_owned(),
+            ))
+            .map_err(|source| crate::error::AppError::Graphics { source })?;
         let extent = renderer.swapchain_extent();
-
-        let graph = FrameGraphBuilder::new()
+        let mut builder = FrameGraphBuilder::new();
+        for (name, format) in [
+            ("hdr_color", ImageFormat::R16G16B16A16Sfloat),
+            ("object_id", ImageFormat::R32Uint),
+            ("viewport_0", ImageFormat::B8G8R8A8Srgb),
+        ] {
+            builder = builder.create_resource(GraphResourceDesc {
+                name: name.into(),
+                resource_type: GraphResourceType::ColorAttachment { clear_value: None },
+                format,
+                width: extent.width,
+                height: extent.height,
+                tracks_swapchain_size: true,
+            });
+        }
+        builder = builder
             .create_resource(GraphResourceDesc {
-                name: "hdr_color".to_string(),
-                resource_type: GraphResourceType::ColorAttachment {
-                    clear_value: Some([0.1, 0.1, 0.1, 1.0]),
+                name: "scene_depth".into(),
+                resource_type: GraphResourceType::DepthAttachment {
+                    clear_value: 0.0,
+                    sampled: false,
                 },
-                format: ImageFormat::R16G16B16A16Sfloat,
+                format: ImageFormat::D32SfloatS8Uint,
                 width: extent.width,
                 height: extent.height,
                 tracks_swapchain_size: true,
             })
             .create_resource(GraphResourceDesc {
-                name: "object_id".to_string(),
-                resource_type: GraphResourceType::ColorAttachment {
-                    clear_value: Some([0.0, 0.0, 0.0, 0.0]),
+                name: "shadow_atlas".into(),
+                resource_type: GraphResourceType::DepthAttachment {
+                    clear_value: 1.0,
+                    sampled: true,
                 },
-                format: ImageFormat::R32Uint,
-                width: extent.width,
-                height: extent.height,
-                tracks_swapchain_size: true,
-            })
+                format: ImageFormat::D32Sfloat,
+                width: 2048,
+                height: 2048,
+                tracks_swapchain_size: false,
+            });
+        let clear_depth = AttachmentOps::clear(ClearValue::DepthStencil {
+            depth: 0.0,
+            stencil: 0,
+        });
+        let load_depth = clear_depth.with_load(katla_gfx::LoadOp::Load);
+        let graph = builder
             .export_resource("object_id")
-            .create_resource(GraphResourceDesc {
-                name: "viewport_0".to_string(),
-                resource_type: GraphResourceType::ColorAttachment {
-                    clear_value: Some([0.0, 0.0, 0.0, 1.0]),
-                },
-                format: ImageFormat::B8G8R8A8Srgb,
-                width: extent.width,
-                height: extent.height,
-                tracks_swapchain_size: true,
-            })
-            .add_side_effect_pass(
-                SimplePass::new("shadow", PassType::Graphics).with_kind(PassKind::Shadow),
+            .add_pass(
+                SimplePass::new("shadow", PassType::Graphics)
+                    .with_kind(PassKind::Shadow)
+                    .depth_ops(
+                        AttachmentOps::clear(ClearValue::DepthStencil {
+                            depth: 1.0,
+                            stencil: 0,
+                        }),
+                        AttachmentOps::dont_care(),
+                    )
+                    .depth_target("shadow_atlas"),
             )
-            .add_side_effect_pass(
+            .add_pass(
                 SimplePass::new("depth_prepass", PassType::Graphics)
-                    .with_kind(PassKind::DepthPrepass),
+                    .with_kind(PassKind::DepthPrepass)
+                    .depth_ops(clear_depth, clear_depth)
+                    .depth_target("scene_depth"),
             )
             .add_pass(
                 SimplePass::new("geometry", PassType::Graphics)
                     .write("hdr_color")
-                    .with_kind(PassKind::Geometry),
+                    .read("shadow_atlas")
+                    .attachment(
+                        "hdr_color",
+                        AttachmentOps::clear(ClearValue::color(0.1, 0.1, 0.1, 1.0)),
+                    )
+                    .with_kind(PassKind::Geometry)
+                    .depth_ops(load_depth, clear_depth)
+                    .depth_target("scene_depth"),
             )
             .add_pass(
                 SimplePass::new("particles", PassType::Graphics)
                     .read("hdr_color")
                     .write("hdr_color")
-                    .with_kind(PassKind::Particles),
+                    .attachment("hdr_color", AttachmentOps::load())
+                    .with_kind(PassKind::Particles)
+                    .depth_ops(load_depth, load_depth)
+                    .depth_target("scene_depth"),
             )
             .add_pass(
                 SimplePass::new("outline", PassType::Graphics)
                     .read("hdr_color")
                     .write("hdr_color")
-                    .with_kind(PassKind::Outline),
+                    .attachment("hdr_color", AttachmentOps::load())
+                    .with_kind(PassKind::Outline)
+                    .depth_ops(load_depth, load_depth)
+                    .depth_target("scene_depth"),
             )
             .add_pass(
                 SimplePass::new("object_id", PassType::Graphics)
                     .write("object_id")
-                    .with_kind(PassKind::ObjectId),
+                    .attachment(
+                        "object_id",
+                        AttachmentOps::clear(ClearValue::TRANSPARENT_BLACK),
+                    )
+                    .with_kind(PassKind::ObjectId)
+                    .depth_ops(load_depth, load_depth)
+                    .depth_target("scene_depth"),
             )
             .add_pass(
                 SimplePass::new("tonemap", PassType::Graphics)
+                    .without_depth()
                     .read("hdr_color")
                     .write("viewport_0")
+                    .attachment("viewport_0", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
                     .with_kind(PassKind::Fullscreen)
                     .tonemap(katla_gfx::TonemapParams {
                         exposure: 1.0,
@@ -398,14 +453,16 @@ impl ApplicationBuilder {
                     }),
             )
             .add_pass(
-                SimplePass::new("ui", PassType::Graphics)
+                katla_gfx::render_graph::UIPass::new("ui")
                     .read("viewport_0")
-                    .write("backbuffer")
-                    .with_kind(PassKind::Ui),
+                    .write_ops(
+                        "backbuffer",
+                        AttachmentOps::clear(ClearValue::color(0.022, 0.022, 0.022, 1.0)),
+                    )
+                    .material(ui_material),
             )
             .build::<katla_gfx::MetalRenderer>()
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-
         Ok(FrameGraph::from_metal(graph))
     }
 
@@ -821,13 +878,15 @@ impl ApplicationBuilder {
                         .register_transient_texture_bindless(renderer, hdr_color)
                         .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
                     let frame_idx = GpuRenderer::current_frame(renderer);
-                    if let Some(view) = frame_graph.transient_image_view_metal(hdr_color, frame_idx)
+                    if frame_graph
+                        .transient_texture_metal(hdr_color, frame_idx)
+                        .is_some()
                     {
                         let transient_slot = frame_graph
                             .transient_texture_metal(hdr_color, frame_idx)
                             .and_then(|texture| texture.bindless_slot)
                             .unwrap_or(hdr_slot);
-                        renderer.set_geometry_hdr_view(view, transient_slot);
+                        renderer.set_geometry_hdr_bindless_slot(transient_slot);
                     }
                 }
 
@@ -835,9 +894,6 @@ impl ApplicationBuilder {
                     let viewport_slot = frame_graph
                         .register_transient_texture_bindless(renderer, viewport)
                         .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-                    if let Some(view) = frame_graph.transient_image_view_metal(viewport, 0) {
-                        renderer.set_tonemap_output_view(view);
-                    }
                     renderer.set_viewport_bindless_slot(viewport_slot);
                 }
             }
@@ -1414,7 +1470,7 @@ impl KatlaEditorFrameGraphPreset {
             ),
             #[cfg(target_os = "macos")]
             katla_gfx::AnyRenderer::Metal(renderer) => (
-                ApplicationBuilder::build_metal_frame_graph(renderer)?,
+                ApplicationBuilder::build_metal_frame_graph(renderer, resources)?,
                 super::frame_graph_config::FrameGraphBindings::katla_editor_metal(),
             ),
         };

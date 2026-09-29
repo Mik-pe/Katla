@@ -356,7 +356,8 @@ impl PassBuilder for CompositePass {
 
                 Ok(Box::new(CompositePassData { viewports }))
             }),
-            uses_depth: false, // Compositing is a fullscreen pass, no depth needed
+            uses_depth: false,
+            depth_target: None,
             color_attachments,
             depth_attachment: None,
             kind: Some(PassKind::Compositing),

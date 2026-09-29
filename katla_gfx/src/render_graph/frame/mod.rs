@@ -411,6 +411,45 @@ impl<'a> Frame<'a, VulkanRenderer> {
         };
 
         let frame_idx = self.current_frame();
+        if let Some(id) = pass.depth_target {
+            let texture = self
+                .graph
+                .transient_texture_by_id(id, frame_idx)
+                .ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Pass '{}' cannot resolve graph depth target {}",
+                        pass.name, id.0
+                    ))
+                })?;
+            let clear = |value| match value {
+                ClearValue::DepthStencil { depth, stencil } => {
+                    ash::vk::ClearDepthStencilValue { depth, stencil }
+                }
+                _ => ash::vk::ClearDepthStencilValue {
+                    depth: 0.0,
+                    stencil: 0,
+                },
+            };
+            let stencil = matches!(
+                texture.format,
+                ash::vk::Format::D32_SFLOAT_S8_UINT | ash::vk::Format::D24_UNORM_S8_UINT
+            )
+            .then(|| {
+                depth_attachment_info(
+                    texture.image_view.vk(),
+                    &ops.stencil,
+                    clear(ops.stencil.clear_value),
+                )
+            });
+            return Ok((
+                Some(depth_attachment_info(
+                    texture.image_view.vk(),
+                    &ops.depth,
+                    clear(ops.depth.clear_value),
+                )),
+                stencil,
+            ));
+        }
         let depth_texture = self
             .renderer
             .frame_context
@@ -564,6 +603,12 @@ impl<'a> Frame<'a, VulkanRenderer> {
                     pass_type,
                     encode_position,
                     outcome,
+                    color_attachment_ops: pass
+                        .color_attachments
+                        .iter()
+                        .map(|(_, ops)| *ops)
+                        .collect(),
+                    depth_attachment_ops: pass.depth_attachment,
                     draw_calls: counts.draw_calls,
                     instances: counts.instances,
                     color_targets: if pass_type == super::pass::PassType::Graphics {
@@ -572,7 +617,12 @@ impl<'a> Frame<'a, VulkanRenderer> {
                         Vec::new()
                     },
                     depth_target: (pass_type == super::pass::PassType::Graphics && pass.uses_depth)
-                        .then(|| super::trace::FRAME_DEPTH_TARGET.to_string()),
+                        .then(|| {
+                            pass.depth_target
+                                .and_then(|id| self.graph.resource_name(id))
+                                .unwrap_or(super::trace::FRAME_DEPTH_TARGET)
+                                .to_string()
+                        }),
                 };
                 self.execution_trace.push(entry);
             }

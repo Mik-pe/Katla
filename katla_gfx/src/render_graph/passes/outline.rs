@@ -72,6 +72,7 @@ impl PassBuilder for OutlinePass {
             output_format: Some(ImageFormat::R16G16B16A16Sfloat),
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
+            depth_target: None,
             color_attachments,
             // Depth is reused from the scene; the stencil aspect is cleared
             // and stored so the sub-passes can mark and combine stencil bits.
@@ -155,6 +156,7 @@ impl PassBuilder for StencilIndicatorPass {
             output_format: Some(ImageFormat::R8Unorm),
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
+            depth_target: None,
             color_attachments,
             // Both aspects load the stencil state left by the outline pass;
             // neither is stored back.

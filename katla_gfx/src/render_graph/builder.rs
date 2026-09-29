@@ -21,8 +21,8 @@ use super::resource::GraphResourceHandle;
 /// Converts a user-friendly pass template into the internal representation
 /// used by the frame graph builder.
 ///
-/// This trait is `pub(crate)` - it's an implementation detail. Users interact
-/// with pass templates (GeometryPass, etc.) directly, not this trait.
+/// Pass templates implement this trait. Import it to bind a template's
+/// depth/stencil attachment to a named graph resource with `depth_target`.
 ///
 /// # Example
 ///
@@ -53,6 +53,31 @@ pub trait PassBuilder: Any {
     /// that the frame graph builder uses to construct the actual pass.
     #[allow(clippy::wrong_self_convention)]
     fn as_builder(self) -> InternalPassBuilder;
+
+    /// Bind this pass's depth/stencil operations to a named graph image.
+    fn depth_target(self, name: impl Into<String>) -> impl PassBuilder
+    where
+        Self: Sized,
+    {
+        DepthTargetPass {
+            pass: self,
+            name: name.into(),
+        }
+    }
+}
+
+struct DepthTargetPass<P> {
+    pass: P,
+    name: String,
+}
+
+impl<P: PassBuilder> PassBuilder for DepthTargetPass<P> {
+    fn as_builder(self) -> InternalPassBuilder {
+        let mut builder = self.pass.as_builder();
+        builder.uses_depth = true;
+        builder.depth_target = Some(self.name);
+        builder
+    }
 }
 
 /// Internal pass builder representation.
@@ -104,6 +129,7 @@ pub struct InternalPassBuilder {
 
     /// Whether this pass uses depth testing (default true for graphics passes).
     pub uses_depth: bool,
+    pub(crate) depth_target: Option<String>,
 
     /// Declared load/store/clear operations per color target (resource names,
     /// resolved against the resource namespace at graph build).
@@ -130,6 +156,7 @@ pub struct SimplePass {
     color_attachments: Vec<(String, crate::render_pass::AttachmentOps)>,
     depth_attachment: Option<crate::render_pass::DepthStencilAttachmentOps>,
     kind: Option<PassKind>,
+    uses_depth: bool,
     tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
 }
 
@@ -145,8 +172,15 @@ impl SimplePass {
             color_attachments: Vec::new(),
             depth_attachment: None,
             kind: None,
+            uses_depth: true,
             tonemap_params: None,
         }
+    }
+
+    /// Render without a depth/stencil attachment.
+    pub fn without_depth(mut self) -> Self {
+        self.uses_depth = false;
+        self
     }
 
     pub fn read(mut self, name: impl Into<String>) -> Self {
@@ -263,7 +297,8 @@ impl PassBuilder for SimplePass {
             material: None,
             output_format: None,
             build_fn: Box::new(|_| Ok(Box::new(()))),
-            uses_depth: true,
+            uses_depth: self.uses_depth,
+            depth_target: None,
             kind: self.kind,
             side_effect: false,
         }
@@ -315,6 +350,7 @@ mod tests {
                 output_format: None,
                 build_fn: Box::new(|_resource_map| Ok(Box::new(()))),
                 uses_depth: true,
+                depth_target: None,
                 color_attachments: Vec::new(),
                 depth_attachment: None,
                 kind: None,

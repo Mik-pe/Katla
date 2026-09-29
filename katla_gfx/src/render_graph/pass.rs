@@ -94,6 +94,8 @@ pub struct PassDesc {
     pub color_attachments: Vec<(ResourceId, AttachmentOps)>,
     /// Whether this pass uses depth testing (default true for graphics passes).
     pub uses_depth: bool,
+    /// Explicit graph depth/stencil target.
+    pub depth_target: Option<ResourceId>,
     /// Depth and stencil attachment operations for this pass's depth target.
     ///
     /// Normalized to a canonical default at graph build when a graphics pass
@@ -137,6 +139,7 @@ impl PassDesc {
             output_format: None,
             color_attachments: Vec::new(),
             uses_depth: true,
+            depth_target: None,
             depth_attachment: None,
             compositing_viewports: None,
             compute_fn: None,

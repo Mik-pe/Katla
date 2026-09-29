@@ -25,6 +25,60 @@ pub(crate) struct MetalCommandBuffer {
 }
 
 impl MetalCommandBuffer {
+    pub(crate) fn render_pass_descriptor(
+        desc: &RenderPassInfo<MetalBackend>,
+    ) -> Retained<MTLRenderPassDescriptor> {
+        let pass_desc = MTLRenderPassDescriptor::new();
+
+        for (i, attachment) in desc.color_attachments.iter().enumerate() {
+            let color_desc = unsafe { pass_desc.colorAttachments().objectAtIndexedSubscript(i) };
+            color_desc.setTexture(Some(&attachment.view.inner));
+            color_desc.setLoadAction(to_mtl_load_action(attachment.load_op));
+            color_desc.setStoreAction(to_mtl_store_action(attachment.store_op));
+            if attachment.load_op == LoadOp::Clear
+                && let ClearValue::Color([r, g, b, a]) = attachment.clear_value
+            {
+                color_desc.setClearColor(objc2_metal::MTLClearColor {
+                    red: r as f64,
+                    green: g as f64,
+                    blue: b as f64,
+                    alpha: a as f64,
+                });
+            }
+        }
+
+        if let Some(ref depth) = desc.depth_attachment {
+            let depth_desc = pass_desc.depthAttachment();
+            depth_desc.setTexture(Some(&depth.view.inner));
+            depth_desc.setLoadAction(to_mtl_load_action(depth.load_op));
+            depth_desc.setStoreAction(to_mtl_store_action(depth.store_op));
+            if depth.load_op == LoadOp::Clear
+                && let ClearValue::DepthStencil { depth: d, .. } = depth.clear_value
+            {
+                depth_desc.setClearDepth(d as f64);
+            }
+
+            if matches!(
+                depth.format,
+                crate::texture::ImageFormat::D32SfloatS8Uint
+                    | crate::texture::ImageFormat::D24UnormS8Uint
+            ) {
+                let stencil_desc = pass_desc.stencilAttachment();
+                stencil_desc.setTexture(Some(&depth.view.inner));
+                stencil_desc.setLoadAction(to_mtl_load_action(depth.stencil_ops.load));
+                stencil_desc.setStoreAction(to_mtl_store_action(depth.stencil_ops.store));
+                if depth.stencil_ops.load == LoadOp::Clear
+                    && let ClearValue::DepthStencil { stencil: s, .. } =
+                        depth.stencil_ops.clear_value
+                {
+                    stencil_desc.setClearStencil(s);
+                }
+            }
+        }
+
+        pass_desc
+    }
+
     fn log_gpu_error(cmd_buffer: &ProtocolObject<dyn MTLCommandBuffer>) {
         let status = cmd_buffer.status();
         if status != MTLCommandBufferStatus::Error {
@@ -111,52 +165,7 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
     }
 
     fn begin_render_pass(&mut self, desc: RenderPassInfo<MetalBackend>) -> MetalRenderEncoder {
-        let pass_desc = MTLRenderPassDescriptor::new();
-
-        for (i, attachment) in desc.color_attachments.iter().enumerate() {
-            let color_desc = unsafe { pass_desc.colorAttachments().objectAtIndexedSubscript(i) };
-            color_desc.setTexture(Some(&attachment.view.inner));
-            color_desc.setLoadAction(to_mtl_load_action(attachment.load_op));
-            color_desc.setStoreAction(to_mtl_store_action(attachment.store_op));
-            if attachment.load_op == LoadOp::Clear
-                && let ClearValue::Color([r, g, b, a]) = attachment.clear_value
-            {
-                color_desc.setClearColor(objc2_metal::MTLClearColor {
-                    red: r as f64,
-                    green: g as f64,
-                    blue: b as f64,
-                    alpha: a as f64,
-                });
-            }
-        }
-
-        if let Some(ref depth) = desc.depth_attachment {
-            let depth_desc = pass_desc.depthAttachment();
-            depth_desc.setTexture(Some(&depth.view.inner));
-            depth_desc.setLoadAction(to_mtl_load_action(depth.load_op));
-            depth_desc.setStoreAction(to_mtl_store_action(depth.store_op));
-            if depth.load_op == LoadOp::Clear
-                && let ClearValue::DepthStencil { depth: d, .. } = depth.clear_value
-            {
-                depth_desc.setClearDepth(d as f64);
-            }
-
-            if matches!(
-                depth.format,
-                crate::texture::ImageFormat::D32SfloatS8Uint
-                    | crate::texture::ImageFormat::D24UnormS8Uint
-            ) {
-                let stencil_desc = pass_desc.stencilAttachment();
-                stencil_desc.setTexture(Some(&depth.view.inner));
-                stencil_desc.setLoadAction(to_mtl_load_action(depth.load_op));
-                stencil_desc.setStoreAction(to_mtl_store_action(depth.store_op));
-                if depth.load_op == LoadOp::Clear
-                    && let ClearValue::DepthStencil { stencil: s, .. } = depth.clear_value
-                {
-                    stencil_desc.setClearStencil(s);
-                }
-            }
-        }
+        let pass_desc = Self::render_pass_descriptor(&desc);
 
         let encoder = self
             .inner

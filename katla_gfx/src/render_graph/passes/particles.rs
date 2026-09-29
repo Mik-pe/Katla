@@ -74,6 +74,7 @@ impl PassBuilder for ParticlePass {
             output_format: Some(ImageFormat::R16G16B16A16Sfloat),
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
+            depth_target: None,
             color_attachments,
             // Depth is reused from the scene and stored for later passes.
             depth_attachment: Some(DepthStencilAttachmentOps {
