@@ -67,6 +67,19 @@ fn unsupported_message(error: &RendererError) -> &str {
 }
 
 impl GpuRenderer for MockRenderer {
+    fn create_buffer(
+        &mut self,
+        _desc: katla_gfx::BufferDesc,
+    ) -> Result<katla_gfx::BufferHandle, RendererError> {
+        self.record("create_buffer");
+        Ok(katla_gfx::BufferHandle::from_raw(0, 0))
+    }
+
+    fn destroy_buffer(&mut self, _handle: katla_gfx::BufferHandle) -> Result<(), RendererError> {
+        self.record("destroy_buffer");
+        Ok(())
+    }
+
     fn swapchain_extent(&self) -> Size2D {
         Size2D::new(64, 48)
     }
