@@ -23,6 +23,22 @@ taken on one machine compares byte-for-byte with a capture on another.
 The `schema_version` field is bumped whenever a format changes. A capture and a
 golden from different schema versions are not comparable.
 
+Schema 11 describes buffer resources as `kind: "buffer"`, with their origin,
+declared byte size, usage capabilities, memory policy, and live access interval.
+Typed buffer usages use snake-case names in JSON. Text and DOT include the same
+allocation requirements, even for buffers whose passes were culled. Image-only
+format and extent fields remain empty for buffers. The physical transient slots
+and memory-saving totals currently describe images; buffer allocation identities,
+aliasing, and per-frame ownership are not reported yet.
+
+Buffer stages distinguish vertex/index input (`VertexInput`), indirect command
+consumption (`DrawIndirect`), shader accesses, copies (`Transfer`), and CPU
+readback (`Host`). Graph validation rejects a usage at an incompatible stage.
+Uniform and storage declarations select their shader stage; `BufferAccess`
+helpers can use `with_stage` to override their default. A host-read declaration
+does not wait for completion: the caller must still await the owning submission
+before reading mapped memory.
+
 ## Capturing a frame locally
 
 The application can dump the compiled graph once, right after a rendered frame —
@@ -68,7 +84,9 @@ pixels points at the backend encoder path, not the graph.
 
 `katla_gfx/tests/goldens/` pins the canonical exports
 (`render_graph_diagnostics.{json,text,dot}`) of a representative
-shadow → geometry → lighting → present chain. The golden test runs in the
+shadow → geometry → lighting → present chain, imported frame constants,
+storage-to-indirect buffer synchronization, and a culled scratch-buffer pass.
+The golden test runs in the
 `cargo test -p katla_gfx --lib` CI step.
 
 When the export format or the compiler changes intentionally, regenerate and

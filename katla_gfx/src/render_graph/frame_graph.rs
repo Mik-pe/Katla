@@ -2320,6 +2320,92 @@ mod tests {
     }
 
     #[test]
+    fn test_buffer_diagnostics_describe_transient_and_imported_allocations() {
+        use crate::render_graph::{ResourceAccessStage, SimplePass};
+
+        let graph = FrameGraphBuilder::new()
+            .create_buffer(GraphBufferDesc::new(
+                "scratch",
+                BufferDesc::new(
+                    1024,
+                    BufferUsages::STORAGE | BufferUsages::TRANSFER_SOURCE,
+                    BufferMemoryPolicy::DeviceLocal,
+                ),
+            ))
+            .import_buffer(
+                "readback",
+                crate::BufferHandle::from_raw(9, 2),
+                BufferDesc::new(
+                    512,
+                    BufferUsages::READBACK | BufferUsages::TRANSFER_DESTINATION,
+                    BufferMemoryPolicy::Readback,
+                ),
+            )
+            .add_side_effect_pass(
+                SimplePass::new("compute", PassType::Graphics).buffer_access(
+                    "scratch",
+                    ResourceAccessMode::Write,
+                    BufferUsage::Storage,
+                    ResourceAccessStage::ComputeShader,
+                    BufferByteRange::new(128, 256),
+                ),
+            )
+            .add_side_effect_pass(
+                SimplePass::new("copy", PassType::Graphics)
+                    .buffer_access(
+                        "scratch",
+                        ResourceAccessMode::Read,
+                        BufferUsage::TransferSource,
+                        ResourceAccessStage::Transfer,
+                        BufferByteRange::new(128, 256),
+                    )
+                    .buffer_access(
+                        "readback",
+                        ResourceAccessMode::Write,
+                        BufferUsage::TransferDestination,
+                        ResourceAccessStage::Transfer,
+                        BufferByteRange::new(0, 256),
+                    ),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let diagnostics = graph.diagnostics().unwrap();
+        let json: serde_json::Value =
+            serde_json::from_str(&diagnostics.to_json_pretty().unwrap()).unwrap();
+        assert_eq!(json["resources"][1]["kind"], "buffer");
+        assert_eq!(json["resources"][1]["origin"], "transient");
+        assert_eq!(
+            json["resources"][1]["buffer"],
+            serde_json::json!({
+                "size": 1024, "usages": ["storage", "transfer_source"], "memory": "device_local",
+            })
+        );
+        assert_eq!(json["resources"][2]["origin"], "imported");
+        assert_eq!(
+            json["resources"][2]["buffer"],
+            serde_json::json!({
+                "size": 512, "usages": ["transfer_destination", "readback"], "memory": "readback",
+            })
+        );
+        assert_eq!(json["resources"][1]["width"], serde_json::Value::Null);
+        assert_eq!(
+            json["resources"][1]["physical_allocation_id"],
+            serde_json::Value::Null
+        );
+        assert_eq!(json["resources"][1]["lifetime"]["last_pass"], 1);
+        let text = diagnostics.to_string();
+        assert!(text.contains("r1 (scratch) transient buffer, 1024 bytes, DeviceLocal, usages [Storage, TransferSource]"));
+        let dot = diagnostics.to_dot();
+        assert!(dot.contains("buffer 1024 bytes, DeviceLocal, usages [Storage, TransferSource]"));
+        for _ in 0..8 {
+            assert_eq!(
+                diagnostics.to_json_pretty().unwrap(),
+                graph.diagnostics().unwrap().to_json_pretty().unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn test_frame_graph_add_and_index_passes() {
         let mut graph = TestGraph::new();
         let p1 = PassDesc::new("a", PassType::Graphics, vec![], vec![rid(1)]);

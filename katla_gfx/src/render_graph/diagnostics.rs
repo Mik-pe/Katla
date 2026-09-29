@@ -53,12 +53,15 @@ use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::ResourceId;
 use super::pass::{PassDesc, PassType};
-use super::resource::{GraphResourceDesc, GraphResourceType, ImportedImageContract};
+use super::resource::{
+    BufferDesc, BufferMemoryPolicy, BufferUsages, GraphResourceDesc, GraphResourceType,
+    ImportedImageContract,
+};
 use super::sync_plan::BufferSyncState;
 use super::{ImageSyncOp, ImageSyncState, ResourceHazardKind};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 10;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 11;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -191,12 +194,95 @@ pub struct RenderGraphDiagnosticResource {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub tracks_swapchain_size: Option<bool>,
+    /// Allocation requirements for a buffer; absent for image resources.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buffer: Option<RenderGraphDiagnosticBufferDescriptor>,
     pub exported: bool,
     pub lifetime: Option<RenderGraphDiagnosticResourceLifetime>,
     /// Stable backend-neutral physical allocation slot assigned by the alias planner.
     pub physical_allocation_id: Option<u32>,
     /// Declared initial/final state contract, present for imported images.
     pub imported_contract: Option<RenderGraphDiagnosticImportedContract>,
+}
+
+/// Declared buffer allocation requirements, independent of native allocation identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticBufferDescriptor {
+    pub size: u64,
+    pub usages: Vec<RenderGraphDiagnosticBufferUsage>,
+    pub memory: RenderGraphDiagnosticBufferMemory,
+}
+
+/// Requested buffer memory placement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderGraphDiagnosticBufferMemory {
+    DeviceLocal,
+    CpuVisible,
+    Readback,
+}
+
+struct BufferDiagnosticResource {
+    descriptor: BufferDesc,
+    origin: RenderGraphDiagnosticResourceOrigin,
+}
+
+impl From<BufferDesc> for RenderGraphDiagnosticBufferDescriptor {
+    fn from(desc: BufferDesc) -> Self {
+        let usages = [
+            (
+                BufferUsages::UNIFORM,
+                RenderGraphDiagnosticBufferUsage::Uniform,
+            ),
+            (
+                BufferUsages::STORAGE,
+                RenderGraphDiagnosticBufferUsage::Storage,
+            ),
+            (
+                BufferUsages::VERTEX,
+                RenderGraphDiagnosticBufferUsage::Vertex,
+            ),
+            (BufferUsages::INDEX, RenderGraphDiagnosticBufferUsage::Index),
+            (
+                BufferUsages::INDIRECT,
+                RenderGraphDiagnosticBufferUsage::Indirect,
+            ),
+            (
+                BufferUsages::TRANSFER_SOURCE,
+                RenderGraphDiagnosticBufferUsage::TransferSource,
+            ),
+            (
+                BufferUsages::TRANSFER_DESTINATION,
+                RenderGraphDiagnosticBufferUsage::TransferDestination,
+            ),
+            (
+                BufferUsages::READBACK,
+                RenderGraphDiagnosticBufferUsage::Readback,
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(flag, usage)| desc.usages.contains(flag).then_some(usage))
+        .collect();
+        Self {
+            size: desc.size,
+            usages,
+            memory: match desc.memory {
+                BufferMemoryPolicy::DeviceLocal => RenderGraphDiagnosticBufferMemory::DeviceLocal,
+                BufferMemoryPolicy::CpuVisible => RenderGraphDiagnosticBufferMemory::CpuVisible,
+                BufferMemoryPolicy::Readback => RenderGraphDiagnosticBufferMemory::Readback,
+            },
+        }
+    }
+}
+
+impl fmt::Display for RenderGraphDiagnosticBufferDescriptor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} bytes, {:?}, usages {:?}",
+            self.size, self.memory, self.usages
+        )
+    }
 }
 
 /// Pass type without backend-specific command data.
@@ -292,6 +378,7 @@ pub struct RenderGraphDiagnosticBufferAccess {
 
 /// Backend-neutral buffer usage of one declared access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RenderGraphDiagnosticBufferUsage {
     Uniform,
     Storage,
@@ -420,12 +507,37 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
     /// resources or mutating frame execution state.
     pub fn diagnostics(&self) -> Result<RenderGraphDiagnostics, RenderGraphError> {
         let plan = self.build_execution_plan()?;
+        let buffers = self
+            .resources
+            .iter()
+            .enumerate()
+            .filter_map(|(index, resource)| {
+                self.buffer_desc(&resource.name).map(|descriptor| {
+                    (
+                        ResourceId(index as u32),
+                        BufferDiagnosticResource {
+                            descriptor,
+                            origin: if self
+                                .transient_buffers
+                                .iter()
+                                .any(|buffer| buffer.name == resource.name)
+                            {
+                                RenderGraphDiagnosticResourceOrigin::Transient
+                            } else {
+                                RenderGraphDiagnosticResourceOrigin::Imported
+                            },
+                        },
+                    )
+                })
+            })
+            .collect();
         Ok(RenderGraphDiagnostics::from_parts(
             &self.passes,
             &self.resources,
             &self.transient_resources,
             &self.exported_resources,
             &self.imported_contracts,
+            &buffers,
             &plan,
         ))
     }
@@ -438,6 +550,7 @@ impl RenderGraphDiagnostics {
         transient_resources: &[GraphResourceDesc],
         exported_resources: &BTreeSet<ResourceId>,
         imported_contracts: &BTreeMap<ResourceId, ImportedImageContract>,
+        buffers: &BTreeMap<ResourceId, BufferDiagnosticResource>,
         plan: &ExecutionPlan,
     ) -> Self {
         let transient_by_name = transient_resources
@@ -465,7 +578,10 @@ impl RenderGraphDiagnostics {
                 let descriptor = transient_by_name
                     .get(namespace_resource.name.as_str())
                     .copied();
-                let origin = if namespace_resource.name == BACKBUFFER_NAME {
+                let buffer = buffers.get(&ResourceId(index as u32));
+                let origin = if let Some(buffer) = buffer {
+                    buffer.origin
+                } else if namespace_resource.name == BACKBUFFER_NAME {
                     RenderGraphDiagnosticResourceOrigin::BuiltIn
                 } else if descriptor.is_some() {
                     RenderGraphDiagnosticResourceOrigin::Transient
@@ -477,12 +593,17 @@ impl RenderGraphDiagnostics {
                     id: index as u32,
                     name: namespace_resource.name.clone(),
                     origin,
-                    kind: descriptor.map(|resource| resource_kind(&resource.resource_type)),
+                    kind: if buffer.is_some() {
+                        Some("buffer".to_string())
+                    } else {
+                        descriptor.map(|resource| resource_kind(&resource.resource_type))
+                    },
                     format: descriptor.map(|resource| format!("{:?}", resource.format)),
                     width: descriptor.map(|resource| resource.width),
                     height: descriptor.map(|resource| resource.height),
                     tracks_swapchain_size: descriptor
                         .map(|resource| resource.tracks_swapchain_size),
+                    buffer: buffer.map(|buffer| buffer.descriptor.into()),
                     exported: exported_resources.contains(&ResourceId(index as u32)),
                     lifetime: plan
                         .resource_lifetimes
@@ -662,16 +783,22 @@ impl RenderGraphDiagnostics {
                 })
                 .unwrap_or_default();
             let peripheries = if resource.exported { 2 } else { 1 };
+            let buffer = resource
+                .buffer
+                .as_ref()
+                .map(|buffer| format!("\\nbuffer {buffer}"))
+                .unwrap_or_default();
             let _ = writeln!(
                 output,
-                "  r{} [shape=ellipse,peripheries={},label=\"{}: {}\\n{}{}{}\"];",
+                "  r{} [shape=ellipse,peripheries={},label=\"{}: {}\\n{}{}{}{}\"];",
                 resource.id,
                 peripheries,
                 resource.id,
                 escape_dot(&resource.name),
                 origin,
                 exported,
-                contract
+                contract,
+                buffer
             );
         }
 
@@ -874,6 +1001,21 @@ impl fmt::Display for RenderGraphDiagnostics {
             self.summary.tile_memory_eligible_bytes,
             self.summary.parallel_levels
         )?;
+
+        for resource in &self.resources {
+            if let Some(buffer) = &resource.buffer {
+                let origin = match resource.origin {
+                    RenderGraphDiagnosticResourceOrigin::BuiltIn => "built-in",
+                    RenderGraphDiagnosticResourceOrigin::Imported => "imported",
+                    RenderGraphDiagnosticResourceOrigin::Transient => "transient",
+                };
+                writeln!(
+                    f,
+                    "  r{} ({}) {origin} buffer, {buffer}",
+                    resource.id, resource.name
+                )?;
+            }
+        }
 
         for resource in self
             .resources
@@ -1583,6 +1725,7 @@ mod tests {
             &transient_resources,
             &exported_resources,
             &BTreeMap::new(),
+            &BTreeMap::new(),
             &plan,
         )
     }
@@ -1624,6 +1767,7 @@ mod tests {
             &resources,
             &transient_resources,
             &exported_resources,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &plan,
         );
@@ -1786,6 +1930,7 @@ mod tests {
             &resources,
             &transient_resources,
             &exported_resources,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &plan,
         )
@@ -1969,6 +2114,7 @@ mod tests {
             &transient_resources,
             &exported_resources,
             &imported_contracts,
+            &BTreeMap::new(),
             &plan,
         );
 
@@ -2037,6 +2183,7 @@ mod tests {
             &transient_resources,
             &exported_resources,
             &BTreeMap::new(),
+            &BTreeMap::new(),
             &plan,
         );
 
@@ -2079,6 +2226,7 @@ mod tests {
             &resources,
             &[],
             &BTreeSet::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &plan,
         );
@@ -2144,6 +2292,7 @@ mod tests {
             &[],
             &BTreeSet::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             &plan,
         );
 
@@ -2174,7 +2323,7 @@ mod tests {
         );
         assert_eq!(
             json["passes"][0]["buffer_accesses"][0]["usage"],
-            serde_json::json!("Storage")
+            serde_json::json!("storage")
         );
         assert_eq!(
             json["passes"][1]["buffer_accesses"][0]["range"],
@@ -2218,6 +2367,7 @@ mod tests {
             &resources,
             &[],
             &BTreeSet::new(),
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &plan,
         );
@@ -2290,6 +2440,9 @@ mod tests {
             namespace_resource("shadow_atlas"),
             namespace_resource("gbuffer"),
             namespace_resource("hdr_color"),
+            namespace_resource("indirect_commands"),
+            namespace_resource("frame_constants"),
+            namespace_resource("unused_scratch"),
         ];
         let transient_resources = vec![
             transient_resource("shadow_atlas"),
@@ -2298,10 +2451,52 @@ mod tests {
         ];
         let passes = vec![
             pass("shadow", Vec::new(), vec![ResourceId(1)]),
-            pass("geometry", vec![ResourceId(1)], vec![ResourceId(2)]),
-            pass("lighting", vec![ResourceId(2)], vec![ResourceId(3)]),
-            pass("present", vec![ResourceId(3)], vec![ResourceId(0)]),
+            pass("geometry", vec![ResourceId(1)], vec![ResourceId(2)])
+                .with_buffer_accesses([BufferAccess::uniform_read(ResourceId(5))]),
+            pass("lighting", vec![ResourceId(2)], vec![ResourceId(3)])
+                .with_buffer_accesses([BufferAccess::storage_write(ResourceId(4))
+                    .with_range(super::super::BufferByteRange::new(0, 64))]),
+            pass("present", vec![ResourceId(3)], vec![ResourceId(0)])
+                .with_buffer_accesses([BufferAccess::indirect_read(ResourceId(4))
+                    .with_range(super::super::BufferByteRange::new(0, 64))]),
+            pass("unused_compute", vec![], vec![])
+                .with_buffer_accesses([BufferAccess::storage_write(ResourceId(6))]),
         ];
+        let buffers = BTreeMap::from([
+            (
+                ResourceId(4),
+                BufferDiagnosticResource {
+                    descriptor: BufferDesc::new(
+                        128,
+                        BufferUsages::STORAGE | BufferUsages::INDIRECT,
+                        BufferMemoryPolicy::DeviceLocal,
+                    ),
+                    origin: RenderGraphDiagnosticResourceOrigin::Transient,
+                },
+            ),
+            (
+                ResourceId(5),
+                BufferDiagnosticResource {
+                    descriptor: BufferDesc::new(
+                        256,
+                        BufferUsages::UNIFORM,
+                        BufferMemoryPolicy::CpuVisible,
+                    ),
+                    origin: RenderGraphDiagnosticResourceOrigin::Imported,
+                },
+            ),
+            (
+                ResourceId(6),
+                BufferDiagnosticResource {
+                    descriptor: BufferDesc::new(
+                        512,
+                        BufferUsages::STORAGE,
+                        BufferMemoryPolicy::DeviceLocal,
+                    ),
+                    origin: RenderGraphDiagnosticResourceOrigin::Transient,
+                },
+            ),
+        ]);
         let exported_resources = BTreeSet::from([ResourceId(0)]);
         let imported_contracts = BTreeMap::from([(
             ResourceId(0),
@@ -2321,6 +2516,7 @@ mod tests {
             &transient_resources,
             &exported_resources,
             &imported_contracts,
+            &buffers,
             &plan,
         )
     }

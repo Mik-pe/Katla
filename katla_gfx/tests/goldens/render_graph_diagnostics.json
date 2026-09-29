@@ -1,13 +1,13 @@
 {
-  "schema_version": 10,
+  "schema_version": 11,
   "summary": {
-    "declared_passes": 4,
+    "declared_passes": 5,
     "live_passes": 4,
-    "culled_passes": 0,
-    "resources": 4,
+    "culled_passes": 1,
+    "resources": 7,
     "dependency_edges": 3,
     "synchronization_transitions": 12,
-    "buffer_synchronization_ops": 0,
+    "buffer_synchronization_ops": 3,
     "physical_transient_allocations": 2,
     "logical_transient_bytes": 98304,
     "physical_transient_bytes": 65536,
@@ -94,6 +94,80 @@
       },
       "physical_allocation_id": 0,
       "imported_contract": null
+    },
+    {
+      "id": 4,
+      "name": "indirect_commands",
+      "origin": "transient",
+      "kind": "buffer",
+      "format": null,
+      "width": null,
+      "height": null,
+      "tracks_swapchain_size": null,
+      "buffer": {
+        "size": 128,
+        "usages": [
+          "storage",
+          "indirect"
+        ],
+        "memory": "device_local"
+      },
+      "exported": false,
+      "lifetime": {
+        "first_execution_position": 2,
+        "first_pass": 2,
+        "last_execution_position": 3,
+        "last_pass": 3
+      },
+      "physical_allocation_id": null,
+      "imported_contract": null
+    },
+    {
+      "id": 5,
+      "name": "frame_constants",
+      "origin": "imported",
+      "kind": "buffer",
+      "format": null,
+      "width": null,
+      "height": null,
+      "tracks_swapchain_size": null,
+      "buffer": {
+        "size": 256,
+        "usages": [
+          "uniform"
+        ],
+        "memory": "cpu_visible"
+      },
+      "exported": false,
+      "lifetime": {
+        "first_execution_position": 1,
+        "first_pass": 1,
+        "last_execution_position": 1,
+        "last_pass": 1
+      },
+      "physical_allocation_id": null,
+      "imported_contract": null
+    },
+    {
+      "id": 6,
+      "name": "unused_scratch",
+      "origin": "transient",
+      "kind": "buffer",
+      "format": null,
+      "width": null,
+      "height": null,
+      "tracks_swapchain_size": null,
+      "buffer": {
+        "size": 512,
+        "usages": [
+          "storage"
+        ],
+        "memory": "device_local"
+      },
+      "exported": false,
+      "lifetime": null,
+      "physical_allocation_id": null,
+      "imported_contract": null
     }
   ],
   "passes": [
@@ -151,6 +225,10 @@
         {
           "id": 1,
           "name": "shadow_atlas"
+        },
+        {
+          "id": 5,
+          "name": "frame_constants"
         }
       ],
       "writes": [
@@ -199,7 +277,21 @@
           }
         }
       ],
-      "buffer_accesses": [],
+      "buffer_accesses": [
+        {
+          "resource": {
+            "id": 5,
+            "name": "frame_constants"
+          },
+          "mode": "read",
+          "usage": "uniform",
+          "stage": "all_graphics",
+          "range": {
+            "offset": 0,
+            "size": 18446744073709551615
+          }
+        }
+      ],
       "color_attachments": [],
       "depth_attachment": null,
       "predecessors": [
@@ -229,6 +321,10 @@
         {
           "id": 3,
           "name": "hdr_color"
+        },
+        {
+          "id": 4,
+          "name": "indirect_commands"
         }
       ],
       "image_accesses": [
@@ -271,7 +367,21 @@
           }
         }
       ],
-      "buffer_accesses": [],
+      "buffer_accesses": [
+        {
+          "resource": {
+            "id": 4,
+            "name": "indirect_commands"
+          },
+          "mode": "write",
+          "usage": "storage",
+          "stage": "compute_shader",
+          "range": {
+            "offset": 0,
+            "size": 64
+          }
+        }
+      ],
       "color_attachments": [],
       "depth_attachment": null,
       "predecessors": [
@@ -295,6 +405,10 @@
         {
           "id": 3,
           "name": "hdr_color"
+        },
+        {
+          "id": 4,
+          "name": "indirect_commands"
         }
       ],
       "writes": [
@@ -343,7 +457,21 @@
           }
         }
       ],
-      "buffer_accesses": [],
+      "buffer_accesses": [
+        {
+          "resource": {
+            "id": 4,
+            "name": "indirect_commands"
+          },
+          "mode": "read",
+          "usage": "indirect",
+          "stage": "draw_indirect",
+          "range": {
+            "offset": 0,
+            "size": 64
+          }
+        }
+      ],
       "color_attachments": [],
       "depth_attachment": null,
       "predecessors": [
@@ -355,6 +483,44 @@
       "side_effect": false,
       "live": true,
       "culled": false
+    },
+    {
+      "index": 4,
+      "name": "unused_compute",
+      "pass_type": "graphics",
+      "kind": null,
+      "reads": [],
+      "writes": [
+        {
+          "id": 6,
+          "name": "unused_scratch"
+        }
+      ],
+      "image_accesses": [],
+      "buffer_accesses": [
+        {
+          "resource": {
+            "id": 6,
+            "name": "unused_scratch"
+          },
+          "mode": "write",
+          "usage": "storage",
+          "stage": "compute_shader",
+          "range": {
+            "offset": 0,
+            "size": 18446744073709551615
+          }
+        }
+      ],
+      "color_attachments": [],
+      "depth_attachment": null,
+      "predecessors": [],
+      "successors": [],
+      "execution_position": null,
+      "parallel_level": null,
+      "side_effect": false,
+      "live": false,
+      "culled": true
     }
   ],
   "dependencies": [
@@ -399,6 +565,13 @@
           "resource": {
             "id": 3,
             "name": "hdr_color"
+          }
+        },
+        {
+          "kind": "RAW",
+          "resource": {
+            "id": 4,
+            "name": "indirect_commands"
           }
         }
       ]
@@ -812,7 +985,62 @@
       "reason": "imported_final"
     }
   ],
-  "buffer_synchronization": [],
+  "buffer_synchronization": [
+    {
+      "resource": {
+        "id": 5,
+        "name": "frame_constants"
+      },
+      "range": {
+        "offset": 0,
+        "size": 18446744073709551615
+      },
+      "before": "undefined",
+      "after": "read Uniform @ AllGraphics",
+      "before_pass": null,
+      "before_name": null,
+      "pass": 1,
+      "pass_name": "geometry",
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 4,
+        "name": "indirect_commands"
+      },
+      "range": {
+        "offset": 0,
+        "size": 64
+      },
+      "before": "undefined",
+      "after": "write Storage @ ComputeShader",
+      "before_pass": null,
+      "before_name": null,
+      "pass": 2,
+      "pass_name": "lighting",
+      "hazard": null,
+      "reason": "initial_use"
+    },
+    {
+      "resource": {
+        "id": 4,
+        "name": "indirect_commands"
+      },
+      "range": {
+        "offset": 0,
+        "size": 64
+      },
+      "before": "write Storage @ ComputeShader",
+      "after": "read Indirect @ DrawIndirect",
+      "before_pass": 2,
+      "before_name": "lighting",
+      "pass": 3,
+      "pass_name": "present",
+      "hazard": "RAW",
+      "reason": "hazard"
+    }
+  ],
   "execution_order": [
     0,
     1,

@@ -77,6 +77,9 @@ pub use backend::RenderGraphBackend;
 pub use builder::SimplePass;
 pub use diagnostics::{
     RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAllocationSlot,
+    RenderGraphDiagnosticBufferAccess, RenderGraphDiagnosticBufferByteRange,
+    RenderGraphDiagnosticBufferDescriptor, RenderGraphDiagnosticBufferMemory,
+    RenderGraphDiagnosticBufferSyncOp, RenderGraphDiagnosticBufferUsage,
     RenderGraphDiagnosticCompatibilityClass, RenderGraphDiagnosticDependency,
     RenderGraphDiagnosticHazard, RenderGraphDiagnosticImageAccess, RenderGraphDiagnosticImageStage,
     RenderGraphDiagnosticImageSubresourceRange, RenderGraphDiagnosticImportedContract,
