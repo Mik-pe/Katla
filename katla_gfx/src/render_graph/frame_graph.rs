@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use super::access::{BufferByteRange, BufferUsage, ResourceAccessMode};
+use super::access::{BufferByteRange, BufferUsage, ResourceAccessMode, ResourceAccessStage};
 use super::allocation_plan::TransientAllocationPlan;
 use super::backend::RenderGraphBackend;
 use super::builder::{InternalPassBuilder, PassBuilder};
@@ -31,6 +31,7 @@ fn validate_buffer_access_descriptor(
     resource: &str,
     mode: ResourceAccessMode,
     usage: BufferUsage,
+    stage: ResourceAccessStage,
     range: BufferByteRange,
     desc: BufferDesc,
 ) -> Result<(), RenderGraphError> {
@@ -86,6 +87,31 @@ fn validate_buffer_access_descriptor(
             pass: pass.to_string(),
             resource: resource.to_string(),
             usage: usage_name.to_string(),
+        }
+        .into());
+    }
+
+    let stage_valid = match usage {
+        BufferUsage::Uniform | BufferUsage::Storage => matches!(
+            stage,
+            ResourceAccessStage::VertexShader
+                | ResourceAccessStage::FragmentShader
+                | ResourceAccessStage::ComputeShader
+                | ResourceAccessStage::AllGraphics
+        ),
+        BufferUsage::Vertex | BufferUsage::Index => stage == ResourceAccessStage::VertexInput,
+        BufferUsage::Indirect => stage == ResourceAccessStage::DrawIndirect,
+        BufferUsage::TransferSource | BufferUsage::TransferDestination => {
+            stage == ResourceAccessStage::Transfer
+        }
+        BufferUsage::Readback => stage == ResourceAccessStage::Host,
+    };
+    if !stage_valid {
+        return Err(GraphValidationError::InvalidBufferAccessStage {
+            pass: pass.to_string(),
+            resource: resource.to_string(),
+            usage: usage_name.to_string(),
+            stage,
         }
         .into());
     }
@@ -831,6 +857,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
                     resource_name,
                     access.mode,
                     access.usage,
+                    access.stage,
                     access.range,
                     desc,
                 )?;
@@ -1642,6 +1669,7 @@ impl FrameGraphBuilder {
                     &access.resource,
                     access.mode,
                     access.usage,
+                    access.stage,
                     access.range,
                     desc,
                 )?;
@@ -2129,6 +2157,167 @@ mod tests {
     }
 
     type TestGraph = FrameGraph<MockBackend>;
+
+    #[test]
+    fn test_buffer_declarations_reject_incompatible_pipeline_stages() {
+        use crate::render_graph::{ResourceAccessStage, SimplePass};
+
+        for (usage, capability, stage) in [
+            (
+                BufferUsage::Vertex,
+                BufferUsages::VERTEX,
+                ResourceAccessStage::VertexShader,
+            ),
+            (
+                BufferUsage::Index,
+                BufferUsages::INDEX,
+                ResourceAccessStage::FragmentShader,
+            ),
+            (
+                BufferUsage::Indirect,
+                BufferUsages::INDIRECT,
+                ResourceAccessStage::ComputeShader,
+            ),
+            (
+                BufferUsage::Uniform,
+                BufferUsages::UNIFORM,
+                ResourceAccessStage::Transfer,
+            ),
+            (
+                BufferUsage::Storage,
+                BufferUsages::STORAGE,
+                ResourceAccessStage::DepthStencil,
+            ),
+            (
+                BufferUsage::TransferSource,
+                BufferUsages::TRANSFER_SOURCE,
+                ResourceAccessStage::AllGraphics,
+            ),
+            (
+                BufferUsage::Readback,
+                BufferUsages::READBACK,
+                ResourceAccessStage::Transfer,
+            ),
+        ] {
+            let desc = BufferDesc::new(64, capability, BufferMemoryPolicy::Readback);
+            let pass = SimplePass::new("consume", PassType::Graphics).buffer_access(
+                "data",
+                ResourceAccessMode::Read,
+                usage,
+                stage,
+                BufferByteRange::WHOLE,
+            );
+            let result = FrameGraphBuilder::new()
+                .create_buffer(GraphBufferDesc::new("data", desc))
+                .add_pass(pass)
+                .build::<MockBackend>();
+            assert!(result.is_err(), "accepted {usage:?} at {stage:?}");
+        }
+    }
+
+    #[test]
+    fn test_buffer_stage_validation_survives_graph_mutation() {
+        use crate::render_graph::{BufferAccess, ResourceAccessStage, SimplePass};
+
+        let mut graph = FrameGraphBuilder::new()
+            .import_buffer(
+                "data",
+                crate::BufferHandle::from_raw(1, 0),
+                BufferDesc::new(64, BufferUsages::UNIFORM, BufferMemoryPolicy::CpuVisible),
+            )
+            .add_pass(
+                SimplePass::new("consume", PassType::Graphics).buffer_access(
+                    "data",
+                    ResourceAccessMode::Read,
+                    BufferUsage::Uniform,
+                    ResourceAccessStage::VertexShader,
+                    BufferByteRange::WHOLE,
+                ),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let data = graph.resource_id("data").unwrap();
+        graph.add_pass(
+            PassDesc::new("invalid", PassType::Graphics, vec![], vec![]).with_buffer_accesses([
+                BufferAccess::uniform_read(data).with_stage(ResourceAccessStage::Transfer),
+            ]),
+        );
+        assert!(matches!(
+            graph.compile(),
+            Err(RenderGraphError::Validation(
+                GraphValidationError::InvalidBufferAccessStage {
+                    stage: ResourceAccessStage::Transfer,
+                    ..
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn test_buffer_helpers_build_valid_graphs_for_all_consumers() {
+        use crate::render_graph::{BufferAccess, SimplePass};
+
+        let data = ResourceId(0);
+        for (access, usages, memory) in [
+            (
+                BufferAccess::uniform_read(data),
+                BufferUsages::UNIFORM,
+                BufferMemoryPolicy::CpuVisible,
+            ),
+            (
+                BufferAccess::storage_read_write(data),
+                BufferUsages::STORAGE,
+                BufferMemoryPolicy::DeviceLocal,
+            ),
+            (
+                BufferAccess::vertex_read(data),
+                BufferUsages::VERTEX,
+                BufferMemoryPolicy::DeviceLocal,
+            ),
+            (
+                BufferAccess::index_read(data),
+                BufferUsages::INDEX,
+                BufferMemoryPolicy::DeviceLocal,
+            ),
+            (
+                BufferAccess::indirect_read(data),
+                BufferUsages::INDIRECT,
+                BufferMemoryPolicy::DeviceLocal,
+            ),
+            (
+                BufferAccess::transfer_read(data),
+                BufferUsages::TRANSFER_SOURCE,
+                BufferMemoryPolicy::DeviceLocal,
+            ),
+            (
+                BufferAccess::transfer_write(data),
+                BufferUsages::TRANSFER_DESTINATION,
+                BufferMemoryPolicy::DeviceLocal,
+            ),
+            (
+                BufferAccess::readback_read(data),
+                BufferUsages::READBACK,
+                BufferMemoryPolicy::Readback,
+            ),
+        ] {
+            FrameGraphBuilder::new()
+                .create_buffer(GraphBufferDesc::new(
+                    "data",
+                    BufferDesc::new(64, usages, memory),
+                ))
+                .add_pass(
+                    SimplePass::new("consume", PassType::Graphics).buffer_access(
+                        "data",
+                        access.mode,
+                        access.usage,
+                        access.stage,
+                        access.range,
+                    ),
+                )
+                .build::<MockBackend>()
+                .unwrap();
+        }
+    }
 
     #[test]
     fn test_frame_graph_add_and_index_passes() {

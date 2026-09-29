@@ -158,7 +158,7 @@ pub struct ImageSyncOp {
 /// access needs. Equal states need no barrier unless a hazard orders them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BufferSyncState {
-    /// Bytes no live pass has written this frame: contents discardable.
+    /// No prior graph access establishes the byte range's synchronization state.
     Undefined,
     /// The state a typed buffer access leaves the bytes in.
     Access {
@@ -287,11 +287,10 @@ struct BufferStatePiece {
 /// One forward scan over the sorted live passes, tracking buffer byte ranges.
 ///
 /// Buffers have no layout, so the scan emits an operation only when a hazard
-/// orders two accesses (RAW/WAR/WAW) or when an access replaces bytes no
-/// earlier access covered this frame (an initial use). Buffers are never
-/// imported in the current graph, so there is no frame-end contract pass, and
-/// frame-start state needs no seeding: unlike images, a buffer has no layout to
-/// bootstrap, so a first use emits nothing.
+/// orders two accesses (RAW/WAR/WAW) or changes their usage/stage. First uses
+/// are recorded without a prior GPU access. Imported buffers carry allocation
+/// descriptors but no initial/final state contracts; their importer must order
+/// external GPU work before graph execution.
 fn scan_buffer_passes(
     passes: &[super::compiler::PassInfo],
     sorted_passes: &[usize],
@@ -338,9 +337,7 @@ fn scan_buffer_passes(
                 });
             }
 
-            // Bytes no earlier access or frame-start state covered arrive
-            // undefined with discardable contents: record an initial use so the
-            // plan is complete, but a backend needs no barrier for it.
+            // First graph accesses have no prior GPU scope to synchronize.
             let mut remainder = vec![access.range];
             for covered_range in covered {
                 remainder = remainder

@@ -45,6 +45,13 @@ pub enum GraphValidationError {
         resource: String,
         usage: String,
     },
+    /// A buffer usage cannot execute at the declared pipeline stage.
+    InvalidBufferAccessStage {
+        pass: String,
+        resource: String,
+        usage: String,
+        stage: super::access::ResourceAccessStage,
+    },
     /// An imported resource uses the sentinel NONE handle.
     InvalidImportedResource(String),
     /// An imported buffer uses the sentinel NONE handle.
@@ -156,6 +163,16 @@ impl fmt::Display for GraphValidationError {
                 f,
                 "pass '{}' declares '{}' as {} with an incompatible access mode",
                 pass, resource, usage
+            ),
+            Self::InvalidBufferAccessStage {
+                pass,
+                resource,
+                usage,
+                stage,
+            } => write!(
+                f,
+                "pass '{}' declares '{}' as {} at incompatible stage {:?}",
+                pass, resource, usage, stage
             ),
             Self::InvalidImportedResource(name) => write!(
                 f,

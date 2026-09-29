@@ -14,7 +14,7 @@ use crate::render_graph::access::{
 };
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
-use crate::render_graph::{BufferSyncState, ImageSyncOp, ImageSyncState};
+use crate::render_graph::{BufferSyncState, ImageSyncOp, ImageSyncState, SyncReason};
 use crate::renderer::VulkanRenderer;
 use crate::sync::{
     AccessFlags2, BufferMemoryBarrier2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags,
@@ -202,7 +202,8 @@ fn buffer_state_masks(state: BufferSyncState) -> (PipelineStage2Flags, AccessFla
 fn buffer_access_mask(usage: BufferUsage, mode: ResourceAccessMode) -> AccessFlags2 {
     let mut access = AccessFlags2::empty();
     match usage {
-        BufferUsage::Uniform | BufferUsage::Storage => {
+        BufferUsage::Uniform => access |= AccessFlags2::UNIFORM_READ,
+        BufferUsage::Storage => {
             if mode.reads() {
                 access |= AccessFlags2::SHADER_READ;
             }
@@ -215,7 +216,7 @@ fn buffer_access_mask(usage: BufferUsage, mode: ResourceAccessMode) -> AccessFla
         BufferUsage::Indirect => access |= AccessFlags2::INDIRECT_COMMAND_READ,
         BufferUsage::TransferSource => access |= AccessFlags2::TRANSFER_READ,
         BufferUsage::TransferDestination => access |= AccessFlags2::TRANSFER_WRITE,
-        BufferUsage::Readback => access |= AccessFlags2::TRANSFER_READ,
+        BufferUsage::Readback => access |= AccessFlags2::HOST_READ,
     }
     access
 }
@@ -238,16 +239,32 @@ fn sync_op_barrier(
     } else {
         ImageAspects::COLOR
     };
+    let barrier = image_sync_barrier(
+        op,
+        VkImage::new(transient.image),
+        texture_aspects,
+        transient.current_layout(),
+    )?;
+    transient.set_layout(barrier.new_layout);
+    Some(barrier)
+}
+
+fn image_sync_barrier(
+    op: &ImageSyncOp,
+    image: VkImage,
+    texture_aspects: ImageAspects,
+    tracked_layout: vk::ImageLayout,
+) -> Option<ImageMemoryBarrier2> {
     let aspects = op.range.aspects & texture_aspects;
     if aspects.is_empty() {
         return None;
     }
 
     let needed_layout = state_layout(op.after);
-    let tracked_layout = transient.current_layout();
-    if tracked_layout == needed_layout && op.before != op.after {
-        // The steady-state layout already satisfies this operation; only a
-        // freshly created texture needed it.
+    if tracked_layout == needed_layout
+        && op.before == ImageSyncState::Undefined
+        && op.reason == SyncReason::InitialUse
+    {
         return None;
     }
 
@@ -266,7 +283,7 @@ fn sync_op_barrier(
             state_masks(op.before)
         };
 
-    let barrier = ImageMemoryBarrier2::new(VkImage::new(transient.image))
+    let barrier = ImageMemoryBarrier2::new(image)
         .src_stage(src_stage)
         .dst_stage(dst_stage)
         .src_access(src_access)
@@ -275,7 +292,6 @@ fn sync_op_barrier(
         .new_layout(needed_layout)
         .subresource_range(vk_subresource_range(aspects, op));
 
-    transient.set_layout(needed_layout);
     Some(barrier)
 }
 
@@ -330,6 +346,9 @@ fn state_masks(state: ImageSyncState) -> (PipelineStage2Flags, AccessFlags2) {
 
 fn stage_mask(stage: ResourceAccessStage) -> PipelineStage2Flags {
     match stage {
+        ResourceAccessStage::VertexInput => PipelineStage2Flags::VERTEX_INPUT,
+        ResourceAccessStage::DrawIndirect => PipelineStage2Flags::DRAW_INDIRECT,
+        ResourceAccessStage::Host => PipelineStage2Flags::HOST,
         ResourceAccessStage::VertexShader => PipelineStage2Flags::VERTEX_SHADER,
         ResourceAccessStage::FragmentShader => PipelineStage2Flags::FRAGMENT_SHADER,
         ResourceAccessStage::ComputeShader => PipelineStage2Flags::COMPUTE_SHADER,
@@ -396,5 +415,157 @@ fn usage_access_mask(usage: ResourceAccessUsage, mode: ResourceAccessMode) -> Ac
         }
         // The presentation engine's read is ordered by the present semaphore.
         ResourceAccessUsage::Present => AccessFlags2::NONE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render_graph::{BufferAccess, ResourceId};
+
+    fn storage_op() -> ImageSyncOp {
+        ImageSyncOp {
+            resource: ResourceId(0),
+            range: crate::render_graph::ImageSubresourceRange::WHOLE_COLOR,
+            before: ImageSyncState::Access {
+                usage: ResourceAccessUsage::Storage,
+                stage: ResourceAccessStage::ComputeShader,
+                mode: ResourceAccessMode::Write,
+            },
+            after: ImageSyncState::Access {
+                usage: ResourceAccessUsage::Storage,
+                stage: ResourceAccessStage::FragmentShader,
+                mode: ResourceAccessMode::Read,
+            },
+            before_pass: Some(0),
+            pass: 1,
+            reason: crate::render_graph::SyncReason::Hazard(
+                crate::render_graph::ResourceHazardKind::ReadAfterWrite,
+            ),
+        }
+    }
+
+    #[test]
+    fn test_storage_write_to_read_keeps_the_same_layout_memory_barrier() {
+        let barrier = image_sync_barrier(
+            &storage_op(),
+            VkImage::new(vk::Image::null()),
+            ImageAspects::COLOR,
+            vk::ImageLayout::GENERAL,
+        )
+        .expect("same-layout RAW hazard must reach the driver")
+        .into_vk();
+        assert_eq!(barrier.old_layout, vk::ImageLayout::GENERAL);
+        assert_eq!(barrier.new_layout, vk::ImageLayout::GENERAL);
+        assert_eq!(
+            barrier.src_stage_mask,
+            vk::PipelineStageFlags2::COMPUTE_SHADER
+        );
+        assert_eq!(barrier.src_access_mask, vk::AccessFlags2::SHADER_WRITE);
+        assert_eq!(
+            barrier.dst_stage_mask,
+            vk::PipelineStageFlags2::FRAGMENT_SHADER
+        );
+        assert_eq!(barrier.dst_access_mask, vk::AccessFlags2::SHADER_READ);
+    }
+
+    #[test]
+    fn test_only_satisfied_initial_layout_bootstraps_are_coalesced() {
+        let mut op = storage_op();
+        op.before = ImageSyncState::Undefined;
+        op.before_pass = None;
+        op.reason = SyncReason::InitialUse;
+        let image = VkImage::new(vk::Image::null());
+        assert!(
+            image_sync_barrier(&op, image, ImageAspects::COLOR, vk::ImageLayout::GENERAL).is_none()
+        );
+        let barrier =
+            image_sync_barrier(&op, image, ImageAspects::COLOR, vk::ImageLayout::UNDEFINED)
+                .unwrap()
+                .into_vk();
+        assert_eq!(
+            barrier.src_stage_mask,
+            vk::PipelineStageFlags2::ALL_COMMANDS
+        );
+        assert_eq!(barrier.src_access_mask, vk::AccessFlags2::MEMORY_WRITE);
+        assert_eq!(barrier.new_layout, vk::ImageLayout::GENERAL);
+    }
+
+    #[test]
+    fn test_matching_layout_keeps_cross_stage_read_ordering() {
+        let mut op = storage_op();
+        op.before = ImageSyncState::Access {
+            usage: ResourceAccessUsage::Storage,
+            stage: ResourceAccessStage::ComputeShader,
+            mode: ResourceAccessMode::Read,
+        };
+        op.reason = SyncReason::StateChange;
+        let barrier = image_sync_barrier(
+            &op,
+            VkImage::new(vk::Image::null()),
+            ImageAspects::COLOR,
+            vk::ImageLayout::GENERAL,
+        )
+        .unwrap()
+        .into_vk();
+        assert_eq!(
+            barrier.src_stage_mask,
+            vk::PipelineStageFlags2::COMPUTE_SHADER
+        );
+        assert_eq!(
+            barrier.dst_stage_mask,
+            vk::PipelineStageFlags2::FRAGMENT_SHADER
+        );
+    }
+
+    #[test]
+    fn test_buffer_consumers_lower_to_the_native_execution_stages() {
+        let resource = ResourceId(0);
+        for (access, expected_stage, expected_access) in [
+            (
+                BufferAccess::vertex_read(resource),
+                PipelineStage2Flags::VERTEX_INPUT,
+                AccessFlags2::VERTEX_ATTRIBUTE_READ,
+            ),
+            (
+                BufferAccess::index_read(resource),
+                PipelineStage2Flags::VERTEX_INPUT,
+                AccessFlags2::INDEX_READ,
+            ),
+            (
+                BufferAccess::indirect_read(resource),
+                PipelineStage2Flags::DRAW_INDIRECT,
+                AccessFlags2::INDIRECT_COMMAND_READ,
+            ),
+            (
+                BufferAccess::uniform_read(resource).with_stage(ResourceAccessStage::ComputeShader),
+                PipelineStage2Flags::COMPUTE_SHADER,
+                AccessFlags2::UNIFORM_READ,
+            ),
+            (
+                BufferAccess::readback_read(resource),
+                PipelineStage2Flags::HOST,
+                AccessFlags2::HOST_READ,
+            ),
+            (
+                BufferAccess::storage_read_write(resource),
+                PipelineStage2Flags::COMPUTE_SHADER,
+                AccessFlags2::SHADER_READ | AccessFlags2::SHADER_WRITE,
+            ),
+            (
+                BufferAccess::transfer_write(resource),
+                PipelineStage2Flags::TRANSFER,
+                AccessFlags2::TRANSFER_WRITE,
+            ),
+        ] {
+            assert_eq!(
+                buffer_state_masks(BufferSyncState::Access {
+                    usage: access.usage,
+                    stage: access.stage,
+                    mode: access.mode,
+                }),
+                (expected_stage, expected_access)
+            );
+        }
     }
 }

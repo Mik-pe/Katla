@@ -424,9 +424,12 @@ pub enum ResourceAccessUsage {
     Present,
 }
 
-/// Backend-neutral pipeline visibility for an image access.
+/// Backend-neutral execution stage for an image or buffer access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ResourceAccessStage {
+    VertexInput,
+    DrawIndirect,
+    Host,
     VertexShader,
     FragmentShader,
     ComputeShader,
@@ -697,7 +700,7 @@ impl BufferAccess {
             resource,
             ResourceAccessMode::Read,
             BufferUsage::Vertex,
-            ResourceAccessStage::VertexShader,
+            ResourceAccessStage::VertexInput,
             BufferByteRange::WHOLE,
         )
     }
@@ -707,7 +710,7 @@ impl BufferAccess {
             resource,
             ResourceAccessMode::Read,
             BufferUsage::Index,
-            ResourceAccessStage::VertexShader,
+            ResourceAccessStage::VertexInput,
             BufferByteRange::WHOLE,
         )
     }
@@ -717,7 +720,7 @@ impl BufferAccess {
             resource,
             ResourceAccessMode::Read,
             BufferUsage::Indirect,
-            ResourceAccessStage::AllGraphics,
+            ResourceAccessStage::DrawIndirect,
             BufferByteRange::WHOLE,
         )
     }
@@ -747,13 +750,19 @@ impl BufferAccess {
             resource,
             ResourceAccessMode::Read,
             BufferUsage::Readback,
-            ResourceAccessStage::Transfer,
+            ResourceAccessStage::Host,
             BufferByteRange::WHOLE,
         )
     }
 
     pub const fn with_range(mut self, range: BufferByteRange) -> Self {
         self.range = range;
+        self
+    }
+
+    /// Select the shader stage consuming a uniform or storage buffer.
+    pub const fn with_stage(mut self, stage: ResourceAccessStage) -> Self {
+        self.stage = stage;
         self
     }
 }

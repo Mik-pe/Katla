@@ -240,6 +240,9 @@ pub enum RenderGraphDiagnosticResourceAccessUsage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RenderGraphDiagnosticImageStage {
+    VertexInput,
+    DrawIndirect,
+    Host,
     VertexShader,
     FragmentShader,
     ComputeShader,
@@ -1189,6 +1192,9 @@ fn diagnostic_access_mode(mode: ResourceAccessMode) -> RenderGraphDiagnosticReso
 
 fn diagnostic_access_stage(stage: ResourceAccessStage) -> RenderGraphDiagnosticImageStage {
     match stage {
+        ResourceAccessStage::VertexInput => RenderGraphDiagnosticImageStage::VertexInput,
+        ResourceAccessStage::DrawIndirect => RenderGraphDiagnosticImageStage::DrawIndirect,
+        ResourceAccessStage::Host => RenderGraphDiagnosticImageStage::Host,
         ResourceAccessStage::VertexShader => RenderGraphDiagnosticImageStage::VertexShader,
         ResourceAccessStage::FragmentShader => RenderGraphDiagnosticImageStage::FragmentShader,
         ResourceAccessStage::ComputeShader => RenderGraphDiagnosticImageStage::ComputeShader,
@@ -1374,18 +1380,7 @@ fn diagnostic_sync_state(state: ImageSyncState) -> RenderGraphDiagnosticSyncStat
         }
         ResourceAccessUsage::Present => RenderGraphDiagnosticResourceAccessUsage::Present,
     };
-    let stage = |stage: super::access::ResourceAccessStage| match stage {
-        ResourceAccessStage::VertexShader => RenderGraphDiagnosticImageStage::VertexShader,
-        ResourceAccessStage::FragmentShader => RenderGraphDiagnosticImageStage::FragmentShader,
-        ResourceAccessStage::ComputeShader => RenderGraphDiagnosticImageStage::ComputeShader,
-        ResourceAccessStage::ColorAttachmentOutput => {
-            RenderGraphDiagnosticImageStage::ColorAttachmentOutput
-        }
-        ResourceAccessStage::DepthStencil => RenderGraphDiagnosticImageStage::DepthStencil,
-        ResourceAccessStage::Transfer => RenderGraphDiagnosticImageStage::Transfer,
-        ResourceAccessStage::Present => RenderGraphDiagnosticImageStage::Present,
-        ResourceAccessStage::AllGraphics => RenderGraphDiagnosticImageStage::AllGraphics,
-    };
+    let stage = diagnostic_access_stage;
     let mode = |mode: super::access::ResourceAccessMode| match mode {
         ResourceAccessMode::Read => RenderGraphDiagnosticResourceAccessMode::Read,
         ResourceAccessMode::Write => RenderGraphDiagnosticResourceAccessMode::Write,
