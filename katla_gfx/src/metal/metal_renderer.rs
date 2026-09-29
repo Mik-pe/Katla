@@ -2037,10 +2037,34 @@ mod tests {
         GpuRenderer::execute_draw_calls(&mut renderer, &frame, &draw_list)
             .expect("execute_draw_calls failed");
 
-        let plan = crate::metal::execution_plan::MetalExecutionPlan::for_test(&[
-            crate::render_graph::PassKind::Geometry,
-            crate::render_graph::PassKind::Fullscreen,
-        ]);
+        let graph = crate::render_graph::FrameGraphBuilder::new()
+            .create_resource(crate::render_graph::GraphResourceDesc {
+                name: "hdr".to_string(),
+                resource_type: crate::render_graph::GraphResourceType::ColorAttachment {
+                    clear_value: None,
+                },
+                format: ImageFormat::R16G16B16A16Sfloat,
+                width: W,
+                height: H,
+                tracks_swapchain_size: false,
+            })
+            .export_resource("backbuffer")
+            .add_pass(
+                crate::render_graph::GeometryPass::new("geometry")
+                    .write_color("hdr", ImageFormat::R16G16B16A16Sfloat),
+            )
+            .add_pass(
+                crate::render_graph::FullscreenPass::new("tonemap")
+                    .read("hdr")
+                    .write_backbuffer(),
+            )
+            .build::<MetalRenderer>()
+            .expect("compile scene graph");
+        let plan = crate::metal::execution_plan::MetalExecutionPlan::compile(
+            &graph,
+            ImageFormat::B8G8R8A8Srgb,
+        )
+        .expect("compile Metal scene plan");
         let mut pending = std::collections::HashMap::new();
         pending.insert(
             0,

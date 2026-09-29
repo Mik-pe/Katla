@@ -405,8 +405,8 @@ mod tests {
             let mut enc = cmd2.begin_compute_pass_with_label("texture_upload");
             enc.bind_compute_pipeline(&pipeline);
             enc.bind_texture(&view, 0);
-            enc.bind_sampler(&sampler, 1);
-            enc.bind_storage_buffer(&out_buf, 0, 2);
+            enc.bind_sampler(&sampler, 0);
+            enc.bind_storage_buffer(&out_buf, 0, 0);
             enc.dispatch(4, 1, 1);
             enc.end_encoding();
             cmd2.end();
@@ -423,6 +423,7 @@ mod tests {
             "SHARED vs PRIVATE sampled differently: shared={:?} private={:?}",
             results[0], results[1]
         );
+        assert_eq!(results[0][0], 0xff0000ff, "probe must sample the red texel");
     }
     /// Reproduce the geometry pass sampling structure exactly: fragment shader
     /// reads a texture through the bindless argument buffer at index 9 while a
@@ -485,7 +486,7 @@ mod tests {
         let vs = compiled.module.entry_points.get("vs_main").unwrap();
         let fs = compiled.module.entry_points.get("fs_main").unwrap();
         let pipeline = ctx
-            .create_graphics_pipeline(
+            .create_graphics_pipeline_with_vertex_descriptor(
                 vs,
                 Some(fs),
                 &[objc2_metal::MTLPixelFormat::RGBA8Unorm],
@@ -494,6 +495,8 @@ mod tests {
                 CompareOp::Always,
                 objc2_metal::MTLCullMode::None,
                 objc2_metal::MTLWinding::Clockwise,
+                Some(&objc2_metal::MTLVertexDescriptor::new()),
+                false,
             )
             .unwrap();
 
