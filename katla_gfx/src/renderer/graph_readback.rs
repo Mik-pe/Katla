@@ -289,22 +289,12 @@ impl VulkanRenderer {
             command.return_to_pool();
             RendererError::VulkanError("Readback fence allocation failed".into(), error)
         })?;
-        let commands = [command.vk_command_buffer()];
-        if let Err(error) = unsafe {
-            self.context.device.queue_submit(
-                self.context.gfx_queue.vk_queue(),
-                &[vk::SubmitInfo::default().command_buffers(&commands)],
-                fence,
-            )
-        } {
+        if let Err(error) = self.context.gfx_queue.submit(&[&command], &[], &[], fence) {
             unsafe {
                 self.context.device.destroy_fence(fence, None);
             }
             command.return_to_pool();
-            return Err(RendererError::VulkanError(
-                "Readback submission failed".into(),
-                error,
-            ));
+            return Err(error);
         }
         let ticket = TextureReadbackTicket {
             id: super::texture_readback::fresh_readback_id(),

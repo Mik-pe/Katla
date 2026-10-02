@@ -49,6 +49,13 @@ The `-s` / `--single-frame` flag runs **100 frames**, then exits automatically.
 On Arch Linux, install `vulkan-validation-layers` with pacman to enable Khronos
 validation in normal runs. Use `cargo run -- -s -v` for GPU-assisted validation.
 
+Vulkan startup requires a Vulkan 1.3 device with graphics and compute on the
+same queue, bindless descriptor features, buffer device addresses, and push
+descriptors. Windowed rendering also requires swapchain and presentation
+support. Selection checks these requirements before ranking devices; if none
+qualify, the initialization error lists the rejected devices and their missing
+requirements.
+
 ## Headless captures
 
 Render the scene and editor without a window (Vulkan on Linux, Metal on macOS):

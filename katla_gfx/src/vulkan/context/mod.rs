@@ -1,5 +1,7 @@
 mod device;
 mod memory;
+mod physical_device;
+mod queue_family;
 mod samplers;
 mod swapchain;
 mod validation;
@@ -24,7 +26,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use super::SwapchainInfo;
 use crate::error::RendererError;
 use crate::sync::{VkImage, VkImageView};
 
@@ -111,20 +112,18 @@ pub struct VulkanContext {
     pub push_descriptor_khr: Option<ash::khr::push_descriptor::Device>,
     /// Cached non-coherent atom size for aligned memory flushes.
     pub non_coherent_atom_size: vk::DeviceSize,
-    /// Staged mesh uploads that are submitted but not yet provably complete.
-    /// Each entry holds its fence, command buffer, and staging allocation
-    /// alive until the next frame-slot wait retires it.
-    pub(crate) pending_staged_uploads: std::cell::RefCell<Vec<PendingStagedUpload>>,
+    /// Submitted one-time commands and optional staging allocations retained
+    /// until a fence proves completion.
+    pub(crate) pending_submissions: std::cell::RefCell<Vec<PendingSubmission>>,
     pub(crate) graph_buffer_history:
         std::cell::RefCell<crate::render_graph::BufferExecutionHistory>,
 }
 
-/// One submitted staged upload awaiting fence completion.
-pub(crate) struct PendingStagedUpload {
+/// One submitted command buffer awaiting fence completion.
+pub(crate) struct PendingSubmission {
     fence: vk::Fence,
-    command_buffer: Option<super::CommandBuffer>,
-    staging_buffer: vk::Buffer,
-    staging_allocation: gpu_allocator::vulkan::Allocation,
+    command_buffer: super::CommandBuffer,
+    staging: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
 }
 
 pub struct VulkanFrameCtx {
@@ -170,7 +169,10 @@ impl VulkanContext {
         &self,
     ) -> Result<super::CommandBuffer, crate::error::RendererError> {
         let command_buffer = super::CommandBuffer::new(&self.device, &self.gfx_cmdpool);
-        command_buffer.begin_single_time_command()?;
+        if let Err(error) = command_buffer.begin_single_time_command() {
+            command_buffer.return_to_pool();
+            return Err(error);
+        }
         Ok(command_buffer)
     }
 
@@ -178,14 +180,46 @@ impl VulkanContext {
         &self,
         command_buffer: super::CommandBuffer,
     ) -> Result<(), crate::error::RendererError> {
-        command_buffer.end_single_time_command()?;
-        let command_buffers = vec![&command_buffer];
-
-        // Submit using the unified submit_and_wait pattern
-        let result = self.gfx_queue.submit_and_wait(&command_buffers, &[], &[]);
-        command_buffer.return_to_pool();
-        result
-            .map_err(|error| RendererError::VulkanError("Failed to submit transfer".into(), error))
+        if let Err(error) = command_buffer.end_single_time_command() {
+            command_buffer.return_to_pool();
+            return Err(error);
+        }
+        let fence = match unsafe {
+            self.device
+                .create_fence(&vk::FenceCreateInfo::default(), None)
+        } {
+            Ok(fence) => fence,
+            Err(error) => {
+                command_buffer.return_to_pool();
+                return Err(RendererError::VulkanError(
+                    "Failed to create submission fence".into(),
+                    error,
+                ));
+            }
+        };
+        if let Err(error) = self.gfx_queue.submit(&[&command_buffer], &[], &[], fence) {
+            command_buffer.return_to_pool();
+            unsafe {
+                self.device.destroy_fence(fence, None);
+            }
+            return Err(error);
+        }
+        match unsafe { self.device.wait_for_fences(&[fence], true, u64::MAX) } {
+            Ok(()) => {
+                command_buffer.return_to_pool();
+                unsafe {
+                    self.device.destroy_fence(fence, None);
+                }
+                Ok(())
+            }
+            Err(error) => {
+                self.defer_submission(fence, command_buffer, None);
+                Err(RendererError::VulkanError(
+                    "Failed to wait for submission fence".into(),
+                    error,
+                ))
+            }
+        }
     }
 
     pub fn init(
@@ -237,8 +271,9 @@ impl VulkanContext {
             RendererError::InitializationFailed(format!("Failed to create surface: {:?}", e))
         })?;
 
-        let physical_device =
-            unsafe { device::pick_physical_device(&instance, &surface_loader, surface) }?;
+        let physical_device = unsafe {
+            physical_device::pick_physical_device(&instance, Some((&surface_loader, surface)))
+        }?;
 
         let queue_indices = QueueFamilyIndices::find_queue_families(
             &instance,
@@ -269,13 +304,7 @@ impl VulkanContext {
             ]
         };
 
-        let device = device::create_device(
-            &instance,
-            physical_device,
-            queue_create_infos,
-            validation_layers_active,
-            true,
-        )?;
+        let device = device::create_device(&instance, physical_device, &queue_create_infos, true)?;
 
         let swapchain_loader = Rc::new(SwapchainDevice::new(&instance, &device));
         let push_descriptor_loader = PushDescriptorDevice::new(&instance, &device);
@@ -340,7 +369,7 @@ impl VulkanContext {
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
-            pending_staged_uploads: std::cell::RefCell::new(Vec::new()),
+            pending_submissions: std::cell::RefCell::new(Vec::new()),
             graph_buffer_history: Default::default(),
         })
     }
@@ -402,7 +431,7 @@ impl VulkanContext {
         );
 
         // Pick physical device (no swapchain requirement)
-        let physical_device = unsafe { device::pick_physical_device_headless(&instance) }?;
+        let physical_device = unsafe { physical_device::pick_physical_device(&instance, None) }?;
 
         // Find queue families (no surface support required)
         let queue_indices =
@@ -431,13 +460,7 @@ impl VulkanContext {
         };
 
         // Create device WITHOUT swapchain extension
-        let device = device::create_device(
-            &instance,
-            physical_device,
-            queue_create_infos,
-            validation_layers_active,
-            false,
-        )?;
+        let device = device::create_device(&instance, physical_device, &queue_create_infos, false)?;
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
@@ -501,80 +524,71 @@ impl VulkanContext {
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
-            pending_staged_uploads: std::cell::RefCell::new(Vec::new()),
+            pending_submissions: std::cell::RefCell::new(Vec::new()),
             graph_buffer_history: Default::default(),
         })
     }
 }
 
 impl VulkanContext {
-    /// Park a submitted staged upload until its fence signals.
-    ///
-    /// The entry keeps the command buffer, staging buffer, and staging
-    /// allocation alive; `drain_completed_staged_uploads` releases them.
-    pub(crate) fn defer_staged_upload(
+    /// Retain submitted commands and optional staging memory until completion.
+    pub(crate) fn defer_submission(
         &self,
         fence: vk::Fence,
         command_buffer: super::CommandBuffer,
-        staging_buffer: vk::Buffer,
-        staging_allocation: gpu_allocator::vulkan::Allocation,
+        staging: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
     ) {
-        self.pending_staged_uploads
+        self.pending_submissions
             .borrow_mut()
-            .push(PendingStagedUpload {
+            .push(PendingSubmission {
                 fence,
-                command_buffer: Some(command_buffer),
-                staging_buffer,
-                staging_allocation,
+                command_buffer,
+                staging,
             });
     }
 
-    /// Wait for and release every completed staged upload.
+    /// Release one-time submissions whose fences prove completion.
     ///
     /// Called at frame boundaries (the entries' fences are typically long
     /// signaled) and after device-wide idle waits.
-    pub(crate) fn drain_completed_staged_uploads(&self) {
-        let mut pending = self.pending_staged_uploads.borrow_mut();
+    pub(crate) fn drain_completed_submissions(&self) {
+        let mut pending = self.pending_submissions.borrow_mut();
         let mut index = 0;
         while index < pending.len() {
             let entry = &pending[index];
             let completed = unsafe { self.device.get_fence_status(entry.fence) }.unwrap_or(false);
             if completed {
-                let mut entry = pending.swap_remove(index);
-                if let Some(command_buffer) = entry.command_buffer.take() {
-                    command_buffer.return_to_pool();
-                }
-                unsafe {
-                    self.device.destroy_fence(entry.fence, None);
-                }
-                self.free_buffer(entry.staging_buffer, entry.staging_allocation);
+                self.release_submission(pending.swap_remove(index));
             } else {
                 index += 1;
             }
         }
     }
 
-    /// Block until every staged upload completed, then release it.
-    ///
-    /// Only valid after a device-wide idle wait (renderer teardown).
-    pub(crate) fn wait_and_drain_all_staged_uploads(&self) {
-        for entry in std::mem::take(&mut *self.pending_staged_uploads.borrow_mut()) {
-            unsafe {
-                let _ = self.device.wait_for_fences(&[entry.fence], true, u64::MAX);
-            }
-            if let Some(command_buffer) = entry.command_buffer {
-                command_buffer.return_to_pool();
-            }
-            unsafe {
-                self.device.destroy_fence(entry.fence, None);
-            }
-            self.free_buffer(entry.staging_buffer, entry.staging_allocation);
+    /// Release every retained submission after device-wide idle.
+    pub(crate) fn drain_all_submissions(&self) {
+        for entry in std::mem::take(&mut *self.pending_submissions.borrow_mut()) {
+            self.release_submission(entry);
+        }
+    }
+
+    fn release_submission(&self, entry: PendingSubmission) {
+        entry.command_buffer.return_to_pool();
+        unsafe {
+            self.device.destroy_fence(entry.fence, None);
+        }
+        if let Some((buffer, allocation)) = entry.staging {
+            self.free_buffer(buffer, allocation);
         }
     }
 
     /// Number of staged uploads awaiting completion (diagnostics, tests).
     pub(crate) fn pending_staged_uploads(&self) -> usize {
-        self.pending_staged_uploads.borrow().len()
+        self.pending_submissions
+            .borrow()
+            .iter()
+            .filter(|submission| submission.staging.is_some())
+            .count()
     }
 
     /// Release presentation resources while the native window and display still exist.
@@ -593,6 +607,7 @@ impl Drop for VulkanContext {
     fn drop(&mut self) {
         unsafe {
             let _ = self.device.device_wait_idle();
+            self.drain_all_submissions();
 
             self.device
                 .destroy_command_pool(self.transfer_command_pool, None);

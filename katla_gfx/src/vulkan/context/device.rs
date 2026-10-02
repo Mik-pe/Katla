@@ -1,313 +1,32 @@
 use std::ffi::CStr;
 
 use ash::{Device, Entry, Instance};
-use log::info;
 
 use crate::error::RendererError;
 
 use super::*;
 
-impl QueueFamilyIndices {
-    pub fn find_queue_families(
-        instance: &Instance,
-        surface_loader: &ash::khr::surface::Instance,
-        surface: vk::SurfaceKHR,
-        physical_device: vk::PhysicalDevice,
-    ) -> Result<Self, RendererError> {
-        let mut queue_family_indices = Self {
-            graphics_idx: None,
-            transfer_idx: None,
-        };
-        unsafe {
-            let family_props =
-                instance.get_physical_device_queue_family_properties(physical_device);
-            info!("Num family indices: {}", family_props.len());
-            for (idx, properties) in family_props.iter().enumerate() {
-                let surface_support = surface_loader
-                    .get_physical_device_surface_support(physical_device, idx as u32, surface)
-                    .map_err(|e| {
-                        RendererError::VulkanError(
-                            format!("Failed to query surface support for queue family {}", idx),
-                            e,
-                        )
-                    })?;
-
-                if properties.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-                    && surface_support
-                    && queue_family_indices.graphics_idx.is_none()
-                {
-                    queue_family_indices.graphics_idx = Some(idx as u32);
-                    continue;
-                }
-
-                if properties.queue_flags.contains(vk::QueueFlags::TRANSFER)
-                    && surface_support
-                    && queue_family_indices.transfer_idx.is_none()
-                {
-                    queue_family_indices.transfer_idx = Some(idx as u32);
-                    continue;
-                }
-            }
-        };
-
-        Ok(queue_family_indices)
-    }
-
-    /// Find queue families for headless rendering (without surface support check).
-    /// This is used when VK_EXT_headless_surface is available and we don't need
-    /// presentation capabilities.
-    pub fn find_queue_families_headless(
-        instance: &Instance,
-        physical_device: vk::PhysicalDevice,
-    ) -> Self {
-        let mut queue_family_indices = Self {
-            graphics_idx: None,
-            transfer_idx: None,
-        };
-        unsafe {
-            let family_props =
-                instance.get_physical_device_queue_family_properties(physical_device);
-            info!("Num family indices (headless): {}", family_props.len());
-            for (idx, properties) in family_props.iter().enumerate() {
-                if properties.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-                    && queue_family_indices.graphics_idx.is_none()
-                {
-                    queue_family_indices.graphics_idx = Some(idx as u32);
-                    continue;
-                }
-
-                if properties.queue_flags.contains(vk::QueueFlags::TRANSFER)
-                    && !properties.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-                    && queue_family_indices.transfer_idx.is_none()
-                {
-                    queue_family_indices.transfer_idx = Some(idx as u32);
-                    continue;
-                }
-            }
-
-            if queue_family_indices.transfer_idx.is_none() {
-                queue_family_indices.transfer_idx = queue_family_indices.graphics_idx;
-            }
-        };
-
-        queue_family_indices
-    }
-}
-
 pub(super) fn create_device(
     instance: &Instance,
     physical_device: vk::PhysicalDevice,
-    queue_create_infos: Vec<vk::DeviceQueueCreateInfo>,
-    with_validation_layers: bool,
+    queue_create_infos: &[vk::DeviceQueueCreateInfo<'_>],
     enable_swapchain: bool,
 ) -> Result<Device, RendererError> {
-    match create_device_inner(
-        instance,
-        physical_device,
-        queue_create_infos.clone(),
-        with_validation_layers,
-        enable_swapchain,
-    ) {
-        Ok(device) => Ok(device),
-        Err(e) if with_validation_layers => {
-            log::warn!(
-                "Vulkan device creation with validation layers failed: {}",
-                e
-            );
-            log::warn!("Retrying without validation layers");
-            create_device_inner(
-                instance,
-                physical_device,
-                queue_create_infos,
-                false,
-                enable_swapchain,
-            )
-        }
-        Err(e) => Err(e),
-    }
-}
-
-fn create_device_inner(
-    instance: &Instance,
-    physical_device: vk::PhysicalDevice,
-    queue_create_infos: Vec<vk::DeviceQueueCreateInfo>,
-    with_validation_layers: bool,
-    enable_swapchain: bool,
-) -> Result<Device, RendererError> {
-    let device_extensions = if enable_swapchain {
-        vec![
-            ash::khr::swapchain::NAME.as_ptr(),
-            ash::khr::push_descriptor::NAME.as_ptr(),
-            ash::khr::maintenance4::NAME.as_ptr(),
-        ]
-    } else {
-        vec![
-            ash::khr::push_descriptor::NAME.as_ptr(),
-            ash::khr::maintenance4::NAME.as_ptr(),
-        ]
-    };
-
-    let mut device_layers = vec![];
-    if with_validation_layers {
-        device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr().cast::<std::ffi::c_char>());
-    }
-
-    let vk13_features = vk::PhysicalDeviceVulkan13Features {
-        s_type: vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,
-        p_next: std::ptr::null_mut(),
-        dynamic_rendering: vk::TRUE,
-        synchronization2: vk::TRUE,
-        ..Default::default()
-    };
-
-    let mut vk12_features = vk::PhysicalDeviceVulkan12Features {
-        s_type: vk::StructureType::PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-        p_next: &vk13_features as *const _ as *mut _,
-        buffer_device_address: vk::TRUE,
-        descriptor_indexing: vk::TRUE,
-        shader_sampled_image_array_non_uniform_indexing: vk::TRUE,
-        descriptor_binding_sampled_image_update_after_bind: vk::TRUE,
-        descriptor_binding_storage_buffer_update_after_bind: vk::TRUE,
-        descriptor_binding_partially_bound: vk::TRUE,
-        descriptor_binding_variable_descriptor_count: vk::TRUE,
-        runtime_descriptor_array: vk::TRUE,
-        ..Default::default()
-    };
-
-    let features = vk::PhysicalDeviceFeatures {
-        sampler_anisotropy: 1,
-        ..Default::default()
-    };
-
+    let device_extensions: Vec<_> = super::physical_device::required_extensions(enable_swapchain)
+        .iter()
+        .map(|name| name.as_ptr())
+        .collect();
+    let features = super::physical_device::required_core_features();
+    let mut vk12_features = super::physical_device::required_vulkan12_features();
+    let mut vk13_features = super::physical_device::required_vulkan13_features();
     let create_info = vk::DeviceCreateInfo::default()
         .enabled_extension_names(&device_extensions)
-        .queue_create_infos(&queue_create_infos)
+        .queue_create_infos(queue_create_infos)
         .enabled_features(&features)
-        .push_next(&mut vk12_features);
-
-    unsafe {
-        instance
-            .create_device(physical_device, &create_info, None)
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to create Vulkan device: {:?}",
-                    e
-                ))
-            })
-    }
-}
-
-pub(super) unsafe fn pick_physical_device(
-    instance: &Instance,
-    surface_loader: &ash::khr::surface::Instance,
-    surface: vk::SurfaceKHR,
-) -> Result<vk::PhysicalDevice, RendererError> {
-    let physical_devices = unsafe { instance.enumerate_physical_devices() }.map_err(|e| {
-        RendererError::InitializationFailed(format!(
-            "Failed to enumerate physical devices: {:?}",
-            e
-        ))
-    })?;
-
-    let physical_device = physical_devices.into_iter().max_by_key(|pd| unsafe {
-        is_physical_device_suitable(instance, surface_loader, *pd, surface)
-    });
-
-    let device = physical_device.ok_or_else(|| {
-        RendererError::InitializationFailed("No suitable physical device found".to_string())
-    })?;
-
-    unsafe {
-        let properties = instance.get_physical_device_properties(device);
-        info!(
-            "Picking physical device: {:?}",
-            CStr::from_ptr(properties.device_name.as_ptr())
-        );
-    }
-
-    Ok(device)
-}
-
-pub(super) unsafe fn is_physical_device_suitable(
-    instance: &Instance,
-    surface_loader: &ash::khr::surface::Instance,
-    physical_device: vk::PhysicalDevice,
-    surface: vk::SurfaceKHR,
-) -> u32 {
-    unsafe {
-        let properties = instance.get_physical_device_properties(physical_device);
-        let mut score = 0;
-
-        match properties.device_type {
-            vk::PhysicalDeviceType::DISCRETE_GPU => score += 1000,
-            vk::PhysicalDeviceType::INTEGRATED_GPU => score += 100,
-            vk::PhysicalDeviceType::CPU => score += 10,
-            _ => {}
-        }
-
-        score += properties.limits.max_image_dimension2_d;
-
-        let swapchain_support = match SwapchainInfo::query_swapchain_support(
-            surface_loader,
-            physical_device,
-            surface,
-        ) {
-            Ok(support) => support,
-            Err(_) => return 0,
-        };
-
-        if swapchain_support.surface_formats.is_empty()
-            || swapchain_support.present_modes.is_empty()
-        {
-            score = 0;
-        }
-
-        score
-    }
-}
-
-/// Pick a physical device for headless rendering.
-/// Simplified version that doesn't require swapchain support.
-pub(super) unsafe fn pick_physical_device_headless(
-    instance: &Instance,
-) -> Result<vk::PhysicalDevice, RendererError> {
-    let physical_devices = unsafe { instance.enumerate_physical_devices() }.map_err(|e| {
-        RendererError::InitializationFailed(format!(
-            "Failed to enumerate physical devices: {:?}",
-            e
-        ))
-    })?;
-
-    let physical_device = physical_devices.into_iter().max_by_key(|physical_device| {
-        let mut score = 0u32;
-        unsafe {
-            let properties = instance.get_physical_device_properties(*physical_device);
-            match properties.device_type {
-                vk::PhysicalDeviceType::DISCRETE_GPU => score += 1000,
-                vk::PhysicalDeviceType::INTEGRATED_GPU => score += 100,
-                vk::PhysicalDeviceType::CPU => score += 10,
-                _ => {}
-            }
-            score += properties.limits.max_image_dimension2_d;
-        }
-        score
-    });
-
-    let device = physical_device.ok_or_else(|| {
-        RendererError::InitializationFailed(
-            "No suitable physical device found for headless rendering".to_string(),
-        )
-    })?;
-
-    unsafe {
-        let properties = instance.get_physical_device_properties(device);
-        info!(
-            "Picking physical device (headless): {:?}",
-            CStr::from_ptr(properties.device_name.as_ptr())
-        );
-    }
-
-    Ok(device)
+        .push_next(&mut vk12_features)
+        .push_next(&mut vk13_features);
+    unsafe { instance.create_device(physical_device, &create_info, None) }
+        .map_err(|e| RendererError::VulkanError("Failed to create Vulkan device".into(), e))
 }
 
 impl VulkanContext {

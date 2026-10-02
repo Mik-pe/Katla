@@ -209,6 +209,7 @@ pub struct VulkanRenderer {
     >,
     /// Last presented swapchain image index (for debugging readback).
     pub(super) last_presented_image_index: Option<u32>,
+    acquired_surface_image: Option<u32>,
     /// Material compiler for compiling materials from shaders.
     pub(crate) material_compiler: MaterialCompiler,
     /// Optional scratch storage for native UI encoding.
@@ -391,6 +392,7 @@ impl VulkanRenderer {
             graph_compute_pipelines: std::collections::HashMap::new(),
             last_presented_image_index: None,
             material_compiler,
+            acquired_surface_image: None,
             ui_renderer: ui_renderer::UIRenderer::new(),
             active_frame: None,
             frame_rendered: false,
@@ -497,7 +499,7 @@ impl VulkanRenderer {
         // Every submission has completed: retired resources can free now and
         // staged uploads release their fences and staging allocations.
         self.drain_retirements_all();
-        self.context.wait_and_drain_all_staged_uploads();
+        self.context.drain_all_submissions();
 
         for sets in &mut self.graphics_descriptor_sets {
             sets.clear();
@@ -576,7 +578,7 @@ impl VulkanRenderer {
         self.pending_texture_exports.clear();
         self.committed_texture_exports
             .retain(|_, export| export.owns_image());
-        self.context.wait_and_drain_all_staged_uploads();
+        self.context.drain_all_submissions();
 
         let old_extent = self.frame_context.extent;
         info!("=== Recreating swapchain ===");
@@ -599,6 +601,7 @@ impl VulkanRenderer {
         )?;
         self.swap_data.destroy(&self.context.device);
         self.swap_data = swap_data;
+        self.acquired_surface_image = None;
         // The new SwapData restarts its frame counter; the device idle wait
         // above completed every old submission, so retirements can free now.
         self.drain_retirements_all();

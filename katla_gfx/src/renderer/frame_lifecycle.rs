@@ -65,6 +65,8 @@ impl VulkanRenderer {
 
     /// Abort any still-open frame, either explicitly (caller aborts) or
     /// implicitly (a new frame is acquired while this one is still open).
+    /// A windowed acquisition stays reserved until a successful submission
+    /// consumes its semaphore, so retrying reuses the same surface image.
     pub(crate) fn frame_clear(&mut self) {
         if self.active_frame.take().is_some() {
             log::debug!(
@@ -110,7 +112,7 @@ impl VulkanRenderer {
             self.bindless_manager.release_texture_slot(slot);
         }
         // Release staged mesh uploads whose copy submissions finished.
-        self.context.drain_completed_staged_uploads();
+        self.context.drain_completed_submissions();
         Ok(())
     }
 
@@ -279,40 +281,37 @@ impl VulkanRenderer {
             RendererError::VulkanError("Failed to reset frame fence".into(), error)
         })?;
 
-        let wait = (!headless).then(|| self.swap_data.image_available_semaphore());
+        let waits = (!headless).then(|| {
+            (
+                self.swap_data.image_available_semaphore(),
+                vk::PipelineStageFlags2::ALL_COMMANDS,
+            )
+        });
         let signal = (!headless).then(|| self.swap_data.render_finished_semaphore(image_index));
         let submit = injected_submit_error.map_or_else(
             || {
-                self.context.gfx_queue.submit_with_stages(
+                self.context.gfx_queue.submit(
                     &[&self.frame_context.command_buffers[slot]],
-                    wait.as_slice(),
+                    waits.as_slice(),
                     signal.as_slice(),
                     fence,
-                    if headless {
-                        &[]
-                    } else {
-                        &[vk::PipelineStageFlags::ALL_COMMANDS]
-                    },
                 )
             },
-            Err,
+            |error| {
+                Err(RendererError::VulkanError(
+                    "Failed to submit frame".into(),
+                    error,
+                ))
+            },
         );
         if let Err(error) = submit {
             self.retire_buffer_consumers(fence);
             self.frame_clear();
-            self.surface_recreation_required = !headless;
-            if let Err(recovery) = self
-                .swap_data
-                .recover_unsubmitted_fence(&self.context.device)
-            {
-                log::error!("{recovery}");
-            }
-            return Err(RendererError::VulkanError(
-                "Failed to submit frame".into(),
-                error,
-            ));
+            return Err(error);
         }
 
+        self.swap_data.mark_submitted();
+        self.acquired_surface_image = None;
         self.commit_graph_buffer_consumers();
         self.commit_output_state(
             image_index as usize,
@@ -393,7 +392,7 @@ pub(crate) fn acquire_frame(
     renderer.wait_for_frame()?;
 
     match renderer.frame_context.swapchain.as_ref() {
-        Some(swapchain) => {
+        Some(swapchain) if renderer.acquired_surface_image.is_none() => {
             let acquire_result = unsafe {
                 swapchain.swapchain_loader.acquire_next_image(
                     swapchain.swapchain,
@@ -409,6 +408,7 @@ pub(crate) fn acquire_frame(
                     }
                     // Store image index for readback debugging
                     renderer.last_presented_image_index = Some(image_index);
+                    renderer.acquired_surface_image = Some(image_index);
                 }
                 Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
                     log::info!("Swapchain out of date at acquire, signaling recreation");
@@ -422,6 +422,7 @@ pub(crate) fn acquire_frame(
                 }
             }
         }
+        Some(_) => {}
         None => renderer.last_presented_image_index = Some(renderer.current_frame() as u32),
     }
 

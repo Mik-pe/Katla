@@ -138,8 +138,30 @@ identity: resource handles always validate index and generation.
 Vulkan headless rendering owns two offscreen targets. Windowed resize uses
 physical pixel dimensions clamped to surface limits and replaces synchronization
 objects with the swapchain. Release the surface before native window teardown.
-Frame fences reset immediately before submission; rejection restores a signaled
-fence or returns a typed poisoned-state error. Scene attachment extents remain
+Frame fences reset immediately before submission. Each slot waits only for a
+successfully accepted submission, so rejection leaves an unsubmitted fence
+reusable without allocating a replacement. Windowed aborts and rejected
+submissions retain the acquired surface image and its semaphore until a
+successful submission consumes them. Scene attachment extents remain
 independent of output extents. Core object storage begins at byte zero; Vulkan
 timestamp profiling is unsupported. Native Metal profiling follows its
 [frame-slot contract](metal4_frame_slots.md).
+
+## Vulkan device and submission contract
+
+Device selection checks Vulkan 1.3, dynamic rendering, synchronization2,
+maintenance4, buffer addresses, anisotropy and the requested bindless descriptor
+features before ranking suitable GPUs. The required-feature declarations also
+build the logical-device request. Headless devices require push descriptors;
+windowed devices additionally require swapchain support and a presenting
+combined graphics/compute queue. A dedicated transfer-only queue does not need
+presentation support. Maintenance4 is enabled as a core feature.
+
+All Vulkan queue submissions use one fallible synchronization2 entry point.
+Each semaphore wait carries its execution stage; binary signals cover all
+commands. Small submissions keep their command and semaphore descriptors inline.
+Mesh uploads batch copy-to-vertex/index barriers in one dependency operation.
+Rejected submissions release their unsubmitted command buffers, fences and
+staging allocations. Submitted one-time command buffers and optional staging
+allocations remain owned until fence completion or an idle device drain, even
+if a CPU wait fails.

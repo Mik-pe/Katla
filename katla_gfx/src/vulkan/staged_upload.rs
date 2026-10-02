@@ -162,12 +162,19 @@ impl StagedUploadBatch {
             "mesh upload staging",
         )?;
 
-        // The staging buffer and every target buffer are freed by RAII on
-        // any failure below, so a failed finish leaks nothing.
         let (fence, command_buffer) =
-            self.record_and_submit(staging_buffer, &staging_allocation, staging_size)?;
-        self.context
-            .defer_staged_upload(fence, command_buffer, staging_buffer, staging_allocation);
+            match self.record_and_submit(staging_buffer, &staging_allocation, staging_size) {
+                Ok(submission) => submission,
+                Err(error) => {
+                    self.context.free_buffer(staging_buffer, staging_allocation);
+                    return Err(error);
+                }
+            };
+        self.context.defer_submission(
+            fence,
+            command_buffer,
+            Some((staging_buffer, staging_allocation)),
+        );
         Ok(())
     }
 
@@ -247,56 +254,59 @@ impl StagedUploadBatch {
             .flush_mapped_memory(staging_allocation, 0, staging_size)?;
 
         let cmd = self.context.begin_single_time_commands()?;
-        unsafe {
-            let vk_cmd = cmd.vk_command_buffer();
-            for record in &self.copies {
-                let region = vk::BufferCopy::default()
-                    .src_offset(record.src_offset)
-                    .dst_offset(0)
-                    .size(record.size);
+        let result = (|| {
+            let dependency = self.copies.iter().fold(
+                crate::sync::DependencyInfo::new(),
+                |dependency, record| {
+                    unsafe {
+                        let region = vk::BufferCopy::default()
+                            .src_offset(record.src_offset)
+                            .size(record.size);
+                        self.context.device.cmd_copy_buffer(
+                            cmd.vk_command_buffer(),
+                            staging_buffer,
+                            record.dst,
+                            &[region],
+                        );
+                    }
+                    dependency.add_buffer_barrier2(crate::sync::BufferMemoryBarrier2 {
+                        src_stage_mask: vk::PipelineStageFlags2::COPY,
+                        dst_stage_mask: vk::PipelineStageFlags2::VERTEX_ATTRIBUTE_INPUT
+                            | vk::PipelineStageFlags2::INDEX_INPUT,
+                        src_access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+                        dst_access_mask: vk::AccessFlags2::VERTEX_ATTRIBUTE_READ
+                            | vk::AccessFlags2::INDEX_READ,
+                        src_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                        dst_queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                        buffer: crate::sync::VkBuffer::new(record.dst),
+                        offset: 0,
+                        size: record.size,
+                    })
+                },
+            );
+            cmd.pipeline_barrier2(dependency);
+            cmd.end_single_time_command()?;
+            let fence = unsafe {
                 self.context
                     .device
-                    .cmd_copy_buffer(vk_cmd, staging_buffer, record.dst, &[region]);
-
-                // Make the copied bytes visible to later vertex/index reads.
-                let barrier = vk::BufferMemoryBarrier::default()
-                    .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-                    .dst_access_mask(
-                        vk::AccessFlags::VERTEX_ATTRIBUTE_READ | vk::AccessFlags::INDEX_READ,
-                    )
-                    .buffer(record.dst)
-                    .size(record.size);
-                self.context.device.cmd_pipeline_barrier(
-                    vk_cmd,
-                    vk::PipelineStageFlags::TRANSFER,
-                    vk::PipelineStageFlags::VERTEX_INPUT,
-                    vk::DependencyFlags::empty(),
-                    &[],
-                    &[barrier],
-                    &[],
-                );
+                    .create_fence(&vk::FenceCreateInfo::default(), None)
             }
-        }
-        cmd.end_single_time_command()?;
-
-        let fence = unsafe {
-            self.context
-                .device
-                .create_fence(&vk::FenceCreateInfo::default(), None)
-                .map_err(|e| {
-                    RendererError::VulkanError("Failed to create upload fence".into(), e)
-                })?
+            .map_err(|e| RendererError::VulkanError("Failed to create upload fence".into(), e))?;
+            if let Err(error) = self.context.gfx_queue.submit(&[&cmd], &[], &[], fence) {
+                unsafe {
+                    self.context.device.destroy_fence(fence, None);
+                }
+                return Err(error);
+            }
+            Ok(fence)
+        })();
+        let fence = match result {
+            Ok(fence) => fence,
+            Err(error) => {
+                cmd.return_to_pool();
+                return Err(error);
+            }
         };
-        if let Err(error) = self.context.gfx_queue.submit(&[&cmd], &[], &[], fence) {
-            unsafe {
-                self.context.device.destroy_fence(fence, None);
-            }
-            cmd.return_to_pool();
-            return Err(RendererError::VulkanError(
-                "Failed to submit upload".into(),
-                error,
-            ));
-        }
         Ok((fence, cmd))
     }
 }
@@ -383,6 +393,44 @@ mod tests {
         );
         assert_eq!(renderer.asset_registry.mesh_count(), meshes_before);
 
+        renderer.destroy();
+    }
+
+    #[test]
+    #[ignore = "requires a Vulkan device"]
+    fn test_failed_staged_submission_releases_all_allocations() {
+        let mut renderer = crate::renderer::VulkanRenderer::init_headless(
+            64,
+            48,
+            crate::ValidationMode::Enabled,
+            c"staged submission failure".into(),
+            c"Katla".into(),
+        )
+        .unwrap();
+        let baseline = renderer.context.allocator.debug_allocation_stats();
+        let meshes_before = renderer.asset_registry.mesh_count();
+        renderer
+            .context
+            .gfx_queue
+            .fail_next_submission(vk::Result::ERROR_OUT_OF_HOST_MEMORY);
+        let (vertices, indices) = test_triangle();
+        let error = renderer
+            .create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            RendererError::VulkanError(_, vk::Result::ERROR_OUT_OF_HOST_MEMORY)
+        ));
+        assert_eq!(renderer.asset_registry.mesh_count(), meshes_before);
+        assert_eq!(renderer.context.pending_staged_uploads(), 0);
+        assert_eq!(
+            renderer.context.allocator.debug_allocation_stats(),
+            baseline
+        );
+        let mesh = renderer
+            .create_mesh(&vertices, &indices, PrimitiveTopology::TriangleList)
+            .unwrap();
+        renderer.destroy_mesh(mesh);
         renderer.destroy();
     }
 
