@@ -1,7 +1,5 @@
-use std::collections::HashMap;
 use std::io::Read as _;
 
-use katla_gfx::AttributeType;
 use katla_gfx::GpuRenderer;
 use katla_gfx::TextureDescriptor;
 use log::info;
@@ -125,20 +123,18 @@ impl super::Application {
 
         let mesh_handle = if model.has_skinning {
             self.renderer
-                .unwrap_vulkan()
-                .create_mesh_soa(
-                    &model.skinned_vertex_attributes,
-                    model.skinned_vertex_data.len() as u32,
+                .create_mesh(
+                    &model.skinned_vertex_data,
                     &indices,
+                    katla_gfx::PrimitiveTopology::TriangleList,
                 )
                 .map_err(|e| AppError::Graphics { source: e })?
         } else {
             self.renderer
-                .unwrap_vulkan()
-                .create_mesh_soa(
-                    &model.vertex_attributes,
-                    model.vertex_data.len() as u32,
+                .create_mesh(
+                    &model.vertex_data,
                     &indices,
+                    katla_gfx::PrimitiveTopology::TriangleList,
                 )
                 .map_err(|e| AppError::Graphics { source: e })?
         };
@@ -288,35 +284,23 @@ impl super::Application {
         let (positions, normals, indices) = mesh.to_indexed_mesh();
         let bounds = mesh.bounds;
 
-        let vertex_count = positions.len() as u32;
-
-        let mut attributes = HashMap::new();
-        attributes.insert(
-            AttributeType::Position,
-            bytemuck::cast_slice(&positions).to_vec(),
-        );
-        attributes.insert(
-            AttributeType::Normal,
-            bytemuck::cast_slice(&normals).to_vec(),
-        );
-
-        // STL has no tangents or UVs. Fill with defaults.
-        let tangents: Vec<[f32; 4]> = vec![[1.0, 0.0, 0.0, 1.0]; positions.len()];
-        let tex_coords: Vec<[f32; 2]> = vec![[0.0, 0.0]; positions.len()];
-        attributes.insert(
-            AttributeType::Tangent,
-            bytemuck::cast_slice(&tangents).to_vec(),
-        );
-        attributes.insert(
-            AttributeType::TexCoord0,
-            bytemuck::cast_slice(&tex_coords).to_vec(),
-        );
-
-        let mesh_handle = self
-            .renderer
-            .unwrap_vulkan()
-            .create_mesh_soa(&attributes, vertex_count, &indices)
-            .map_err(|e| AppError::Graphics { source: e })?;
+        let vertices: Vec<katla_gfx::vertex::VertexPBR> = positions
+            .iter()
+            .zip(&normals)
+            .map(|(&position, &normal)| {
+                katla_gfx::vertex::VertexPBR::new(
+                    position,
+                    normal,
+                    [1.0, 0.0, 0.0, 1.0],
+                    [0.0, 0.0],
+                )
+            })
+            .collect();
+        let mesh_handle = self.renderer.create_mesh(
+            &vertices,
+            &indices,
+            katla_gfx::PrimitiveTopology::TriangleList,
+        )?;
 
         let triangles: Vec<[u32; 3]> = indices
             .as_chunks::<3>()
@@ -347,7 +331,7 @@ impl super::Application {
         info!(
             "Loaded STL mesh '{}' ({} vertices, {} triangles) -> handle {}",
             path_ref.display(),
-            vertex_count,
+            vertices.len(),
             mesh.triangles.len(),
             mesh_handle.index()
         );

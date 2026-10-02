@@ -15,6 +15,8 @@ pub(crate) struct MetalGraphicsPipeline {
     pub(crate) cull_mode: MTLCullMode,
     pub(crate) front_face: MTLWinding,
     pub(crate) depth_bias: Option<(f32, f32, f32)>,
+    pub(crate) stencil_reference: Option<u32>,
+    pub(crate) wireframe: bool,
 }
 
 impl GpuGraphicsPipeline for MetalGraphicsPipeline {}
@@ -35,6 +37,7 @@ pub(crate) struct MetalComputePipeline {
 }
 
 impl GpuComputePipeline for MetalComputePipeline {
+    #[cfg(test)]
     fn workgroup_size(&self) -> [u32; 3] {
         self.workgroup
     }

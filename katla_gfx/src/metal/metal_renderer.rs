@@ -3,12 +3,11 @@
 //! MetalRenderer wraps MetalContext and provides the same rendering API as
 //! VulkanRenderer, allowing katla_app to be generic over the graphics backend.
 
-use std::mem;
-
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::MTLTexture;
 
+use crate::backend::command::GpuCommandBuffer;
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::{
@@ -19,22 +18,13 @@ use crate::handle::{
 use crate::renderer::MAX_OBJECTS_PER_FRAME;
 use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::pipeline_descriptor::PipelineDescriptor;
-use crate::renderer::pipeline_kind::PipelineKind;
-use crate::renderer::types::{DrawList, FrameUniforms, InstanceData};
+use crate::renderer::types::{DrawList, InstanceData};
 use crate::size::Size2D;
 use crate::texture::{ImageFormat, TextureDescriptor};
-use crate::viewport::Viewport;
 
-use super::animation::MetalAnimationSystem;
 use super::argument_buffer::MetalBindlessTextureManager;
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
-use super::depth_prepass::MetalDepthPrepass;
-use super::light_culling::MetalLightCulling;
-use super::outline::MetalOutlineSubsystem;
-use super::particle::MetalParticleSubsystem;
-use super::picking::MetalPickingSubsystem;
-use super::shadow::MetalShadowSubsystem;
 use super::texture::MetalTextureView;
 use super::ui_renderer::MetalUIRenderer;
 
@@ -93,9 +83,7 @@ mod object_buffer_capacity_tests {
                 DrawCall::instanced(
                     MeshHandle::NONE,
                     MaterialHandle::NONE,
-                    std::iter::repeat(InstanceData::default())
-                        .take(count as usize)
-                        .collect(),
+                    std::iter::repeat_n(InstanceData::default(), count as usize).collect(),
                 )
             } else {
                 DrawCall::new(MeshHandle::NONE, MaterialHandle::NONE)
@@ -156,6 +144,7 @@ pub(crate) struct MetalMesh {
     pub(crate) index_count: u32,
     pub(crate) vertex_count: u32,
     pub(crate) vertex_stride: u32,
+    pub(crate) layout: crate::vertex::VertexLayout,
     pub(crate) usage: crate::renderer::registry::MeshUsage,
 }
 
@@ -168,21 +157,21 @@ pub(crate) struct MetalMesh {
 /// with the Vulkan backend.
 pub(crate) struct MetalMaterial {
     pub(crate) descriptor: crate::renderer::pipeline_descriptor::PipelineDescriptor,
+    pub(crate) interface: crate::renderer::graphics_interface::GraphicsInterface,
     pub(crate) variants: std::collections::HashMap<
         crate::renderer::pipeline_variant::PipelineVariantKey,
         super::pipeline::MetalGraphicsPipeline,
     >,
     pub(crate) textures: crate::renderer::registry::MaterialTextures,
-    pub(crate) pending_reload: Option<
-        std::sync::mpsc::Receiver<
-            Result<
-                std::collections::HashMap<
-                    crate::renderer::pipeline_variant::PipelineVariantKey,
-                    super::pipeline::MetalGraphicsPipeline,
-                >,
-                String,
-            >,
-        >,
+    pub(crate) pending_reload:
+        Option<std::sync::mpsc::Receiver<Result<MetalMaterialReplacement, String>>>,
+}
+
+pub(crate) struct MetalMaterialReplacement {
+    pub(crate) interface: crate::renderer::graphics_interface::GraphicsInterface,
+    pub(crate) variants: std::collections::HashMap<
+        crate::renderer::pipeline_variant::PipelineVariantKey,
+        super::pipeline::MetalGraphicsPipeline,
     >,
 }
 
@@ -282,8 +271,6 @@ pub(crate) fn resolve_wgsl_includes(
 
 pub struct MetalRenderer {
     pub(crate) context: MetalContext,
-    pub(crate) frame_uniforms: FrameUniforms,
-    pub(crate) frame_uniform_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
     pub(crate) object_storage_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
     pub(crate) current_drawable_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
     pub(crate) drawable_texture_view: Option<MetalTextureView>,
@@ -311,55 +298,31 @@ pub struct MetalRenderer {
         super::pipeline::MetalComputePipeline,
     >,
     pub(crate) graph_buffers: ResourceStorage<super::buffer::MetalGraphBuffer, BufferMarker>,
-    pub(crate) viewports: Vec<Viewport>,
+    pub(crate) graph_buffer_owners:
+        std::collections::HashMap<BufferHandle, super::submission::SubmissionCompletion>,
     pub(crate) bindless_manager: MetalBindlessTextureManager,
     pub(crate) default_texture: Option<TextureHandle>,
-    pub(crate) default_normal_texture: Option<TextureHandle>,
-    pub(crate) default_mr_texture: Option<TextureHandle>,
-    pub(crate) default_material: Option<MaterialHandle>,
     pub(crate) size: Size2D,
     pub(crate) drawable_size: Size2D,
-    pub(crate) ui_font_atlas: Option<TextureHandle>,
     pub(crate) frame_slots: Vec<super::frame_lifecycle::MetalFrameSlot>,
     pub(crate) last_submitted_slot: Option<usize>,
+    pub(crate) last_submission: Option<(usize, u64, super::submission::SubmissionCompletion)>,
     pub(crate) pending_frame: Option<super::frame_lifecycle::MetalPendingFrame>,
     pub(crate) pending_buffer_accesses:
         std::cell::RefCell<Vec<super::frame_lifecycle::MetalBufferExecution>>,
     pub(crate) defined_output_contents: std::collections::HashSet<(u64, u8)>,
     pub(crate) frame_metrics: super::frame_lifecycle::MetalFrameMetrics,
     pub(crate) texture_uploads: super::texture_upload::TextureUploadQueue,
-    pub(crate) light_culling: Option<MetalLightCulling>,
+    pub(crate) texture_readbacks: super::texture_readback::MetalTextureReadbacks,
+    skeleton_buffer_handles: std::collections::HashMap<(usize, SkeletonHandle), BufferHandle>,
     pub(crate) ui_renderers: [MetalUIRenderer; FRAMES_IN_FLIGHT],
-    pub(crate) animation_system: Option<MetalAnimationSystem>,
-    pub(crate) particle_system: Option<MetalParticleSubsystem>,
-    /// Per-frame-slot (emit, simulate) workgroup counts staged by
-    /// step_particle_system and consumed by render().
-    pending_particle_workgroups: [(u32, u32); FRAMES_IN_FLIGHT],
-    pub(crate) pending_ui_draw_list: Option<crate::renderer::types::UIDrawList>,
-    pub(crate) shadow: MetalShadowSubsystem,
-    pub(crate) depth_prepass: MetalDepthPrepass,
-    pub(crate) outline: MetalOutlineSubsystem,
-    pub(crate) picking: MetalPickingSubsystem,
-    pub(crate) depth_texture_view: Option<MetalTextureView>,
-    pub(crate) hdr_color_view: Option<MetalTextureView>,
-    pub(crate) depth_stencil_view: Option<MetalTextureView>,
     pub(crate) shared_sampler: Option<super::sampler::MetalSamplerState>,
-    pub(crate) shadow_cascade_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
-    /// Cascade data with clip-space Y mirrored for Metal's Y-up convention;
-    /// consumed only by the shadow-depth encode (the sampler reads the
-    /// Vulkan-convention [`Self::shadow_cascade_buffer`]).
-    pub(crate) shadow_cascade_encode_buffers: [Option<MetalBuffer>; FRAMES_IN_FLIGHT],
-    pub(crate) shadow_sampler: Option<super::sampler::MetalSamplerState>,
-    #[expect(dead_code)]
-    pub(crate) scene_color_view: Option<MetalTextureView>,
-    pub(crate) viewport_bindless_slot: Option<u32>,
-    pub(crate) geometry_hdr_bindless_slot: Option<u32>,
-    pub(crate) tonemap_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
-    pub(crate) sky_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
-    pub(crate) dummy_vertex_buffer: Option<MetalBuffer>,
+    pub(crate) packet_samplers: Vec<(
+        crate::renderer::frame_bindings::SamplingMode,
+        super::sampler::MetalSamplerState,
+    )>,
     pub(crate) capabilities: crate::renderer::types::GpuCapabilities,
     pub(crate) timestamp_queries: Option<super::timestamp_queries::MetalTimestampQueries>,
-    pub(crate) viewport_panel_rect: Option<crate::rect::Rect>,
 }
 
 impl MetalRenderer {
@@ -391,8 +354,6 @@ impl MetalRenderer {
         if dw > 0 && dh > 0 {
             renderer.drawable_size = Size2D::new(dw, dh);
             renderer.size = Size2D::new(dw, dh);
-            renderer.recreate_render_targets(dw, dh);
-            renderer.resize_light_culling(dw, dh);
         }
 
         Ok(renderer)
@@ -414,8 +375,6 @@ impl MetalRenderer {
 
         renderer.drawable_size = Size2D::new(width, height);
         renderer.size = Size2D::new(width, height);
-        renderer.recreate_render_targets(width, height);
-        renderer.resize_light_culling(width, height);
 
         Ok(renderer)
     }
@@ -439,6 +398,30 @@ impl MetalRenderer {
     /// Submission timing and bounded CPU lead from the three-slot scheduler.
     pub fn frame_metrics(&self) -> &super::frame_lifecycle::MetalFrameMetrics {
         &self.frame_metrics
+    }
+
+    /// Observe the latest frame owner without waiting for native completion.
+    pub fn capture_submission_snapshot(
+        &self,
+    ) -> Option<crate::render_graph::capture::CapturedSubmission> {
+        let (slot, generation, completion) = if let Some(pending) = &self.pending_frame {
+            let slot = self.frame_index();
+            (
+                slot,
+                self.frame_slots[slot].generation,
+                &pending.command.completion,
+            )
+        } else {
+            let (slot, generation, completion) = self.last_submission.as_ref()?;
+            (*slot, *generation, completion)
+        };
+        Some(crate::render_graph::capture::CapturedSubmission {
+            frame_slot: slot,
+            generation,
+            command_allocator: slot,
+            feedback_identity: format!("slot.{slot}.generation.{generation}"),
+            feedback: completion.feedback_snapshot(),
+        })
     }
 
     /// Wait for the exact submission producing the most recently presented output.
@@ -471,8 +454,6 @@ impl MetalRenderer {
         let mut renderer = Self {
             context,
             persistent_buffers,
-            frame_uniforms: FrameUniforms::default(),
-            frame_uniform_buffers: [const { None }; FRAMES_IN_FLIGHT],
             object_storage_buffers: [const { None }; FRAMES_IN_FLIGHT],
             current_drawable_texture: None,
             drawable_texture_view: None,
@@ -486,75 +467,43 @@ impl MetalRenderer {
             textures: ResourceStorage::new(),
             skeletons: std::array::from_fn(|_| ResourceStorage::new()),
             graph_buffers: ResourceStorage::new(),
+            graph_buffer_owners: std::collections::HashMap::new(),
             buffer_history_retirement: Default::default(),
             buffer_history: Default::default(),
             compute_pipelines: std::collections::HashMap::new(),
-            viewports: Vec::new(),
             bindless_manager,
             default_texture: None,
-            default_normal_texture: None,
-            default_mr_texture: None,
-            default_material: None,
             size: Size2D::default(),
             drawable_size: Size2D::default(),
-            ui_font_atlas: None,
             frame_slots,
             last_submitted_slot: None,
+            last_submission: None,
             pending_frame: None,
             pending_buffer_accesses: Default::default(),
             defined_output_contents: Default::default(),
             frame_metrics: Default::default(),
             texture_uploads: super::texture_upload::TextureUploadQueue::default(),
-            light_culling: None,
+            texture_readbacks: Default::default(),
+            skeleton_buffer_handles: Default::default(),
             ui_renderers: std::array::from_fn(|_| MetalUIRenderer::new()),
-            animation_system: None,
-            particle_system: None,
-            pending_particle_workgroups: [(0, 1); FRAMES_IN_FLIGHT],
-            pending_ui_draw_list: None,
-            shadow: MetalShadowSubsystem::new(),
-            depth_prepass: MetalDepthPrepass::new(),
-            outline: MetalOutlineSubsystem::new(),
-            picking: MetalPickingSubsystem::new(),
-            depth_texture_view: None,
-            hdr_color_view: None,
-            depth_stencil_view: None,
             shared_sampler: None,
-            shadow_cascade_buffers: [const { None }; FRAMES_IN_FLIGHT],
-            shadow_cascade_encode_buffers: [const { None }; FRAMES_IN_FLIGHT],
-            shadow_sampler: None,
-            scene_color_view: None,
-            viewport_bindless_slot: None,
-            geometry_hdr_bindless_slot: None,
-            tonemap_pipeline: None,
-            sky_pipeline: None,
-            dummy_vertex_buffer: None,
+            packet_samplers: Vec::new(),
             capabilities: {
                 use crate::renderer::types::{GpuCapabilities, GpuVendor};
                 GpuCapabilities {
                     max_texture_size: 16384,
                     max_bindless_textures: features.max_bindless_textures,
                     supports_compute: true,
+                    clip_y_down: false,
                     max_frames_in_flight: FRAMES_IN_FLIGHT,
                     vendor: GpuVendor::Apple,
-                    supports_light_culling: false,
                 }
             },
             timestamp_queries: None,
-            viewport_panel_rect: None,
         };
 
         let default_tex = renderer.create_texture_solid([255, 255, 255, 255])?;
         renderer.default_texture = Some(default_tex);
-
-        // Flat normal: [128,128,255,255] in UNORM = neutral tangent-space normal (0.5,0.5,1.0)
-        let normal_desc = TextureDescriptor::new(1, 1, ImageFormat::R8G8B8A8Unorm);
-        let default_normal = renderer.create_texture(&normal_desc, &[128, 128, 255, 255])?;
-        renderer.default_normal_texture = Some(default_normal);
-
-        // Metallic-Roughness default: [255,128,0,255] in UNORM = roughness=0.5, metallic=0.0
-        let mr_desc = TextureDescriptor::new(1, 1, ImageFormat::R8G8B8A8Unorm);
-        let default_mr = renderer.create_texture(&mr_desc, &[255, 128, 0, 255])?;
-        renderer.default_mr_texture = Some(default_mr);
 
         // Texture registration is valid before a shader layout exists. The argument
         // buffer itself is initialized lazily from the first compiled fragment
@@ -565,57 +514,8 @@ impl MetalRenderer {
                 .set_default_texture(&entry._view.inner);
         }
 
-        // Sentinel material behind `default_material()` before any real
-        // material is compiled; it has no identity and no variants, so it
-        // draws nothing until the app compiles and sets a real default.
-        let default_mat = MetalMaterial {
-            descriptor: crate::renderer::pipeline_descriptor::PipelineDescriptor::pbr(""),
-            variants: std::collections::HashMap::new(),
-            textures: crate::renderer::registry::MaterialTextures::default(),
-            pending_reload: None,
-        };
-        renderer.default_material = Some(renderer.materials.insert(default_mat));
-
-        renderer.recreate_render_targets(renderer.size.width, renderer.size.height);
-
         // Create shared sampler for texture sampling
         renderer.shared_sampler = Some(renderer.context.create_sampler()?);
-
-        for slot in 0..FRAMES_IN_FLIGHT {
-            let buffer = renderer.context.create_buffer(512, true)?;
-            let encode = renderer.context.create_buffer(512, true)?;
-            unsafe {
-                std::ptr::write_bytes(buffer.map(), 0, 512);
-                std::ptr::write_bytes(encode.map(), 0, 512);
-            }
-            renderer.shadow_cascade_buffers[slot] = Some(buffer);
-            renderer.shadow_cascade_encode_buffers[slot] = Some(encode);
-        }
-
-        // Shadow comparison sampler (Set 4, binding 2)
-        {
-            let desc = objc2_metal::MTLSamplerDescriptor::new();
-            desc.setMinFilter(objc2_metal::MTLSamplerMinMagFilter::Linear);
-            desc.setMagFilter(objc2_metal::MTLSamplerMinMagFilter::Linear);
-            desc.setMipFilter(objc2_metal::MTLSamplerMipFilter::NotMipmapped);
-            desc.setSAddressMode(objc2_metal::MTLSamplerAddressMode::ClampToEdge);
-            desc.setTAddressMode(objc2_metal::MTLSamplerAddressMode::ClampToEdge);
-            desc.setCompareFunction(objc2_metal::MTLCompareFunction::LessEqual);
-            let sampler = renderer.context.create_sampler_with_descriptor(&desc)?;
-            renderer.shadow_sampler = Some(sampler);
-        }
-
-        // Small dummy vertex buffer for fullscreen passes that have a vertex descriptor
-        // referencing buffer index 10 but don't actually read vertex data.
-        let dummy_vb = renderer.context.create_buffer(4, true)?;
-        {
-            let ptr = dummy_vb.map();
-            unsafe {
-                std::ptr::write_bytes(ptr, 0, 4);
-            }
-            dummy_vb.unmap();
-        }
-        renderer.dummy_vertex_buffer = Some(dummy_vb);
 
         renderer.timestamp_queries = Some(super::timestamp_queries::MetalTimestampQueries::new()?);
         if renderer.timestamp_queries.is_some() {
@@ -627,11 +527,6 @@ impl MetalRenderer {
 
     fn ensure_uniform_buffers(&mut self) -> Result<(), RendererError> {
         let frame_idx = frame_slot(self.frame_index);
-        if self.frame_uniform_buffers[frame_idx].is_none() {
-            let frame_size = mem::size_of::<FrameUniforms>() as u64;
-            self.frame_uniform_buffers[frame_idx] =
-                Some(self.context.create_buffer(frame_size, true)?);
-        }
         if self.object_storage_buffers[frame_idx].is_none() {
             let object_size = MAX_OBJECTS_PER_FRAME as u64 * OBJECT_UNIFORM_SIZE;
             self.object_storage_buffers[frame_idx] =
@@ -640,74 +535,9 @@ impl MetalRenderer {
         Ok(())
     }
 
-    pub(crate) fn current_frame_uniform_buffer(&self) -> Option<&MetalBuffer> {
-        let idx = frame_slot(self.frame_index);
-        self.frame_uniform_buffers[idx].as_ref()
-    }
-
-    /// Upload scene animation data into the acquired frame slot.
-    pub fn animation_uploader_mut(&mut self) -> Option<&mut dyn crate::AnimationBufferUploader> {
-        self.animation_system
-            .as_mut()
-            .map(|system| system as &mut dyn crate::AnimationBufferUploader)
-    }
-
-    /// Frame driver access to the particle subsystem (None when uninitialized).
-    pub fn particle_emitter_driver_mut(
-        &mut self,
-    ) -> Option<&mut dyn super::super::particles::particle_drive::ParticleEmitterDriver> {
-        self.particle_system
-            .as_mut()
-            .map(|ps| ps as &mut dyn super::super::particles::particle_drive::ParticleEmitterDriver)
-    }
-
-    /// Per-frame simulation step: uploads frame data + emitter configs, rolls
-    /// the counters over, and computes this frame's dispatch sizes.
-    ///
-    /// Mirrors the Vulkan path's `GlobalParticleSystem::update` usage; returns
-    /// `(emit_workgroups, simulate_workgroups)`.
-    pub fn step_particle_system(&mut self, delta_time: f32) -> Result<(u32, u32), RendererError> {
-        let frame_index = self.frame_index;
-        let frame_slot_index = super::metal_renderer::frame_slot(frame_index);
-
-        let Some(ps) = self.particle_system.as_mut() else {
-            return Ok((0, 1));
-        };
-
-        let (max_alive, emit_count) = ps.update(delta_time, frame_index)?;
-        let emit_workgroups = if emit_count > 0 {
-            emit_count.div_ceil(super::particle::PARTICLE_EMIT_WORKGROUP_SIZE)
-        } else {
-            0
-        };
-        let total_to_simulate = max_alive + emit_count;
-        let simulate_workgroups = if total_to_simulate > 0 {
-            total_to_simulate.div_ceil(super::particle::PARTICLE_SIMULATE_WORKGROUP_SIZE)
-        } else {
-            1
-        };
-
-        // Stash for render(); the compute pass runs inline at the top of the
-        // frame's command buffer so the indirect draw command is fresh before
-        // any render pass encodes.
-        self.pending_particle_workgroups[frame_slot_index] = (emit_workgroups, simulate_workgroups);
-
-        Ok((emit_workgroups, simulate_workgroups))
-    }
-
     pub(crate) fn current_object_storage_buffer(&self) -> Option<&MetalBuffer> {
         let idx = frame_slot(self.frame_index);
         self.object_storage_buffers[idx].as_ref()
-    }
-
-    /// Set the application's HDR bindless resource role.
-    pub fn set_geometry_hdr_bindless_slot(&mut self, bindless_slot: u32) {
-        self.geometry_hdr_bindless_slot = Some(bindless_slot);
-    }
-
-    /// Set the viewport bindless slot from the frame graph.
-    pub fn set_viewport_bindless_slot(&mut self, slot: u32) {
-        self.viewport_bindless_slot = Some(slot);
     }
 
     pub(crate) fn execute_metal_passes(
@@ -741,105 +571,6 @@ impl MetalRenderer {
             frame_graph,
             frame_graph.execution_trace_enabled(),
         )
-    }
-
-    /// Initialize the Forward+ light culling system.
-    pub fn init_light_culling(
-        &mut self,
-        screen_width: u32,
-        screen_height: u32,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let lc = MetalLightCulling::new(&self.context, screen_width, screen_height)?;
-        self.light_culling = Some(lc);
-        self.capabilities.supports_light_culling = true;
-        Ok(())
-    }
-
-    /// Upload point light data for the current frame.
-    pub(crate) fn upload_lights(&mut self, lights: &[super::light_culling::PointLightGPU]) {
-        if let Some(ref mut lc) = self.light_culling {
-            lc.upload_lights(lights);
-        }
-    }
-
-    /// Whether the light culling system is active.
-    pub fn has_light_culling(&self) -> bool {
-        self.light_culling.is_some()
-    }
-
-    /// Recreate light culling buffers for new screen dimensions.
-    pub fn resize_light_culling(&mut self, screen_width: u32, screen_height: u32) {
-        if let Some(ref mut lc) = self.light_culling
-            && let Err(e) = lc.resize(&self.context, screen_width, screen_height)
-        {
-            log::error!("Failed to resize Metal light culling: {}", e);
-        }
-    }
-
-    /// Initialize the GPU animation compute pipeline.
-    pub fn init_animation_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let mut system = MetalAnimationSystem::new();
-        system.initialize(&self.context);
-        let _ = shader_path;
-        self.animation_system = Some(system);
-        Ok(())
-    }
-
-    /// Queue a UI draw list for rendering in the next frame.
-    ///
-    /// The UI is rendered after geometry passes, directly to the swapchain image.
-    pub fn render_ui_pass(&mut self, draw_list: crate::renderer::types::UIDrawList) {
-        self.pending_ui_draw_list = Some(draw_list);
-    }
-
-    /// Create the shadow map depth texture.
-    pub fn init_shadow_resources(
-        &mut self,
-        _shadow_atlas_view: Option<()>,
-    ) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    pub fn queue_picking_readback(
-        &mut self,
-        frame: usize,
-        x: u32,
-        y: u32,
-    ) -> Result<(), RendererError> {
-        let slot = self.last_submitted_slot.ok_or_else(|| {
-            RendererError::InvalidOperation("No graph frame has been submitted for picking".into())
-        })?;
-        let source = self.frame_slots[slot]
-            .picking_target
-            .clone()
-            .ok_or_else(|| {
-                RendererError::InvalidOperation(
-                    "The submitted graph has no object-ID attachment".into(),
-                )
-            })?;
-        self.picking
-            .queue_picking_readback(&self.context, frame, source, x, y)
-    }
-
-    pub fn check_picking_readback(&mut self) -> Option<(usize, u32)> {
-        self.picking.check_picking_readback()
-    }
-
-    pub fn has_pending_picking_readback(&self) -> bool {
-        self.picking.has_pending_readback()
-    }
-
-    /// Update shadow cascade view-projection matrices.
-    pub fn update_shadows(&mut self, light_direction: [f32; 3]) {
-        self.shadow.update_cascades(
-            &self.frame_uniforms.view_matrix,
-            &self.frame_uniforms.proj_matrix,
-            light_direction,
-        );
     }
 
     /// Register a Metal texture with the bindless system (render graph backend).
@@ -879,25 +610,8 @@ impl MetalRenderer {
 }
 
 impl MetalRenderer {
-    pub(crate) fn set_frame_uniforms(&mut self, uniforms: FrameUniforms) {
-        self.frame_uniforms = uniforms;
-    }
-
     pub(crate) fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
         self.ensure_uniform_buffers()?;
-
-        {
-            let frame_buf = self.current_frame_uniform_buffer().unwrap();
-            let ptr = frame_buf.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    &self.frame_uniforms as *const FrameUniforms as *const u8,
-                    ptr,
-                    mem::size_of::<FrameUniforms>(),
-                );
-            }
-            frame_buf.unmap();
-        }
 
         let object_buf = self.current_object_storage_buffer().unwrap();
         let buf_size = object_buf.size() as usize;
@@ -949,49 +663,6 @@ impl MetalRenderer {
 
         Ok(())
     }
-
-    pub(crate) fn draw(
-        &mut self,
-        uniforms: &FrameUniforms,
-        draw_calls: &[crate::renderer::types::DrawCall],
-    ) -> Result<DrawList, RendererError> {
-        self.set_frame_uniforms(uniforms.clone());
-        let mut draw_list = DrawList::new();
-        for draw in draw_calls {
-            draw_list.push(draw.clone());
-        }
-        self.execute_draw_calls(&draw_list)?;
-        Ok(draw_list)
-    }
-
-    pub(crate) fn upload_shadow_cascades(&mut self) {
-        let Some(ref shadow_buf) = self.shadow_cascade_buffers[self.frame_index()] else {
-            return;
-        };
-        let data = self.shadow.gpu_data();
-        let bytes = bytemuck::bytes_of(&data);
-        let ptr = shadow_buf.map();
-        unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast(), bytes.len());
-        }
-        shadow_buf.unmap();
-
-        // The shadow-depth encode projects with Metal's Y-up clip space;
-        // mirror the cascade Y so the atlas content matches the shared
-        // sampler's Vulkan-convention lookup.
-        let flipped = crate::shadow::cascade::flip_projection_y(&data);
-        if let Some(ref encode_buf) = self.shadow_cascade_encode_buffers[self.frame_index()] {
-            let ptr = encode_buf.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    bytemuck::bytes_of(&flipped).as_ptr(),
-                    ptr.cast(),
-                    bytes.len(),
-                );
-            }
-            encode_buf.unmap();
-        }
-    }
 }
 
 impl GpuRenderer for MetalRenderer {
@@ -999,16 +670,6 @@ impl GpuRenderer for MetalRenderer {
         &mut self,
     ) -> Result<crate::renderer::frame_scope::FrameAcquisition, RendererError> {
         super::frame_lifecycle::acquire_frame(self)
-    }
-
-    fn set_frame_uniforms(
-        &mut self,
-        frame: &crate::renderer::frame_scope::FrameToken,
-        uniforms: FrameUniforms,
-    ) -> Result<(), RendererError> {
-        self.frame_write_check(frame)?;
-        MetalRenderer::set_frame_uniforms(self, uniforms);
-        Ok(())
     }
 
     fn execute_draw_calls(
@@ -1020,39 +681,10 @@ impl GpuRenderer for MetalRenderer {
         MetalRenderer::execute_draw_calls(self, draw_list)
     }
 
-    fn draw(
-        &mut self,
-        frame: &crate::renderer::frame_scope::FrameToken,
-        uniforms: &FrameUniforms,
-        draw_calls: &[crate::renderer::types::DrawCall],
-    ) -> Result<DrawList, RendererError> {
-        self.frame_write_check(frame)?;
-        MetalRenderer::draw(self, uniforms, draw_calls)
-    }
-
-    fn upload_lights(
-        &mut self,
-        frame: &crate::renderer::frame_scope::FrameToken,
-        lights: &[crate::renderer::types::PointLightGPU],
-    ) -> Result<(), RendererError> {
-        self.frame_write_check(frame)?;
-        MetalRenderer::upload_lights(self, lights);
-        Ok(())
-    }
-
-    fn upload_shadow_cascades(
-        &mut self,
-        frame: &crate::renderer::frame_scope::FrameToken,
-    ) -> Result<(), RendererError> {
-        self.frame_write_check(frame)?;
-        MetalRenderer::upload_shadow_cascades(self);
-        Ok(())
-    }
-
     fn present(
         &mut self,
         frame: crate::renderer::frame_scope::FrameToken,
-    ) -> Result<(), RendererError> {
+    ) -> Result<crate::renderer::frame_scope::PresentOutcome, RendererError> {
         MetalRenderer::present_frame(self, frame)
     }
 
@@ -1062,10 +694,6 @@ impl GpuRenderer for MetalRenderer {
     ) -> Result<(), RendererError> {
         super::frame_lifecycle::abort_frame(self, frame);
         Ok(())
-    }
-
-    fn frame_uniforms(&self) -> &FrameUniforms {
-        &self.frame_uniforms
     }
 
     fn swapchain_extent(&self) -> Size2D {
@@ -1089,6 +717,10 @@ impl GpuRenderer for MetalRenderer {
                 log::error!("Metal device drain failed: {error}");
                 successful = false;
             }
+        }
+        if let Err(error) = self.texture_readbacks.wait_pending() {
+            log::error!("Metal readback drain failed: {error}");
+            successful = false;
         }
         if successful {
             self.buffer_history.borrow_mut().clear();
@@ -1117,12 +749,228 @@ impl GpuRenderer for MetalRenderer {
             .insert(super::buffer::MetalGraphBuffer::new(buffer, desc)))
     }
 
+    fn capture_submission_snapshot(
+        &self,
+    ) -> Option<crate::render_graph::capture::CapturedSubmission> {
+        MetalRenderer::capture_submission_snapshot(self)
+    }
+
+    fn buffer_descriptor(&self, handle: BufferHandle) -> Option<crate::render_graph::BufferDesc> {
+        self.graph_buffers.get(handle).map(|buffer| buffer.desc)
+    }
+
+    fn frame_slot_count(&self) -> usize {
+        FRAMES_IN_FLIGHT
+    }
+
+    fn create_buffer_with_data(
+        &mut self,
+        desc: crate::render_graph::BufferDesc,
+        data: &[u8],
+    ) -> Result<BufferHandle, RendererError> {
+        if data.len() as u64 > desc.size {
+            return Err(RendererError::InvalidOperation(
+                "Initial data exceeds buffer capacity".into(),
+            ));
+        }
+        let handle = self.create_buffer(desc)?;
+        let target = self
+            .graph_buffers
+            .get(handle)
+            .ok_or_else(|| RendererError::InvalidOperation("Buffer creation failed".into()))?;
+        let upload = self.context.create_buffer(desc.size, true)?;
+        unsafe {
+            std::ptr::write_bytes(upload.map(), 0, desc.size as usize);
+            std::ptr::copy_nonoverlapping(data.as_ptr(), upload.map(), data.len());
+        }
+        upload.unmap();
+        let mut command = self.context.create_command_buffer();
+        command.begin();
+        let mut blit = crate::backend::command::GpuCommandBuffer::begin_blit_pass(&mut command);
+        crate::backend::command::GpuBlitEncoder::copy_buffer_to_buffer(
+            &mut blit,
+            &upload,
+            0,
+            &target.buffer,
+            0,
+            desc.size,
+        );
+        crate::backend::command::GpuBlitEncoder::end_encoding(blit);
+        command.end();
+        command.submit(&self.context);
+        command.wait_until_completed()?;
+        Ok(handle)
+    }
+
+    fn graph_texture_source(
+        &self,
+        resource: crate::render_graph::ResourceId,
+    ) -> Option<crate::renderer::texture_readback::GraphTextureSource> {
+        self.texture_readbacks.source(resource)
+    }
+
+    fn queue_texture_readback(
+        &mut self,
+        source: crate::renderer::texture_readback::GraphTextureSource,
+        region: crate::renderer::texture_readback::TextureReadbackRegion,
+    ) -> Result<crate::renderer::texture_readback::TextureReadbackTicket, RendererError> {
+        self.texture_readbacks.queue(&self.context, source, region)
+    }
+
+    fn poll_texture_readback(
+        &mut self,
+        ticket: crate::renderer::texture_readback::TextureReadbackTicket,
+    ) -> Result<Option<crate::renderer::texture_readback::TextureReadbackData>, RendererError> {
+        self.texture_readbacks.poll(ticket)
+    }
+
+    fn skeleton_buffer_handle(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        skeleton: SkeletonHandle,
+    ) -> Result<BufferHandle, RendererError> {
+        self.frame_write_check(frame)?;
+        let slot = frame.slot();
+        let buffer =
+            self.skeletons[slot]
+                .get(skeleton)
+                .ok_or_else(|| RendererError::StaleHandle {
+                    resource: "skeleton".into(),
+                    detail: format!("handle {}", skeleton.index()),
+                })?;
+        let desc = crate::render_graph::BufferDesc::new(
+            buffer.size(),
+            crate::render_graph::BufferUsages::STORAGE
+                | crate::render_graph::BufferUsages::TRANSFER_DESTINATION
+                | crate::render_graph::BufferUsages::TRANSFER_SOURCE,
+            crate::render_graph::BufferMemoryPolicy::CpuVisible,
+        );
+        let graph_buffer = super::buffer::MetalGraphBuffer::new(buffer.clone(), desc);
+        if let Some(handle) = self.skeleton_buffer_handles.get(&(slot, skeleton)).copied()
+            && let Some(target) = self.graph_buffers.get_mut(handle)
+        {
+            *target = graph_buffer;
+            return Ok(handle);
+        }
+        let handle = self.graph_buffers.insert(graph_buffer);
+        self.skeleton_buffer_handles
+            .insert((slot, skeleton), handle);
+        Ok(handle)
+    }
+
+    fn read_buffer_completed(
+        &mut self,
+        handle: BufferHandle,
+        range: crate::render_graph::BufferByteRange,
+    ) -> Result<Option<Vec<u8>>, RendererError> {
+        let buffer = self
+            .graph_buffers
+            .get(handle)
+            .ok_or_else(|| RendererError::StaleHandle {
+                resource: "buffer".into(),
+                detail: format!("handle {}", handle.index()),
+            })?;
+        if buffer.desc.memory != crate::render_graph::BufferMemoryPolicy::Readback {
+            return Err(RendererError::InvalidOperation(
+                "Completed buffer reads require readback memory".into(),
+            ));
+        }
+        let bytes = range
+            .size
+            .min(buffer.desc.size.saturating_sub(range.offset));
+        if bytes == 0
+            || range.offset >= buffer.desc.size
+            || range.size != u64::MAX && range.size > buffer.desc.size - range.offset
+        {
+            return Err(RendererError::InvalidOperation(
+                "Readback range exceeds buffer capacity".into(),
+            ));
+        }
+        let Some(owner) = self.graph_buffer_owners.get(&handle) else {
+            return Ok(None);
+        };
+        if !owner.is_complete() {
+            return Ok(None);
+        }
+        if owner.feedback_snapshot() == crate::render_graph::capture::CapturedFeedback::Failed {
+            return Err(RendererError::InvalidOperation(
+                "Readback's owning submission failed".into(),
+            ));
+        }
+        let data = unsafe {
+            std::slice::from_raw_parts(
+                buffer
+                    .buffer
+                    .map()
+                    .add((buffer.offset + range.offset) as usize),
+                bytes as usize,
+            )
+        }
+        .to_vec();
+        Ok(Some(data))
+    }
+
+    fn write_buffer(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        handle: BufferHandle,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        self.frame_write_check(frame)?;
+        if self
+            .graph_buffer_owners
+            .get(&handle)
+            .is_some_and(|owner| !owner.is_complete())
+        {
+            return Err(RendererError::InvalidOperation(
+                "Buffer is still owned by an in-flight submission".into(),
+            ));
+        }
+        let buffer = self
+            .graph_buffers
+            .get(handle)
+            .ok_or_else(|| RendererError::StaleHandle {
+                resource: "buffer".into(),
+                detail: format!("handle {}", handle.index()),
+            })?;
+        if !matches!(
+            buffer.desc.memory,
+            crate::render_graph::BufferMemoryPolicy::CpuVisible
+                | crate::render_graph::BufferMemoryPolicy::Readback
+        ) {
+            return Err(RendererError::InvalidOperation(
+                "CPU buffer writes require CPU-visible memory".into(),
+            ));
+        }
+        let end = offset
+            .checked_add(data.len() as u64)
+            .ok_or_else(|| RendererError::InvalidOperation("Buffer write range overflow".into()))?;
+        if end > buffer.desc.size {
+            return Err(RendererError::InvalidOperation(
+                "Buffer write exceeds its declared range".into(),
+            ));
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                data.as_ptr(),
+                buffer.buffer.map().add((buffer.offset + offset) as usize),
+                data.len(),
+            );
+        }
+        buffer
+            .buffer
+            .flush(buffer.offset + offset, data.len() as u64);
+        Ok(())
+    }
+
     fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError> {
         let buffer = self.graph_buffers.get(handle).ok_or_else(|| {
             RendererError::InvalidOperation(format!("Unknown buffer handle {}", handle.index()))
         })?;
         self.persistent_buffers
             .replace(&[&buffer.buffer.inner], &[])?;
+        self.graph_buffer_owners.remove(&handle);
         self.graph_buffers.remove(handle).map(drop).ok_or_else(|| {
             RendererError::InvalidOperation(format!("Unknown buffer handle {}", handle.index()))
         })
@@ -1133,10 +981,6 @@ impl GpuRenderer for MetalRenderer {
     }
 
     fn supports_feature(&self, _feature: crate::renderer::features::RendererFeature) -> bool {
-        // Metal implements every optional renderer feature: animation
-        // compute, light culling, pass pipelines, shadow maps, particles,
-        // timestamp queries, in-place texture upload, depth bindless
-        // registration, and the direct UI pass.
         true
     }
 
@@ -1144,13 +988,11 @@ impl GpuRenderer for MetalRenderer {
         if let Err(error) = self.persistent_buffers.clear() {
             self.frame_poisoned = Some(error.to_string());
         }
-        self.particle_system = None;
         self.meshes = ResourceStorage::new();
         self.materials = ResourceStorage::new();
         self.textures = ResourceStorage::new();
         self.skeletons = std::array::from_fn(|_| ResourceStorage::new());
         self.graph_buffers = ResourceStorage::new();
-        self.viewports.clear();
     }
 
     fn create_mesh<T, U>(
@@ -1264,32 +1106,6 @@ impl GpuRenderer for MetalRenderer {
         self.destroy_texture_impl(handle)
     }
 
-    fn create_viewport(&mut self) -> crate::viewport::ViewportBuilder {
-        self.create_viewport_impl()
-    }
-
-    fn viewport_count(&self) -> usize {
-        self.viewport_count_impl()
-    }
-
-    fn get_viewport(
-        &self,
-        handle: crate::viewport::ViewportHandle,
-    ) -> Option<&crate::viewport::Viewport> {
-        self.get_viewport_impl(handle)
-    }
-
-    fn viewport_extent(
-        &self,
-        handle: crate::viewport::ViewportHandle,
-    ) -> Option<crate::size::Size2D> {
-        self.viewport_extent_impl(handle)
-    }
-
-    fn destroy_viewport(&mut self, handle: crate::viewport::ViewportHandle) {
-        self.destroy_viewport_impl(handle)
-    }
-
     fn compile_material(
         &mut self,
         descriptor: &PipelineDescriptor,
@@ -1303,14 +1119,6 @@ impl GpuRenderer for MetalRenderer {
         textures: crate::renderer::registry::MaterialTextures,
     ) {
         self.set_material_textures_impl(material, textures)
-    }
-
-    fn set_default_material(&mut self, material: MaterialHandle) {
-        self.default_material = Some(material);
-    }
-
-    fn default_material(&self) -> MaterialHandle {
-        self.default_material_impl()
     }
 
     fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize {
@@ -1334,150 +1142,20 @@ impl GpuRenderer for MetalRenderer {
         if dw > 0 && dh > 0 {
             self.drawable_size = Size2D::new(dw, dh);
         }
-        self.resize_light_culling(dw, dh);
-        self.recreate_render_targets(dw, dh);
         Ok(())
-    }
-
-    fn recreate_scene_render_targets(&mut self, width: u32, height: u32) {
-        self.recreate_render_targets(width, height);
-        // The Forward+ light culling grid must match the scene render target
-        // size: the PBR shader looks up tiles by framebuffer pixel coordinate,
-        // and the HDR attachment is now panel-sized.
-        self.resize_light_culling(width, height);
     }
 
     fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
         self.create_skeleton_impl(joint_count)
     }
 
-    fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        self.update_skeleton_impl(handle, matrices)
-    }
-
-    fn init_particle_system(&mut self) -> Result<(), RendererError> {
-        const MAX_PARTICLES: u32 = 1_048_576; // Must match WGSL MAX_PARTICLES
-        let mut subsystem = MetalParticleSubsystem::new(&self.context, MAX_PARTICLES)?;
-        subsystem.create_render_pipeline(&self.context, "particles/particle_render.wgsl")?;
-        self.particle_system = Some(subsystem);
-        Ok(())
-    }
-
-    fn create_ui_font_atlas(
-        &mut self,
-        width: u32,
-        height: u32,
-        data: &[u8],
-    ) -> Result<TextureHandle, RendererError> {
-        self.create_ui_font_atlas_impl(width, height, data)
-    }
-
-    fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
-        self.update_ui_font_atlas_impl(width, height, data)
-    }
-
-    fn ui_font_atlas_handle(&self) -> Option<TextureHandle> {
-        self.ui_font_atlas_handle_impl()
-    }
-
     // -- Shadows --
-
-    fn update_shadows(&mut self, light_direction: [f32; 3]) {
-        MetalRenderer::update_shadows(self, light_direction);
-    }
-
-    fn depth_texture_base_index(&self) -> Option<u32> {
-        // Metal does not use bindless depth textures in the same way
-        None
-    }
-
-    fn viewport_bindless_index(&self) -> Option<u32> {
-        self.viewport_bindless_slot
-    }
-
-    fn geometry_hdr_bindless_index(&self) -> Option<u32> {
-        self.geometry_hdr_bindless_slot
-    }
-
-    fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {
-        Err(RendererError::InvalidOperation(
-            "register_depth_textures_bindless not supported on Metal".into(),
-        ))
-    }
 
     // -- Animation --
 
-    fn init_animation_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_animation_pipeline(self, shader_path)
-    }
-
     // -- Pipeline Initialization --
 
-    fn init_light_culling(
-        &mut self,
-        width: u32,
-        height: u32,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        MetalRenderer::init_light_culling(self, width, height, shader_path)
-    }
-
-    fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
-        Ok(())
-    }
-
-    fn init_pass_pipeline(
-        &mut self,
-        kind: crate::renderer::pipeline_kind::PipelineKind,
-        shader_paths: &[&std::path::Path],
-    ) -> Result<(), RendererError> {
-        match kind {
-            PipelineKind::Shadow => MetalRenderer::init_shadow_pipeline(self, shader_paths[0]),
-            PipelineKind::ShadowSkinned => {
-                MetalRenderer::init_shadow_pipeline_skinned(self, shader_paths[0])
-            }
-            PipelineKind::DepthPrepass => {
-                MetalRenderer::init_depth_prepass_pipeline(self, shader_paths[0])
-            }
-            PipelineKind::DepthPrepassSkinned => {
-                MetalRenderer::init_depth_prepass_skinned_pipeline(self, shader_paths[0])
-            }
-            PipelineKind::DepthPrepassBillboard => {
-                MetalRenderer::init_depth_prepass_billboard_pipeline(self, shader_paths[0])
-            }
-            PipelineKind::Outline => MetalRenderer::init_outline_pipelines(
-                self,
-                shader_paths[0],
-                shader_paths[1],
-                shader_paths[2],
-                shader_paths[3],
-            ),
-            PipelineKind::StencilIndicator => MetalRenderer::init_stencil_indicator_pipelines(
-                self,
-                shader_paths[0],
-                shader_paths[1],
-            ),
-            PipelineKind::Picking => MetalRenderer::init_picking_pipeline(self, shader_paths[0]),
-            PipelineKind::PickingSkinned => {
-                MetalRenderer::init_picking_skinned_pipeline(self, shader_paths[0])
-            }
-            PipelineKind::Sky => MetalRenderer::init_sky_pipeline(self, shader_paths[0]),
-            PipelineKind::Tonemap => MetalRenderer::init_tonemap_pipeline(self, shader_paths[0]),
-        }
-    }
-
-    fn set_viewport_bindless_slot(&mut self, slot: u32) {
-        self.viewport_bindless_slot = Some(slot);
-    }
-
     // -- UI Rendering --
-
-    fn render_ui_pass(&mut self, draw_list: crate::renderer::types::UIDrawList) {
-        MetalRenderer::render_ui_pass(self, draw_list);
-    }
 
     fn begin_timestamp(&mut self, label: &str) {
         if let Some(ref mut tq) = self.timestamp_queries {
@@ -1494,16 +1172,14 @@ impl GpuRenderer for MetalRenderer {
     fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
         if let Some(ref tq) = self.timestamp_queries {
             for slot in &self.frame_slots {
-                tq.cache_completed(&slot.timestamps);
+                if let Some(timestamps) = &slot.timestamps {
+                    tq.cache_completed(timestamps);
+                }
             }
             tq.cached_results()
         } else {
             Vec::new()
         }
-    }
-
-    fn set_viewport_panel_rect(&mut self, rect: Option<crate::rect::Rect>) {
-        self.viewport_panel_rect = rect;
     }
 }
 
@@ -1511,12 +1187,103 @@ impl GpuRenderer for MetalRenderer {
 mod tests {
     use super::*;
     use crate::renderer::gpu_renderer::GpuRenderer;
-    use crate::renderer::types::{DrawCall, DrawList, FrameUniforms};
-    use crate::texture::TextureUsage;
+    use crate::renderer::types::{DrawCall, DrawList};
 
     fn create_renderer() -> MetalRenderer {
         let context = MetalContext::init_headless().expect("Failed to create headless context");
         MetalRenderer::new(context).expect("Failed to create MetalRenderer")
+    }
+
+    #[test]
+    fn test_foreign_renderer_token_rejects_write_render_and_present_without_consuming_owner() {
+        use crate::render_graph::{
+            BufferDesc, BufferMemoryPolicy, BufferUsages, FrameGraphBuilder, PassType, SimplePass,
+        };
+        use crate::render_pass::{AttachmentOps, ClearValue};
+        use crate::renderer::frame_scope::SurfaceStatus;
+        let mut first = create_renderer();
+        let mut second = create_renderer();
+        let foreign = super::super::test_support::acquire(&mut first, 8);
+        let own = super::super::test_support::acquire(&mut second, 8);
+        assert_eq!(foreign.slot(), own.slot());
+        assert_ne!(foreign, own);
+        let copied = own;
+        let buffer = second
+            .create_buffer(BufferDesc::new(
+                4,
+                BufferUsages::STORAGE,
+                BufferMemoryPolicy::CpuVisible,
+            ))
+            .unwrap();
+        second.write_buffer(&copied, buffer, 0, &[7; 4]).unwrap();
+        assert!(matches!(
+            second.write_buffer(&foreign, buffer, 0, &[99; 4]),
+            Err(RendererError::InvalidOperation(_))
+        ));
+        let bytes = unsafe {
+            std::slice::from_raw_parts(second.graph_buffers.get(buffer).unwrap().buffer.map(), 4)
+        };
+        assert_eq!(bytes, [7; 4]);
+        let mut graph = FrameGraphBuilder::new()
+            .add_pass(
+                SimplePass::new("clear", PassType::Graphics)
+                    .without_depth()
+                    .write("backbuffer")
+                    .attachment("backbuffer", AttachmentOps::clear(ClearValue::OPAQUE_BLACK)),
+            )
+            .build::<MetalRenderer>()
+            .unwrap();
+        assert!(matches!(
+            second.render(&foreign, &mut graph, |_| {}),
+            Err(RendererError::InvalidOperation(_))
+        ));
+        assert!(second.frame_poisoned.is_none());
+        assert_eq!(second.active_frame, Some(own));
+        second.render(&copied, &mut graph, |_| {}).unwrap();
+        assert!(matches!(
+            second.present(foreign),
+            Err(RendererError::InvalidOperation(_))
+        ));
+        assert_eq!(second.active_frame, Some(own));
+        assert!(second.pending_frame.is_some());
+        assert!(second.frame_slots[own.slot()].submission.is_none());
+        assert_eq!(
+            second.present(own).unwrap().surface.unwrap(),
+            SurfaceStatus::Presented
+        );
+        second.wait_for_last_submission().unwrap();
+        first.abort(foreign).unwrap();
+    }
+
+    #[test]
+    fn test_present_requires_recorded_submission_and_keeps_aborted_slot_reusable() {
+        use crate::render_graph::{FrameGraphBuilder, PassType, SimplePass};
+        use crate::render_pass::{AttachmentOps, ClearValue};
+        use crate::renderer::frame_scope::SurfaceStatus;
+        let mut renderer = create_renderer();
+        let frame = super::super::test_support::acquire(&mut renderer, 8);
+        let error = renderer.present(frame).unwrap_err();
+        assert!(matches!(error, RendererError::InvalidOperation(_)));
+        assert!(renderer.frame_slots[frame.slot()].submission.is_none());
+        assert!(renderer.last_submission.is_none());
+        assert_eq!(renderer.frame_index(), frame.slot());
+        renderer.abort(frame).unwrap();
+        let recovered = super::super::test_support::acquire(&mut renderer, 8);
+        assert_eq!(recovered.slot(), frame.slot());
+        let mut graph = FrameGraphBuilder::new()
+            .add_pass(
+                SimplePass::new("clear", PassType::Graphics)
+                    .without_depth()
+                    .write("backbuffer")
+                    .attachment("backbuffer", AttachmentOps::clear(ClearValue::OPAQUE_BLACK)),
+            )
+            .build::<MetalRenderer>()
+            .unwrap();
+        renderer.render(&recovered, &mut graph, |_| {}).unwrap();
+        let outcome = renderer.present(recovered).unwrap();
+        assert_eq!(outcome.surface.unwrap(), SurfaceStatus::Presented);
+        assert!(renderer.frame_slots[recovered.slot()].submission.is_some());
+        renderer.wait_for_last_submission().unwrap();
     }
 
     #[test]
@@ -1537,22 +1304,24 @@ mod tests {
             renderer.default_texture.is_some(),
             "default_texture should be set"
         );
-        assert!(
-            renderer.default_material.is_some(),
-            "default_material should be set"
+        assert!(renderer.materials.is_empty());
+        assert!(renderer.compute_pipelines.is_empty());
+        assert!(renderer.graph_buffers.is_empty());
+        assert!(renderer.meshes.is_empty());
+        assert_eq!(
+            renderer.textures.len(),
+            1,
+            "only the descriptor-safe white texture exists"
         );
-
-        let default_tex = renderer.default_texture();
+        assert!(renderer.object_storage_buffers.iter().all(Option::is_none));
+        assert!(renderer.packet_samplers.is_empty());
         assert!(
-            default_tex.is_some(),
-            "default texture handle should be valid"
+            renderer
+                .frame_slots
+                .iter()
+                .all(|slot| slot.timestamps.is_none())
         );
-
-        let default_mat = renderer.default_material();
-        assert!(
-            default_mat.is_some(),
-            "default material handle should be valid"
-        );
+        assert!(renderer.ui_renderers.iter().all(|ui| ui.is_unallocated()));
     }
 
     #[test]
@@ -1565,7 +1334,13 @@ mod tests {
         let identity = [[
             1.0f32, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ]; 4];
-        renderer.update_skeleton(skeleton, &identity);
+        let frame = super::super::test_support::acquire(&mut renderer, 16);
+        let handle = renderer.skeleton_buffer_handle(&frame, skeleton).unwrap();
+        renderer
+            .write_buffer(&frame, handle, 0, bytemuck::cast_slice(&identity))
+            .unwrap();
+        assert_eq!(renderer.buffer_descriptor(handle).unwrap().size, 256);
+        renderer.abort(frame).unwrap();
     }
 
     #[test]
@@ -1622,7 +1397,7 @@ mod tests {
 
         let default_mesh = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0])
             .expect("cube creation should succeed");
-        let default_mat = renderer.default_material();
+        let default_mat = MaterialHandle::NONE;
 
         let draw = DrawCall::new(default_mesh, default_mat);
         let mut draw_list = DrawList::new();
@@ -1721,431 +1496,60 @@ mod tests {
 
     // --- Headless render test helpers ---
 
-    fn sub3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-        [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-    }
-
-    fn cross3(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-        [
-            a[1] * b[2] - a[2] * b[1],
-            a[2] * b[0] - a[0] * b[2],
-            a[0] * b[1] - a[1] * b[0],
-        ]
-    }
-
-    fn dot3(a: [f32; 3], b: [f32; 3]) -> f32 {
-        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-    }
-
-    fn normalize3(v: [f32; 3]) -> [f32; 3] {
-        let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
-        if len > 0.0 {
-            [v[0] / len, v[1] / len, v[2] / len]
-        } else {
-            [0.0, 0.0, 0.0]
-        }
-    }
-
-    fn look_at(eye: [f32; 3], target: [f32; 3], up: [f32; 3]) -> [f32; 16] {
-        let fwd = normalize3(sub3(target, eye));
-        let right = normalize3(cross3(fwd, up));
-        let real_up = cross3(right, fwd);
-        [
-            right[0],
-            real_up[0],
-            -fwd[0],
-            0.0,
-            right[1],
-            real_up[1],
-            -fwd[1],
-            0.0,
-            right[2],
-            real_up[2],
-            -fwd[2],
-            0.0,
-            -dot3(right, eye),
-            -dot3(real_up, eye),
-            dot3(fwd, eye),
-            1.0,
-        ]
-    }
-
-    fn perspective(fov_deg: f32, aspect: f32, near: f32, far: f32) -> [f32; 16] {
-        let f = 1.0 / (fov_deg * std::f32::consts::PI / 360.0).tan();
-        [
-            f / aspect,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            -f,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            far / (near - far),
-            -1.0,
-            0.0,
-            0.0,
-            near * far / (near - far),
-            0.0,
-        ]
-    }
-
-    fn mat4_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
-        let mut r = [0.0f32; 16];
-        for col in 0..4 {
-            for row in 0..4 {
-                let mut sum = 0.0f32;
-                for k in 0..4 {
-                    sum += a[k * 4 + row] * b[col * 4 + k];
-                }
-                r[col * 4 + row] = sum;
-            }
-        }
-        r
-    }
-
-    fn mat4_inverse(m: &[f32; 16]) -> [f32; 16] {
-        let m00 = m[0];
-        let m10 = m[1];
-        let m20 = m[2];
-        let m30 = m[3];
-        let m01 = m[4];
-        let m11 = m[5];
-        let m21 = m[6];
-        let m31 = m[7];
-        let m02 = m[8];
-        let m12 = m[9];
-        let m22 = m[10];
-        let m32 = m[11];
-        let m03 = m[12];
-        let m13 = m[13];
-        let m23 = m[14];
-        let m33 = m[15];
-
-        let coef00 = m22 * m33 - m32 * m23;
-        let coef02 = m12 * m33 - m32 * m13;
-        let coef03 = m12 * m23 - m22 * m13;
-        let coef04 = m21 * m33 - m31 * m23;
-        let coef06 = m11 * m33 - m31 * m13;
-        let coef07 = m11 * m23 - m21 * m13;
-        let coef08 = m21 * m32 - m31 * m22;
-        let coef10 = m11 * m32 - m31 * m12;
-        let coef11 = m11 * m22 - m21 * m12;
-        let coef12 = m20 * m33 - m30 * m23;
-        let coef14 = m10 * m33 - m30 * m13;
-        let coef15 = m10 * m23 - m20 * m13;
-        let coef16 = m20 * m32 - m30 * m22;
-        let coef18 = m10 * m32 - m30 * m12;
-        let coef19 = m10 * m22 - m20 * m12;
-        let coef20 = m20 * m31 - m30 * m21;
-        let coef22 = m10 * m31 - m30 * m11;
-        let coef23 = m10 * m21 - m20 * m11;
-
-        let fac0 = [coef00, coef00, coef02, coef03];
-        let fac1 = [coef04, coef04, coef06, coef07];
-        let fac2 = [coef08, coef08, coef10, coef11];
-        let fac3 = [coef12, coef12, coef14, coef15];
-        let fac4 = [coef16, coef16, coef18, coef19];
-        let fac5 = [coef20, coef20, coef22, coef23];
-
-        let sign_a: [f32; 4] = [1.0, -1.0, 1.0, -1.0];
-        let sign_b: [f32; 4] = [-1.0, 1.0, -1.0, 1.0];
-
-        let det = m00 * (m11 * coef00 - m12 * coef04 + m13 * coef08)
-            + m01 * (m10 * coef00 - m12 * coef12 + m13 * coef16)
-            + m02 * (m10 * coef04 - m11 * coef12 + m13 * coef20)
-            + m03 * (m10 * coef08 - m11 * coef16 + m12 * coef20);
-        let inv_det = 1.0 / det;
-
-        let row0 = [
-            m11 * fac0[0] - m12 * fac1[0] + m13 * fac2[0],
-            m10 * fac0[1] - m12 * fac3[1] + m13 * fac4[1],
-            m10 * fac1[2] - m11 * fac3[2] + m13 * fac5[2],
-            m10 * fac2[3] - m11 * fac4[3] + m12 * fac5[3],
-        ];
-        let row1 = [
-            m01 * fac0[0] - m02 * fac1[0] + m03 * fac2[0],
-            m00 * fac0[1] - m02 * fac3[1] + m03 * fac4[1],
-            m00 * fac1[2] - m01 * fac3[2] + m03 * fac5[2],
-            m00 * fac2[3] - m01 * fac4[3] + m02 * fac5[3],
-        ];
-        let row2 = [
-            m31 * fac0[0] - m32 * fac1[0] + m33 * fac2[0],
-            m30 * fac0[1] - m32 * fac3[1] + m33 * fac4[1],
-            m30 * fac1[2] - m31 * fac3[2] + m33 * fac5[2],
-            m30 * fac2[3] - m31 * fac4[3] + m32 * fac5[3],
-        ];
-        let row3 = [
-            m21 * fac0[0] - m22 * fac1[0] + m23 * fac2[0],
-            m20 * fac0[1] - m22 * fac3[1] + m23 * fac4[1],
-            m20 * fac1[2] - m21 * fac3[2] + m23 * fac5[2],
-            m20 * fac2[3] - m21 * fac4[3] + m22 * fac5[3],
-        ];
-
-        [
-            row0[0] * sign_a[0] * inv_det,
-            row0[1] * sign_b[0] * inv_det,
-            row0[2] * sign_a[1] * inv_det,
-            row0[3] * sign_b[1] * inv_det,
-            row1[0] * sign_b[0] * inv_det,
-            row1[1] * sign_a[1] * inv_det,
-            row1[2] * sign_b[1] * inv_det,
-            row1[3] * sign_a[2] * inv_det,
-            row2[0] * sign_a[1] * inv_det,
-            row2[1] * sign_b[1] * inv_det,
-            row2[2] * sign_a[2] * inv_det,
-            row2[3] * sign_b[2] * inv_det,
-            row3[0] * sign_b[1] * inv_det,
-            row3[1] * sign_a[2] * inv_det,
-            row3[2] * sign_b[2] * inv_det,
-            row3[3] * sign_a[3] * inv_det,
-        ]
-    }
-
-    fn readback_texture_bgra8(
-        texture: &ProtocolObject<dyn MTLTexture>,
-        width: u32,
-        height: u32,
-    ) -> Vec<u8> {
-        let bytes_per_row = width as usize * 4;
-        let mut data = vec![0u8; bytes_per_row * height as usize];
-        let region = objc2_metal::MTLRegion {
-            origin: objc2_metal::MTLOrigin { x: 0, y: 0, z: 0 },
-            size: objc2_metal::MTLSize {
-                width: width as usize,
-                height: height as usize,
-                depth: 1,
-            },
-        };
-        unsafe {
-            texture.getBytes_bytesPerRow_fromRegion_mipmapLevel(
-                std::ptr::NonNull::new(data.as_mut_ptr() as *mut std::ffi::c_void).unwrap(),
-                bytes_per_row,
-                region,
-                0,
-            );
-        }
-        data
-    }
-
-    /// Regression test for white flicker bugs: render a basic scene with sky + PBR + tonemap
-    /// and verify the output isn't predominantly white.
     #[test]
-    fn test_headless_render_not_white() {
-        let _ = env_logger::builder().is_test(true).try_init();
-
-        const W: u32 = 256;
-        const H: u32 = 256;
-
-        // Create headless context with drawable support
-        let context = MetalContext::init_headless_with_size(W, H)
-            .expect("Failed to create headless context with size");
-        let mut renderer = MetalRenderer::new(context).expect("Failed to create MetalRenderer");
-
-        if let Some(reason) =
-            super::super::argument_buffer::MetalBindlessTextureManager::unsupported_device_reason(
-                &renderer.context.device,
-            )
-        {
-            eprintln!("SKIP test_headless_render_not_white: {reason}");
-            return;
-        }
-
-        // Resize to set up render targets (depth, HDR, depth-stencil)
-        renderer.resize(W, H).expect("resize failed");
-
-        // Compile pipelines the same way the app does
-        let pbr_material = renderer
-            .compile_material(&PipelineDescriptor::pbr("model_pbr.wgsl"))
-            .expect("Failed to compile PBR material");
-        renderer
-            .init_sky_pipeline(std::path::Path::new("sky.wgsl"))
-            .expect("Failed to init sky pipeline");
-        renderer
-            .init_tonemap_pipeline(std::path::Path::new("tonemapping.wgsl"))
-            .expect("Failed to init tonemap pipeline");
-
-        // Initialize light culling so PBR shader's Forward+ bindings are satisfied
-        renderer
-            .init_light_culling(W, H, std::path::Path::new("light_culling.wgsl"))
-            .expect("Failed to init light culling");
-        renderer.upload_lights(&[]);
-
-        // Create meshes
-        let cube = crate::primitives::create_cube(&mut renderer, [1.0, 1.0, 1.0])
-            .expect("cube creation should succeed");
-        let plane = crate::primitives::create_plane(&mut renderer, 10.0, 10.0)
-            .expect("plane creation should succeed");
-
-        // Create Shared BGRA8 texture as tonemap output (CPU-readable via getBytes)
-        let readback_desc = TextureDescriptor::new(W, H, ImageFormat::B8G8R8A8Srgb)
-            .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
-        let (readback_tex, _readback_view) = renderer
-            .context
-            .create_texture_shared(&readback_desc)
-            .expect("Failed to create readback texture");
-        // The no-UI headless schedule tonemaps directly to the current drawable.
-        // Use the CPU-readable texture as that drawable so the test reads the
-        // attachment that was actually rendered.
-        renderer.set_headless_drawable(readback_tex.inner.clone());
-
-        // Set up camera and frame uniforms
-        let view = look_at([3.0, 3.0, 3.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
-        let proj = perspective(60.0, 1.0, 0.1, 100.0);
-        let inv_view_proj = mat4_inverse(&mat4_mul(&proj, &view));
-
-        let uniforms = FrameUniforms {
-            view_matrix: view,
-            proj_matrix: proj,
-            inv_view_proj_matrix: inv_view_proj,
-            camera_position: [3.0, 3.0, 3.0, 1.0],
-            light_direction: [0.3, 1.0, 0.2, 0.0],
-            light_color: [1.0, 0.98, 0.95, 0.0],
-            light_intensity: [3.0, 0.0, 0.0, 0.0],
-            tiles: [W / 16, H / 16, 0, 0],
-            tonemap: [1.0, 2.2, 0.0, 0.0],
-            overlay: [0.0, 0.0, 0.0, 0.0],
-            compositing: [0.0, 0.0, 0.0, 0.0],
-        };
-        // Build draw list: red cube at origin, green ground plane below
-        let plane_transform: [f32; 16] = [
-            10.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, -0.5, 0.0, 1.0,
-        ];
-
-        let plane_draw = DrawCall::new(plane, pbr_material)
-            .with_transform(plane_transform)
-            .with_color([0.5, 0.7, 0.5, 1.0])
-            .with_pbr(0.0, 0.8, 1.0);
-
-        let cube_draw = DrawCall::new(cube, pbr_material)
-            .with_color([0.8, 0.2, 0.2, 1.0])
-            .with_pbr(0.0, 0.5, 1.0);
-
-        let mut draw_list = DrawList::new();
-        draw_list.push(plane_draw);
-        draw_list.push(cube_draw);
-
-        // Run the frame lifecycle: acquire the slot, write frame data through
-        // token-gated calls, render, and present.
-        use crate::renderer::frame_scope::FrameAcquisition;
-        let frame = match GpuRenderer::acquire_frame(&mut renderer).expect("acquire_frame failed") {
-            FrameAcquisition::Ready(frame) => frame,
-            FrameAcquisition::Unavailable | FrameAcquisition::OutOfDate => {
-                panic!("headless test renderer must always acquire a frame");
-            }
-        };
-        GpuRenderer::set_frame_uniforms(&mut renderer, &frame, uniforms)
-            .expect("set_frame_uniforms failed");
-        GpuRenderer::execute_draw_calls(&mut renderer, &frame, &draw_list)
-            .expect("execute_draw_calls failed");
-
-        use crate::render_graph::PassBuilder;
-        let mut graph = crate::render_graph::FrameGraphBuilder::new()
-            .create_resource(crate::render_graph::GraphResourceDesc {
-                name: "hdr".to_string(),
-                resource_type: crate::render_graph::GraphResourceType::ColorAttachment {
-                    clear_value: None,
-                },
-                format: ImageFormat::R16G16B16A16Sfloat,
-                width: W,
-                height: H,
-                tracks_swapchain_size: false,
-            })
-            .create_resource(crate::render_graph::GraphResourceDesc {
-                name: "depth".into(),
-                resource_type: crate::render_graph::GraphResourceType::DepthAttachment {
-                    clear_value: 0.0,
-                    sampled: false,
-                },
-                format: ImageFormat::D32SfloatS8Uint,
-                width: W,
-                height: H,
-                tracks_swapchain_size: false,
-            })
-            .create_resource(crate::render_graph::GraphResourceDesc {
-                name: "shadow_atlas".into(),
-                resource_type: crate::render_graph::GraphResourceType::DepthAttachment {
-                    clear_value: 1.0,
-                    sampled: true,
-                },
-                format: ImageFormat::D32Sfloat,
-                width: W,
-                height: H,
-                tracks_swapchain_size: false,
-            })
+    fn test_headless_custom_pass_renders_without_scene_initialization() {
+        use crate::render_graph::{FrameGraphBuilder, PassKind, PassType, SimplePass};
+        use crate::render_pass::{AttachmentOps, ClearValue};
+        let mut renderer = create_renderer();
+        let source = format!(
+            "{} @fragment fn fs_main()->@location(0) vec4<f32>{{return vec4<f32>(1.,0.,0.,1.);}}",
+            super::super::test_support::FULLSCREEN_VERTEX
+        );
+        let material = super::super::test_support::material(
+            &mut renderer,
+            &source,
+            super::super::test_support::fullscreen_descriptor(ImageFormat::B8G8R8A8Srgb),
+        );
+        let mut graph = FrameGraphBuilder::new()
             .export_resource("backbuffer")
             .add_pass(
-                crate::render_graph::ShadowPass::new("shadow clear")
-                    .write_depth("shadow_atlas", ImageFormat::D32Sfloat)
-                    .resolution(W, H)
-                    .depth_target("shadow_atlas"),
-            )
-            .add_pass(
-                crate::render_graph::GeometryPass::new("geometry")
-                    .read("shadow_atlas")
-                    .write_color("hdr", ImageFormat::R16G16B16A16Sfloat)
-                    .depth_target("depth"),
-            )
-            .add_pass(
-                crate::render_graph::FullscreenPass::new("tonemap")
-                    .read("hdr")
-                    .write_backbuffer(),
+                SimplePass::new("custom", PassType::Graphics)
+                    .without_depth()
+                    .write("backbuffer")
+                    .attachment("backbuffer", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
+                    .with_kind(PassKind::Fullscreen),
             )
             .build::<MetalRenderer>()
-            .expect("compile scene graph");
+            .unwrap();
         graph
-            .initialize_transient_textures(&renderer)
-            .expect("initialize graph textures");
-        graph
-            .register_transient_texture_bindless(&mut renderer, "hdr")
-            .expect("register graph HDR");
-        renderer.bindless_manager.publish_snapshot().unwrap();
-        let plan = crate::metal::execution_plan::MetalExecutionPlan::compile(
-            &graph,
-            ImageFormat::B8G8R8A8Srgb,
-            Some(&renderer),
-        )
-        .expect("compile Metal scene plan");
-        let mut pending = std::collections::HashMap::new();
-        pending.insert(
-            1,
-            crate::render_graph::PassExecutionData {
-                draw_lists: vec![std::rc::Rc::new(draw_list)],
-                ..Default::default()
-            },
+            .set_pass_bindings(
+                graph.pass_id("custom").unwrap(),
+                super::super::test_support::vertices(
+                    material,
+                    crate::vertex::VertexLayout::new(vec![]),
+                    3,
+                ),
+            )
+            .unwrap();
+        let frame = super::super::test_support::acquire(&mut renderer, 16);
+        renderer.render(&frame, &mut graph, |_| {}).unwrap();
+        renderer.present(frame).unwrap();
+        let source = renderer
+            .graph_texture_source(graph.resource_id("backbuffer").unwrap())
+            .unwrap();
+        let ticket = renderer
+            .queue_texture_readback(
+                source,
+                crate::renderer::texture_readback::TextureReadbackRegion::pixel(8, 8),
+            )
+            .unwrap();
+        assert_eq!(
+            super::super::test_support::readback(&mut renderer, ticket).bytes,
+            [0, 0, 255, 255]
         );
-        renderer
-            .render_frame_manual(&frame, &plan, pending, &graph)
-            .expect("render_frame failed");
-        GpuRenderer::present(&mut renderer, frame).expect("present failed");
-
-        // Wait for GPU to finish writing to the tonemap output texture
-        renderer
-            .wait_for_frame_impl()
-            .expect("wait_for_frame failed");
-
-        // Read back pixels from Shared storage texture
-        let pixels = readback_texture_bgra8(&readback_tex.inner, W, H);
-
-        // Analyze: count pixels that are nearly white (all channels > 240)
-        let total_pixels = W as usize * H as usize;
-        let white_count = pixels
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .filter(|p| p[0] > 240 && p[1] > 240 && p[2] > 240)
-            .count();
-        let white_ratio = white_count as f32 / total_pixels as f32;
-
-        assert!(
-            white_ratio < 0.5,
-            "Image is {:.0}% white pixels (threshold 50%). \
-             Sky + PBR + tonemap produced a blown-out white frame — \
-             white flicker regression likely.",
-            white_ratio * 100.0
-        );
+        assert_eq!(renderer.materials.len(), 1);
+        assert!(renderer.object_storage_buffers.iter().all(Option::is_none));
+        assert!(renderer.ui_renderers.iter().all(|ui| ui.is_unallocated()));
     }
 }
 

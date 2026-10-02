@@ -11,17 +11,12 @@
 //! contract suites:
 //! `TMPDIR=$HOME/tmp cargo test -p katla_gfx --test generational_handles -- --ignored`).
 
-mod common;
-
 use std::ffi::CString;
 
-use common::create_headless_context;
-use katla_gfx::particles::{EmitterConfig, GlobalParticleSystem};
 use katla_gfx::{
     GpuRenderer, MeshHandle, PrimitiveTopology, RendererError, ValidationMode, VertexPBR,
     VulkanRenderer,
 };
-use std::rc::Rc;
 
 fn headless_renderer() -> VulkanRenderer {
     VulkanRenderer::init_headless(
@@ -135,31 +130,45 @@ fn test_texture_stale_handle_rejected_after_slot_reuse() {
 #[ignore = "requires a Vulkan device"]
 fn test_skeleton_stale_handle_rejected_after_slot_reuse() {
     let mut renderer = headless_renderer();
-    let identity = [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-    ];
-
     let first = renderer.create_skeleton(4).unwrap();
-    assert!(renderer.get_skeleton_descriptor(first).is_some());
-
+    let katla_gfx::renderer::frame_scope::FrameAcquisition::Ready(token) =
+        renderer.acquire_frame().unwrap()
+    else {
+        panic!("headless frame unavailable")
+    };
+    let first_buffer = renderer.skeleton_buffer_handle(&token, first).unwrap();
+    assert_eq!(
+        renderer.buffer_descriptor(first_buffer).unwrap().size,
+        4 * 64
+    );
     renderer.destroy_skeleton(first);
-    assert!(renderer.get_skeleton_descriptor(first).is_none());
-
-    // Stale update is a safe no-op; double-destroy is harmless.
-    renderer.update_skeleton(first, &[identity; 4]);
+    assert!(renderer.skeleton_buffer_handle(&token, first).is_err());
+    assert!(renderer.buffer_descriptor(first_buffer).is_none());
+    renderer.abort(token).unwrap();
     renderer.destroy_skeleton(first);
 
     let second = renderer.create_skeleton(6).unwrap();
     assert_eq!(second.index(), first.index());
     assert_ne!(second, first);
-    assert!(renderer.get_skeleton_descriptor(second).is_some());
-    assert!(renderer.get_skeleton_descriptor(first).is_none());
-
+    let katla_gfx::renderer::frame_scope::FrameAcquisition::Ready(token) =
+        renderer.acquire_frame().unwrap()
+    else {
+        panic!("headless frame unavailable")
+    };
+    let second_buffer = renderer.skeleton_buffer_handle(&token, second).unwrap();
+    assert_eq!(
+        renderer.buffer_descriptor(second_buffer).unwrap().size,
+        6 * 64
+    );
+    assert!(renderer.skeleton_buffer_handle(&token, first).is_err());
     renderer.destroy_skeleton(first);
-    assert!(
-        renderer.get_skeleton_descriptor(second).is_some(),
+    assert_eq!(
+        renderer.skeleton_buffer_handle(&token, second).unwrap(),
+        second_buffer,
         "stale destroy must not destroy the replacement"
     );
+    assert!(renderer.buffer_descriptor(second_buffer).is_some());
+    renderer.abort(token).unwrap();
 }
 
 #[test]
@@ -199,40 +208,6 @@ fn test_material_stale_handle_rejected_after_slot_reuse() {
     renderer.destroy_material(first);
     assert!(
         renderer.asset_registry.get_material(second).is_some(),
-        "stale destroy must not destroy the replacement"
-    );
-}
-
-#[test]
-#[ignore = "requires a Vulkan device"]
-fn test_emitter_stale_handle_rejected_after_slot_reuse() {
-    let context = Rc::new(create_headless_context(false));
-    let mut system = GlobalParticleSystem::new(&context, 1024).unwrap();
-
-    let config = EmitterConfig {
-        emit_rate: 10.0,
-        ..Default::default()
-    };
-    let first = system.create_emitter(config).unwrap();
-    assert!(system.burst(first, 5).is_ok());
-
-    system.destroy_emitter(first, false);
-    // Stale burst fails typed.
-    assert!(system.burst(first, 5).is_err());
-
-    // Double-destroy harmless.
-    system.destroy_emitter(first, false);
-
-    let second = system.create_emitter(config).unwrap();
-    assert_eq!(second.index(), first.index());
-    assert_ne!(second, first);
-    assert!(system.burst(second, 3).is_ok());
-    assert!(system.burst(first, 3).is_err());
-
-    // Stale destroy must not destroy the replacement.
-    system.destroy_emitter(first, false);
-    assert!(
-        system.burst(second, 3).is_ok(),
         "stale destroy must not destroy the replacement"
     );
 }

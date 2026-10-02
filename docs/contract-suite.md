@@ -18,7 +18,7 @@ above them, not a replacement.
 ## Running
 
 ```bash
-cargo test -p katla_gfx --test contract -- --ignored
+cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1
 ```
 
 The scenarios need a graphics device, so they are `#[ignore]`d like the other
@@ -26,10 +26,20 @@ device suites. On macOS, enable Metal API validation the way CI does:
 
 ```bash
 MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
-    cargo test -p katla_gfx --test contract -- --ignored
+    cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1
 ```
 
-Select scenarios by name substring: `-- --ignored test_contract_instanced`.
+Select a scenario with a Cargo filter, for example:
+
+```bash
+cargo test -p katla_gfx --test contract test_contract_instanced --locked -- --ignored --test-threads=1
+```
+
+CI runs Linux scenarios on lavapipe with `--skip graphics::pbr`, because that
+software driver's PBR compilation path crashes. Physical Vulkan acceptance runs
+the full suite. The macOS job runs native scenarios only when its default GPU
+supports Metal 4; unsupported hosted GPUs still run portable library tests and
+typed capability rejection, and report native acceptance as blocked.
 
 ## Adding a scenario
 
@@ -41,7 +51,10 @@ Select scenarios by name substring: `-- --ignored test_contract_instanced`.
    and `finish()` asserts the log stays empty.
 2. Write the scenario against `renderer.gfx()` — the backend-neutral
    `AnyRenderer` and the `GpuRenderer` trait — plus `harness::build_graph`,
-   `render_frame`, and `pass_id`. Never name `VulkanRenderer` or
+   `render_frame`, and `pass_id`. Pass resources, constants, samplers, draw or
+   dispatch phases and explicit color/depth targets belong to graph declarations
+   and binding packets. Renderer construction supplies device/frame/resource
+   primitives; the harness supplies scenario data. Never name `VulkanRenderer` or
    `MetalRenderer` in a scenario.
 3. Assert observable results only: readback pixels (BGRA, row 0 = top on both
    backends), typed `RendererError` variants, or public query methods.
@@ -65,3 +78,27 @@ Select scenarios by name substring: `-- --ignored test_contract_instanced`.
 - When extending the public gfx API, ask: which of these promises does the
   new API touch, and does the suite already pin it? If not, add the scenario
   in the same PR.
+
+## Covered contracts
+
+Graphics scenarios assert indexed widths, object transforms, direct/instanced
+draw equivalence, dynamic mesh lifecycle, material rendering across graph
+configurations, emitted attachment contracts and load/clear behavior. Resource
+scenarios exercise stale texture generations, idempotent destruction, retirement
+after frame drain and independent frame slots; error
+scenarios assert typed rejection without disturbing live resources or producing
+validation errors.
+
+The harness acquires a frame token, installs explicit graphics data, renders the
+graph and consumes the token at present. It reads the committed graph export
+through a retained texture source and readback ticket, rather than a renderer
+scene attachment. Capabilities describe legitimate backend differences; optional
+API details stay in the harness.
+
+Native backend capture regressions complement this suite with actual encoder,
+synchronization scope, binding, residency and submission observations. They
+compare capture disabled/enabled GPU outputs and write plan/execution artifacts
+on divergence. Portable diagnostic fixtures cover deterministic JSON, text and
+DOT, culling/allocation identities and deliberate mismatch detection. See
+[render-graph capture](render_graph_capture.md) and [CI](ci.md) for those commands
+and the native-device boundary.

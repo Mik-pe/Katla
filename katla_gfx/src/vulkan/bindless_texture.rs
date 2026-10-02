@@ -17,7 +17,7 @@
 //! ├─ Descriptor Set Layout (set 1)                             │
 //! │  ├─ Binding 0: texture_2d array (4096 slots)               │
 //! │  └─ Binding 1: shared sampler                              │
-//! ├─ Default Textures (reserved slots 0-4)                     │
+//! ├─ Default Textures (reserved slot 0)                     │
 //! │  ├─ slots[0]: White (default albedo)                       │
 //! │  ├─ slots[1]: Flat normal                                  │
 //! │  ├─ slots[2]: Default MR (non-metal, medium roughness)     │
@@ -53,7 +53,7 @@ use ash::vk;
 use std::rc::Rc;
 
 use crate::RendererError;
-use crate::sync::{VkDescriptorSet, VkDescriptorSetLayout, VkImageView, VkSampler};
+use crate::sync::{VkDescriptorSet, VkDescriptorSetLayout, VkSampler};
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
 
@@ -61,7 +61,7 @@ use crate::vulkan::texture::Texture;
 pub const MAX_BINDLESS_TEXTURES: u32 = 4096;
 
 /// Number of reserved slots for default textures.
-pub(crate) const DEFAULT_TEXTURE_COUNT: u32 = 5;
+pub(crate) const DEFAULT_TEXTURE_COUNT: u32 = 1;
 
 /// Bindless texture manager.
 ///
@@ -77,8 +77,6 @@ pub struct BindlessTextureManager {
     descriptor_set: VkDescriptorSet,
     /// Shared sampler for all textures.
     shared_sampler: VkSampler,
-    /// CLAMP_TO_EDGE sampler for UI textures (font atlas).
-    ui_sampler: VkSampler,
     /// Texture slots (Some = occupied, None = free).
     slots: Vec<Option<vk::ImageView>>,
     /// Stack of free slot indices for O(1) allocation.
@@ -86,7 +84,7 @@ pub struct BindlessTextureManager {
     /// Device handle for cleanup.
     device: ash::Device,
     /// Default textures (kept alive for their resources).
-    _default_textures: Vec<Texture>,
+    _fallback_texture: Rc<Texture>,
 }
 
 impl BindlessTextureManager {
@@ -103,12 +101,9 @@ impl BindlessTextureManager {
     ///
     /// # Returns
     /// A new BindlessTextureManager, or an error if creation fails
-    pub fn new(context: &Rc<VulkanContext>) -> Result<Self, RendererError> {
+    pub fn new(context: &Rc<VulkanContext>, fallback: Rc<Texture>) -> Result<Self, RendererError> {
         // Create shared sampler with reasonable defaults
         let shared_sampler = context.create_sampler_repeat_anisotropic()?;
-
-        // Create CLAMP_TO_EDGE sampler for UI textures (prevents atlas edge wrapping)
-        let ui_sampler = context.create_sampler_clamp_edge_linear()?;
 
         // Create descriptor set layout
         // Binding 0: texture_2d array (SAMPLED_IMAGE, count = MAX_BINDLESS_TEXTURES)
@@ -188,17 +183,22 @@ impl BindlessTextureManager {
             context.device.update_descriptor_sets(&[sampler_write], &[]);
         }
 
-        // Create default textures (1x1 pixels for each type)
-        let (default_image_views, default_textures) =
-            Self::create_default_textures(context, descriptor_set);
-
-        // Initialize slots with default textures at reserved positions
-        let mut slots = vec![None; MAX_BINDLESS_TEXTURES as usize];
-        for (i, view) in default_image_views.iter().enumerate() {
-            slots[i] = Some(view.vk());
+        let image_info = [vk::DescriptorImageInfo::default()
+            .image_view(fallback.image_view().vk())
+            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let write = vk::WriteDescriptorSet::default()
+            .dst_set(descriptor_set)
+            .dst_binding(0)
+            .dst_array_element(0)
+            .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
+            .image_info(&image_info);
+        unsafe {
+            context.device.update_descriptor_sets(&[write], &[]);
         }
+        let mut slots = vec![None; MAX_BINDLESS_TEXTURES as usize];
+        slots[0] = Some(fallback.image_view().vk());
 
-        // Initialize free slots stack (skip reserved slots 0-4)
+        // Initialize free slots stack (skip reserved slot 0)
         let free_slots: Vec<u32> = (DEFAULT_TEXTURE_COUNT..MAX_BINDLESS_TEXTURES)
             .rev()
             .collect();
@@ -208,64 +208,14 @@ impl BindlessTextureManager {
             descriptor_layout: VkDescriptorSetLayout::new(descriptor_layout),
             descriptor_set: VkDescriptorSet::new(descriptor_set),
             shared_sampler,
-            ui_sampler,
             slots,
             free_slots,
             device: context.device.clone(),
-            _default_textures: default_textures,
+            _fallback_texture: fallback,
         })
     }
 
     /// Create default textures (white, normal, MR, AO, emission).
-    fn create_default_textures(
-        context: &Rc<VulkanContext>,
-        descriptor_set: vk::DescriptorSet,
-    ) -> (Vec<VkImageView>, Vec<Texture>) {
-        let mut views = Vec::with_capacity(DEFAULT_TEXTURE_COUNT as usize);
-        let mut textures = Vec::with_capacity(DEFAULT_TEXTURE_COUNT as usize);
-
-        let default_entries: [([u8; 4], crate::ImageFormat); DEFAULT_TEXTURE_COUNT as usize] = [
-            ([255, 255, 255, 255], crate::ImageFormat::R8G8B8A8Srgb), // Slot 0: White albedo (SRGB)
-            ([128, 128, 255, 255], crate::ImageFormat::R8G8B8A8Unorm), // Slot 1: Flat normal (linear)
-            ([255, 128, 0, 255], crate::ImageFormat::R8G8B8A8Unorm),   // Slot 2: MR (linear)
-            ([255, 255, 255, 255], crate::ImageFormat::R8G8B8A8Unorm), // Slot 3: AO (linear)
-            ([0, 0, 0, 255], crate::ImageFormat::R8G8B8A8Unorm),       // Slot 4: Emission (linear)
-        ];
-
-        for (slot_idx, (pixels, format)) in default_entries.iter().enumerate() {
-            let texture = Texture::create_image(
-                context.clone(),
-                1,
-                1,
-                *format,
-                crate::texture::TextureUsage::default(),
-                pixels,
-            );
-
-            // Update descriptor set for this slot
-            let image_info = [vk::DescriptorImageInfo::default()
-                .image_view(texture.image_view.vk())
-                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
-
-            let write = vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
-                .dst_binding(0)
-                .dst_array_element(slot_idx as u32)
-                .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(1)
-                .image_info(&image_info);
-
-            unsafe {
-                context.device.update_descriptor_sets(&[write], &[]);
-            }
-
-            views.push(texture.image_view);
-            textures.push(texture);
-        }
-
-        (views, textures)
-    }
-
     /// Register a texture with the bindless system.
     ///
     /// Allocates a slot and updates the descriptor set with the texture's image view.
@@ -387,14 +337,6 @@ impl BindlessTextureManager {
         self.shared_sampler
     }
 
-    /// Get the CLAMP_TO_EDGE sampler for UI textures.
-    ///
-    /// This sampler uses CLAMP_TO_EDGE addressing to prevent UV wrapping
-    /// artifacts at font atlas glyph boundaries during panel resize.
-    pub fn ui_sampler(&self) -> VkSampler {
-        self.ui_sampler
-    }
-
     /// Check if a slot is occupied by a texture.
     ///
     /// # Arguments
@@ -408,7 +350,7 @@ impl BindlessTextureManager {
 
     /// Get the number of occupied (non-free) texture slots.
     ///
-    /// This excludes default textures at slots 0-4.
+    /// This excludes default textures at slot 0.
     pub fn occupied_slot_count(&self) -> usize {
         self.slots.iter().filter(|s| s.is_some()).count()
     }
@@ -434,7 +376,7 @@ impl BindlessTextureManager {
     /// println!("{}", debug_info);
     /// // Output:
     /// // Bindless Slot Allocation:
-    /// // Slots 0-4: [DEFAULT] (reserved for default textures)
+    /// // Slot 0: [DEFAULT] (reserved for default textures)
     /// // Slot 5: [OCCUPIED]
     /// // Slot 6: [OCCUPIED]
     /// // Slots 7-4095: [FREE]
@@ -465,11 +407,6 @@ impl BindlessTextureManager {
         for (start, end, status) in ranges {
             if start == end {
                 output.push_str(&format!("Slot {}: {}\n", start, status));
-            } else if start == 0 && end < DEFAULT_TEXTURE_COUNT - 1 {
-                output.push_str(&format!(
-                    "Slots {}-{}: [DEFAULT] (reserved for default textures)\n",
-                    start, end
-                ));
             } else {
                 output.push_str(&format!("Slots {}-{}: {}\n", start, end, status));
             }
@@ -577,59 +514,6 @@ impl Drop for BindlessTextureManager {
             self.device
                 .destroy_descriptor_set_layout(self.descriptor_layout.vk(), None);
             self.device.destroy_sampler(self.shared_sampler.vk(), None);
-            self.device.destroy_sampler(self.ui_sampler.vk(), None);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_max_bindless_textures() {
-        // Ensure we have a reasonable limit
-        assert!(MAX_BINDLESS_TEXTURES >= 1024);
-        assert!(MAX_BINDLESS_TEXTURES <= 16384);
-    }
-
-    #[test]
-    fn test_default_texture_count() {
-        assert_eq!(DEFAULT_TEXTURE_COUNT, 5);
-    }
-
-    #[test]
-    fn test_bindless_slot_queries_require_vulkan() {
-        // These tests require a Vulkan context, so we just verify the methods exist
-        // Actual functionality is tested in integration tests
-        assert!(MAX_BINDLESS_TEXTURES > 0);
-    }
-
-    #[test]
-    fn test_debug_slot_allocation_formatting() {
-        // Verify debug output format methods compile and return the expected types
-        // Actual functionality testing requires Vulkan context
-
-        // This test ensures the API methods exist and return correct types
-        // Real testing is done via integration tests and manual verification
-        assert!(DEFAULT_TEXTURE_COUNT > 0);
-        assert!(MAX_BINDLESS_TEXTURES > DEFAULT_TEXTURE_COUNT);
-    }
-
-    #[test]
-    fn test_debug_slot_info_returns_string() {
-        // Verify debug_slot_info returns a String
-        // Actual testing requires Vulkan context
-        assert!(true);
-    }
-
-    #[test]
-    fn test_is_default_slot() {
-        // Verify the method exists and works for known default slots
-        // Slots 0-4 are reserved for default textures
-
-        // We can test the logic without a Vulkan instance
-        assert!(DEFAULT_TEXTURE_COUNT == 5);
-        assert!(0 < DEFAULT_TEXTURE_COUNT);
     }
 }

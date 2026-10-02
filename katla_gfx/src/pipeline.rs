@@ -132,83 +132,6 @@ pub enum BlendOp {
     Max,
 }
 
-/// Shader stage visibility flags.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct ShaderStageFlags {
-    /// Vertex shader stage.
-    pub vertex: bool,
-    /// Fragment shader stage.
-    pub fragment: bool,
-    /// Compute shader stage.
-    pub compute: bool,
-}
-
-impl ShaderStageFlags {
-    /// No shader stages.
-    pub const NONE: Self = Self {
-        vertex: false,
-        fragment: false,
-        compute: false,
-    };
-
-    /// Vertex shader stage only.
-    pub const VERTEX: Self = Self {
-        vertex: true,
-        fragment: false,
-        compute: false,
-    };
-
-    /// Fragment shader stage only.
-    pub const FRAGMENT: Self = Self {
-        vertex: false,
-        fragment: true,
-        compute: false,
-    };
-
-    /// Vertex and fragment shader stages (common for graphics pipelines).
-    pub const VERTEX_FRAGMENT: Self = Self {
-        vertex: true,
-        fragment: true,
-        compute: false,
-    };
-
-    /// Compute shader stage only.
-    pub const COMPUTE: Self = Self {
-        vertex: false,
-        fragment: false,
-        compute: true,
-    };
-
-    /// All shader stages.
-    pub const ALL: Self = Self {
-        vertex: true,
-        fragment: true,
-        compute: true,
-    };
-
-    /// Create a new ShaderStageFlags with all stages disabled.
-    #[inline]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Check if any shader stage is enabled.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        !self.vertex && !self.fragment && !self.compute
-    }
-
-    /// Combine two ShaderStageFlags with bitwise OR.
-    #[inline]
-    pub fn union(self, other: Self) -> Self {
-        Self {
-            vertex: self.vertex || other.vertex,
-            fragment: self.fragment || other.fragment,
-            compute: self.compute || other.compute,
-        }
-    }
-}
-
 // Vulkan Conversion Implementations
 
 impl From<CompareOp> for ash::vk::CompareOp {
@@ -293,23 +216,6 @@ impl From<BlendOp> for ash::vk::BlendOp {
             BlendOp::Min => ash::vk::BlendOp::MIN,
             BlendOp::Max => ash::vk::BlendOp::MAX,
         }
-    }
-}
-
-impl From<ShaderStageFlags> for ash::vk::ShaderStageFlags {
-    #[inline]
-    fn from(stages: ShaderStageFlags) -> Self {
-        let mut flags = ash::vk::ShaderStageFlags::empty();
-        if stages.vertex {
-            flags |= ash::vk::ShaderStageFlags::VERTEX;
-        }
-        if stages.fragment {
-            flags |= ash::vk::ShaderStageFlags::FRAGMENT;
-        }
-        if stages.compute {
-            flags |= ash::vk::ShaderStageFlags::COMPUTE;
-        }
-        flags
     }
 }
 
@@ -480,84 +386,6 @@ mod tests {
         );
         assert_eq!(ash::vk::BlendOp::from(BlendOp::Min), ash::vk::BlendOp::MIN);
         assert_eq!(ash::vk::BlendOp::from(BlendOp::Max), ash::vk::BlendOp::MAX);
-    }
-
-    #[test]
-    fn test_shader_stage_flags_constants() {
-        assert!(ShaderStageFlags::VERTEX.vertex);
-        assert!(!ShaderStageFlags::VERTEX.fragment);
-        assert!(!ShaderStageFlags::VERTEX.compute);
-
-        assert!(!ShaderStageFlags::FRAGMENT.vertex);
-        assert!(ShaderStageFlags::FRAGMENT.fragment);
-        assert!(!ShaderStageFlags::FRAGMENT.compute);
-
-        assert!(!ShaderStageFlags::COMPUTE.vertex);
-        assert!(!ShaderStageFlags::COMPUTE.fragment);
-        assert!(ShaderStageFlags::COMPUTE.compute);
-
-        assert!(ShaderStageFlags::VERTEX_FRAGMENT.vertex);
-        assert!(ShaderStageFlags::VERTEX_FRAGMENT.fragment);
-        assert!(!ShaderStageFlags::VERTEX_FRAGMENT.compute);
-
-        assert!(ShaderStageFlags::ALL.vertex);
-        assert!(ShaderStageFlags::ALL.fragment);
-        assert!(ShaderStageFlags::ALL.compute);
-
-        assert!(!ShaderStageFlags::NONE.vertex);
-        assert!(!ShaderStageFlags::NONE.fragment);
-        assert!(!ShaderStageFlags::NONE.compute);
-    }
-
-    #[test]
-    fn test_shader_stage_flags_is_empty() {
-        assert!(ShaderStageFlags::NONE.is_empty());
-        assert!(ShaderStageFlags::new().is_empty());
-        assert!(!ShaderStageFlags::VERTEX.is_empty());
-        assert!(!ShaderStageFlags::ALL.is_empty());
-    }
-
-    #[test]
-    fn test_shader_stage_flags_union() {
-        let combined = ShaderStageFlags::VERTEX.union(ShaderStageFlags::FRAGMENT);
-        assert!(combined.vertex);
-        assert!(combined.fragment);
-        assert!(!combined.compute);
-
-        let all = ShaderStageFlags::VERTEX_FRAGMENT.union(ShaderStageFlags::COMPUTE);
-        assert!(all.vertex);
-        assert!(all.fragment);
-        assert!(all.compute);
-    }
-
-    #[test]
-    fn test_shader_stage_flags_conversion() {
-        assert_eq!(
-            ash::vk::ShaderStageFlags::from(ShaderStageFlags::VERTEX),
-            ash::vk::ShaderStageFlags::VERTEX
-        );
-        assert_eq!(
-            ash::vk::ShaderStageFlags::from(ShaderStageFlags::FRAGMENT),
-            ash::vk::ShaderStageFlags::FRAGMENT
-        );
-        assert_eq!(
-            ash::vk::ShaderStageFlags::from(ShaderStageFlags::COMPUTE),
-            ash::vk::ShaderStageFlags::COMPUTE
-        );
-        assert_eq!(
-            ash::vk::ShaderStageFlags::from(ShaderStageFlags::VERTEX_FRAGMENT),
-            ash::vk::ShaderStageFlags::VERTEX | ash::vk::ShaderStageFlags::FRAGMENT
-        );
-        assert_eq!(
-            ash::vk::ShaderStageFlags::from(ShaderStageFlags::ALL),
-            ash::vk::ShaderStageFlags::VERTEX
-                | ash::vk::ShaderStageFlags::FRAGMENT
-                | ash::vk::ShaderStageFlags::COMPUTE
-        );
-        assert_eq!(
-            ash::vk::ShaderStageFlags::from(ShaderStageFlags::NONE),
-            ash::vk::ShaderStageFlags::empty()
-        );
     }
 
     #[test]

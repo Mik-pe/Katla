@@ -27,6 +27,8 @@ pub enum GraphValidationError {
         resource: u32,
         reason: String,
     },
+    /// Graphics bindings exceed the pass's declared resource contract.
+    InvalidPassBinding { pass: String, reason: String },
     /// A recorded command violates its reflected resource contract.
     InvalidComputeCommand { pass: String, reason: String },
     /// A resource declaration or import has an empty name.
@@ -76,6 +78,8 @@ pub enum GraphValidationError {
     },
     /// An imported resource uses the sentinel NONE handle.
     InvalidImportedResource(String),
+    /// An imported buffer cannot retire while a pass or export still consumes it.
+    ImportedBufferStillInUse { resource: String, consumer: String },
     /// An imported buffer uses the sentinel NONE handle.
     InvalidImportedBuffer(String),
     /// A pass has an empty name.
@@ -104,6 +108,10 @@ pub enum GraphValidationError {
     LoadingUndefinedAttachment { pass: String, resource: String },
     /// A compute pass declares attachment operations.
     AttachmentOpsOnComputePass(String),
+    /// A declared depth target is not a graph depth image or imported texture.
+    InvalidDepthTarget { pass: String, resource: String },
+    /// A depth-using pass does not bind a graph image.
+    MissingDepthTarget { pass: String },
     /// A pass declares depth operations but does not use depth.
     DepthOpsWithoutDepthUse(String),
     /// A depth clear value is outside the [0, 1] range.
@@ -144,6 +152,9 @@ impl fmt::Display for GraphValidationError {
                     f,
                     "pass '{pass}' declares invalid image access r{resource}: {reason}"
                 )
+            }
+            Self::InvalidPassBinding { pass, reason } => {
+                write!(f, "invalid resource binding in pass '{pass}': {reason}")
             }
             Self::InvalidComputeCommand { pass, reason } => {
                 write!(f, "invalid compute command in pass '{pass}': {reason}")
@@ -225,6 +236,10 @@ impl fmt::Display for GraphValidationError {
                 "imported resource '{}' uses GraphResourceHandle::NONE",
                 name
             ),
+            Self::ImportedBufferStillInUse { resource, consumer } => write!(
+                f,
+                "imported buffer '{resource}' is still referenced by '{consumer}'"
+            ),
             Self::InvalidImportedBuffer(name) => {
                 write!(f, "imported buffer '{}' uses BufferHandle::NONE", name)
             }
@@ -277,6 +292,15 @@ impl fmt::Display for GraphValidationError {
             Self::AttachmentOpsOnComputePass(pass) => write!(
                 f,
                 "compute pass '{}' must not declare attachment operations",
+                pass
+            ),
+            Self::InvalidDepthTarget { pass, resource } => write!(
+                f,
+                "pass '{pass}' binds non-depth resource '{resource}' as its depth target"
+            ),
+            Self::MissingDepthTarget { pass } => write!(
+                f,
+                "pass '{}' uses depth without a declared graph depth target",
                 pass
             ),
             Self::DepthOpsWithoutDepthUse(pass) => write!(

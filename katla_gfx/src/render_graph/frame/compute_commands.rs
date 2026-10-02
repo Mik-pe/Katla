@@ -1,7 +1,6 @@
 use super::Frame;
 use crate::render_graph::{
-    BufferUsage, BuiltinComputeKernel, ComputeCommand, ComputeDispatch, ComputeDispatchSize,
-    ComputeKernel, PassDesc, RenderGraphError,
+    BufferUsage, ComputeCommand, ComputeDispatch, ComputeDispatchSize, PassDesc, RenderGraphError,
 };
 use crate::renderer::VulkanRenderer;
 use crate::vulkan::commandbuffer::CommandBuffer;
@@ -35,6 +34,19 @@ fn command_scope(command: &ComputeCommand) -> (vk::PipelineStageFlags2, vk::Acce
     }
 }
 
+fn command_barrier(
+    previous: &ComputeCommand,
+    command: &ComputeCommand,
+) -> vk::MemoryBarrier2<'static> {
+    let (source_stages, source_accesses) = command_scope(previous);
+    let (destination_stages, destination_accesses) = command_scope(command);
+    vk::MemoryBarrier2::default()
+        .src_stage_mask(source_stages)
+        .src_access_mask(source_accesses)
+        .dst_stage_mask(destination_stages)
+        .dst_access_mask(destination_accesses)
+}
+
 impl Frame<'_, VulkanRenderer> {
     fn graph_dispatch_groups(
         &self,
@@ -47,29 +59,6 @@ impl Frame<'_, VulkanRenderer> {
         match dispatch.size {
             ComputeDispatchSize::Direct(groups) => groups,
             ComputeDispatchSize::Indirect { .. } => [1, 1, 1],
-            ComputeDispatchSize::Frame => match dispatch.kernel {
-                ComputeKernel::Builtin(BuiltinComputeKernel::AnimationPose) => {
-                    [self.animation_skeleton_count().div_ceil(64), 1, 1]
-                }
-                ComputeKernel::Builtin(BuiltinComputeKernel::ParticleEmit) => {
-                    [self.particle_emit_workgroup_count(), 1, 1]
-                }
-                ComputeKernel::Builtin(BuiltinComputeKernel::ParticleSimulate) => {
-                    [self.particle_simulate_workgroup_count(), 1, 1]
-                }
-                ComputeKernel::Builtin(BuiltinComputeKernel::ParticleDrawCommand) => [
-                    u32::from(self.particle_simulate_workgroup_count() > 0),
-                    1,
-                    1,
-                ],
-                ComputeKernel::Builtin(BuiltinComputeKernel::LightCulling) => self
-                    .renderer
-                    .light_culling_buffers()
-                    .map_or([0, 1, 1], |buffers| {
-                        [buffers.tiles_x(), buffers.tiles_y(), 1]
-                    }),
-                ComputeKernel::Shader(_) => [0, 0, 0],
-            },
         }
     }
 
@@ -79,10 +68,7 @@ impl Frame<'_, VulkanRenderer> {
         cmd: vk::CommandBuffer,
     ) -> Result<(), RenderGraphError> {
         let slot = self.current_frame();
-        if dispatch.kernel == ComputeKernel::Builtin(BuiltinComputeKernel::LightCulling) {
-            self.renderer.prepare_graph_lights();
-        }
-        let descriptor = dispatch.kernel.descriptor_ref();
+        let descriptor = &dispatch.pipeline;
         let pipeline = self
             .renderer
             .graph_compute_pipelines
@@ -249,19 +235,18 @@ impl Frame<'_, VulkanRenderer> {
                 .checked_sub(1)
                 .and_then(|index| pass.commands.get(index))
             {
-                let (source_stages, source_accesses) = command_scope(previous);
-                let (destination_stages, destination_accesses) = command_scope(command);
-                let barrier = vk::MemoryBarrier2::default()
-                    .src_stage_mask(source_stages)
-                    .src_access_mask(source_accesses)
-                    .dst_stage_mask(destination_stages)
-                    .dst_access_mask(destination_accesses);
+                let barrier = command_barrier(previous, command);
                 unsafe {
                     self.renderer.context.device.cmd_pipeline_barrier2(
                         command_buffer,
                         &vk::DependencyInfo::default().memory_barriers(&[barrier]),
                     );
                 }
+                self.capture_memory_barrier(
+                    &barrier,
+                    &command_barrier(previous, command),
+                    "intra_pass_command_dependency",
+                );
             }
             match command {
                 ComputeCommand::Dispatch(dispatch) => {
@@ -270,6 +255,27 @@ impl Frame<'_, VulkanRenderer> {
                         continue;
                     }
                     self.bind_graph_kernel(dispatch, command_buffer)?;
+                    let layout_identity = self
+                        .renderer
+                        .graph_compute_pipelines
+                        .get(&dispatch.pipeline)
+                        .map(|pipeline| format!("compute:{:?}", pipeline.interface));
+                    if let Some(identity) = layout_identity {
+                        self.capture_binding_set(identity);
+                    }
+                    let mut resources: Vec<_> = dispatch
+                        .bindings
+                        .iter()
+                        .map(|binding| binding.resource.0)
+                        .collect();
+                    if let ComputeDispatchSize::Indirect { resource, .. } = dispatch.size {
+                        resources.push(resource.0);
+                    }
+                    self.capture_encoder(
+                        pass,
+                        crate::render_graph::capture::CapturedEncoderKind::Compute,
+                        resources,
+                    );
                     unsafe {
                         match dispatch.size {
                             ComputeDispatchSize::Indirect { resource, offset } => {
@@ -311,9 +317,6 @@ impl Frame<'_, VulkanRenderer> {
                 } => {
                     let Some(buffer) = self.graph.buffer_by_id(self.renderer, *resource, slot)
                     else {
-                        if self.graph.is_builtin_buffer(*resource) {
-                            continue;
-                        }
                         return Err(RenderGraphError::InvalidConfiguration(
                             "Fill buffer unavailable".into(),
                         ));
@@ -346,6 +349,11 @@ impl Frame<'_, VulkanRenderer> {
                             *value,
                         );
                     }
+                    self.capture_encoder(
+                        pass,
+                        crate::render_graph::capture::CapturedEncoderKind::Blit,
+                        vec![resource.0],
+                    );
                 }
                 ComputeCommand::CopyBuffer {
                     source,
@@ -404,6 +412,18 @@ impl Frame<'_, VulkanRenderer> {
                             source.vk_buffer(),
                             destination.vk_buffer(),
                             &[region],
+                        );
+                    }
+                    if let ComputeCommand::CopyBuffer {
+                        source,
+                        destination,
+                        ..
+                    } = command
+                    {
+                        self.capture_encoder(
+                            pass,
+                            crate::render_graph::capture::CapturedEncoderKind::Blit,
+                            vec![source.0, destination.0],
                         );
                     }
                 }

@@ -61,13 +61,13 @@ jobs:
           cargo clippy -p katla_ecs --all-targets --all-features --locked -- -D warnings
 
       - name: Check graphics library
-        run: cargo check -p katla_gfx --lib --locked --quiet
+        run: cargo check -p katla_gfx --all-targets --locked --quiet
 
       - name: Test graphics library
         run: cargo test -p katla_gfx --lib --locked --quiet -- --test-threads=1
 
       - name: Lint graphics library
-        run: cargo clippy -p katla_gfx --lib --locked --quiet -- -D warnings
+        run: cargo clippy -p katla_gfx --all-targets --locked --quiet -- -D warnings
 
       - name: Cross-backend contract suite (Vulkan on lavapipe)
         # Serial: lavapipe's pipe-loader races on concurrent instance
@@ -79,14 +79,18 @@ jobs:
       - name: Vulkan transient allocation, aliasing and resize validation
         run: cargo test -p katla_gfx --test transient_aliasing --locked -- --ignored --test-threads=1
 
+      - name: Vulkan native capture and retained readback validation
+        run: cargo test -p katla_gfx --lib renderer::capture_tests --locked -- --ignored --test-threads=1
+
       - name: Upload render-graph diagnostics artifacts
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: render-graph-diagnostics-linux
+          name: render-graph-plan-execution-linux
           path: target/render-graph-diagnostics/
           if-no-files-found: ignore
           retention-days: 7
+          include-hidden-files: false
 
   macos-26:
     name: macOS 26 / Metal
@@ -116,7 +120,9 @@ jobs:
           cargo clippy -p katla_ecs --all-targets --all-features --locked -- -D warnings
 
       - name: Check graphics and application crates
-        run: cargo check -p katla_gfx -p katla_app --locked --quiet
+        run: |
+          cargo check -p katla_gfx -p katla_app --all-targets --locked --quiet
+          cargo check -p katla_app --no-default-features --all-targets --locked --quiet
 
       - name: Probe default GPU Metal 4 support
         id: metal4
@@ -151,7 +157,7 @@ jobs:
           METAL_DEVICE_WRAPPER_TYPE: "1"
 
       - name: Lint graphics and application crates
-        run: cargo clippy -p katla_gfx -p katla_app --locked --quiet -- -D warnings
+        run: cargo clippy -p katla_gfx -p katla_app --all-targets --locked --quiet -- -D warnings
 
       - name: Cross-backend contract suite (Metal with API validation)
         if: steps.metal4.outputs.supported == 'true'
@@ -164,10 +170,11 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: render-graph-diagnostics-macos
+          name: render-graph-plan-execution-macos
           path: target/render-graph-diagnostics/
           if-no-files-found: ignore
           retention-days: 7
+          include-hidden-files: false
 
   ecs-miri:
     name: ECS pointer and lifetime checks
@@ -187,6 +194,7 @@ jobs:
           cargo +nightly-2026-08-04 miri test -p katla_ecs --lib query::filter::tests --locked
           cargo +nightly-2026-08-04 miri test -p katla_ecs --lib entity_allocator::tests --locked
           cargo +nightly-2026-08-04 miri test -p katla_ecs --lib sparse_set::tests::test_generational_keys_reject_stale_access --locked
+          cargo +nightly-2026-08-04 miri test -p katla_ecs --lib sparse_set::tests::test_sparse_set_remove --locked
           cargo +nightly-2026-08-04 miri test -p katla_ecs --test entity_lifecycle --locked
         env:
           MIRIFLAGS: -Zmiri-disable-isolation

@@ -109,6 +109,7 @@ impl GpuBuffer for MetalBuffer {
         }
     }
 
+    #[cfg(test)]
     fn gpu_address(&self) -> u64 {
         self.inner.gpuAddress()
     }

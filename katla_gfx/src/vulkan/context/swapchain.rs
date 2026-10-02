@@ -3,10 +3,7 @@ use std::rc::Rc;
 use ash::{Device, vk};
 use gpu_allocator::{MemoryLocation, vulkan::Allocation};
 
-use crate::{
-    barrier::ImageBarrier,
-    sync::{VkImage, VkImageView},
-};
+use crate::sync::{VkImage, VkImageView};
 
 use super::*;
 
@@ -109,11 +106,6 @@ impl VulkanFrameCtx {
             .map(|img| VkImage::new(*img))
             .collect();
 
-        const FRAMES_IN_FLIGHT: usize = 2;
-        let depth_render_textures: Vec<RenderTexture> = (0..FRAMES_IN_FLIGHT)
-            .map(|_| create_depth_render_texture(context.clone(), swapchain.get_extent()))
-            .collect();
-
         let command_buffers = context
             .gfx_cmdpool
             .create_command_buffers(swapchain_image_views.len() as _);
@@ -121,7 +113,6 @@ impl VulkanFrameCtx {
         Ok(Self {
             context: context.clone(),
             extent: swapchain.get_extent(),
-            scene_extent: swapchain.get_extent(),
             swapchain: Some(swapchain),
             offscreen_targets: Vec::new(),
             swapchain_image_views,
@@ -134,7 +125,6 @@ impl VulkanFrameCtx {
             pending_output_contents: std::cell::Cell::new(None),
             pending_transient_layouts: Default::default(),
             swapchain_images: swapchain_images_wrapped,
-            depth_render_textures,
             command_buffers,
         })
     }
@@ -185,7 +175,6 @@ impl VulkanFrameCtx {
             context: context.clone(),
             swapchain: None,
             extent,
-            scene_extent: extent,
             swapchain_image_layouts: (0..images.len())
                 .map(|_| std::cell::Cell::new(vk::ImageLayout::UNDEFINED))
                 .collect(),
@@ -197,24 +186,29 @@ impl VulkanFrameCtx {
             swapchain_images: images,
             swapchain_image_views: views,
             offscreen_targets: targets,
-            depth_render_textures: (0..2)
-                .map(|_| create_depth_render_texture(context.clone(), extent))
-                .collect(),
             command_buffers: context.gfx_cmdpool.create_command_buffers(2),
         })
-    }
-
-    pub(crate) fn resize_scene_depth(&mut self, extent: vk::Extent2D) {
-        self.depth_render_textures = (0..2)
-            .map(|_| create_depth_render_texture(self.context.clone(), extent))
-            .collect();
-        self.scene_extent = extent;
     }
 
     pub fn recreate_swapchain(
         &mut self,
         extent: vk::Extent2D,
     ) -> Result<(), crate::error::RendererError> {
+        if extent.width == 0 || extent.height == 0 {
+            return Err(crate::error::RendererError::InvalidOperation(
+                "Output dimensions must be nonzero".into(),
+            ));
+        }
+        if self.swapchain.is_none() {
+            let replacement = Self::init_headless(&self.context, extent)?;
+            self.pending_transient_layouts.borrow_mut().rollback();
+            self.destroy();
+            for command in self.command_buffers.drain(..) {
+                command.return_to_pool();
+            }
+            *self = replacement;
+            return Ok(());
+        }
         let (swapchain_loader, surface_loader, surface) =
             self.context.window_resources().ok_or_else(|| {
                 crate::error::RendererError::InitializationFailed(
@@ -233,7 +227,6 @@ impl VulkanFrameCtx {
         )?;
         self.destroy();
         self.extent = swapchain.get_extent();
-        self.scene_extent = self.extent;
         let swapchain_images = swapchain.get_swapchain_images()?;
 
         self.swapchain_images = swapchain_images
@@ -261,10 +254,6 @@ impl VulkanFrameCtx {
                 ))
             })
             .collect();
-        const FRAMES_IN_FLIGHT: usize = 2;
-        self.depth_render_textures = (0..FRAMES_IN_FLIGHT)
-            .map(|_| create_depth_render_texture(self.context.clone(), self.extent))
-            .collect();
         self.swapchain = Some(swapchain);
         Ok(())
     }
@@ -281,87 +270,6 @@ impl VulkanFrameCtx {
             }
             self.offscreen_targets.clear();
             self.swapchain_image_views.clear();
-            self.depth_render_textures.clear();
         }
-    }
-}
-
-fn create_depth_render_texture(context: Rc<VulkanContext>, extent: vk::Extent2D) -> RenderTexture {
-    let depth_format = context
-        .find_depth_format()
-        .expect("Failed to find depth format");
-    let extent_3d = vk::Extent3D {
-        width: extent.width,
-        height: extent.height,
-        depth: 1,
-    };
-    let create_info = vk::ImageCreateInfo::default()
-        .image_type(vk::ImageType::TYPE_2D)
-        .mip_levels(1)
-        .array_layers(1)
-        .format(depth_format)
-        .extent(extent_3d)
-        .tiling(vk::ImageTiling::OPTIMAL)
-        .samples(vk::SampleCountFlags::TYPE_1)
-        .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED);
-
-    let (depth_image, image_memory) = context
-        .create_image(create_info, MemoryLocation::GpuOnly)
-        .expect("Failed to create depth image");
-
-    let image_view = VulkanFrameCtx::create_image_view(
-        &context.device,
-        depth_image,
-        depth_format,
-        vk::ImageAspectFlags::DEPTH,
-    );
-
-    let has_stencil = matches!(
-        depth_format,
-        vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT
-    );
-
-    let depth_stencil_image_view = if has_stencil {
-        Some(VkImageView::new(VulkanFrameCtx::create_image_view(
-            &context.device,
-            depth_image,
-            depth_format,
-            vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-        )))
-    } else {
-        None
-    };
-
-    let cmd_buffer = context
-        .begin_single_time_commands()
-        .expect("Failed to begin single-time commands");
-    let cmd = cmd_buffer.vk_command_buffer();
-
-    let depth_range = vk::ImageSubresourceRange {
-        aspect_mask: vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
-        base_mip_level: 0,
-        level_count: 1,
-        base_array_layer: 0,
-        layer_count: 1,
-    };
-
-    ImageBarrier::transition_from_undefined_with_range(
-        &cmd,
-        &context.device,
-        depth_image,
-        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        depth_range,
-    );
-
-    context
-        .end_single_time_commands(cmd_buffer)
-        .expect("Failed to end single-time commands");
-
-    RenderTexture {
-        image_view: VkImageView::new(image_view),
-        depth_stencil_image_view,
-        image: VkImage::new(depth_image),
-        image_memory,
-        context,
     }
 }

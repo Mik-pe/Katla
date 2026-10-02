@@ -47,7 +47,7 @@ cargo fmt                      # Format
 cargo run                     # Run the application
 cargo run -- -s               # Run in limited-frame mode (100 frames)
 METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- -s  # Metal validation (macOS)
-cargo run -p katla_gfx --example particle_validation  # Headless GPU validation
+cargo test -p katla_gfx --lib render_graph::native_compute_tests -- --nocapture  # Native compute validation
 ```
 
 ## Command Line Arguments

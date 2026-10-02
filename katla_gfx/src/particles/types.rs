@@ -12,18 +12,12 @@ pub enum EmitterShape {
     Box = 4,
 }
 
-// Safety: EmitterShape is repr(u32), guaranteed 4 bytes with no padding.
-unsafe impl bytemuck::Pod for EmitterShape {}
-unsafe impl bytemuck::Zeroable for EmitterShape {}
-
 /// 16-byte aligned `[f32; 4]` to match WGSL `vec4f` alignment.
 #[repr(C, align(16))]
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, Serialize, Deserialize, bytemuck::Pod, bytemuck::Zeroable,
+)]
 pub struct Align16Vec4(pub [f32; 4]);
-
-// Safety: Align16Vec4 is repr(C) with align(16), contains only f32 (Pod).
-unsafe impl bytemuck::Pod for Align16Vec4 {}
-unsafe impl bytemuck::Zeroable for Align16Vec4 {}
 
 /// Per-emitter configuration uploaded to a GPU storage buffer.
 ///
@@ -111,13 +105,49 @@ pub struct EmitterConfig {
     pub _pad2: [f32; 3],
 }
 
-// Safety: EmitterConfig is repr(C), all fields are Pod (EmitterShape is repr(u32), f32, u32, Align16Vec4).
-// The 12 bytes of implicit padding between color_variation and color_end are never read uninitialized
-// because the struct is always created via Default or explicit field init.
-unsafe impl bytemuck::Pod for EmitterConfig {}
-unsafe impl bytemuck::Zeroable for EmitterConfig {}
-
 impl EmitterConfig {
+    /// Encode the WGSL storage-buffer layout with initialized alignment padding.
+    pub fn gpu_bytes(&self) -> [u8; 160] {
+        let mut bytes = [0; 160];
+        let mut write = |offset: usize, values: &[f32]| {
+            for (index, value) in values.iter().enumerate() {
+                let start = offset + index * 4;
+                bytes[start..start + 4].copy_from_slice(&value.to_le_bytes());
+            }
+        };
+        write(0, &self.position);
+        write(
+            20,
+            &[self.emit_rate, self.base_lifetime, self.lifetime_variation],
+        );
+        write(32, &self.velocity_direction);
+        write(
+            48,
+            &[
+                self.velocity_magnitude,
+                self.velocity_cone_angle,
+                self.base_scale,
+                self.scale_variation,
+            ],
+        );
+        write(64, &self.color);
+        write(80, &[self.color_variation]);
+        write(96, &self.color_end.0);
+        write(112, &self.shape_params);
+        write(
+            128,
+            &[
+                self.gravity,
+                self.turbulence_strength,
+                self.turbulence_frequency,
+            ],
+        );
+        write(144, &[self.scale_end]);
+        bytes[16..20].copy_from_slice(&(self.shape as u32).to_le_bytes());
+        bytes[140..144].copy_from_slice(&self.kill_all.to_le_bytes());
+        bytes
+    }
+
     pub fn builder() -> EmitterConfigBuilder {
         EmitterConfigBuilder::new()
     }
@@ -306,13 +336,4 @@ impl Default for EmitterConfig {
             _pad2: [0.0; 3],
         }
     }
-}
-
-/// Per-emitter runtime state (not uploaded to GPU).
-#[derive(Clone, Default)]
-pub(crate) struct EmitterState {
-    /// Burst particles to emit this frame
-    pub burst_count: u32,
-    /// Accumulated fractional emit time for rate-based emission
-    pub emit_accumulator: f32,
 }

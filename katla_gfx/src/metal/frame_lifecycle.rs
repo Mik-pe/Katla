@@ -7,7 +7,7 @@ use objc2_metal::MTL4CommandAllocator;
 use std::time::{Duration, Instant};
 
 use crate::error::RendererError;
-use crate::renderer::frame_scope::{FrameAcquisition, FrameToken};
+use crate::renderer::frame_scope::{FrameAcquisition, FrameToken, PresentOutcome};
 use crate::texture::ImageFormat;
 
 use super::metal_renderer::MetalRenderer;
@@ -45,7 +45,9 @@ impl MetalRenderer {
         self.pending_buffer_accesses.borrow_mut().clear();
         if abandoned {
             let slot = self.frame_index();
-            self.frame_slots[slot].timestamps.reset();
+            if let Some(timestamps) = &mut self.frame_slots[slot].timestamps {
+                timestamps.reset();
+            }
         }
         self.texture_uploads
             .cancel_unsubmitted(self.frame_slots[self.frame_index()].generation);
@@ -94,10 +96,14 @@ impl MetalRenderer {
         self.buffer_history_retirement
             .borrow_mut()
             .retire_completed(&mut self.buffer_history.borrow_mut());
-        if let Some(queries) = &self.timestamp_queries {
-            queries.cache_completed(&self.frame_slots[slot].timestamps);
+        if let Some(queries) = &self.timestamp_queries
+            && let Some(timestamps) = &self.frame_slots[slot].timestamps
+        {
+            queries.cache_completed(timestamps);
         }
-        self.frame_slots[slot].timestamps.reset();
+        if let Some(timestamps) = &mut self.frame_slots[slot].timestamps {
+            timestamps.reset();
+        }
         self.frame_slots[slot].allocator.reset();
         self.frame_metrics.slot_wait = started.elapsed();
         self.frame_metrics.in_flight = self
@@ -149,12 +155,6 @@ impl MetalRenderer {
         let frame_idx = self.frame_index();
 
         self.bindless_manager.publish_snapshot()?;
-        if let Some(light) = &mut self.light_culling {
-            light.prepare_frame(
-                &self.frame_uniforms.view_matrix,
-                &self.frame_uniforms.proj_matrix,
-            );
-        }
 
         match self.execute_metal_passes(frame, pending, frame_graph, frame_idx) {
             Ok(trace) => {
@@ -171,7 +171,10 @@ impl MetalRenderer {
     }
 
     /// Commit the recorded frame, present its drawable, and release its token.
-    pub(crate) fn present_frame(&mut self, frame: FrameToken) -> Result<(), RendererError> {
+    pub(crate) fn present_frame(
+        &mut self,
+        frame: FrameToken,
+    ) -> Result<PresentOutcome, RendererError> {
         use crate::backend::command::GpuCommandBuffer;
         use objc2_metal::MTLBuffer;
         self.frame_check(&frame)?;
@@ -182,56 +185,64 @@ impl MetalRenderer {
             )));
         }
         let slot = frame.slot();
-        if let Some(pending) = self.pending_frame.take() {
-            pending.command.resources.check()?;
-            self.context
-                .surface
-                .wait_for_drawable(&self.context.command_queue);
-            let started = Instant::now();
-            pending.command.submit(&self.context);
-            self.frame_metrics.cpu_submit = started.elapsed();
-            self.texture_uploads
-                .mark_submitted(self.frame_slots[slot].generation);
-            self.context.surface.present(&self.context.command_queue);
-            self.frame_slots[slot]
-                .timestamps
-                .submitted(pending.command.completion.clone());
-            for access in self.pending_buffer_accesses.borrow_mut().drain(..) {
-                let identity = access.buffer.inner.gpuAddress();
-                self.buffer_history
-                    .borrow_mut()
-                    .record(identity, access.offset, &access.accesses);
-                self.buffer_history_retirement.borrow_mut().record(
-                    identity,
-                    &access.buffer,
-                    slot,
-                    &pending.command.completion,
-                );
-            }
-            self.frame_slots[slot].picking_target =
-                pending
-                    .picking_target
-                    .map(|view| super::picking::MetalPickingSource {
-                        view,
-                        slot,
-                        generation: self.frame_slots[slot].generation,
-                    });
-            self.frame_slots[slot].submission = Some(pending.command);
-            self.last_submitted_slot = Some(slot);
-            self.defined_output_contents = pending.defined_outputs;
-            self.frame_metrics.in_flight = self
-                .frame_slots
-                .iter()
-                .filter(|slot| {
-                    slot.submission
-                        .as_ref()
-                        .is_some_and(|submission| !submission.completion.is_complete())
-                })
-                .count();
-            self.frame_metrics.cpu_lead = self.frame_metrics.in_flight;
-        } else if self.frame_owns_drawable {
-            self.context.surface.discard_drawable();
+        let pending = self.pending_frame.take().ok_or_else(|| {
+            RendererError::InvalidOperation(
+                "Cannot present a frame without recorded GPU work; abort it instead".into(),
+            )
+        })?;
+
+        pending.command.resources.check()?;
+        self.context
+            .surface
+            .wait_for_drawable(&self.context.command_queue);
+        let started = Instant::now();
+        pending.command.submit(&self.context);
+        self.frame_metrics.cpu_submit = started.elapsed();
+        self.texture_uploads
+            .mark_submitted(self.frame_slots[slot].generation);
+        self.context.surface.present(&self.context.command_queue);
+        if let Some(timestamps) = &mut self.frame_slots[slot].timestamps {
+            timestamps.submitted(pending.command.completion.clone());
         }
+        for access in self.pending_buffer_accesses.borrow_mut().drain(..) {
+            let identity = access.buffer.inner.gpuAddress();
+            self.buffer_history
+                .borrow_mut()
+                .record(identity, access.offset, &access.accesses);
+            self.buffer_history_retirement.borrow_mut().record(
+                identity,
+                &access.buffer,
+                slot,
+                &pending.command.completion,
+            );
+        }
+        for handle in pending.imported_buffers {
+            self.graph_buffer_owners
+                .insert(handle, pending.command.completion.clone());
+        }
+        self.texture_readbacks.publish(
+            pending.exported_images,
+            slot,
+            self.frame_slots[slot].generation,
+        );
+        self.last_submission = Some((
+            slot,
+            self.frame_slots[slot].generation,
+            pending.command.completion.clone(),
+        ));
+        self.frame_slots[slot].submission = Some(pending.command);
+        self.last_submitted_slot = Some(slot);
+        self.defined_output_contents = pending.defined_outputs;
+        self.frame_metrics.in_flight = self
+            .frame_slots
+            .iter()
+            .filter(|slot| {
+                slot.submission
+                    .as_ref()
+                    .is_some_and(|submission| !submission.completion.is_complete())
+            })
+            .count();
+        self.frame_metrics.cpu_lead = self.frame_metrics.in_flight;
         self.active_frame = None;
         if self.frame_owns_drawable {
             self.current_drawable_texture = None;
@@ -239,7 +250,7 @@ impl MetalRenderer {
         self.frame_owns_drawable = false;
         self.drawable_texture_view = None;
         self.frame_index = self.frame_index.wrapping_add(1);
-        Ok(())
+        Ok(PresentOutcome::presented())
     }
 }
 
@@ -256,18 +267,10 @@ pub(crate) fn acquire_frame(
     renderer.poll_material_reloads_impl();
     renderer.frame_clear();
     renderer.wait_for_slot(renderer.frame_index())?;
-    let slot = renderer.frame_index();
-    if let Some(light) = &mut renderer.light_culling {
-        light.select_slot(slot);
-    }
-    if let Some(animation) = &mut renderer.animation_system {
-        animation.select_slot(slot);
-    }
-
     // If a headless drawable is already set, skip acquiring from the surface
     if renderer.current_drawable_texture.is_some() {
         let slot = renderer.frame_index();
-        let token = FrameToken::new(slot, renderer.frame_generation);
+        let token = FrameToken::new(slot);
         renderer.frame_slots[slot].generation = renderer.frame_generation;
         renderer.frame_generation += 1;
         renderer.active_frame = Some(token);
@@ -283,7 +286,7 @@ pub(crate) fn acquire_frame(
             renderer.current_drawable_texture = Some(texture);
             renderer.frame_owns_drawable = true;
             let slot = renderer.frame_index();
-            let token = FrameToken::new(slot, renderer.frame_generation);
+            let token = FrameToken::new(slot);
             renderer.frame_slots[slot].generation = renderer.frame_generation;
             renderer.frame_generation += 1;
             renderer.active_frame = Some(token);
@@ -301,45 +304,14 @@ pub(crate) fn abort_frame(renderer: &mut MetalRenderer, frame: FrameToken) {
     }
 }
 
-#[cfg(test)]
-impl MetalRenderer {
-    /// Direct plan execution for tests that build `PassExecutionData` manually
-    /// instead of through a frame graph. A failure poisons the open frame.
-    pub(crate) fn render_frame_manual(
-        &mut self,
-        frame: &FrameToken,
-        plan: &super::execution_plan::MetalExecutionPlan,
-        pending: std::collections::HashMap<usize, crate::render_graph::PassExecutionData>,
-        graph: &crate::render_graph::FrameGraph<Self>,
-    ) -> Result<(), RendererError> {
-        self.frame_check(frame)?;
-        if self.pending_frame.is_some() || self.frame_slots[frame.slot()].submission.is_some() {
-            return Err(RendererError::InvalidOperation(
-                "The acquired frame has already been submitted".into(),
-            ));
-        }
-        if let Some(reason) = &self.frame_poisoned {
-            return Err(RendererError::InvalidOperation(format!(
-                "frame is poisoned by a previous render failure and cannot render again: {reason}"
-            )));
-        }
-        self.bindless_manager.publish_snapshot()?;
-        match self.render_frame(frame, plan, pending, graph, false) {
-            Ok(_trace) => Ok(()),
-            Err(e) => {
-                self.texture_uploads
-                    .cancel_unsubmitted(self.frame_slots[self.frame_index()].generation);
-                self.frame_poisoned = Some(format!("{e:?}"));
-                Err(e)
-            }
-        }
-    }
-}
-
 pub(crate) struct MetalPendingFrame {
     pub(crate) command: super::command_buffer::MetalCommandBuffer,
     pub(crate) defined_outputs: std::collections::HashSet<(u64, u8)>,
-    pub(crate) picking_target: Option<super::texture::MetalTextureView>,
+    pub(crate) exported_images: std::collections::HashMap<
+        crate::render_graph::ResourceId,
+        super::texture::MetalTextureView,
+    >,
+    pub(crate) imported_buffers: Vec<crate::handle::BufferHandle>,
 }
 
 pub(crate) struct MetalBufferExecution {
@@ -352,8 +324,7 @@ pub(crate) struct MetalFrameSlot {
     pub(crate) allocator: Retained<ProtocolObject<dyn MTL4CommandAllocator>>,
     pub(crate) submission: Option<super::command_buffer::MetalCommandBuffer>,
     pub(crate) generation: u64,
-    pub(crate) timestamps: super::timestamp_queries::MetalTimestampSlot,
-    pub(crate) picking_target: Option<super::picking::MetalPickingSource>,
+    pub(crate) timestamps: Option<super::timestamp_queries::MetalTimestampSlot>,
 }
 
 impl MetalFrameSlot {
@@ -365,8 +336,7 @@ impl MetalFrameSlot {
             allocator: context.create_command_allocator(slot)?,
             submission: None,
             generation: 0,
-            picking_target: None,
-            timestamps: super::timestamp_queries::MetalTimestampSlot::new(&context.device, slot)?,
+            timestamps: None,
         })
     }
 }

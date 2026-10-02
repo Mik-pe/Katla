@@ -104,14 +104,6 @@ pub struct InternalPassBuilder {
     /// Explicit typed buffer accesses.
     pub(crate) buffer_accesses: Vec<NamedBufferAccess>,
 
-    /// Optional pipeline handle (for fullscreen/compute passes).
-    pub pipeline: Option<crate::handle::PipelineHandle>,
-
-    /// Optional tonemap parameters (for HDR tonemapping passes).
-    pub tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
-    /// Optional overlay parameters (for wallhack overlay passes).
-    pub overlay_params: Option<crate::render_graph::passes::OverlayParams>,
-
     /// Optional material handle (for geometry passes).
     pub material: Option<crate::handle::MaterialHandle>,
 
@@ -157,7 +149,6 @@ pub struct SimplePass {
     depth_attachment: Option<crate::render_pass::DepthStencilAttachmentOps>,
     kind: Option<PassKind>,
     uses_depth: bool,
-    tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
 }
 
 impl SimplePass {
@@ -172,8 +163,7 @@ impl SimplePass {
             color_attachments: Vec::new(),
             depth_attachment: None,
             kind: None,
-            uses_depth: true,
-            tonemap_params: None,
+            uses_depth: false,
         }
     }
 
@@ -212,6 +202,7 @@ impl SimplePass {
         depth: crate::render_pass::AttachmentOps,
         stencil: crate::render_pass::AttachmentOps,
     ) -> Self {
+        self.uses_depth = true;
         self.depth_attachment =
             Some(crate::render_pass::DepthStencilAttachmentOps { depth, stencil });
         self
@@ -273,11 +264,6 @@ impl SimplePass {
         self.kind = Some(kind);
         self
     }
-
-    pub fn tonemap(mut self, params: crate::render_graph::passes::TonemapParams) -> Self {
-        self.tonemap_params = Some(params);
-        self
-    }
 }
 
 impl PassBuilder for SimplePass {
@@ -291,9 +277,6 @@ impl PassBuilder for SimplePass {
             buffer_accesses: self.buffer_accesses,
             color_attachments: self.color_attachments,
             depth_attachment: self.depth_attachment,
-            pipeline: None,
-            tonemap_params: self.tonemap_params,
-            overlay_params: None,
             material: None,
             output_format: None,
             build_fn: Box::new(|_| Ok(Box::new(()))),
@@ -344,8 +327,6 @@ mod tests {
                 writes: self.writes,
                 image_accesses: Vec::new(),
                 buffer_accesses: Vec::new(),
-                pipeline: None,
-                tonemap_params: None,
                 material: None,
                 output_format: None,
                 build_fn: Box::new(|_resource_map| Ok(Box::new(()))),
@@ -354,7 +335,6 @@ mod tests {
                 color_attachments: Vec::new(),
                 depth_attachment: None,
                 kind: None,
-                overlay_params: None,
                 side_effect: false,
             }
         }

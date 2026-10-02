@@ -1,4 +1,4 @@
-//! Frame-scoped lifecycle contract tests for issue #89.
+//! Frame-scoped device lifecycle contracts.
 //!
 //! One frame means one token: `acquire_frame` hands out the token and waits for
 //! the slot's previous submission, frame-local calls accept only that token, and
@@ -8,7 +8,7 @@
 //! - frame-local calls without an open frame fail typed;
 //! - a token that was already finished (or superseded by a later acquisition)
 //!   is rejected instead of writing into another frame's slot;
-//! - aborting and dropping a token both leave the slot reusable, never stranded;
+//! - aborting or superseding an acquisition leaves its slot reusable;
 //! - the slot index cycles across frames in flight and prior work completes
 //!   before its slot is handed out again.
 //!
@@ -23,10 +23,17 @@
 
 use std::ffi::CString;
 
-use katla_gfx::render_graph::{FrameGraph, FrameGraphBuilder, GeometryPass};
+#[path = "support/readback.rs"]
+mod readback;
+
+use katla_gfx::render_graph::{
+    BufferDesc, BufferMemoryPolicy, BufferUsages, FrameGraph, FrameGraphBuilder, GeometryPass,
+};
 use katla_gfx::renderer::frame_scope::{FrameAcquisition, FrameToken};
 use katla_gfx::texture::ImageFormat;
-use katla_gfx::{GpuRenderer, RendererError, ValidationMode, VulkanRenderer};
+use katla_gfx::{
+    BufferHandle, DrawList, GpuRenderer, RendererError, ValidationMode, VulkanRenderer,
+};
 
 const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
@@ -46,9 +53,24 @@ fn headless_renderer(label: &str) -> VulkanRenderer {
 
 fn backbuffer_graph() -> FrameGraph<VulkanRenderer> {
     FrameGraphBuilder::new()
-        .add_pass(GeometryPass::new("clear").write_color("backbuffer", ImageFormat::B8G8R8A8Srgb))
+        .add_pass(
+            GeometryPass::new("clear")
+                .without_depth()
+                .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb),
+        )
+        .export_resource("backbuffer")
         .build::<VulkanRenderer>()
         .unwrap_or_else(|error| panic!("backbuffer graph must build: {error}"))
+}
+
+fn writable_buffer(renderer: &mut VulkanRenderer) -> BufferHandle {
+    renderer
+        .create_buffer(BufferDesc::new(
+            16,
+            BufferUsages::STORAGE,
+            BufferMemoryPolicy::CpuVisible,
+        ))
+        .unwrap()
 }
 
 fn acquire(renderer: &mut VulkanRenderer) -> FrameToken {
@@ -64,18 +86,21 @@ fn acquire(renderer: &mut VulkanRenderer) -> FrameToken {
 #[ignore = "requires a Vulkan device"]
 fn test_frame_local_calls_require_an_open_frame() {
     let mut renderer = headless_renderer("Frame scope: no open frame");
-    let stale = FrameToken::new(0, 0);
+    let buffer = writable_buffer(&mut renderer);
+    let stale = FrameToken::new(0);
 
     let error = renderer
-        .set_frame_uniforms(&stale, Default::default())
+        .write_buffer(&stale, buffer, 0, &[0; 16])
         .expect_err("no frame is open");
     assert!(
         matches!(&error, RendererError::InvalidOperation(message) if message.contains("no frame is currently acquired")),
         "unexpected error: {error:?}"
     );
     assert!(
-        renderer.upload_shadow_cascades(&stale).is_err(),
-        "shadow cascade upload must require an open frame"
+        renderer
+            .execute_draw_calls(&stale, &DrawList::new())
+            .is_err(),
+        "draw storage upload must require an open frame"
     );
 
     renderer.destroy();
@@ -89,20 +114,30 @@ fn test_normal_frame_acquires_renders_and_presents() {
     let mut renderer = headless_renderer("Frame scope: normal frame");
     let mut graph = backbuffer_graph();
 
+    let buffer = writable_buffer(&mut renderer);
     let token = acquire(&mut renderer);
     renderer
-        .set_frame_uniforms(&token, Default::default())
+        .write_buffer(&token, buffer, 0, &[0; 16])
         .expect("frame-local write on the open frame");
     renderer
         .render(&token, &mut graph, |_| {})
         .expect("graph execution");
-    renderer.present(token).expect("present");
+    assert!(
+        renderer.write_buffer(&token, buffer, 0, &[1; 16]).is_err(),
+        "successful encoding freezes mutable frame writes"
+    );
+    assert_eq!(
+        renderer
+            .present(token)
+            .expect("present")
+            .surface
+            .expect("surface presentation"),
+        katla_gfx::SurfaceStatus::Presented
+    );
 
-    renderer.queue_async_readback(0).expect("queue readback");
-    let (_, pixels) = renderer
-        .wait_for_pending_readback()
-        .expect("wait for readback")
-        .expect("readback completes");
+    let (source, pixels) =
+        readback::read_pixels(&mut renderer, graph.resource_id("backbuffer").unwrap());
+    assert_eq!(source.frame_slot, token.slot());
     assert_eq!(pixels.len(), (WIDTH * HEIGHT * 4) as usize);
 
     graph.cleanup();
@@ -118,11 +153,19 @@ fn test_finished_and_superseded_tokens_are_rejected() {
     let mut renderer = headless_renderer("Frame scope: stale tokens");
     let mut graph = backbuffer_graph();
 
+    let buffer = writable_buffer(&mut renderer);
     let presented = acquire(&mut renderer);
     renderer
         .render(&presented, &mut graph, |_| {})
         .expect("graph execution");
-    renderer.present(presented).expect("present");
+    assert_eq!(
+        renderer
+            .present(presented)
+            .expect("present")
+            .surface
+            .expect("surface presentation"),
+        katla_gfx::SurfaceStatus::Presented
+    );
 
     // `FrameToken` is `Copy`, so a caller can hold on to it; the renderer must
     // refuse it now that the frame is closed.
@@ -148,14 +191,14 @@ fn test_finished_and_superseded_tokens_are_rejected() {
         "an unfinished frame keeps its slot; only present advances it"
     );
     let error = renderer
-        .set_frame_uniforms(&superseded, Default::default())
+        .write_buffer(&superseded, buffer, 0, &[0; 16])
         .expect_err("a superseded token must be rejected");
     assert!(
         matches!(&error, RendererError::InvalidOperation(message) if message.contains("stale frame token")),
         "unexpected error: {error:?}"
     );
     renderer
-        .set_frame_uniforms(&current, Default::default())
+        .write_buffer(&current, buffer, 0, &[0; 16])
         .expect("the current token is still accepted");
 
     renderer.abort(current).expect("abort the open frame");
@@ -184,7 +227,14 @@ fn test_aborted_frame_leaves_its_slot_reusable() {
     renderer
         .render(&reused, &mut graph, |_| {})
         .expect("the reused slot still renders");
-    renderer.present(reused).expect("present");
+    assert_eq!(
+        renderer
+            .present(reused)
+            .expect("present")
+            .surface
+            .expect("surface presentation"),
+        katla_gfx::SurfaceStatus::Presented
+    );
 
     graph.cleanup();
     renderer.destroy();
@@ -211,7 +261,14 @@ fn test_abandoned_acquisition_reuses_the_slot_normally() {
     renderer
         .render(&reused, &mut graph, |_| {})
         .expect("graph execution");
-    renderer.present(reused).expect("present");
+    assert_eq!(
+        renderer
+            .present(reused)
+            .expect("present")
+            .surface
+            .expect("surface presentation"),
+        katla_gfx::SurfaceStatus::Presented
+    );
 
     graph.cleanup();
     renderer.destroy();
@@ -226,29 +283,51 @@ fn test_slots_cycle_and_reuse_completes_prior_work() {
     let mut renderer = headless_renderer("Frame scope: slots in flight");
     let mut graph = backbuffer_graph();
 
+    let buffers: Vec<_> = (0..FRAMES_IN_FLIGHT)
+        .map(|_| writable_buffer(&mut renderer))
+        .collect();
+    assert_eq!(renderer.frame_slot_count(), FRAMES_IN_FLIGHT);
     let mut slots = Vec::new();
+    let mut previous_submission = 0;
     for frame in 0..(FRAMES_IN_FLIGHT * 2) {
         // No explicit wait: the previous owner of this slot may still be
         // executing, and acquire_frame must not hand out an unfinished slot.
         let token = acquire(&mut renderer);
         slots.push(token.slot());
         renderer
-            .set_frame_uniforms(&token, Default::default())
+            .write_buffer(&token, buffers[token.slot()], 0, &[frame as u8; 16])
             .expect("frame-local write");
         renderer
             .render(&token, &mut graph, |_| {})
             .expect("graph execution");
-        renderer.present(token).expect("present");
+        assert_eq!(
+            renderer
+                .present(token)
+                .expect("present")
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
 
-        renderer.queue_async_readback(frame).unwrap();
-        let (captured, pixels) = renderer
-            .wait_for_pending_readback()
-            .expect("wait for readback")
-            .expect("readback completes");
-        assert_eq!(captured, frame, "readback belongs to the presenting frame");
+        let (source, pixels) =
+            readback::read_pixels(&mut renderer, graph.resource_id("backbuffer").unwrap());
+        assert_eq!(
+            source.frame_slot,
+            token.slot(),
+            "readback belongs to the presenting slot"
+        );
+        assert!(
+            source.submission > previous_submission,
+            "readback belongs to a new committed submission"
+        );
+        previous_submission = source.submission;
         assert_eq!(pixels.len(), (WIDTH * HEIGHT * 4) as usize);
         assert!(
-            pixels.chunks_exact(4).all(|pixel| pixel == [0, 0, 0, 255]),
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| *pixel == [0, 0, 0, 255]),
             "frame {frame} rendered the declared clear"
         );
     }

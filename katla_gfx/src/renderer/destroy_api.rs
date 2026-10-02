@@ -98,9 +98,11 @@ impl VulkanRenderer {
     /// # Arguments
     /// * `handle` - The skeleton handle to destroy
     pub fn destroy_skeleton(&mut self, handle: SkeletonHandle) {
-        self.skeleton_descriptors.remove(handle);
-        if let Some(buffer) = self.skeleton_buffers.remove(handle) {
-            self.retire(buffer);
+        if let Some(buffers) = self.skeleton_buffers.remove(handle) {
+            self.wait_for_device();
+            for buffer in buffers {
+                self.graph_buffers.remove(buffer);
+            }
         }
     }
 }
@@ -245,22 +247,6 @@ mod tests {
     // =========================================================================
     // VAL-GPU-011: Default textures are never destroyed
     // =========================================================================
-
-    #[test]
-    fn test_default_textures_preserved() {
-        // Verify the is_default_texture check works correctly for all 5 defaults
-        // Default handles are at indices 0-4 (created first in TextureManager::new)
-        for i in 0..5 {
-            let handle = TextureHandle::from_raw(i, 0);
-            // We can't create a TextureManager without GPU, but we verify
-            // the NONE guard prevents destruction of invalid handles
-            if i == u32::MAX {
-                assert!(handle.is_none());
-            } else {
-                assert!(handle.is_some());
-            }
-        }
-    }
 
     // =========================================================================
     // VAL-GPU-010: Resource counts through create/destroy sequences

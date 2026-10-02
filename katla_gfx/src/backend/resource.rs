@@ -6,6 +6,7 @@ pub trait GpuBuffer: Sized + Send + Sync {
     fn map(&self) -> *mut u8;
     fn unmap(&self);
     fn flush(&self, offset: u64, size: u64);
+    #[cfg(test)]
     fn gpu_address(&self) -> u64;
 }
 
@@ -23,13 +24,8 @@ pub trait GpuImageView<B: GpuBackend>: Sized + Send + Sync {
 pub trait GpuGraphicsPipeline: Clone + Send + Sync {}
 
 pub trait GpuComputePipeline: Clone + Send + Sync {
+    #[cfg(test)]
     fn workgroup_size(&self) -> [u32; 3];
 }
 
 pub trait GpuSampler: Clone + Send + Sync {}
-
-pub trait GpuFence: Send + Sync {
-    fn is_signaled(&self) -> bool;
-}
-
-pub trait GpuEvent: Send + Sync {}

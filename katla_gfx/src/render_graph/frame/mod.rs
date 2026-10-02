@@ -1,15 +1,10 @@
 mod barriers;
-mod compositing;
+pub(crate) use barriers::state_layout;
 mod compute_commands;
-mod depth_prepass;
 mod draw_calls;
-mod draw_helpers;
+mod graphics_bindings;
 mod graphics_pass;
-mod object_id_pass;
-mod outline_pass;
-mod parallel_geometry;
-mod particle_rendering;
-mod shadow_pass;
+mod native_capture;
 mod ui_rendering;
 
 use std::collections::HashMap;
@@ -19,8 +14,7 @@ use super::backend::RenderGraphBackend;
 use super::error::RenderGraphError;
 use super::frame_graph::FrameGraph;
 use super::handles::PassId;
-use super::pass::{PassDesc, PassKind, PassType};
-use crate::handle::SkeletonHandle;
+use super::pass::PassDesc;
 use crate::renderer::types::{DrawList, PreparedDrawCounts, PreparedDraws, UIDrawList};
 
 /// Frame context for submitting work to passes.
@@ -36,7 +30,6 @@ pub struct Frame<'a, B: RenderGraphBackend> {
         super::handles::ResourceId,
         Vec<(super::ImageSubresourceRange, super::ImageSyncState)>,
     >,
-    /// Whether the particle emit compute pass ran this frame.
     /// What this frame's backend actually encoded, in encode order.
     ///
     /// Populated by the backend as it creates encoders; the graph-level
@@ -70,22 +63,6 @@ impl PassExecutionData {
     /// Prepared draw/instance totals for this pass, for diagnostics.
     pub(crate) fn prepared_counts(&self) -> PreparedDrawCounts {
         self.prepared().counts()
-    }
-}
-
-/// Whether the dispatch in [`Frame::execute_passes`] creates an encoder for a
-/// pass.
-///
-/// Every graphics arm encodes except a fullscreen pass with no pipeline, and a
-/// compute pass encodes only with a pipeline or a legacy callback. Recording
-/// this keeps the trace's `SkippedNoWork` outcome honest rather than inferred
-/// from draw counts.
-fn dispatch_encodes(pass: &PassDesc) -> bool {
-    match pass.pass_type {
-        PassType::Graphics => {
-            !matches!(pass.kind, Some(PassKind::Fullscreen)) || pass.pipeline.is_some()
-        }
-        PassType::Compute | PassType::Transfer => !pass.commands.is_empty(),
     }
 }
 
@@ -150,26 +127,6 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     /// Get mutable access to the renderer.
     pub fn renderer_mut(&mut self) -> &mut B {
         self.renderer
-    }
-
-    /// Get the particle emit workgroup count for this frame.
-    pub fn particle_emit_workgroup_count(&self) -> u32 {
-        self.graph.params.particle_emit_workgroup_count
-    }
-
-    /// Get the particle simulate workgroup count for this frame.
-    pub fn particle_simulate_workgroup_count(&self) -> u32 {
-        self.graph.params.particle_simulate_workgroup_count
-    }
-
-    /// Get the animation skeleton count for this frame.
-    pub fn animation_skeleton_count(&self) -> u32 {
-        self.graph.params.animation_skeleton_count
-    }
-
-    /// Get the skeleton copy commands for this frame.
-    pub fn skeleton_copy_commands(&self) -> &[(SkeletonHandle, u32, u32)] {
-        &self.graph.params.skeleton_copy_commands
     }
 
     /// Submit a draw list to a pass.
@@ -314,7 +271,7 @@ impl<'a> Frame<'a, VulkanRenderer> {
                         })
                     })
             })
-            .unwrap_or(self.renderer.frame_context.scene_extent)
+            .unwrap_or(self.renderer.frame_context.extent)
     }
 
     fn imported_texture(&self, id: super::ResourceId) -> Option<&crate::vulkan::texture::Texture> {
@@ -371,7 +328,7 @@ impl<'a> Frame<'a, VulkanRenderer> {
     pub(super) fn resolve_color_attachments(
         &self,
         pass: &PassDesc,
-    ) -> Result<Vec<ash::vk::RenderingAttachmentInfo<'_>>, RenderGraphError> {
+    ) -> Result<Vec<ash::vk::RenderingAttachmentInfo<'static>>, RenderGraphError> {
         use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 
         let mut infos = Vec::with_capacity(pass.color_attachments.len());
@@ -422,8 +379,8 @@ impl<'a> Frame<'a, VulkanRenderer> {
         pass: &PassDesc,
     ) -> Result<
         (
-            Option<ash::vk::RenderingAttachmentInfo<'_>>,
-            Option<ash::vk::RenderingAttachmentInfo<'_>>,
+            Option<ash::vk::RenderingAttachmentInfo<'static>>,
+            Option<ash::vk::RenderingAttachmentInfo<'static>>,
         ),
         RenderGraphError,
     > {
@@ -489,6 +446,20 @@ impl<'a> Frame<'a, VulkanRenderer> {
         let frame_idx = self.current_frame();
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
         let execution_order = self.graph.execution_order();
+        if self.trace_enabled {
+            use super::capture::{CapturedFeedback, CapturedSubmission};
+            self.execution_trace.backend.backend = "vulkan".into();
+            self.execution_trace.backend.frame = Some(CapturedSubmission {
+                frame_slot: frame_idx,
+                generation: self.renderer.frame_generation.saturating_sub(1),
+                command_allocator: frame_idx,
+                feedback_identity: format!(
+                    "frame_fence:{frame_idx}:{}",
+                    self.renderer.frame_generation.saturating_sub(1)
+                ),
+                feedback: CapturedFeedback::Pending,
+            });
+        }
         let mut output_defined =
             self.renderer.frame_context.swapchain_image_contents[self.image_index as usize].get();
         let output_id = self.graph.resource_id(BACKBUFFER_NAME);
@@ -509,74 +480,24 @@ impl<'a> Frame<'a, VulkanRenderer> {
 
             self.insert_sync_barriers(&cmd, index)?;
 
+            for access in &pass.buffer_accesses {
+                if let Some(buffer) =
+                    self.graph
+                        .buffer_by_id(self.renderer, access.resource, frame_idx)
+                {
+                    use ash::vk::Handle;
+                    self.renderer
+                        .pending_graph_buffers
+                        .insert(buffer.vk_buffer().as_raw());
+                }
+            }
+
             let counts = data.prepared_counts();
 
             match pass.pass_type {
-                super::pass::PassType::Graphics => match pass.kind {
-                    Some(super::pass::PassKind::Shadow) => {
-                        self.execute_shadow_pass(&cmd, pass, data)?;
-                    }
-                    Some(super::pass::PassKind::DepthPrepass) => {
-                        self.execute_depth_prepass(&cmd, pass, data)?;
-                    }
-                    Some(super::pass::PassKind::Outline) => {
-                        self.execute_outline_pass(&cmd, pass, data)?;
-                    }
-                    Some(super::pass::PassKind::ObjectId) => {
-                        self.execute_object_id_pass(&cmd, pass, data)?;
-                    }
-                    Some(super::pass::PassKind::StencilIndicator) => {
-                        self.execute_stencil_indicator_pass(&cmd, pass, data)?;
-                    }
-                    Some(super::pass::PassKind::Compositing) => {
-                        if let Some(material_handle) = pass.material {
-                            self.execute_compositing_pass(&cmd, pass, material_handle)?;
-                        } else {
-                            log::warn!("Compositing pass '{}' has no material", pass.name);
-                        }
-                    }
-                    Some(super::pass::PassKind::Ui) => {
-                        self.execute_graphics_pass(&cmd, pass, data)?;
-                    }
-                    Some(super::pass::PassKind::Fullscreen) => {
-                        if let Some(pipeline) = pass.pipeline {
-                            self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
-                        }
-                    }
-                    Some(super::pass::PassKind::Geometry) => {
-                        if let Some(material_handle) = pass.material {
-                            if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
-                                self.execute_compositing_pass(&cmd, pass, material_handle)?;
-                            } else {
-                                self.execute_graphics_pass(&cmd, pass, data)?;
-                            }
-                        } else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
-                            if let Some(pipeline) = pass.pipeline {
-                                self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
-                            }
-                        } else {
-                            self.execute_graphics_pass(&cmd, pass, data)?;
-                        }
-                    }
-                    Some(super::pass::PassKind::Particles) => {
-                        self.execute_particle_pass(&cmd, pass)?;
-                    }
-                    None => {
-                        if let Some(material_handle) = pass.material {
-                            if pass.compositing_viewports.is_some() && data.draw_lists.is_empty() {
-                                self.execute_compositing_pass(&cmd, pass, material_handle)?;
-                            } else {
-                                self.execute_graphics_pass(&cmd, pass, data)?;
-                            }
-                        } else if pass.pipeline.is_some() && data.draw_lists.is_empty() {
-                            if let Some(pipeline) = pass.pipeline {
-                                self.execute_fullscreen_pass(&cmd, pass, pipeline)?;
-                            }
-                        } else {
-                            self.execute_graphics_pass(&cmd, pass, data)?;
-                        }
-                    }
-                },
+                super::pass::PassType::Graphics => {
+                    self.execute_graphics_pass(&cmd, pass, data)?;
+                }
                 super::pass::PassType::Compute | super::pass::PassType::Transfer => {
                     self.execute_compute_commands(&cmd, pass, data.dispatch)?;
                 }
@@ -585,7 +506,13 @@ impl<'a> Frame<'a, VulkanRenderer> {
             if self.trace_enabled {
                 let encode_position = self.execution_trace.entries().len();
                 let pass_type = pass.pass_type;
-                let outcome = if dispatch_encodes(pass) {
+                let outcome = if self
+                    .execution_trace
+                    .backend
+                    .encoders
+                    .iter()
+                    .any(|encoder| encoder.pass_index == Some(index))
+                {
                     super::trace::EmittedPassOutcome::Encoded
                 } else {
                     super::trace::EmittedPassOutcome::SkippedNoWork
@@ -610,12 +537,10 @@ impl<'a> Frame<'a, VulkanRenderer> {
                         Vec::new()
                     },
                     depth_target: (pass_type == super::pass::PassType::Graphics && pass.uses_depth)
-                        .then(|| {
-                            pass.depth_target
-                                .and_then(|id| self.graph.resource_name(id))
-                                .unwrap_or(super::trace::FRAME_DEPTH_TARGET)
-                                .to_string()
-                        }),
+                        .then_some(pass.depth_target)
+                        .flatten()
+                        .and_then(|id| self.graph.resource_name(id))
+                        .map(str::to_owned),
                 };
                 self.execution_trace.push(entry);
             }

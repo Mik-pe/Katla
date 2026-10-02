@@ -1,46 +1,54 @@
 5 declared passes (4 live, 1 culled), 7 resources, 3 dependency edges, 12 synchronization transitions, 2 transient allocations (98304 logical bytes, 65536 physical bytes, 32768 saved, 0 tile-memory eligible), 4 parallel levels
+  culling enabled: true, liveness roots [3]
   boundary p0: graphics / render, predecessors [], alias handoffs []
   boundary p1: graphics / render, predecessors [0], alias handoffs []
   boundary p2: graphics / render, predecessors [1], alias handoffs []
   boundary p3: graphics / render, predecessors [2], alias handoffs []
   allocation source: compiler_projection
+  r0 (backbuffer) live alias predecessor None, successor None
+  r1 (shadow_atlas) live alias predecessor None, successor Some(3)
+  r2 (gbuffer) live alias predecessor None, successor None
+  r3 (hdr_color) live alias predecessor Some(1), successor None
+  r4 (indirect_commands) live alias predecessor None, successor None
+  r5 (frame_constants) live alias predecessor None, successor None
+  r6 (unused_scratch) culled: no live pass accesses this unexported resource; alias predecessor None, successor None
   r4 (indirect_commands) transient buffer, 128 bytes, DeviceLocal, usages [Storage, Indirect]
   r5 (frame_constants) imported buffer, 256 bytes, CpuVisible, usages [Uniform]
   r6 (unused_scratch) transient buffer, 512 bytes, DeviceLocal, usages [Storage]
   r0 (backbuffer) imported, initial ColorAttachment, required final PresentSrc
-  [0] shadow (level 0, reads 0, writes 1)
-    r1 (shadow_atlas): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
-  [1] geometry (level 1, reads 2, writes 1)
+  [0] shadow (level 0, reads 0, writes 1), colors [r1 Clear->Store]
+    r1 (shadow_atlas): write ColorAttachment @ ColorAttachmentOutput, color, mips 0+4294967295, layers 0+4294967295
+  [1] geometry (level 1, reads 2, writes 1), colors [r2 Clear->Store]
     r1 (shadow_atlas): read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295
-    r2 (gbuffer): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
+    r2 (gbuffer): write ColorAttachment @ ColorAttachmentOutput, color, mips 0+4294967295, layers 0+4294967295
     r5 (frame_constants): read Uniform @ AllGraphics, bytes 0+unbounded
-  [2] lighting (level 2, reads 1, writes 2)
+  [2] lighting (level 2, reads 1, writes 2), colors [r3 Clear->Store]
     r2 (gbuffer): read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295
-    r3 (hdr_color): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
+    r3 (hdr_color): write ColorAttachment @ ColorAttachmentOutput, color, mips 0+4294967295, layers 0+4294967295
     r4 (indirect_commands): write Storage @ ComputeShader, bytes 0+64
-  [3] present (level 3, reads 2, writes 1)
-    r0 (backbuffer): write Storage @ AllGraphics, color, mips 0+4294967295, layers 0+4294967295
+  [3] present (level 3, reads 2, writes 1), colors [r0 Clear->Store]
+    r0 (backbuffer): write ColorAttachment @ ColorAttachmentOutput, color, mips 0+4294967295, layers 0+4294967295
     r3 (hdr_color): read Sampled @ FragmentShader, color|depth|stencil, mips 0+4294967295, layers 0+4294967295
     r4 (indirect_commands): read Indirect @ DrawIndirect, bytes 0+64
-  [4] unused_compute (culled)
+  [4] unused_compute (culled): not a producer of an exported resource or side-effect root
     r6 (unused_scratch): write Storage @ ComputeShader, bytes 0+unbounded
   synchronization transitions:
-    [frame start -> pass 0 (shadow)] r1 (shadow_atlas), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)
-    [frame start -> pass 1 (geometry)] r1 (shadow_atlas), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)
-    [pass 0 (shadow) -> pass 1 (geometry)] r1 (shadow_atlas), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> read Sampled @ FragmentShader (hazard Raw)
-    [frame start -> pass 1 (geometry)] r2 (gbuffer), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)
-    [frame start -> pass 2 (lighting)] r2 (gbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)
-    [pass 1 (geometry) -> pass 2 (lighting)] r2 (gbuffer), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> read Sampled @ FragmentShader (hazard Raw)
-    [frame start -> pass 2 (lighting)] r3 (hdr_color), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write Storage @ AllGraphics (initial_use)
-    [frame start -> pass 3 (present)] r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Storage @ AllGraphics (initial_use)
-    [frame start -> pass 3 (present)] r3 (hdr_color), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use)
-    [pass 2 (lighting) -> pass 3 (present)] r3 (hdr_color), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> read Sampled @ FragmentShader (hazard Raw)
-    [frame start -> frame end] r0 (backbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Present @ Present (imported_final)
-    [pass 3 (present) -> frame end] r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: write Storage @ AllGraphics -> write Present @ Present (imported_final)
+    [frame start -> pass 0 (shadow)] r1 (shadow_atlas), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write ColorAttachment @ ColorAttachmentOutput (initial_use); version r1.initial, frame_start -> graphics/render
+    [frame start -> pass 1 (geometry)] r1 (shadow_atlas), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use); version r1.initial, frame_start -> graphics/render
+    [pass 0 (shadow) -> pass 1 (geometry)] r1 (shadow_atlas), color, mips 0+4294967295, layers 0+4294967295: write ColorAttachment @ ColorAttachmentOutput -> read Sampled @ FragmentShader (hazard Raw); version r1.access.0, graphics/render -> graphics/render
+    [frame start -> pass 1 (geometry)] r2 (gbuffer), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write ColorAttachment @ ColorAttachmentOutput (initial_use); version r2.initial, frame_start -> graphics/render
+    [frame start -> pass 2 (lighting)] r2 (gbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use); version r2.initial, frame_start -> graphics/render
+    [pass 1 (geometry) -> pass 2 (lighting)] r2 (gbuffer), color, mips 0+4294967295, layers 0+4294967295: write ColorAttachment @ ColorAttachmentOutput -> read Sampled @ FragmentShader (hazard Raw); version r2.access.1, graphics/render -> graphics/render
+    [frame start -> pass 2 (lighting)] r3 (hdr_color), color, mips 0+4294967295, layers 0+4294967295: read Sampled @ FragmentShader -> write ColorAttachment @ ColorAttachmentOutput (initial_use); version r3.initial, frame_start -> graphics/render
+    [frame start -> pass 3 (present)] r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write ColorAttachment @ ColorAttachmentOutput (initial_use); version r0.initial, frame_start -> graphics/render
+    [frame start -> pass 3 (present)] r3 (hdr_color), depth|stencil, mips 0+4294967295, layers 0+4294967295: undefined -> read Sampled @ FragmentShader (initial_use); version r3.initial, frame_start -> graphics/render
+    [pass 2 (lighting) -> pass 3 (present)] r3 (hdr_color), color, mips 0+4294967295, layers 0+4294967295: write ColorAttachment @ ColorAttachmentOutput -> read Sampled @ FragmentShader (hazard Raw); version r3.access.2, graphics/render -> graphics/render
+    [frame start -> frame end] r0 (backbuffer), depth|stencil, mips 0+4294967295, layers 0+4294967295: read_write ColorAttachment @ ColorAttachmentOutput -> write Present @ Present (imported_final); version r0.initial, frame_start -> frame_end
+    [pass 3 (present) -> frame end] r0 (backbuffer), color, mips 0+4294967295, layers 0+4294967295: write ColorAttachment @ ColorAttachmentOutput -> write Present @ Present (imported_final); version r0.access.3, graphics/render -> frame_end
   buffer synchronization operations:
-    [frame start -> pass 2 (lighting)] r4 (indirect_commands), bytes 0+64: write Storage @ ComputeShader -> write Storage @ ComputeShader (initial_use)
-    [frame start -> pass 2 (lighting)] r4 (indirect_commands), bytes 0+64: read Indirect @ DrawIndirect -> write Storage @ ComputeShader (initial_use)
-    [pass 2 (lighting) -> pass 3 (present)] r4 (indirect_commands), bytes 0+64: write Storage @ ComputeShader -> read Indirect @ DrawIndirect (hazard Raw)
+    [frame start -> pass 2 (lighting)] r4 (indirect_commands), bytes 0+64: write Storage @ ComputeShader -> write Storage @ ComputeShader (initial_use); version r4.initial, frame_start -> graphics/render
+    [frame start -> pass 2 (lighting)] r4 (indirect_commands), bytes 0+64: read Indirect @ DrawIndirect -> write Storage @ ComputeShader (initial_use); version r4.initial, frame_start -> graphics/render
+    [pass 2 (lighting) -> pass 3 (present)] r4 (indirect_commands), bytes 0+64: write Storage @ ComputeShader -> read Indirect @ DrawIndirect (hazard Raw); version r4.access.2, graphics/render -> graphics/render
   transient allocation slots:
     slot 0 (32768 bytes, saves 32768, positions 0-3, color_attachment R8G8B8A8Unorm 128x64, swapchain-tracked, tile memory: no (resource is sampled, stored, transferred, or presented outside an attachment)): r1 (shadow_atlas) -> r3 (hdr_color)
     slot 1 (32768 bytes, saves 0, positions 1-2, color_attachment R8G8B8A8Unorm 128x64, swapchain-tracked, tile memory: no (resource is sampled, stored, transferred, or presented outside an attachment)): r2 (gbuffer)

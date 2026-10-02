@@ -161,14 +161,14 @@ impl ImageLayoutTracker {
 }
 
 /// Transient texture created and managed by the frame graph.
+#[derive(Clone)]
 pub struct TransientTexture {
     /// Vulkan context for cleanup.
-    context: Rc<VulkanContext>,
+    owner: Rc<TransientTextureOwner>,
     /// Vulkan image handle.
     pub image: vk::Image,
     /// Standalone memory allocation; `None` when the texture is aliased
     /// into a physical slot owned by [`VkSlotMemory`].
-    pub allocation: Option<Allocation>,
     /// Shared slot memory this texture is aliased into, if any.
     slot_memory: Option<Rc<VkSlotMemory>>,
     /// Image view for rendering/sampling.
@@ -196,9 +196,14 @@ impl TransientTexture {
         extent: vk::Extent2D,
     ) -> Self {
         Self {
-            context,
+            owner: Rc::new(TransientTextureOwner {
+                context,
+                image,
+                image_view,
+                allocation,
+                slot_memory: RefCell::new(None),
+            }),
             image,
-            allocation,
             slot_memory: None,
             image_view,
             format,
@@ -214,6 +219,7 @@ impl TransientTexture {
     /// The texture owns a reference to the shared memory; the image itself
     /// must already be bound to it.
     pub(crate) fn set_slot_memory(&mut self, slot_memory: Rc<VkSlotMemory>) {
+        *self.owner.slot_memory.borrow_mut() = Some(slot_memory.clone());
         self.slot_memory = Some(slot_memory);
     }
 
@@ -238,7 +244,15 @@ impl TransientTexture {
     }
 }
 
-impl Drop for TransientTexture {
+struct TransientTextureOwner {
+    context: Rc<VulkanContext>,
+    image: vk::Image,
+    image_view: VkImageView,
+    allocation: Option<Allocation>,
+    slot_memory: RefCell<Option<Rc<VkSlotMemory>>>,
+}
+
+impl Drop for TransientTextureOwner {
     fn drop(&mut self) {
         unsafe {
             self.context
@@ -248,9 +262,13 @@ impl Drop for TransientTexture {
             if let Some(allocation) = self.allocation.take() {
                 self.context.allocator.free(allocation, "transient texture");
             }
-            // Shared slot memory outlives every member image and is freed
-            // when the last `Rc<VkSlotMemory>` drops.
         }
+    }
+}
+
+impl TransientTexture {
+    pub(crate) fn allocation(&self) -> Option<&Allocation> {
+        self.owner.allocation.as_ref()
     }
 }
 

@@ -226,7 +226,7 @@ fn compute_world_transforms_from_parent_map(
         // Get parent transform (already computed due to topological order)
         let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
             if let Some(parent_transform) = world_transforms.get(parent_index) {
-                parent_transform.clone() * local_matrix
+                *parent_transform * local_matrix
             } else {
                 // Parent not yet computed (shouldn't happen with proper topological order)
                 local_matrix
@@ -615,50 +615,46 @@ mod tests {
             // Apply animation samples to local transforms (like SkeletalAnimationSystem does)
             let mut animated_local = local_transforms.clone();
             for (node_index, path, value) in &samples {
-                if let Some(joint_index) = joints.iter().position(|&j| j == *node_index) {
-                    if joint_index < animated_local.len() {
-                        let transform = &animated_local[joint_index];
-                        let decomposed = transform.decompose();
+                if let Some(joint_index) = joints.iter().position(|&j| j == *node_index)
+                    && joint_index < animated_local.len()
+                {
+                    let transform = &animated_local[joint_index];
+                    let decomposed = transform.decompose();
 
-                        let new_transform = match (path, value) {
-                            (crate::animation::ChannelPath::Translation, SampledValue::Vec3(t)) => {
-                                let t_vec = katla_math::Vec3::new(t[0], t[1], t[2]);
-                                katla_math::Mat4::from_trs(
-                                    t_vec,
-                                    decomposed.rotation,
-                                    decomposed.scale,
-                                )
-                            }
-                            (crate::animation::ChannelPath::Rotation, SampledValue::Quat(q)) => {
-                                let q_quat = katla_math::Quat::new(q[0], q[1], q[2], q[3]);
-                                katla_math::Mat4::from_trs(
-                                    decomposed.position,
-                                    q_quat,
-                                    decomposed.scale,
-                                )
-                            }
-                            (crate::animation::ChannelPath::Scale, SampledValue::Vec3(s)) => {
-                                let s_vec = katla_math::Vec3::new(s[0], s[1], s[2]);
-                                katla_math::Mat4::from_trs(
-                                    decomposed.position,
-                                    decomposed.rotation,
-                                    s_vec,
-                                )
-                            }
-                            _ => continue,
-                        };
-                        animated_local[joint_index] = new_transform;
-                    }
+                    let new_transform = match (path, value) {
+                        (crate::animation::ChannelPath::Translation, SampledValue::Vec3(t)) => {
+                            let t_vec = katla_math::Vec3::new(t[0], t[1], t[2]);
+                            katla_math::Mat4::from_trs(t_vec, decomposed.rotation, decomposed.scale)
+                        }
+                        (crate::animation::ChannelPath::Rotation, SampledValue::Quat(q)) => {
+                            let q_quat = katla_math::Quat::new(q[0], q[1], q[2], q[3]);
+                            katla_math::Mat4::from_trs(
+                                decomposed.position,
+                                q_quat,
+                                decomposed.scale,
+                            )
+                        }
+                        (crate::animation::ChannelPath::Scale, SampledValue::Vec3(s)) => {
+                            let s_vec = katla_math::Vec3::new(s[0], s[1], s[2]);
+                            katla_math::Mat4::from_trs(
+                                decomposed.position,
+                                decomposed.rotation,
+                                s_vec,
+                            )
+                        }
+                        _ => continue,
+                    };
+                    animated_local[joint_index] = new_transform;
                 }
             }
 
             // Compute world transforms (like Skeleton::compute_world_transforms does)
             let mut world_transforms = vec![katla_math::Mat4::identity(); joints.len()];
             for i in 0..world_transforms.len() {
-                let local = animated_local[i].clone();
+                let local = animated_local[i];
                 if let Some(Some(parent_idx)) = parent_indices.get(i) {
                     if *parent_idx < world_transforms.len() {
-                        world_transforms[i] = world_transforms[*parent_idx].clone() * local;
+                        world_transforms[i] = world_transforms[*parent_idx] * local;
                     } else {
                         world_transforms[i] = local;
                     }

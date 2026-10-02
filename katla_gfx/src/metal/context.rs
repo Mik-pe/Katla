@@ -1,4 +1,3 @@
-use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
@@ -6,8 +5,8 @@ use objc2_metal::{
     MTL4CommandQueueDescriptor, MTLCompareFunction, MTLCreateSystemDefaultDevice,
     MTLDepthStencilDescriptor, MTLDepthStencilState, MTLDevice, MTLFunction, MTLGPUFamily,
     MTLPixelFormat, MTLRenderPipelineDescriptor, MTLResourceOptions, MTLStencilDescriptor,
-    MTLStencilOperation, MTLStorageMode, MTLTextureDescriptor, MTLVertexDescriptor,
-    MTLVertexFormat, MTLVertexStepFunction,
+    MTLStorageMode, MTLTextureDescriptor, MTLVertexDescriptor, MTLVertexFormat,
+    MTLVertexStepFunction,
 };
 
 use crate::backend::traits::{GpuBackend, GpuContext};
@@ -15,140 +14,13 @@ use crate::error::RendererError;
 use crate::pipeline::CompareOp;
 use crate::texture::TextureDescriptor;
 
-/// Stencil face operations for depth/stencil state creation.
-#[derive(Debug)]
-pub(crate) struct StencilFaceOps {
-    pub compare_func: MTLCompareFunction,
-    pub stencil_fail_op: MTLStencilOperation,
-    pub depth_fail_op: MTLStencilOperation,
-    pub depth_stencil_pass_op: MTLStencilOperation,
-    pub read_mask: u32,
-    pub write_mask: u32,
-}
-
-impl Default for StencilFaceOps {
-    fn default() -> Self {
-        Self {
-            compare_func: MTLCompareFunction::Always,
-            stencil_fail_op: MTLStencilOperation::Keep,
-            depth_fail_op: MTLStencilOperation::Keep,
-            depth_stencil_pass_op: MTLStencilOperation::Keep,
-            read_mask: 0xFF,
-            write_mask: 0xFF,
-        }
-    }
-}
-
 use super::buffer::MetalBuffer;
 use super::command_buffer::MetalCommandBuffer;
 use super::format::{to_mtl_compare_func, to_mtl_pixel_format, to_mtl_texture_usage};
 use super::pipeline::{MetalComputePipeline, MetalGraphicsPipeline};
 use super::sampler::MetalSamplerState;
 use super::surface::MetalSurface;
-use super::sync::{MetalEvent, MetalFence};
 use super::texture::{MetalTexture, MetalTextureView};
-
-/// Build the standard PBR vertex descriptor matching `VertexPBR`.
-///
-/// Layout (48 bytes stride, interleaved in buffer 0):
-/// - location 0: position Float3 @ offset 0
-/// - location 1: normal Float3 @ offset 12
-/// - location 2: tangent Float4 @ offset 24
-/// - location 3: uv Float2 @ offset 40
-pub(crate) fn default_pbr_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
-    let vertex_descriptor = MTLVertexDescriptor::new();
-
-    let layouts = vertex_descriptor.layouts();
-    let layout = unsafe { layouts.objectAtIndexedSubscript(10) };
-    unsafe {
-        layout.setStride(48);
-        layout.setStepFunction(MTLVertexStepFunction::PerVertex);
-        layout.setStepRate(1);
-    }
-
-    let attrs = vertex_descriptor.attributes();
-
-    let pos_attr = unsafe { attrs.objectAtIndexedSubscript(0) };
-    pos_attr.setFormat(MTLVertexFormat::Float3);
-    unsafe {
-        pos_attr.setOffset(0);
-        pos_attr.setBufferIndex(10);
-    }
-
-    let norm_attr = unsafe { attrs.objectAtIndexedSubscript(1) };
-    norm_attr.setFormat(MTLVertexFormat::Float3);
-    unsafe {
-        norm_attr.setOffset(12);
-        norm_attr.setBufferIndex(10);
-    }
-
-    let tan_attr = unsafe { attrs.objectAtIndexedSubscript(2) };
-    tan_attr.setFormat(MTLVertexFormat::Float4);
-    unsafe {
-        tan_attr.setOffset(24);
-        tan_attr.setBufferIndex(10);
-    }
-
-    let uv_attr = unsafe { attrs.objectAtIndexedSubscript(3) };
-    uv_attr.setFormat(MTLVertexFormat::Float2);
-    unsafe {
-        uv_attr.setOffset(40);
-        uv_attr.setBufferIndex(10);
-    }
-
-    vertex_descriptor
-}
-
-/// Build the UI vertex descriptor matching `VertexUI`.
-///
-/// Layout (24 bytes stride, interleaved in buffer 10):
-/// - location 0: position Float2 @ offset 0
-/// - location 1: uv Float2 @ offset 8
-/// - location 2: color UByte4Norm @ offset 16
-/// - location 3: texture_index UInt @ offset 20
-pub(crate) fn ui_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
-    let vertex_descriptor = MTLVertexDescriptor::new();
-
-    let layouts = vertex_descriptor.layouts();
-    let layout = unsafe { layouts.objectAtIndexedSubscript(10) };
-    unsafe {
-        layout.setStride(24);
-        layout.setStepFunction(MTLVertexStepFunction::PerVertex);
-        layout.setStepRate(1);
-    }
-
-    let attrs = vertex_descriptor.attributes();
-
-    let pos_attr = unsafe { attrs.objectAtIndexedSubscript(0) };
-    pos_attr.setFormat(MTLVertexFormat::Float2);
-    unsafe {
-        pos_attr.setOffset(0);
-        pos_attr.setBufferIndex(10);
-    }
-
-    let uv_attr = unsafe { attrs.objectAtIndexedSubscript(1) };
-    uv_attr.setFormat(MTLVertexFormat::Float2);
-    unsafe {
-        uv_attr.setOffset(8);
-        uv_attr.setBufferIndex(10);
-    }
-
-    let color_attr = unsafe { attrs.objectAtIndexedSubscript(2) };
-    color_attr.setFormat(MTLVertexFormat::UChar4Normalized);
-    unsafe {
-        color_attr.setOffset(16);
-        color_attr.setBufferIndex(10);
-    }
-
-    let texture_index_attr = unsafe { attrs.objectAtIndexedSubscript(3) };
-    texture_index_attr.setFormat(MTLVertexFormat::UInt);
-    unsafe {
-        texture_index_attr.setOffset(20);
-        texture_index_attr.setBufferIndex(10);
-    }
-
-    vertex_descriptor
-}
 
 /// Build the instanced UI vertex descriptor for unit quad input.
 ///
@@ -179,87 +51,18 @@ pub(crate) fn ui_instanced_vertex_descriptor() -> Retained<MTLVertexDescriptor> 
     vertex_descriptor
 }
 
-/// Build the skinned PBR vertex descriptor matching `VertexPBRSkinned`.
-///
-/// Layout (72 bytes stride, interleaved in buffer 0):
-/// - location 0: position Float3 @ offset 0
-/// - location 1: normal Float3 @ offset 12
-/// - location 2: tangent Float4 @ offset 24
-/// - location 3: uv Float2 @ offset 40
-/// - location 4: joint_indices UShort4 @ offset 48
-/// - location 5: joint_weights Float4 @ offset 56
-pub(crate) fn pbr_skinned_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
-    let vertex_descriptor = MTLVertexDescriptor::new();
-
-    let layouts = vertex_descriptor.layouts();
-    let layout = unsafe { layouts.objectAtIndexedSubscript(10) };
-    unsafe {
-        layout.setStride(72);
-        layout.setStepFunction(MTLVertexStepFunction::PerVertex);
-        layout.setStepRate(1);
-    }
-
-    let attrs = vertex_descriptor.attributes();
-
-    let pos_attr = unsafe { attrs.objectAtIndexedSubscript(0) };
-    pos_attr.setFormat(MTLVertexFormat::Float3);
-    unsafe {
-        pos_attr.setOffset(0);
-        pos_attr.setBufferIndex(10);
-    }
-
-    let norm_attr = unsafe { attrs.objectAtIndexedSubscript(1) };
-    norm_attr.setFormat(MTLVertexFormat::Float3);
-    unsafe {
-        norm_attr.setOffset(12);
-        norm_attr.setBufferIndex(10);
-    }
-
-    let tan_attr = unsafe { attrs.objectAtIndexedSubscript(2) };
-    tan_attr.setFormat(MTLVertexFormat::Float4);
-    unsafe {
-        tan_attr.setOffset(24);
-        tan_attr.setBufferIndex(10);
-    }
-
-    let uv_attr = unsafe { attrs.objectAtIndexedSubscript(3) };
-    uv_attr.setFormat(MTLVertexFormat::Float2);
-    unsafe {
-        uv_attr.setOffset(40);
-        uv_attr.setBufferIndex(10);
-    }
-
-    let joints_attr = unsafe { attrs.objectAtIndexedSubscript(4) };
-    joints_attr.setFormat(MTLVertexFormat::UShort4);
-    unsafe {
-        joints_attr.setOffset(48);
-        joints_attr.setBufferIndex(10);
-    }
-
-    let weights_attr = unsafe { attrs.objectAtIndexedSubscript(5) };
-    weights_attr.setFormat(MTLVertexFormat::Float4);
-    unsafe {
-        weights_attr.setOffset(56);
-        weights_attr.setBufferIndex(10);
-    }
-
-    vertex_descriptor
-}
-
-/// Build an empty vertex descriptor for fullscreen passes.
-///
-/// Fullscreen shaders generate a triangle from `@builtin(vertex_index)`
-/// and do not read from any vertex buffer or attributes.
-pub(crate) fn fullscreen_vertex_descriptor() -> Retained<MTLVertexDescriptor> {
-    let vertex_descriptor = MTLVertexDescriptor::new();
-    let layouts = vertex_descriptor.layouts();
-    let layout = unsafe { layouts.objectAtIndexedSubscript(10) };
-    unsafe {
-        layout.setStride(1);
-        layout.setStepFunction(MTLVertexStepFunction::PerVertex);
-        layout.setStepRate(1);
-    }
-    vertex_descriptor
+pub(crate) struct GraphicsPipelineConfig<'a> {
+    pub(crate) vertex_function: &'a ProtocolObject<dyn MTLFunction>,
+    pub(crate) fragment_function: Option<&'a ProtocolObject<dyn MTLFunction>>,
+    pub(crate) color_formats: &'a [MTLPixelFormat],
+    pub(crate) depth_format: Option<MTLPixelFormat>,
+    pub(crate) depth_write_enabled: bool,
+    pub(crate) depth_compare: CompareOp,
+    pub(crate) cull_mode: objc2_metal::MTLCullMode,
+    pub(crate) front_face: objc2_metal::MTLWinding,
+    pub(crate) vertex_descriptor: &'a MTLVertexDescriptor,
+    pub(crate) alpha_blended: bool,
+    pub(crate) portable: Option<&'a crate::renderer::pipeline_descriptor::PipelineDescriptor>,
 }
 
 pub(crate) struct MetalFeatures {
@@ -280,12 +83,6 @@ impl GpuBackend for MetalBackend {
     type GraphicsPipeline = MetalGraphicsPipeline;
     type ComputePipeline = MetalComputePipeline;
     type Sampler = MetalSamplerState;
-    type Fence = MetalFence;
-    type Event = MetalEvent;
-
-    fn name() -> &'static str {
-        "Metal"
-    }
 }
 
 pub(crate) struct MetalContext {
@@ -586,22 +383,15 @@ impl MetalContext {
             allocator,
             completion: Default::default(),
             resources: super::encoding_resources::EncodingResources::new(&self.device, label),
+            recording: std::cell::Cell::new(false),
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn create_graphics_pipeline(
         &self,
-        vertex_function: &ProtocolObject<dyn MTLFunction>,
-        fragment_function: Option<&ProtocolObject<dyn MTLFunction>>,
-        color_formats: &[MTLPixelFormat],
-        depth_format: Option<MTLPixelFormat>,
-        depth_write_enabled: bool,
-        depth_compare: CompareOp,
-        cull_mode: objc2_metal::MTLCullMode,
-        front_face: objc2_metal::MTLWinding,
+        config: GraphicsPipelineConfig<'_>,
     ) -> Result<MetalGraphicsPipeline, RendererError> {
-        self.create_graphics_pipeline_with_vertex_descriptor(
+        let GraphicsPipelineConfig {
             vertex_function,
             fragment_function,
             color_formats,
@@ -610,25 +400,10 @@ impl MetalContext {
             depth_compare,
             cull_mode,
             front_face,
-            None,
-            false,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn create_graphics_pipeline_with_vertex_descriptor(
-        &self,
-        vertex_function: &ProtocolObject<dyn MTLFunction>,
-        fragment_function: Option<&ProtocolObject<dyn MTLFunction>>,
-        color_formats: &[MTLPixelFormat],
-        depth_format: Option<MTLPixelFormat>,
-        depth_write_enabled: bool,
-        depth_compare: CompareOp,
-        cull_mode: objc2_metal::MTLCullMode,
-        front_face: objc2_metal::MTLWinding,
-        vertex_descriptor: Option<&MTLVertexDescriptor>,
-        alpha_blended: bool,
-    ) -> Result<MetalGraphicsPipeline, RendererError> {
+            vertex_descriptor,
+            alpha_blended,
+            portable,
+        } = config;
         let descriptor = MTLRenderPipelineDescriptor::new();
         descriptor.setVertexFunction(Some(vertex_function));
         descriptor.setFragmentFunction(fragment_function);
@@ -638,6 +413,23 @@ impl MetalContext {
         for (i, &format) in color_formats.iter().enumerate() {
             let attachment = unsafe { color_attachments.objectAtIndexedSubscript(i) };
             attachment.setPixelFormat(format);
+            if let Some(portable) = portable {
+                let mask = portable.color_write_mask.0;
+                let mut native = objc2_metal::MTLColorWriteMask::None;
+                if mask & 1 != 0 {
+                    native |= objc2_metal::MTLColorWriteMask::Red;
+                }
+                if mask & 2 != 0 {
+                    native |= objc2_metal::MTLColorWriteMask::Green;
+                }
+                if mask & 4 != 0 {
+                    native |= objc2_metal::MTLColorWriteMask::Blue;
+                }
+                if mask & 8 != 0 {
+                    native |= objc2_metal::MTLColorWriteMask::Alpha;
+                }
+                attachment.setWriteMask(native);
+            }
 
             if alpha_blended {
                 attachment.setBlendingEnabled(true);
@@ -660,17 +452,13 @@ impl MetalContext {
             }
         }
 
-        let vd = match vertex_descriptor {
-            Some(vd) => vd.retain(),
-            None => default_pbr_vertex_descriptor(),
-        };
-        descriptor.setVertexDescriptor(Some(&vd));
+        descriptor.setVertexDescriptor(Some(vertex_descriptor));
 
         let pipeline_state = self.pipeline_archive.as_ref().ok_or_else(|| {
             RendererError::InitializationFailed("Metal pipeline compiler service unavailable".into())
-        })?.create_render_pipeline(&descriptor, &format!("depth_write={depth_write_enabled};depth_compare={depth_compare:?};cull={cull_mode:?};front={front_face:?};stencil=none"))?;
+        })?.create_render_pipeline(&descriptor, &format!("depth_write={depth_write_enabled};depth_compare={depth_compare:?};cull={cull_mode:?};front={front_face:?};portable={portable:?}"))?;
 
-        let depth_stencil_state = if depth_format.is_some() {
+        let mut depth_stencil_state = if depth_format.is_some() {
             Some(self.create_depth_stencil_state(
                 depth_write_enabled,
                 to_mtl_compare_func(depth_compare),
@@ -679,6 +467,34 @@ impl MetalContext {
             None
         };
 
+        if let Some(stencil) = portable.and_then(|descriptor| descriptor.stencil) {
+            let descriptor = MTLDepthStencilDescriptor::new();
+            descriptor.setDepthCompareFunction(to_mtl_compare_func(depth_compare));
+            descriptor.setDepthWriteEnabled(depth_write_enabled);
+            for (front, face) in [(true, stencil.front), (false, stencil.back)] {
+                let native = MTLStencilDescriptor::new();
+                native.setStencilCompareFunction(to_mtl_compare_func(face.compare));
+                native.setStencilFailureOperation(portable_stencil_op(face.fail));
+                native.setDepthFailureOperation(portable_stencil_op(face.depth_fail));
+                native.setDepthStencilPassOperation(portable_stencil_op(face.pass));
+                native.setReadMask(stencil.read_mask);
+                native.setWriteMask(stencil.write_mask);
+                if front {
+                    descriptor.setFrontFaceStencil(Some(&native));
+                } else {
+                    descriptor.setBackFaceStencil(Some(&native));
+                }
+            }
+            depth_stencil_state = Some(
+                self.device
+                    .newDepthStencilStateWithDescriptor(&descriptor)
+                    .ok_or_else(|| {
+                        RendererError::InitializationFailed(
+                            "Depth/stencil state creation failed".into(),
+                        )
+                    })?,
+            );
+        }
         Ok(MetalGraphicsPipeline {
             vertex_layout: super::shader::function_layout(vertex_function)?,
             fragment_layout: fragment_function
@@ -688,7 +504,16 @@ impl MetalContext {
             depth_stencil_state,
             cull_mode,
             front_face,
-            depth_bias: None,
+            depth_bias: portable.map(|descriptor| {
+                (
+                    descriptor.depth_bias.constant,
+                    descriptor.depth_bias.slope_factor,
+                    descriptor.depth_bias.clamp,
+                )
+            }),
+            stencil_reference: portable
+                .and_then(|descriptor| descriptor.stencil.map(|state| state.reference)),
+            wireframe: portable.is_some_and(|descriptor| descriptor.wireframe),
         })
     }
 
@@ -703,126 +528,6 @@ impl MetalContext {
         self.device
             .newDepthStencilStateWithDescriptor(&descriptor)
             .expect("Failed to create depth-stencil state")
-    }
-
-    pub(crate) fn create_depth_stencil_state_with_stencil(
-        &self,
-        depth_write_enabled: bool,
-        depth_compare: MTLCompareFunction,
-        stencil_face: StencilFaceOps,
-    ) -> Retained<ProtocolObject<dyn MTLDepthStencilState>> {
-        let descriptor = MTLDepthStencilDescriptor::new();
-        descriptor.setDepthWriteEnabled(depth_write_enabled);
-        descriptor.setDepthCompareFunction(depth_compare);
-
-        let stencil_desc = MTLStencilDescriptor::new();
-        stencil_desc.setStencilCompareFunction(stencil_face.compare_func);
-        stencil_desc.setStencilFailureOperation(stencil_face.stencil_fail_op);
-        stencil_desc.setDepthFailureOperation(stencil_face.depth_fail_op);
-        stencil_desc.setDepthStencilPassOperation(stencil_face.depth_stencil_pass_op);
-        stencil_desc.setReadMask(stencil_face.read_mask);
-        stencil_desc.setWriteMask(stencil_face.write_mask);
-
-        descriptor.setFrontFaceStencil(Some(&stencil_desc));
-        descriptor.setBackFaceStencil(Some(&stencil_desc));
-
-        self.device
-            .newDepthStencilStateWithDescriptor(&descriptor)
-            .expect("Failed to create depth-stencil state with stencil")
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn create_graphics_pipeline_with_stencil(
-        &self,
-        vertex_function: &ProtocolObject<dyn MTLFunction>,
-        fragment_function: Option<&ProtocolObject<dyn MTLFunction>>,
-        color_formats: &[MTLPixelFormat],
-        depth_format: Option<MTLPixelFormat>,
-        depth_write_enabled: bool,
-        depth_compare: CompareOp,
-        cull_mode: objc2_metal::MTLCullMode,
-        front_face: objc2_metal::MTLWinding,
-        stencil_face: StencilFaceOps,
-    ) -> Result<MetalGraphicsPipeline, RendererError> {
-        self.create_graphics_pipeline_with_stencil_and_vertex_descriptor(
-            vertex_function,
-            fragment_function,
-            color_formats,
-            depth_format,
-            depth_write_enabled,
-            depth_compare,
-            cull_mode,
-            front_face,
-            stencil_face,
-            None,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn create_graphics_pipeline_with_stencil_and_vertex_descriptor(
-        &self,
-        vertex_function: &ProtocolObject<dyn MTLFunction>,
-        fragment_function: Option<&ProtocolObject<dyn MTLFunction>>,
-        color_formats: &[MTLPixelFormat],
-        depth_format: Option<MTLPixelFormat>,
-        depth_write_enabled: bool,
-        depth_compare: CompareOp,
-        cull_mode: objc2_metal::MTLCullMode,
-        front_face: objc2_metal::MTLWinding,
-        stencil_face: StencilFaceOps,
-        vertex_descriptor: Option<&MTLVertexDescriptor>,
-    ) -> Result<MetalGraphicsPipeline, RendererError> {
-        let descriptor = MTLRenderPipelineDescriptor::new();
-        descriptor.setVertexFunction(Some(vertex_function));
-        descriptor.setFragmentFunction(fragment_function);
-        descriptor.setRasterSampleCount(1);
-
-        let color_attachments = descriptor.colorAttachments();
-        for (i, &format) in color_formats.iter().enumerate() {
-            let attachment = unsafe { color_attachments.objectAtIndexedSubscript(i) };
-            attachment.setPixelFormat(format);
-        }
-
-        if let Some(depth_fmt) = depth_format {
-            descriptor.setDepthAttachmentPixelFormat(depth_fmt);
-            if depth_fmt == MTLPixelFormat::Depth32Float_Stencil8
-                || depth_fmt == MTLPixelFormat::Depth24Unorm_Stencil8
-            {
-                descriptor.setStencilAttachmentPixelFormat(depth_fmt);
-            }
-        }
-
-        let vd = match vertex_descriptor {
-            Some(vd) => vd.retain(),
-            None => default_pbr_vertex_descriptor(),
-        };
-        descriptor.setVertexDescriptor(Some(&vd));
-
-        let pipeline_state = self.pipeline_archive.as_ref().ok_or_else(|| {
-            RendererError::InitializationFailed("Metal pipeline compiler service unavailable".into())
-        })?.create_render_pipeline(&descriptor, &format!("depth_write={depth_write_enabled};depth_compare={depth_compare:?};cull={cull_mode:?};front={front_face:?};stencil={stencil_face:?}"))?;
-
-        let depth_stencil_state = if depth_format.is_some() {
-            Some(self.create_depth_stencil_state_with_stencil(
-                depth_write_enabled,
-                to_mtl_compare_func(depth_compare),
-                stencil_face,
-            ))
-        } else {
-            None
-        };
-
-        Ok(MetalGraphicsPipeline {
-            vertex_layout: super::shader::function_layout(vertex_function)?,
-            fragment_layout: fragment_function
-                .map(super::shader::function_layout)
-                .transpose()?,
-            pipeline_state,
-            depth_stencil_state,
-            cull_mode,
-            front_face,
-            depth_bias: None,
-        })
     }
 
     pub(crate) fn create_compute_pipeline(
@@ -867,6 +572,22 @@ impl MetalContext {
 // the `!Send`/`!Sync` command-buffer and encoder types in this module.
 unsafe impl Send for MetalContext {}
 unsafe impl Sync for MetalContext {}
+
+fn portable_stencil_op(
+    operation: crate::renderer::pipeline_descriptor::StencilOperation,
+) -> objc2_metal::MTLStencilOperation {
+    use crate::renderer::pipeline_descriptor::StencilOperation::*;
+    match operation {
+        Keep => objc2_metal::MTLStencilOperation::Keep,
+        Zero => objc2_metal::MTLStencilOperation::Zero,
+        Replace => objc2_metal::MTLStencilOperation::Replace,
+        IncrementClamp => objc2_metal::MTLStencilOperation::IncrementClamp,
+        DecrementClamp => objc2_metal::MTLStencilOperation::DecrementClamp,
+        Invert => objc2_metal::MTLStencilOperation::Invert,
+        IncrementWrap => objc2_metal::MTLStencilOperation::IncrementWrap,
+        DecrementWrap => objc2_metal::MTLStencilOperation::DecrementWrap,
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1021,16 +742,19 @@ mod tests {
         let vs = shader.module.entry_points.get("vs_main").unwrap();
         let fs = shader.module.entry_points.get("fs_main").unwrap();
 
-        let pipeline = ctx.create_graphics_pipeline(
-            vs,
-            Some(fs),
-            &[MTLPixelFormat::BGRA8Unorm_sRGB],
-            Some(MTLPixelFormat::Depth32Float),
-            true,
-            CompareOp::LessOrEqual,
-            objc2_metal::MTLCullMode::Back,
-            objc2_metal::MTLWinding::Clockwise,
-        );
+        let pipeline = ctx.create_graphics_pipeline(GraphicsPipelineConfig {
+            vertex_function: vs,
+            fragment_function: Some(fs),
+            color_formats: &[MTLPixelFormat::BGRA8Unorm_sRGB],
+            depth_format: Some(MTLPixelFormat::Depth32Float),
+            depth_write_enabled: true,
+            depth_compare: CompareOp::LessOrEqual,
+            cull_mode: objc2_metal::MTLCullMode::Back,
+            front_face: objc2_metal::MTLWinding::Clockwise,
+            vertex_descriptor: &objc2_metal::MTLVertexDescriptor::new(),
+            alpha_blended: false,
+            portable: None,
+        });
         assert!(
             pipeline.is_ok(),
             "Failed to create graphics pipeline: {:?}",
@@ -1147,18 +871,19 @@ struct VertexOutput {
         let fs = shader.module.entry_points.get("fs_main").unwrap();
 
         let pipeline = ctx
-            .create_graphics_pipeline_with_vertex_descriptor(
-                vs,
-                Some(fs),
-                &[MTLPixelFormat::BGRA8Unorm_sRGB],
-                None,
-                false,
-                CompareOp::Always,
-                objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::Clockwise,
-                Some(&fullscreen_vertex_descriptor()),
-                false,
-            )
+            .create_graphics_pipeline(GraphicsPipelineConfig {
+                vertex_function: vs,
+                fragment_function: Some(fs),
+                color_formats: &[MTLPixelFormat::BGRA8Unorm_sRGB],
+                depth_format: None,
+                depth_write_enabled: false,
+                depth_compare: CompareOp::Always,
+                cull_mode: objc2_metal::MTLCullMode::None,
+                front_face: objc2_metal::MTLWinding::Clockwise,
+                vertex_descriptor: &MTLVertexDescriptor::new(),
+                alpha_blended: false,
+                portable: None,
+            })
             .unwrap();
 
         let desc = TextureDescriptor::new(256, 256, crate::texture::ImageFormat::B8G8R8A8Srgb)

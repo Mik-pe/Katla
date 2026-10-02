@@ -133,7 +133,6 @@ pub struct VulkanFrameCtx {
     pub(crate) swapchain_image_views: Vec<VkImageView>,
     pub swapchain: Option<super::Swapchain>,
     pub(crate) extent: vk::Extent2D,
-    pub(crate) scene_extent: vk::Extent2D,
     pub(crate) offscreen_targets: Vec<RenderTexture>,
     pub(crate) swapchain_images: Vec<VkImage>,
     pub(crate) swapchain_image_layouts: Vec<std::cell::Cell<vk::ImageLayout>>,
@@ -141,10 +140,6 @@ pub struct VulkanFrameCtx {
     pub(crate) pending_output_contents: std::cell::Cell<Option<(usize, bool)>>,
     pub(crate) pending_transient_layouts:
         std::cell::RefCell<crate::render_graph::ImageLayoutJournal>,
-    /// Per-frame depth render textures (one per FRAMES_IN_FLIGHT).
-    /// Each in-flight frame uses its own depth buffer to prevent data races
-    /// when multiple frames execute concurrently on the GPU (e.g., MAILBOX present mode).
-    pub depth_render_textures: Vec<RenderTexture>,
     pub command_buffers: Vec<super::CommandBuffer>,
 }
 
@@ -188,10 +183,10 @@ impl VulkanContext {
         let command_buffers = vec![&command_buffer];
 
         // Submit using the unified submit_and_wait pattern
-        self.gfx_queue.submit_and_wait(&command_buffers, &[], &[]);
-
+        let result = self.gfx_queue.submit_and_wait(&command_buffers, &[], &[]);
         command_buffer.return_to_pool();
-        Ok(())
+        result
+            .map_err(|error| RendererError::VulkanError("Failed to submit transfer".into(), error))
     }
 
     pub fn init(

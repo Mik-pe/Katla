@@ -8,14 +8,15 @@ Two rendering backends, selected at runtime via `AnyRenderer`:
 
 `GpuRenderer` is the backend-agnostic trait. Both `VulkanRenderer` and `MetalRenderer` implement it. `AnyRenderer` is an enum that dispatches dynamically.
 
-Backend-specific code lives in `vulkan/` and `metal/`. The public API uses `GpuRenderer` trait methods only.
+Backend-specific code lives in `vulkan/` and `metal/`. Public resource, frame, submission and graph operations use backend-neutral types.
 
 ### When Adding New Features
 
-1. Add the method to `GpuRenderer` trait first (with default no-op impl)
-2. Implement for both `VulkanRenderer` and `MetalRenderer`
-3. Add dispatch to `AnyRenderer` enum
-4. If it involves render graph resources, extend `RenderGraphBackend` trait
+1. Keep `GpuRenderer` limited to resource creation, capabilities, frame ownership, submission, graph execution and generic readback.
+2. Compose scene and editor features in the application with ordinary resources, explicit bindings and graph passes. Font atlases, viewport policy, picking selection, outlines, shadows and postprocessing must not become mandatory core methods.
+3. Implement new core operations for both `VulkanRenderer` and `MetalRenderer`, with explicit `AnyRenderer` dispatch. Required operations must not have default no-op implementations.
+4. Extend `RenderGraphBackend` only for generic graph allocation, synchronization or execution needs. Never introduce a second feature-forwarding trait.
+5. A core/headless graph must initialize without installing scene or editor resources and pipelines.
 
 ## Render Graph
 
@@ -23,13 +24,9 @@ The render graph is generic over `GpuRenderer`. `FrameGraphBuilder` provides a f
 
 ## Descriptor Set Layout (Vulkan-only)
 
-Vulkan uses a **3-set descriptor layout**. Metal 4 uses reflected per-stage argument tables, immutable bindless resource-ID buffers, and submission-owned residency snapshots.
+Vulkan derives descriptor layouts from the selected shader entry points. Metal 4 uses reflected per-stage argument tables, immutable bindless resource-ID buffers, and submission-owned residency snapshots. Bindings declare the actual buffer usage, stages and ranges in the graph; resource groups are shader contracts rather than a fixed number of engine descriptor sets.
 
-- **Set 0** — Per-frame uniforms + per-object storage buffer array (indexed by `instance_index`)
-- **Set 1** — Bindless texture array (up to 4096) + shared sampler
-- **Set 2** — Optional skeletal animation joint matrices
-
-For shader authors: access textures via `bindless_textures[texture_indices.x]`. Never use push constants.
+Katla scene shaders use groups for frame/object data, bindless textures, skeletal joints, tiled lights and shadows. Custom shaders declare their own bindings through ordinary pass packets. For scene shader authors, access textures via `bindless_textures[texture_indices.x]`. Never use push constants.
 
 ## Image Barriers (Vulkan-only)
 
@@ -39,4 +36,4 @@ Before using `vk::` types, check for existing wrappers/helpers first.
 
 ## Feature Gating
 
-The `validation` feature promotes internal modules (`barrier`, `sync`, `lighting`, pipeline types) from `pub(crate)` to `pub` for use in validation examples and benchmarks. Run with `--features validation`.
+The `validation` feature exposes internal barrier, synchronization and pipeline types for validation examples and benchmarks. Run with `--features validation`.

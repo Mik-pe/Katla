@@ -94,9 +94,6 @@ impl PassBuilder for DepthPrepass {
             writes,
             image_accesses,
             buffer_accesses: Vec::new(),
-            pipeline: None,
-            tonemap_params: None,
-            overlay_params: None,
             material: None,
             output_format: if has_writes {
                 Some(ImageFormat::R32Uint)

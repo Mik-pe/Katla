@@ -10,6 +10,13 @@
 //! All tests need a Vulkan device (`#[ignore]`, like the other GPU
 //! contract tests).
 
+#[path = "support/readback.rs"]
+mod readback;
+
+#[path = "support/camera_shader_data.rs"]
+mod camera_shader_data;
+use camera_shader_data::CameraShaderData;
+
 use std::ffi::CString;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -19,8 +26,8 @@ use katla_gfx::renderer::{DrawCall, DrawList};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::{Vertex, VertexPBR};
 use katla_gfx::{
-    CullMode, DepthState, FrameUniforms, GpuRenderer, IndexType, MaterialHandle, MeshDescriptor,
-    MeshHandle, MeshMemoryClass, MeshUsage, PipelineDescriptor, PrimitiveTopology, ValidationMode,
+    CullMode, DepthState, GpuRenderer, IndexType, MaterialHandle, MeshDescriptor, MeshHandle,
+    MeshMemoryClass, MeshUsage, PipelineDescriptor, PrimitiveTopology, ValidationMode,
     VulkanRenderer,
 };
 
@@ -45,7 +52,7 @@ fn headless_renderer() -> VulkanRenderer {
         // ValidationMode::Disabled: compiling the PBR pipeline under the
         // system validation layer segfaults the Intel driver on this machine
         // (same caveat as the other GPU contract tests).
-        ValidationMode::Disabled,
+        ValidationMode::Enabled,
         CString::new("Static mesh placement test").unwrap(),
         CString::new("Katla").unwrap(),
     )
@@ -105,7 +112,7 @@ fn pixel(ndc_x: f32, ndc_y: f32) -> usize {
 
 /// True when the pixel is red-dominant (the mesh tint). The target is
 /// B8G8R8A8: the red channel is byte 2 of the readback.
-fn covered(pixels: &Vec<u8>, ndc: (f32, f32)) -> bool {
+fn covered(pixels: &[u8], ndc: (f32, f32)) -> bool {
     let at = pixel(ndc.0, ndc.1);
     pixels[at + 2] > 120 && pixels[at] < 120 && pixels[at + 1] < 120
 }
@@ -150,29 +157,24 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
 
     // Both must render: the staged static mesh through its copy submission,
     // the dynamic mesh through its direct writes.
-    let uniforms = FrameUniforms {
+    let uniforms = CameraShaderData {
         view_matrix: identity(),
         proj_matrix: identity(),
         inv_view_proj_matrix: identity(),
         ..Default::default()
     };
     let shaders = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/shaders");
-    renderer
-        .init_light_culling(WIDTH, HEIGHT, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
     let material: MaterialHandle = renderer
         .compile_material(
             &PipelineDescriptor::pbr(
                 shaders
-                    .join("model_pbr.wgsl")
+                    .join("../../katla_gfx/tests/support/mesh.wgsl")
                     .to_string_lossy()
                     .into_owned(),
             )
             .with_color_format(ImageFormat::B8G8R8A8Srgb)
             .with_depth(DepthState::disabled())
+            .with_depth_format(None)
             .with_cull(CullMode::None),
         )
         .unwrap();
@@ -180,6 +182,7 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
     let mut graph = FrameGraphBuilder::new()
         .add_pass(
             GeometryPass::new("geometry")
+                .without_depth()
                 .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                 .clear_color([0.0, 0.0, 0.0, 1.0])
                 .material(material),
@@ -190,8 +193,7 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
 
     let render_and_capture = |renderer: &mut VulkanRenderer,
                               graph: &mut FrameGraph<VulkanRenderer>,
-                              mesh: MeshHandle,
-                              frame: usize|
+                              mesh: MeshHandle|
      -> Vec<u8> {
         let draw_list = {
             let mut list = DrawList::new();
@@ -199,8 +201,8 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
             list
         };
         let frame_token = acquire_frame_token(&mut *renderer);
-        renderer
-            .set_frame_uniforms(&frame_token, uniforms.clone())
+        graph
+            .set_pass_bindings(geometry_pass, uniforms.bindings())
             .unwrap();
         renderer
             .execute_draw_calls(&frame_token, &draw_list)
@@ -210,18 +212,24 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
                 frame_context.submit(geometry_pass, Rc::new(draw_list));
             })
             .unwrap();
-        renderer.present(frame_token).unwrap();
-        renderer.queue_async_readback(frame).unwrap();
-        let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
+        let (_, pixels) = readback::read_pixels(renderer, graph.resource_id("backbuffer").unwrap());
         pixels
     };
 
-    let staged_pixels = render_and_capture(&mut renderer, &mut graph, mesh, 0);
+    let staged_pixels = render_and_capture(&mut renderer, &mut graph, mesh);
     assert!(
         covered(&staged_pixels, (0.0, 0.0)),
         "the staged static mesh must render through its copy submission"
     );
-    let dynamic_pixels = render_and_capture(&mut renderer, &mut graph, dynamic, 1);
+    let dynamic_pixels = render_and_capture(&mut renderer, &mut graph, dynamic);
     assert!(covered(&dynamic_pixels, (0.0, 0.0)));
 
     // Frame boundaries released the staged uploads.
@@ -234,13 +242,20 @@ fn test_static_mesh_stages_into_device_local_and_renders() {
     renderer.destroy_mesh(dynamic);
     for frame in 2..6 {
         let frame_token = acquire_frame_token(&mut renderer);
-        renderer
-            .set_frame_uniforms(&frame_token, uniforms.clone())
+        graph
+            .set_pass_bindings(geometry_pass, uniforms.bindings())
             .unwrap();
         renderer
             .render(&frame_token, &mut graph, |_| {})
             .expect("empty frame render");
-        renderer.present(frame_token).unwrap();
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
         let _ = frame;
     }
     assert_eq!(renderer.pending_retirements().total(), 0);

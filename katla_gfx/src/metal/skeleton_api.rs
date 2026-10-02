@@ -28,30 +28,6 @@ impl MetalRenderer {
         Ok(handle)
     }
 
-    pub(crate) fn update_skeleton_impl(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        let slot = self.frame_index();
-        let Some(buffer) = self.skeletons[slot].get_mut(handle) else {
-            return;
-        };
-        let replacement = match self.context.create_buffer(buffer.size(), true) {
-            Ok(replacement) => replacement,
-            Err(error) => {
-                log::error!("Skeleton upload allocation failed: {error}");
-                return;
-            }
-        };
-        *buffer = replacement;
-        let max_matrices = (buffer.size() / 64) as usize;
-        let count = matrices.len().min(max_matrices);
-        let ptr = buffer.map();
-        let matrices_bytes =
-            unsafe { std::slice::from_raw_parts(matrices.as_ptr() as *const u8, count * 64) };
-        unsafe {
-            std::ptr::copy_nonoverlapping(matrices_bytes.as_ptr(), ptr, matrices_bytes.len());
-        }
-        buffer.unmap();
-    }
-
     pub(crate) fn destroy_skeleton_impl(&mut self, handle: SkeletonHandle) {
         for storage in &mut self.skeletons {
             storage.remove(handle);

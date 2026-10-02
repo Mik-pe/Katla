@@ -26,6 +26,12 @@ pub(crate) struct EncodingResources {
     persistent: RefCell<Vec<Rc<MetalResidency>>>,
     identity: RefCell<Option<SubmissionIdentity>>,
     layouts: RefCell<Vec<super::binding_schema::ArgumentTableLayout>>,
+    capture: RefCell<Option<crate::render_graph::capture::BackendExecutionTrace>>,
+    capture_context: RefCell<(Option<usize>, String, Vec<u32>)>,
+    #[cfg(test)]
+    native_encoder_count: std::cell::Cell<usize>,
+    #[cfg(test)]
+    native_barrier_count: std::cell::Cell<usize>,
 }
 
 impl EncodingResources {
@@ -45,7 +51,172 @@ impl EncodingResources {
             persistent: RefCell::new(Vec::new()),
             identity: RefCell::new(None),
             layouts: RefCell::new(Vec::new()),
+            capture: RefCell::new(None),
+            capture_context: RefCell::new((None, String::new(), Vec::new())),
+            #[cfg(test)]
+            native_encoder_count: std::cell::Cell::new(0),
+            #[cfg(test)]
+            native_barrier_count: std::cell::Cell::new(0),
         })
+    }
+
+    pub(crate) fn enable_capture(&self) {
+        *self.capture.borrow_mut() = Some(crate::render_graph::capture::BackendExecutionTrace {
+            backend: "Metal4".into(),
+            ..Default::default()
+        });
+    }
+
+    pub(crate) fn capture_context(&self, pass: Option<usize>, label: &str, resources: Vec<u32>) {
+        if self.capture.borrow().is_some() {
+            *self.capture_context.borrow_mut() = (pass, label.into(), resources);
+        }
+    }
+
+    pub(crate) fn record_encoder(&self, kind: crate::render_graph::capture::CapturedEncoderKind) {
+        #[cfg(test)]
+        self.native_encoder_count
+            .set(self.native_encoder_count.get() + 1);
+        if let Some(capture) = self.capture.borrow_mut().as_mut() {
+            let (pass, label, resources) = &*self.capture_context.borrow();
+            capture
+                .encoders
+                .push(crate::render_graph::capture::CapturedEncoder {
+                    ordinal: capture.encoders.len(),
+                    pass_index: *pass,
+                    label: label.clone(),
+                    kind,
+                    resources: resources.clone(),
+                });
+        }
+    }
+
+    pub(crate) fn observe_resource(&self, resource: u32) {
+        if let Some(capture) = self.capture.borrow_mut().as_mut()
+            && let Some(encoder) = capture.encoders.last_mut()
+            && !encoder.resources.contains(&resource)
+        {
+            encoder.resources.push(resource);
+        }
+    }
+
+    pub(crate) fn record_sync(
+        &self,
+        operation: crate::render_graph::capture::CapturedSyncOperation,
+    ) {
+        if let Some(capture) = self.capture.borrow_mut().as_mut() {
+            capture.synchronization.push(operation);
+        }
+    }
+
+    pub(crate) fn capture_binding(
+        &self,
+        table: &ProtocolObject<dyn MTL4ArgumentTable>,
+        layout: &super::binding_schema::ArgumentTableLayout,
+    ) {
+        let Some(identity) = self
+            .tables
+            .borrow()
+            .iter()
+            .position(|retained| std::ptr::eq(&**retained, table))
+        else {
+            return;
+        };
+        if let Some(capture) = self.capture.borrow_mut().as_mut() {
+            let layout_identity = serde_json::to_string(layout).unwrap_or_default();
+            if !capture.bindings.iter().any(|binding| {
+                binding.identity == identity && binding.layout_identity == layout_identity
+            }) {
+                capture
+                    .bindings
+                    .push(crate::render_graph::capture::CapturedBindingSet {
+                        identity,
+                        layout_identity,
+                        residency_members: Vec::new(),
+                        snapshot_generation: None,
+                    });
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn native_counts(&self) -> (usize, usize) {
+        (
+            self.native_encoder_count.get(),
+            self.native_barrier_count.get(),
+        )
+    }
+    #[cfg(test)]
+    pub(crate) fn native_barriers(&self, count: usize) {
+        self.native_barrier_count
+            .set(self.native_barrier_count.get() + count);
+    }
+    pub(crate) fn captured_boundary(&self, boundary: &str) -> bool {
+        self.capture.borrow().as_ref().is_some_and(|capture| {
+            capture
+                .synchronization
+                .iter()
+                .any(|operation| operation.boundary == boundary)
+        })
+    }
+
+    pub(crate) fn capture_enabled(&self) -> bool {
+        self.capture.borrow().is_some()
+    }
+
+    pub(crate) fn capture(&self) -> crate::render_graph::capture::BackendExecutionTrace {
+        let Some(mut capture) = self.capture.borrow().clone() else {
+            return Default::default();
+        };
+        let diagnostics = self.diagnostics();
+        let mut memberships = vec![diagnostics.submission];
+        memberships.extend(diagnostics.persistent);
+        memberships.extend(
+            diagnostics
+                .bindless
+                .iter()
+                .map(|snapshot| snapshot.residency.clone()),
+        );
+        let members = memberships
+            .iter()
+            .enumerate()
+            .flat_map(|(set_identity, residency)| {
+                residency.members.iter().map(move |member| {
+                    crate::render_graph::capture::CapturedResidentResource {
+                        set_identity,
+                        kind: member.kind.into(),
+                        ordinal: member.id,
+                        estimated_bytes: member.estimated_bytes,
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        for binding in &mut capture.bindings {
+            binding.residency_members = members.clone();
+        }
+        for snapshot in diagnostics.bindless {
+            capture
+                .bindings
+                .push(crate::render_graph::capture::CapturedBindingSet {
+                    identity: self.tables.borrow().len() + capture.bindings.len(),
+                    layout_identity: "bindless_resource_ids".into(),
+                    residency_members: snapshot
+                        .residency
+                        .members
+                        .iter()
+                        .map(
+                            |member| crate::render_graph::capture::CapturedResidentResource {
+                                set_identity: capture.bindings.len(),
+                                kind: member.kind.into(),
+                                ordinal: member.id,
+                                estimated_bytes: member.estimated_bytes,
+                            },
+                        )
+                        .collect(),
+                    snapshot_generation: Some(snapshot.generation),
+                });
+        }
+        capture
     }
 
     pub(crate) fn fail(&self, error: String) {

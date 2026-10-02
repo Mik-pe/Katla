@@ -32,7 +32,7 @@ impl Queue {
         wait_semaphores: &[Semaphore],
         signal_semaphores: &[Semaphore],
         signal_fence: Fence,
-    ) {
+    ) -> Result<(), vk::Result> {
         let stage_masks: Vec<_> = (0..wait_semaphores.len())
             .map(|_| vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
             .collect();
@@ -56,7 +56,7 @@ impl Queue {
         signal_semaphores: &[Semaphore],
         signal_fence: Fence,
         wait_stage_masks: &[vk::PipelineStageFlags],
-    ) {
+    ) -> Result<(), vk::Result> {
         let vk_cmd_buffers: Vec<_> = command_buffers
             .iter()
             .map(|cb| cb.vk_command_buffer())
@@ -71,7 +71,6 @@ impl Queue {
         unsafe {
             self.device
                 .queue_submit(self.queue, &[submit_info], signal_fence)
-                .expect("Failed to submit queue");
         }
     }
 
@@ -89,24 +88,17 @@ impl Queue {
         command_buffers: &[&CommandBuffer],
         wait_semaphores: &[Semaphore],
         signal_semaphores: &[Semaphore],
-    ) {
+    ) -> Result<(), vk::Result> {
         // Create fence for this operation
         let fence_info = vk::FenceCreateInfo::default();
-        let fence = unsafe {
-            self.device
-                .create_fence(&fence_info, None)
-                .expect("Failed to create fence for submit_and_wait")
-        };
+        let fence = unsafe { self.device.create_fence(&fence_info, None)? };
 
-        // Submit with fence
-        self.submit(command_buffers, wait_semaphores, signal_semaphores, fence);
-
-        // Wait for completion
+        let result = self
+            .submit(command_buffers, wait_semaphores, signal_semaphores, fence)
+            .and_then(|()| unsafe { self.device.wait_for_fences(&[fence], true, u64::MAX) });
         unsafe {
-            self.device
-                .wait_for_fences(&[fence], true, u64::MAX)
-                .expect("Failed to wait for fence in submit_and_wait");
             self.device.destroy_fence(fence, None);
         }
+        result
     }
 }

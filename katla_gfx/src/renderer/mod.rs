@@ -11,74 +11,62 @@ pub(crate) mod types;
 
 pub mod any_renderer;
 pub mod features;
+pub mod frame_bindings;
 pub mod gpu_renderer;
+pub mod graphics_interface;
 pub mod pipeline_descriptor;
 pub mod pipeline_kind;
 pub mod pipeline_variant;
 pub mod retirement;
+pub mod texture_readback;
+mod vulkan_core;
 
-pub(crate) mod animation_init;
 pub(crate) mod bindless_queries;
 pub(crate) mod buffer_api;
-pub(crate) mod compositing;
-pub(crate) mod depth_prepass;
+#[cfg(test)]
+mod capture_tests;
 pub(crate) mod destroy_api;
-pub(crate) mod font_atlas;
 pub(crate) mod frame_lifecycle;
 pub mod frame_scope;
-pub(crate) mod fullscreen_shader;
-pub(crate) mod light_culling;
+mod graph_readback;
 pub(crate) mod material_api;
 pub(crate) mod mesh_manager;
-pub(crate) mod outline;
-pub(crate) mod particle_init;
-pub(crate) mod picking;
-pub(crate) mod readback;
 pub(crate) mod registry;
-pub(crate) mod shadow;
 pub(crate) mod skeleton_api;
 pub(crate) mod texture_api;
-pub(crate) mod timestamp_queries;
 pub(crate) mod ui_renderer;
-pub(crate) mod viewport_manager;
 
 // Public re-exports (always available — backend-agnostic types)
 pub use crate::handle::{
     Handle, MaterialHandle, MeshHandle, PipelineHandle, SkeletonHandle, TextureHandle,
 };
 pub use features::RendererFeature;
+pub use frame_scope::{FrameAcquisition, FrameToken, PresentOutcome, SurfaceStatus};
 pub use pipeline_descriptor::{
-    BlendMode, DepthState, MetalPipelineOptions, NativePipelineOptions, PipelineDescriptor,
-    PipelineStages, SpecializationValue, VulkanPipelineOptions,
+    BlendMode, DepthState, PipelineDescriptor, PipelineStages, SpecializationValue,
 };
 pub use types::{
-    DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
-    PointLightGPU, PreparedDrawCounts, PreparedDraws, UIDrawList, UiDrawCommand,
+    DrawCall, DrawList, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData, PointLightGPU,
+    PreparedDrawCounts, PreparedDraws, UIDrawList, UiDrawCommand,
 };
 
 // Vulkan re-exports
 pub use crate::error::ValidationMode;
 pub use registry::AssetRegistry;
 
-use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
-
-use crate::barrier::ImageBarrier;
 use crate::error::RendererError;
 use crate::handle::{BufferMarker, ResourceStorage, SkeletonMarker};
 use crate::renderer::retirement::RetirementSnapshot;
-use crate::sync::COLOR_SUBRESOURCE_RANGE;
 use crate::texture::{TextureDescriptor, TextureManager};
 use crate::vulkan::IndexType;
 use crate::vulkan::bindless_texture::{BindlessTextureManager, MAX_BINDLESS_TEXTURES};
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::context::VulkanFrameCtx;
-use crate::vulkan::material::SkeletonDescriptorSet;
 use crate::vulkan::material::compiler::MaterialCompiler;
-use crate::vulkan::material::storage_uniform::{StorageDescriptorSet, StorageUniformManager};
+use crate::vulkan::material::storage_uniform::StorageUniformManager;
 use crate::vulkan::retirement::{
     FrameRetirements, RetiredBuffer, RetiredResource, RetirementQueue,
 };
-use crate::vulkan::skeleton_buffer::SkeletonBuffer;
 use crate::vulkan::swapdata::SwapData;
 use crate::vulkan::vertex_attribute::AttributeType;
 use crate::vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
@@ -101,8 +89,8 @@ pub(crate) struct UiFrameResources {
     pub unit_quad_index_buffers: Vec<IndexBuffer>,
     /// Per-frame UI descriptor sets (owns both set and pool, automatic cleanup).
     pub descriptor_sets: Vec<Option<crate::vulkan::descriptor_set::DescriptorSet>>,
-    /// UI uniform buffer (reused across frames).
-    pub uniform_buffer: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+    /// Screen-size uniform allocation for each frame slot.
+    pub uniform_buffers: Vec<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
 }
 
 impl UiFrameResources {
@@ -149,12 +137,16 @@ impl UiFrameResources {
             .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-        let (uniform_buffer, uniform_allocation) = context
-            .allocate_buffer(
-                &uniform_buffer_info,
-                gpu_allocator::MemoryLocation::CpuToGpu,
-            )
-            .expect("Failed to allocate UI uniform buffer");
+        let uniform_buffers = (0..FRAMES_IN_FLIGHT)
+            .map(|_| {
+                context
+                    .allocate_buffer(
+                        &uniform_buffer_info,
+                        gpu_allocator::MemoryLocation::CpuToGpu,
+                    )
+                    .expect("Failed to allocate UI uniform buffer")
+            })
+            .collect();
 
         Self {
             vertex_buffers,
@@ -163,21 +155,9 @@ impl UiFrameResources {
             unit_quad_vertex_buffers,
             unit_quad_index_buffers,
             descriptor_sets,
-            uniform_buffer: Some((uniform_buffer, uniform_allocation)),
+            uniform_buffers,
         }
     }
-}
-
-/// Transpose a 4x4 matrix from row-major to column-major format.
-///
-/// Pending readback operation for async frame checking
-pub struct PendingReadback {
-    frame: usize,
-    fence: vk::Fence,
-    command_buffer: crate::vulkan::commandbuffer::CommandBuffer,
-    staging_buffer: vk::Buffer,
-    staging_allocation: gpu_allocator::vulkan::Allocation,
-    buffer_size: vk::DeviceSize,
 }
 
 pub struct VulkanRenderer {
@@ -204,76 +184,43 @@ pub struct VulkanRenderer {
     /// Storage uniform manager for storage buffer-based uniforms.
     /// Materials use storage buffers with instance indexing.
     pub(crate) storage_manager: StorageUniformManager,
-    /// Per-frame storage descriptor sets for binding frame and object uniforms.
-    /// Each set contains the storage buffer bound at two offsets (frame_data at 0, objects at 256).
-    pub(crate) storage_descriptor_sets: Vec<StorageDescriptorSet>,
-    /// Skeleton descriptor sets for GPU skeletal animation.
-    /// Indexed by SkeletonHandle via generational ResourceStorage.
-    pub(crate) skeleton_descriptors: ResourceStorage<SkeletonDescriptorSet, SkeletonMarker>,
-    /// Skeleton buffers for GPU skeletal animation.
-    /// Kept slot-aligned with `skeleton_descriptors`: both storages see the
-    /// same insert/remove sequence so one SkeletonHandle addresses both.
-    pub(crate) skeleton_buffers: ResourceStorage<SkeletonBuffer, SkeletonMarker>,
+    /// Per-slot ordinary buffers associated with a skeleton handle.
+    pub(crate) skeleton_buffers: ResourceStorage<Vec<crate::BufferHandle>, SkeletonMarker>,
     /// Backend-neutral buffer resources addressable from render graphs.
     pub(crate) graph_buffers:
         ResourceStorage<crate::render_graph::transient_buffer::VulkanGraphBuffer, BufferMarker>,
+    pub(crate) pending_texture_exports: Vec<graph_readback::VulkanTextureExport>,
+    pub(crate) committed_texture_exports: std::collections::HashMap<
+        crate::render_graph::ResourceId,
+        graph_readback::VulkanTextureExport,
+    >,
+    pub(crate) texture_readbacks:
+        std::collections::HashMap<u64, graph_readback::VulkanTextureReadback>,
+    pub(crate) graphics_descriptor_sets: Vec<Vec<crate::vulkan::descriptor_set::DescriptorSet>>,
+    pub(crate) graphics_constants:
+        Vec<Vec<crate::render_graph::transient_buffer::VulkanGraphBuffer>>,
+    pub(crate) graphics_image_views: Vec<Vec<vk::ImageView>>,
+    pub(crate) graphics_samplers:
+        std::collections::HashMap<super::renderer::frame_bindings::SamplingMode, vk::Sampler>,
+    pub(crate) pending_graph_buffers: std::collections::HashSet<u64>,
+    pub(crate) graph_buffer_consumers: std::collections::HashMap<u64, Option<vk::Fence>>,
     pub(crate) graph_compute_pipelines: std::collections::HashMap<
         crate::render_graph::ComputePipelineDesc,
         crate::render_graph::vulkan_compute::VulkanGraphComputePipeline,
     >,
-    /// Compositing descriptor set layout for multi-viewport compositing.
-    /// Created during initialization and used when compiling compositing materials.
-    pub(crate) compositing_descriptor_set_layout: vk::DescriptorSetLayout,
-    /// Frame-level uniforms set once per frame via set_frame_uniforms().
-    pub(crate) frame_uniforms: FrameUniforms,
     /// Last presented swapchain image index (for debugging readback).
     pub(super) last_presented_image_index: Option<u32>,
-    /// Cached default white PBR material handle.
-    pub(super) default_material_handle: Option<MaterialHandle>,
-    /// Pending async readback operation
-    pub(super) pending_readback: Option<PendingReadback>,
-    /// Output render target for final composition (UI renders here, then present_pass copies to swapchain).
-    output_target: Option<OutputRenderTarget>,
-    /// Viewport manager for viewport and render target management.
-    pub(crate) viewport_manager: viewport_manager::ViewportManager,
     /// Material compiler for compiling materials from shaders.
     pub(crate) material_compiler: MaterialCompiler,
-    /// UI rendering subsystem - owns UI resources and font atlas.
-    pub ui_renderer: ui_renderer::UIRenderer,
-    /// GPU timestamp query pool for profiling render passes.
-    pub(crate) timestamp_queries: Option<timestamp_queries::TimestampQueries>,
-    /// Global particle system for GPU-driven particle effects.
-    pub particle_system: Option<crate::particles::GlobalParticleSystem>,
-    /// GPU animation pose evaluation pipeline.
-    /// GPU animation buffers for pose evaluation.
-    pub animation_buffers: Option<crate::animation::PoseComputeBuffers>,
-    /// Light culling subsystem (Forward+ dynamic lighting).
-    light_culling: light_culling::LightSubsystem,
-    /// Shadow system state (CSM cascaded shadow maps).
-    pub(crate) shadow: shadow::ShadowSubsystem,
-    /// Shared empty descriptor set layout (no bindings).
-    /// Used as a placeholder for Set 1 in skinned pipelines (outline, depth prepass, shadow).
-    pub(crate) shared_empty_descriptor_layout: vk::DescriptorSetLayout,
-    /// Empty descriptor sets (one per frame) for binding at unused set slots.
-    /// Prevents VUID-vkCmdDrawIndexed-None-08600 when pipeline layouts declare
-    /// sets for light culling (3) and shadow (4) but those systems aren't ready.
-    empty_descriptor_sets: Vec<vk::DescriptorSet>,
-    /// Descriptor pool for allocating empty descriptor sets.
-    empty_descriptor_pool: vk::DescriptorPool,
-    /// Depth prepass subsystem (depth-only pre-pass).
-    depth_prepass: depth_prepass::DepthPrepassSubsystem,
-    /// Outline highlight subsystem (stencil-based selection highlight).
-    pub(crate) outline: outline::OutlineSubsystem,
-    /// Picking readback subsystem.
-    picking: picking::PickingSubsystem,
-    /// Base bindless index for per-frame depth textures.
-    /// Actual index for frame N is `depth_texture_base_index + N`.
-    depth_texture_base_index: Option<u32>,
+    /// Optional scratch storage for native UI encoding.
+    pub(crate) ui_renderer: ui_renderer::UIRenderer,
     /// The currently open frame-scoped token (see `renderer::frame_scope`).
     active_frame: Option<crate::renderer::frame_scope::FrameToken>,
     frame_rendered: bool,
+    pub(crate) last_submission: Option<(usize, u64, Option<vk::Fence>)>,
+    pub(crate) surface_recreation_required: bool,
     /// Monotonic counter handed to successive acquired frames.
-    frame_generation: u64,
+    pub(crate) frame_generation: u64,
     /// Why the open frame is poisoned (a render failure); `present` refuses to submit.
     frame_poisoned: Option<String>,
     /// GPU hardware capabilities and limits.
@@ -306,100 +253,6 @@ impl VulkanRenderer {
         })
     }
 
-    fn create_storage_descriptor_sets(
-        context: &Rc<VulkanContext>,
-        storage_manager: &StorageUniformManager,
-    ) -> Result<Vec<StorageDescriptorSet>, RendererError> {
-        let mut sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        for frame_idx in 0..FRAMES_IN_FLIGHT {
-            let descriptor_set = StorageDescriptorSet::new(
-                context,
-                storage_manager.buffer(frame_idx),
-                storage_manager.buffer_size(),
-            )
-            .map_err(|e| {
-                error!("Failed to create storage descriptor set: {:?}", e);
-                RendererError::InitializationFailed(format!(
-                    "Failed to create storage descriptor set for frame {}: {:?}",
-                    frame_idx, e
-                ))
-            })?;
-            sets.push(descriptor_set);
-        }
-        Ok(sets)
-    }
-
-    fn create_compositing_descriptor_set_layout(
-        device: &ash::Device,
-    ) -> Result<vk::DescriptorSetLayout, RendererError> {
-        use crate::vulkan::compositing::CompositingDescriptorSet;
-        CompositingDescriptorSet::create_layout(device).map_err(|e| {
-            error!(
-                "Failed to create compositing descriptor set layout: {:?}",
-                e
-            );
-            RendererError::InitializationFailed(
-                "Failed to create compositing descriptor set layout".to_string(),
-            )
-        })
-    }
-
-    fn create_empty_descriptor_set_layout(
-        context: &Rc<VulkanContext>,
-    ) -> Result<vk::DescriptorSetLayout, RendererError> {
-        unsafe {
-            context
-                .device
-                .create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default(), None)
-                .map_err(|_| {
-                    RendererError::InitializationFailed(
-                        "Failed to create empty descriptor set layout".to_string(),
-                    )
-                })
-        }
-    }
-
-    fn create_empty_descriptor_sets(
-        context: &Rc<VulkanContext>,
-        layout: vk::DescriptorSetLayout,
-    ) -> Result<(vk::DescriptorPool, Vec<vk::DescriptorSet>), RendererError> {
-        // Include a dummy pool size for driver compatibility (some drivers reject
-        // pools with zero pool sizes even when allocating empty descriptor sets).
-        let dummy_pool_size = vk::DescriptorPoolSize::default()
-            .ty(vk::DescriptorType::STORAGE_BUFFER)
-            .descriptor_count(FRAMES_IN_FLIGHT as u32);
-        let pool_info = vk::DescriptorPoolCreateInfo::default()
-            .max_sets(FRAMES_IN_FLIGHT as u32)
-            .pool_sizes(std::slice::from_ref(&dummy_pool_size));
-        let pool = unsafe {
-            context
-                .device
-                .create_descriptor_pool(&pool_info, None)
-                .map_err(|_| {
-                    RendererError::InitializationFailed(
-                        "Failed to create empty descriptor pool".to_string(),
-                    )
-                })
-        }?;
-        let layouts: Vec<_> = (0..FRAMES_IN_FLIGHT).map(|_| layout).collect();
-        let allocate_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(pool)
-            .set_layouts(&layouts);
-        let sets = unsafe {
-            context
-                .device
-                .allocate_descriptor_sets(&allocate_info)
-                .map_err(|_| {
-                    RendererError::InitializationFailed(
-                        "Failed to allocate empty descriptor sets".to_string(),
-                    )
-                })
-        }?;
-        Ok((pool, sets))
-    }
-}
-
-impl VulkanRenderer {
     pub fn init(
         display: &dyn HasDisplayHandle,
         window: &dyn HasWindowHandle,
@@ -477,7 +330,7 @@ impl VulkanRenderer {
                 supports_compute: true,
                 max_frames_in_flight: FRAMES_IN_FLIGHT,
                 vendor,
-                supports_light_culling: false,
+                clip_y_down: true,
             }
         };
 
@@ -491,55 +344,29 @@ impl VulkanRenderer {
             FRAMES_IN_FLIGHT,
         )?;
 
+        let mut texture_manager = TextureManager::new(context.clone())?;
+        let fallback_handle = texture_manager.default_texture();
+        let fallback = texture_manager
+            .get_texture_rc(fallback_handle)
+            .ok_or_else(|| {
+                RendererError::InitializationFailed("Descriptor fallback texture is absent".into())
+            })?;
         let bindless_manager = Self::init_step(
             "bindless texture manager",
-            BindlessTextureManager::new(&context),
+            BindlessTextureManager::new(&context, fallback),
         )?;
+        texture_manager.register_bindless_slot(fallback_handle, 0);
         info!(
-            "Bindless texture system initialized (max {} textures)",
+            "Texture system initialized (max {} textures)",
             MAX_BINDLESS_TEXTURES
         );
 
-        let texture_manager =
-            Self::init_step("texture manager", TextureManager::new(context.clone()))?;
-        info!("Texture manager initialized");
-
         let storage_manager = StorageUniformManager::new(&context, FRAMES_IN_FLIGHT)?;
-        let storage_descriptor_sets =
-            Self::create_storage_descriptor_sets(&context, &storage_manager)?;
 
         let mesh_manager = mesh_manager::MeshManager::new(context.clone());
-        let viewport_manager = viewport_manager::ViewportManager::new();
 
-        let material_compiler = Self::init_step(
-            "material compiler",
-            MaterialCompiler::new(
-                context.clone(),
-                &bindless_manager,
-                &storage_descriptor_sets[0],
-            ),
-        )?;
+        let material_compiler = MaterialCompiler::new(context.clone(), &bindless_manager);
         info!("Material compiler initialized");
-
-        let compositing_descriptor_set_layout =
-            Self::create_compositing_descriptor_set_layout(&context.device)?;
-        info!("Compositing descriptor set layout created");
-
-        let shared_empty_descriptor_layout = Self::create_empty_descriptor_set_layout(&context)?;
-        let (empty_descriptor_pool, empty_descriptor_sets) =
-            Self::create_empty_descriptor_sets(&context, shared_empty_descriptor_layout)?;
-        let ui_renderer = ui_renderer::UIRenderer::new(&context);
-
-        let timestamp_period = unsafe {
-            context
-                .instance
-                .get_physical_device_properties(context.physical_device)
-        }
-        .limits
-        .timestamp_period;
-
-        let timestamp_queries =
-            timestamp_queries::TimestampQueries::new(&context.device, timestamp_period).ok();
 
         Ok(Self {
             context,
@@ -551,34 +378,25 @@ impl VulkanRenderer {
             bindless_manager,
             texture_manager,
             storage_manager,
-            storage_descriptor_sets,
-            skeleton_descriptors: ResourceStorage::new(),
             skeleton_buffers: ResourceStorage::new(),
             graph_buffers: ResourceStorage::new(),
+            pending_texture_exports: Vec::new(),
+            committed_texture_exports: Default::default(),
+            texture_readbacks: Default::default(),
+            graphics_descriptor_sets: (0..FRAMES_IN_FLIGHT).map(|_| Vec::new()).collect(),
+            graphics_constants: (0..FRAMES_IN_FLIGHT).map(|_| Vec::new()).collect(),
+            graphics_image_views: (0..FRAMES_IN_FLIGHT).map(|_| Vec::new()).collect(),
+            graphics_samplers: Default::default(),
+            pending_graph_buffers: Default::default(),
+            graph_buffer_consumers: Default::default(),
             graph_compute_pipelines: std::collections::HashMap::new(),
-            compositing_descriptor_set_layout,
-            frame_uniforms: FrameUniforms::default(),
             last_presented_image_index: None,
-            default_material_handle: None,
-            pending_readback: None,
-            output_target: None,
-            viewport_manager,
             material_compiler,
-            ui_renderer,
-            timestamp_queries,
-            particle_system: None,
-            animation_buffers: None,
-            light_culling: light_culling::LightSubsystem::default(),
-            shared_empty_descriptor_layout,
-            empty_descriptor_sets,
-            empty_descriptor_pool,
-            shadow: shadow::ShadowSubsystem::default(),
-            depth_prepass: depth_prepass::DepthPrepassSubsystem::default(),
-            outline: outline::OutlineSubsystem::default(),
-            picking: picking::PickingSubsystem::default(),
-            depth_texture_base_index: None,
+            ui_renderer: ui_renderer::UIRenderer::new(),
             active_frame: None,
             frame_rendered: false,
+            last_submission: None,
+            surface_recreation_required: false,
             frame_generation: 0,
             frame_poisoned: None,
             capabilities: gpu_capabilities,
@@ -598,96 +416,10 @@ impl VulkanRenderer {
         &self.context
     }
 
-    /// Register per-frame depth textures with the bindless system.
-    ///
-    /// Must be called after frame context is created. Returns the base bindless slot;
-    /// frame N's depth texture is at `base + N`.
-    pub fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {
-        let mut base_slot: Option<u32> = None;
-        for (frame_idx, depth_texture) in
-            self.frame_context.depth_render_textures.iter().enumerate()
-        {
-            let slot = self
-                .bindless_manager
-                .register_texture(depth_texture.image_view.vk())
-                .map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to register depth texture frame {}: {}",
-                        frame_idx, e
-                    ))
-                })?;
-            if frame_idx == 0 {
-                base_slot = Some(slot);
-            }
-            log::debug!(
-                "Registered depth texture frame {} at bindless slot {}",
-                frame_idx,
-                slot
-            );
-        }
-        let base = base_slot.ok_or_else(|| {
-            RendererError::InitializationFailed("No depth textures to register".to_string())
-        })?;
-        self.depth_texture_base_index = Some(base);
-        Ok(base)
-    }
-
-    /// Get the base bindless index for per-frame depth textures.
-    /// Actual index for frame N is `base + N`.
-    pub fn depth_texture_base_index(&self) -> Option<u32> {
-        self.depth_texture_base_index
-    }
-
-    /// Get an empty descriptor set for the given frame index.
-    ///
-    /// Used as a fallback binding when a pipeline declares a descriptor set slot
-    /// but the corresponding system isn't active yet (e.g., shadow atlas not ready).
-    pub(crate) fn empty_descriptor_set(&self, frame_idx: usize) -> vk::DescriptorSet {
-        self.empty_descriptor_sets
-            .get(frame_idx)
-            .copied()
-            .unwrap_or(vk::DescriptorSet::null())
-    }
-
-    /// Initialize or resize the output render target.
-    ///
-    /// This creates a texture that the UI renders to, which is then
-    /// copied to the swapchain by the present pass.
-    pub fn init_output_target(
-        &mut self,
-        width: u32,
-        height: u32,
-    ) -> Result<(), crate::error::RendererError> {
-        let needs_resize = self
-            .output_target
-            .as_ref()
-            .map(|t| t.extent.width != width || t.extent.height != height)
-            .unwrap_or(true);
-
-        if needs_resize {
-            // Old target is dropped automatically with Drop
-            self.output_target = None;
-            let target = OutputRenderTarget::new(self.context.clone(), width, height)?;
-            self.output_target = Some(target);
-            info!(
-                "Output render target created/resized to {}x{}",
-                width, height
-            );
-        }
-        Ok(())
-    }
-
     /// Get the swapchain extent (primary window size).
     pub fn swapchain_extent(&self) -> crate::Size2D {
         let ext = self.frame_context.extent;
         crate::Size2D::new(ext.width, ext.height)
-    }
-
-    /// Get output dimensions.
-    pub fn output_extent(&self) -> Option<crate::Size2D> {
-        self.output_target
-            .as_ref()
-            .map(|t| crate::Size2D::from(t.extent))
     }
 
     /// Register a texture image view with the bindless texture system.
@@ -752,113 +484,40 @@ impl VulkanRenderer {
             })
     }
 
-    // ========================================================================
-    // Viewport System
-    // ========================================================================
-
-    /// Create a viewport builder for configuring a new viewport.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let viewport = renderer.create_viewport()
-    ///     .size(512, 512)
-    ///     .with_depth(DepthFormat::D32SfloatS8Uint)
-    ///     .output_mode(OutputMode::Offscreen)
-    ///     .label("preview")
-    ///     .build(&mut renderer)?;
-    /// ```
-    pub fn create_viewport(&mut self) -> ViewportBuilder {
-        self.viewport_manager.create()
-    }
-
-    /// Get the number of viewports.
-    pub fn viewport_count(&self) -> usize {
-        self.viewport_manager.count()
-    }
-
-    /// Get viewport by handle.
-    pub fn get_viewport(&self, handle: ViewportHandle) -> Option<&Viewport> {
-        self.viewport_manager.get(handle)
-    }
-
-    /// Get mutable viewport by handle.
-    pub fn get_viewport_mut(&mut self, handle: ViewportHandle) -> Option<&mut Viewport> {
-        self.viewport_manager.get_mut(handle)
-    }
-
-    /// Get the texture ID for a viewport (for UI sampling).
-    ///
-    /// Note: This is a legacy method for UI compatibility. The actual texture
-    /// is managed by the frame graph system, not the viewport itself.
-    /// Returns a u64 that can be used with katla_ui::TextureId::custom(id).
-    pub fn viewport_texture_id(&self, handle: ViewportHandle) -> Option<u64> {
-        self.viewport_manager.texture_id(handle)
-    }
-
-    /// Get the viewport extent by handle.
-    pub fn viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Size2D> {
-        self.viewport_manager.extent(handle)
-    }
-
-    /// Destroy a viewport by handle.
-    pub fn destroy_viewport(&mut self, handle: ViewportHandle) {
-        if self.viewport_manager.destroy(handle) {
-            info!("Viewport {} destroyed", handle.0);
-        }
-    }
-
+    /// Retire submitted work and release native resource owners.
     pub fn destroy(&mut self) {
         if self.destroyed {
             return;
         }
         self.destroyed = true;
-
-        // Pending readback should have been cleaned up by wait_for_pending_readback()
-        // before destroy() is called. This handles the leak case.
-        if let Some(readback) = self.pending_readback.take() {
-            log::error!(
-                "Pending readback leaked during destroy() — call wait_for_pending_readback() before shutdown"
-            );
-            unsafe {
-                let _ = self
-                    .context
-                    .device
-                    .wait_for_fences(&[readback.fence], true, u64::MAX);
-                readback.command_buffer.return_to_pool();
-                self.context.device.destroy_fence(readback.fence, None);
-                self.context
-                    .free_buffer(readback.staging_buffer, readback.staging_allocation);
-            }
-        }
-
-        // Wait for device idle to ensure all GPU operations have completed
         self.wait_for_device();
+
+        self.texture_readbacks.clear();
+        self.pending_texture_exports.clear();
+        self.committed_texture_exports.clear();
         // Every submission has completed: retired resources can free now and
         // staged uploads release their fences and staging allocations.
         self.drain_retirements_all();
         self.context.wait_and_drain_all_staged_uploads();
 
-        // Destroy output render target (Drop handles cleanup)
-        self.output_target = None;
-
-        // Destroy all viewports
-        self.viewport_manager.clear();
-
-        // Destroy particle system FIRST (before destroying other resources)
-        // This ensures proper cleanup order and avoids heap corruption
-        if let Some(mut particle_system) = self.particle_system.take() {
-            info!("Destroying particle system");
-            particle_system.destroy();
+        for sets in &mut self.graphics_descriptor_sets {
+            sets.clear();
         }
-
-        // Destroy timestamp query pool
-        if let Some(tq) = self.timestamp_queries.take() {
-            tq.destroy(&self.context.device);
+        for buffers in &mut self.graphics_constants {
+            buffers.clear();
         }
-
-        // Destroy animation pipeline and buffers
-        self.animation_buffers = None; // Drop handles cleanup via Drop impl
+        for views in &mut self.graphics_image_views {
+            for view in views.drain(..) {
+                unsafe {
+                    self.context.device.destroy_image_view(view, None);
+                }
+            }
+        }
+        for (_, sampler) in self.graphics_samplers.drain() {
+            unsafe {
+                self.context.device.destroy_sampler(sampler, None);
+            }
+        }
 
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
@@ -866,66 +525,11 @@ impl VulkanRenderer {
         // Destroy material compiler (cleans up descriptor layouts)
         self.material_compiler.destroy();
 
-        // Destroy compositing descriptor set layout
-        unsafe {
-            self.context
-                .device
-                .destroy_descriptor_set_layout(self.compositing_descriptor_set_layout, None);
-        }
+        self.ui_renderer.destroy(&self.context);
 
-        // Clean up UI resources
-        {
-            let ui_resources = self.ui_renderer.ui_resources_mut();
-            // Vertex and index buffers have Drop impls that clean up themselves
-            ui_resources.vertex_buffers.clear();
-            ui_resources.index_buffers.clear();
-
-            // Descriptor sets own their pools and clean up automatically via Drop
-            ui_resources.descriptor_sets.clear();
-
-            // Destroy uniform buffer
-            if let Some((buffer, allocation)) = ui_resources.uniform_buffer.take() {
-                self.context.free_buffer(buffer, allocation);
-            }
-        }
-
-        // Destroy light culling subsystem
-        self.light_culling.destroy();
-
-        // Destroy picking subsystem (cleans up any pending readback)
-        self.picking.destroy(&self.context);
-
-        // Destroy shadow system resources (buffers, samplers, pools)
-        self.shadow.destroy_resources(&self.context);
-
-        // Destroy outline subsystem resources
-        self.outline.destroy(&self.context);
-
-        // Destroy depth prepass subsystem (pipelines owned by AssetRegistry, no GPU cleanup)
-        self.depth_prepass.destroy();
-
-        // Wait for GPU to finish all in-flight work before destroying resources
-        // that pipelines still reference (descriptor set layouts, etc.)
         self.context.pre_destroy();
-
-        // Destroy descriptor set layouts AFTER device_wait_idle, since pipelines
-        // in asset_registry still reference them until they are dropped.
-        self.shadow.destroy_layouts(&self.context);
-        unsafe {
-            if self.empty_descriptor_pool != vk::DescriptorPool::null() {
-                self.context
-                    .device
-                    .destroy_descriptor_pool(self.empty_descriptor_pool, None);
-            }
-        }
-        if self.shared_empty_descriptor_layout != vk::DescriptorSetLayout::null() {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(self.shared_empty_descriptor_layout, None);
-            }
-        }
-
+        self.skeleton_buffers = ResourceStorage::new();
+        self.graph_buffers = ResourceStorage::new();
         self.swap_data.destroy(&self.context.device);
         self.frame_context.destroy();
         self.context.destroy_surface();
@@ -944,7 +548,35 @@ impl VulkanRenderer {
         &mut self,
         size: crate::Size2D,
     ) -> Result<(), crate::error::RendererError> {
+        if size.width == 0 || size.height == 0 {
+            return Err(RendererError::InvalidOperation(
+                "Output dimensions must be nonzero".into(),
+            ));
+        }
         self.wait_for_device();
+        self.frame_clear();
+        for sets in &mut self.graphics_descriptor_sets {
+            sets.clear();
+        }
+        for constants in &mut self.graphics_constants {
+            constants.clear();
+        }
+        for views in &mut self.graphics_image_views {
+            for view in views.drain(..) {
+                unsafe {
+                    self.context.device.destroy_image_view(view, None);
+                }
+            }
+        }
+        self.graph_buffer_consumers
+            .values_mut()
+            .for_each(|owner| *owner = None);
+        self.last_submission = None;
+        self.surface_recreation_required = false;
+        self.last_presented_image_index = None;
+        self.pending_texture_exports.clear();
+        self.committed_texture_exports
+            .retain(|_, export| export.owns_image());
         self.context.wait_and_drain_all_staged_uploads();
 
         let old_extent = self.frame_context.extent;
@@ -974,30 +606,6 @@ impl VulkanRenderer {
 
         let new_extent = self.frame_context.extent;
         info!("  New extent: {}x{}", new_extent.width, new_extent.height);
-
-        // Re-register depth textures with bindless (depth images were recreated)
-        if self.depth_texture_base_index.is_some() {
-            for (frame_idx, depth_texture) in
-                self.frame_context.depth_render_textures.iter().enumerate()
-            {
-                if let Some(base) = self.depth_texture_base_index {
-                    let slot = base + frame_idx as u32;
-                    if let Err(e) = self
-                        .bindless_manager
-                        .update_texture(slot, depth_texture.image_view.vk())
-                    {
-                        log::error!(
-                            "Failed to update depth texture bindless slot {}: {}",
-                            slot,
-                            e
-                        );
-                    }
-                }
-            }
-        }
-
-        // Recreate light culling buffers for new dimensions
-        self.resize_light_culling(new_extent.width, new_extent.height);
 
         Ok(())
     }
@@ -1393,25 +1001,7 @@ impl VulkanRenderer {
         self.swap_data.current_frame()
     }
 
-    /// Initialize the particle system.
-    ///
-    /// This must be called after renderer initialization but before frame graph creation.
-    /// Sets up the global particle buffer and prepares for particle rendering.
-    pub fn init_particle_system(&mut self) -> Result<(), RendererError> {
-        use crate::particles::GlobalParticleSystem;
-
-        info!("Initializing particle system...");
-
-        let particle_system = GlobalParticleSystem::new(&self.context, 1_048_576).map_err(|e| {
-            RendererError::InitializationFailed(format!("Failed to create particle system: {}", e))
-        })?;
-
-        self.particle_system = Some(particle_system);
-
-        info!("Particle system initialized successfully");
-        Ok(())
-    }
-
+    /// Create an empty graph builder.
     pub fn create_frame_graph(&self) -> crate::render_graph::FrameGraphBuilder {
         crate::render_graph::FrameGraphBuilder::new()
     }
@@ -1426,134 +1016,38 @@ impl Drop for VulkanRenderer {
     }
 }
 
-/// Output render target for final UI composition.
-/// The UI renders to this texture, then present_pass blits it to the swapchain.
-/// This decouples rendering from presentation for a cleaner architecture.
-pub(crate) struct OutputRenderTarget {
-    /// Color attachment image.
-    pub(crate) color_image: vk::Image,
-    color_memory: gpu_allocator::vulkan::Allocation,
-    pub(crate) color_image_view: vk::ImageView,
-    /// Render extent (matches swapchain size).
-    pub extent: vk::Extent2D,
-    /// Context for cleanup.
-    context: Rc<VulkanContext>,
-}
-
-impl OutputRenderTarget {
-    /// Create a new output render target with the given dimensions.
-    pub fn new(
-        context: Rc<VulkanContext>,
-        width: u32,
-        height: u32,
-    ) -> Result<Self, crate::error::RendererError> {
-        unsafe {
-            let extent = vk::Extent2D { width, height };
-            let extent3d = vk::Extent3D {
-                width,
-                height,
-                depth: 1,
-            };
-
-            // Create color image (RGBA8, can be used as color attachment and transfer source/dest)
-            let color_create_info = vk::ImageCreateInfo::default()
-                .image_type(vk::ImageType::TYPE_2D)
-                .extent(extent3d)
-                .mip_levels(1)
-                .array_layers(1)
-                .format(vk::Format::B8G8R8A8_SRGB) // Match swapchain format
-                .tiling(vk::ImageTiling::OPTIMAL)
-                .initial_layout(vk::ImageLayout::UNDEFINED)
-                .usage(
-                    vk::ImageUsageFlags::COLOR_ATTACHMENT
-                        | vk::ImageUsageFlags::TRANSFER_SRC
-                        | vk::ImageUsageFlags::TRANSFER_DST,
-                )
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .samples(vk::SampleCountFlags::TYPE_1);
-
-            let (color_image, color_memory) = context
-                .create_image(color_create_info, gpu_allocator::MemoryLocation::GpuOnly)
-                .expect("Failed to create color image");
-
-            // Create color image view
-            let color_view_create_info = vk::ImageViewCreateInfo::default()
-                .image(color_image)
-                .view_type(vk::ImageViewType::TYPE_2D)
-                .format(vk::Format::B8G8R8A8_SRGB)
-                .components(vk::ComponentMapping::default())
-                .subresource_range(COLOR_SUBRESOURCE_RANGE);
-
-            let color_image_view = context
-                .device
-                .create_image_view(&color_view_create_info, None)?;
-
-            // Transition image to COLOR_ATTACHMENT_OPTIMAL (ready for UI rendering)
-            let cmd_buffer = context.begin_single_time_commands()?;
-            let cmd = cmd_buffer.vk_command_buffer();
-
-            ImageBarrier::transition_from_undefined(
-                &cmd,
-                &context.device,
-                color_image,
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            );
-
-            context.end_single_time_commands(cmd_buffer)?;
-
-            Ok(Self {
-                color_image,
-                color_memory,
-                color_image_view,
-                extent,
-                context,
-            })
-        }
-    }
-}
-
-impl Drop for OutputRenderTarget {
-    fn drop(&mut self) {
-        unsafe {
-            self.context
-                .device
-                .destroy_image_view(self.color_image_view, None);
-            self.context.device.destroy_image(self.color_image, None);
-            let memory = std::mem::take(&mut self.color_memory);
-            self.context.allocator.free(memory, "output render target");
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::texture::{ImageFormat, TextureDescriptor};
+    use super::*;
 
     #[test]
-    fn test_ui_font_atlas_format() {
-        // Test that the font atlas texture descriptor uses SRGB format
-        // Font atlas should use SRGB format for proper color reproduction
-        let desc = TextureDescriptor::rgba8_srgb(512, 512);
-
-        // Font atlas should use SRGB format
+    #[ignore = "requires a Vulkan device"]
+    fn test_constructor_allocates_only_device_core_resources() {
+        let mut renderer = VulkanRenderer::init_headless(
+            32,
+            32,
+            ValidationMode::Enabled,
+            c"constructor-proof".into(),
+            c"Katla".into(),
+        )
+        .unwrap();
+        assert_eq!(renderer.asset_registry.material_count(), 0);
+        assert_eq!(renderer.asset_registry.material_variant_count(), 0);
+        assert_eq!(renderer.asset_registry.mesh_count(), 0);
+        assert_eq!(renderer.texture_manager.len(), 1);
         assert_eq!(
-            desc.format,
-            ImageFormat::R8G8B8A8Srgb,
-            "Font atlas must use SRGB format for correct color rendering"
+            renderer
+                .texture_manager
+                .get_bindless_slot(renderer.texture_manager.default_texture()),
+            Some(0)
         );
-    }
-
-    #[test]
-    fn test_texture_descriptor_format_difference() {
-        // Demonstrate the difference between SRGB and UNORM formats
-        let srgb_desc = TextureDescriptor::rgba8_srgb(256, 256);
-        let unorm_desc = TextureDescriptor::rgba8_unorm(256, 256);
-
-        assert_eq!(srgb_desc.format, ImageFormat::R8G8B8A8Srgb);
-        assert_eq!(unorm_desc.format, ImageFormat::R8G8B8A8Unorm);
-
-        // Both have same dimensions
-        assert_eq!(srgb_desc.width, unorm_desc.width);
-        assert_eq!(srgb_desc.height, unorm_desc.height);
+        assert_eq!(renderer.graph_buffers.len(), 0);
+        assert_eq!(renderer.skeleton_buffers.len(), 0);
+        assert!(renderer.graph_compute_pipelines.is_empty());
+        assert!(renderer.graphics_samplers.is_empty());
+        assert!(renderer.graphics_constants.iter().all(Vec::is_empty));
+        assert!(renderer.graphics_descriptor_sets.iter().all(Vec::is_empty));
+        assert!(!renderer.ui_renderer.is_installed());
+        renderer.destroy();
     }
 }

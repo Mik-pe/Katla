@@ -34,6 +34,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
 use winit::window::Window;
 
+#[cfg(test)]
 use katla_gfx::GpuRenderer;
 
 use crate::{FrameGraph, Renderer};
@@ -315,515 +316,6 @@ impl ApplicationBuilder {
         Ok(renderer)
     }
 
-    /// Build the semantic frame graph used by the Metal backend.
-    ///
-    /// Metal owns its encoder implementations, but pass presence and order are
-    /// validated against this compiled graph before command encoding starts.
-    #[cfg(target_os = "macos")]
-    fn build_metal_frame_graph(
-        renderer: &mut katla_gfx::MetalRenderer,
-        resources: &ResourceManager,
-    ) -> AppResult<FrameGraph> {
-        use katla_gfx::render_graph::{
-            FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassBuilder, PassKind,
-            PassType, SimplePass,
-        };
-        use katla_gfx::{AttachmentOps, ClearValue, ImageFormat};
-        let ui_material = renderer
-            .compile_material(&katla_gfx::PipelineDescriptor::ui(
-                resources
-                    .shader_path("ui/ui.wgsl")
-                    .to_string_lossy()
-                    .into_owned(),
-            ))
-            .map_err(|source| crate::error::AppError::Graphics { source })?;
-        let extent = renderer.swapchain_extent();
-        let mut builder = FrameGraphBuilder::new();
-        for (name, format) in [
-            ("hdr_color", ImageFormat::R16G16B16A16Sfloat),
-            ("object_id", ImageFormat::R32Uint),
-            ("viewport_0", ImageFormat::B8G8R8A8Srgb),
-        ] {
-            builder = builder.create_resource(GraphResourceDesc {
-                name: name.into(),
-                resource_type: GraphResourceType::ColorAttachment { clear_value: None },
-                format,
-                width: extent.width,
-                height: extent.height,
-                tracks_swapchain_size: true,
-            });
-        }
-        builder = builder
-            .create_resource(GraphResourceDesc {
-                name: "scene_depth".into(),
-                resource_type: GraphResourceType::DepthAttachment {
-                    clear_value: 0.0,
-                    sampled: false,
-                },
-                format: ImageFormat::D32SfloatS8Uint,
-                width: extent.width,
-                height: extent.height,
-                tracks_swapchain_size: true,
-            })
-            .create_resource(GraphResourceDesc {
-                name: "shadow_atlas".into(),
-                resource_type: GraphResourceType::DepthAttachment {
-                    clear_value: 1.0,
-                    sampled: true,
-                },
-                format: ImageFormat::D32Sfloat,
-                width: 2048,
-                height: 2048,
-                tracks_swapchain_size: false,
-            });
-        let clear_depth = AttachmentOps::clear(ClearValue::DepthStencil {
-            depth: 0.0,
-            stencil: 0,
-        });
-        let load_depth = clear_depth.with_load(katla_gfx::LoadOp::Load);
-        let graph = builder
-            .export_resource("object_id")
-            .add_pass(
-                SimplePass::new("shadow", PassType::Graphics)
-                    .with_kind(PassKind::Shadow)
-                    .depth_ops(
-                        AttachmentOps::clear(ClearValue::DepthStencil {
-                            depth: 1.0,
-                            stencil: 0,
-                        }),
-                        AttachmentOps::dont_care(),
-                    )
-                    .depth_target("shadow_atlas"),
-            )
-            .add_pass(
-                SimplePass::new("depth_prepass", PassType::Graphics)
-                    .with_kind(PassKind::DepthPrepass)
-                    .depth_ops(clear_depth, clear_depth)
-                    .depth_target("scene_depth"),
-            )
-            .add_pass(
-                SimplePass::new("geometry", PassType::Graphics)
-                    .write("hdr_color")
-                    .read("shadow_atlas")
-                    .attachment(
-                        "hdr_color",
-                        AttachmentOps::clear(ClearValue::color(0.1, 0.1, 0.1, 1.0)),
-                    )
-                    .with_kind(PassKind::Geometry)
-                    .depth_ops(load_depth, clear_depth)
-                    .depth_target("scene_depth"),
-            )
-            .add_pass(
-                SimplePass::new("particles", PassType::Graphics)
-                    .read("hdr_color")
-                    .write("hdr_color")
-                    .attachment("hdr_color", AttachmentOps::load())
-                    .with_kind(PassKind::Particles)
-                    .depth_ops(load_depth, load_depth)
-                    .depth_target("scene_depth"),
-            )
-            .add_pass(
-                SimplePass::new("outline", PassType::Graphics)
-                    .read("hdr_color")
-                    .write("hdr_color")
-                    .attachment("hdr_color", AttachmentOps::load())
-                    .with_kind(PassKind::Outline)
-                    .depth_ops(load_depth, load_depth)
-                    .depth_target("scene_depth"),
-            )
-            .add_pass(
-                SimplePass::new("object_id", PassType::Graphics)
-                    .write("object_id")
-                    .attachment(
-                        "object_id",
-                        AttachmentOps::clear(ClearValue::TRANSPARENT_BLACK),
-                    )
-                    .with_kind(PassKind::ObjectId)
-                    .depth_ops(load_depth, load_depth)
-                    .depth_target("scene_depth"),
-            )
-            .add_pass(
-                SimplePass::new("tonemap", PassType::Graphics)
-                    .without_depth()
-                    .read("hdr_color")
-                    .write("viewport_0")
-                    .attachment("viewport_0", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
-                    .with_kind(PassKind::Fullscreen)
-                    .tonemap(katla_gfx::TonemapParams {
-                        exposure: 1.0,
-                        gamma: 2.2,
-                        mode: katla_gfx::TonemapOperator::Aces,
-                        hdr_texture_index: None,
-                    }),
-            )
-            .add_pass(
-                katla_gfx::render_graph::UIPass::new("ui")
-                    .read("viewport_0")
-                    .write_ops(
-                        "backbuffer",
-                        AttachmentOps::clear(ClearValue::color(0.022, 0.022, 0.022, 1.0)),
-                    )
-                    .material(ui_material),
-            )
-            .build::<katla_gfx::MetalRenderer>()
-            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-        Ok(FrameGraph::from_metal(graph))
-    }
-
-    /// Build the frame graph for the application.
-    ///
-    /// Uses HDR intermediate rendering with tonemapping and multi-viewport compositing:
-    /// 1. Sky pass renders procedural sky to HDR texture
-    /// 2. Geometry pass renders scene to HDR texture (R16G16B16A16Sfloat)
-    /// 3. Tonemap pass samples HDR and outputs to viewport texture
-    /// 4. Compositing pass composites viewport textures to backbuffer
-    /// 5. UI pass samples from backbuffer (now gets composited result)
-    fn build_frame_graph(
-        renderer: &mut katla_gfx::VulkanRenderer,
-        resources: &ResourceManager,
-    ) -> AppResult<FrameGraph> {
-        use katla_gfx::render_graph::UIPass;
-        use katla_gfx::render_graph::{
-            DepthPrepass, FullscreenPass, GeometryPass, GraphResourceDesc, GraphResourceType,
-            OutlinePass, ShadowPass, StencilIndicatorPass,
-        };
-        use katla_gfx::render_pass::LoadOp;
-        use katla_gfx::texture::ImageFormat as TextureImageFormat;
-
-        let extent = renderer.swapchain_extent();
-
-        // Compile sky shader (procedural fullscreen sky) with HDR output format
-        let sky_shader_path = resources.shader_path("sky.wgsl");
-        let sky_pipeline = renderer
-            .compile_fullscreen_shader_with_format(
-                sky_shader_path,
-                TextureImageFormat::R16G16B16A16Sfloat,
-            )
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // Compile tonemap shader for post-processing
-        let tonemap_shader_path = resources.shader_path("tonemapping.wgsl");
-        let tonemap_pipeline = renderer
-            .compile_fullscreen_shader(tonemap_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // Compile wallhack overlay shader (reads LDR + stencil indicator, applies tint)
-        let overlay_shader_path = resources.shader_path("wallhack_overlay.wgsl");
-        let overlay_pipeline = renderer
-            .compile_fullscreen_shader_with_format(
-                overlay_shader_path,
-                katla_gfx::ImageFormat::B8G8R8A8Srgb,
-            )
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // We'll get the HDR texture index after registering with bindless
-        // For now, use None - it will be set during app init
-        let tonemap_params = katla_gfx::TonemapParams {
-            exposure: 0.4,
-            gamma: 2.2,
-            mode: katla_gfx::TonemapOperator::Aces,
-            hdr_texture_index: None,
-        };
-
-        // Compile UI shader for editor UI rendering
-        let ui_shader_path = resources.shader_path("ui/ui.wgsl");
-        let ui_descriptor =
-            katla_gfx::PipelineDescriptor::ui(ui_shader_path.to_string_lossy().into_owned());
-        let ui_material = renderer
-            .compile_material(&ui_descriptor)
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // Initialize Forward+ light culling system BEFORE compiling PBR materials,
-        // since PBR pipelines need Set 3 for light culling data.
-        let light_cull_shader_path = resources.shader_path("lighting/light_cull.wgsl");
-        renderer
-            .init_light_culling(extent.width, extent.height, &light_cull_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // Initialize shadow resources BEFORE compiling PBR materials,
-        // since PBR pipelines need Set 4 for shadow data.
-        // Shadow atlas view will be set after frame graph creates the transient texture.
-        use katla_gfx::CascadeParams;
-        renderer
-            .init_shadow_resources(None, CascadeParams::default())
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // Register depth textures with bindless for screen-space effects (contact shadows, AO)
-        let depth_texture_base = renderer
-            .register_depth_textures_bindless()
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-        log::info!(
-            "Depth textures registered with bindless at base slot {}",
-            depth_texture_base
-        );
-
-        // Initialize shadow depth pipeline (depth-only rendering from light's perspective)
-        let shadow_shader_path = resources.shader_path("shadow/shadow_depth.wgsl");
-        renderer
-            .init_pass_pipeline(katla_gfx::PipelineKind::Shadow, &[&shadow_shader_path])
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        let shadow_skinned_shader_path = resources.shader_path("shadow/shadow_depth_skinned.wgsl");
-        renderer
-            .init_pass_pipeline(
-                katla_gfx::PipelineKind::ShadowSkinned,
-                &[&shadow_skinned_shader_path],
-            )
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        let depth_prepass_shader_path = resources.shader_path("depth_prepass.wgsl");
-        renderer
-            .init_pass_pipeline(
-                katla_gfx::PipelineKind::DepthPrepass,
-                &[&depth_prepass_shader_path],
-            )
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        let depth_prepass_skinned_shader_path = resources.shader_path("depth_prepass_skinned.wgsl");
-        renderer
-            .init_pass_pipeline(
-                katla_gfx::PipelineKind::DepthPrepassSkinned,
-                &[&depth_prepass_skinned_shader_path],
-            )
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        let billboard_depth_shader_path = resources.shader_path("billboard_depth.wgsl");
-        renderer
-            .init_pass_pipeline(
-                katla_gfx::PipelineKind::DepthPrepassBillboard,
-                &[&billboard_depth_shader_path],
-            )
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // Initialize outline pipelines for stencil-based selection highlight
-        let stencil_mark_shader_path = resources.shader_path("outline/stencil_mark.wgsl");
-        let stencil_mark_skinned_shader_path =
-            resources.shader_path("outline/stencil_mark_skinned.wgsl");
-        let outline_draw_shader_path = resources.shader_path("outline/outline_draw.wgsl");
-        let outline_draw_skinned_shader_path =
-            resources.shader_path("outline/outline_draw_skinned.wgsl");
-        renderer
-            .init_pass_pipeline(
-                katla_gfx::PipelineKind::Outline,
-                &[
-                    &stencil_mark_shader_path,
-                    &stencil_mark_skinned_shader_path,
-                    &outline_draw_shader_path,
-                    &outline_draw_skinned_shader_path,
-                ],
-            )
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // Initialize stencil indicator pipeline for wallhack overlay
-        let stencil_indicator_shader_path = resources.shader_path("outline/stencil_indicator.wgsl");
-        let stencil_indicator_skinned_shader_path =
-            resources.shader_path("outline/stencil_indicator_skinned.wgsl");
-        renderer
-            .init_pass_pipeline(
-                katla_gfx::PipelineKind::StencilIndicator,
-                &[
-                    &stencil_indicator_shader_path,
-                    &stencil_indicator_skinned_shader_path,
-                ],
-            )
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        // Compile geometry shader for PBR model rendering
-        log::info!("About to compile PBR geometry shader...");
-        let geometry_shader_path = resources.shader_path("model_pbr.wgsl");
-        let geometry_descriptor =
-            katla_gfx::PipelineDescriptor::pbr(geometry_shader_path.to_string_lossy().into_owned());
-        let geometry_material = renderer
-            .compile_material(&geometry_descriptor)
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        log::info!("PBR geometry shader compiled successfully");
-
-        // Compile particle rendering shader with alpha blending
-        let particle_shader_path = resources.shader_path("particles/particle_render.wgsl");
-
-        // Initialize particle render pipeline using the renderer's method
-        renderer
-            .init_particle_render_pipeline(&particle_shader_path)
-            .map_err(|e| crate::error::AppError::Graphics { source: e })?;
-
-        let graph = renderer
-            .create_frame_graph()
-            // Create HDR color texture for geometry pass output
-            .create_resource(GraphResourceDesc {
-                name: "hdr_color".to_string(),
-                resource_type: GraphResourceType::ColorAttachment {
-                    clear_value: Some([0.1, 0.1, 0.1, 1.0]),
-                },
-                format: TextureImageFormat::R16G16B16A16Sfloat,
-                width: extent.width,
-                height: extent.height,
-                tracks_swapchain_size: true,
-            })
-            // Create viewport texture for tonemap output (LDR, sRGB for backbuffer compatibility)
-            // Use B8G8R8A8Srgb to match backbuffer format (tonemap shader expects this)
-            .create_resource(GraphResourceDesc {
-                name: "viewport_0".to_string(),
-                resource_type: GraphResourceType::ColorAttachment {
-                    clear_value: Some([0.0, 0.0, 0.0, 1.0]),
-                },
-                format: TextureImageFormat::B8G8R8A8Srgb,
-                width: extent.width,
-                height: extent.height,
-                tracks_swapchain_size: true,
-            })
-            // Create shadow atlas (depth texture, 2x2 cascade grid)
-            .create_resource(GraphResourceDesc {
-                name: "shadow_atlas".to_string(),
-                resource_type: GraphResourceType::DepthAttachment {
-                    clear_value: 1.0,
-                    sampled: true,
-                },
-                format: TextureImageFormat::D32Sfloat,
-                width: 4096,
-                height: 4096,
-                tracks_swapchain_size: false,
-            })
-            // Create object-ID picking texture (R32Uint, for GPU picking)
-            .create_resource(GraphResourceDesc {
-                name: "object_id".to_string(),
-                resource_type: GraphResourceType::ColorAttachment {
-                    clear_value: Some([0.0, 0.0, 0.0, 0.0]),
-                },
-                format: TextureImageFormat::R32Uint,
-                width: extent.width,
-                height: extent.height,
-                tracks_swapchain_size: true,
-            })
-            // Picking readback is externally observable even though it is not presented.
-            .export_resource("object_id")
-            // Create stencil indicator texture (R8, for wallhack overlay).
-            // Written by the stencil indicator pass after the outline pass.
-            // Sampled by the tonemap shader to apply orange tint over occluded selected objects.
-            .create_resource(GraphResourceDesc {
-                name: "stencil_indicator".to_string(),
-                resource_type: GraphResourceType::ColorAttachment {
-                    clear_value: Some([0.0, 0.0, 0.0, 0.0]),
-                },
-                format: TextureImageFormat::R8Unorm,
-                width: extent.width,
-                height: extent.height,
-                tracks_swapchain_size: true,
-            })
-            // Note: Particle compute passes (emit and simulate) are executed automatically
-            // by the render graph before any graphics passes. They don't need to be added here.
-            // Sky pass: renders procedural sky (depth=1.0 so geometry appears in front)
-            .add_pass(
-                FullscreenPass::new("sky")
-                    .write("hdr_color", TextureImageFormat::R16G16B16A16Sfloat)
-                    .pipeline(sky_pipeline),
-            )
-            // Shadow pass: renders depth from light's perspective into 2x2 cascade atlas
-            .add_pass(
-                ShadowPass::new("shadow")
-                    .write_depth("shadow_atlas", TextureImageFormat::D32Sfloat)
-                    .resolution(4096, 4096),
-            )
-            // Depth prepass: renders scene depth from camera's perspective.
-            // Also outputs object IDs to a R32Uint texture for GPU-based entity picking.
-            // Populates the depth buffer before the geometry pass for early-Z rejection.
-            .add_pass(DepthPrepass::new("depth_prepass").write_object_id("object_id"))
-            // Geometry pass: renders scene to HDR color texture
-            // Loads existing contents (sky pass) and writes geometry on top
-            // Reuses depth from the depth prepass (LoadOp::Load)
-            .add_pass(
-                GeometryPass::new("geometry")
-                    .write_color_ops(
-                        "hdr_color",
-                        TextureImageFormat::R16G16B16A16Sfloat,
-                        katla_gfx::AttachmentOps::load(),
-                    )
-                    .depth_config(
-                        katla_gfx::AttachmentOps::clear(katla_gfx::ClearValue::DepthStencil {
-                            depth: 0.0,
-                            stencil: 0,
-                        })
-                        .with_load(LoadOp::Load),
-                        katla_gfx::AttachmentOps::clear(katla_gfx::ClearValue::DepthStencil {
-                            depth: 0.0,
-                            stencil: 0,
-                        }),
-                    )
-                    .material(geometry_material)
-                    .read("shadow_atlas"),
-            )
-            // Particle pass: renders GPU-simulated particles with alpha blending.
-            // Reads/writes hdr_color (loads existing geometry, composites particles).
-            // Depth testing reuses scene depth from the depth prepass.
-            .add_pass(
-                katla_gfx::ParticlePass::new("particles")
-                    .write_color("hdr_color", TextureImageFormat::R16G16B16A16Sfloat),
-            )
-            // Outline pass: stencil-based selection highlight for editor.
-            // Renders after geometry so the outline is drawn on top of the scene.
-            // Only draws when entities are selected (filtered draw list).
-            .add_pass(
-                OutlinePass::new("outline")
-                    .write_color("hdr_color", TextureImageFormat::R16G16B16A16Sfloat),
-            )
-            // Stencil indicator pass: writes R8 mask where selected objects are occluded.
-            // Sampled by the wallhack overlay pass to apply tint over occluded selected objects.
-            .add_pass(
-                StencilIndicatorPass::new("stencil_indicator")
-                    .write_color("stencil_indicator", TextureImageFormat::R8Unorm),
-            )
-            // Tonemap pass: samples HDR color and outputs to viewport texture
-            // The viewport texture is then sampled by the UI system to display in the viewport panel
-            .add_pass(
-                FullscreenPass::new("tonemap")
-                    .read("hdr_color")
-                    .write("viewport_0", TextureImageFormat::B8G8R8A8Srgb)
-                    .pipeline(tonemap_pipeline)
-                    .tonemap(tonemap_params),
-            )
-            // Wallhack overlay pass: reads LDR viewport and stencil indicator mask,
-            // applies orange tint where selected objects are occluded.
-            .add_pass(
-                katla_gfx::OverlayPass::new("wallhack_overlay")
-                    .read("viewport_0")
-                    .read("stencil_indicator")
-                    .write("viewport_0", TextureImageFormat::B8G8R8A8Srgb)
-                    .pipeline(overlay_pipeline)
-                    .overlay(katla_gfx::OverlayParams {
-                        ldr_texture_index: None,       // Set during app init
-                        stencil_indicator_index: None, // Set during app init
-                    }),
-            )
-            // Background pass: fills the backbuffer with a solid background color
-            // This provides a dark background for the editor UI panels
-            .add_pass(
-                FullscreenPass::new("background")
-                    .write_backbuffer()
-                    .pipeline(tonemap_pipeline) // Reuse tonemap pipeline (outputs solid color with no HDR input)
-                    .tonemap(katla_gfx::TonemapParams {
-                        exposure: 1.0,
-                        gamma: 1.0,
-                        mode: katla_gfx::TonemapOperator::Aces,
-                        hdr_texture_index: None,
-                    }),
-            )
-            // UI pass: draws editor UI to backbuffer
-            // Note: UI composites on top of the background pass
-            // Declares viewport_0 as a read dependency so the render graph inserts
-            // a layout transition (COLOR_ATTACHMENT -> SHADER_READ_ONLY) before
-            // the UI shader samples from it via the bindless system.
-            .add_pass(
-                UIPass::new("ui")
-                    .write("backbuffer")
-                    .read("viewport_0")
-                    .material(ui_material),
-            )
-            .build()
-            .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-
-        Ok(FrameGraph::from_vulkan(graph))
-    }
-
     fn build_selected_frame_graph(
         factory: Option<FrameGraphFactory>,
         renderer: &mut Renderer,
@@ -837,17 +329,25 @@ impl ApplicationBuilder {
 
     fn prepare_frame_graph(
         configured: ApplicationFrameGraph,
-        renderer: &mut Renderer,
     ) -> AppResult<(
         FrameGraph,
         super::PassIds,
         super::frame_graph_config::FrameGraphBindings,
         FrameGraphRuntime,
     )> {
-        let (mut frame_graph, bindings, runtime) = configured.into_parts();
+        let (frame_graph, bindings, runtime) = configured.into_parts();
         bindings.validate_resources(&frame_graph)?;
         let pass_ids = super::PassIds::resolve(&frame_graph, &bindings.passes)?;
 
+        Ok((frame_graph, pass_ids, bindings, runtime))
+    }
+
+    fn initialize_frame_graph(
+        frame_graph: &mut FrameGraph,
+        renderer: &mut Renderer,
+        bindings: &super::frame_graph_config::FrameGraphBindings,
+        runtime: FrameGraphRuntime,
+    ) -> AppResult<()> {
         frame_graph
             .initialize_transient_textures(renderer)
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
@@ -855,48 +355,25 @@ impl ApplicationBuilder {
             .initialize_transient_buffers(renderer)
             .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
 
-        match renderer {
-            katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
-                if let Some(shadow_atlas) = bindings.resources.shadow_atlas.as_deref() {
-                    for frame_idx in 0..2 {
-                        if let Some(view) = frame_graph
-                            .as_vulkan()
-                            .transient_texture_view_for_frame(shadow_atlas, frame_idx)
-                        {
-                            vulkan_renderer.set_shadow_atlas_view(frame_idx, view);
-                        }
-                    }
-                }
-            }
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => {
-                if let Some(hdr_color) = bindings.resources.hdr_color.as_deref() {
-                    let hdr_slot = frame_graph
-                        .register_transient_texture_bindless(renderer, hdr_color)
-                        .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-                    let frame_idx = GpuRenderer::current_frame(renderer);
-                    if frame_graph
-                        .transient_texture_metal(hdr_color, frame_idx)
-                        .is_some()
-                    {
-                        let transient_slot = frame_graph
-                            .transient_texture_metal(hdr_color, frame_idx)
-                            .and_then(|texture| texture.bindless_slot)
-                            .unwrap_or(hdr_slot);
-                        renderer.set_geometry_hdr_bindless_slot(transient_slot);
-                    }
-                }
-
-                if let Some(viewport) = bindings.resources.viewport.as_deref() {
-                    let viewport_slot = frame_graph
-                        .register_transient_texture_bindless(renderer, viewport)
-                        .map_err(|e| crate::error::AppError::Graphics { source: e.into() })?;
-                    renderer.set_viewport_bindless_slot(viewport_slot);
-                }
-            }
+        for name in [
+            bindings.resources.hdr_color.as_deref(),
+            bindings.resources.viewport.as_deref(),
+            bindings.resources.tonemap_output.as_deref(),
+            bindings.resources.stencil_indicator.as_deref(),
+            (runtime.uses_katla_scene() && frame_graph.resource_id("scene_depth").is_some())
+                .then_some("scene_depth"),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            frame_graph
+                .register_transient_texture_bindless(renderer, name)
+                .map_err(|source| crate::AppError::Graphics {
+                    source: source.into(),
+                })?;
         }
 
-        Ok((frame_graph, pass_ids, bindings, runtime))
+        Ok(())
     }
 
     #[cfg(feature = "editor")]
@@ -956,41 +433,8 @@ impl ApplicationBuilder {
         let camera = Camera::new(&mut world);
         let resources = ResourceManager::discover()?;
 
-        // Create UI context and load fonts
         let mut ui_context = katla_ui::UiContext::new();
         let scale_factor = crate::application::headless::HEADLESS_SCALE_FACTOR;
-
-        let font_path = resources.font_path("roboto-regular.ttf");
-        if font_path.exists()
-            && let Ok(font_bytes) = std::fs::read(&font_path)
-        {
-            let font_id = ui_context.fonts_mut().add_font(&font_bytes).ok();
-            if let Some(font_id) = font_id {
-                for &size in DEFAULT_UI_FONT_SIZES {
-                    ui_context
-                        .fonts_mut()
-                        .precache_ascii(font_id, size, scale_factor);
-                }
-                ui_context.set_font(font_id);
-            }
-        }
-        let icon_font_path = resources.font_path("forkawesome-webfont.ttf");
-        if icon_font_path.exists()
-            && let Ok(font_bytes) = std::fs::read(&icon_font_path)
-            && ui_context
-                .fonts_mut()
-                .add_font_with_id(&font_bytes, katla_ui::FontId::ICON)
-                .is_ok()
-        {
-            for &size in DEFAULT_UI_FONT_SIZES {
-                ui_context.fonts_mut().precache_icons(
-                    katla_ui::FontId::ICON,
-                    size,
-                    scale_factor,
-                    katla_ui::ForkAwesome::common_icons(),
-                );
-            }
-        }
 
         // Create headless Metal renderer
         let engine_name =
@@ -1022,34 +466,79 @@ impl ApplicationBuilder {
         )
         .map_err(|source| crate::error::AppError::Graphics { source })?;
 
-        // Upload font atlas
-        let (font_atlas_handle, atlas_width, atlas_height) = {
-            let fonts = ui_context.fonts();
-            let (w, h) = fonts.atlas_size();
-            let data = fonts.atlas_data_rgba();
-            (renderer.create_ui_font_atlas(w, h, &data), w, h)
-        };
-        log::info!(
-            "Uploaded font atlas: {}x{}, handle={:?}",
-            atlas_width,
-            atlas_height,
-            font_atlas_handle
-        );
-
         let configured_frame_graph =
             Self::build_selected_frame_graph(frame_graph_factory, &mut renderer, &resources)?;
-        let (frame_graph, pass_ids, frame_graph_bindings, frame_graph_runtime) =
-            Self::prepare_frame_graph(configured_frame_graph, &mut renderer)?;
+        let (mut frame_graph, mut pass_ids, frame_graph_bindings, frame_graph_runtime) =
+            Self::prepare_frame_graph(configured_frame_graph)?;
+        frame_graph.set_execution_trace(info.dump_render_graph.is_some());
+        let mut scene_features = frame_graph_runtime
+            .uses_katla_scene()
+            .then(|| {
+                super::scene_features::SceneFeatures::new(
+                    &mut renderer,
+                    &resources,
+                    &frame_graph_bindings,
+                )
+            })
+            .transpose()?;
+        if let Some(features) = &mut scene_features {
+            features.animation.install_graph(&mut frame_graph)?;
+            features.lights.install_graph(&mut frame_graph)?;
+            features.particles.install_graph(&mut frame_graph)?;
+            pass_ids.refresh(&frame_graph, &frame_graph_bindings.passes)?;
+            features
+                .animation
+                .warm_pipeline(&mut renderer, &frame_graph)?;
+            frame_graph.initialize_compute_pipelines(&mut renderer)?;
+        }
+        Self::initialize_frame_graph(
+            &mut frame_graph,
+            &mut renderer,
+            &frame_graph_bindings,
+            frame_graph_runtime,
+        )?;
+        let mut editor_features = super::features::EditorFeatures::default();
+        if frame_graph_runtime.uses_katla_scene() {
+            let font_path = resources.font_path("roboto-regular.ttf");
+            if font_path.exists()
+                && let Ok(font_bytes) = std::fs::read(&font_path)
+            {
+                let font_id = ui_context.fonts_mut().add_font(&font_bytes).ok();
+                if let Some(font_id) = font_id {
+                    for &size in DEFAULT_UI_FONT_SIZES {
+                        ui_context
+                            .fonts_mut()
+                            .precache_ascii(font_id, size, scale_factor);
+                    }
+                    ui_context.set_font(font_id);
+                }
+            }
+            let icon_font_path = resources.font_path("forkawesome-webfont.ttf");
+            if icon_font_path.exists()
+                && let Ok(font_bytes) = std::fs::read(&icon_font_path)
+                && ui_context
+                    .fonts_mut()
+                    .add_font_with_id(&font_bytes, katla_ui::FontId::ICON)
+                    .is_ok()
+            {
+                for &size in DEFAULT_UI_FONT_SIZES {
+                    ui_context.fonts_mut().precache_icons(
+                        katla_ui::FontId::ICON,
+                        size,
+                        scale_factor,
+                        katla_ui::ForkAwesome::common_icons(),
+                    );
+                }
+            }
 
-        // Initialize UI renderer for Metal
+            editor_features.upload_font_atlas(&mut renderer, &mut ui_context)?;
+        }
+
         #[cfg(feature = "editor")]
         let mut ui_renderer = crate::ui::UIRenderer::new();
         #[cfg(feature = "editor")]
-        if let Some(font_handle) = renderer.ui_font_atlas_handle()
-            && let Some(bindless_slot) = renderer.get_bindless_slot(font_handle)
-        {
-            ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-            log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
+        if let Some(slot) = editor_features.font_atlas_slot() {
+            ui_renderer.set_font_atlas_bindless_slot(slot);
         }
 
         // Insert required ECS resources
@@ -1081,6 +570,8 @@ impl ApplicationBuilder {
             pass_ids,
             frame_graph_bindings,
             frame_graph_runtime,
+            editor_features,
+            scene_features,
             camera,
             gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),
@@ -1089,6 +580,7 @@ impl ApplicationBuilder {
             input_mapper: InputMapper::new(),
             current_modifiers: ModifiersState::empty(),
             frame_count: 0,
+            frame_readback: None,
             last_draw_call_count: 0,
             resources,
             ui_context,
@@ -1203,76 +695,6 @@ impl ApplicationBuilder {
             Err(e) => log::warn!("Failed to initialize clipboard: {}", e),
         }
 
-        // Load default font for text rendering
-        let font_path = resources.font_path("roboto-regular.ttf");
-        if font_path.exists() {
-            match std::fs::read(&font_path) {
-                Ok(font_bytes) => {
-                    let font_result = ui_context.fonts_mut().add_font(&font_bytes);
-                    match font_result {
-                        Ok(font_id) => {
-                            // Precache common ASCII characters at typical UI sizes
-                            // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
-                            // actual DPI scale on first use if different
-                            for &size in DEFAULT_UI_FONT_SIZES {
-                                ui_context.fonts_mut().precache_ascii(font_id, size, 1.0);
-                            }
-                            ui_context.set_font(font_id);
-                            log::info!("Loaded default font from {}", font_path.display());
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to parse font: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to read font file {}: {}", font_path.display(), e);
-                }
-            }
-        } else {
-            log::warn!("Font file not found: {}", font_path.display());
-        }
-
-        // Load icon font (ForkAwesome)
-        let icon_font_path = resources.font_path("forkawesome-webfont.ttf");
-        if icon_font_path.exists() {
-            match std::fs::read(&icon_font_path) {
-                Ok(font_bytes) => {
-                    let icon_font_result = ui_context
-                        .fonts_mut()
-                        .add_font_with_id(&font_bytes, FontId::ICON);
-                    match icon_font_result {
-                        Ok(()) => {
-                            // Precache common icons at typical UI sizes
-                            // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
-                            // actual DPI scale on first use if different
-                            for &size in DEFAULT_UI_FONT_SIZES {
-                                ui_context.fonts_mut().precache_icons(
-                                    FontId::ICON,
-                                    size,
-                                    1.0,
-                                    ForkAwesome::common_icons(),
-                                );
-                            }
-                            log::info!("Loaded icon font from {}", icon_font_path.display());
-                        }
-                        Err(e) => {
-                            log::warn!("Failed to parse icon font: {}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to read icon font file {}: {}",
-                        icon_font_path.display(),
-                        e
-                    );
-                }
-            }
-        } else {
-            log::warn!("Icon font file not found: {}", icon_font_path.display());
-        }
-
         let gltf_loader: crate::util::GltfLoaderFn = Box::new(|path: &PathBuf| {
             GLTFModel::new(path).map_err(|e| {
                 log::error!("Failed to load GLTF model from {:?}: {e}", path);
@@ -1298,60 +720,117 @@ impl ApplicationBuilder {
 
         let mut renderer = Self::init_renderer(&event_loop, &window, &info, &resources)?;
 
-        // Upload initial font atlas texture to GPU
-        let (font_atlas_handle, atlas_width, atlas_height) = {
-            let fonts = ui_context.fonts();
-            let (atlas_width, atlas_height) = fonts.atlas_size();
-            let atlas_data = fonts.atlas_data_rgba();
-            (
-                renderer
-                    .create_ui_font_atlas(atlas_width, atlas_height, &atlas_data)
-                    .map_err(|e| crate::error::AppError::Graphics { source: e })?,
-                atlas_width,
-                atlas_height,
-            )
-        };
-
-        log::info!(
-            "Uploaded font atlas texture: {}x{}, handle={:?}, handle_index={}",
-            atlas_width,
-            atlas_height,
-            font_atlas_handle,
-            font_atlas_handle.index()
-        );
-
         let configured_frame_graph =
             Self::build_selected_frame_graph(frame_graph_factory, &mut renderer, &resources)?;
-        let (frame_graph, pass_ids, frame_graph_bindings, frame_graph_runtime) =
-            Self::prepare_frame_graph(configured_frame_graph, &mut renderer)?;
-
-        // Initialize UI renderer with font atlas bindless slot
-        #[cfg(feature = "editor")]
-        let mut ui_renderer = crate::ui::UIRenderer::new();
-        #[cfg(feature = "editor")]
-        match &mut renderer {
-            katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
-                match vulkan_renderer.ui_renderer.font_atlas_bindless_slot() {
-                    Some(bindless_slot) => {
-                        ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-                        log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
+        let (mut frame_graph, mut pass_ids, frame_graph_bindings, frame_graph_runtime) =
+            Self::prepare_frame_graph(configured_frame_graph)?;
+        frame_graph.set_execution_trace(info.dump_render_graph.is_some());
+        let mut scene_features = frame_graph_runtime
+            .uses_katla_scene()
+            .then(|| {
+                super::scene_features::SceneFeatures::new(
+                    &mut renderer,
+                    &resources,
+                    &frame_graph_bindings,
+                )
+            })
+            .transpose()?;
+        if let Some(features) = &mut scene_features {
+            features.animation.install_graph(&mut frame_graph)?;
+            features.lights.install_graph(&mut frame_graph)?;
+            features.particles.install_graph(&mut frame_graph)?;
+            pass_ids.refresh(&frame_graph, &frame_graph_bindings.passes)?;
+            features
+                .animation
+                .warm_pipeline(&mut renderer, &frame_graph)?;
+            frame_graph.initialize_compute_pipelines(&mut renderer)?;
+        }
+        Self::initialize_frame_graph(
+            &mut frame_graph,
+            &mut renderer,
+            &frame_graph_bindings,
+            frame_graph_runtime,
+        )?;
+        let mut editor_features = super::features::EditorFeatures::default();
+        if frame_graph_runtime.uses_katla_scene() {
+            // Load default font for text rendering
+            let font_path = resources.font_path("roboto-regular.ttf");
+            if font_path.exists() {
+                match std::fs::read(&font_path) {
+                    Ok(font_bytes) => {
+                        let font_result = ui_context.fonts_mut().add_font(&font_bytes);
+                        match font_result {
+                            Ok(font_id) => {
+                                // Precache common ASCII characters at typical UI sizes
+                                // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
+                                // actual DPI scale on first use if different
+                                for &size in DEFAULT_UI_FONT_SIZES {
+                                    ui_context.fonts_mut().precache_ascii(font_id, size, 1.0);
+                                }
+                                ui_context.set_font(font_id);
+                                log::info!("Loaded default font from {}", font_path.display());
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to parse font: {}", e);
+                            }
+                        }
                     }
-                    None => {
-                        log::error!(
-                            "Font atlas bindless slot is None! Text will render as solid colors."
+                    Err(e) => {
+                        log::warn!("Failed to read font file {}: {}", font_path.display(), e);
+                    }
+                }
+            } else {
+                log::warn!("Font file not found: {}", font_path.display());
+            }
+
+            // Load icon font (ForkAwesome)
+            let icon_font_path = resources.font_path("forkawesome-webfont.ttf");
+            if icon_font_path.exists() {
+                match std::fs::read(&icon_font_path) {
+                    Ok(font_bytes) => {
+                        let icon_font_result = ui_context
+                            .fonts_mut()
+                            .add_font_with_id(&font_bytes, FontId::ICON);
+                        match icon_font_result {
+                            Ok(()) => {
+                                // Precache common icons at typical UI sizes
+                                // Note: Using scale_factor 1.0 for initial cache; will re-rasterize at
+                                // actual DPI scale on first use if different
+                                for &size in DEFAULT_UI_FONT_SIZES {
+                                    ui_context.fonts_mut().precache_icons(
+                                        FontId::ICON,
+                                        size,
+                                        1.0,
+                                        ForkAwesome::common_icons(),
+                                    );
+                                }
+                                log::info!("Loaded icon font from {}", icon_font_path.display());
+                            }
+                            Err(e) => {
+                                log::warn!("Failed to parse icon font: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "Failed to read icon font file {}: {}",
+                            icon_font_path.display(),
+                            e
                         );
                     }
                 }
+            } else {
+                log::warn!("Icon font file not found: {}", icon_font_path.display());
             }
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => {
-                if let Some(font_handle) = renderer.ui_font_atlas_handle()
-                    && let Some(bindless_slot) = renderer.get_bindless_slot(font_handle)
-                {
-                    ui_renderer.set_font_atlas_bindless_slot(bindless_slot);
-                    log::info!("Font atlas bindless slot initialized: {}", bindless_slot);
-                }
-            }
+
+            editor_features.upload_font_atlas(&mut renderer, &mut ui_context)?;
+        }
+
+        #[cfg(feature = "editor")]
+        let mut ui_renderer = crate::ui::UIRenderer::new();
+        #[cfg(feature = "editor")]
+        if let Some(slot) = editor_features.font_atlas_slot() {
+            ui_renderer.set_font_atlas_bindless_slot(slot);
         }
 
         world.insert_resource(crate::input::InputState::new());
@@ -1374,6 +853,8 @@ impl ApplicationBuilder {
             pass_ids,
             frame_graph_bindings,
             frame_graph_runtime,
+            editor_features,
+            scene_features,
             camera,
             gltf_cache: GltfCache::new(gltf_loader),
             timer: Timer::new(100),
@@ -1382,6 +863,7 @@ impl ApplicationBuilder {
             input_mapper: InputMapper::new(),
             current_modifiers: ModifiersState::empty(),
             frame_count: 0,
+            frame_readback: None,
             last_draw_call_count: 0,
             resources,
             ui_context,
@@ -1447,43 +929,88 @@ impl ApplicationBuilder {
     }
 }
 
-impl KatlaEditorFrameGraphPreset {
-    /// Build Katla's explicit scene + editor graph preset for the active backend.
-    pub fn build(
-        renderer: &mut Renderer,
-        resources: &ResourceManager,
-    ) -> AppResult<ApplicationFrameGraph> {
-        // Heavy scene subsystems belong to this explicit preset, not renderer
-        // construction. A graph-only application therefore pays no particle
-        // buffer allocation or simulation setup cost.
-        renderer
-            .init_particle_system()
-            .map_err(|source| crate::error::AppError::Graphics { source })?;
-
-        let (graph, bindings) = match renderer {
-            katla_gfx::AnyRenderer::Vulkan(renderer) => (
-                ApplicationBuilder::build_frame_graph(renderer, resources)?,
-                super::frame_graph_config::FrameGraphBindings::katla_editor(),
-            ),
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(renderer) => (
-                ApplicationBuilder::build_metal_frame_graph(renderer, resources)?,
-                super::frame_graph_config::FrameGraphBindings::katla_editor_metal(),
-            ),
-        };
-
-        Ok(ApplicationFrameGraph::new(graph)
-            .with_bindings(bindings)
-            .with_runtime(FrameGraphRuntime::KatlaScene))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use super::*;
     use katla_ecs::World;
+
+    #[test]
+    #[ignore = "requires a native headless GPU"]
+    fn test_headless_graph_only_keeps_scene_and_editor_features_uninitialized() {
+        use katla_gfx::render_graph::{FrameGraphBuilder, PassType, SimplePass};
+        use katla_gfx::{AttachmentOps, ClearValue, MaterialHandle};
+
+        let mut app = ApplicationBuilder::new()
+            .with_frame_graph(|renderer, _resources| {
+                let builder = FrameGraphBuilder::new().add_pass(
+                    SimplePass::new("application_clear", PassType::Graphics)
+                        .write("backbuffer")
+                        .attachment("backbuffer", AttachmentOps::clear(ClearValue::OPAQUE_BLACK)),
+                );
+                let graph = match renderer {
+                    Renderer::Vulkan(_) => {
+                        FrameGraph::from_vulkan(builder.build::<katla_gfx::VulkanRenderer>()?)
+                    }
+                    #[cfg(target_os = "macos")]
+                    Renderer::Metal(_) => {
+                        FrameGraph::from_metal(builder.build::<katla_gfx::MetalRenderer>()?)
+                    }
+                };
+                Ok(ApplicationFrameGraph::new(graph))
+            })
+            .build_headless(1, String::new())
+            .expect("Build graph-only application");
+        assert_eq!(app.frame_graph_runtime, FrameGraphRuntime::GraphOnly);
+        assert!(app.scene_features.is_none());
+        assert!(!app.editor_features.has_font_atlas());
+        assert!(app.ui_context.fonts().get_font(FontId::DEFAULT).is_none());
+        assert!(app.ui_context.fonts().get_font(FontId::ICON).is_none());
+        assert_eq!(app.default_material_handle, MaterialHandle::NONE);
+
+        app.init().expect("Initialize graph-only application");
+        #[cfg(target_os = "macos")]
+        {
+            let drawable = app.renderer.create_offscreen_texture(32, 32);
+            app.renderer.set_headless_drawable(drawable);
+        }
+        app.render_editor_frame(1.0 / 60.0);
+        assert!(app.renderer.capture_submission_snapshot().is_some());
+        assert!(app.scene_features.is_none());
+        assert!(app.gpu_animation_system.is_none());
+        assert!(!app.editor_features.has_font_atlas());
+        assert!(app.ui_context.fonts().get_font(FontId::DEFAULT).is_none());
+        assert!(app.ui_context.fonts().get_font(FontId::ICON).is_none());
+        assert_eq!(app.default_material_handle, MaterialHandle::NONE);
+    }
+
+    #[cfg(feature = "editor")]
+    #[test]
+    #[ignore = "requires a native headless GPU"]
+    fn test_scene_material_occlusion_is_independent_of_font_atlas() {
+        let mut app = ApplicationBuilder::new()
+            .build_headless(1, String::new())
+            .expect("Build scene application");
+        let textures = app
+            .scene_features
+            .as_ref()
+            .expect("Scene features")
+            .material_textures();
+        let white = app.renderer.default_texture();
+        let white_slot = app.renderer.get_bindless_slot(white).expect("White slot");
+        let atlas_slot = app.editor_features.font_atlas_slot().expect("Font slot");
+        assert_eq!(textures.albedo, white);
+        assert_eq!(textures.occlusion, white);
+        assert_eq!(
+            app.renderer.get_bindless_slot(textures.occlusion),
+            Some(white_slot)
+        );
+        assert_ne!(white_slot, atlas_slot);
+        assert_ne!(textures.normal, white);
+        assert_ne!(textures.metallic_roughness, white);
+        app.cleanup_on_exit();
+    }
 
     #[test]
     fn test_builder_on_init_stores_hook() {

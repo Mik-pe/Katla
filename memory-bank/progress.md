@@ -1,6 +1,6 @@
 # Progress
 
-## Current Delivery
+## Previous Ten-Issue Delivery
 
 - The direct-main ten-issue batch contains #138, #31, #32, #33, #35, #36, #53, #54, #55 and #58. ECS is delivered and closed after green Linux/macOS/Miri CI. The nine graphics implementations are complete, with native Vulkan and Metal acceptance, full editor interaction QA and source-hashed scene/cache measurements. CI enforces current-SDK/portable checks on macos-26 and native Vulkan contracts on Ubuntu 24.04. Unsupported hosted virtual GPUs receive an explicit native Metal acceptance BLOCKED notice; the typed rejection regression runs before native filtering. Physical M5 native acceptance remains separate.
 - Graph buffers and neutral compute commands now declare actual animation, skeleton, light and particle dependencies on both backends. One compiled synchronization plan handles subresources, native buffer ranges, role changes, transfers, alias visibility and output contracts. Vulkan speculative layouts roll back on abort.
@@ -24,14 +24,15 @@
 
 - **Native compiled attachments (#56)** — graph declarations own color/depth/stencil targets and operations. Helpers draw into supplied encoders; hidden target fallbacks and implicit scene depth are removed. Native traces compare emitted work to the compiled contract. Arbitrary imported images and compute migration have since been integrated into the current batch.
 - **Prepared draw data and frame-scoped API (#89, #101)** — submissions reuse immutable draw lists; explicit acquisition tokens guard mutable writes and preserve slot ownership.
-- **Portable graph capture (#37, partial)** — deterministic JSON/text/DOT and failure artifacts exist. Schema 12 includes compiled boundaries, buffer ranges, persistence and native per-slot texture allocation records. Native Metal submission diagnostics expose reflected layouts, residency and feedback. Full portable capture integration and finer queue/submission identities remain open.
+- **Earlier portable graph capture (#37, partial)** — deterministic JSON/text/DOT and failure artifacts exist. Schema 12 includes compiled boundaries, buffer ranges, persistence and native per-slot texture allocation records. Native Metal submission diagnostics expose reflected layouts, residency and feedback. The subsequent schema 13 delivery completes the joined native capture described below.
 - **Canonical pipeline variants (#88)** — render/material identity includes shader, attachment and raster state; variants are prepared and reused from canonical keys.
 - **Shader and editor correctness** — billboard alpha depth, shadow sampling, sky/grid state, viewport sizing and layout overlap were corrected. Public backend-neutral rendering APIs no longer expose raw Vulkan handles.
 - **Optional MCP dependency security** — rmcp resolves to 2.2.0; the feature-gated server path was validated and Dependabot alerts cleared in the September 27 delivery.
 
 ## Follow-Up Work
 
-- #37 portable capture integration and #93 wider ECS roadmap remain outside the ten-issue batch.
+- Implemented #37 joined passive capture and #93 graphics core versus app ownership. Scene/editor resources, shaders, frame uniforms and graph policy now belong to the app; constructors are generic and GraphOnly needs no fonts. Native lifecycle fixes distinguish submission acceptance from surface status, preserve completed readback ownership across fence reuse, reject foreign-renderer tokens and retain the newest picking request. Exported graph resources retain all final disjoint writers. Local validation passes 2,164 workspace library tests, 13 Metal contracts and native Vulkan capture/lifecycle/resource fixtures; publication and exact-head CI receipts are available from GitHub.
 - Backend-neutral texture-view cleanup, compositing/stencil handlers and broader ECS sanitizer/soak coverage remain separate tasks in TODO.md.
-- Default application features are validated. Optional all-feature MCP editor polling still has a double mutable borrow and an unused router field; repairing that integration is outside this batch.
+- ECS World/scheduler and gfx graph/capture/trace code are split by responsibility. Removed obsolete backend feature implementations, duplicate adapters, unused descriptor/uniform prefixes and no-op Vulkan profiling. Strict Rust 1.99 Clippy passes all targets/features. ECS passes 239 unit tests, integration/doctests and 48 focused Miri tests; source-hashed benchmarks are refreshed without a speedup claim. Optional MCP polling now drains requests before borrowing app state; the unused router field is removed.
+- A preexisting particle emitter-index reuse hazard remains recorded in TODO.md: old GPU particles require a generation or retirement design before an emitter slot is safely reused. It is outside the two remaining GitHub issues.
 - Physical local Metal evidence uses Apple M5/macOS 27. CI supports exactly macos-26 and Ubuntu 24.04; do not add older macOS jobs or mutable runner aliases.

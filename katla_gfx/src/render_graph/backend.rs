@@ -90,6 +90,13 @@ pub trait RenderGraphBackend: Sized + 'static {
         None
     }
 
+    /// Inspect actual backing storage of one graph-owned buffer.
+    fn transient_buffer_allocation_info(
+        _buffer: &Self::TransientBuffer,
+    ) -> Option<NativeTransientAllocation> {
+        None
+    }
+
     /// Create one graph-owned buffer allocation.
     fn create_transient_buffer(
         &self,
@@ -113,14 +120,6 @@ pub trait RenderGraphBackend: Sized + 'static {
         &self,
         handle: crate::handle::BufferHandle,
     ) -> Option<&Self::TransientBuffer>;
-
-    /// Resolve an active-slot renderer-owned allocation imported into the graph.
-    fn builtin_buffer(
-        &self,
-        _role: super::compute::BuiltinBuffer,
-    ) -> Option<Self::TransientBuffer> {
-        None
-    }
 
     /// Byte offset of a graph-visible slice within its native allocation.
     fn buffer_offset(_buffer: &Self::TransientBuffer) -> u64 {
@@ -192,15 +191,11 @@ pub trait RenderGraphBackend: Sized + 'static {
 
     /// Get the swapchain image view for the current frame's image index.
     fn swapchain_image_view(&self, image_index: u32) -> Self::ImageView;
-
-    /// Get the depth buffer image view for a specific frame index.
-    fn depth_image_view(&self, frame_index: usize) -> Option<Self::ImageView>;
 }
 
-/// Borrowed allocation or a non-owning view of a renderer subsystem buffer.
+/// Borrowed graph allocation or application-owned imported buffer.
 pub enum ResolvedGraphBuffer<'a, B: RenderGraphBackend> {
     Borrowed(&'a B::TransientBuffer),
-    Imported(B::TransientBuffer),
 }
 
 impl<B: RenderGraphBackend> std::ops::Deref for ResolvedGraphBuffer<'_, B> {
@@ -208,7 +203,6 @@ impl<B: RenderGraphBackend> std::ops::Deref for ResolvedGraphBuffer<'_, B> {
     fn deref(&self) -> &Self::Target {
         match self {
             Self::Borrowed(buffer) => buffer,
-            Self::Imported(buffer) => buffer,
         }
     }
 }

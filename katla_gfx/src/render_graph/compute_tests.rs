@@ -36,10 +36,10 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
 }
 "#;
     ComputeDispatch {
-        kernel: ComputeKernel::Shader(ComputePipelineDesc {
+        pipeline: ComputePipelineDesc {
             wgsl: source.into(),
             entry: "cs_main".into(),
-        }),
+        },
         bindings: vec![
             ComputeBinding {
                 group: 1,
@@ -136,7 +136,7 @@ fn test_native_compiled_custom_compute_direct_and_indirect_outputs() {
         CString::new("Katla").unwrap(),
     )
     .unwrap();
-    let errors = super::builtin_compute_tests::capture_validation_errors(&renderer);
+    let errors = super::native_compute_tests::capture_validation_errors(&renderer);
     let storage =
         BufferUsages::STORAGE | BufferUsages::TRANSFER_DESTINATION | BufferUsages::TRANSFER_SOURCE;
     let mut graph = FrameGraphBuilder::new()
@@ -314,6 +314,13 @@ fn test_native_compiled_custom_compute_direct_and_indirect_outputs() {
         before_abort,
         "aborted encoded dispatch/copy must never reach the GPU"
     );
+    let host_write = renderer
+        .create_buffer(BufferDesc::new(
+            4,
+            BufferUsages::UNIFORM,
+            BufferMemoryPolicy::CpuVisible,
+        ))
+        .unwrap();
     for _ in 0..3 {
         prepare_drawable(&mut renderer);
         let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
@@ -325,17 +332,11 @@ fn test_native_compiled_custom_compute_direct_and_indirect_outputs() {
                 .render(&frame, &mut graph, |_| panic!("duplicate render callback"))
                 .is_err()
         );
-        let uniforms = crate::renderer::types::FrameUniforms::default();
-        let draws = crate::renderer::types::DrawList::new();
-        let writes = [
-            GpuRenderer::set_frame_uniforms(&mut renderer, &frame, uniforms.clone()),
-            GpuRenderer::execute_draw_calls(&mut renderer, &frame, &draws),
-            GpuRenderer::draw(&mut renderer, &frame, &uniforms, &[]).map(|_| ()),
-            GpuRenderer::upload_lights(&mut renderer, &frame, &[]),
-            GpuRenderer::upload_shadow_cascades(&mut renderer, &frame),
-        ];
-        for write in writes {
-            let error = write.unwrap_err();
+        for result in [
+            renderer.write_buffer(&frame, host_write, 0, &0u32.to_le_bytes()),
+            GpuRenderer::execute_draw_calls(&mut renderer, &frame, &crate::DrawList::new()),
+        ] {
+            let error = result.unwrap_err();
             assert!(
                 matches!(error, crate::RendererError::InvalidOperation(_)),
                 "{error:?}"
@@ -350,8 +351,10 @@ fn test_native_compiled_custom_compute_direct_and_indirect_outputs() {
         renderer.present(frame).unwrap();
         let bytes = wait_and_read(&mut renderer, &graph, frame.slot());
         let values: Vec<_> = bytes
-            .chunks_exact(4)
-            .map(|bytes| u32::from_le_bytes(bytes.try_into().unwrap()))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|bytes| u32::from_le_bytes(*bytes))
             .collect();
         assert_eq!(&values[..64], &(32..96).collect::<Vec<u32>>());
         assert_eq!(&values[64..96], &(32..64).collect::<Vec<u32>>());

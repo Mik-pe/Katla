@@ -6,7 +6,7 @@
 //! any backend: shader identity and entry points, the canonical vertex
 //! layout (the same [`VertexLayout`](crate::vertex::VertexLayout) model used
 //! by mesh creation), portable render state, specialization constants, and
-//! explicit per-backend native extension points.
+//! explicit attachment and raster state.
 //!
 //! Backends translate the same descriptor without string switches:
 //! Vulkan builds bindings generically from the layout, Metal selects its
@@ -36,7 +36,7 @@ pub enum PipelineStages {
         /// Vertex shader entry point (convention: `"vs_main"`).
         vertex_entry: String,
         /// Fragment shader entry point (convention: `"fs_main"`).
-        fragment_entry: String,
+        fragment_entry: Option<String>,
     },
     /// A compute pipeline with a single compute entry point.
     Compute {
@@ -50,7 +50,7 @@ impl PipelineStages {
     pub fn graphics() -> Self {
         Self::Graphics {
             vertex_entry: "vs_main".to_string(),
-            fragment_entry: "fs_main".to_string(),
+            fragment_entry: Some("fs_main".to_string()),
         }
     }
 
@@ -110,6 +110,69 @@ impl DepthState {
     }
 }
 
+/// Portable operation applied to a stencil value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StencilOperation {
+    Keep,
+    Zero,
+    Replace,
+    IncrementClamp,
+    DecrementClamp,
+    Invert,
+    IncrementWrap,
+    DecrementWrap,
+}
+
+/// Stencil test and operations for one rasterized face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StencilFaceState {
+    pub compare: CompareOp,
+    pub fail: StencilOperation,
+    pub depth_fail: StencilOperation,
+    pub pass: StencilOperation,
+}
+
+/// Explicit stencil state; absent state disables stencil testing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct StencilState {
+    pub front: StencilFaceState,
+    pub back: StencilFaceState,
+    pub reference: u32,
+    pub read_mask: u32,
+    pub write_mask: u32,
+}
+
+/// Enabled color channels of a graphics pipeline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ColorWriteMask(pub u8);
+
+impl ColorWriteMask {
+    pub const NONE: Self = Self(0);
+    pub const RED: Self = Self(1);
+    pub const GREEN: Self = Self(2);
+    pub const BLUE: Self = Self(4);
+    pub const ALPHA: Self = Self(8);
+    pub const ALL: Self = Self(15);
+}
+
+/// Raster depth offset applied before the depth test.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct DepthBias {
+    pub constant: f32,
+    pub slope_factor: f32,
+    pub clamp: f32,
+}
+
+impl Eq for DepthBias {}
+
+impl std::hash::Hash for DepthBias {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        for value in [self.constant, self.slope_factor, self.clamp] {
+            state.write_u32(if value == 0.0 { 0 } else { value.to_bits() });
+        }
+    }
+}
+
 /// A single specialization / function-constant value, keyed by constant ID.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecializationValue {
@@ -129,41 +192,9 @@ impl std::hash::Hash for SpecializationValue {
         match self {
             Self::Bool(v) => v.hash(state),
             Self::U32(v) => v.hash(state),
-            // Hash by bits so NaN handling is explicit; validation rejects
-            // non-finite values before they can reach a backend.
-            Self::F32(v) => v.to_bits().hash(state),
+            Self::F32(v) => (if *v == 0.0 { 0 } else { v.to_bits() }).hash(state),
         }
     }
-}
-
-/// Vulkan-only pipeline options.
-///
-/// Anything here affects Vulkan ABI concepts (descriptor set layouts) that
-/// have no portable meaning. Other backends ignore this struct.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct VulkanPipelineOptions {
-    /// Whether this material uses compositing (requires set 2 descriptor set
-    /// layout, provided by the frame graph). Default is false.
-    pub compositing: bool,
-}
-
-/// Metal-only pipeline options.
-///
-/// Reserved for future Metal-specific pipeline inputs. Other backends ignore
-/// this struct.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct MetalPipelineOptions {}
-
-/// Explicit per-backend native extension points.
-///
-/// Portable fields live on [`PipelineDescriptor`] itself; anything that only
-/// makes sense on one backend goes here so backends never have to guess.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub struct NativePipelineOptions {
-    /// Vulkan-only options.
-    pub vulkan: VulkanPipelineOptions,
-    /// Metal-only options.
-    pub metal: MetalPipelineOptions,
 }
 
 /// Backend-neutral material/pipeline compilation descriptor.
@@ -189,14 +220,22 @@ pub struct PipelineDescriptor {
     pub cull: CullMode,
     /// Depth testing/writing.
     pub depth: DepthState,
+    /// Explicit stencil tests and writes.
+    pub stencil: Option<StencilState>,
+    /// Color channels written by the fragment stage.
+    pub color_write_mask: ColorWriteMask,
+    /// Explicit depth bias used by this pipeline.
+    pub depth_bias: DepthBias,
     /// Wireframe rasterization.
     pub wireframe: bool,
     /// Color attachment format (`Auto` = backend default / deferred).
     pub color_format: ImageFormat,
+    /// Whether this pipeline encodes a color attachment, including discard-only fragment stages.
+    pub color_attachment: bool,
+    /// Exact depth/stencil attachment format; None encodes without a depth attachment.
+    pub depth_format: Option<ImageFormat>,
     /// Specialization constants by constant ID, in deterministic order.
     pub specialization: BTreeMap<u32, SpecializationValue>,
-    /// Backend-only extension points.
-    pub native: NativePipelineOptions,
 }
 
 impl PipelineDescriptor {
@@ -209,10 +248,14 @@ impl PipelineDescriptor {
             blend: BlendMode::Opaque,
             cull: CullMode::Back,
             depth: DepthState::default(),
+            stencil: None,
+            color_write_mask: ColorWriteMask::ALL,
+            depth_bias: DepthBias::default(),
             wireframe: false,
             color_format: ImageFormat::Auto,
+            color_attachment: true,
+            depth_format: Some(ImageFormat::D32SfloatS8Uint),
             specialization: BTreeMap::new(),
-            native: NativePipelineOptions::default(),
         }
     }
 
@@ -225,10 +268,14 @@ impl PipelineDescriptor {
             blend: BlendMode::AlphaBlend,
             cull: CullMode::None,
             depth: DepthState::disabled(),
+            stencil: None,
+            color_write_mask: ColorWriteMask::ALL,
+            depth_bias: DepthBias::default(),
             wireframe: false,
             color_format: ImageFormat::B8G8R8A8Srgb,
+            color_attachment: true,
+            depth_format: None,
             specialization: BTreeMap::new(),
-            native: NativePipelineOptions::default(),
         }
     }
 
@@ -241,10 +288,14 @@ impl PipelineDescriptor {
             blend: BlendMode::Opaque,
             cull: CullMode::Back,
             depth: DepthState::default(),
+            stencil: None,
+            color_write_mask: ColorWriteMask::ALL,
+            depth_bias: DepthBias::default(),
             wireframe: false,
             color_format: ImageFormat::Auto,
+            color_attachment: true,
+            depth_format: Some(ImageFormat::D32SfloatS8Uint),
             specialization: BTreeMap::new(),
-            native: NativePipelineOptions::default(),
         }
     }
 
@@ -257,10 +308,14 @@ impl PipelineDescriptor {
             blend: BlendMode::Opaque,
             cull: CullMode::Back,
             depth: DepthState::default(),
+            stencil: None,
+            color_write_mask: ColorWriteMask::ALL,
+            depth_bias: DepthBias::default(),
             wireframe: false,
             color_format: ImageFormat::Auto,
+            color_attachment: true,
+            depth_format: Some(ImageFormat::D32SfloatS8Uint),
             specialization: BTreeMap::new(),
-            native: NativePipelineOptions::default(),
         }
     }
 
@@ -276,11 +331,27 @@ impl PipelineDescriptor {
             blend: BlendMode::AlphaBlend,
             cull: CullMode::None,
             depth: DepthState::default(),
+            stencil: None,
+            color_write_mask: ColorWriteMask::ALL,
+            depth_bias: DepthBias::default(),
             wireframe: false,
             color_format: ImageFormat::Auto,
+            color_attachment: true,
+            depth_format: Some(ImageFormat::D32SfloatS8Uint),
             specialization: BTreeMap::new(),
-            native: NativePipelineOptions::default(),
         }
+    }
+
+    /// A vertex-only graphics pipeline for explicitly declared depth attachments.
+    pub fn depth_only(shader_path: impl Into<String>, vertex: VertexLayout) -> Self {
+        let mut descriptor = Self::pbr(shader_path);
+        descriptor.vertex = vertex;
+        descriptor.color_attachment = false;
+        descriptor.stages = PipelineStages::Graphics {
+            vertex_entry: "vs_main".into(),
+            fragment_entry: None,
+        };
+        descriptor
     }
 
     /// Compute pipeline with no vertex input.
@@ -294,11 +365,45 @@ impl PipelineDescriptor {
             blend: BlendMode::Opaque,
             cull: CullMode::None,
             depth: DepthState::disabled(),
+            stencil: None,
+            color_write_mask: ColorWriteMask::ALL,
+            depth_bias: DepthBias::default(),
             wireframe: false,
             color_format: ImageFormat::Auto,
+            color_attachment: false,
+            depth_format: None,
             specialization: BTreeMap::new(),
-            native: NativePipelineOptions::default(),
         }
+    }
+
+    /// Enable or disable the pipeline's color attachment explicitly.
+    pub fn with_color_attachment(mut self, enabled: bool) -> Self {
+        self.color_attachment = enabled;
+        self
+    }
+
+    /// Specify the depth/stencil attachment format used during pipeline creation.
+    pub fn with_depth_format(mut self, format: Option<ImageFormat>) -> Self {
+        self.depth_format = format;
+        self
+    }
+
+    /// Set explicit stencil testing and write operations.
+    pub fn with_stencil(mut self, stencil: StencilState) -> Self {
+        self.stencil = Some(stencil);
+        self
+    }
+
+    /// Set the channels written by the fragment stage.
+    pub fn with_color_write_mask(mut self, mask: ColorWriteMask) -> Self {
+        self.color_write_mask = mask;
+        self
+    }
+
+    /// Set the raster depth offset.
+    pub fn with_depth_bias(mut self, bias: DepthBias) -> Self {
+        self.depth_bias = bias;
+        self
     }
 
     /// Override the shader path.
@@ -315,7 +420,7 @@ impl PipelineDescriptor {
     ) -> Self {
         self.stages = PipelineStages::Graphics {
             vertex_entry: vertex_entry.into(),
-            fragment_entry: fragment_entry.into(),
+            fragment_entry: Some(fragment_entry.into()),
         };
         self
     }
@@ -362,12 +467,6 @@ impl PipelineDescriptor {
         self
     }
 
-    /// Enable or disable Vulkan compositing descriptor set layout use.
-    pub fn with_vulkan_compositing(mut self, compositing: bool) -> Self {
-        self.native.vulkan.compositing = compositing;
-        self
-    }
-
     /// True when the vertex layout is the canonical UI layout.
     ///
     /// Both backends key UI-specific pipeline wiring (second instanced
@@ -391,23 +490,37 @@ impl PipelineDescriptor {
                 reason: "shader_path must not be empty".to_string(),
             });
         }
+        if self.color_write_mask.0 & !ColorWriteMask::ALL.0 != 0 {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "material".into(),
+                reason: "color write mask contains undefined channels".into(),
+            });
+        }
+        if ![
+            self.depth_bias.constant,
+            self.depth_bias.slope_factor,
+            self.depth_bias.clamp,
+        ]
+        .into_iter()
+        .all(f32::is_finite)
+        {
+            return Err(RendererError::InvalidDescriptor {
+                resource: "material".into(),
+                reason: "depth bias values must be finite".into(),
+            });
+        }
         match &self.stages {
             PipelineStages::Graphics {
                 vertex_entry,
                 fragment_entry,
             } => {
-                if vertex_entry.is_empty() || fragment_entry.is_empty() {
+                if vertex_entry.is_empty() || fragment_entry.as_ref().is_some_and(String::is_empty)
+                {
                     return Err(RendererError::InvalidDescriptor {
                         resource: "material".to_string(),
                         reason:
                             "graphics pipelines need non-empty vertex and fragment entry points"
                                 .to_string(),
-                    });
-                }
-                if self.vertex.is_empty() || self.vertex.stride() == 0 {
-                    return Err(RendererError::InvalidDescriptor {
-                        resource: "material".to_string(),
-                        reason: "graphics pipelines need a non-empty vertex layout".to_string(),
                     });
                 }
             }
@@ -468,7 +581,9 @@ impl PipelineDescriptor {
                 fragment_entry,
             } => {
                 require(vertex_entry, naga::ShaderStage::Vertex)?;
-                require(fragment_entry, naga::ShaderStage::Fragment)?;
+                if let Some(fragment_entry) = fragment_entry {
+                    require(fragment_entry, naga::ShaderStage::Fragment)?;
+                }
             }
             PipelineStages::Compute { compute_entry } => {
                 require(compute_entry, naga::ShaderStage::Compute)?;
@@ -494,6 +609,39 @@ mod tests {
     }
 
     #[test]
+    fn test_equal_signed_zero_specializations_share_cache_keys() {
+        use std::hash::{Hash, Hasher};
+        let positive = SpecializationValue::F32(0.0);
+        let negative = SpecializationValue::F32(-0.0);
+        assert_eq!(positive, negative);
+        let hash = |value: SpecializationValue| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(hash(positive), hash(negative));
+    }
+
+    #[test]
+    fn test_graphics_constructors_declare_their_attachments() {
+        for descriptor in [
+            PipelineDescriptor::pbr("shader"),
+            PipelineDescriptor::skinned("shader"),
+            PipelineDescriptor::simple("shader"),
+            PipelineDescriptor::billboard("shader"),
+        ] {
+            assert!(descriptor.color_attachment);
+            assert_eq!(descriptor.depth_format, Some(ImageFormat::D32SfloatS8Uint));
+        }
+        let ui = PipelineDescriptor::ui("shader");
+        assert!(ui.color_attachment);
+        assert_eq!(ui.depth_format, None);
+        let compute = PipelineDescriptor::compute("shader", "cs_main");
+        assert!(!compute.color_attachment);
+        assert_eq!(compute.depth_format, None);
+    }
+
+    #[test]
     fn test_canonical_descriptors_validate() {
         PipelineDescriptor::pbr("shaders/pbr.wgsl")
             .validate()
@@ -513,6 +661,59 @@ mod tests {
         PipelineDescriptor::compute("shaders/compute.wgsl", "cs_main")
             .validate()
             .unwrap();
+    }
+
+    #[test]
+    fn test_depth_only_shader_needs_no_fragment_entry() {
+        let descriptor = PipelineDescriptor::depth_only("depth.wgsl", VertexLayout::position())
+            .with_depth_format(Some(ImageFormat::D32Sfloat));
+        descriptor.validate().unwrap();
+        PipelineDescriptor::validate_shader_source(
+            "@vertex fn vs_main() -> @builtin(position) vec4f { return vec4f(0.0); }",
+            &descriptor.stages,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_shader_generated_vertices_need_no_mesh_layout() {
+        let mut descriptor = PipelineDescriptor::simple("fullscreen.wgsl");
+        descriptor.vertex = VertexLayout::empty();
+        descriptor.validate().unwrap();
+    }
+
+    #[test]
+    fn test_invalid_color_mask_and_depth_bias_rejected() {
+        assert!(is_invalid_descriptor(
+            PipelineDescriptor::pbr("pbr.wgsl")
+                .with_color_write_mask(ColorWriteMask(16))
+                .validate()
+        ));
+        assert!(is_invalid_descriptor(
+            PipelineDescriptor::pbr("pbr.wgsl")
+                .with_depth_bias(DepthBias {
+                    constant: f32::INFINITY,
+                    ..DepthBias::default()
+                })
+                .validate()
+        ));
+    }
+
+    #[test]
+    fn test_equal_depth_bias_values_have_identical_hashes() {
+        use std::hash::{DefaultHasher, Hash, Hasher};
+        let zero = DepthBias::default();
+        let negative_zero = DepthBias {
+            constant: -0.0,
+            ..zero
+        };
+        assert_eq!(zero, negative_zero);
+        let hash = |value: DepthBias| {
+            let mut hasher = DefaultHasher::new();
+            value.hash(&mut hasher);
+            hasher.finish()
+        };
+        assert_eq!(hash(zero), hash(negative_zero));
     }
 
     #[test]
@@ -541,7 +742,7 @@ mod tests {
             .unwrap();
         let missing = PipelineStages::Graphics {
             vertex_entry: "vs_missing".to_string(),
-            fragment_entry: "fs_main".to_string(),
+            fragment_entry: Some("fs_main".to_string()),
         };
         assert!(is_invalid_descriptor(
             PipelineDescriptor::validate_shader_source(MINIMAL_WGSL, &missing)

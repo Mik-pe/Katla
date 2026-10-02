@@ -6,7 +6,7 @@ use crate::renderer::pipeline_descriptor::PipelineDescriptor;
 use crate::renderer::pipeline_variant::PipelineVariantKey;
 use crate::texture::ImageFormat;
 
-use super::metal_renderer::{MetalMaterial, MetalRenderer, read_shader};
+use super::metal_renderer::{MetalMaterial, MetalMaterialReplacement, MetalRenderer, read_shader};
 use super::shader;
 
 impl MetalRenderer {
@@ -27,26 +27,24 @@ impl MetalRenderer {
             ));
         }
 
-        let declared_format = match descriptor.color_format {
-            ImageFormat::Auto if !descriptor.is_ui_layout() => ImageFormat::R16G16B16A16Sfloat,
-            ImageFormat::Auto => ImageFormat::B8G8R8A8Srgb,
-            format => format,
-        };
+        let declared_format =
+            PipelineVariantKey::resolve(descriptor, ImageFormat::Auto).color_format();
         let wgsl_source = read_shader(&descriptor.shader_path)?;
         let mut variants = std::collections::HashMap::new();
-        let formats = if descriptor.color_format != ImageFormat::R32Uint {
-            vec![
-                ImageFormat::R8G8B8A8Srgb,
-                ImageFormat::R8G8B8A8Unorm,
-                ImageFormat::B8G8R8A8Srgb,
-                ImageFormat::R8Unorm,
-                ImageFormat::Rg8Unorm,
-                ImageFormat::R32Sfloat,
-                ImageFormat::R16G16B16A16Sfloat,
-            ]
-        } else {
-            vec![declared_format]
-        };
+        let formats =
+            if descriptor.color_attachment && descriptor.color_format != ImageFormat::R32Uint {
+                vec![
+                    ImageFormat::R8G8B8A8Srgb,
+                    ImageFormat::R8G8B8A8Unorm,
+                    ImageFormat::B8G8R8A8Srgb,
+                    ImageFormat::R8Unorm,
+                    ImageFormat::Rg8Unorm,
+                    ImageFormat::R32Sfloat,
+                    ImageFormat::R16G16B16A16Sfloat,
+                ]
+            } else {
+                vec![declared_format]
+            };
         for format in formats {
             let key = PipelineVariantKey::resolve(descriptor, format);
             let pipeline =
@@ -71,7 +69,13 @@ impl MetalRenderer {
             None
         };
 
+        let interface = crate::renderer::graphics_interface::GraphicsInterface::reflect(
+            &wgsl_source,
+            &descriptor.stages,
+        )
+        .map_err(RendererError::InvalidOperation)?;
         let handle = self.materials.insert(MetalMaterial {
+            interface,
             descriptor: descriptor.clone(),
             variants,
             pending_reload: None,
@@ -99,128 +103,71 @@ impl MetalRenderer {
         wgsl_source: &str,
     ) -> Result<super::pipeline::MetalGraphicsPipeline, RendererError> {
         use crate::pipeline::CullMode;
-        use crate::renderer::pipeline_descriptor::PipelineStages;
-        use crate::vertex::VertexLayout;
-
+        use crate::renderer::pipeline_descriptor::{BlendMode, PipelineStages};
         let PipelineStages::Graphics {
             vertex_entry,
             fragment_entry,
         } = &descriptor.stages
         else {
             return Err(RendererError::UnsupportedFeature(
-                "compute pipelines have no graphics variants".to_string(),
+                "Compute pipelines have no graphics variants".into(),
             ));
         };
-
-        log::debug!(
-            "compile_material: shader_path={}, wgsl_size={} bytes",
-            descriptor.shader_path,
-            wgsl_source.len()
-        );
-        if wgsl_source.contains("pbr_lighting") {
-            log::debug!("compile_material: WGSL contains PBR lighting code");
-        }
-
-        let entry_points = vec![vertex_entry.as_str(), fragment_entry.as_str()];
-
-        let profile = if descriptor.is_ui_layout() {
-            shader::ShaderProfile::Ui
-        } else {
-            shader::ShaderProfile::Graphics
-        };
-
-        let compiled =
-            shader::compile_wgsl_to_metal(&context.device, wgsl_source, &entry_points, profile)?;
-
-        let vertex_fn = compiled
+        let entries = std::iter::once(vertex_entry.as_str())
+            .chain(fragment_entry.as_deref())
+            .collect::<Vec<_>>();
+        let compiled = shader::compile_wgsl_to_metal(
+            &context.device,
+            wgsl_source,
+            &entries,
+            shader::ShaderProfile::Graphics,
+        )?;
+        let vertex_function = compiled
             .module
             .entry_points
-            .get(vertex_entry.as_str())
-            .ok_or_else(|| {
-                RendererError::InvalidOperation("Vertex entry point not found".into())
-            })?;
-
-        let fragment_fn = compiled.module.entry_points.get(fragment_entry.as_str());
-
-        // Attachment formats come from the variant key, not from renderer
-        // state: the resolved color format plus the shared depth derivation.
-        let color_formats = &[super::format::to_mtl_pixel_format(key.color_format())];
-        let depth_format = key.depth_format().map(super::format::to_mtl_pixel_format);
-
-        let is_skinned = descriptor.vertex == VertexLayout::pbr_skinned();
-        let is_billboard =
-            descriptor.vertex == VertexLayout::pbr() && matches!(descriptor.cull, CullMode::None);
-
-        let pipeline = if descriptor.is_ui_layout() {
-            let vd = if vertex_entry == "vs_instanced" {
-                super::context::ui_instanced_vertex_descriptor()
-            } else {
-                super::context::ui_vertex_descriptor()
-            };
-            context.create_graphics_pipeline_with_vertex_descriptor(
-                vertex_fn,
-                fragment_fn
-                    .as_ref()
-                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                color_formats,
-                depth_format,
-                false,
-                crate::pipeline::CompareOp::Always,
-                objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::Clockwise,
-                Some(&vd),
-                true,
-            )?
-        } else if is_skinned {
-            let vd = super::context::pbr_skinned_vertex_descriptor();
-            context.create_graphics_pipeline_with_vertex_descriptor(
-                vertex_fn,
-                fragment_fn
-                    .as_ref()
-                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                color_formats,
-                depth_format,
-                descriptor.depth.write,
-                descriptor.depth.compare,
-                objc2_metal::MTLCullMode::Back,
-                objc2_metal::MTLWinding::Clockwise,
-                Some(&vd),
-                false,
-            )?
-        } else if is_billboard {
-            context.create_graphics_pipeline_with_vertex_descriptor(
-                vertex_fn,
-                fragment_fn
-                    .as_ref()
-                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                color_formats,
-                depth_format,
-                descriptor.depth.write,
-                descriptor.depth.compare,
-                objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::Clockwise,
-                None,
-                true,
-            )?
+            .get(vertex_entry)
+            .ok_or_else(|| RendererError::InvalidOperation("Vertex entry point missing".into()))?;
+        let fragment_function = fragment_entry
+            .as_ref()
+            .map(|entry| {
+                compiled.module.entry_points.get(entry).ok_or_else(|| {
+                    RendererError::InvalidOperation("Fragment entry point missing".into())
+                })
+            })
+            .transpose()?;
+        let colors = if descriptor.color_attachment {
+            vec![super::format::to_mtl_pixel_format(key.color_format())]
         } else {
-            let vd = super::context::default_pbr_vertex_descriptor();
-            context.create_graphics_pipeline_with_vertex_descriptor(
-                vertex_fn,
-                fragment_fn
-                    .as_ref()
-                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                color_formats,
-                depth_format,
-                descriptor.depth.write,
-                descriptor.depth.compare,
-                objc2_metal::MTLCullMode::Back,
-                objc2_metal::MTLWinding::Clockwise,
-                Some(&vd),
-                false,
-            )?
+            Vec::new()
         };
-
-        Ok(pipeline)
+        let layout = if descriptor.is_ui_layout() && vertex_entry == "vs_instanced" {
+            super::context::ui_instanced_vertex_descriptor()
+        } else {
+            vertex_descriptor(&descriptor.vertex)
+        };
+        context.create_graphics_pipeline(crate::metal::context::GraphicsPipelineConfig {
+            vertex_function,
+            fragment_function: fragment_function
+                .map(|function| &**function as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+            color_formats: &colors,
+            depth_format: key.depth_format().map(super::format::to_mtl_pixel_format),
+            depth_write_enabled: descriptor.depth.write,
+            depth_compare: descriptor.depth.compare,
+            cull_mode: match descriptor.cull {
+                CullMode::None => objc2_metal::MTLCullMode::None,
+                CullMode::Front => objc2_metal::MTLCullMode::Front,
+                CullMode::Back => objc2_metal::MTLCullMode::Back,
+                CullMode::FrontAndBack => {
+                    return Err(RendererError::UnsupportedFeature(
+                        "Metal does not support front-and-back culling".into(),
+                    ));
+                }
+            },
+            front_face: objc2_metal::MTLWinding::Clockwise,
+            vertex_descriptor: &layout,
+            alpha_blended: descriptor.blend == BlendMode::AlphaBlend,
+            portable: Some(key.descriptor()),
+        })
     }
 
     /// Verify startup warmup completed before acquiring or encoding a frame.
@@ -256,13 +203,15 @@ impl MetalRenderer {
                 continue;
             };
             match receiver.try_recv() {
-                Ok(Ok(variants)) => {
+                Ok(Ok(replacement)) => {
+                    let variants = replacement.variants;
                     if material.descriptor.is_ui_layout() {
                         use crate::renderer::pipeline_descriptor::PipelineStages;
                         if let Some((_, instanced)) = variants.iter().find(|(key, _)| matches!(&key.descriptor().stages, PipelineStages::Graphics { vertex_entry, .. } if vertex_entry == "vs_instanced")) {
                             for ui in &mut self.ui_renderers { ui.set_instanced_pipeline(instanced.clone()); }
                         }
                     }
+                    material.interface = replacement.interface;
                     material.variants = variants;
                     material.pending_reload = None;
                     log::info!("pipeline_cache event=reload_swap material={handle:?}");
@@ -305,14 +254,6 @@ impl MetalRenderer {
         })
     }
 
-    /// Whether the handle references a registered material.
-    ///
-    /// Draw collection skips unknown handles with a warning; every known
-    /// handle must already have its requested variant ready.
-    pub(crate) fn has_material_impl(&self, material: MaterialHandle) -> bool {
-        self.materials.get(material).is_some()
-    }
-
     pub(crate) fn set_material_textures_impl(
         &mut self,
         material: MaterialHandle,
@@ -324,32 +265,20 @@ impl MetalRenderer {
     }
 
     /// Resolve a material's typed texture bindings to argument-table
-    /// indices. `NONE` and stale handles resolve to the role's default
-    /// texture slot; this is the only place material texture handles
-    /// become shader-visible numbers on Metal.
+    /// indices. Missing handles use the descriptor-safe fallback slot.
     pub(crate) fn resolve_material_texture_slots_impl(&self, material: MaterialHandle) -> [u32; 4] {
-        use crate::texture::{
-            DEFAULT_ALBEDO_SLOT, DEFAULT_MR_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_OCCLUSION_SLOT,
-        };
         let textures = self
             .materials
             .get(material)
             .map(|mat| mat.textures)
             .unwrap_or_default();
         [
-            self.get_bindless_slot_impl(textures.albedo)
-                .unwrap_or(DEFAULT_ALBEDO_SLOT),
-            self.get_bindless_slot_impl(textures.normal)
-                .unwrap_or(DEFAULT_NORMAL_SLOT),
+            self.get_bindless_slot_impl(textures.albedo).unwrap_or(0),
+            self.get_bindless_slot_impl(textures.normal).unwrap_or(0),
             self.get_bindless_slot_impl(textures.metallic_roughness)
-                .unwrap_or(DEFAULT_MR_SLOT),
-            self.get_bindless_slot_impl(textures.occlusion)
-                .unwrap_or(DEFAULT_OCCLUSION_SLOT),
+                .unwrap_or(0),
+            self.get_bindless_slot_impl(textures.occlusion).unwrap_or(0),
         ]
-    }
-
-    pub(crate) fn default_material_impl(&self) -> MaterialHandle {
-        self.default_material.unwrap_or_default()
     }
 
     pub(crate) fn destroy_material_impl(&mut self, handle: MaterialHandle) {
@@ -397,7 +326,16 @@ impl MetalRenderer {
                         )?;
                         replacements.insert(key, pipeline);
                     }
-                    Ok(replacements)
+                    let interface =
+                        crate::renderer::graphics_interface::GraphicsInterface::reflect(
+                            &source,
+                            &descriptor.stages,
+                        )
+                        .map_err(RendererError::InvalidOperation)?;
+                    Ok(MetalMaterialReplacement {
+                        interface,
+                        variants: replacements,
+                    })
                 })()
                 .map_err(|error| error.to_string());
                 log::info!(
@@ -411,6 +349,43 @@ impl MetalRenderer {
         }
         count
     }
+}
+
+fn vertex_descriptor(
+    layout: &crate::vertex::VertexLayout,
+) -> objc2::rc::Retained<objc2_metal::MTLVertexDescriptor> {
+    use crate::vertex::VertexAttributeFormat::*;
+    let native = objc2_metal::MTLVertexDescriptor::new();
+    let mut offset = 0;
+    for (index, format) in layout.formats().iter().enumerate() {
+        let attribute = unsafe { native.attributes().objectAtIndexedSubscript(index) };
+        attribute.setFormat(match format {
+            Float => objc2_metal::MTLVertexFormat::Float,
+            Float2 => objc2_metal::MTLVertexFormat::Float2,
+            Float3 => objc2_metal::MTLVertexFormat::Float3,
+            Float4 => objc2_metal::MTLVertexFormat::Float4,
+            UByte4 => objc2_metal::MTLVertexFormat::UChar4,
+            UByte4Norm => objc2_metal::MTLVertexFormat::UChar4Normalized,
+            UShort4 => objc2_metal::MTLVertexFormat::UShort4,
+            UShort4Norm => objc2_metal::MTLVertexFormat::UShort4Normalized,
+            Int => objc2_metal::MTLVertexFormat::Int,
+            UInt => objc2_metal::MTLVertexFormat::UInt,
+        });
+        unsafe {
+            attribute.setOffset(offset);
+            attribute.setBufferIndex(10);
+        }
+        offset += format.size_bytes();
+    }
+    if !layout.is_empty() {
+        let binding = unsafe { native.layouts().objectAtIndexedSubscript(10) };
+        unsafe {
+            binding.setStride(layout.stride());
+            binding.setStepFunction(objc2_metal::MTLVertexStepFunction::PerVertex);
+            binding.setStepRate(1);
+        }
+    }
+    native
 }
 
 #[cfg(test)]

@@ -457,7 +457,7 @@ impl Application {
                     let vp = self.editor.editor_ui.last_viewport_bounds;
                     let rel_x = mouse_pos.x() - vp.min.x();
                     let rel_y = mouse_pos.y() - vp.min.y();
-                    self.editor.pending_pick = Some((self.frame_count, rel_x, rel_y));
+                    self.queue_pick([rel_x, rel_y], [vp.width(), vp.height()]);
                 }
             }
         }

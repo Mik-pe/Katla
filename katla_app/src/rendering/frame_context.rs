@@ -9,7 +9,8 @@
 //!
 //! ```ignore
 //! use katla_app::rendering::FrameContext;
-//! use katla_gfx::{MeshHandle, MaterialHandle, renderer::FrameUniforms};
+//! use katla_gfx::{MeshHandle, MaterialHandle};
+//! use katla_app::rendering::FrameUniforms;
 //!
 //! // Create frame context at start of frame
 //! let mut frame = FrameContext::new();
@@ -39,8 +40,10 @@
 
 use katla_gfx::{
     MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle,
-    renderer::{DrawCall, DrawList, FrameUniforms, InstanceData},
+    renderer::{DrawCall, DrawList, InstanceData},
 };
+
+use super::FrameUniforms;
 
 /// Per-frame context for submitting draws with automatic instance allocation.
 ///
@@ -50,7 +53,7 @@ use katla_gfx::{
 pub struct FrameContext {
     /// Accumulated draw calls for this frame
     draw_list: DrawList,
-    /// Frame uniforms (camera, lighting) - from katla_gfx public API
+    /// Scene shader data for the submitted frame
     /// Always set via set_camera() or set_frame_uniforms() before rendering
     frame_uniforms: FrameUniforms,
 }

@@ -1,6 +1,7 @@
 use log::{error, info, warn};
 
 use katla_gfx::GpuRenderer;
+#[cfg(feature = "editor")]
 use katla_gfx::primitives;
 
 use crate::application::Application;
@@ -14,11 +15,7 @@ impl Application {
             self.world
                 .insert_resource(crate::resources::AmbientLight::default());
 
-            match &mut self.renderer {
-                katla_gfx::AnyRenderer::Vulkan(_) => self.init_vulkan()?,
-                #[cfg(target_os = "macos")]
-                katla_gfx::AnyRenderer::Metal(_) => self.init_metal()?,
-            }
+            self.init_scene_features()?;
         } else {
             info!("Skipping Katla scene renderer initialization for graph-only runtime");
         }
@@ -77,376 +74,32 @@ impl Application {
 }
 
 impl Application {
-    fn init_vulkan(&mut self) -> Result<(), AppError> {
-        // Initialize default PBR material
+    fn init_scene_features(&mut self) -> Result<(), AppError> {
         let shader_path = self.resources.shader_path("model_pbr.wgsl");
-        info!(
-            "Loading default PBR material from: {}",
-            shader_path.display()
-        );
-
-        // Create HDR PBR material for rendering to HDR intermediate
-        let descriptor =
-            katla_gfx::PipelineDescriptor::pbr(shader_path.to_string_lossy().into_owned())
-                .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat);
-        self.default_material_handle =
-            self.renderer.compile_material(&descriptor).map_err(|e| {
-                AppError::RendererInitFailed {
-                    reason: format!("Failed to create default HDR PBR material: {e}"),
-                }
-            })?;
-
-        info!("Default HDR PBR material loaded successfully");
-
-        // Set the protected material in the GPU resource tracker so it's never destroyed
+        self.default_material_handle = self.renderer.compile_material(
+            &katla_gfx::PipelineDescriptor::pbr(shader_path.to_string_lossy().into_owned())
+                .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat),
+        )?;
+        if let Some(features) = &mut self.scene_features {
+            self.renderer
+                .set_material_textures(self.default_material_handle, features.material_textures());
+        }
         self.gpu_resource_tracker
             .set_protected_material(self.default_material_handle);
-
-        // Initialize editor GPU resources
+        self.gpu_animation_system =
+            Some(crate::systems::gpu_animation_system::GpuAnimationSystem::new());
         #[cfg(feature = "editor")]
         {
             self.init_gizmo_resources();
             self.init_billboard_resources();
         }
-
-        // Initialize animation pose evaluation pipeline
-        let anim_shader_path = self
-            .resources
-            .shader_path("compute/animation/pose_eval.wgsl");
-        self.renderer
-            .init_animation_pipeline(&anim_shader_path)
-            .map_err(|error| AppError::RendererInitFailed {
-                reason: error.to_string(),
-            })?;
-
-        // Create GPU animation system (ECS queries only, GPU resources on renderer)
-        self.gpu_animation_system =
-            Some(crate::systems::gpu_animation_system::GpuAnimationSystem::new());
-
-        self.install_scene_compute_graph()?;
-
-        // Initialize transient textures and register with bindless system
-        self.frame_graph
-            .initialize_transient_textures(&mut self.renderer)
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to initialize transient textures: {e}"),
-            })?;
-        self.frame_graph
-            .initialize_transient_buffers(&mut self.renderer)
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to initialize transient buffers: {e}"),
-            })?;
-
-        let hdr_bindless_index =
-            if let Some(name) = self.frame_graph_bindings.resources.hdr_color.as_deref() {
-                let index = self
-                    .frame_graph
-                    .register_transient_texture_bindless(&mut self.renderer, name)
-                    .map_err(|e| AppError::RendererInitFailed {
-                        reason: format!(
-                            "Failed to register HDR resource '{name}' with bindless system: {e}"
-                        ),
-                    })?;
-                info!("HDR resource '{name}' registered at bindless index {index}");
-                Some(index)
-            } else {
-                None
-            };
-
-        if let (Some(pass_id), Some(texture_index)) = (self.pass_ids.tonemap, hdr_bindless_index) {
-            self.frame_graph
-                .set_tonemap_texture_index(pass_id, texture_index)
-                .map_err(|e| AppError::RendererInitFailed {
-                    reason: format!("Failed to set tonemap texture index: {e}"),
-                })?;
-        }
-
-        let viewport_bindless_index =
-            if let Some(name) = self.frame_graph_bindings.resources.viewport.as_deref() {
-                let index = self
-                .frame_graph
-                .register_transient_texture_bindless(&mut self.renderer, name)
-                .map_err(|e| AppError::RendererInitFailed {
-                    reason: format!(
-                        "Failed to register viewport resource '{name}' with bindless system: {e}"
-                    ),
-                })?;
-                self.frame_graph
-                    .as_vulkan_mut()
-                    .set_ldr_texture_base_index(index);
-                info!("Viewport resource '{name}' registered at bindless index {index}");
-                Some(index)
-            } else {
-                None
-            };
-
-        #[cfg(feature = "editor")]
-        {
-            if let Some(viewport_index) = viewport_bindless_index {
-                self.editor
-                    .editor_ui
-                    .set_viewport_bindless_index(viewport_index);
-            }
-
-            let stencil_indicator_index = if let Some(name) = self
-                .frame_graph_bindings
-                .resources
-                .stencil_indicator
-                .as_deref()
-            {
-                Some(
-                    self.frame_graph
-                        .register_transient_texture_bindless(&mut self.renderer, name)
-                        .map_err(|e| AppError::RendererInitFailed {
-                            reason: format!(
-                                "Failed to register stencil-indicator resource '{name}': {e}"
-                            ),
-                        })?,
-                )
-            } else {
-                None
-            };
-
-            if let (Some(pass_id), Some(viewport_index), Some(stencil_index)) = (
-                self.pass_ids.wallhack_overlay,
-                viewport_bindless_index,
-                stencil_indicator_index,
-            ) {
-                self.frame_graph
-                    .as_vulkan_mut()
-                    .set_overlay_texture_indices(pass_id, viewport_index, stencil_index)
-                    .map_err(|e| AppError::RendererInitFailed {
-                        reason: format!("Failed to set wallhack overlay texture indices: {e}"),
-                    })?;
-            }
-        }
-
         Ok(())
     }
 }
 
-#[cfg(target_os = "macos")]
-impl Application {
-    fn init_metal(&mut self) -> Result<(), AppError> {
-        // Initialize default PBR material via GpuRenderer trait
-        let shader_path = self.resources.shader_path("model_pbr.wgsl");
-        let shader_str = shader_path.to_string_lossy();
-        self.default_material_handle = self
-            .renderer
-            .compile_material(&katla_gfx::PipelineDescriptor::pbr(shader_str.into_owned()))
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to create default PBR material: {e}"),
-            })?;
-
-        // Propagate to the renderer so its default_material() returns the correct handle
-        self.renderer
-            .set_default_material(self.default_material_handle);
-
-        self.gpu_resource_tracker
-            .set_protected_material(self.default_material_handle);
-
-        info!("Default PBR material loaded (Metal)");
-
-        // Initialize editor GPU resources
-        #[cfg(feature = "editor")]
-        {
-            self.init_gizmo_resources();
-            self.init_billboard_resources();
-        }
-
-        // Initialize Forward+ light culling
-        let extent = self.renderer.swapchain_extent();
-        let light_culling_shader_path = self.resources.shader_path("light_culling.wgsl");
-        if let Err(e) = self.renderer.init_light_culling(
-            extent.width,
-            extent.height,
-            &light_culling_shader_path,
-        ) {
-            warn!("Failed to initialize Metal light culling: {}", e);
-        } else {
-            info!("Light culling initialized (Metal)");
-        }
-
-        // Initialize shadow map resources
-        if let Err(e) = self.renderer.init_shadow_resources() {
-            warn!("Failed to initialize Metal shadow resources: {}", e);
-        } else {
-            info!("Shadow resources initialized (Metal)");
-        }
-
-        // Initialize shadow depth pipeline
-        let shadow_shader_path = self.resources.shader_path("shadow/shadow_depth.wgsl");
-        if let Err(e) = self
-            .renderer
-            .init_pass_pipeline(katla_gfx::PipelineKind::Shadow, &[&shadow_shader_path])
-        {
-            warn!("Failed to initialize Metal shadow pipeline: {}", e);
-        } else {
-            info!("Shadow pipeline initialized (Metal)");
-        }
-
-        // Initialize skinned shadow depth pipeline
-        let shadow_skinned_shader_path = self
-            .resources
-            .shader_path("shadow/shadow_depth_skinned.wgsl");
-        if let Err(e) = self.renderer.init_pass_pipeline(
-            katla_gfx::PipelineKind::ShadowSkinned,
-            &[&shadow_skinned_shader_path],
-        ) {
-            warn!("Failed to initialize Metal skinned shadow pipeline: {}", e);
-        } else {
-            info!("Skinned shadow pipeline initialized (Metal)");
-        }
-
-        // Initialize GPU animation compute pipeline
-        let anim_shader_path = self
-            .resources
-            .shader_path("compute/animation/pose_eval.wgsl");
-        self.renderer
-            .init_animation_pipeline(&anim_shader_path)
-            .map_err(|error| AppError::RendererInitFailed {
-                reason: error.to_string(),
-            })?;
-
-        // Initialize sky pipeline for procedural atmosphere
-        let sky_shader_path = self.resources.shader_path("sky.wgsl");
-        if let Err(e) = self
-            .renderer
-            .init_pass_pipeline(katla_gfx::PipelineKind::Sky, &[&sky_shader_path])
-        {
-            warn!("Failed to initialize Metal sky pipeline: {}", e);
-        } else {
-            info!("Sky pipeline initialized (Metal)");
-        }
-
-        // Initialize tonemapping pipeline for HDR-to-LDR conversion
-        let tonemap_shader_path = self.resources.shader_path("tonemapping.wgsl");
-        if let Err(e) = self
-            .renderer
-            .init_pass_pipeline(katla_gfx::PipelineKind::Tonemap, &[&tonemap_shader_path])
-        {
-            warn!("Failed to initialize Metal tonemap pipeline: {}", e);
-        } else {
-            info!("Tonemap pipeline initialized (Metal)");
-        }
-
-        // Initialize depth prepass pipeline
-        let depth_prepass_shader_path = self.resources.shader_path("depth_prepass.wgsl");
-        if let Err(e) = self.renderer.init_pass_pipeline(
-            katla_gfx::PipelineKind::DepthPrepass,
-            &[&depth_prepass_shader_path],
-        ) {
-            warn!("Failed to initialize Metal depth prepass pipeline: {}", e);
-        } else {
-            info!("Depth prepass pipeline initialized (Metal)");
-        }
-
-        // Initialize skinned depth prepass pipeline
-        let depth_prepass_skinned_shader_path =
-            self.resources.shader_path("depth_prepass_skinned.wgsl");
-        if let Err(e) = self.renderer.init_pass_pipeline(
-            katla_gfx::PipelineKind::DepthPrepassSkinned,
-            &[&depth_prepass_skinned_shader_path],
-        ) {
-            warn!(
-                "Failed to initialize Metal skinned depth prepass pipeline: {}",
-                e
-            );
-        } else {
-            info!("Skinned depth prepass pipeline initialized (Metal)");
-        }
-
-        // Initialize billboard depth prepass pipeline
-        let billboard_depth_shader_path = self.resources.shader_path("billboard_depth.wgsl");
-        if let Err(e) = self.renderer.init_pass_pipeline(
-            katla_gfx::PipelineKind::DepthPrepassBillboard,
-            &[&billboard_depth_shader_path],
-        ) {
-            warn!(
-                "Failed to initialize Metal billboard depth prepass pipeline: {}",
-                e
-            );
-        } else {
-            info!("Billboard depth prepass pipeline initialized (Metal)");
-        }
-
-        // Initialize outline pipelines for stencil-based selection highlight
-        let stencil_mark_shader_path = self.resources.shader_path("outline/stencil_mark.wgsl");
-        let stencil_mark_skinned_shader_path = self
-            .resources
-            .shader_path("outline/stencil_mark_skinned.wgsl");
-        let outline_draw_shader_path = self.resources.shader_path("outline/outline_draw.wgsl");
-        let outline_draw_skinned_shader_path = self
-            .resources
-            .shader_path("outline/outline_draw_skinned.wgsl");
-        if let Err(e) = self.renderer.init_pass_pipeline(
-            katla_gfx::PipelineKind::Outline,
-            &[
-                &stencil_mark_shader_path,
-                &stencil_mark_skinned_shader_path,
-                &outline_draw_shader_path,
-                &outline_draw_skinned_shader_path,
-            ],
-        ) {
-            warn!("Failed to initialize Metal outline pipelines: {}", e);
-        } else {
-            info!("Outline pipelines initialized (Metal)");
-        }
-
-        // Initialize GPU picking pipeline
-        let picking_shader_path = self.resources.shader_path("picking/object_id.wgsl");
-        if let Err(e) = self
-            .renderer
-            .init_pass_pipeline(katla_gfx::PipelineKind::Picking, &[&picking_shader_path])
-        {
-            warn!("Failed to initialize Metal picking pipeline: {}", e);
-        } else {
-            info!("Picking pipeline initialized (Metal)");
-        }
-
-        let picking_skinned_shader_path =
-            self.resources.shader_path("picking/object_id_skinned.wgsl");
-        if let Err(e) = self.renderer.init_pass_pipeline(
-            katla_gfx::PipelineKind::PickingSkinned,
-            &[&picking_skinned_shader_path],
-        ) {
-            warn!("Failed to initialize Metal skinned picking pipeline: {}", e);
-        } else {
-            info!("Skinned picking pipeline initialized (Metal)");
-        }
-
-        // Set tonemap texture index on the tonemap pass
-        if let (Some(pass_id), Some(hdr_idx)) = (
-            self.pass_ids.tonemap,
-            self.renderer.geometry_hdr_bindless_index(),
-        ) {
-            self.frame_graph
-                .set_tonemap_texture_index(pass_id, hdr_idx)
-                .map_err(|e| AppError::RendererInitFailed {
-                    reason: format!("Failed to set Metal tonemap texture index: {e}"),
-                })?;
-            info!("Tonemap pass HDR texture index set to {} (Metal)", hdr_idx);
-        }
-
-        // Set viewport bindless index in editor UI
-        #[cfg(feature = "editor")]
-        {
-            if let Some(vp_idx) = self.renderer.viewport_bindless_index() {
-                self.editor.editor_ui.set_viewport_bindless_index(vp_idx);
-            }
-        }
-
-        self.gpu_animation_system =
-            Some(crate::systems::gpu_animation_system::GpuAnimationSystem::new());
-        self.install_scene_compute_graph()?;
-
-        Ok(())
-    }
-}
-
-#[cfg(feature = "editor")]
 impl Application {
     /// Initialize GPU resources for billboard icons (mesh + material + icon textures).
+    #[cfg(feature = "editor")]
     pub(crate) fn init_billboard_resources(&mut self) {
         use crate::billboard::BillboardResources;
         use crate::components::BillboardIcon;

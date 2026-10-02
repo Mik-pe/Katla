@@ -21,32 +21,27 @@ impl McpState {
         info!("MCP server bridge initialized");
         Self { bridge }
     }
+}
 
-    pub(crate) fn poll(
-        &mut self,
-        app: &mut crate::application::Application,
-        registry: &ComponentRegistry,
-        protected: &ProtectedEntities,
-    ) {
-        let requests = self.bridge.poll_requests();
-        for req in requests {
-            let response = match req.op.into_op() {
-                McpOpKind::Scene(scene_op) => {
-                    if let Err(msg) = check_protected_entity(&scene_op, protected) {
-                        McpResponse { result: Err(msg) }
-                    } else {
-                        if let SceneOp::DestroyEntity { entity } = &scene_op {
-                            cleanup_entity_hierarchy_world(&mut app.world, *entity);
-                        }
-                        execute_scene_op(scene_op, &mut app.world, registry)
+pub(crate) fn poll(app: &mut crate::application::Application, protected: &ProtectedEntities) {
+    let requests = app.editor.mcp_state.bridge.poll_requests();
+    for req in requests {
+        let response = match req.op.into_op() {
+            McpOpKind::Scene(scene_op) => {
+                if let Err(msg) = check_protected_entity(&scene_op, protected) {
+                    McpResponse { result: Err(msg) }
+                } else {
+                    if let SceneOp::DestroyEntity { entity } = &scene_op {
+                        cleanup_entity_hierarchy_world(&mut app.world, *entity);
                     }
+                    execute_scene_op(scene_op, &mut app.world, &app.editor.component_registry)
                 }
-                McpOpKind::Resource(resource_op) => execute_resource_op(resource_op),
-                McpOpKind::LoadScene { path } => execute_load_scene(app, &path),
-                McpOpKind::SaveScene { path } => execute_save_scene(app, path.as_deref()),
-            };
-            let _ = req.response_tx.send(response);
-        }
+            }
+            McpOpKind::Resource(resource_op) => execute_resource_op(resource_op),
+            McpOpKind::LoadScene { path } => execute_load_scene(app, &path),
+            McpOpKind::SaveScene { path } => execute_save_scene(app, path.as_deref()),
+        };
+        let _ = req.response_tx.send(response);
     }
 }
 
@@ -102,10 +97,10 @@ fn execute_scene_op(
                 "message": tool_result.message,
                 "affected_entities": tool_result.affected_entities.iter().map(|id| id.id()).collect::<Vec<u64>>(),
             });
-            if let Some(data) = tool_result.data {
-                if let Some(map) = json.as_object_mut() {
-                    map.insert("data".to_string(), data);
-                }
+            if let Some(data) = tool_result.data
+                && let Some(map) = json.as_object_mut()
+            {
+                map.insert("data".to_string(), data);
             }
             McpResponse { result: Ok(json) }
         }

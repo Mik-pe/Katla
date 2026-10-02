@@ -6,6 +6,9 @@
 use crate::render_graph::access::{
     BufferUsage, ImageAspects, ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
+use crate::render_graph::capture::{
+    CapturedNativeSyncRange, CapturedNativeSyncScope, CapturedSyncOperation,
+};
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
 use crate::render_graph::{BufferSyncState, ImageSyncOp, ImageSyncState, SyncReason};
@@ -37,9 +40,14 @@ impl Frame<'_, VulkanRenderer> {
         };
         let frame_idx = self.current_frame();
 
+        let mut observations = Vec::new();
         let mut image_barriers = Vec::with_capacity(image_ops.len());
         for op in &image_ops {
-            image_barriers.extend(self.resolve_image_sync_barriers(op)?);
+            let (barriers, required) = self.resolve_image_sync_barriers(op)?;
+            if self.trace_enabled {
+                observations.push(image_observation(op, &barriers, required, "before_pass"));
+            }
+            image_barriers.extend(barriers);
         }
 
         let mut buffer_barriers = Vec::with_capacity(buffer_ops.len());
@@ -48,9 +56,6 @@ impl Frame<'_, VulkanRenderer> {
                 .graph
                 .buffer_by_id(self.renderer, op.resource, frame_idx)
             else {
-                if self.graph.is_builtin_buffer(op.resource) {
-                    continue;
-                }
                 return Err(RenderGraphError::BackendError(format!(
                     "Pass '{}' cannot resolve graph buffer '{}' for synchronization",
                     pass.name,
@@ -58,10 +63,22 @@ impl Frame<'_, VulkanRenderer> {
                 )));
             };
             if op.before == BufferSyncState::Undefined {
+                if self.trace_enabled {
+                    observations.push(
+                        CapturedSyncOperation::buffer(op, "before_pass")
+                            .omitted("Undefined buffer state has no previous memory access"),
+                    );
+                }
                 continue;
             }
             let buffer_size = buffer.size();
             if op.range.offset >= buffer_size {
+                if self.trace_enabled {
+                    observations.push(
+                        CapturedSyncOperation::buffer(op, "before_pass")
+                            .omitted("Native buffer range starts outside this allocation"),
+                    );
+                }
                 continue;
             }
             let range_size = if op.range.size == u64::MAX {
@@ -70,38 +87,63 @@ impl Frame<'_, VulkanRenderer> {
                 op.range.size.min(buffer_size - op.range.offset)
             };
             if range_size == 0 {
+                if self.trace_enabled {
+                    observations.push(
+                        CapturedSyncOperation::buffer(op, "before_pass")
+                            .omitted("Native buffer range is empty"),
+                    );
+                }
                 continue;
             }
 
             let (src_stage, src_access) = buffer_state_masks(op.before);
             let (dst_stage, dst_access) = buffer_state_masks(op.after);
-            buffer_barriers.push(
-                BufferMemoryBarrier2::new(
+            let barrier = BufferMemoryBarrier2::new(
+                VkBuffer::new(buffer.buffer),
+                buffer.offset + op.range.offset,
+                range_size,
+            )
+            .src_stage(src_stage)
+            .dst_stage(dst_stage)
+            .src_access(src_access)
+            .dst_access(dst_access);
+            if self.trace_enabled {
+                let mut observation = CapturedSyncOperation::buffer(op, "before_pass");
+                observation.native_scope.push(buffer_scope(&barrier));
+                let expected = BufferMemoryBarrier2::new(
                     VkBuffer::new(buffer.buffer),
                     buffer.offset + op.range.offset,
                     range_size,
                 )
-                .src_stage(src_stage)
-                .dst_stage(dst_stage)
-                .src_access(src_access)
-                .dst_access(dst_access),
-            );
+                .src_stage(buffer_state_masks(op.before).0)
+                .src_access(buffer_state_masks(op.before).1)
+                .dst_stage(buffer_state_masks(op.after).0)
+                .dst_access(buffer_state_masks(op.after).1);
+                observation
+                    .required_native_scope
+                    .push(buffer_scope(&expected));
+                observations.push(observation);
+            }
+            buffer_barriers.push(barrier);
         }
 
         if image_barriers.is_empty() && buffer_barriers.is_empty() && !alias_handoff {
+            self.execution_trace
+                .backend
+                .synchronization
+                .extend(observations);
             return Ok(());
         }
 
         let mut dependency = DependencyInfo::new();
         if alias_handoff {
-            dependency.memory_barriers.push(
-                vk::MemoryBarrier2::default()
-                    .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
-                    .src_access_mask(vk::AccessFlags2::MEMORY_WRITE)
-                    .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
-                    .dst_access_mask(
-                        vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE,
-                    ),
+            dependency.memory_barriers.push(alias_memory_barrier());
+        }
+        if alias_handoff && self.trace_enabled {
+            self.capture_memory_barrier(
+                &dependency.memory_barriers[0],
+                &alias_memory_barrier(),
+                "texture_alias_handoff",
             );
         }
         for barrier in image_barriers {
@@ -116,6 +158,10 @@ impl Frame<'_, VulkanRenderer> {
                 .device
                 .cmd_pipeline_barrier2(cmd_vk, dependency);
         });
+        self.execution_trace
+            .backend
+            .synchronization
+            .extend(observations);
 
         Ok(())
     }
@@ -123,7 +169,7 @@ impl Frame<'_, VulkanRenderer> {
     fn resolve_image_sync_barriers(
         &mut self,
         op: &ImageSyncOp,
-    ) -> Result<Vec<ImageMemoryBarrier2>, RenderGraphError> {
+    ) -> Result<(Vec<ImageMemoryBarrier2>, Vec<CapturedNativeSyncScope>), RenderGraphError> {
         if let Some(texture) = self
             .graph
             .transient_texture_by_id(op.resource, self.current_frame())
@@ -133,7 +179,27 @@ impl Frame<'_, VulkanRenderer> {
                 .pending_transient_layouts
                 .borrow_mut()
                 .record(texture);
-            return Ok(sync_op_barriers(op, texture));
+            let expected = if self.trace_enabled {
+                let ranges = texture
+                    .layouts
+                    .borrow()
+                    .ranges(op.range, vk::ImageLayout::UNDEFINED);
+                ranges
+                    .into_iter()
+                    .filter_map(|(range, tracked)| {
+                        image_sync_barrier(
+                            &ImageSyncOp { range, ..*op },
+                            VkImage::new(texture.image),
+                            format_aspects(texture.format),
+                            tracked,
+                        )
+                    })
+                    .map(|barrier| image_scope(&barrier))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            return Ok((sync_op_barriers(op, texture), expected));
         }
         let (image, aspects, initial_layout) =
             if self.graph.resource_id(crate::render_graph::BACKBUFFER_NAME) == Some(op.resource) {
@@ -175,8 +241,14 @@ impl Frame<'_, VulkanRenderer> {
         }
         ranges.extend(remainder.into_iter().map(|range| (range, initial_layout)));
         let mut barriers = Vec::new();
+        let mut expected = Vec::new();
         for (range, layout) in ranges {
             let ranged_op = ImageSyncOp { range, ..*op };
+            if self.trace_enabled
+                && let Some(required) = image_sync_barrier(&ranged_op, image, aspects, layout)
+            {
+                expected.push(image_scope(&required));
+            }
             if let Some(barrier) = image_sync_barrier(&ranged_op, image, aspects, layout) {
                 *pieces = pieces
                     .iter()
@@ -191,7 +263,7 @@ impl Frame<'_, VulkanRenderer> {
                 barriers.push(barrier);
             }
         }
-        Ok(barriers)
+        Ok((barriers, expected))
     }
 
     /// Insert the frame-end operations satisfying imported final-state
@@ -209,12 +281,20 @@ impl Frame<'_, VulkanRenderer> {
 
         let cmd_vk = cmd.vk_command_buffer();
 
+        let mut observations = Vec::new();
         let mut barriers = Vec::with_capacity(ops.len());
         for op in &ops {
-            barriers.extend(self.resolve_image_sync_barriers(op)?);
+            let (native, required) = self.resolve_image_sync_barriers(op)?;
+            if self.trace_enabled {
+                observations.push(image_observation(op, &native, required, "frame_end"));
+            }
+            barriers.extend(native);
         }
-
         if barriers.is_empty() {
+            self.execution_trace
+                .backend
+                .synchronization
+                .extend(observations);
             return Ok(());
         }
 
@@ -228,9 +308,71 @@ impl Frame<'_, VulkanRenderer> {
                 .device
                 .cmd_pipeline_barrier2(cmd_vk, dependency);
         });
+        self.execution_trace
+            .backend
+            .synchronization
+            .extend(observations);
 
         Ok(())
     }
+}
+
+fn alias_memory_barrier() -> vk::MemoryBarrier2<'static> {
+    vk::MemoryBarrier2::default()
+        .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+        .src_access_mask(vk::AccessFlags2::MEMORY_WRITE)
+        .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+        .dst_access_mask(vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE)
+}
+
+fn image_scope(barrier: &ImageMemoryBarrier2) -> CapturedNativeSyncScope {
+    let native = barrier.clone().into_vk();
+    CapturedNativeSyncScope {
+        range: CapturedNativeSyncRange::Image {
+            aspects: native.subresource_range.aspect_mask.as_raw(),
+            base_mip: native.subresource_range.base_mip_level,
+            mips: native.subresource_range.level_count,
+            base_layer: native.subresource_range.base_array_layer,
+            layers: native.subresource_range.layer_count,
+        },
+        source_stages: native.src_stage_mask.as_raw(),
+        destination_stages: native.dst_stage_mask.as_raw(),
+        source_access: native.src_access_mask.as_raw(),
+        destination_access: native.dst_access_mask.as_raw(),
+        old_layout: Some(format!("{:?}", native.old_layout)),
+        new_layout: Some(format!("{:?}", native.new_layout)),
+        visibility: 0,
+    }
+}
+fn buffer_scope(barrier: &BufferMemoryBarrier2) -> CapturedNativeSyncScope {
+    let native = barrier.clone().into_vk();
+    CapturedNativeSyncScope {
+        range: CapturedNativeSyncRange::Buffer {
+            offset: native.offset,
+            bytes: native.size,
+        },
+        source_stages: native.src_stage_mask.as_raw(),
+        destination_stages: native.dst_stage_mask.as_raw(),
+        source_access: native.src_access_mask.as_raw(),
+        destination_access: native.dst_access_mask.as_raw(),
+        old_layout: None,
+        new_layout: None,
+        visibility: 0,
+    }
+}
+fn image_observation(
+    op: &ImageSyncOp,
+    native: &[ImageMemoryBarrier2],
+    required: Vec<CapturedNativeSyncScope>,
+    boundary: &str,
+) -> CapturedSyncOperation {
+    let mut observed = CapturedSyncOperation::image(op, boundary);
+    observed.native_scope = native.iter().map(image_scope).collect();
+    observed.required_native_scope = required;
+    if native.is_empty() {
+        observed = observed.omitted("Tracked subresource layouts already satisfy this bootstrap operation or aspects do not intersect");
+    }
+    observed
 }
 
 fn buffer_state_masks(state: BufferSyncState) -> (PipelineStage2Flags, AccessFlags2) {
@@ -376,7 +518,7 @@ fn vk_subresource_range(aspects: ImageAspects, op: &ImageSyncOp) -> vk::ImageSub
 }
 
 /// Layout a sync state's usage maps to.
-fn state_layout(state: ImageSyncState) -> vk::ImageLayout {
+pub(crate) fn state_layout(state: ImageSyncState) -> vk::ImageLayout {
     match state {
         ImageSyncState::Undefined => vk::ImageLayout::UNDEFINED,
         ImageSyncState::Access { usage, .. } => match usage {
@@ -502,6 +644,76 @@ mod tests {
                 crate::render_graph::ResourceHazardKind::ReadAfterWrite,
             ),
         }
+    }
+
+    #[test]
+    fn test_native_image_observation_retains_each_layout_piece_and_scope() {
+        let mut first_op = storage_op();
+        first_op.range =
+            crate::render_graph::ImageSubresourceRange::new(ImageAspects::COLOR, 0, 1, 0, 1);
+        let mut second_op = first_op;
+        second_op.range.base_mip_level = 1;
+        let image = VkImage::new(vk::Image::null());
+        let first = image_sync_barrier(
+            &first_op,
+            image,
+            ImageAspects::COLOR,
+            vk::ImageLayout::GENERAL,
+        )
+        .unwrap();
+        let second = image_sync_barrier(
+            &second_op,
+            image,
+            ImageAspects::COLOR,
+            vk::ImageLayout::UNDEFINED,
+        )
+        .unwrap();
+        let expected = vec![image_scope(&first), image_scope(&second)];
+        let observation = image_observation(
+            &storage_op(),
+            &[first, second],
+            expected.clone(),
+            "before_pass",
+        );
+        assert_eq!(observation.native_scope, expected);
+        assert_eq!(observation.required_native_scope, expected);
+        assert_eq!(
+            observation.native_scope[0].old_layout.as_deref(),
+            Some("GENERAL")
+        );
+        assert_eq!(
+            observation.native_scope[1].old_layout.as_deref(),
+            Some("UNDEFINED")
+        );
+        assert_ne!(
+            observation.native_scope[0].range,
+            observation.native_scope[1].range
+        );
+        let json = serde_json::to_string(&observation).unwrap();
+        assert!(!json.contains("0x"));
+        assert!(!json.contains("image_handle"));
+    }
+
+    #[test]
+    fn test_observation_exposes_changed_native_scope_without_changing_required_scope() {
+        let op = storage_op();
+        let image = VkImage::new(vk::Image::null());
+        let required =
+            image_sync_barrier(&op, image, ImageAspects::COLOR, vk::ImageLayout::GENERAL).unwrap();
+        let changed = required.clone().dst_stage(PipelineStage2Flags::empty());
+        let observation =
+            image_observation(&op, &[changed], vec![image_scope(&required)], "before_pass");
+        assert_ne!(observation.native_scope, observation.required_native_scope);
+        assert_eq!(observation.native_scope[0].destination_stages, 0);
+        assert_ne!(observation.required_native_scope[0].destination_stages, 0);
+    }
+
+    #[test]
+    fn test_satisfied_bootstrap_observation_is_explicitly_omitted() {
+        let observation = image_observation(&storage_op(), &[], vec![], "before_pass");
+        assert!(!observation.emitted);
+        assert!(observation.omission_reason.is_some());
+        assert!(observation.native_scope.is_empty());
     }
 
     #[test]

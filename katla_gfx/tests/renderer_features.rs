@@ -1,52 +1,49 @@
-//! Renderer capability contract for issue #91.
-//!
-//! A minimal backend implementing `GpuRenderer` must make an explicit
-//! decision for every operation: required operations reach the backend's own
-//! implementation (no silent inherited default), and optional operations
-//! either work or fail with `RendererError::UnsupportedFeature` before
-//! mutating any state. `supports_feature` must agree with that behavior.
-//!
-//! If the trait ever regains a successful no-op default, the recording
-//! assertions below fail: the call never reaches an explicit implementation.
+//! Minimal device implementation without scene or editor feature methods.
 
+use katla_gfx::renderer::texture_readback::{
+    GraphTextureSource, TextureReadbackData, TextureReadbackRegion, TextureReadbackTicket,
+};
+use katla_gfx::{BufferDesc, BufferHandle, BufferMemoryPolicy, BufferUsages};
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 
-use katla_gfx::renderer::frame_scope::{FrameAcquisition, FrameToken};
+use katla_gfx::renderer::frame_scope::{FrameAcquisition, FrameToken, PresentOutcome};
 use katla_gfx::{
-    DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuRenderer, GpuVendor, IndexType,
-    MaterialHandle, MeshHandle, MeshIndexElement, PipelineDescriptor, PipelineKind, PointLightGPU,
-    Rect, RendererError, RendererFeature, Size2D, SkeletonHandle, TextureDescriptor, TextureHandle,
-    UIDrawList, ViewportBuilder, ViewportHandle,
+    DrawList, GpuCapabilities, GpuRenderer, GpuVendor, IndexType, MaterialHandle, MeshHandle,
+    MeshIndexElement, PipelineDescriptor, RendererError, RendererFeature, Size2D, SkeletonHandle,
+    TextureDescriptor, TextureHandle,
 };
 
 /// Minimal backend: implements every required operation explicitly with
 /// recorded calls, declines every optional feature with a typed error.
 struct MockRenderer {
     capabilities: GpuCapabilities,
-    uniforms: FrameUniforms,
     calls: RefCell<Vec<&'static str>>,
     /// Bumped only by operations that claim to do real work. Optional
     /// operations must fail before touching it.
     generation: Cell<u64>,
     /// The currently open frame token from `acquire_frame`.
     active_frame: Option<FrameToken>,
+    buffers: HashMap<BufferHandle, (BufferDesc, Vec<u8>)>,
+    next_buffer: u32,
 }
 
 impl MockRenderer {
     fn new() -> Self {
         Self {
             capabilities: GpuCapabilities {
+                clip_y_down: false,
                 max_texture_size: 512,
                 max_bindless_textures: 16,
                 supports_compute: false,
                 max_frames_in_flight: 1,
                 vendor: GpuVendor::Unknown,
-                supports_light_culling: false,
             },
-            uniforms: FrameUniforms::default(),
             calls: RefCell::new(Vec::new()),
             generation: Cell::new(0),
             active_frame: None,
+            buffers: HashMap::new(),
+            next_buffer: 0,
         }
     }
 
@@ -55,7 +52,7 @@ impl MockRenderer {
     }
 
     fn was_called(&self, name: &str) -> bool {
-        self.calls.borrow().iter().any(|c| *c == name)
+        self.calls.borrow().contains(&name)
     }
 }
 
@@ -67,17 +64,137 @@ fn unsupported_message(error: &RendererError) -> &str {
 }
 
 impl GpuRenderer for MockRenderer {
-    fn create_buffer(
-        &mut self,
-        _desc: katla_gfx::BufferDesc,
-    ) -> Result<katla_gfx::BufferHandle, RendererError> {
+    fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle, RendererError> {
         self.record("create_buffer");
-        Ok(katla_gfx::BufferHandle::from_raw(0, 0))
+        let size = usize::try_from(desc.size)
+            .map_err(|_| RendererError::InvalidOperation("buffer size".into()))?;
+        let handle = BufferHandle::from_raw(self.next_buffer, 0);
+        self.next_buffer += 1;
+        self.buffers.insert(handle, (desc, vec![0; size]));
+        Ok(handle)
+    }
+    fn buffer_descriptor(&self, handle: BufferHandle) -> Option<BufferDesc> {
+        self.buffers.get(&handle).map(|entry| entry.0)
+    }
+    fn create_buffer_with_data(
+        &mut self,
+        desc: BufferDesc,
+        data: &[u8],
+    ) -> Result<BufferHandle, RendererError> {
+        if data.len() as u64 > desc.size {
+            return Err(RendererError::InvalidOperation(
+                "initial data exceeds allocation".into(),
+            ));
+        }
+        let handle = self.create_buffer(desc)?;
+        self.buffers.get_mut(&handle).unwrap().1[..data.len()].copy_from_slice(data);
+        Ok(handle)
+    }
+    fn write_buffer(
+        &mut self,
+        frame: &FrameToken,
+        handle: BufferHandle,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        if self.active_frame != Some(*frame) {
+            return Err(RendererError::InvalidOperation("frame not acquired".into()));
+        }
+        let entry = self
+            .buffers
+            .get_mut(&handle)
+            .ok_or_else(|| RendererError::StaleHandle {
+                resource: "buffer".into(),
+                detail: format!("{handle:?}"),
+            })?;
+        if entry.0.memory != BufferMemoryPolicy::CpuVisible {
+            return Err(RendererError::InvalidOperation(
+                "buffer not CPU writable".into(),
+            ));
+        }
+        let start = usize::try_from(offset)
+            .map_err(|_| RendererError::InvalidOperation("offset overflow".into()))?;
+        let end = start
+            .checked_add(data.len())
+            .ok_or_else(|| RendererError::InvalidOperation("range overflow".into()))?;
+        let destination = entry
+            .1
+            .get_mut(start..end)
+            .ok_or_else(|| RendererError::InvalidOperation("range exceeds allocation".into()))?;
+        destination.copy_from_slice(data);
+        self.record("write_buffer");
+        Ok(())
+    }
+    fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError> {
+        self.record("destroy_buffer");
+        self.buffers.remove(&handle);
+        Ok(())
+    }
+    fn frame_slot_count(&self) -> usize {
+        1
+    }
+    fn skeleton_buffer_handle(
+        &mut self,
+        _frame: &FrameToken,
+        _skeleton: SkeletonHandle,
+    ) -> Result<BufferHandle, RendererError> {
+        Err(RendererError::UnsupportedFeature(
+            "mock has no skeleton storage".into(),
+        ))
+    }
+    fn read_buffer_completed(
+        &mut self,
+        handle: BufferHandle,
+        range: katla_gfx::render_graph::BufferByteRange,
+    ) -> Result<Option<Vec<u8>>, RendererError> {
+        let entry = self
+            .buffers
+            .get(&handle)
+            .ok_or_else(|| RendererError::StaleHandle {
+                resource: "buffer".into(),
+                detail: format!("{handle:?}"),
+            })?;
+        if entry.0.memory != BufferMemoryPolicy::Readback {
+            return Err(RendererError::InvalidOperation(
+                "buffer not a readback allocation".into(),
+            ));
+        }
+        let start = usize::try_from(range.offset)
+            .map_err(|_| RendererError::InvalidOperation("offset overflow".into()))?;
+        let size = usize::try_from(range.size)
+            .map_err(|_| RendererError::InvalidOperation("size overflow".into()))?;
+        let end = start
+            .checked_add(size)
+            .ok_or_else(|| RendererError::InvalidOperation("range overflow".into()))?;
+        let bytes = entry
+            .1
+            .get(start..end)
+            .ok_or_else(|| RendererError::InvalidOperation("range exceeds allocation".into()))?;
+        Ok(Some(bytes.to_vec()))
     }
 
-    fn destroy_buffer(&mut self, _handle: katla_gfx::BufferHandle) -> Result<(), RendererError> {
-        self.record("destroy_buffer");
-        Ok(())
+    fn graph_texture_source(
+        &self,
+        _resource: katla_gfx::render_graph::ResourceId,
+    ) -> Option<GraphTextureSource> {
+        None
+    }
+    fn queue_texture_readback(
+        &mut self,
+        _source: GraphTextureSource,
+        _region: TextureReadbackRegion,
+    ) -> Result<TextureReadbackTicket, RendererError> {
+        Err(RendererError::UnsupportedFeature(
+            "mock has no texture readback".into(),
+        ))
+    }
+    fn poll_texture_readback(
+        &mut self,
+        _ticket: TextureReadbackTicket,
+    ) -> Result<Option<TextureReadbackData>, RendererError> {
+        Err(RendererError::UnsupportedFeature(
+            "mock has no texture readback".into(),
+        ))
     }
 
     fn swapchain_extent(&self) -> Size2D {
@@ -110,68 +227,37 @@ impl GpuRenderer for MockRenderer {
 
     fn acquire_frame(&mut self) -> Result<FrameAcquisition, RendererError> {
         self.record("acquire_frame");
-        let token = FrameToken::new(0, self.generation.get());
+        self.generation.set(self.generation.get() + 1);
+        let token = FrameToken::new(0);
         self.active_frame = Some(token);
         Ok(FrameAcquisition::Ready(token))
     }
 
-    fn set_frame_uniforms(
-        &mut self,
-        _frame: &FrameToken,
-        uniforms: FrameUniforms,
-    ) -> Result<(), RendererError> {
-        self.record("set_frame_uniforms");
-        self.uniforms = uniforms;
-        Ok(())
-    }
-
     fn execute_draw_calls(
         &mut self,
-        _frame: &FrameToken,
+        frame: &FrameToken,
         _draw_list: &DrawList,
     ) -> Result<(), RendererError> {
+        if self.active_frame != Some(*frame) {
+            return Err(RendererError::InvalidOperation("frame not acquired".into()));
+        }
         self.record("execute_draw_calls");
         Ok(())
     }
 
-    fn draw(
-        &mut self,
-        _frame: &FrameToken,
-        _uniforms: &FrameUniforms,
-        _draw_calls: &[DrawCall],
-    ) -> Result<DrawList, RendererError> {
-        self.record("draw");
-        Ok(DrawList::default())
-    }
-
-    fn upload_lights(
-        &mut self,
-        _frame: &FrameToken,
-        _lights: &[PointLightGPU],
-    ) -> Result<(), RendererError> {
-        self.record("upload_lights");
-        Ok(())
-    }
-
-    fn upload_shadow_cascades(&mut self, _frame: &FrameToken) -> Result<(), RendererError> {
-        self.record("upload_shadow_cascades");
-        Ok(())
-    }
-
-    fn present(&mut self, _frame: FrameToken) -> Result<(), RendererError> {
+    fn present(&mut self, frame: FrameToken) -> Result<PresentOutcome, RendererError> {
+        if self.active_frame != Some(frame) {
+            return Err(RendererError::InvalidOperation("frame not acquired".into()));
+        }
         self.record("present");
         self.active_frame = None;
-        Ok(())
+        Ok(PresentOutcome::presented())
     }
 
     fn abort(&mut self, _frame: FrameToken) -> Result<(), RendererError> {
         self.record("abort");
         self.active_frame = None;
         Ok(())
-    }
-
-    fn frame_uniforms(&self) -> &FrameUniforms {
-        &self.uniforms
     }
 
     fn create_mesh<T, U>(
@@ -255,14 +341,6 @@ impl GpuRenderer for MockRenderer {
         self.record("set_material_textures");
     }
 
-    fn set_default_material(&mut self, _material: MaterialHandle) {
-        self.record("set_default_material");
-    }
-
-    fn default_material(&self) -> MaterialHandle {
-        MaterialHandle::from_raw(0, 0)
-    }
-
     fn recompile_materials_for_shader(&mut self, _shader_path: &std::path::Path) -> usize {
         self.record("recompile_materials_for_shader");
         0
@@ -284,83 +362,14 @@ impl GpuRenderer for MockRenderer {
         self.record("destroy_skeleton");
     }
 
-    fn create_viewport(&mut self) -> ViewportBuilder {
-        self.record("create_viewport");
-        ViewportBuilder::new()
-    }
-
-    fn viewport_count(&self) -> usize {
-        0
-    }
-
-    fn get_viewport(&self, _handle: ViewportHandle) -> Option<&katla_gfx::Viewport> {
-        None
-    }
-
-    fn viewport_extent(&self, _handle: ViewportHandle) -> Option<Size2D> {
-        None
-    }
-
-    fn destroy_viewport(&mut self, _handle: ViewportHandle) {
-        self.record("destroy_viewport");
-    }
-
     fn resize(&mut self, _width: u32, _height: u32) -> Result<(), RendererError> {
         self.record("resize");
         Ok(())
     }
 
-    fn recreate_scene_render_targets(&mut self, _width: u32, _height: u32) {
-        self.record("recreate_scene_render_targets");
-    }
-
-    fn update_shadows(&mut self, _light_direction: [f32; 3]) {
-        self.record("update_shadows");
-    }
-
     fn create_skeleton(&mut self, _joint_count: usize) -> Result<SkeletonHandle, RendererError> {
         self.record("create_skeleton");
         Ok(SkeletonHandle::from_raw(0, 0))
-    }
-
-    fn update_skeleton(&mut self, _handle: SkeletonHandle, _matrices: &[[f32; 16]]) {
-        self.record("update_skeleton");
-    }
-
-    fn init_particle_system(&mut self) -> Result<(), RendererError> {
-        Err(RendererError::UnsupportedFeature(
-            "mock backend has no particle system".into(),
-        ))
-    }
-
-    fn create_ui_font_atlas(
-        &mut self,
-        _width: u32,
-        _height: u32,
-        _data: &[u8],
-    ) -> Result<TextureHandle, RendererError> {
-        self.record("create_ui_font_atlas");
-        Ok(TextureHandle::from_raw(2, 0))
-    }
-
-    fn update_ui_font_atlas(&mut self, _width: u32, _height: u32, _data: &[u8]) {
-        self.record("update_ui_font_atlas");
-    }
-
-    fn ui_font_atlas_handle(&self) -> Option<TextureHandle> {
-        None
-    }
-
-    fn set_viewport_bindless_slot(&mut self, _slot: u32) {
-        self.record("set_viewport_bindless_slot");
-    }
-
-    fn render_ui_pass(&mut self, _draw_list: UIDrawList) {
-        self.record("render_ui_pass");
-    }
-
-    fn set_viewport_panel_rect(&mut self, _rect: Option<Rect>) {
-        self.record("set_viewport_panel_rect");
     }
 }
 
@@ -377,83 +386,125 @@ fn test_minimal_backend_reports_no_optional_features() {
 }
 
 #[test]
-fn test_unsupported_operations_fail_explicitly_without_mutation() {
+fn test_unsupported_texture_updates_do_not_mutate_backend() {
     let mut renderer = MockRenderer::new();
-    let shader_path = std::path::Path::new("test.wgsl");
-
-    let error = renderer.init_animation_pipeline(shader_path).unwrap_err();
-    assert!(unsupported_message(&error).contains("init_animation_pipeline"));
-
-    let error = renderer
-        .init_light_culling(64, 48, shader_path)
-        .unwrap_err();
-    assert!(unsupported_message(&error).contains("init_light_culling"));
-
-    let error = renderer.init_shadow_resources().unwrap_err();
-    assert!(unsupported_message(&error).contains("init_shadow_resources"));
-
-    let error = renderer
-        .init_pass_pipeline(PipelineKind::Sky, &[shader_path])
-        .unwrap_err();
-    assert!(unsupported_message(&error).contains("init_pass_pipeline"));
-
-    let error = renderer.init_particle_system().unwrap_err();
-    assert!(unsupported_message(&error).contains("particle"));
-
     let error = renderer
         .update_texture(TextureHandle::from_raw(0, 0), &[])
         .unwrap_err();
     assert!(unsupported_message(&error).contains("update_texture"));
-
-    let error = renderer.register_depth_textures_bindless().unwrap_err();
-    assert!(unsupported_message(&error).contains("register_depth_textures_bindless"));
-
-    assert_eq!(
-        renderer.generation.get(),
-        0,
-        "failed optional operations must not mutate backend state"
-    );
-    assert!(
-        renderer.calls.borrow().is_empty(),
-        "failed optional operations must not reach backend implementations"
-    );
+    let error = renderer
+        .update_texture_region(
+            TextureHandle::from_raw(0, 0),
+            katla_gfx::texture::TextureUploadRegion::base(&TextureDescriptor::rgba8_unorm(1, 1)),
+            &[],
+        )
+        .unwrap_err();
+    assert!(unsupported_message(&error).contains("subresource"));
+    assert_eq!(renderer.generation.get(), 0);
+    assert!(renderer.calls.borrow().is_empty());
 }
 
 #[test]
-fn test_required_operations_reach_explicit_implementations() {
+fn test_core_resources_work_without_editor_services() {
     let mut renderer = MockRenderer::new();
-
-    let frame = match renderer.acquire_frame().unwrap() {
-        FrameAcquisition::Ready(token) => token,
-        other => panic!("mock must acquire a frame, got {other:?}"),
+    let desc = BufferDesc::new(8, BufferUsages::STORAGE, BufferMemoryPolicy::CpuVisible);
+    let handle = renderer
+        .create_buffer_with_data(desc, &[1, 2, 3, 4])
+        .unwrap();
+    assert_eq!(renderer.buffer_descriptor(handle), Some(desc));
+    let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
+        panic!("frame unavailable")
     };
-    renderer.upload_lights(&frame, &[]).unwrap();
-    renderer.update_shadows([0.0, 1.0, 0.0]);
-    renderer.upload_shadow_cascades(&frame).unwrap();
-    renderer.set_viewport_bindless_slot(3);
-    renderer.render_ui_pass(UIDrawList::default());
-    renderer.set_viewport_panel_rect(None);
-    renderer.recreate_scene_render_targets(64, 48);
+    renderer
+        .write_buffer(&frame, handle, 4, &[5, 6, 7, 8])
+        .unwrap();
+    assert_eq!(renderer.buffers[&handle].1, [1, 2, 3, 4, 5, 6, 7, 8]);
+    assert!(renderer.was_called("create_buffer"));
+    assert!(renderer.was_called("write_buffer"));
+    assert_eq!(renderer.frame_slot_count(), 1);
     assert_eq!(
-        renderer.recompile_materials_for_shader(std::path::Path::new("x.wgsl")),
-        0
+        renderer
+            .present(frame)
+            .unwrap()
+            .surface
+            .expect("surface presentation"),
+        katla_gfx::SurfaceStatus::Presented
     );
+    assert!(renderer.write_buffer(&frame, handle, 0, &[9]).is_err());
+    renderer.destroy_buffer(handle).unwrap();
+    assert_eq!(renderer.buffer_descriptor(handle), None);
+    assert!(renderer.capture_submission_snapshot().is_none());
+}
 
-    for expected in [
-        "upload_lights",
-        "update_shadows",
-        "upload_shadow_cascades",
-        "set_viewport_bindless_slot",
-        "render_ui_pass",
-        "set_viewport_panel_rect",
-        "recreate_scene_render_targets",
-        "recompile_materials_for_shader",
-    ] {
-        assert!(
-            renderer.was_called(expected),
-            "{expected} never reached an explicit backend implementation"
-        );
-    }
+#[test]
+fn test_buffer_write_rejects_stale_frame_and_bounds_without_mutation() {
+    let mut renderer = MockRenderer::new();
+    let handle = renderer
+        .create_buffer(BufferDesc::new(
+            4,
+            BufferUsages::UNIFORM,
+            BufferMemoryPolicy::CpuVisible,
+        ))
+        .unwrap();
+    let FrameAcquisition::Ready(first) = renderer.acquire_frame().unwrap() else {
+        panic!("frame unavailable")
+    };
+    let FrameAcquisition::Ready(second) = renderer.acquire_frame().unwrap() else {
+        panic!("frame unavailable")
+    };
+    assert!(renderer.present(first).is_err());
+    assert_eq!(renderer.active_frame, Some(second));
+    assert!(!renderer.was_called("present"));
+    assert!(renderer.write_buffer(&first, handle, 0, &[1]).is_err());
+    assert!(renderer.write_buffer(&second, handle, 3, &[1, 2]).is_err());
+    assert!(
+        renderer
+            .write_buffer(&second, handle, u64::MAX, &[1])
+            .is_err()
+    );
+    assert_eq!(renderer.buffers[&handle].1, [0; 4]);
+    renderer.abort(second).unwrap();
+}
+
+#[test]
+fn test_completed_readback_requires_explicit_memory_policy_and_live_range() {
+    use katla_gfx::render_graph::BufferByteRange;
+    let mut renderer = MockRenderer::new();
+    let handle = renderer
+        .create_buffer_with_data(
+            BufferDesc::new(4, BufferUsages::READBACK, BufferMemoryPolicy::Readback),
+            &[3, 2, 1, 0],
+        )
+        .unwrap();
+    assert_eq!(
+        renderer
+            .read_buffer_completed(handle, BufferByteRange::new(1, 2))
+            .unwrap(),
+        Some(vec![2, 1])
+    );
+    assert!(
+        renderer
+            .read_buffer_completed(handle, BufferByteRange::new(3, 2))
+            .is_err()
+    );
+    renderer.destroy_buffer(handle).unwrap();
+    assert!(
+        renderer
+            .read_buffer_completed(handle, BufferByteRange::new(0, 4))
+            .is_err()
+    );
+    let ordinary = renderer
+        .create_buffer(BufferDesc::new(
+            4,
+            BufferUsages::STORAGE,
+            BufferMemoryPolicy::CpuVisible,
+        ))
+        .unwrap();
+    assert!(
+        renderer
+            .read_buffer_completed(ordinary, BufferByteRange::new(0, 4))
+            .is_err()
+    );
 }
 
 #[test]
@@ -470,4 +521,28 @@ fn test_mesh_index_format_absent_is_explicit() {
     let renderer = MockRenderer::new();
     assert_eq!(renderer.mesh_index_format(MeshHandle::from_raw(0, 0)), None);
     let _: Option<IndexType> = renderer.mesh_index_format(MeshHandle::from_raw(0, 0));
+}
+
+#[test]
+fn test_frame_tokens_have_unique_acquisition_identity_and_copy_preserves_ownership() {
+    let mut first = MockRenderer::new();
+    let mut second = MockRenderer::new();
+    let FrameAcquisition::Ready(first_frame) = first.acquire_frame().unwrap() else {
+        panic!("frame unavailable")
+    };
+    let FrameAcquisition::Ready(second_frame) = second.acquire_frame().unwrap() else {
+        panic!("frame unavailable")
+    };
+    assert_eq!(first_frame.slot(), second_frame.slot());
+    assert_ne!(first_frame, second_frame);
+    assert!(second.present(first_frame).is_err());
+    assert_eq!(second.active_frame, Some(second_frame));
+    assert!(!second.was_called("present"));
+    let copied = second_frame;
+    assert_eq!(
+        second.present(copied).unwrap().surface.unwrap(),
+        katla_gfx::SurfaceStatus::Presented
+    );
+    assert!(second.present(second_frame).is_err());
+    first.abort(first_frame).unwrap();
 }

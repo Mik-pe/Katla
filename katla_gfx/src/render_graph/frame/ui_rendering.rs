@@ -19,6 +19,23 @@ impl Frame<'_, VulkanRenderer> {
             return Ok(());
         }
 
+        let sampling = pass
+            .bindings
+            .samplers
+            .iter()
+            .find(|binding| binding.group == 0 && binding.binding == 1 && binding.stages.fragment)
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(
+                    "UI pass requires its explicit sampler at group 0 binding 1".into(),
+                )
+            })?
+            .sampling;
+        if sampling == crate::renderer::frame_bindings::SamplingMode::DepthComparison {
+            return Err(RenderGraphError::InvalidConfiguration(
+                "UI sampler must not compare depth".into(),
+            ));
+        }
+        let sampler = self.graphics_sampler(sampling)?;
         let material_handle = pass.material.ok_or(RenderGraphError::InvalidConfiguration(
             "UI pass has no material specified. Use .material() on UIPass.".to_string(),
         ))?;
@@ -117,12 +134,6 @@ impl Frame<'_, VulkanRenderer> {
 
         let extent = self.renderer.frame_context.extent;
 
-        if self.renderer.ui_renderer.font_atlas_handle().is_none() {
-            return Err(RenderGraphError::InvalidConfiguration(
-                "UI font atlas not initialized".to_string(),
-            ));
-        }
-
         // Bind UI descriptor sets (sampler, uniforms, instance storage buffer, bindless textures)
         // Use screen_size from draw list (logical pixels, matches vertex coordinates)
         // Both pipelines share the same descriptor set layout, so binding once is sufficient.
@@ -132,6 +143,7 @@ impl Frame<'_, VulkanRenderer> {
             pipeline_layout,
             ui_draw_list.screen_size,
             instance_buffer,
+            sampler,
         )?;
 
         for draw_cmd in &ui_draw_list.commands {
@@ -237,7 +249,10 @@ impl Frame<'_, VulkanRenderer> {
         let index_bytes = bytemuck::cast_slice(&ui_draw_list.indices);
 
         let (vb_handle, ib_handle, replaced_vb, replaced_ib) = {
-            let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+            let ui_resources = self
+                .renderer
+                .ui_renderer
+                .ui_resources_mut(&self.renderer.context);
 
             let vb = &mut ui_resources.vertex_buffers[frame_idx];
             let replaced_vb = vb.upload_data(vertex_bytes);
@@ -272,7 +287,10 @@ impl Frame<'_, VulkanRenderer> {
         let unit_quad_index_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES);
 
         let (instance_handle, quad_ib_handle, replaced_instance, replaced_quad) = {
-            let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+            let ui_resources = self
+                .renderer
+                .ui_renderer
+                .ui_resources_mut(&self.renderer.context);
 
             // Upload instance data
             let instance_ib = &mut ui_resources.instance_buffers[frame_idx];
@@ -313,7 +331,10 @@ impl Frame<'_, VulkanRenderer> {
         let quad_index_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES);
 
         let (quad_vb_handle, quad_ib_handle, replaced_vb, replaced_ib) = {
-            let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+            let ui_resources = self
+                .renderer
+                .ui_renderer
+                .ui_resources_mut(&self.renderer.context);
 
             let quad_vb = &mut ui_resources.unit_quad_vertex_buffers[frame_idx];
             let replaced_vb = quad_vb.upload_data(quad_vertex_bytes);
@@ -343,6 +364,7 @@ impl Frame<'_, VulkanRenderer> {
         pipeline_layout: vk::PipelineLayout,
         screen_size: [f32; 2],
         instance_buffer: Option<vk::Buffer>,
+        sampler: vk::Sampler,
     ) -> Result<(), RenderGraphError> {
         // Get the pipeline to access its descriptor set layouts (separate borrow to avoid conflicts)
         let descriptor_set_layout = {
@@ -369,6 +391,7 @@ impl Frame<'_, VulkanRenderer> {
             descriptor_set_layout,
             screen_size,
             instance_buffer,
+            sampler,
         )?;
 
         // Bind descriptor set 0 (sampler, uniforms)
@@ -387,8 +410,12 @@ impl Frame<'_, VulkanRenderer> {
         layout: vk::DescriptorSetLayout,
         screen_size: [f32; 2],
         instance_buffer: Option<vk::Buffer>,
+        sampler: vk::Sampler,
     ) -> Result<vk::DescriptorSet, RenderGraphError> {
-        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+        let ui_resources = self
+            .renderer
+            .ui_renderer
+            .ui_resources_mut(&self.renderer.context);
 
         // Ensure we have storage for this frame
         while ui_resources.descriptor_sets.len() <= frame_idx {
@@ -402,7 +429,7 @@ impl Frame<'_, VulkanRenderer> {
         let _ = ui_resources; // Release borrow before calling update
 
         if let Some(ds_handle) = descriptor_set_handle {
-            self.update_ui_descriptor_set(ds_handle, screen_size, instance_buffer)?;
+            self.update_ui_descriptor_set(ds_handle, screen_size, instance_buffer, sampler)?;
             return Ok(ds_handle);
         }
 
@@ -467,13 +494,16 @@ impl Frame<'_, VulkanRenderer> {
         );
 
         // Store descriptor set (owns pool, automatic cleanup)
-        let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+        let ui_resources = self
+            .renderer
+            .ui_renderer
+            .ui_resources_mut(&self.renderer.context);
         if frame_idx < ui_resources.descriptor_sets.len() {
             ui_resources.descriptor_sets[frame_idx] = Some(descriptor_set_wrapper);
         }
         let _ = ui_resources;
 
-        self.update_ui_descriptor_set(descriptor_set, screen_size, instance_buffer)?;
+        self.update_ui_descriptor_set(descriptor_set, screen_size, instance_buffer, sampler)?;
 
         Ok(descriptor_set)
     }
@@ -484,19 +514,25 @@ impl Frame<'_, VulkanRenderer> {
         descriptor_set: vk::DescriptorSet,
         screen_size: [f32; 2],
         instance_buffer: Option<vk::Buffer>,
+        sampler: vk::Sampler,
     ) -> Result<(), RenderGraphError> {
-        let sampler = self.renderer.bindless_manager.ui_sampler();
+        let frame_slot = self.current_frame();
 
         let uniform_data = [screen_size[0], screen_size[1], 1.0, 0.0];
         let uniform_bytes = bytemuck::cast_slice(&uniform_data);
 
         let uniform_buffer = {
-            let ui_resources = self.renderer.ui_renderer.ui_resources_mut();
+            let ui_resources = self
+                .renderer
+                .ui_renderer
+                .ui_resources_mut(&self.renderer.context);
 
             ui_resources
-                .uniform_buffer
-                .as_ref()
-                .expect("UI uniform buffer allocated in constructor")
+                .uniform_buffers
+                .get(frame_slot)
+                .ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration("UI frame slot unavailable".into())
+                })?
                 .0
         };
 
@@ -504,10 +540,12 @@ impl Frame<'_, VulkanRenderer> {
             let allocation = &self
                 .renderer
                 .ui_renderer
-                .ui_resources_mut()
-                .uniform_buffer
-                .as_ref()
-                .expect("UI uniform buffer allocated in constructor")
+                .ui_resources_mut(&self.renderer.context)
+                .uniform_buffers
+                .get(frame_slot)
+                .ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration("UI frame slot unavailable".into())
+                })?
                 .1;
             self.renderer.context.map_buffer(allocation)?
         };
@@ -515,6 +553,15 @@ impl Frame<'_, VulkanRenderer> {
         unsafe {
             std::ptr::copy_nonoverlapping(uniform_bytes.as_ptr(), uniform_ptr, uniform_bytes.len());
         }
+        let allocation = &self
+            .renderer
+            .ui_renderer
+            .ui_resources_mut(&self.renderer.context)
+            .uniform_buffers[frame_slot]
+            .1;
+        self.renderer
+            .context
+            .flush_mapped_memory(allocation, 0, uniform_bytes.len() as u64)?;
 
         let uniform_buffer_info = vk::DescriptorBufferInfo::default()
             .buffer(uniform_buffer)
@@ -522,7 +569,7 @@ impl Frame<'_, VulkanRenderer> {
             .range(uniform_bytes.len() as vk::DeviceSize);
 
         let image_info = vk::DescriptorImageInfo::default()
-            .sampler(sampler.vk())
+            .sampler(sampler)
             .image_view(vk::ImageView::null()) // Null for sampler-only write
             .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
 

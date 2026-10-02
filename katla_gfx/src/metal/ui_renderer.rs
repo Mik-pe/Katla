@@ -61,6 +61,16 @@ impl MetalUIRenderer {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn is_unallocated(&self) -> bool {
+        self.vertex_buffer.is_none()
+            && self.index_buffer.is_none()
+            && self.instance_buffer.is_none()
+            && self.unit_quad_vertex_buffer.is_none()
+            && self.unit_quad_index_buffer.is_none()
+            && self.instanced_pipeline.is_none()
+    }
+
     pub(crate) fn set_instanced_pipeline(&mut self, pipeline: MetalGraphicsPipeline) {
         self.instanced_pipeline = Some(pipeline);
     }
@@ -232,7 +242,20 @@ impl MetalUIRenderer {
             if cmd.count == 0 {
                 continue;
             }
-            plan.inline(16, 3, true, true);
+            let pipeline = if cmd.is_instanced {
+                self.instanced_pipeline.as_ref().unwrap_or(fallback)
+            } else {
+                fallback
+            };
+            for (index, stages) in super::graphics_packet::table_slots(
+                pipeline,
+                0,
+                3,
+                super::binding_schema::TableBindingKind::Buffer,
+                crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
+            ) {
+                plan.inline(16, index as usize, stages.vertex, stages.fragment);
+            }
             if cmd.is_instanced {
                 if cmd
                     .offset
@@ -247,14 +270,22 @@ impl MetalUIRenderer {
                     RendererError::InvalidOperation("UI instance buffer missing".into())
                 })?;
                 let stride = std::mem::size_of::<crate::vertex::VertexUIInstance>() as u64;
-                plan.buffer(
-                    instance,
-                    u64::from(cmd.offset) * stride,
-                    u64::from(cmd.count) * stride,
-                    11,
-                    true,
-                    false,
-                )?;
+                for (index, stages) in super::graphics_packet::table_slots(
+                    pipeline,
+                    0,
+                    4,
+                    super::binding_schema::TableBindingKind::Buffer,
+                    crate::backend::command::ShaderStages::VERTEX,
+                ) {
+                    plan.buffer(
+                        instance,
+                        u64::from(cmd.offset) * stride,
+                        u64::from(cmd.count) * stride,
+                        index as usize,
+                        stages.vertex,
+                        stages.fragment,
+                    )?;
+                }
                 plan.full_buffer(
                     self.unit_quad_vertex_buffer.as_ref().ok_or_else(|| {
                         RendererError::InvalidOperation("UI quad vertex buffer missing".into())
@@ -371,11 +402,23 @@ impl MetalUIRenderer {
                 }
 
                 // Instanced draw: bind instance buffer + unit quad, draw instanced
-                encoder.set_push_constants(
-                    bytemuck::cast_slice(&[ui_uniforms(draw_list)]),
+                let pipeline = self
+                    .instanced_pipeline
+                    .as_ref()
+                    .unwrap_or(non_instanced_pipeline);
+                for (index, stages) in super::graphics_packet::table_slots(
+                    pipeline,
+                    0,
                     3,
+                    super::binding_schema::TableBindingKind::Buffer,
                     crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
-                );
+                ) {
+                    encoder.set_push_constants(
+                        bytemuck::cast_slice(&[ui_uniforms(draw_list)]),
+                        index,
+                        stages,
+                    );
+                }
                 // Bind instance data as storage buffer at buffer 11 (vertex stage).
                 // Metal's instance_id starts from 0 regardless of baseInstance,
                 // so we bind the buffer with a byte offset so instance_data[0]
@@ -383,14 +426,22 @@ impl MetalUIRenderer {
                 let instance_offset =
                     cmd.offset as usize * std::mem::size_of::<crate::vertex::VertexUIInstance>();
                 if let Some(ref inst_buf) = self.instance_buffer {
-                    encoder.bind_storage_buffer_range_render(
-                        inst_buf,
-                        instance_offset as u64,
-                        u64::from(cmd.count)
-                            * std::mem::size_of::<crate::vertex::VertexUIInstance>() as u64,
-                        11,
+                    for (index, stages) in super::graphics_packet::table_slots(
+                        pipeline,
+                        0,
+                        4,
+                        super::binding_schema::TableBindingKind::Buffer,
                         crate::backend::command::ShaderStages::VERTEX,
-                    );
+                    ) {
+                        encoder.bind_storage_buffer_range_render(
+                            inst_buf,
+                            instance_offset as u64,
+                            u64::from(cmd.count)
+                                * std::mem::size_of::<crate::vertex::VertexUIInstance>() as u64,
+                            index,
+                            stages,
+                        );
+                    }
                 }
                 if let Some(ref quad_ib) = self.unit_quad_index_buffer {
                     encoder.bind_index_buffer(
@@ -411,11 +462,19 @@ impl MetalUIRenderer {
                 }
 
                 // Vertex-based draw: complex geometry
-                encoder.set_push_constants(
-                    bytemuck::cast_slice(&[ui_uniforms(draw_list)]),
+                for (index, stages) in super::graphics_packet::table_slots(
+                    non_instanced_pipeline,
+                    0,
                     3,
+                    super::binding_schema::TableBindingKind::Buffer,
                     crate::backend::command::ShaderStages::VERTEX_FRAGMENT,
-                );
+                ) {
+                    encoder.set_push_constants(
+                        bytemuck::cast_slice(&[ui_uniforms(draw_list)]),
+                        index,
+                        stages,
+                    );
+                }
                 // Re-bind original vertex/index buffers for complex geometry
                 if let Some(ref vb) = self.vertex_buffer {
                     encoder.bind_vertex_buffer(vb, 0, 10);

@@ -12,17 +12,15 @@ use crate::error::RendererError;
 use crate::handle::{BufferHandle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 use crate::render_graph::BufferDesc;
 use crate::renderer::features::RendererFeature;
-use crate::renderer::frame_scope::{FrameAcquisition, FrameToken};
+use crate::renderer::frame_scope::{FrameAcquisition, FrameToken, PresentOutcome};
 use crate::renderer::pipeline_descriptor::PipelineDescriptor;
-use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::registry::PrimitiveTopology;
-use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, UIDrawList};
+use crate::renderer::types::DrawList;
 use crate::texture::TextureDescriptor;
-use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
 /// Backend-agnostic renderer interface.
 ///
-/// Covers resource creation (meshes, textures, materials, skeletons, viewports),
+/// Covers resource creation (buffers, meshes, textures, materials and skeleton storage),
 /// the frame-scoped lifecycle, and teardown. All method signatures use
 /// Katla-native types only — no `vk::`, `ash::`, or Metal types appear in the trait.
 ///
@@ -33,8 +31,7 @@ use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 /// 1. [`GpuRenderer::acquire_frame`] — waits for a free frame slot (and, when
 ///    windowed, acquires the surface image), returning [`FrameAcquisition`]:
 ///    `Ready(token)`, `Unavailable`, or `OutOfDate`.
-/// 2. Frame-local writes take the token: `set_frame_uniforms`,
-///    `execute_draw_calls`/`draw`, `upload_lights`, `upload_shadow_cascades`.
+/// 2. Frame-local geometry uploads and generic buffer writes take the token.
 /// 3. The renderer's inherent `render` method executes the frame graph for the
 ///    token's frame.
 /// 4. [`GpuRenderer::present`] consumes the token: submit + present, identical
@@ -44,10 +41,6 @@ use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 /// nothing is submitted or presented and no slot is stranded. There is no
 /// implicit call-ordering path beside this one.
 pub trait GpuRenderer: Sized + 'static {
-    // ========================================================================
-    // Frame-Scoped Lifecycle
-    // ========================================================================
-
     /// Acquire one frame: wait for a free reusable slot and, when windowed,
     /// acquire the next surface image.
     ///
@@ -61,13 +54,6 @@ pub trait GpuRenderer: Sized + 'static {
     /// - `OutOfDate` — the surface is stale; recreate it and acquire again.
     fn acquire_frame(&mut self) -> Result<FrameAcquisition, RendererError>;
 
-    /// Set per-frame uniforms (camera, lighting) for this frame's slot.
-    fn set_frame_uniforms(
-        &mut self,
-        frame: &FrameToken,
-        uniforms: FrameUniforms,
-    ) -> Result<(), RendererError>;
-
     /// Write per-object draw data into this frame's slot storage.
     fn execute_draw_calls(
         &mut self,
@@ -75,43 +61,27 @@ pub trait GpuRenderer: Sized + 'static {
         draw_list: &DrawList,
     ) -> Result<(), RendererError>;
 
-    /// Convenience: set uniforms + write draw calls, return the DrawList.
-    fn draw(
-        &mut self,
-        frame: &FrameToken,
-        uniforms: &FrameUniforms,
-        draw_calls: &[DrawCall],
-    ) -> Result<DrawList, RendererError>;
-
-    /// Upload point light data for this frame's Forward+ culling.
-    fn upload_lights(
-        &mut self,
-        frame: &FrameToken,
-        lights: &[PointLightGPU],
-    ) -> Result<(), RendererError>;
-
-    /// Upload shadow cascade data to this frame's slot storage.
-    fn upload_shadow_cascades(&mut self, frame: &FrameToken) -> Result<(), RendererError>;
-
     /// Submit this frame's recorded work and present it. Consumes the token.
     ///
     /// Identical semantics on Vulkan and Metal: `present` returns after the
     /// submission is enqueued (Vulkan) or the presenting command buffer is
     /// committed (Metal), not after the GPU retires.
-    fn present(&mut self, frame: FrameToken) -> Result<(), RendererError>;
+    /// An outer error guarantees no GPU submission was accepted. Every successful
+    /// outcome requires the caller to advance its submitted-frame state, then
+    /// inspect the outcome's surface result for recreation or presentation failure.
+    fn present(&mut self, frame: FrameToken) -> Result<PresentOutcome, RendererError>;
 
     /// Abandon the frame without submitting or presenting. Consumes the token.
     fn abort(&mut self, frame: FrameToken) -> Result<(), RendererError>;
-
-    // ========================================================================
-    // Initialization & Queries
-    // ========================================================================
 
     /// Get the swapchain / surface extent (primary window size).
     fn swapchain_extent(&self) -> Size2D;
 
     /// Get the current frame index for double-buffered resources.
     fn current_frame(&self) -> usize;
+
+    /// Number of reusable submission slots, independent of surface image count.
+    fn frame_slot_count(&self) -> usize;
 
     /// Number of swapchain images.
     fn num_images(&self) -> usize;
@@ -121,6 +91,60 @@ pub trait GpuRenderer: Sized + 'static {
 
     /// Create a typed, backend-owned buffer that a render graph can import.
     fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle, RendererError>;
+
+    /// Describe a live buffer allocation without exposing its native representation.
+    fn buffer_descriptor(&self, handle: BufferHandle) -> Option<BufferDesc>;
+
+    /// Create and initialize a resource before it is used by a submitted frame.
+    ///
+    /// Device-local uploads complete before successful return. The allocation
+    /// and initial upload are atomic: failure does not register a partial resource.
+    fn create_buffer_with_data(
+        &mut self,
+        desc: BufferDesc,
+        data: &[u8],
+    ) -> Result<BufferHandle, RendererError>;
+
+    /// Write the acquired slot's CPU-visible buffer allocation.
+    ///
+    /// The backend validates bounds, CPU access and ownership; the operation must
+    /// never overwrite an allocation still read by another submitted frame.
+    fn write_buffer(
+        &mut self,
+        frame: &FrameToken,
+        handle: BufferHandle,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), RendererError>;
+
+    /// Read CPU-visible result bytes only after their exact last committed consumer retires.
+    ///
+    /// Returns None while its owner is pending. Rejects stale handles, out-of-bounds
+    /// ranges and allocations without the explicit Readback memory policy.
+    fn read_buffer_completed(
+        &mut self,
+        handle: BufferHandle,
+        range: crate::render_graph::BufferByteRange,
+    ) -> Result<Option<Vec<u8>>, RendererError>;
+
+    /// The latest committed export; aborted acquisitions never replace it.
+    fn graph_texture_source(
+        &self,
+        resource: crate::render_graph::ResourceId,
+    ) -> Option<super::texture_readback::GraphTextureSource>;
+
+    /// Queue a copy from an exact retained committed graph image.
+    fn queue_texture_readback(
+        &mut self,
+        source: super::texture_readback::GraphTextureSource,
+        region: super::texture_readback::TextureReadbackRegion,
+    ) -> Result<super::texture_readback::TextureReadbackTicket, RendererError>;
+
+    /// Poll without waiting; a completed result consumes its queued copy once.
+    fn poll_texture_readback(
+        &mut self,
+        ticket: super::texture_readback::TextureReadbackTicket,
+    ) -> Result<Option<super::texture_readback::TextureReadbackData>, RendererError>;
 
     /// Destroy a buffer after all submitted work using it has completed.
     fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError>;
@@ -141,22 +165,18 @@ pub trait GpuRenderer: Sized + 'static {
     /// that omits it fails to compile instead of silently misreporting.
     fn supports_feature(&self, feature: RendererFeature) -> bool;
 
-    // ========================================================================
-    // Frame Queries
-    // ========================================================================
-
-    /// Get the current frame uniforms.
-    fn frame_uniforms(&self) -> &FrameUniforms;
-
-    // ========================================================================
-    // Mesh Creation
-    // ========================================================================
+    /// Passive snapshot of observed native submission state; never waits for completion.
+    fn capture_submission_snapshot(
+        &self,
+    ) -> Option<crate::render_graph::capture::CapturedSubmission> {
+        None
+    }
 
     /// Create a mesh from typed vertex and index data.
     ///
-    /// The vertex type's trusted [`Vertex`] implementation declares the
+    /// The vertex type's trusted [`Vertex`](crate::vertex::Vertex) implementation declares the
     /// layout and attribute semantics; the index width comes from
-    /// [`MeshIndexElement`]. Topology and static usage are explicit mesh
+    /// [`MeshIndexElement`](crate::renderer::registry::MeshIndexElement). Topology and static usage are explicit mesh
     /// properties recorded on the mesh. Nothing is guessed from byte
     /// shapes, and validation failures return typed errors before any GPU
     /// upload. Failed creation registers nothing.
@@ -223,10 +243,6 @@ pub trait GpuRenderer: Sized + 'static {
         indices: &[u32],
     ) -> Result<(), RendererError>;
 
-    // ========================================================================
-    // Texture Creation & Queries
-    // ========================================================================
-
     /// Create a texture from a descriptor and pixel data.
     ///
     /// Fails with a typed error (invalid descriptor, allocation or upload
@@ -292,10 +308,6 @@ pub trait GpuRenderer: Sized + 'static {
     /// Get the default white texture handle.
     fn default_texture(&self) -> TextureHandle;
 
-    // ========================================================================
-    // Material Creation
-    // ========================================================================
-
     /// Compile a shader into a GPU pipeline and return a material handle.
     ///
     /// Takes a backend-neutral [`PipelineDescriptor`]: shader path and entry
@@ -315,12 +327,6 @@ pub trait GpuRenderer: Sized + 'static {
         textures: crate::renderer::registry::MaterialTextures,
     );
 
-    /// Set the default PBR material handle (called once during init).
-    fn set_default_material(&mut self, material: MaterialHandle);
-
-    /// Get the default PBR material handle.
-    fn default_material(&self) -> MaterialHandle;
-
     /// Recompile all materials compiled from the given shader file.
     ///
     /// Invalidates cached shader modules, re-reads the shader from disk,
@@ -330,10 +336,6 @@ pub trait GpuRenderer: Sized + 'static {
     /// recompilation support returns 0 from its own implementation rather
     /// than inheriting silence.
     fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize;
-
-    // ========================================================================
-    // Destruction
-    // ========================================================================
 
     /// Destroy a mesh.
     fn destroy_mesh(&mut self, handle: MeshHandle);
@@ -347,210 +349,18 @@ pub trait GpuRenderer: Sized + 'static {
     /// Destroy a skeleton.
     fn destroy_skeleton(&mut self, handle: SkeletonHandle);
 
-    // ========================================================================
-    // Viewport
-    // ========================================================================
-
-    /// Begin building a new viewport.
-    fn create_viewport(&mut self) -> ViewportBuilder;
-
-    /// Number of active viewports.
-    fn viewport_count(&self) -> usize;
-
-    /// Look up a viewport by handle.
-    fn get_viewport(&self, handle: ViewportHandle) -> Option<&Viewport>;
-
-    /// Look up a viewport extent by handle.
-    fn viewport_extent(&self, handle: ViewportHandle) -> Option<Size2D>;
-
-    /// Destroy a viewport.
-    fn destroy_viewport(&mut self, handle: ViewportHandle);
-
-    // ========================================================================
-    // Frame Graph
-    // ========================================================================
-
-    /// Recreate swapchain after resize. Returns updated texture names and slots.
+    /// Recreate the output surface at the requested physical pixel extent.
     fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError>;
-
-    /// Recreate the 3D-scene render targets (depth, HDR, picking) at the given
-    /// size, independent of the swapchain. Under the editor the scene is
-    /// composed for the viewport panel's aspect ratio, so its render targets
-    /// must be sized to the panel — not the window — to avoid stretching the
-    /// scene across the full drawable and then cropping.
-    ///
-    /// Required with no default. A backend whose scene targets are
-    /// frame-graph transients (sized via the frame graph) implements this as
-    /// an explicit documented no-op instead of inheriting silence.
-    fn recreate_scene_render_targets(&mut self, width: u32, height: u32);
-
-    // ========================================================================
-    // Shadows
-    // ========================================================================
-
-    /// Update shadow cascade view-projection matrices from light direction.
-    ///
-    /// Required: every backend implements this explicitly.
-    fn update_shadows(&mut self, light_direction: [f32; 3]);
-
-    /// Get the base bindless index for per-frame depth textures.
-    /// Actual index for frame N is `base + N`. Returns `None` if not registered.
-    fn depth_texture_base_index(&self) -> Option<u32> {
-        None
-    }
-
-    /// Get the bindless slot index of the offscreen viewport texture.
-    /// The editor UI uses this to display the 3D scene in the viewport panel.
-    fn viewport_bindless_index(&self) -> Option<u32> {
-        None
-    }
-
-    /// Register per-frame depth textures with the bindless system.
-    /// Returns the base bindless slot index.
-    ///
-    /// Optional ([`RendererFeature::DepthBindlessRegistration`]): the default
-    /// fails with `UnsupportedFeature` before touching any state.
-    fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {
-        Err(RendererError::UnsupportedFeature(
-            "register_depth_textures_bindless not supported".into(),
-        ))
-    }
-
-    /// Get the bindless slot index of the HDR geometry render target.
-    /// Used by the tonemapping shader to sample the HDR scene.
-    fn geometry_hdr_bindless_index(&self) -> Option<u32> {
-        None
-    }
-
-    // ========================================================================
-    // Animation
-    // ========================================================================
-
-    /// Initialize the GPU animation compute pipeline.
-    /// `shader_path` is an absolute or relative path to the WGSL shader.
-    ///
-    /// Optional ([`RendererFeature::AnimationCompute`]): the default fails
-    /// with `UnsupportedFeature` before touching any state.
-    fn init_animation_pipeline(
-        &mut self,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Err(RendererError::UnsupportedFeature(
-            "init_animation_pipeline not implemented for this backend".into(),
-        ))
-    }
-
-    // ========================================================================
-    // Pipeline Initialization
-    // ========================================================================
-
-    /// Initialize Forward+ light culling for the given output size.
-    ///
-    /// Optional ([`RendererFeature::LightCulling`]): the default fails with
-    /// `UnsupportedFeature` before touching any state.
-    fn init_light_culling(
-        &mut self,
-        _width: u32,
-        _height: u32,
-        _shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        Err(RendererError::UnsupportedFeature(
-            "init_light_culling not implemented for this backend".into(),
-        ))
-    }
-
-    /// Initialize shadow-map resources.
-    ///
-    /// Optional ([`RendererFeature::ShadowMaps`]): the default fails with
-    /// `UnsupportedFeature` before touching any state.
-    fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
-        Err(RendererError::UnsupportedFeature(
-            "init_shadow_resources not implemented for this backend".into(),
-        ))
-    }
-
-    /// Initialize a GPU pipeline by kind.
-    ///
-    /// Consolidates the individual `init_*_pipeline` methods into a single entry
-    /// point. The `shader_paths` slice length depends on the kind:
-    ///
-    /// - **1 path**: Shadow, ShadowSkinned, DepthPrepass, DepthPrepassSkinned,
-    ///   DepthPrepassBillboard, Picking, PickingSkinned, Sky, Tonemap
-    /// - **2 paths**: StencilIndicator (base + skinned)
-    /// - **4 paths**: Outline (stencil_mark + stencil_mark_skinned + outline_draw + outline_draw_skinned)
-    ///
-    /// Optional ([`RendererFeature::PassPipelines`]): the default fails with
-    /// `UnsupportedFeature` before touching any state.
-    fn init_pass_pipeline(
-        &mut self,
-        _kind: PipelineKind,
-        _shader_paths: &[&std::path::Path],
-    ) -> Result<(), RendererError> {
-        Err(RendererError::UnsupportedFeature(
-            "init_pass_pipeline not implemented for this backend".into(),
-        ))
-    }
-
-    /// Store the bindless slot of the viewport texture for UI composition.
-    ///
-    /// Required with no default. A backend that resolves the viewport texture
-    /// through graph bindings instead of a stored slot implements this as an
-    /// explicit documented no-op.
-    fn set_viewport_bindless_slot(&mut self, slot: u32);
-
-    // ========================================================================
-    // UI Rendering
-    // ========================================================================
-
-    /// Queue a UI draw list for rendering in the next frame.
-    ///
-    /// Required with no default. Gated by
-    /// [`RendererFeature::DirectUiPass`]: backends that render UI through the
-    /// frame graph implement this as an explicit documented no-op and report
-    /// the feature as unsupported.
-    fn render_ui_pass(&mut self, draw_list: UIDrawList);
-
-    // ========================================================================
-    // Skeleton
-    // ========================================================================
 
     /// Create a GPU skeleton buffer for skeletal animation.
     fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError>;
 
-    /// Upload joint matrices to a skeleton.
-    fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]);
-
-    // ========================================================================
-    // Particles (optional — Metal may return errors/no-ops initially)
-    // ========================================================================
-
-    /// Initialize the global particle system.
-    fn init_particle_system(&mut self) -> Result<(), RendererError>;
-
-    // ========================================================================
-    // Font Atlas
-    // ========================================================================
-
-    /// Create or replace the UI font atlas texture.
-    ///
-    /// Fails with a typed error instead of installing a placeholder.
-    /// Failed creation changes nothing.
-    fn create_ui_font_atlas(
+    /// Import the acquired slot's skeleton storage into a graph without native handles.
+    fn skeleton_buffer_handle(
         &mut self,
-        width: u32,
-        height: u32,
-        data: &[u8],
-    ) -> Result<TextureHandle, RendererError>;
-
-    /// Update the existing font atlas texture in-place.
-    fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]);
-
-    /// Get the font atlas texture handle, if one has been created.
-    fn ui_font_atlas_handle(&self) -> Option<TextureHandle>;
-
-    // ========================================================================
-    // GPU Timestamp Queries (Profiling)
-    // ========================================================================
+        frame: &FrameToken,
+        skeleton: SkeletonHandle,
+    ) -> Result<BufferHandle, RendererError>;
 
     /// Begin a timestamp query with the given label.
     ///
@@ -573,466 +383,5 @@ pub trait GpuRenderer: Sized + 'static {
     /// support.
     fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
         Vec::new()
-    }
-
-    // ========================================================================
-    // Viewport Panel Rect
-    // ========================================================================
-
-    /// Set the viewport panel bounds in physical pixel coordinates.
-    /// When Some, the 3D scene is restricted to this rect. When None, full-screen.
-    ///
-    /// Required with no default. A backend that sizes its scene targets
-    /// through [`GpuRenderer::recreate_scene_render_targets`] instead of a
-    /// per-frame rect implements this as an explicit documented no-op.
-    fn set_viewport_panel_rect(&mut self, rect: Option<crate::rect::Rect>);
-}
-
-// ---------------------------------------------------------------------------
-// VulkanRenderer impl — delegates to existing methods.
-// Feature-gated behind vulkan since VulkanRenderer is vulkan-only.
-// ---------------------------------------------------------------------------
-
-use crate::renderer::VulkanRenderer;
-
-impl GpuRenderer for VulkanRenderer {
-    fn acquire_frame(&mut self) -> Result<FrameAcquisition, RendererError> {
-        super::frame_lifecycle::acquire_frame(self)
-    }
-
-    fn create_buffer(&mut self, desc: BufferDesc) -> Result<BufferHandle, RendererError> {
-        VulkanRenderer::create_buffer(self, desc)
-    }
-
-    fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError> {
-        VulkanRenderer::destroy_buffer(self, handle)
-    }
-
-    fn set_frame_uniforms(
-        &mut self,
-        frame: &FrameToken,
-        uniforms: FrameUniforms,
-    ) -> Result<(), RendererError> {
-        self.frame_write_check(frame)?;
-        VulkanRenderer::set_frame_uniforms(self, uniforms);
-        Ok(())
-    }
-
-    fn execute_draw_calls(
-        &mut self,
-        frame: &FrameToken,
-        draw_list: &DrawList,
-    ) -> Result<(), RendererError> {
-        self.frame_write_check(frame)?;
-        VulkanRenderer::execute_draw_calls(self, draw_list)
-    }
-
-    fn draw(
-        &mut self,
-        frame: &FrameToken,
-        uniforms: &FrameUniforms,
-        draw_calls: &[DrawCall],
-    ) -> Result<DrawList, RendererError> {
-        self.frame_write_check(frame)?;
-        VulkanRenderer::draw(self, uniforms, draw_calls)
-    }
-
-    fn upload_lights(
-        &mut self,
-        frame: &FrameToken,
-        lights: &[PointLightGPU],
-    ) -> Result<(), RendererError> {
-        self.frame_write_check(frame)?;
-        VulkanRenderer::upload_lights(self, lights);
-        Ok(())
-    }
-
-    fn upload_shadow_cascades(&mut self, frame: &FrameToken) -> Result<(), RendererError> {
-        self.frame_write_check(frame)?;
-        VulkanRenderer::upload_shadow_cascades(self);
-        Ok(())
-    }
-
-    fn present(&mut self, frame: FrameToken) -> Result<(), RendererError> {
-        VulkanRenderer::present_frame(self, frame)
-    }
-
-    fn abort(&mut self, frame: FrameToken) -> Result<(), RendererError> {
-        super::frame_lifecycle::abort_frame(self, frame);
-        Ok(())
-    }
-
-    fn swapchain_extent(&self) -> Size2D {
-        VulkanRenderer::swapchain_extent(self)
-    }
-
-    fn current_frame(&self) -> usize {
-        VulkanRenderer::current_frame(self)
-    }
-
-    fn num_images(&self) -> usize {
-        VulkanRenderer::num_images(self)
-    }
-
-    fn wait_for_device(&self) {
-        VulkanRenderer::wait_for_device(self);
-    }
-
-    fn destroy(&mut self) {
-        VulkanRenderer::destroy(self);
-    }
-
-    fn capabilities(&self) -> &crate::renderer::types::GpuCapabilities {
-        &self.capabilities
-    }
-
-    fn supports_feature(&self, feature: crate::renderer::features::RendererFeature) -> bool {
-        use crate::renderer::features::RendererFeature;
-        match feature {
-            // Vulkan renders UI through the frame graph (`frame.submit_ui()`),
-            // not through a direct queued UI pass.
-            RendererFeature::DirectUiPass | RendererFeature::TextureSubresourceUpload => false,
-            RendererFeature::AnimationCompute
-            | RendererFeature::LightCulling
-            | RendererFeature::PassPipelines
-            | RendererFeature::ShadowMaps
-            | RendererFeature::ParticleSystem
-            | RendererFeature::TimestampQueries
-            | RendererFeature::TextureInPlaceUpdate
-            | RendererFeature::DepthBindlessRegistration => true,
-        }
-    }
-
-    fn frame_uniforms(&self) -> &FrameUniforms {
-        VulkanRenderer::frame_uniforms(self)
-    }
-
-    fn create_mesh<T, U>(
-        &mut self,
-        vertices: &[T],
-        indices: &[U],
-        topology: PrimitiveTopology,
-    ) -> Result<MeshHandle, RendererError>
-    where
-        T: crate::vertex::Vertex,
-        U: crate::renderer::registry::MeshIndexElement,
-    {
-        VulkanRenderer::create_mesh(self, vertices, indices, topology)
-    }
-
-    fn mesh_index_format(&self, mesh: MeshHandle) -> Option<crate::backend::command::IndexType> {
-        VulkanRenderer::mesh_index_format(self, mesh)
-    }
-
-    fn mesh_vertex_count(&self, mesh: MeshHandle) -> Option<u32> {
-        VulkanRenderer::mesh_vertex_count(self, mesh)
-    }
-
-    fn mesh_index_count(&self, mesh: MeshHandle) -> Option<u32> {
-        VulkanRenderer::mesh_index_count(self, mesh)
-    }
-
-    fn create_mesh_dynamic(
-        &mut self,
-        descriptor: &crate::renderer::registry::MeshDescriptor,
-        vertex_data: &[u8],
-        indices: &[u32],
-    ) -> Result<MeshHandle, RendererError> {
-        VulkanRenderer::create_mesh_dynamic(self, descriptor, vertex_data, indices)
-    }
-
-    fn update_mesh_dynamic(
-        &mut self,
-        mesh: MeshHandle,
-        vertex_data: &[u8],
-        vertex_count: u32,
-        indices: &[u32],
-    ) -> Result<(), RendererError> {
-        VulkanRenderer::update_mesh_dynamic(self, mesh, vertex_data, vertex_count, indices)
-    }
-
-    fn create_texture(
-        &mut self,
-        desc: &TextureDescriptor,
-        data: &[u8],
-    ) -> Result<TextureHandle, RendererError> {
-        VulkanRenderer::create_texture(self, desc, data)
-    }
-
-    fn create_texture_solid(&mut self, color: [u8; 4]) -> Result<TextureHandle, RendererError> {
-        VulkanRenderer::create_texture_solid(self, color)
-    }
-
-    fn update_texture(&mut self, handle: TextureHandle, data: &[u8]) -> Result<(), RendererError> {
-        let texture =
-            self.texture_manager
-                .get_texture(handle)
-                .ok_or_else(|| RendererError::StaleHandle {
-                    resource: "texture".to_string(),
-                    detail: format!("{handle:?} in update_texture"),
-                })?;
-        texture.update_data(data)
-    }
-
-    fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
-        VulkanRenderer::get_bindless_slot(self, handle)
-    }
-
-    fn get_texture_at_slot(&self, slot: u32) -> Option<TextureHandle> {
-        VulkanRenderer::get_texture_at_slot(self, slot)
-    }
-
-    fn get_texture_bindless_index(&self, handle: TextureHandle) -> u32 {
-        VulkanRenderer::get_texture_bindless_index(self, handle)
-    }
-
-    fn default_texture(&self) -> TextureHandle {
-        VulkanRenderer::default_texture(self)
-    }
-
-    fn recreate_scene_render_targets(&mut self, width: u32, height: u32) {
-        if let Err(error) = unsafe { self.context.device.device_wait_idle() } {
-            log::error!("Failed to wait before resizing scene targets: {error}");
-            return;
-        }
-        self.frame_context
-            .resize_scene_depth(ash::vk::Extent2D { width, height });
-        if let Some(base) = self.depth_texture_base_index {
-            for (frame, texture) in self.frame_context.depth_render_textures.iter().enumerate() {
-                if let Err(error) = self
-                    .bindless_manager
-                    .update_texture(base + frame as u32, texture.image_view.vk())
-                {
-                    log::error!("Failed to refresh scene depth binding: {error}");
-                }
-            }
-        }
-        self.resize_light_culling(width, height);
-    }
-
-    fn compile_material(
-        &mut self,
-        descriptor: &PipelineDescriptor,
-    ) -> Result<MaterialHandle, RendererError> {
-        use crate::renderer::pipeline_descriptor::PipelineStages;
-
-        descriptor.validate()?;
-        if !descriptor.specialization.is_empty() {
-            return Err(RendererError::UnsupportedFeature(
-                "specialization constants are not yet plumbed into the Vulkan material compiler"
-                    .to_string(),
-            ));
-        }
-        let PipelineStages::Graphics { .. } = &descriptor.stages else {
-            return Err(RendererError::UnsupportedFeature(
-                "compute pipelines are not yet supported by compile_material".to_string(),
-            ));
-        };
-
-        VulkanRenderer::compile_material_descriptor(self, descriptor)
-    }
-
-    fn set_material_textures(
-        &mut self,
-        material: MaterialHandle,
-        textures: crate::renderer::registry::MaterialTextures,
-    ) {
-        VulkanRenderer::set_material_textures(self, material, textures);
-    }
-
-    fn set_default_material(&mut self, material: MaterialHandle) {
-        self.default_material_handle = Some(material);
-    }
-
-    fn default_material(&self) -> MaterialHandle {
-        VulkanRenderer::default_material(self)
-    }
-
-    fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize {
-        VulkanRenderer::recompile_materials_for_shader(self, shader_path)
-    }
-
-    fn destroy_mesh(&mut self, handle: MeshHandle) {
-        VulkanRenderer::destroy_mesh(self, handle);
-    }
-
-    fn destroy_material(&mut self, handle: MaterialHandle) {
-        VulkanRenderer::destroy_material(self, handle);
-    }
-
-    fn destroy_texture(&mut self, handle: TextureHandle) {
-        VulkanRenderer::destroy_texture(self, handle);
-    }
-
-    fn destroy_skeleton(&mut self, handle: SkeletonHandle) {
-        VulkanRenderer::destroy_skeleton(self, handle);
-    }
-
-    fn create_viewport(&mut self) -> ViewportBuilder {
-        VulkanRenderer::create_viewport(self)
-    }
-
-    fn viewport_count(&self) -> usize {
-        VulkanRenderer::viewport_count(self)
-    }
-
-    fn get_viewport(&self, handle: ViewportHandle) -> Option<&Viewport> {
-        VulkanRenderer::get_viewport(self, handle)
-    }
-
-    fn viewport_extent(&self, handle: ViewportHandle) -> Option<Size2D> {
-        VulkanRenderer::viewport_extent(self, handle)
-    }
-
-    fn destroy_viewport(&mut self, handle: ViewportHandle) {
-        VulkanRenderer::destroy_viewport(self, handle);
-    }
-
-    fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
-        VulkanRenderer::recreate_swapchain(self, Size2D::new(width, height))
-    }
-
-    fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
-        VulkanRenderer::create_skeleton(self, joint_count)
-    }
-
-    fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        VulkanRenderer::update_skeleton(self, handle, matrices);
-    }
-
-    fn init_particle_system(&mut self) -> Result<(), RendererError> {
-        VulkanRenderer::init_particle_system(self)
-    }
-
-    fn create_ui_font_atlas(
-        &mut self,
-        width: u32,
-        height: u32,
-        data: &[u8],
-    ) -> Result<TextureHandle, RendererError> {
-        VulkanRenderer::create_ui_font_atlas(self, width, height, data)
-    }
-
-    fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
-        VulkanRenderer::update_ui_font_atlas(self, width, height, data);
-    }
-
-    fn ui_font_atlas_handle(&self) -> Option<TextureHandle> {
-        self.ui_renderer.font_atlas()
-    }
-
-    // -- Shadows --
-
-    fn update_shadows(&mut self, light_direction: [f32; 3]) {
-        VulkanRenderer::update_shadows(self, light_direction);
-    }
-
-    fn depth_texture_base_index(&self) -> Option<u32> {
-        VulkanRenderer::depth_texture_base_index(self)
-    }
-
-    fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {
-        VulkanRenderer::register_depth_textures_bindless(self)
-    }
-
-    // -- Animation --
-
-    fn init_animation_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        VulkanRenderer::init_animation_pipeline(self, shader_path)
-    }
-
-    // -- UI Rendering --
-
-    fn render_ui_pass(&mut self, _draw_list: UIDrawList) {
-        // Vulkan renders UI through the frame graph via frame.submit_ui(),
-        // not through a direct render_ui_pass call.
-    }
-
-    fn set_viewport_panel_rect(&mut self, _rect: Option<crate::rect::Rect>) {
-        // Vulkan sizes its 3D-scene targets through
-        // recreate_scene_render_targets; no per-frame panel rect is stored.
-    }
-
-    fn set_viewport_bindless_slot(&mut self, _slot: u32) {
-        // Vulkan resolves the viewport texture through frame-graph bindings,
-        // not through a stored bindless slot.
-    }
-
-    // -- Pipeline Initialization --
-
-    fn init_light_culling(
-        &mut self,
-        width: u32,
-        height: u32,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        VulkanRenderer::init_light_culling(self, width, height, shader_path)
-    }
-
-    fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
-        VulkanRenderer::init_shadow_resources(self, None, crate::shadow::CascadeParams::default())
-    }
-
-    fn init_pass_pipeline(
-        &mut self,
-        kind: PipelineKind,
-        shader_paths: &[&std::path::Path],
-    ) -> Result<(), RendererError> {
-        match kind {
-            PipelineKind::Shadow => VulkanRenderer::init_shadow_pipeline(self, shader_paths[0]),
-            PipelineKind::ShadowSkinned => {
-                VulkanRenderer::init_shadow_pipeline_skinned(self, shader_paths[0])
-            }
-            PipelineKind::DepthPrepass => {
-                VulkanRenderer::init_depth_prepass_pipeline(self, shader_paths[0])
-            }
-            PipelineKind::DepthPrepassSkinned => {
-                VulkanRenderer::init_depth_prepass_skinned_pipeline(self, shader_paths[0])
-            }
-            PipelineKind::DepthPrepassBillboard => {
-                VulkanRenderer::init_depth_prepass_billboard_pipeline(self, shader_paths[0])
-            }
-            PipelineKind::Outline => VulkanRenderer::init_outline_pipelines(
-                self,
-                shader_paths[0],
-                shader_paths[1],
-                shader_paths[2],
-                shader_paths[3],
-            ),
-            PipelineKind::StencilIndicator => VulkanRenderer::init_stencil_indicator_pipelines(
-                self,
-                shader_paths[0],
-                shader_paths[1],
-            ),
-            PipelineKind::Picking
-            | PipelineKind::PickingSkinned
-            | PipelineKind::Sky
-            | PipelineKind::Tonemap => Ok(()),
-        }
-    }
-
-    fn begin_timestamp(&mut self, label: &str) {
-        if let Some(ref mut tq) = self.timestamp_queries {
-            tq.begin(label);
-        }
-    }
-
-    fn end_timestamp(&mut self, label: &str) {
-        if let Some(ref mut tq) = self.timestamp_queries {
-            tq.end(label);
-        }
-    }
-
-    fn read_timestamps(&self) -> Vec<crate::renderer::types::GpuTimestamp> {
-        // Need &mut to read results; use get_mut pattern through interior mutability
-        // Since this is called on &self, we return cached results
-        if let Some(ref tq) = self.timestamp_queries {
-            tq.cached_results()
-        } else {
-            Vec::new()
-        }
     }
 }

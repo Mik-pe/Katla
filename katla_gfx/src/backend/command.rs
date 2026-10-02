@@ -1,5 +1,8 @@
+#[cfg(target_os = "macos")]
 use crate::backend::traits::GpuBackend;
+#[cfg(target_os = "macos")]
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
+#[cfg(target_os = "macos")]
 use crate::texture::ImageFormat;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -65,6 +68,7 @@ impl ShaderStages {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub struct ColorAttachmentInfo<B: GpuBackend> {
     pub view: B::ImageView,
     pub load_op: LoadOp,
@@ -72,6 +76,7 @@ pub struct ColorAttachmentInfo<B: GpuBackend> {
     pub clear_value: ClearValue,
 }
 
+#[cfg(target_os = "macos")]
 pub struct DepthAttachmentInfo<B: GpuBackend> {
     pub view: B::ImageView,
     pub load_op: LoadOp,
@@ -81,6 +86,7 @@ pub struct DepthAttachmentInfo<B: GpuBackend> {
     pub stencil_ops: crate::render_pass::AttachmentOps,
 }
 
+#[cfg(target_os = "macos")]
 pub struct RenderPassInfo<B: GpuBackend> {
     pub color_attachments: Vec<ColorAttachmentInfo<B>>,
     pub depth_attachment: Option<DepthAttachmentInfo<B>>,
@@ -89,8 +95,9 @@ pub struct RenderPassInfo<B: GpuBackend> {
     pub debug_label: Option<&'static str>,
 }
 
+#[cfg(all(test, target_os = "macos"))]
 impl<B: GpuBackend> RenderPassInfo<B> {
-    /// Unlabeled pass info with the given attachments (tests + internal call sites).
+    /// Unlabeled pass info for native fixtures.
     pub(crate) fn unlabeled(
         color_attachments: Vec<ColorAttachmentInfo<B>>,
         depth_attachment: Option<DepthAttachmentInfo<B>>,
@@ -103,16 +110,7 @@ impl<B: GpuBackend> RenderPassInfo<B> {
     }
 }
 
-pub struct BufferImageCopy {
-    pub buffer_offset: u64,
-    pub image_width: u32,
-    pub image_height: u32,
-    pub image_depth: u32,
-    pub mip_level: u32,
-    pub base_array_layer: u32,
-    pub layer_count: u32,
-}
-
+#[cfg(target_os = "macos")]
 pub trait GpuCommandBuffer<B: GpuBackend>: Sized {
     fn begin(&mut self);
     fn end(&mut self);
@@ -122,18 +120,14 @@ pub trait GpuCommandBuffer<B: GpuBackend>: Sized {
     fn begin_blit_pass(&mut self) -> B::BlitEncoder;
     /// Compute pass carrying a deterministic label for GPU captures and
     /// encoder-execution diagnostics.
+    #[cfg(test)]
     fn begin_compute_pass_with_label(&mut self, label: &'static str) -> B::ComputeEncoder;
     /// Blit pass carrying a deterministic label for GPU captures and
     /// encoder-execution diagnostics.
     fn begin_blit_pass_with_label(&mut self, label: &'static str) -> B::BlitEncoder;
-    fn copy_buffer_to_texture(
-        &mut self,
-        src: &B::Buffer,
-        dst: &B::Image,
-        regions: &[BufferImageCopy],
-    );
 }
 
+#[cfg(target_os = "macos")]
 pub trait GpuRenderEncoder<B: GpuBackend>: Sized {
     fn end_encoding(self);
     fn bind_graphics_pipeline(&mut self, pipeline: &B::GraphicsPipeline);
@@ -146,8 +140,6 @@ pub trait GpuRenderEncoder<B: GpuBackend>: Sized {
         index: u32,
         stages: ShaderStages,
     );
-    fn bind_texture(&mut self, view: &B::ImageView, index: u32, stages: ShaderStages);
-    fn bind_sampler(&mut self, sampler: &B::Sampler, index: u32, stages: ShaderStages);
     fn set_push_constants(&mut self, data: &[u8], index: u32, stages: ShaderStages);
     fn set_viewport(
         &mut self,
@@ -159,7 +151,6 @@ pub trait GpuRenderEncoder<B: GpuBackend>: Sized {
         max_depth: f32,
     );
     fn set_scissor(&mut self, x: u32, y: u32, width: u32, height: u32);
-    fn set_depth_bias(&mut self, bias: f32, slope: f32, clamp: f32);
     fn draw(
         &mut self,
         vertex_count: u32,
@@ -178,16 +169,21 @@ pub trait GpuRenderEncoder<B: GpuBackend>: Sized {
     fn set_stencil_reference_value(&mut self, reference: u32);
 }
 
+#[cfg(target_os = "macos")]
 pub trait GpuComputeEncoder<B: GpuBackend>: Sized {
     fn end_encoding(self);
     fn bind_compute_pipeline(&mut self, pipeline: &B::ComputePipeline);
+    #[cfg(test)]
     fn bind_storage_buffer(&mut self, buffer: &B::Buffer, offset: u64, index: u32);
+    #[cfg(test)]
     fn bind_texture(&mut self, view: &B::ImageView, index: u32);
+    #[cfg(test)]
     fn bind_sampler(&mut self, sampler: &B::Sampler, index: u32);
     fn set_push_constants(&mut self, data: &[u8], index: u32);
     fn dispatch(&mut self, group_count_x: u32, group_count_y: u32, group_count_z: u32);
 }
 
+#[cfg(target_os = "macos")]
 pub trait GpuBlitEncoder<B: GpuBackend>: Sized {
     fn end_encoding(self);
     fn copy_buffer_to_buffer(
@@ -198,12 +194,7 @@ pub trait GpuBlitEncoder<B: GpuBackend>: Sized {
         dst_offset: u64,
         size: u64,
     );
-    fn copy_buffer_to_texture(
-        &mut self,
-        src: &B::Buffer,
-        dst: &B::Image,
-        regions: &[BufferImageCopy],
-    );
     /// Copy the full base-mip surface of `src` into `dst` (same format and extent).
+    #[cfg(test)]
     fn copy_texture_to_texture(&mut self, src: &B::Image, dst: &B::Image);
 }

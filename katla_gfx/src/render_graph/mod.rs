@@ -44,9 +44,8 @@ pub mod access;
 mod allocation_plan;
 mod buffer_history;
 mod builder;
+pub mod capture;
 pub(crate) use buffer_history::BufferExecutionHistory;
-#[cfg(test)]
-mod builtin_compute_tests;
 mod compiler;
 mod compute;
 #[cfg(test)]
@@ -56,7 +55,10 @@ mod error;
 mod execution_plan_diagnostics;
 mod frame_graph;
 mod handles;
+#[cfg(test)]
+mod native_compute_tests;
 mod pass;
+mod pass_bindings;
 mod passes;
 mod resource;
 mod sync_plan;
@@ -87,8 +89,8 @@ pub use backend::{
 };
 pub use builder::{PassBuilder, SimplePass};
 pub use compute::{
-    BuiltinBuffer, BuiltinComputeKernel, ComputeBinding, ComputeBindingLayout, ComputeCommand,
-    ComputeDispatch, ComputeDispatchSize, ComputeInterface, ComputeKernel, ComputePipelineDesc,
+    ComputeBinding, ComputeBindingLayout, ComputeCommand, ComputeDispatch, ComputeDispatchSize,
+    ComputeInterface, ComputePipelineDesc,
 };
 pub use diagnostics::{
     RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAllocationSlot,
@@ -110,13 +112,14 @@ pub use error::{GraphValidationError, RenderGraphError};
 pub use frame::Frame;
 #[cfg(target_os = "macos")]
 pub(crate) use frame::PassExecutionData;
+pub(crate) use frame::state_layout;
 pub use frame_graph::{FrameGraph, FrameGraphBuilder};
 pub use handles::{PassId, ResourceId};
 pub use pass::{PassDesc, PassKind, PassType};
 pub use passes::{
     CompositePass, ComputePass, DepthPrepass, FullscreenPass, GeometryPass, OutlinePass,
-    OverlayParams, OverlayPass, ParticlePass, ShadowPass, StencilIndicatorPass, TonemapOperator,
-    TonemapParams, UIPass, ViewportPass, ViewportRect,
+    OverlayPass, ParticlePass, ShadowPass, StencilIndicatorPass, UIPass, ViewportPass,
+    ViewportRect,
 };
 pub use resource::{
     BufferDesc, BufferMemoryPolicy, BufferUsages, GraphBufferDesc, GraphResourceDesc,
@@ -127,8 +130,8 @@ pub use sync_plan::{
 };
 pub(crate) use sync_plan::{ImageSyncOp, ImageSyncState, ResourceHazardKind, SyncPlan, SyncReason};
 pub use trace::{
-    EmittedPassOutcome, FRAME_DEPTH_TARGET, ResourceExecutionTrace, ResourceExecutionTraceEntry,
-    TraceDivergence, compare_with_compiled,
+    EmittedPassOutcome, ResourceExecutionTrace, ResourceExecutionTraceEntry, TraceDivergence,
+    compare_with_compiled,
 };
 pub use transient_texture::TransientTexture;
 

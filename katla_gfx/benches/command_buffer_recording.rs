@@ -28,8 +28,8 @@ impl MockDrawCommand {
             layout: (index % 4) as u64,
             storage_ds: 1,
             bindless_ds: 2,
-            skeleton_ds: if index % 10 == 0 { 3 } else { 0 },
-            is_skinned: index % 10 == 0,
+            skeleton_ds: if index.is_multiple_of(10) { 3 } else { 0 },
+            is_skinned: index.is_multiple_of(10),
             pos_buf: 100 + index as u64,
             norm_buf: 200 + index as u64,
             tang_buf: 300 + index as u64,
@@ -100,7 +100,7 @@ fn record_parallel(commands: &[MockDrawCommand]) -> u64 {
 fn bench_sequential_recording(c: &mut Criterion) {
     let mut group = c.benchmark_group("cb_recording_sequential");
     for size in [100, 500, 1000] {
-        let commands: Vec<MockDrawCommand> = (0..size).map(|i| MockDrawCommand::new(i)).collect();
+        let commands: Vec<MockDrawCommand> = (0..size).map(MockDrawCommand::new).collect();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
             b.iter(|| black_box(record_sequential(&commands)));
@@ -112,7 +112,7 @@ fn bench_sequential_recording(c: &mut Criterion) {
 fn bench_parallel_recording(c: &mut Criterion) {
     let mut group = c.benchmark_group("cb_recording_parallel");
     for size in [100, 500, 1000] {
-        let commands: Vec<MockDrawCommand> = (0..size).map(|i| MockDrawCommand::new(i)).collect();
+        let commands: Vec<MockDrawCommand> = (0..size).map(MockDrawCommand::new).collect();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, _| {
             b.iter(|| black_box(record_parallel(&commands)));
@@ -124,7 +124,7 @@ fn bench_parallel_recording(c: &mut Criterion) {
 fn bench_sequential_vs_parallel(c: &mut Criterion) {
     let mut group = c.benchmark_group("cb_recording_comparison");
     for size in [100, 500, 1000] {
-        let commands: Vec<MockDrawCommand> = (0..size).map(|i| MockDrawCommand::new(i)).collect();
+        let commands: Vec<MockDrawCommand> = (0..size).map(MockDrawCommand::new).collect();
 
         group.bench_with_input(BenchmarkId::new("sequential", size), &size, |b, _| {
             b.iter(|| black_box(record_sequential(&commands)));

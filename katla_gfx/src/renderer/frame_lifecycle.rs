@@ -10,11 +10,37 @@ use ash::vk;
 use crate::error::RendererError;
 use crate::render_graph::Frame;
 use crate::renderer::VulkanRenderer;
-use crate::renderer::frame_scope::{FrameAcquisition, FrameToken};
-use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, InstanceData};
+use crate::renderer::frame_scope::{FrameAcquisition, FrameToken, PresentOutcome, SurfaceStatus};
+use crate::renderer::types::{DrawList, InstanceData};
 
 /// Marker methods implementing the frame-scoped contract on Vulkan.
 impl VulkanRenderer {
+    fn commit_graph_buffer_consumers(&mut self) {
+        self.commit_texture_exports();
+        let fence = self.swap_data.in_flight_fence();
+        self.last_submission = Some((
+            self.current_frame(),
+            self.frame_generation.saturating_sub(1),
+            Some(fence),
+        ));
+        for buffer in self.pending_graph_buffers.drain() {
+            self.graph_buffer_consumers.insert(buffer, Some(fence));
+        }
+    }
+
+    fn retire_buffer_consumers(&mut self, fence: vk::Fence) {
+        for owner in self.graph_buffer_consumers.values_mut() {
+            if *owner == Some(fence) {
+                *owner = None;
+            }
+        }
+        if let Some((_, _, owner)) = &mut self.last_submission
+            && *owner == Some(fence)
+        {
+            *owner = None;
+        }
+    }
+
     pub(crate) fn frame_check(&self, frame: &FrameToken) -> Result<(), RendererError> {
         match &self.active_frame {
             Some(active) if active == frame => Ok(()),
@@ -46,6 +72,8 @@ impl VulkanRenderer {
                 self.current_frame()
             );
         }
+        self.pending_texture_exports.clear();
+        self.pending_graph_buffers.clear();
         self.frame_rendered = false;
         self.frame_poisoned = None;
         self.frame_context.pending_output_contents.set(None);
@@ -64,6 +92,16 @@ impl VulkanRenderer {
     /// a slot an older submission still references.
     pub(crate) fn wait_for_frame(&mut self) -> Result<(), RendererError> {
         self.swap_data.wait_for_fence(&self.context.device)?;
+        let fence = self.swap_data.in_flight_fence();
+        self.retire_buffer_consumers(fence);
+        let slot = self.current_frame();
+        self.graphics_descriptor_sets[slot].clear();
+        self.graphics_constants[slot].clear();
+        for view in self.graphics_image_views[slot].drain(..) {
+            unsafe {
+                self.context.device.destroy_image_view(view, None);
+            }
+        }
         let expired_slots = self.retirements.drain_completed(
             self.swap_data.frame_counter(),
             self.swap_data.frames_in_flight(),
@@ -74,34 +112,6 @@ impl VulkanRenderer {
         // Release staged mesh uploads whose copy submissions finished.
         self.context.drain_completed_staged_uploads();
         Ok(())
-    }
-
-    /// Set frame-level uniforms for the current frame slot.
-    pub(crate) fn set_frame_uniforms(&mut self, mut uniforms: FrameUniforms) {
-        // Get frame index from swap_data (the source of truth for frame advancement)
-        let frame_idx = self.swap_data.current_frame();
-
-        // Inject depth texture bindless index into light_intensity.y for screen-space effects
-        if let Some(depth_base) = self.depth_texture_base_index {
-            uniforms.light_intensity = [
-                uniforms.light_intensity[0],
-                (depth_base + frame_idx as u32) as f32,
-                uniforms.light_intensity[2],
-                uniforms.light_intensity[3],
-            ];
-        }
-
-        // Write frame uniforms to storage buffer for current frame
-        self.storage_manager
-            .update_from_frame_uniforms(frame_idx, &uniforms);
-
-        // Store for reference
-        self.frame_uniforms = uniforms;
-    }
-
-    /// Get the current frame uniforms (view/proj matrices, camera, lighting).
-    pub fn frame_uniforms(&self) -> &FrameUniforms {
-        &self.frame_uniforms
     }
 
     /// Write all per-object data from draw calls to this slot's storage buffer.
@@ -149,24 +159,6 @@ impl VulkanRenderer {
             }
         }
         Ok(())
-    }
-
-    /// Simple immediate mode draw: set uniforms + write draw calls, return the DrawList.
-    pub(crate) fn draw(
-        &mut self,
-        uniforms: &FrameUniforms,
-        draw_calls: &[DrawCall],
-    ) -> Result<DrawList, RendererError> {
-        self.set_frame_uniforms(uniforms.clone());
-
-        let mut draw_list = DrawList::new();
-        for draw in draw_calls {
-            draw_list.push(draw.clone());
-        }
-
-        self.execute_draw_calls(&draw_list)?;
-
-        Ok(draw_list)
     }
 
     /// Execute the frame graph for an open frame: begin the command buffer,
@@ -235,6 +227,7 @@ impl VulkanRenderer {
             })?;
         }
 
+        self.prepare_texture_exports(frame_graph, image_index as usize);
         self.frame_rendered = true;
         Ok(())
     }
@@ -255,7 +248,19 @@ impl VulkanRenderer {
     /// Present implementation: submit the recorded work and present. Consumes
     /// the open frame; the slot advances and becomes busy until a later
     /// acquire waits for its fence.
-    pub(crate) fn present_frame(&mut self, frame: FrameToken) -> Result<(), RendererError> {
+    pub(crate) fn present_frame(
+        &mut self,
+        frame: FrameToken,
+    ) -> Result<PresentOutcome, RendererError> {
+        self.present_frame_impl(frame, None, None)
+    }
+
+    fn present_frame_impl(
+        &mut self,
+        frame: FrameToken,
+        injected_submit_error: Option<vk::Result>,
+        injected_surface_result: Option<Result<bool, vk::Result>>,
+    ) -> Result<PresentOutcome, RendererError> {
         self.frame_check(&frame)?;
         if let Some(reason) = self.frame_poisoned.take() {
             self.active_frame = None;
@@ -264,91 +269,111 @@ impl VulkanRenderer {
             )));
         }
         self.active_frame = None;
-
         let headless = self.frame_context.swapchain.is_none();
         let image_index = self
             .last_presented_image_index
             .unwrap_or(frame.slot() as u32);
-        let frame_idx = self.current_frame();
+        let slot = self.current_frame();
+        let fence = self.swap_data.in_flight_fence();
+        unsafe { self.context.device.reset_fences(&[fence]) }.map_err(|error| {
+            RendererError::VulkanError("Failed to reset frame fence".into(), error)
+        })?;
 
-        unsafe {
-            self.context
-                .device
-                .reset_fences(&[self.swap_data.in_flight_fence()])
-        }
-        .map_err(|e| RendererError::VulkanError("Failed to reset frame fence".into(), e))?;
-
-        if headless {
-            self.context.gfx_queue.submit(
-                &[&self.frame_context.command_buffers[frame_idx]],
-                &[],
-                &[],
-                self.swap_data.in_flight_fence(),
-            );
-            self.commit_output_state(image_index as usize, vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
-            self.swap_data.wait_for_fence(&self.context.device)?;
-            self.swap_data.step_frame();
-            return Ok(());
-        }
-
-        let swapchain = self
-            .frame_context
-            .swapchain
-            .as_ref()
-            .expect("window swapchain");
-        let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
-        let signal_semaphores = [render_finished_semaphore];
-        let swapchains = [swapchain.swapchain];
-        let image_indices = [image_index];
-
-        let wait_semaphores = [self.swap_data.image_available_semaphore()];
-        self.context.gfx_queue.submit_with_stages(
-            &[&self.frame_context.command_buffers[frame_idx]],
-            &wait_semaphores,
-            &signal_semaphores,
-            self.swap_data.in_flight_fence(),
-            &[vk::PipelineStageFlags::ALL_COMMANDS],
+        let wait = (!headless).then(|| self.swap_data.image_available_semaphore());
+        let signal = (!headless).then(|| self.swap_data.render_finished_semaphore(image_index));
+        let submit = injected_submit_error.map_or_else(
+            || {
+                self.context.gfx_queue.submit_with_stages(
+                    &[&self.frame_context.command_buffers[slot]],
+                    wait.as_slice(),
+                    signal.as_slice(),
+                    fence,
+                    if headless {
+                        &[]
+                    } else {
+                        &[vk::PipelineStageFlags::ALL_COMMANDS]
+                    },
+                )
+            },
+            Err,
         );
-
-        self.commit_output_state(image_index as usize, vk::ImageLayout::PRESENT_SRC_KHR);
-        let present_wait_semaphores = [render_finished_semaphore];
-        let present_info = vk::PresentInfoKHR::default()
-            .wait_semaphores(&present_wait_semaphores)
-            .swapchains(&swapchains)
-            .image_indices(&image_indices);
-
-        unsafe {
-            let present_result = swapchain
-                .swapchain_loader
-                .queue_present(self.context.gfx_queue.vk_queue(), &present_info);
-
-            match present_result {
-                Ok(is_suboptimal) => {
-                    // Suboptimal is very common on macOS/MoltenVK (especially first frame).
-                    // Still rendered successfully, but signal that swapchain should be recreated.
-                    if is_suboptimal {
-                        log::debug!("Present suboptimal, signaling swapchain recreation");
-                        self.swap_data.step_frame();
-                        return Err(RendererError::SwapchainOutOfDate);
-                    }
-                }
-                Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
-                    // Frame was presented but swapchain is stale, signal recreation.
-                    log::debug!("Present out of date, signaling swapchain recreation");
-                    self.swap_data.step_frame();
-                    return Err(RendererError::SwapchainOutOfDate);
-                }
-                Err(e) => {
-                    return Err(RendererError::SwapchainError(format!(
-                        "Failed to present: {:?}",
-                        e
-                    )));
-                }
+        if let Err(error) = submit {
+            self.retire_buffer_consumers(fence);
+            self.frame_clear();
+            self.surface_recreation_required = !headless;
+            if let Err(recovery) = self
+                .swap_data
+                .recover_unsubmitted_fence(&self.context.device)
+            {
+                log::error!("{recovery}");
             }
+            return Err(RendererError::VulkanError(
+                "Failed to submit frame".into(),
+                error,
+            ));
         }
 
+        self.commit_graph_buffer_consumers();
+        self.commit_output_state(
+            image_index as usize,
+            if headless {
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL
+            } else {
+                vk::ImageLayout::PRESENT_SRC_KHR
+            },
+        );
+        let surface = if headless {
+            match self.swap_data.wait_for_fence(&self.context.device) {
+                Ok(()) => {
+                    self.retire_buffer_consumers(fence);
+                    surface_status(injected_surface_result.unwrap_or(Ok(false)))
+                }
+                Err(error) => Err(error),
+            }
+        } else {
+            let swapchain = self
+                .frame_context
+                .swapchain
+                .as_ref()
+                .expect("window swapchain");
+            let signals = [self.swap_data.render_finished_semaphore(image_index)];
+            let swapchains = [swapchain.swapchain];
+            let indices = [image_index];
+            let info = vk::PresentInfoKHR::default()
+                .wait_semaphores(&signals)
+                .swapchains(&swapchains)
+                .image_indices(&indices);
+            surface_status(injected_surface_result.unwrap_or_else(|| unsafe {
+                swapchain
+                    .swapchain_loader
+                    .queue_present(self.context.gfx_queue.vk_queue(), &info)
+            }))
+        };
+        self.surface_recreation_required =
+            !headless && !matches!(surface, Ok(SurfaceStatus::Presented));
         self.swap_data.step_frame();
-        Ok(())
+        Ok(PresentOutcome { surface })
+    }
+
+    #[cfg(test)]
+    pub(super) fn present_frame_injected(
+        &mut self,
+        frame: FrameToken,
+        submit_error: Option<vk::Result>,
+        surface_result: Option<Result<bool, vk::Result>>,
+    ) -> Result<PresentOutcome, RendererError> {
+        self.present_frame_impl(frame, submit_error, surface_result)
+    }
+}
+
+fn surface_status(result: Result<bool, vk::Result>) -> Result<SurfaceStatus, RendererError> {
+    match result {
+        Ok(false) => Ok(SurfaceStatus::Presented),
+        Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Ok(SurfaceStatus::RecreateRequired),
+        Err(error) => Err(RendererError::VulkanError(
+            "Failed to present submitted frame".into(),
+            error,
+        )),
     }
 }
 
@@ -360,6 +385,9 @@ impl VulkanRenderer {
 pub(crate) fn acquire_frame(
     renderer: &mut VulkanRenderer,
 ) -> Result<FrameAcquisition, RendererError> {
+    if renderer.surface_recreation_required {
+        return Ok(FrameAcquisition::OutOfDate);
+    }
     // An unfinished frame from an earlier acquisition is abandoned here.
     renderer.frame_clear();
     renderer.wait_for_frame()?;
@@ -397,11 +425,7 @@ pub(crate) fn acquire_frame(
         None => renderer.last_presented_image_index = Some(renderer.current_frame() as u32),
     }
 
-    let token = FrameToken::new(renderer.current_frame(), renderer.frame_generation);
-    if let Some(buffers) = &mut renderer.animation_buffers {
-        buffers.set_frame_slot(token.slot());
-    }
-    renderer.light_culling.set_frame_slot(token.slot());
+    let token = FrameToken::new(renderer.current_frame());
     renderer.frame_generation += 1;
     renderer.active_frame = Some(token);
     Ok(FrameAcquisition::Ready(token))

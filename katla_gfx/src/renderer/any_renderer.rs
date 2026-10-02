@@ -9,11 +9,9 @@ use crate::handle::{BufferHandle, MaterialHandle, MeshHandle, SkeletonHandle, Te
 use crate::render_graph::BufferDesc;
 use crate::renderer::gpu_renderer::GpuRenderer;
 use crate::renderer::pipeline_descriptor::PipelineDescriptor;
-use crate::renderer::pipeline_kind::PipelineKind;
 use crate::renderer::registry::PrimitiveTopology;
-use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, PointLightGPU, UIDrawList};
+use crate::renderer::types::DrawList;
 use crate::texture::TextureDescriptor;
-use crate::viewport::{Viewport, ViewportBuilder, ViewportHandle};
 
 #[cfg(target_os = "macos")]
 use crate::metal::metal_renderer::MetalRenderer;
@@ -186,18 +184,6 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn set_frame_uniforms(
-        &mut self,
-        frame: &crate::renderer::frame_scope::FrameToken,
-        uniforms: FrameUniforms,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => GpuRenderer::set_frame_uniforms(r, frame, uniforms),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => GpuRenderer::set_frame_uniforms(r, frame, uniforms),
-        }
-    }
-
     fn execute_draw_calls(
         &mut self,
         frame: &crate::renderer::frame_scope::FrameToken,
@@ -210,46 +196,10 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn draw(
-        &mut self,
-        frame: &crate::renderer::frame_scope::FrameToken,
-        uniforms: &FrameUniforms,
-        draw_calls: &[DrawCall],
-    ) -> Result<DrawList, RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => GpuRenderer::draw(r, frame, uniforms, draw_calls),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => GpuRenderer::draw(r, frame, uniforms, draw_calls),
-        }
-    }
-
-    fn upload_lights(
-        &mut self,
-        frame: &crate::renderer::frame_scope::FrameToken,
-        lights: &[PointLightGPU],
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => GpuRenderer::upload_lights(r, frame, lights),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => GpuRenderer::upload_lights(r, frame, lights),
-        }
-    }
-
-    fn upload_shadow_cascades(
-        &mut self,
-        frame: &crate::renderer::frame_scope::FrameToken,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => GpuRenderer::upload_shadow_cascades(r, frame),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => GpuRenderer::upload_shadow_cascades(r, frame),
-        }
-    }
-
     fn present(
         &mut self,
         frame: crate::renderer::frame_scope::FrameToken,
-    ) -> Result<(), RendererError> {
+    ) -> Result<crate::renderer::frame_scope::PresentOutcome, RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => GpuRenderer::present(r, frame),
             #[cfg(target_os = "macos")]
@@ -308,6 +258,122 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn buffer_descriptor(&self, handle: BufferHandle) -> Option<BufferDesc> {
+        match self {
+            Self::Vulkan(renderer) => GpuRenderer::buffer_descriptor(renderer, handle),
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::buffer_descriptor(renderer, handle),
+        }
+    }
+
+    fn capture_submission_snapshot(
+        &self,
+    ) -> Option<crate::render_graph::capture::CapturedSubmission> {
+        match self {
+            Self::Vulkan(renderer) => GpuRenderer::capture_submission_snapshot(renderer),
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::capture_submission_snapshot(renderer),
+        }
+    }
+
+    fn create_buffer_with_data(
+        &mut self,
+        desc: BufferDesc,
+        data: &[u8],
+    ) -> Result<BufferHandle, RendererError> {
+        match self {
+            Self::Vulkan(renderer) => GpuRenderer::create_buffer_with_data(renderer, desc, data),
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::create_buffer_with_data(renderer, desc, data),
+        }
+    }
+
+    fn write_buffer(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        handle: BufferHandle,
+        offset: u64,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        match self {
+            Self::Vulkan(renderer) => {
+                GpuRenderer::write_buffer(renderer, frame, handle, offset, data)
+            }
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => {
+                GpuRenderer::write_buffer(renderer, frame, handle, offset, data)
+            }
+        }
+    }
+
+    fn read_buffer_completed(
+        &mut self,
+        handle: BufferHandle,
+        range: crate::render_graph::BufferByteRange,
+    ) -> Result<Option<Vec<u8>>, RendererError> {
+        match self {
+            Self::Vulkan(renderer) => GpuRenderer::read_buffer_completed(renderer, handle, range),
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::read_buffer_completed(renderer, handle, range),
+        }
+    }
+
+    fn graph_texture_source(
+        &self,
+        resource: crate::render_graph::ResourceId,
+    ) -> Option<super::texture_readback::GraphTextureSource> {
+        match self {
+            Self::Vulkan(renderer) => GpuRenderer::graph_texture_source(renderer, resource),
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::graph_texture_source(renderer, resource),
+        }
+    }
+
+    fn queue_texture_readback(
+        &mut self,
+        source: super::texture_readback::GraphTextureSource,
+        region: super::texture_readback::TextureReadbackRegion,
+    ) -> Result<super::texture_readback::TextureReadbackTicket, RendererError> {
+        match self {
+            Self::Vulkan(renderer) => GpuRenderer::queue_texture_readback(renderer, source, region),
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::queue_texture_readback(renderer, source, region),
+        }
+    }
+
+    fn poll_texture_readback(
+        &mut self,
+        ticket: super::texture_readback::TextureReadbackTicket,
+    ) -> Result<Option<super::texture_readback::TextureReadbackData>, RendererError> {
+        match self {
+            Self::Vulkan(renderer) => GpuRenderer::poll_texture_readback(renderer, ticket),
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::poll_texture_readback(renderer, ticket),
+        }
+    }
+
+    fn frame_slot_count(&self) -> usize {
+        match self {
+            Self::Vulkan(renderer) => GpuRenderer::frame_slot_count(renderer),
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::frame_slot_count(renderer),
+        }
+    }
+
+    fn skeleton_buffer_handle(
+        &mut self,
+        frame: &crate::renderer::frame_scope::FrameToken,
+        skeleton: SkeletonHandle,
+    ) -> Result<BufferHandle, RendererError> {
+        match self {
+            Self::Vulkan(renderer) => {
+                GpuRenderer::skeleton_buffer_handle(renderer, frame, skeleton)
+            }
+            #[cfg(target_os = "macos")]
+            Self::Metal(renderer) => GpuRenderer::skeleton_buffer_handle(renderer, frame, skeleton),
+        }
+    }
+
     fn destroy_buffer(&mut self, handle: BufferHandle) -> Result<(), RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => GpuRenderer::destroy_buffer(r, handle),
@@ -337,14 +403,6 @@ impl GpuRenderer for AnyRenderer {
             AnyRenderer::Vulkan(r) => r.supports_feature(feature),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.supports_feature(feature),
-        }
-    }
-
-    fn frame_uniforms(&self) -> &FrameUniforms {
-        match self {
-            AnyRenderer::Vulkan(r) => r.frame_uniforms(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.frame_uniforms(),
         }
     }
 
@@ -532,22 +590,6 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn set_default_material(&mut self, material: MaterialHandle) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.set_default_material(material),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.set_default_material(material),
-        }
-    }
-
-    fn default_material(&self) -> MaterialHandle {
-        match self {
-            AnyRenderer::Vulkan(r) => r.default_material(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.default_material(),
-        }
-    }
-
     fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize {
         match self {
             AnyRenderer::Vulkan(r) => r.recompile_materials_for_shader(shader_path),
@@ -588,46 +630,6 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn create_viewport(&mut self) -> ViewportBuilder {
-        match self {
-            AnyRenderer::Vulkan(r) => r.create_viewport(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_viewport(),
-        }
-    }
-
-    fn viewport_count(&self) -> usize {
-        match self {
-            AnyRenderer::Vulkan(r) => r.viewport_count(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.viewport_count(),
-        }
-    }
-
-    fn get_viewport(&self, handle: ViewportHandle) -> Option<&Viewport> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.get_viewport(handle),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.get_viewport(handle),
-        }
-    }
-
-    fn viewport_extent(&self, handle: ViewportHandle) -> Option<crate::Size2D> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.viewport_extent(handle),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.viewport_extent(handle),
-        }
-    }
-
-    fn destroy_viewport(&mut self, handle: ViewportHandle) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.destroy_viewport(handle),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.destroy_viewport(handle),
-        }
-    }
-
     fn resize(&mut self, width: u32, height: u32) -> Result<(), RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => r.resize(width, height),
@@ -636,143 +638,11 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
-    fn recreate_scene_render_targets(&mut self, width: u32, height: u32) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.recreate_scene_render_targets(width, height),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.recreate_scene_render_targets(width, height),
-        }
-    }
-
-    fn update_shadows(&mut self, light_direction: [f32; 3]) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.update_shadows(light_direction),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.update_shadows(light_direction),
-        }
-    }
-
-    fn depth_texture_base_index(&self) -> Option<u32> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.depth_texture_base_index(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.depth_texture_base_index(),
-        }
-    }
-
-    fn viewport_bindless_index(&self) -> Option<u32> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.viewport_bindless_index(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.viewport_bindless_index(),
-        }
-    }
-
-    fn register_depth_textures_bindless(&mut self) -> Result<u32, RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.register_depth_textures_bindless(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.register_depth_textures_bindless(),
-        }
-    }
-
-    fn geometry_hdr_bindless_index(&self) -> Option<u32> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.geometry_hdr_bindless_index(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.geometry_hdr_bindless_index(),
-        }
-    }
-
-    fn init_animation_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_animation_pipeline(shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_animation_pipeline(shader_path),
-        }
-    }
-
-    fn init_pass_pipeline(
-        &mut self,
-        kind: PipelineKind,
-        shader_paths: &[&std::path::Path],
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_pass_pipeline(kind, shader_paths),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_pass_pipeline(kind, shader_paths),
-        }
-    }
-
-    fn render_ui_pass(&mut self, draw_list: UIDrawList) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.render_ui_pass(draw_list),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.render_ui_pass(draw_list),
-        }
-    }
-
     fn create_skeleton(&mut self, joint_count: usize) -> Result<SkeletonHandle, RendererError> {
         match self {
             AnyRenderer::Vulkan(r) => r.create_skeleton(joint_count),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.create_skeleton(joint_count),
-        }
-    }
-
-    fn update_skeleton(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.update_skeleton(handle, matrices),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.update_skeleton(handle, matrices),
-        }
-    }
-
-    fn init_particle_system(&mut self) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_particle_system(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_particle_system(),
-        }
-    }
-
-    fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => <VulkanRenderer as GpuRenderer>::init_shadow_resources(r),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => <MetalRenderer as GpuRenderer>::init_shadow_resources(r),
-        }
-    }
-
-    fn create_ui_font_atlas(
-        &mut self,
-        width: u32,
-        height: u32,
-        data: &[u8],
-    ) -> Result<TextureHandle, RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.create_ui_font_atlas(width, height, data),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.create_ui_font_atlas(width, height, data),
-        }
-    }
-
-    fn update_ui_font_atlas(&mut self, width: u32, height: u32, data: &[u8]) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.update_ui_font_atlas(width, height, data),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.update_ui_font_atlas(width, height, data),
-        }
-    }
-
-    fn ui_font_atlas_handle(&self) -> Option<TextureHandle> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.ui_font_atlas_handle(),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.ui_font_atlas_handle(),
         }
     }
 
@@ -797,22 +667,6 @@ impl GpuRenderer for AnyRenderer {
             AnyRenderer::Vulkan(r) => r.read_timestamps(),
             #[cfg(target_os = "macos")]
             AnyRenderer::Metal(r) => r.read_timestamps(),
-        }
-    }
-
-    fn set_viewport_panel_rect(&mut self, rect: Option<crate::rect::Rect>) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.set_viewport_panel_rect(rect),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.set_viewport_panel_rect(rect),
-        }
-    }
-
-    fn set_viewport_bindless_slot(&mut self, slot: u32) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.set_viewport_bindless_slot(slot),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.set_viewport_bindless_slot(slot),
         }
     }
 }
@@ -853,116 +707,11 @@ impl AnyRenderer {
         }
     }
 
-    /// Recreate the swapchain (Vulkan only).
-    /// Metal uses resize() + recreate_transient_textures() separately.
-    pub fn recreate_swapchain(&mut self, size: crate::Size2D) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.recreate_swapchain(size),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(_r) => Err(RendererError::InvalidOperation(
-                "Metal backend uses resize(), not recreate_swapchain()".into(),
-            )),
-        }
-    }
-
     // --- Metal-specific methods ---
 
     // --- Pipeline init methods (delegated to GpuRenderer trait) ---
 
-    pub fn init_light_culling(
-        &mut self,
-        width: u32,
-        height: u32,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(r) => r.init_light_culling(width, height, shader_path),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.init_light_culling(width, height, shader_path),
-        }
-    }
-
-    pub fn init_shadow_resources(&mut self) -> Result<(), RendererError> {
-        GpuRenderer::init_shadow_resources(self)
-    }
-
-    pub fn set_viewport_bindless_slot(&mut self, slot: u32) {
-        match self {
-            AnyRenderer::Vulkan(r) => r.set_viewport_bindless_slot(slot),
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.set_viewport_bindless_slot(slot),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn viewport_bindless_slot(&self) -> Option<u32> {
-        match self {
-            AnyRenderer::Vulkan(_) => None,
-            AnyRenderer::Metal(r) => r.viewport_bindless_slot,
-        }
-    }
-
     // --- Metal-specific methods (take Metal types, not in trait) ---
-
-    #[cfg(target_os = "macos")]
-    pub fn set_geometry_hdr_bindless_slot(&mut self, slot: u32) {
-        if let AnyRenderer::Metal(renderer) = self {
-            renderer.set_geometry_hdr_bindless_slot(slot);
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn init_sky_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(_) => Ok(()),
-            AnyRenderer::Metal(r) => r.init_sky_pipeline(shader_path),
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn init_tonemap_pipeline(
-        &mut self,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(_) => Ok(()),
-            AnyRenderer::Metal(r) => r.init_tonemap_pipeline(shader_path),
-        }
-    }
-
-    pub fn queue_metal_picking_readback(
-        &mut self,
-        _frame: usize,
-        _x: u32,
-        _y: u32,
-    ) -> Result<(), RendererError> {
-        match self {
-            AnyRenderer::Vulkan(_) => {
-                Err(RendererError::InvalidOperation("Not Metal backend".into()))
-            }
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.queue_picking_readback(_frame, _x, _y),
-        }
-    }
-
-    pub fn check_metal_picking_readback(&mut self) -> Option<(usize, u32)> {
-        match self {
-            AnyRenderer::Vulkan(_) => None,
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.check_picking_readback(),
-        }
-    }
-
-    pub fn has_pending_metal_picking_readback(&self) -> bool {
-        match self {
-            AnyRenderer::Vulkan(_) => false,
-            #[cfg(target_os = "macos")]
-            AnyRenderer::Metal(r) => r.has_pending_picking_readback(),
-        }
-    }
 
     /// Create an offscreen BGRA8 texture suitable for headless rendering and CPU readback.
     ///

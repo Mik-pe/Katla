@@ -5,6 +5,12 @@
 //! Load pass extends them. Both graphs below draw the same green UI quad on
 //! the left half; they differ only in the first pass's declared load op.
 
+#[path = "support/ui_bindings.rs"]
+mod ui_bindings;
+
+#[path = "support/readback.rs"]
+mod readback;
+
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 
@@ -29,7 +35,6 @@ fn acquire_frame_token(
 
 #[test]
 #[ignore = "requires a Vulkan device"]
-
 fn declared_clear_replaces_and_declared_load_extends_attachments() {
     let mut renderer = VulkanRenderer::init_headless(
         64,
@@ -49,10 +54,12 @@ fn declared_clear_replaces_and_declared_load_extends_attachments() {
             }
         });
 
-    // The UI renderer requires a font atlas to be registered.
     let _atlas = renderer
-        .create_ui_font_atlas(1, 1, &[255, 0, 0, 255])
-        .expect("test font atlas creation");
+        .create_texture(
+            &katla_gfx::TextureDescriptor::rgba8_unorm(1, 1),
+            &[255, 0, 0, 255],
+        )
+        .expect("test texture creation");
     let white = renderer
         .create_texture(&katla_gfx::TextureDescriptor::rgba8_unorm(1, 1), &[255; 4])
         .expect("test texture creation");
@@ -62,9 +69,6 @@ fn declared_clear_replaces_and_declared_load_extends_attachments() {
         .compile_material(&PipelineDescriptor::ui(
             shaders.join("ui/ui.wgsl").to_string_lossy().into_owned(),
         ))
-        .unwrap();
-    renderer
-        .init_light_culling(64, 48, &shaders.join("lighting/light_cull.wgsl"))
         .unwrap();
 
     let ui = {
@@ -108,26 +112,40 @@ fn declared_clear_replaces_and_declared_load_extends_attachments() {
         (green, [0, 255, 0, 255]),
     ] {
         let mut graph = FrameGraphBuilder::new()
-            .add_pass(GeometryPass::new("background").write_color_ops(
-                "backbuffer",
-                ImageFormat::B8G8R8A8Srgb,
-                AttachmentOps::clear(ClearValue::Color(background)),
-            ))
+            .add_pass(
+                GeometryPass::new("background")
+                    .without_depth()
+                    .write_color_ops(
+                        "backbuffer",
+                        ImageFormat::B8G8R8A8Srgb,
+                        AttachmentOps::clear(ClearValue::Color(background)),
+                    ),
+            )
             .add_pass(UIPass::new("ui").write("backbuffer").material(material))
             .build::<VulkanRenderer>()
             .unwrap();
         let ui_pass = graph.pass_id("ui").unwrap();
+        graph
+            .set_pass_bindings(ui_pass, ui_bindings::bindings())
+            .unwrap();
 
-        for frame in 0..2 {
+        for _ in 0..2 {
             let frame_token = acquire_frame_token(&mut renderer);
             renderer
                 .render(&frame_token, &mut graph, |frame| {
                     frame.submit_ui(ui_pass, &ui);
                 })
                 .unwrap();
-            renderer.present(frame_token).unwrap();
-            renderer.queue_async_readback(frame).unwrap();
-            let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
+            assert_eq!(
+                renderer
+                    .present(frame_token)
+                    .unwrap()
+                    .surface
+                    .expect("surface presentation"),
+                katla_gfx::SurfaceStatus::Presented
+            );
+            let (_, pixels) =
+                readback::read_pixels(&mut renderer, graph.resource_id("backbuffer").unwrap());
 
             // The UI quad covers the left probe; the right probe shows what
             // the UI pass's declared Load op preserved from the first pass.

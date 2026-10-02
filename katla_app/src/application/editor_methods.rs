@@ -109,18 +109,29 @@ impl Application {
     pub(crate) fn render_editor_frame(&mut self, dt: f32) {
         use super::editor;
 
+        if !self.frame_graph_runtime.uses_katla_scene() {
+            self.render_frame(None, dt, self.frame_count);
+            return;
+        }
+
+        if let Some(features) = &mut self.scene_features
+            && let Err(error) = features.particles.refresh_stats(&mut self.renderer)
+        {
+            log::warn!("Particle statistics unavailable: {error}");
+        }
+
         #[cfg(not(target_os = "macos"))]
         {
-            let frame_idx = self.renderer.current_frame();
-            if let Some(base_ldr_index) = self.frame_graph.get_ldr_texture_base_index() {
-                let actual_ldr_index = base_ldr_index + frame_idx as u32;
-                self.editor
-                    .editor_ui
-                    .set_viewport_bindless_index(actual_ldr_index);
+            if let Some(name) = self.frame_graph_bindings.resources.viewport.as_deref()
+                && let Some(slot) = self
+                    .frame_graph
+                    .transient_texture_bindless_slot(name, self.renderer.current_frame())
+            {
+                self.editor.editor_ui.set_viewport_bindless_index(slot);
             }
 
             log::debug!("Generating UI draw list...");
-            let ui_draw_list = editor::generate_ui_draw_list(self, dt);
+            let mut ui_draw_list = editor::generate_ui_draw_list(self, dt);
             log::debug!("UI draw list generated");
 
             // Save capture state for next frame's input routing.
@@ -135,7 +146,7 @@ impl Application {
             // and BEFORE render_frame (which samples from the GPU atlas).
             // Doing it after render_frame would cause a one-frame lag where text
             // samples from stale GPU data.
-            editor::upload_font_atlas(self);
+            editor::upload_font_atlas(self, &mut ui_draw_list);
 
             // Render frame to GPU (includes UI if present)
             log::debug!("Rendering frame...");
@@ -156,14 +167,13 @@ impl Application {
             if let Some(name) = self.frame_graph_bindings.resources.viewport.as_deref()
                 && let Some(slot) = self
                     .frame_graph
-                    .transient_texture_metal(name, self.renderer.current_frame())
-                    .and_then(|texture| texture.bindless_slot)
+                    .transient_texture_bindless_slot(name, self.renderer.current_frame())
             {
                 self.editor.editor_ui.set_viewport_bindless_index(slot);
             }
 
             log::debug!("Generating UI draw list (Metal)...");
-            let ui_draw_list = editor::generate_ui_draw_list(self, dt);
+            let mut ui_draw_list = editor::generate_ui_draw_list(self, dt);
             log::debug!("UI draw list generated (Metal)");
 
             self.editor.editor_ui.prev_want_capture_keyboard =
@@ -171,16 +181,7 @@ impl Application {
             self.editor.editor_ui.prev_want_capture_mouse =
                 self.ui_context.input().want_capture_mouse;
 
-            editor::upload_font_atlas(self);
-
-            // Pass viewport panel bounds to renderer (logical → physical pixels)
-            let vp_bounds = self.editor.editor_ui.last_viewport_bounds;
-            let sf = self.scale_factor;
-            let phys_rect = katla_gfx::Rect::new(
-                [vp_bounds.min.x() * sf, vp_bounds.min.y() * sf],
-                [vp_bounds.max.x() * sf, vp_bounds.max.y() * sf],
-            );
-            self.renderer.set_viewport_panel_rect(Some(phys_rect));
+            editor::upload_font_atlas(self, &mut ui_draw_list);
 
             // Size the 3D-scene render targets to the panel (done after UI
             // layout populated the panel bounds and before rendering).

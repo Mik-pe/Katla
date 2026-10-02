@@ -1,5 +1,5 @@
 {
-  "schema_version": 12,
+  "schema_version": 13,
   "summary": {
     "declared_passes": 5,
     "live_passes": 4,
@@ -15,6 +15,10 @@
     "tile_memory_eligible_bytes": 0,
     "parallel_levels": 4
   },
+  "culling_enabled": true,
+  "liveness_roots": [
+    3
+  ],
   "resources": [
     {
       "id": 0,
@@ -32,6 +36,10 @@
         "last_execution_position": 3,
         "last_pass": 3
       },
+      "live": true,
+      "cull_reason": null,
+      "alias_predecessor": null,
+      "alias_successor": null,
       "physical_allocation_id": null,
       "persistence": null,
       "imported_contract": {
@@ -55,12 +63,16 @@
         "last_execution_position": 1,
         "last_pass": 1
       },
+      "live": true,
+      "cull_reason": null,
+      "alias_predecessor": null,
+      "alias_successor": 3,
       "physical_allocation_id": 0,
       "persistence": {
         "exported": false,
         "crosses_render_pass": true,
         "sampled": true,
-        "storage": true,
+        "storage": false,
         "transfer_or_readback": false,
         "tile_memory_eligible": false
       },
@@ -82,12 +94,16 @@
         "last_execution_position": 2,
         "last_pass": 2
       },
+      "live": true,
+      "cull_reason": null,
+      "alias_predecessor": null,
+      "alias_successor": null,
       "physical_allocation_id": 1,
       "persistence": {
         "exported": false,
         "crosses_render_pass": true,
         "sampled": true,
-        "storage": true,
+        "storage": false,
         "transfer_or_readback": false,
         "tile_memory_eligible": false
       },
@@ -109,12 +125,16 @@
         "last_execution_position": 3,
         "last_pass": 3
       },
+      "live": true,
+      "cull_reason": null,
+      "alias_predecessor": 1,
+      "alias_successor": null,
       "physical_allocation_id": 0,
       "persistence": {
         "exported": false,
         "crosses_render_pass": true,
         "sampled": true,
-        "storage": true,
+        "storage": false,
         "transfer_or_readback": false,
         "tile_memory_eligible": false
       },
@@ -144,6 +164,10 @@
         "last_execution_position": 3,
         "last_pass": 3
       },
+      "live": true,
+      "cull_reason": null,
+      "alias_predecessor": null,
+      "alias_successor": null,
       "physical_allocation_id": null,
       "persistence": null,
       "imported_contract": null
@@ -171,6 +195,10 @@
         "last_execution_position": 1,
         "last_pass": 1
       },
+      "live": true,
+      "cull_reason": null,
+      "alias_predecessor": null,
+      "alias_successor": null,
       "physical_allocation_id": null,
       "persistence": null,
       "imported_contract": null
@@ -193,6 +221,10 @@
       },
       "exported": false,
       "lifetime": null,
+      "live": false,
+      "cull_reason": "no live pass accesses this unexported resource",
+      "alias_predecessor": null,
+      "alias_successor": null,
       "physical_allocation_id": null,
       "persistence": null,
       "imported_contract": null
@@ -222,8 +254,8 @@
             "name": "shadow_atlas"
           },
           "mode": "write",
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "range": {
             "aspects": [
               "color"
@@ -236,7 +268,14 @@
         }
       ],
       "buffer_accesses": [],
-      "color_attachments": [],
+      "color_attachments": [
+        {
+          "resource": 1,
+          "load": "Clear",
+          "store": "Store",
+          "clear_value": "color [0.0, 0.0, 0.0, 1.0]"
+        }
+      ],
       "depth_attachment": null,
       "predecessors": [],
       "successors": [
@@ -246,7 +285,8 @@
       "parallel_level": 0,
       "side_effect": false,
       "live": true,
-      "culled": false
+      "culled": false,
+      "liveness_reason": "required producer of a live pass"
     },
     {
       "index": 1,
@@ -300,8 +340,8 @@
             "name": "gbuffer"
           },
           "mode": "write",
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "range": {
             "aspects": [
               "color"
@@ -328,7 +368,14 @@
           }
         }
       ],
-      "color_attachments": [],
+      "color_attachments": [
+        {
+          "resource": 2,
+          "load": "Clear",
+          "store": "Store",
+          "clear_value": "color [0.0, 0.0, 0.0, 1.0]"
+        }
+      ],
       "depth_attachment": null,
       "predecessors": [
         0
@@ -340,7 +387,8 @@
       "parallel_level": 1,
       "side_effect": false,
       "live": true,
-      "culled": false
+      "culled": false,
+      "liveness_reason": "required producer of a live pass"
     },
     {
       "index": 2,
@@ -394,8 +442,8 @@
             "name": "hdr_color"
           },
           "mode": "write",
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "range": {
             "aspects": [
               "color"
@@ -422,7 +470,14 @@
           }
         }
       ],
-      "color_attachments": [],
+      "color_attachments": [
+        {
+          "resource": 3,
+          "load": "Clear",
+          "store": "Store",
+          "clear_value": "color [0.0, 0.0, 0.0, 1.0]"
+        }
+      ],
       "depth_attachment": null,
       "predecessors": [
         1
@@ -434,7 +489,8 @@
       "parallel_level": 2,
       "side_effect": false,
       "live": true,
-      "culled": false
+      "culled": false,
+      "liveness_reason": "required producer of a live pass"
     },
     {
       "index": 3,
@@ -468,8 +524,8 @@
             "name": "backbuffer"
           },
           "mode": "write",
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "range": {
             "aspects": [
               "color"
@@ -516,7 +572,14 @@
           }
         }
       ],
-      "color_attachments": [],
+      "color_attachments": [
+        {
+          "resource": 0,
+          "load": "Clear",
+          "store": "Store",
+          "clear_value": "color [0.0, 0.0, 0.0, 1.0]"
+        }
+      ],
       "depth_attachment": null,
       "predecessors": [
         2
@@ -526,7 +589,8 @@
       "parallel_level": 3,
       "side_effect": false,
       "live": true,
-      "culled": false
+      "culled": false,
+      "liveness_reason": "final exported resource producer"
     },
     {
       "index": 4,
@@ -568,7 +632,8 @@
       "parallel_level": null,
       "side_effect": false,
       "live": false,
-      "culled": true
+      "culled": true,
+      "liveness_reason": "not a producer of an exported resource or side-effect root"
     }
   ],
   "external_image_producers": [],
@@ -628,6 +693,9 @@
   ],
   "synchronization": [
     {
+      "version": "r1.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 1,
         "name": "shadow_atlas"
@@ -654,8 +722,8 @@
       },
       "after_state": {
         "Access": {
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "mode": "write"
         }
       },
@@ -663,6 +731,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r1.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 1,
         "name": "shadow_atlas"
@@ -693,6 +764,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r1.access.0",
+      "source_boundary": "graphics/render",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 1,
         "name": "shadow_atlas"
@@ -712,8 +786,8 @@
       "to_name": "geometry",
       "before_state": {
         "Access": {
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "mode": "write"
         }
       },
@@ -728,6 +802,9 @@
       "reason": "hazard"
     },
     {
+      "version": "r2.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 2,
         "name": "gbuffer"
@@ -754,8 +831,8 @@
       },
       "after_state": {
         "Access": {
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "mode": "write"
         }
       },
@@ -763,6 +840,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r2.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 2,
         "name": "gbuffer"
@@ -793,6 +873,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r2.access.1",
+      "source_boundary": "graphics/render",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 2,
         "name": "gbuffer"
@@ -812,8 +895,8 @@
       "to_name": "lighting",
       "before_state": {
         "Access": {
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "mode": "write"
         }
       },
@@ -828,6 +911,9 @@
       "reason": "hazard"
     },
     {
+      "version": "r3.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 3,
         "name": "hdr_color"
@@ -854,8 +940,8 @@
       },
       "after_state": {
         "Access": {
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "mode": "write"
         }
       },
@@ -863,6 +949,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r0.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 0,
         "name": "backbuffer"
@@ -889,8 +978,8 @@
       },
       "after_state": {
         "Access": {
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "mode": "write"
         }
       },
@@ -898,6 +987,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r3.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 3,
         "name": "hdr_color"
@@ -928,6 +1020,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r3.access.2",
+      "source_boundary": "graphics/render",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 3,
         "name": "hdr_color"
@@ -947,8 +1042,8 @@
       "to_name": "present",
       "before_state": {
         "Access": {
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "mode": "write"
         }
       },
@@ -963,6 +1058,9 @@
       "reason": "hazard"
     },
     {
+      "version": "r0.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "frame_end",
       "resource": {
         "id": 0,
         "name": "backbuffer"
@@ -999,6 +1097,9 @@
       "reason": "imported_final"
     },
     {
+      "version": "r0.access.3",
+      "source_boundary": "graphics/render",
+      "destination_boundary": "frame_end",
       "resource": {
         "id": 0,
         "name": "backbuffer"
@@ -1018,8 +1119,8 @@
       "to_name": null,
       "before_state": {
         "Access": {
-          "usage": "storage",
-          "stage": "all_graphics",
+          "usage": "color_attachment",
+          "stage": "color_attachment_output",
           "mode": "write"
         }
       },
@@ -1036,6 +1137,9 @@
   ],
   "buffer_synchronization": [
     {
+      "version": "r4.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 4,
         "name": "indirect_commands"
@@ -1054,6 +1158,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r4.initial",
+      "source_boundary": "frame_start",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 4,
         "name": "indirect_commands"
@@ -1072,6 +1179,9 @@
       "reason": "initial_use"
     },
     {
+      "version": "r4.access.2",
+      "source_boundary": "graphics/render",
+      "destination_boundary": "graphics/render",
       "resource": {
         "id": 4,
         "name": "indirect_commands"

@@ -78,9 +78,9 @@ impl VulkanRenderer {
         Ok(handle)
     }
 
-    /// Get the default white texture.
+    /// Get the descriptor-safe fallback texture.
     pub fn default_texture(&self) -> TextureHandle {
-        self.texture_manager.default_white()
+        self.texture_manager.default_texture()
     }
 
     /// Get the shared sampler used by the bindless texture system.

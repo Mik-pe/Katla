@@ -11,6 +11,13 @@
 //! Pure contract tests run everywhere; the rest need a Vulkan device
 //! (`#[ignore]`, like the other GPU contract tests).
 
+#[path = "support/readback.rs"]
+mod readback;
+
+#[path = "support/camera_shader_data.rs"]
+mod camera_shader_data;
+use camera_shader_data::CameraShaderData;
+
 use std::ffi::CString;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -20,9 +27,9 @@ use katla_gfx::renderer::{DrawCall, DrawList};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::VertexPBR;
 use katla_gfx::{
-    CullMode, DepthState, FrameUniforms, GpuRenderer, IndexType, MaterialHandle, MeshDescriptor,
-    MeshHandle, MeshUsage, PipelineDescriptor, PrimitiveTopology, ValidationMode, Vertex,
-    VulkanRenderer, validate_dynamic_update,
+    CullMode, DepthState, GpuRenderer, IndexType, MaterialHandle, MeshDescriptor, MeshHandle,
+    MeshUsage, PipelineDescriptor, PrimitiveTopology, ValidationMode, Vertex, VulkanRenderer,
+    validate_dynamic_update,
 };
 
 /// Acquire one frame from the headless renderer (always ready offscreen).
@@ -97,7 +104,7 @@ fn headless_renderer() -> VulkanRenderer {
         // ValidationMode::Disabled: compiling the PBR pipeline under the
         // system validation layer segfaults the Intel driver on this machine
         // (same caveat as the instanced-draw contract test).
-        ValidationMode::Disabled,
+        ValidationMode::Enabled,
         CString::new("Dynamic mesh update test").unwrap(),
         CString::new("Katla").unwrap(),
     )
@@ -211,7 +218,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
             }
         });
 
-    let uniforms = FrameUniforms {
+    let uniforms = CameraShaderData {
         view_matrix: identity(),
         proj_matrix: identity(),
         inv_view_proj_matrix: identity(),
@@ -219,24 +226,17 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
     };
 
     let shaders = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/shaders");
-    renderer
-        .init_light_culling(WIDTH, HEIGHT, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
-    // PBR pipelines declare Set 4 for shadow data; the descriptor layouts
-    // must exist before the material is compiled.
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
     let material: MaterialHandle = renderer
         .compile_material(
             &PipelineDescriptor::pbr(
                 shaders
-                    .join("model_pbr.wgsl")
+                    .join("../../katla_gfx/tests/support/mesh.wgsl")
                     .to_string_lossy()
                     .into_owned(),
             )
             .with_color_format(ImageFormat::B8G8R8A8Srgb)
             .with_depth(DepthState::disabled())
+            .with_depth_format(None)
             .with_cull(CullMode::None),
         )
         .unwrap();
@@ -250,6 +250,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
     let mut graph = FrameGraphBuilder::new()
         .add_pass(
             GeometryPass::new("geometry")
+                .without_depth()
                 .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                 .clear_color([0.0, 0.0, 0.0, 1.0])
                 .material(material),
@@ -259,19 +260,16 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
     let geometry_pass = graph.pass_id("geometry").unwrap();
 
     let render_and_capture = |renderer: &mut VulkanRenderer,
-                              graph: &mut FrameGraph<VulkanRenderer>,
-                              frame: usize|
+                              graph: &mut FrameGraph<VulkanRenderer>|
      -> Vec<u8> {
         let draw_list = {
             let mut list = DrawList::new();
-            // The red tint makes mesh pixels distinguishable from the lit
-            // gray background these headless captures settle on.
             list.push(DrawCall::new(mesh, material).with_color([1.0, 0.1, 0.1, 1.0]));
             list
         };
         let frame_token = acquire_frame_token(&mut *renderer);
-        renderer
-            .set_frame_uniforms(&frame_token, uniforms.clone())
+        graph
+            .set_pass_bindings(geometry_pass, uniforms.bindings())
             .unwrap();
         renderer
             .execute_draw_calls(&frame_token, &draw_list)
@@ -281,9 +279,15 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
                 frame_context.submit(geometry_pass, Rc::new(draw_list));
             })
             .unwrap();
-        renderer.present(frame_token).unwrap();
-        renderer.queue_async_readback(frame).unwrap();
-        let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
+        let (_, pixels) = readback::read_pixels(renderer, graph.resource_id("backbuffer").unwrap());
         pixels
     };
 
@@ -296,12 +300,14 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
     // True when no mesh-tinted pixel exists anywhere.
     let no_mesh_pixels = |pixels: &Vec<u8>| -> bool {
         !pixels
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .any(|c| c[2] > 120 && c[0] < 120 && c[1] < 120)
     };
 
     // Frame 0: both triangles of the top-left quadrant are visible.
-    let quad_pixels = render_and_capture(&mut renderer, &mut graph, 0);
+    let quad_pixels = render_and_capture(&mut renderer, &mut graph);
     assert!(
         covered(&quad_pixels, (-0.75, -0.75)),
         "triangle A must cover the lower-left half"
@@ -321,7 +327,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
         update(&mut renderer, mesh, &shifted, &indices);
     }
     assert_eq!(renderer.mesh_vertex_count(mesh), Some(6));
-    let same_size_pixels = render_and_capture(&mut renderer, &mut graph, 1);
+    let same_size_pixels = render_and_capture(&mut renderer, &mut graph);
     assert!(covered(&same_size_pixels, (-0.75, -0.75)));
     assert!(covered(&same_size_pixels, (-0.25, -0.25)));
 
@@ -336,7 +342,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
         0,
         "shrinking must not reallocate"
     );
-    let shrunk_pixels = render_and_capture(&mut renderer, &mut graph, 2);
+    let shrunk_pixels = render_and_capture(&mut renderer, &mut graph);
     assert!(covered(&shrunk_pixels, (-0.75, -0.75)));
     assert!(
         !covered(&shrunk_pixels, (-0.25, -0.25)),
@@ -354,15 +360,15 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
         renderer.pending_retirements().buffers > 0,
         "growth past capacity must retire the replaced buffers"
     );
-    let grown_pixels = render_and_capture(&mut renderer, &mut graph, 3);
+    let grown_pixels = render_and_capture(&mut renderer, &mut graph);
     assert!(covered(&grown_pixels, (-0.75, -0.75)));
     assert!(covered(&grown_pixels, (-0.25, -0.25)));
     assert!(
         covered(&grown_pixels, (0.5, -0.5)),
         "the grown top-right quadrant must render"
     );
-    for frame in 4..7 {
-        render_and_capture(&mut renderer, &mut graph, frame);
+    for _ in 4..7 {
+        render_and_capture(&mut renderer, &mut graph);
     }
     assert_eq!(
         renderer.pending_retirements().buffers,
@@ -376,7 +382,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
         .expect("empty update");
     assert_eq!(renderer.mesh_vertex_count(mesh), Some(0));
     assert_eq!(renderer.mesh_index_count(mesh), Some(0));
-    let empty_pixels = render_and_capture(&mut renderer, &mut graph, 7);
+    let empty_pixels = render_and_capture(&mut renderer, &mut graph);
     assert!(
         no_mesh_pixels(&empty_pixels),
         "an empty mesh must leave no mesh-tinted pixel anywhere"
@@ -386,7 +392,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
     update(&mut renderer, mesh, &shrunk, &[0, 1, 2]);
     assert_eq!(renderer.mesh_vertex_count(mesh), Some(3));
     assert_eq!(renderer.mesh_index_count(mesh), Some(3));
-    let repopulated_pixels = render_and_capture(&mut renderer, &mut graph, 8);
+    let repopulated_pixels = render_and_capture(&mut renderer, &mut graph);
     assert!(covered(&repopulated_pixels, (-0.75, -0.75)));
     assert!(!covered(&repopulated_pixels, (-0.25, -0.25)));
 
@@ -402,7 +408,7 @@ fn test_dynamic_mesh_updates_preserve_counts_and_rendering() {
             (quad_top_left().0[..3].to_vec(), vec![0, 1, 2])
         };
         update(&mut renderer, mesh, &verts, &idx);
-        render_and_capture(&mut renderer, &mut graph, 9 + cycle);
+        render_and_capture(&mut renderer, &mut graph);
     }
     assert_eq!(renderer.pending_retirements().buffers, 0);
 

@@ -383,14 +383,14 @@ fn test_editor_overlay_produces_dockspace_in_zstack() {
 
     // Verify the root is a ZStack
     let has_zstack_root = view_tree.iter_nodes().any(|(id, node)| {
-        if let Some(root_id) = view_tree.root() {
-            if id == root_id {
-                return node
-                    .widget
-                    .as_any()
-                    .downcast_ref::<katla_ui::declarative::widgets::zstack::ZStack>()
-                    .is_some();
-            }
+        if let Some(root_id) = view_tree.root()
+            && id == root_id
+        {
+            return node
+                .widget
+                .as_any()
+                .downcast_ref::<katla_ui::declarative::widgets::zstack::ZStack>()
+                .is_some();
         }
         false
     });

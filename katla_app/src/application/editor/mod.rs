@@ -286,50 +286,36 @@ impl SceneCommand for EditorSpawnCommand {
 /// This MUST be called AFTER `generate_ui_draw_list()` (which rasterizes new glyphs
 /// into the CPU atlas) and BEFORE `render_frame()` (which samples from the GPU atlas).
 /// Calling it after render_frame causes a one-frame lag where the GPU has stale data.
-pub fn upload_font_atlas(app: &mut Application) {
-    let (needs_update, width, height, was_resized) = {
-        let fonts = app.ui_context.fonts();
-        let needs_update = fonts.atlas_needs_update();
-        if !needs_update {
-            (false, 0, 0, false)
-        } else {
-            let (w, h) = fonts.atlas_size();
-            let resized = fonts.atlas_was_resized();
-            (true, w, h, resized)
-        }
-    };
-
-    if !needs_update {
+pub fn upload_font_atlas(app: &mut Application, draw_list: &mut Option<UIDrawList>) {
+    if !app.frame_graph_runtime.uses_katla_scene() {
         return;
     }
-
-    let data = app.ui_context.fonts().atlas_data_rgba();
-
-    if was_resized {
-        let _atlas_handle = match app.renderer.create_ui_font_atlas(width, height, &data) {
-            Ok(handle) => handle,
-            Err(error) => {
-                log::error!("Font atlas recreation failed: {error}");
-                return;
-            }
-        };
-
-        if let Some(bindless_slot) = match &mut app.renderer {
-            katla_gfx::AnyRenderer::Vulkan(r) => r.ui_renderer.font_atlas_bindless_slot(),
-            #[cfg(target_os = "macos")]
-            katla_gfx::AnyRenderer::Metal(_) => app.renderer.get_bindless_slot(_atlas_handle),
-        } {
-            app.editor
-                .ui_renderer
-                .set_font_atlas_bindless_slot(bindless_slot);
-        }
-
-        app.ui_context.fonts_mut().clear_atlas_resized();
-    } else {
-        app.renderer.update_ui_font_atlas(width, height, &data);
+    let previous_slot = app.editor_features.font_atlas_slot();
+    if let Err(error) = app
+        .editor_features
+        .upload_font_atlas(&mut app.renderer, &mut app.ui_context)
+    {
+        log::error!("Font atlas upload failed: {error}");
+        return;
     }
-
-    app.ui_context.fonts_mut().mark_atlas_updated();
+    if let Some(slot) = app.editor_features.font_atlas_slot() {
+        app.editor.ui_renderer.set_font_atlas_bindless_slot(slot);
+        if let Some(previous_slot) = previous_slot
+            && previous_slot != slot
+            && let Some(draw_list) = draw_list
+        {
+            for vertex in &mut draw_list.vertices {
+                if vertex.texture_index == previous_slot {
+                    vertex.texture_index = slot;
+                }
+            }
+            for instance in &mut draw_list.instances {
+                if instance.texture_index == previous_slot {
+                    instance.texture_index = slot;
+                }
+            }
+        }
+    }
 }
 
 /// Generate UI draw list for the current frame.
@@ -957,14 +943,17 @@ pub fn process_editor_actions(app: &mut Application) {
                     .collect();
 
                 // Clean up particle emitters before destroying entities
-                if let Some(vulkan_renderer) = app.renderer.as_vulkan() {
+                if let Some(features) = &mut app.scene_features {
                     for id in &to_remove {
                         if let Some(emitter) =
                             app.world.get_component_mut::<ParticleEmitterComponent>(*id)
                             && let Some(handle) = emitter.emitter_handle.take()
-                            && let Some(ps) = &mut vulkan_renderer.particle_system
                         {
-                            ps.destroy_emitter(handle, emitter.kill_on_destroy);
+                            katla_gfx::ParticleEmitterDriver::destroy_emitter(
+                                &mut features.particles,
+                                handle,
+                                emitter.kill_on_destroy,
+                            );
                         }
                     }
                 }
@@ -1094,55 +1083,9 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
             EditorAction::ResetParticleSystem => {
-                if let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut app.renderer
-                    && let Some(ps) = &mut vulkan_renderer.particle_system
-                {
-                    use katla_gfx::particles::EmitterHandle;
-
-                    let entity_configs: Vec<(
-                        EntityId,
-                        EmitterHandle,
-                        katla_gfx::particles::EmitterConfig,
-                        bool,
-                    )> = app
-                        .world
-                        .query::<&mut ParticleEmitterComponent>()
-                        .filter_map(|(id, emitter)| {
-                            emitter
-                                .emitter_handle
-                                .map(|h| (id, h, emitter.config, emitter.kill_on_destroy))
-                        })
-                        .collect();
-
-                    for (id, handle, _config, kill_on_destroy) in &entity_configs {
-                        ps.destroy_emitter(*handle, *kill_on_destroy);
-                        if let Some(emitter) =
-                            app.world.get_component_mut::<ParticleEmitterComponent>(*id)
-                        {
-                            emitter.emitter_handle = None;
-                        }
-                    }
-
-                    if let Err(e) = ps.reset_all() {
-                        log::error!("Failed to reset particle system: {}", e);
-                    }
-
-                    for (id, _old_handle, config, _kill_on_destroy) in entity_configs {
-                        match ps.create_emitter(config) {
-                            Ok(handle) => {
-                                if let Some(emitter) =
-                                    app.world.get_component_mut::<ParticleEmitterComponent>(id)
-                                {
-                                    emitter.emitter_handle = Some(handle);
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Failed to recreate particle emitter: {}", e);
-                            }
-                        }
-                    }
-
-                    info!("Particle system reset complete");
+                if let Some(features) = &mut app.scene_features {
+                    features.particles.reset_all();
+                    info!("Particle system reset queued");
                 }
             }
             EditorAction::SetGizmoMode(mode_id) => {
@@ -1361,12 +1304,11 @@ pub fn process_editor_actions(app: &mut Application) {
     // Poll for MCP server requests
     #[cfg(feature = "mcp")]
     {
-        let registry = &app.editor.component_registry;
         let protected = mcp::ProtectedEntities {
             camera_entity: app.camera.entity,
             gizmo_entity: app.editor.gizmo_state.entity,
         };
-        app.editor.mcp_state.poll(app, registry, &protected);
+        mcp::poll(app, &protected);
     }
 
     // Update OS cursor based on UI request
@@ -1397,7 +1339,7 @@ pub fn process_editor_actions(app: &mut Application) {
 /// view of the selected emitter's config, and gathers system-wide stats.
 fn collect_particle_inspector_data(app: &mut Application) {
     use crate::components::ParticleEmitterComponent;
-    use crate::ui::{EmitterConfigView, ParticleInspectorData, ParticleStats};
+    use crate::ui::{EmitterConfigView, ParticleInspectorData};
     use katla_gfx::particles::EmitterShape;
 
     let mut emitter_entities = Vec::new();
@@ -1443,30 +1385,10 @@ fn collect_particle_inspector_data(app: &mut Application) {
     }
 
     // Get system-wide stats
-    let stats = match &app.renderer {
-        katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
-            vulkan_renderer.particle_system.as_ref().map(|ps| {
-                let s = ps.get_stats();
-                ParticleStats {
-                    max_alive_count: s.max_alive_count,
-                    current_alive_count: s.current_alive_count,
-                    dead_count: s.dead_count,
-                    total_emitted: s.total_emitted,
-                    total_died: s.total_died,
-                    compute_time_ms: s.compute_time_ms,
-                    avg_compute_time_ms: s.avg_compute_time_ms,
-                    peak_compute_time_ms: s.peak_compute_time_ms,
-                    emitter_counts: s.emitter_counts,
-                    memory_used_mb: s.memory_used_mb,
-                    buffer_utilization: s.buffer_utilization,
-                    frame_count: s.frame_count,
-                    total_dispatches: s.total_dispatches,
-                }
-            })
-        }
-        #[cfg(target_os = "macos")]
-        katla_gfx::AnyRenderer::Metal(_) => None,
-    };
+    let stats = app
+        .scene_features
+        .as_ref()
+        .and_then(|features| features.particles.stats());
 
     app.editor.editor_ui.particle_inspector_data = ParticleInspectorData {
         emitter_entities,
@@ -1957,7 +1879,7 @@ mod tests {
         assert_eq!(emitter.config.gravity, -5.0);
         assert!(emitter.active);
 
-        let ps: Option<katla_gfx::particles::GlobalParticleSystem> = None;
+        let ps: Option<super::super::scene_features::SceneFeatures> = None;
         assert!(ps.is_none());
 
         let emitter = world

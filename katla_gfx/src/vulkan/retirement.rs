@@ -21,7 +21,6 @@ use std::rc::Rc;
 use crate::renderer::retirement::RetirementSnapshot;
 
 use super::context::VulkanContext;
-use super::skeleton_buffer::SkeletonBuffer;
 use super::texture::Texture;
 use crate::renderer::registry::AnyPipeline;
 
@@ -93,8 +92,6 @@ pub(crate) enum RetiredResource {
     /// hot reload, descriptor-layout invalidation). Boxed: pipelines are the
     /// largest variant by far.
     Pipeline(Box<AnyPipeline>),
-    /// Destroyed skeleton joint-matrix storage buffer.
-    SkeletonBuffer(SkeletonBuffer),
     /// Bindless slot withheld from the free list while in-flight submissions
     /// can still resolve the old texture through it.
     BindlessSlot(u32),
@@ -106,7 +103,6 @@ impl RetiredResource {
             RetiredResource::Buffer(_) => RetirementKind::Buffer,
             RetiredResource::Texture(_) => RetirementKind::Texture,
             RetiredResource::Pipeline(_) => RetirementKind::Pipeline,
-            RetiredResource::SkeletonBuffer(_) => RetirementKind::SkeletonBuffer,
             RetiredResource::BindlessSlot(_) => RetirementKind::BindlessSlot,
         }
     }
@@ -119,9 +115,6 @@ impl RetiredResource {
                 format!("texture view {:?}", texture.image_view().vk())
             }
             RetiredResource::Pipeline(pipeline) => format!("pipeline {:?}", pipeline.vk_pipeline()),
-            RetiredResource::SkeletonBuffer(buffer) => {
-                format!("skeleton buffer {:?}", buffer.buffer())
-            }
             RetiredResource::BindlessSlot(slot) => format!("bindless slot {slot}"),
         }
     }
@@ -130,7 +123,6 @@ impl RetiredResource {
     fn approximate_bytes(&self) -> Option<u64> {
         match self {
             RetiredResource::Buffer(buffer) => Some(buffer.allocation_bytes()),
-            RetiredResource::SkeletonBuffer(buffer) => Some(buffer.size()),
             _ => None,
         }
     }
@@ -154,19 +146,12 @@ impl From<AnyPipeline> for RetiredResource {
     }
 }
 
-impl From<SkeletonBuffer> for RetiredResource {
-    fn from(buffer: SkeletonBuffer) -> Self {
-        RetiredResource::SkeletonBuffer(buffer)
-    }
-}
-
 /// Resource categories tracked in [`RetirementSnapshot`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RetirementKind {
     Buffer,
     Texture,
     Pipeline,
-    SkeletonBuffer,
     BindlessSlot,
 }
 
@@ -236,7 +221,6 @@ impl RetirementQueue {
                 RetirementKind::Buffer => out.buffers += 1,
                 RetirementKind::Texture => out.textures += 1,
                 RetirementKind::Pipeline => out.pipelines += 1,
-                RetirementKind::SkeletonBuffer => out.skeleton_buffers += 1,
                 RetirementKind::BindlessSlot => out.bindless_slots += 1,
             }
             if let Some(bytes) = resource.approximate_bytes() {

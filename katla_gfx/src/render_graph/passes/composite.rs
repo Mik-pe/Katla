@@ -336,9 +336,6 @@ impl PassBuilder for CompositePass {
             writes,
             image_accesses,
             buffer_accesses: Vec::new(),
-            pipeline: None,
-            tonemap_params: None,
-            overlay_params: None,
             material,
             output_format,
             build_fn: Box::new(move |resource_map: &HashMap<String, GraphResourceHandle>| {

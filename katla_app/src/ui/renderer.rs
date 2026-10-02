@@ -1,4 +1,3 @@
-#![cfg_attr(not(feature = "editor"), allow(dead_code))]
 //! UI rendering conversion layer.
 //!
 //! This module provides the bridge between `katla_ui` and `katla_gfx`:

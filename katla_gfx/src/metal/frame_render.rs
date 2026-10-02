@@ -2,10 +2,11 @@
 
 use super::attachments::ResolvedMetalAttachments;
 use super::execution_plan::{MetalExecutionPlan, MetalPassRecord};
+use super::graphics_packet::GraphicsFrame;
 use super::metal_renderer::MetalRenderer;
 use super::render_encoder::MetalRenderEncoder;
 use super::texture::{MetalTexture, MetalTextureView};
-use crate::backend::command::{GpuCommandBuffer, GpuRenderEncoder, IndexType, ShaderStages};
+use crate::backend::command::{GpuCommandBuffer, GpuRenderEncoder, IndexType};
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::render_graph::{FrameGraph, PassExecutionData, PassKind};
@@ -107,7 +108,7 @@ impl MetalRenderer {
                 if record.pass_type != crate::render_graph::PassType::Graphics { return Ok(None); }
                 let attachments =
                     ResolvedMetalAttachments::resolve(record, graph, &drawable, slot, self)?;
-                validate_builtin_attachments(record, &attachments)?;
+
                 for (contract, native) in record.color_attachments.iter().zip(&attachments.info.color_attachments) {
                     if graph.imported_images.contains_key(&contract.resource) || graph.resource_name(contract.resource) == Some("backbuffer") {
                         let identity = (native.view.inner.gpuResourceID().to_raw(), 1);
@@ -129,23 +130,6 @@ impl MetalRenderer {
                             if load == crate::render_pass::LoadOp::Load && !defined_outputs.contains(&identity) { return Err(RendererError::InvalidOperation(format!("Pass '{}' loads imported depth/stencil contents before they are defined", record.name))); }
                             if store == crate::render_pass::StoreOp::Store { defined_outputs.insert(identity); } else { defined_outputs.remove(&identity); }
                         }
-                }
-                if record.kind == PassKind::Fullscreen { self.fullscreen_input(record, graph, slot)?; }
-                if record.kind == PassKind::Geometry {
-                    if record.color_attachments[0].load_op == crate::render_pass::LoadOp::Clear && self.sky_pipeline.is_some()
-                        && (record.color_attachments[0].format != crate::texture::ImageFormat::R16G16B16A16Sfloat || record.depth_attachment.is_none()) {
-                        return Err(RendererError::InvalidOperation(format!("Geometry pass '{}' has attachments incompatible with its sky pipeline", record.name)));
-                    }
-                    if let Some(data) = pending.get(&record.pass_index) {
-                        for draw in data.prepared().iter() {
-                            if let Some(material) = self.materials.get(draw.material) {
-                                let key = crate::renderer::pipeline_variant::PipelineVariantKey::resolve(&material.descriptor, record.color_attachments[0].format);
-                                if key.depth_format() != record.depth_attachment.map(|attachment| attachment.format) {
-                                    return Err(RendererError::InvalidOperation(format!("Geometry pass '{}' has depth incompatible with its material", record.name)));
-                                }
-                            }
-                        }
-                    }
                 }
                 Ok(Some(attachments))
             })
@@ -170,6 +154,9 @@ impl MetalRenderer {
         cmd_buffer
             .resources
             .set_submission_identity(slot, self.frame_slots[slot].generation);
+        if trace_enabled {
+            cmd_buffer.resources.enable_capture();
+        }
         let default_data = PassExecutionData::default();
         let mut ui_uploads = HashMap::new();
         for record in plan
@@ -184,16 +171,22 @@ impl MetalRenderer {
                 self.ui_renderers[slot].upload_draw_list(&self.context, list)?;
                 ui_uploads.insert(record.pass_index, self.ui_renderers[slot].clone());
             }
+            self.prepare_packet_samplers(record)?;
             self.preflight_graphics_record(&cmd_buffer.resources, record, data, graph, slot)?;
         }
         cmd_buffer.begin();
-        if let Some(queries) = &self.timestamp_queries {
+        if let Some(queries) = &self.timestamp_queries
+            && !queries.labels().is_empty()
+        {
+            if self.frame_slots[slot].timestamps.is_none() {
+                self.frame_slots[slot].timestamps = Some(
+                    super::timestamp_queries::MetalTimestampSlot::new(&self.context.device, slot)?,
+                );
+            }
             let generation = self.frame_slots[slot].generation;
-            self.frame_slots[slot].timestamps.begin(
-                &cmd_buffer.inner,
-                queries.labels(),
-                generation,
-            );
+            if let Some(timestamps) = &mut self.frame_slots[slot].timestamps {
+                timestamps.begin(&cmd_buffer.inner, queries.labels(), generation);
+            }
         }
         let persistent = self.persistent_buffers.snapshot();
         cmd_buffer.inner.useResidencySet(persistent.native());
@@ -206,6 +199,9 @@ impl MetalRenderer {
             ))));
         if self.texture_uploads.has_pending() {
             use crate::backend::command::GpuBlitEncoder;
+            cmd_buffer
+                .resources
+                .capture_context(None, "texture_upload", Vec::new());
             let mut blit = cmd_buffer.begin_blit_pass_with_label("texture_upload");
             blit.inner
                 .barrierAfterQueueStages_beforeStages_visibilityOptions(
@@ -213,6 +209,14 @@ impl MetalRenderer {
                     objc2_metal::MTLStages::Blit,
                     objc2_metal::MTL4VisibilityOptions::Device,
                 );
+            super::sync::capture_native_boundary(
+                &cmd_buffer.resources,
+                "texture_upload.acquire",
+                super::sync::NativeBoundary::UploadAcquire,
+                objc2_metal::MTLStages::All,
+                objc2_metal::MTLStages::Blit,
+                objc2_metal::MTL4VisibilityOptions::Device,
+            );
             self.texture_uploads
                 .encode_into(&mut blit, self.frame_slots[slot].generation);
             blit.inner
@@ -221,22 +225,41 @@ impl MetalRenderer {
                     objc2_metal::MTLStages::All,
                     objc2_metal::MTL4VisibilityOptions::Device,
                 );
+            super::sync::capture_native_boundary(
+                &cmd_buffer.resources,
+                "texture_upload.release",
+                super::sync::NativeBoundary::UploadRelease,
+                objc2_metal::MTLStages::Blit,
+                objc2_metal::MTLStages::All,
+                objc2_metal::MTL4VisibilityOptions::Device,
+            );
             blit.end_encoding();
         }
         log::debug!("Metal execution plan: {}", plan.trace().join(" -> "));
-        let mut picking_target = None;
         let mut execution_trace = crate::render_graph::ResourceExecutionTrace::new();
         for (position, (record, attachments)) in plan.passes().iter().zip(resolved).enumerate() {
             let data = pending.remove(&record.pass_index).unwrap_or_default();
             if record.pass_type != crate::render_graph::PassType::Graphics {
+                let has_work = record.commands.iter().any(|command| match command { crate::render_graph::ComputeCommand::Dispatch(dispatch) => !matches!(dispatch.size, crate::render_graph::ComputeDispatchSize::Direct(groups) if groups.contains(&0)), crate::render_graph::ComputeCommand::FillBuffer {range,..} => range.size != 0, crate::render_graph::ComputeCommand::CopyBuffer {size,..} => *size != 0 });
                 self.encode_compute_record(&mut cmd_buffer, record, graph, slot)?;
+                if !has_work {
+                    super::sync::capture_skipped_boundary(
+                        graph,
+                        record.pass_index,
+                        &cmd_buffer.resources,
+                    );
+                }
                 if trace_enabled {
                     execution_trace.push(crate::render_graph::ResourceExecutionTraceEntry {
                         pass_index: record.pass_index,
                         name: record.name.clone(),
                         pass_type: record.pass_type,
                         encode_position: position,
-                        outcome: crate::render_graph::EmittedPassOutcome::Encoded,
+                        outcome: if has_work {
+                            crate::render_graph::EmittedPassOutcome::Encoded
+                        } else {
+                            crate::render_graph::EmittedPassOutcome::SkippedNoWork
+                        },
                         draw_calls: 0,
                         instances: 0,
                         color_attachment_ops: Vec::new(),
@@ -254,10 +277,6 @@ impl MetalRenderer {
             let counts = data.prepared_counts();
             let width = attachments.width;
             let height = attachments.height;
-            // Picking observes the attachment selected by this pass, including its frame slot.
-            if record.kind == PassKind::ObjectId {
-                picking_target = Some(attachments.info.color_attachments[0].view.clone());
-            }
             let color_attachment_ops = trace_enabled.then(|| {
                 attachments
                     .info
@@ -286,6 +305,24 @@ impl MetalRenderer {
                         })
                 })
                 .flatten();
+            let resources = if trace_enabled {
+                record
+                    .color_attachments
+                    .iter()
+                    .map(|attachment| attachment.resource.0)
+                    .chain(
+                        record
+                            .depth_attachment
+                            .iter()
+                            .map(|attachment| attachment.resource.0),
+                    )
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            cmd_buffer
+                .resources
+                .capture_context(Some(record.pass_index), &record.name, resources);
             let mut encoder = cmd_buffer.begin_render_pass(attachments.info);
             encoder
                 .inner
@@ -295,41 +332,19 @@ impl MetalRenderer {
                 graph,
                 record.pass_index,
                 objc2_metal::MTLStages::Vertex | objc2_metal::MTLStages::Fragment,
+                &cmd_buffer.resources,
             );
             encoder.set_viewport(0.0, 0.0, width as f32, height as f32, 0.0, 1.0);
             encoder.set_scissor(0, 0, width, height);
-            match record.kind {
-                PassKind::Shadow => {
-                    self.encode_shadow_record(&mut encoder, record, &data, width)?
-                }
-                PassKind::DepthPrepass => {
-                    self.encode_depth_prepass_record(&mut encoder, record, &data, width, height)?
-                }
-                PassKind::Geometry => {
-                    self.encode_geometry_record(&mut encoder, record, &data, graph, slot)?
-                }
-                PassKind::ObjectId => {
-                    self.encode_object_id_record(&mut encoder, record, &data, width, height)?
-                }
-                PassKind::Outline => {
-                    self.encode_outline_record(&mut encoder, record, &data, width, height)?
-                }
-                PassKind::Fullscreen => {
-                    self.encode_fullscreen_record(&mut encoder, record, graph, slot)?
-                }
-                PassKind::Ui => self.encode_ui_record(
-                    &mut encoder,
-                    record,
-                    data.ui_draw_lists.first(),
-                    width,
-                    height,
-                )?,
-                PassKind::Particles => {
-                    self.encode_particle_record(&mut encoder, record, width, height)?
-                }
-                PassKind::StencilIndicator | PassKind::Compositing => {
-                    unreachable!("unsupported Metal handler")
-                }
+            let frame = GraphicsFrame {
+                graph,
+                slot,
+                size: crate::size::Size2D::new(width, height),
+            };
+            if record.kind == PassKind::Ui {
+                self.encode_ui_record(&mut encoder, record, data.ui_draw_lists.first(), frame)?;
+            } else {
+                self.encode_graphics_packet(&mut encoder, record, &data, frame)?;
             }
             encoder.end_encoding();
             if trace_enabled {
@@ -350,334 +365,67 @@ impl MetalRenderer {
         }
         if !graph.final_image_sync_ops().is_empty() {
             use crate::backend::command::GpuComputeEncoder;
+            cmd_buffer
+                .resources
+                .capture_context(None, "final_output", Vec::new());
             let terminal = cmd_buffer.begin_compute_pass();
-            super::sync::apply_final_image_boundary(terminal.inner.as_ref(), graph);
+            super::sync::apply_final_image_boundary(
+                terminal.inner.as_ref(),
+                graph,
+                &cmd_buffer.resources,
+            );
             terminal.end_encoding();
         }
         cmd_buffer.resources.check()?;
-        self.frame_slots[slot].timestamps.end(&cmd_buffer.inner);
+        if let Some(timestamps) = &self.frame_slots[slot].timestamps {
+            timestamps.end(&cmd_buffer.inner);
+        }
         cmd_buffer.end();
         graph.record_buffer_execution(self);
+        let mut exported_images = HashMap::new();
+        for resource in &graph.exported_resources {
+            let view = if graph.resource_name(*resource) == Some("backbuffer") {
+                Some(drawable.clone())
+            } else if let Some(handle) = graph.imported_images.get(resource) {
+                self.textures.get(*handle).map(|entry| entry._view.clone())
+            } else {
+                graph
+                    .transient_texture_by_id(*resource, slot)
+                    .map(|texture| texture.view.clone())
+            };
+            if let Some(view) = view {
+                exported_images.insert(*resource, view);
+            }
+        }
+        let imported_buffers = plan
+            .passes()
+            .iter()
+            .flat_map(|record| &record.buffer_accesses)
+            .filter_map(|access| graph.imported_buffer_handle(access.resource))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        if trace_enabled {
+            execution_trace.backend = cmd_buffer.resources.capture();
+            execution_trace.backend.frame =
+                Some(crate::render_graph::capture::CapturedSubmission {
+                    frame_slot: slot,
+                    generation: self.frame_slots[slot].generation,
+                    command_allocator: slot,
+                    feedback_identity: format!(
+                        "slot.{slot}.generation.{}",
+                        self.frame_slots[slot].generation
+                    ),
+                    feedback: crate::render_graph::capture::CapturedFeedback::Pending,
+                });
+        }
         self.pending_frame = Some(super::frame_lifecycle::MetalPendingFrame {
             command: cmd_buffer,
             defined_outputs,
-            picking_target,
+            exported_images,
+            imported_buffers,
         });
         Ok(execution_trace)
-    }
-
-    fn encode_geometry_record(
-        &self,
-        encoder: &mut MetalRenderEncoder,
-        record: &MetalPassRecord,
-        data: &PassExecutionData,
-        graph: &FrameGraph<Self>,
-        slot: usize,
-    ) -> Result<(), RendererError> {
-        Self::bind_common_resources(self, encoder);
-        for access in &record.image_accesses {
-            if access.usage == crate::render_graph::ResourceAccessUsage::Sampled
-                && let Some(texture) = graph.transient_texture_by_id(access.resource, slot)
-                && matches!(texture.format, crate::texture::ImageFormat::D32Sfloat)
-            {
-                encoder.bind_native_texture(
-                    &texture.view.inner,
-                    1,
-                    crate::backend::command::ShaderStages::FRAGMENT,
-                );
-
-                encoder.use_texture(
-                    &texture.view.inner,
-                    objc2_metal::MTLResourceUsage::Read,
-                    objc2_metal::MTLRenderStages::Fragment,
-                );
-            }
-        }
-        if record.color_attachments[0].load_op == crate::render_pass::LoadOp::Clear
-            && let Some(ref pipeline) = self.sky_pipeline
-        {
-            if let Some(ref buffer) = self.dummy_vertex_buffer {
-                encoder.bind_vertex_buffer(buffer, 0, 10);
-            }
-            encoder.bind_graphics_pipeline(pipeline);
-            encoder.draw(3, 1, 0, 0);
-        }
-        Self::draw_objects(
-            self,
-            encoder,
-            record.color_attachments[0].format,
-            data.prepared(),
-        );
-        Ok(())
-    }
-
-    fn encode_shadow_record(
-        &self,
-        encoder: &mut MetalRenderEncoder,
-        _record: &MetalPassRecord,
-        data: &PassExecutionData,
-        resolution: u32,
-    ) -> Result<(), RendererError> {
-        if data.prepared().is_empty() {
-            return Ok(());
-        }
-        let pipeline = self
-            .shadow
-            .pipeline()
-            .ok_or_else(|| RendererError::InvalidOperation("Shadow pipeline missing".into()))?;
-        super::shadow::render_cascades(
-            encoder,
-            pipeline,
-            self.shadow.pipeline_skinned(),
-            Some(&self.skeletons[self.frame_index()]),
-            resolution,
-            self.current_frame_uniform_buffer()
-                .ok_or_else(|| RendererError::InvalidOperation("Frame uniforms missing".into()))?,
-            self.current_object_storage_buffer()
-                .ok_or_else(|| RendererError::InvalidOperation("Object storage missing".into()))?,
-            self.shadow_cascade_encode_buffers[self.frame_index()]
-                .as_ref()
-                .ok_or_else(|| RendererError::InvalidOperation("Cascade data missing".into()))?,
-            self.shadow.cascade_count(),
-            &self.meshes,
-            &self.materials,
-            data.prepared(),
-        );
-        Ok(())
-    }
-
-    fn encode_depth_prepass_record(
-        &self,
-        encoder: &mut MetalRenderEncoder,
-        _record: &MetalPassRecord,
-        data: &PassExecutionData,
-        width: u32,
-        height: u32,
-    ) -> Result<(), RendererError> {
-        if data.prepared().is_empty() {
-            return Ok(());
-        }
-        let pipeline = self
-            .depth_prepass
-            .pipeline()
-            .ok_or_else(|| RendererError::InvalidOperation("Depth pipeline missing".into()))?;
-        super::depth_prepass::render_depth_prepass(
-            encoder,
-            pipeline,
-            self.depth_prepass.pipeline_skinned(),
-            self.depth_prepass.pipeline_billboard(),
-            width,
-            height,
-            self.current_frame_uniform_buffer()
-                .ok_or_else(|| RendererError::InvalidOperation("Frame uniforms missing".into()))?,
-            self.current_object_storage_buffer()
-                .ok_or_else(|| RendererError::InvalidOperation("Object storage missing".into()))?,
-            &self.meshes,
-            &self.materials,
-            data.prepared(),
-            &self.skeletons[self.frame_index()],
-            self.bindless_manager.snapshot(),
-            self.shared_sampler.as_ref(),
-        );
-        Ok(())
-    }
-
-    fn encode_object_id_record(
-        &self,
-        encoder: &mut MetalRenderEncoder,
-        _record: &MetalPassRecord,
-        data: &PassExecutionData,
-        width: u32,
-        height: u32,
-    ) -> Result<(), RendererError> {
-        if data.prepared().is_empty() {
-            return Ok(());
-        }
-        let pipeline = self
-            .picking
-            .pipeline()
-            .ok_or_else(|| RendererError::InvalidOperation("Picking pipeline missing".into()))?;
-        super::picking::render_object_id_pass(
-            encoder,
-            pipeline,
-            self.picking.pipeline_skinned(),
-            width,
-            height,
-            self.current_frame_uniform_buffer()
-                .ok_or_else(|| RendererError::InvalidOperation("Frame uniforms missing".into()))?,
-            self.current_object_storage_buffer()
-                .ok_or_else(|| RendererError::InvalidOperation("Object storage missing".into()))?,
-            &self.meshes,
-            &self.materials,
-            data.prepared(),
-            &self.skeletons[self.frame_index()],
-        );
-        Ok(())
-    }
-
-    fn encode_outline_record(
-        &self,
-        encoder: &mut MetalRenderEncoder,
-        _record: &MetalPassRecord,
-        data: &PassExecutionData,
-        width: u32,
-        height: u32,
-    ) -> Result<(), RendererError> {
-        if data.prepared().is_empty() {
-            return Ok(());
-        }
-        let frame = self
-            .current_frame_uniform_buffer()
-            .ok_or_else(|| RendererError::InvalidOperation("Frame uniforms missing".into()))?;
-        let objects = self
-            .current_object_storage_buffer()
-            .ok_or_else(|| RendererError::InvalidOperation("Object storage missing".into()))?;
-        if let Some(pipeline) = self.outline.stencil_mark_pipeline() {
-            super::outline::render_stencil_mark(
-                encoder,
-                pipeline,
-                self.outline.stencil_mark_skinned_pipeline(),
-                width,
-                height,
-                frame,
-                objects,
-                &self.meshes,
-                &self.materials,
-                data.prepared(),
-                &self.skeletons[self.frame_index()],
-            );
-        }
-        if let Some(pipeline) = self.outline.outline_draw_pipeline() {
-            super::outline::render_outline(
-                encoder,
-                pipeline,
-                self.outline.outline_draw_skinned_pipeline(),
-                width,
-                height,
-                frame,
-                objects,
-                &self.meshes,
-                &self.materials,
-                data.prepared(),
-                &self.skeletons[self.frame_index()],
-            );
-        }
-        Ok(())
-    }
-
-    fn encode_particle_record(
-        &self,
-        encoder: &mut MetalRenderEncoder,
-        _record: &MetalPassRecord,
-        width: u32,
-        height: u32,
-    ) -> Result<(), RendererError> {
-        if let Some(system) = &self.particle_system
-            && let Some(pipeline) = system.render_pipeline()
-        {
-            super::particle::render_particles(
-                encoder,
-                pipeline,
-                width,
-                height,
-                self.current_frame_uniform_buffer().ok_or_else(|| {
-                    RendererError::InvalidOperation("Frame uniforms missing".into())
-                })?,
-                system,
-                self.frame_index,
-            );
-        }
-        Ok(())
-    }
-
-    fn fullscreen_input(
-        &self,
-        record: &MetalPassRecord,
-        graph: &FrameGraph<Self>,
-        slot: usize,
-    ) -> Result<u32, RendererError> {
-        let inputs = record
-            .image_accesses
-            .iter()
-            .filter(|access| access.usage == crate::render_graph::ResourceAccessUsage::Sampled)
-            .collect::<Vec<_>>();
-        if inputs.len() != 1 {
-            return Err(RendererError::InvalidOperation(format!(
-                "Fullscreen pass '{}' requires exactly one declared sampled input",
-                record.name
-            )));
-        }
-        let resource = inputs[0].resource;
-        let sampling_slot = if let Some(handle) = graph.imported_images.get(&resource) {
-            self.textures
-                .get(*handle)
-                .and_then(|entry| entry.bindless_slot)
-        } else {
-            graph
-                .transient_texture_by_id(resource, slot)
-                .and_then(|texture| texture.bindless_slot)
-        };
-        sampling_slot
-            .filter(|_| self.tonemap_pipeline.is_some())
-            .ok_or_else(|| {
-                RendererError::InvalidOperation(format!(
-                    "Fullscreen pass '{}' has an unresolved sampled input or pipeline",
-                    record.name
-                ))
-            })
-    }
-
-    fn encode_fullscreen_record(
-        &self,
-        encoder: &mut MetalRenderEncoder,
-        record: &MetalPassRecord,
-        graph: &FrameGraph<Self>,
-        slot: usize,
-    ) -> Result<(), RendererError> {
-        let tonemap_pipeline = self
-            .tonemap_pipeline
-            .as_ref()
-            .ok_or_else(|| RendererError::InvalidOperation("Tonemap pipeline missing".into()))?;
-        let hdr_slot = self.fullscreen_input(record, graph, slot)?;
-        let mut uniforms = self.frame_uniforms.clone();
-        if let Some(params) = record.tonemap_params {
-            uniforms.tonemap = [
-                params.exposure,
-                params.gamma,
-                params.mode as u32 as f32,
-                hdr_slot as f32,
-            ];
-        } else {
-            uniforms.tonemap[3] = hdr_slot as f32;
-        }
-        if let Some(snapshot) = self.bindless_manager.snapshot() {
-            encoder.bind_bindless(snapshot);
-        }
-        if let Some(ref sampler) = self.shared_sampler {
-            encoder.bind_native_sampler(
-                &sampler.inner,
-                0,
-                crate::backend::command::ShaderStages::FRAGMENT,
-            );
-        }
-        if let Some(ref dummy_vertex_buffer) = self.dummy_vertex_buffer {
-            encoder.bind_vertex_buffer(dummy_vertex_buffer, 0, 10);
-        }
-        encoder.set_push_constants(
-            unsafe {
-                // FrameUniforms is repr(C) and consists of initialized scalar arrays.
-                std::slice::from_raw_parts(
-                    &uniforms as *const crate::renderer::types::FrameUniforms as *const u8,
-                    std::mem::size_of_val(&uniforms),
-                )
-            },
-            0,
-            ShaderStages::VERTEX_FRAGMENT,
-        );
-        encoder.bind_graphics_pipeline(tonemap_pipeline);
-        encoder.draw(3, 1, 0, 0);
-
-        Ok(())
     }
 
     fn encode_ui_record(
@@ -685,9 +433,9 @@ impl MetalRenderer {
         encoder: &mut MetalRenderEncoder,
         record: &MetalPassRecord,
         draw_list: Option<&UIDrawList>,
-        width: u32,
-        height: u32,
+        frame: GraphicsFrame<'_>,
     ) -> Result<(), RendererError> {
+        let crate::size::Size2D { width, height } = frame.size;
         let Some(draw_list) = draw_list.filter(|list| !list.is_empty()) else {
             return Ok(());
         };
@@ -696,63 +444,16 @@ impl MetalRenderer {
             .ok_or_else(|| RendererError::InvalidOperation("UI pass has no material".into()))?;
         let pipeline = self.material_pipeline(material, record.color_attachments[0].format)?;
         encoder.bind_graphics_pipeline(&pipeline);
-        if let Some(snapshot) = self.bindless_manager.snapshot() {
-            encoder.bind_bindless(snapshot);
-        }
-        if let Some(ref sampler) = self.shared_sampler {
-            encoder.bind_native_sampler(
-                &sampler.inner,
-                0,
-                crate::backend::command::ShaderStages::FRAGMENT,
-            );
-        }
-        if let Some(vertex_buffer) = self.ui_renderers[self.frame_index()].vertex_buffer() {
+        self.bind_packet(encoder, &pipeline, &record.bindings, &[], frame, None)?;
+        if let Some(vertex_buffer) = self.ui_renderers[frame.slot].vertex_buffer() {
             encoder.bind_vertex_buffer(vertex_buffer, 0, 10);
         }
-        if let Some(index_buffer) = self.ui_renderers[self.frame_index()].index_buffer() {
+        if let Some(index_buffer) = self.ui_renderers[frame.slot].index_buffer() {
             encoder.bind_index_buffer(index_buffer, 0, IndexType::Uint32);
         }
-        self.ui_renderers[self.frame_index()]
+        self.ui_renderers[frame.slot]
             .render_ui_commands(encoder, draw_list, &pipeline, width, height);
         Ok(())
-    }
-}
-
-fn validate_builtin_attachments(
-    record: &MetalPassRecord,
-    attachments: &ResolvedMetalAttachments,
-) -> Result<(), RendererError> {
-    use crate::texture::ImageFormat;
-    let formats = record
-        .color_attachments
-        .iter()
-        .map(|attachment| attachment.format)
-        .collect::<Vec<_>>();
-    let depth = record.depth_attachment.map(|attachment| attachment.format);
-    let ds = ImageFormat::D32SfloatS8Uint;
-    let valid = match record.kind {
-        PassKind::Shadow => {
-            formats.is_empty()
-                && depth == Some(ImageFormat::D32Sfloat)
-                && attachments.width == attachments.height
-        }
-        PassKind::DepthPrepass => formats.is_empty() && depth == Some(ds),
-        PassKind::ObjectId => formats == [ImageFormat::R32Uint] && depth == Some(ds),
-        PassKind::Particles | PassKind::Outline => {
-            formats == [ImageFormat::R16G16B16A16Sfloat] && depth == Some(ds)
-        }
-        PassKind::Geometry => formats.len() == 1 && (depth.is_none() || depth == Some(ds)),
-        PassKind::Fullscreen => formats == [ImageFormat::B8G8R8A8Srgb] && depth.is_none(),
-        PassKind::Ui => formats == [ImageFormat::B8G8R8A8Srgb] && depth.is_none(),
-        _ => false,
-    };
-    if valid {
-        Ok(())
-    } else {
-        Err(RendererError::InvalidOperation(format!(
-            "Metal pass '{}' has attachments incompatible with its built-in encoder ({:?})",
-            record.name, record.kind
-        )))
     }
 }
 
@@ -835,61 +536,19 @@ impl MetalRenderer {
         slot: usize,
     ) -> Result<(), RendererError> {
         use crate::backend::command::{GpuBlitEncoder, GpuComputeEncoder};
-        use crate::render_graph::{
-            BuiltinComputeKernel, ComputeCommand, ComputeDispatchSize, ComputeKernel,
-            RenderGraphBackend,
-        };
+        use crate::render_graph::{ComputeCommand, ComputeDispatchSize, RenderGraphBackend};
         for (index, operation) in record.commands.iter().enumerate() {
             match operation {
                 ComputeCommand::Dispatch(dispatch) => {
-                    let descriptor = dispatch.kernel.descriptor_ref();
+                    let descriptor = &dispatch.pipeline;
                     let pipeline = self.compute_pipelines.get(descriptor).ok_or_else(|| {
                         RendererError::InvalidOperation(format!(
                             "Compute pipeline for '{}' was not prepared before encoding",
                             record.name
                         ))
                     })?;
-                    let builtin = match &dispatch.kernel {
-                        ComputeKernel::Builtin(kernel) => Some(*kernel),
-                        _ => None,
-                    };
                     let groups = match dispatch.size {
                         ComputeDispatchSize::Direct(groups) => groups,
-                        ComputeDispatchSize::Frame => match builtin {
-                            Some(BuiltinComputeKernel::AnimationPose) => [
-                                graph
-                                    .frame_parameters()
-                                    .animation_skeleton_count
-                                    .div_ceil(64),
-                                1,
-                                1,
-                            ],
-                            Some(BuiltinComputeKernel::LightCulling) => self
-                                .light_culling
-                                .as_ref()
-                                .map(|light| light.dispatch_size())
-                                .unwrap_or([0, 0, 0]),
-                            Some(BuiltinComputeKernel::ParticleEmit) => {
-                                [graph.frame_parameters().particle_emit_workgroup_count, 1, 1]
-                            }
-                            Some(BuiltinComputeKernel::ParticleSimulate) => [
-                                graph.frame_parameters().particle_simulate_workgroup_count,
-                                1,
-                                1,
-                            ],
-                            Some(BuiltinComputeKernel::ParticleDrawCommand) => [
-                                u32::from(
-                                    graph.frame_parameters().particle_simulate_workgroup_count > 0,
-                                ),
-                                1,
-                                1,
-                            ],
-                            None => {
-                                return Err(RendererError::InvalidOperation(
-                                    "Custom compute dispatch requires explicit workgroups".into(),
-                                ));
-                            }
-                        },
                         ComputeDispatchSize::Indirect { .. } => [1, 1, 1],
                     };
                     if groups.contains(&0) {
@@ -955,6 +614,11 @@ impl MetalRenderer {
                             ));
                         }
                     }
+                    command.resources.capture_context(
+                        Some(record.pass_index),
+                        &format!("{}.dispatch.{index}", record.name),
+                        Vec::new(),
+                    );
                     let mut encoder = command.begin_compute_pass();
                     encoder
                         .inner
@@ -978,19 +642,31 @@ impl MetalRenderer {
                                 after,
                                 objc2_metal::MTL4VisibilityOptions::Device,
                             );
+                        super::sync::capture_native_boundary(
+                            &command.resources,
+                            "inter_command",
+                            super::sync::NativeBoundary::BetweenCommands {
+                                previous_compute: matches!(
+                                    &record.commands[index - 1],
+                                    ComputeCommand::Dispatch(_)
+                                ),
+                                current_compute: matches!(operation, ComputeCommand::Dispatch(_)),
+                            },
+                            before,
+                            after,
+                            objc2_metal::MTL4VisibilityOptions::Device,
+                        );
                     }
                     super::sync::apply_compiled_boundary(
                         encoder.inner.as_ref(),
                         graph,
                         record.pass_index,
                         objc2_metal::MTLStages::Dispatch,
+                        &command.resources,
                     );
                     encoder.bind_compute_pipeline(pipeline);
                     for binding in &dispatch.bindings {
                         let Some(buffer) = graph.buffer_by_id(self, binding.resource, slot) else {
-                            if builtin.is_some() && graph.is_builtin_buffer(binding.resource) {
-                                continue;
-                            }
                             return Err(RendererError::InvalidOperation(format!(
                                 "Compute pass '{}' cannot resolve buffer {}",
                                 record.name, binding.resource.0
@@ -1009,6 +685,7 @@ impl MetalRenderer {
                         if uniform && !dispatch.constants.is_empty() {
                             encoder.set_push_constants(&dispatch.constants, native.index as u32);
                         } else {
+                            command.resources.observe_resource(binding.resource.0);
                             encoder.bind_storage_buffer_range(
                                 &buffer.buffer,
                                 offset,
@@ -1028,6 +705,7 @@ impl MetalRenderer {
                                         "Unresolved indirect compute command".into(),
                                     )
                                 })?;
+                            command.resources.observe_resource(resource.0);
                             encoder.dispatch_indirect(
                                 &buffer.buffer,
                                 <Self as RenderGraphBackend>::buffer_offset(&buffer) + offset,
@@ -1043,9 +721,6 @@ impl MetalRenderer {
                     value,
                 } => {
                     let Some(buffer) = graph.buffer_by_id(self, *resource, slot) else {
-                        if graph.is_builtin_buffer(*resource) {
-                            continue;
-                        }
                         return Err(RendererError::InvalidOperation(
                             "Unresolved fill buffer".into(),
                         ));
@@ -1062,6 +737,19 @@ impl MetalRenderer {
                         ));
                     }
                     let fill_size = range.size.min(available);
+                    command.resources.capture_context(
+                        Some(record.pass_index),
+                        &format!("{}.transfer.{index}", record.name),
+                        match operation {
+                            ComputeCommand::FillBuffer { resource, .. } => vec![resource.0],
+                            ComputeCommand::CopyBuffer {
+                                source,
+                                destination,
+                                ..
+                            } => vec![source.0, destination.0],
+                            _ => Vec::new(),
+                        },
+                    );
                     let mut encoder = command.begin_blit_pass();
                     encoder
                         .inner
@@ -1085,12 +773,27 @@ impl MetalRenderer {
                                 after,
                                 objc2_metal::MTL4VisibilityOptions::Device,
                             );
+                        super::sync::capture_native_boundary(
+                            &command.resources,
+                            "inter_command",
+                            super::sync::NativeBoundary::BetweenCommands {
+                                previous_compute: matches!(
+                                    &record.commands[index - 1],
+                                    ComputeCommand::Dispatch(_)
+                                ),
+                                current_compute: matches!(operation, ComputeCommand::Dispatch(_)),
+                            },
+                            before,
+                            after,
+                            objc2_metal::MTL4VisibilityOptions::Device,
+                        );
                     }
                     super::sync::apply_compiled_boundary(
                         encoder.inner.as_ref(),
                         graph,
                         record.pass_index,
                         objc2_metal::MTLStages::Blit,
+                        &command.resources,
                     );
                     if value
                         .to_le_bytes()
@@ -1134,10 +837,6 @@ impl MetalRenderer {
                     let (Some(source_buffer), Some(destination_buffer)) =
                         (source_buffer, destination_buffer)
                     else {
-                        if graph.is_builtin_buffer(*source) || graph.is_builtin_buffer(*destination)
-                        {
-                            continue;
-                        }
                         return Err(RendererError::InvalidOperation(
                             "Unresolved copy buffer".into(),
                         ));
@@ -1164,6 +863,19 @@ impl MetalRenderer {
                             ));
                         }
                     }
+                    command.resources.capture_context(
+                        Some(record.pass_index),
+                        &format!("{}.transfer.{index}", record.name),
+                        match operation {
+                            ComputeCommand::FillBuffer { resource, .. } => vec![resource.0],
+                            ComputeCommand::CopyBuffer {
+                                source,
+                                destination,
+                                ..
+                            } => vec![source.0, destination.0],
+                            _ => Vec::new(),
+                        },
+                    );
                     let mut encoder = command.begin_blit_pass();
                     encoder
                         .inner
@@ -1187,12 +899,27 @@ impl MetalRenderer {
                                 after,
                                 objc2_metal::MTL4VisibilityOptions::Device,
                             );
+                        super::sync::capture_native_boundary(
+                            &command.resources,
+                            "inter_command",
+                            super::sync::NativeBoundary::BetweenCommands {
+                                previous_compute: matches!(
+                                    &record.commands[index - 1],
+                                    ComputeCommand::Dispatch(_)
+                                ),
+                                current_compute: matches!(operation, ComputeCommand::Dispatch(_)),
+                            },
+                            before,
+                            after,
+                            objc2_metal::MTL4VisibilityOptions::Device,
+                        );
                     }
                     super::sync::apply_compiled_boundary(
                         encoder.inner.as_ref(),
                         graph,
                         record.pass_index,
                         objc2_metal::MTLStages::Blit,
+                        &command.resources,
                     );
                     encoder.copy_buffer_to_buffer(
                         &source_buffer.buffer,

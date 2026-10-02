@@ -11,19 +11,6 @@ pub(crate) use ash::vk::AccessFlags2;
 /// Type alias for Vulkan pipeline stage flags 2.
 pub(crate) type PipelineStage2Flags = ash::vk::PipelineStageFlags2;
 
-// Common Subresource Range Constants
-
-/// Standard color subresource range for single-layer images.
-///
-/// Use this for most color attachment and texture operations.
-pub(crate) const COLOR_SUBRESOURCE_RANGE: vk::ImageSubresourceRange = vk::ImageSubresourceRange {
-    aspect_mask: vk::ImageAspectFlags::COLOR,
-    base_mip_level: 0,
-    level_count: 1,
-    base_array_layer: 0,
-    layer_count: 1,
-};
-
 macro_rules! define_vk_wrapper {
     ($name:ident, $vk_type:ty) => {
         #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -558,14 +545,6 @@ mod tests {
 
         let empty = AccessFlags2::NONE;
         assert!(empty.is_empty());
-    }
-
-    #[test]
-    fn test_access_flags2_conversions() {
-        let vk_flags = vk::AccessFlags2KHR::COLOR_ATTACHMENT_WRITE_KHR;
-        let wrapper: AccessFlags2 = vk_flags.into();
-        let back: vk::AccessFlags2KHR = wrapper.into();
-        assert_eq!(vk_flags, back);
     }
 
     #[test]

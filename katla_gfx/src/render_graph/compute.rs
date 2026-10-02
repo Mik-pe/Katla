@@ -5,43 +5,6 @@ use super::{
     ResourceId,
 };
 
-/// Renderer-owned buffer imported under a graph resource identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BuiltinBuffer {
-    AnimationParams,
-    AnimationClips,
-    AnimationChannels,
-    AnimationTimes,
-    AnimationValues,
-    AnimationJoints,
-    AnimationWorld,
-    AnimationOutput,
-    Skeleton(crate::handle::SkeletonHandle),
-    LightData,
-    LightTiles,
-    LightHeaders,
-    LightFrame,
-    ParticleData,
-    ParticleDeadList,
-    ParticleAliveRead,
-    ParticleAliveWrite,
-    ParticleCounters,
-    ParticlePreviousCounters,
-    ParticleIndirect,
-    ParticleFrame,
-    ParticleEmitters,
-}
-
-/// Built-in shader selected independently of its native pipeline representation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum BuiltinComputeKernel {
-    AnimationPose,
-    LightCulling,
-    ParticleEmit,
-    ParticleSimulate,
-    ParticleDrawCommand,
-}
-
 /// Canonical shader buffer binding reflected from WGSL.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComputeBindingLayout {
@@ -118,63 +81,6 @@ impl ComputeInterface {
     }
 }
 
-impl BuiltinComputeKernel {
-    /// The canonical interface is reflected from the same source compiled by both adapters.
-    pub fn descriptor(self) -> ComputePipelineDesc {
-        self.descriptor_ref().clone()
-    }
-
-    pub(crate) fn descriptor_ref(self) -> &'static ComputePipelineDesc {
-        use std::sync::OnceLock;
-        static ANIMATION: OnceLock<ComputePipelineDesc> = OnceLock::new();
-        static LIGHTS: OnceLock<ComputePipelineDesc> = OnceLock::new();
-        static EMIT: OnceLock<ComputePipelineDesc> = OnceLock::new();
-        static SIMULATE: OnceLock<ComputePipelineDesc> = OnceLock::new();
-        static DRAW: OnceLock<ComputePipelineDesc> = OnceLock::new();
-        let cache = match self {
-            Self::AnimationPose => &ANIMATION,
-            Self::LightCulling => &LIGHTS,
-            Self::ParticleEmit => &EMIT,
-            Self::ParticleSimulate => &SIMULATE,
-            Self::ParticleDrawCommand => &DRAW,
-        };
-        cache.get_or_init(|| self.build_descriptor())
-    }
-
-    fn build_descriptor(self) -> ComputePipelineDesc {
-        let source = match self {
-            Self::AnimationPose => {
-                include_str!("../../../resources/shaders/compute/animation/pose_eval.wgsl")
-            }
-            Self::LightCulling => {
-                include_str!("../../../resources/shaders/lighting/light_cull.wgsl")
-            }
-            Self::ParticleEmit => {
-                include_str!("../../../resources/shaders/particles/particle_emit.wgsl")
-            }
-            Self::ParticleSimulate => {
-                include_str!("../../../resources/shaders/particles/particle_simulate.wgsl")
-            }
-            Self::ParticleDrawCommand => {
-                include_str!("../../../resources/shaders/particles/particle_draw_command.wgsl")
-            }
-        };
-        let source = source
-            .replace(
-                "#include \"../common/lighting_types.wgsl\"",
-                include_str!("../../../resources/shaders/common/lighting_types.wgsl"),
-            )
-            .replace(
-                "#include \"common.wgsl\"",
-                include_str!("../../../resources/shaders/particles/common.wgsl"),
-            );
-        ComputePipelineDesc {
-            wgsl: source,
-            entry: "cs_main".into(),
-        }
-    }
-}
-
 /// Portable compute pipeline identity; the interface is reflected from this exact source.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ComputePipelineDesc {
@@ -185,28 +91,6 @@ pub struct ComputePipelineDesc {
 impl ComputePipelineDesc {
     pub fn interface(&self) -> Result<ComputeInterface, String> {
         ComputeInterface::reflect(&self.wgsl, &self.entry)
-    }
-}
-
-/// Compute pipeline and optional built-in frame-workload policy.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum ComputeKernel {
-    Builtin(BuiltinComputeKernel),
-    Shader(ComputePipelineDesc),
-}
-
-impl ComputeKernel {
-    pub fn descriptor(&self) -> ComputePipelineDesc {
-        self.descriptor_ref().clone()
-    }
-    pub(crate) fn descriptor_ref(&self) -> &ComputePipelineDesc {
-        match self {
-            Self::Builtin(kernel) => kernel.descriptor_ref(),
-            Self::Shader(descriptor) => descriptor,
-        }
-    }
-    pub fn interface(&self) -> Result<ComputeInterface, String> {
-        self.descriptor_ref().interface()
     }
 }
 
@@ -223,20 +107,16 @@ pub struct ComputeBinding {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComputeDispatchSize {
     Direct([u32; 3]),
-    Indirect {
-        resource: ResourceId,
-        offset: u64,
-    },
-    /// Uses frame parameters supplied by the owning application.
-    Frame,
+    Indirect { resource: ResourceId, offset: u64 },
 }
 
 /// One compute dispatch with a complete declared resource binding interface.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComputeDispatch {
-    pub kernel: ComputeKernel,
+    /// Portable shader pipeline prepared before execution.
+    pub pipeline: ComputePipelineDesc,
     pub bindings: Vec<ComputeBinding>,
-    /// Inline uniform bytes, interpreted through the kernel's reflected uniform binding.
+    /// Inline uniform bytes, interpreted through the pipeline's reflected uniform binding.
     pub constants: Vec<u8>,
     pub size: ComputeDispatchSize,
 }
@@ -289,7 +169,7 @@ pub(crate) fn validate_commands(pass: &PassDesc) -> Result<(), String> {
                 if pass.pass_type != super::PassType::Compute {
                     return Err("Dispatch commands require a compute pass".into());
                 }
-                let interface = dispatch.kernel.interface()?;
+                let interface = dispatch.pipeline.interface()?;
                 if dispatch.bindings.len() != interface.bindings.len() {
                     return Err("Compute binding count differs from shader reflection".into());
                 }
@@ -327,13 +207,6 @@ pub(crate) fn validate_commands(pass: &PassDesc) -> Result<(), String> {
                         .any(|binding| binding.usage == BufferUsage::Uniform)
                 {
                     return Err("Inline constants require a reflected uniform binding".into());
-                }
-                if dispatch.size == ComputeDispatchSize::Frame
-                    && matches!(dispatch.kernel, ComputeKernel::Shader(_))
-                {
-                    return Err(
-                        "Custom compute requires explicit direct or indirect dimensions".into(),
-                    );
                 }
                 if !dispatch.constants.is_empty() {
                     if dispatch.constants.len() % 4 != 0 || dispatch.constants.len() > 65536 {
@@ -458,7 +331,7 @@ pub(crate) fn validate_commands(pass: &PassDesc) -> Result<(), String> {
 impl ComputeDispatch {
     /// Declare accesses directly from the canonical shader interface.
     pub fn accesses(&self) -> Result<Vec<BufferAccess>, String> {
-        let interface = self.kernel.interface()?;
+        let interface = self.pipeline.interface()?;
         self.bindings
             .iter()
             .map(|binding| {
@@ -485,10 +358,10 @@ mod tests {
     const SOURCE: &str = "@group(2) @binding(4) var<storage, read_write> output: array<u32>; @compute @workgroup_size(8) fn main(@builtin(global_invocation_id) id:vec3u) { output[id.x]=id.x+1u; }";
     fn dispatch() -> ComputeDispatch {
         ComputeDispatch {
-            kernel: ComputeKernel::Shader(ComputePipelineDesc {
+            pipeline: ComputePipelineDesc {
                 wgsl: SOURCE.into(),
                 entry: "main".into(),
-            }),
+            },
             bindings: vec![ComputeBinding {
                 group: 2,
                 binding: 4,
@@ -501,23 +374,11 @@ mod tests {
     }
     #[test]
     fn test_reflection_preserves_nondefault_entry_point_and_bindings() {
-        let interface = dispatch().kernel.interface().unwrap();
+        let interface = dispatch().pipeline.interface().unwrap();
         assert_eq!(interface.workgroup_size, [8, 1, 1]);
         assert_eq!(interface.bindings[0].group, 2);
         assert_eq!(interface.bindings[0].binding, 4);
         assert_eq!(interface.bindings[0].mode, ResourceAccessMode::ReadWrite);
-    }
-    #[test]
-    fn test_builtin_interfaces_are_reflected_from_valid_canonical_sources() {
-        for kernel in [
-            BuiltinComputeKernel::AnimationPose,
-            BuiltinComputeKernel::LightCulling,
-            BuiltinComputeKernel::ParticleEmit,
-            BuiltinComputeKernel::ParticleSimulate,
-            BuiltinComputeKernel::ParticleDrawCommand,
-        ] {
-            assert!(!kernel.descriptor().interface().unwrap().bindings.is_empty());
-        }
     }
     #[test]
     fn test_compute_commands_reject_undeclared_resources_and_ranges() {
@@ -570,10 +431,10 @@ mod tests {
     #[test]
     fn test_inline_constants_require_transfer_write_and_fit_uniform_range() {
         let command = ComputeDispatch {
-            kernel: ComputeKernel::Shader(ComputePipelineDesc {
+            pipeline: ComputePipelineDesc {
                 wgsl: "@group(0) @binding(0) var<uniform> params: vec4u; @compute @workgroup_size(1) fn main() { let value = params.x; }".into(),
                 entry: "main".into(),
-            }),
+            },
             bindings: vec![ComputeBinding { group: 0, binding: 0, resource: ResourceId(3), range: BufferByteRange::new(16, 16) }],
             constants: vec![0; 16],
             size: ComputeDispatchSize::Direct([1, 1, 1]),
@@ -648,11 +509,11 @@ mod tests {
     #[test]
     fn test_fixed_shader_buffer_span_constrains_binding_ranges() {
         let mut command = ComputeDispatch {
-            kernel: ComputeKernel::Shader(ComputePipelineDesc { wgsl: "@group(0) @binding(0) var<uniform> params: vec4u; @compute @workgroup_size(1) fn main() { let value = params.x; }".into(), entry: "main".into() }),
+            pipeline: ComputePipelineDesc { wgsl: "@group(0) @binding(0) var<uniform> params: vec4u; @compute @workgroup_size(1) fn main() { let value = params.x; }".into(), entry: "main".into() },
             bindings: vec![ComputeBinding { group: 0, binding: 0, resource: ResourceId(3), range: BufferByteRange::new(0, 4) }],
             constants: vec![], size: ComputeDispatchSize::Direct([1, 1, 1]),
         };
-        let interface = command.kernel.interface().unwrap();
+        let interface = command.pipeline.interface().unwrap();
         assert_eq!(interface.bindings[0].minimum_buffer_bytes, 16);
         let pass = PassDesc::new("span", super::super::PassType::Compute, vec![], vec![])
             .with_buffer_accesses(command.accesses().unwrap())

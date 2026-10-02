@@ -1,7 +1,6 @@
 use std::sync::mpsc;
 
 use rmcp::handler::server::ServerHandler;
-use rmcp::handler::server::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Json;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::Implementation;
@@ -12,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use katla_ecs::scene_tool::{ResourceOp, SceneOp};
 
 pub struct KatlaMcpServer {
-    tool_router: ToolRouter<Self>,
     request_tx: mpsc::Sender<PendingMcpRequest>,
 }
 
@@ -228,10 +226,7 @@ impl McpBridge {
     pub fn new() -> (KatlaMcpServer, Self, tokio::sync::watch::Receiver<bool>) {
         let (tx, rx) = mpsc::channel();
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        let server = KatlaMcpServer {
-            tool_router: KatlaMcpServer::tool_router(),
-            request_tx: tx,
-        };
+        let server = KatlaMcpServer { request_tx: tx };
         let bridge = McpBridge {
             receiver: rx,
             shutdown_tx,

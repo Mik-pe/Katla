@@ -62,16 +62,24 @@ fn vs_main(
     return out;
 }
 
+fn billboard_alpha(in: VertexOutput) -> f32 {
+    let obj = objects[in.instance_idx];
+    let albedo_idx = u32(obj.material_params.w);
+    let sample = textureSample(bindless_textures[albedo_idx], shared_sampler, in.tex_coords);
+    return sample.a * obj.base_color.a;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) {
-    let obj = objects[in.instance_idx];
-
-    let albedo_idx = u32(obj.material_params.w);
-    let albedo_sample = textureSample(bindless_textures[albedo_idx], shared_sampler, in.tex_coords);
-
-    let alpha = albedo_sample.a * obj.base_color.a;
-
-    if (alpha < 0.5) {
+    if (billboard_alpha(in) < 0.5) {
         discard;
     }
+}
+
+@fragment
+fn fs_object_id(in: VertexOutput) -> @location(0) vec4u {
+    if (billboard_alpha(in) < 0.5) {
+        discard;
+    }
+    return vec4u(in.instance_idx + 1u, 0u, 0u, 1u);
 }

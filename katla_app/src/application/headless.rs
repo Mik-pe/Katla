@@ -14,16 +14,8 @@ pub const HEADLESS_SCALE_FACTOR: f32 = 2.0;
 
 use crate::application::Application;
 use crate::error::AppResult;
-#[cfg(not(target_os = "macos"))]
 use katla_gfx::GpuRenderer;
-#[cfg(target_os = "macos")]
-use katla_gfx::MetalTextureRetained;
 use log::info;
-
-#[cfg(target_os = "macos")]
-type HeadlessFrame = Option<MetalTextureRetained>;
-#[cfg(not(target_os = "macos"))]
-type HeadlessFrame = ();
 
 impl Application {
     /// Run the headless frame loop: render N frames and save a screenshot.
@@ -62,11 +54,6 @@ impl Application {
             hook(self);
         }
 
-        // Keep a reference to the last rendered offscreen texture for readback.
-        // The renderer takes ownership of the drawable texture during render_frame
-        // (via .take()), so we must clone it beforehand.
-        #[cfg(target_os = "macos")]
-        let mut last_offscreen: Option<MetalTextureRetained> = None;
         #[cfg(target_os = "macos")]
         let mut frame_metrics = Vec::with_capacity(max_frames);
 
@@ -81,7 +68,7 @@ impl Application {
 
             #[cfg(target_os = "macos")]
             {
-                last_offscreen = self.run_one_headless_frame();
+                self.run_one_headless_frame();
                 if let Some(renderer) = self.renderer.as_metal() {
                     let metrics = renderer.frame_metrics();
                     frame_metrics.push([
@@ -102,11 +89,7 @@ impl Application {
             if let Some(ref mut runner) = interaction_test
                 && let Some(screenshot_dest) = runner.end_frame(self, _frame)
             {
-                self.save_headless_screenshot(
-                    &screenshot_dest,
-                    #[cfg(target_os = "macos")]
-                    last_offscreen.clone(),
-                )?;
+                self.save_headless_screenshot(&screenshot_dest)?;
             }
 
             // UI test: check for screenshot and inject state changes
@@ -115,19 +98,10 @@ impl Application {
                 && let Some(screenshot_dest) =
                     runner.on_frame(_frame, &mut self.editor.editor_ui, &self.world)
             {
-                self.save_headless_screenshot(
-                    &screenshot_dest,
-                    #[cfg(target_os = "macos")]
-                    last_offscreen.clone(),
-                )?;
+                self.save_headless_screenshot(&screenshot_dest)?;
             }
 
             self.frame_count += 1;
-
-            #[cfg(all(target_os = "macos", not(feature = "editor")))]
-            let _ = &mut ui_test;
-            #[cfg(all(target_os = "macos", not(feature = "editor")))]
-            let _ = &mut interaction_test;
         }
 
         #[cfg(target_os = "macos")]
@@ -138,11 +112,7 @@ impl Application {
 
         // Save screenshot from the last frame's offscreen texture (standard mode only)
         if ui_test.is_none() && interaction_test.is_none() {
-            self.save_headless_screenshot(
-                &screenshot_path,
-                #[cfg(target_os = "macos")]
-                last_offscreen,
-            )?;
+            self.save_headless_screenshot(&screenshot_path)?;
         }
 
         // Layout dump (if both --headless and --dump-layout are set)
@@ -173,8 +143,8 @@ impl Application {
         Ok(())
     }
 
-    /// Render one headless frame. Returns the offscreen texture that was rendered to.
-    fn run_one_headless_frame(&mut self) -> HeadlessFrame {
+    /// Render one headless frame into the device's offscreen drawable.
+    fn run_one_headless_frame(&mut self) {
         self.timer.add_timestamp();
         let dt = self.timer.get_delta() as f32;
 
@@ -228,16 +198,11 @@ impl Application {
             &mut self.renderer,
         );
 
-        // Create a fresh offscreen texture and set as drawable for this frame.
-        // Clone it before passing to the renderer — the renderer takes ownership
-        // via .take() during render_frame, but the Shared-storage texture persists
-        // on the GPU and the clone remains valid for readback.
+        // Headless Metal needs an offscreen drawable for each submission.
         #[cfg(target_os = "macos")]
         let offscreen = self
             .renderer
             .create_offscreen_texture(HEADLESS_WIDTH, HEADLESS_HEIGHT);
-        #[cfg(target_os = "macos")]
-        let offscreen_clone = offscreen.clone();
         #[cfg(target_os = "macos")]
         self.renderer.set_headless_drawable(offscreen);
 
@@ -245,51 +210,18 @@ impl Application {
 
         // Render editor frame (same as windowed — includes UI generation)
         self.render_editor_frame(dt);
-
-        #[cfg(target_os = "macos")]
-        {
-            Some(offscreen_clone)
-        }
     }
 
-    fn save_headless_screenshot(
-        &mut self,
-        path: &str,
-        #[cfg(target_os = "macos")] texture: Option<MetalTextureRetained>,
-    ) -> AppResult<()> {
-        #[cfg(target_os = "macos")]
-        if let Some(renderer) = self.renderer.as_metal() {
-            renderer
-                .wait_for_last_submission()
-                .map_err(|source| crate::error::AppError::Graphics { source })?;
-        }
-
-        #[cfg(target_os = "macos")]
-        let Some(texture) = texture else {
-            log::error!("No offscreen texture available for screenshot");
-            return Err(crate::error::AppError::Other {
-                message: "No offscreen texture available".to_string(),
-            });
-        };
-
-        #[cfg(target_os = "macos")]
-        let bgra_data =
-            crate::Renderer::readback_bgra_texture(&texture, HEADLESS_WIDTH, HEADLESS_HEIGHT);
-
-        #[cfg(not(target_os = "macos"))]
-        let bgra_data = {
-            let renderer = self.renderer.unwrap_vulkan();
-            renderer
-                .queue_async_readback(self.frame_count)
-                .map_err(|source| crate::error::AppError::Graphics { source })?;
-            renderer
-                .wait_for_pending_readback()
-                .map_err(|source| crate::error::AppError::Graphics { source })?
-                .ok_or_else(|| crate::error::AppError::Other {
-                    message: "No headless frame available".into(),
-                })?
-                .1
-        };
+    fn save_headless_screenshot(&mut self, path: &str) -> AppResult<()> {
+        let ticket = self.queue_frame_readback()?;
+        self.renderer.wait_for_device();
+        let data = self
+            .renderer
+            .poll_texture_readback(ticket)?
+            .ok_or_else(|| crate::AppError::Other {
+                message: "Frame capture did not complete after waiting for the device".into(),
+            })?;
+        let bgra_data = data.bytes;
 
         // Convert BGRA to RGBA for PNG
         let rgba_data: Vec<u8> = bgra_data
@@ -302,7 +234,7 @@ impl Application {
         // Encode PNG
         let mut png_data = Vec::new();
         {
-            let mut encoder = png::Encoder::new(&mut png_data, HEADLESS_WIDTH, HEADLESS_HEIGHT);
+            let mut encoder = png::Encoder::new(&mut png_data, data.size.width, data.size.height);
             encoder.set_color(png::ColorType::Rgba);
             encoder.set_depth(png::BitDepth::Eight);
             let mut writer = encoder

@@ -1,15 +1,13 @@
-use log::{debug, info, warn};
+#[cfg(feature = "editor")]
+use log::debug;
+use log::{info, warn};
 
 use katla_gfx::GpuRenderer;
 
 use crate::application::Application;
 
 impl Application {
-    /// Serialize the compiled render-graph diagnostics and write them to stdout or a file.
-    ///
-    /// Only runs once, after the first frame, so the graph reflects the frame's
-    /// live resources. The compiler is pure, so this needs no GPU work and the
-    /// dump is identical on every backend for the same declared graph.
+    /// Export the compiled graph and native execution capture after the first frame.
     pub(crate) fn dump_render_graph_if_needed(&mut self) {
         if self.render_graph_dumped {
             return;
@@ -19,13 +17,42 @@ impl Application {
             return;
         };
 
-        let output = match self.frame_graph.diagnostics() {
-            Ok(diagnostics) => diagnostics.to_string(),
+        let mut capture = match self.frame_graph.capture() {
+            Ok(capture) => capture,
             Err(error) => {
-                log::error!("Failed to compile render-graph diagnostics: {error}");
+                log::error!("Failed to capture render graph: {error}");
                 self.render_graph_dumped = true;
                 return;
             }
+        };
+        if let Some(snapshot) = self.renderer.capture_submission_snapshot() {
+            capture.backend_execution.frame = Some(snapshot);
+        }
+        for failure in &capture.comparison {
+            log::error!("Render-graph capture divergence: {failure}");
+        }
+        let output = match target {
+            super::DumpLayoutTarget::File(path)
+                if std::path::Path::new(path)
+                    .extension()
+                    .is_some_and(|ext| ext == "json") =>
+            {
+                match capture.to_json_pretty() {
+                    Ok(json) => json,
+                    Err(error) => {
+                        log::error!("Failed to serialize render-graph capture: {error}");
+                        return;
+                    }
+                }
+            }
+            super::DumpLayoutTarget::File(path)
+                if std::path::Path::new(path)
+                    .extension()
+                    .is_some_and(|ext| ext == "dot") =>
+            {
+                capture.to_dot()
+            }
+            _ => capture.to_string(),
         };
 
         match target {
@@ -57,26 +84,20 @@ impl Application {
             hook(self);
         }
 
-        // Wait for any pending async readback to complete before destroying resources
-        // This must happen BEFORE wait_for_device() to ensure readback finishes
-        if let Some(vulkan_renderer) = self.renderer.as_vulkan() {
-            match vulkan_renderer.wait_for_pending_readback() {
-                Ok(Some((frame, image_data))) => {
-                    info!("Saving final frame {} before shutdown", frame);
-                    let extent = self.renderer.swapchain_extent();
-                    let width = extent.width as usize;
-                    let height = extent.height as usize;
-                    if let Err(e) = self.save_frame_as_png(frame, &image_data, width, height) {
-                        log::error!("Failed to save final frame {}: {}", frame, e);
-                    }
-                }
-                Ok(None) => {
-                    log::debug!("No pending readback to complete during shutdown");
-                }
-                Err(e) => {
-                    log::error!("Failed to wait for pending readback during shutdown: {}", e);
+        self.renderer.wait_for_device();
+        match self.poll_frame_readback() {
+            Ok(Some((frame, data))) => {
+                if let Err(error) = self.save_frame_as_png(
+                    frame,
+                    &data.bytes,
+                    data.size.width as usize,
+                    data.size.height as usize,
+                ) {
+                    log::error!("Failed to save final frame {frame}: {error}");
                 }
             }
+            Ok(None) => {}
+            Err(error) => log::error!("Failed to finish frame readback: {error}"),
         }
 
         // Save preferences before exit
@@ -96,7 +117,7 @@ impl Application {
         // This ensures proper cleanup order and avoids heap corruption during shutdown
         self.frame_graph.cleanup();
 
-        // Destroy renderer (which owns the particle system)
+        // Destroy the remaining device resources
         self.renderer.destroy();
     }
 
@@ -238,30 +259,20 @@ impl Application {
         // - On frame N+1: Check if readback from frame N is complete and save to disk
         // This allows us to catch synchronization issues that synchronous readback would mask
         if self.info.check_black_frames && self.frame_count > 0 {
-            let extent = self.renderer.swapchain_extent();
-            let width = extent.width as usize;
-            let height = extent.height as usize;
-
-            // Collect readback result and queue next readback in a single mutable borrow scope
-            let readback_result = match &mut self.renderer {
-                katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) => {
-                    let result = vulkan_renderer.check_pending_readback();
-                    if let Err(e) = vulkan_renderer.queue_async_readback(self.frame_count) {
-                        log::error!(
-                            "Frame {} - Failed to queue async readback: {}",
-                            self.frame_count,
-                            e
-                        );
-                    }
-                    Some(result)
+            let readback_result = self.poll_frame_readback();
+            if self.frame_readback.is_none() {
+                match self.queue_frame_readback() {
+                    Ok(ticket) => self.frame_readback = Some((self.frame_count, ticket)),
+                    Err(error) => log::error!("Failed to queue frame readback: {error}"),
                 }
-                #[cfg(target_os = "macos")]
-                katla_gfx::AnyRenderer::Metal(_) => None,
-            };
-
-            if let Some(Ok(Some((prev_frame, image_data)))) = readback_result {
+            }
+            if let Ok(Some((prev_frame, data))) = &readback_result {
+                let prev_frame = *prev_frame;
+                let image_data = &data.bytes;
+                let width = data.size.width as usize;
+                let height = data.size.height as usize;
                 // Save frame as PNG for visual inspection
-                if let Err(e) = self.save_frame_as_png(prev_frame, &image_data, width, height) {
+                if let Err(e) = self.save_frame_as_png(prev_frame, image_data, width, height) {
                     log::error!("Failed to save frame {}: {}", prev_frame, e);
                 }
 
@@ -317,7 +328,7 @@ impl Application {
                         b
                     );
                 }
-            } else if let Some(Err(e)) = readback_result {
+            } else if let Err(e) = readback_result {
                 log::error!("Failed to check pending readback: {}", e);
             }
         }
@@ -336,6 +347,46 @@ impl Application {
 
         if let Some(ref window) = self.window {
             window.request_redraw();
+        }
+    }
+
+    pub(crate) fn queue_frame_readback(
+        &mut self,
+    ) -> crate::AppResult<katla_gfx::TextureReadbackTicket> {
+        let source = self
+            .frame_graph
+            .resource_id("backbuffer")
+            .and_then(|resource| self.renderer.graph_texture_source(resource))
+            .ok_or_else(|| crate::AppError::Other {
+                message: "Frame capture requires an exported committed backbuffer".into(),
+            })?;
+        Ok(self.renderer.queue_texture_readback(
+            source,
+            katla_gfx::TextureReadbackRegion {
+                origin: [0, 0],
+                size: self.renderer.swapchain_extent(),
+                mip_level: 0,
+                array_layer: 0,
+            },
+        )?)
+    }
+
+    fn poll_frame_readback(
+        &mut self,
+    ) -> crate::AppResult<Option<(usize, katla_gfx::TextureReadbackData)>> {
+        let Some((frame, ticket)) = self.frame_readback else {
+            return Ok(None);
+        };
+        match self.renderer.poll_texture_readback(ticket) {
+            Ok(Some(data)) => {
+                self.frame_readback = None;
+                Ok(Some((frame, data)))
+            }
+            Ok(None) => Ok(None),
+            Err(error) => {
+                self.frame_readback = None;
+                Err(error.into())
+            }
         }
     }
 
@@ -460,59 +511,116 @@ impl Application {
 }
 
 impl Application {
-    pub(crate) fn prepare_scene_gpu(&mut self, dt: f32) -> Result<(), katla_gfx::RendererError> {
-        let uses_katla_scene = self.frame_graph_runtime.uses_katla_scene();
-
-        if uses_katla_scene
-            && let katla_gfx::AnyRenderer::Vulkan(vulkan_renderer) = &mut self.renderer
-            && let Some(ref mut ps) = vulkan_renderer.particle_system
-        {
-            self.particle_system.update(
+    pub(crate) fn prepare_scene_gpu(
+        &mut self,
+        token: &katla_gfx::renderer::frame_scope::FrameToken,
+        dt: f32,
+        uniforms: &crate::rendering::FrameUniforms,
+        draws: &katla_gfx::renderer::DrawList,
+    ) -> crate::AppResult<()> {
+        let Some(features) = &mut self.scene_features else {
+            return Ok(());
+        };
+        if let Some(cpu) = &mut self.gpu_animation_system {
+            features.animation.prepare_frame(
+                &mut self.renderer,
+                &mut self.frame_graph,
+                token,
                 &mut self.world,
-                ps as &mut dyn katla_gfx::ParticleEmitterDriver,
-                dt,
-            );
+                cpu,
+            )?;
         }
-
-        if !uses_katla_scene {
-            return Ok(());
-        }
-        let Some(gpu_anim) = &mut self.gpu_animation_system else {
+        let scene_size = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+            self.panel_rt_size
+        } else {
+            self.renderer.swapchain_extent()
+        };
+        features.lights.prepare_frame(
+            &mut self.renderer,
+            &mut self.frame_graph,
+            token,
+            &self.point_lights_buffer,
+            uniforms,
+            scene_size,
+        )?;
+        features.particles.prepare_frame(
+            &mut self.renderer,
+            &mut self.frame_graph,
+            token,
+            &mut self.world,
+            &mut self.particle_system,
+            dt,
+            self.frame_count as u32,
+            uniforms,
+        )?;
+        #[cfg(feature = "editor")]
+        let selected = self
+            .editor
+            .editor_ui
+            .selected_entity
+            .map(|entity| self.collect_selected_instance_indices(entity))
+            .unwrap_or_default();
+        #[cfg(not(feature = "editor"))]
+        let selected = Vec::new();
+        let Some(features) = &mut self.scene_features else {
             return Ok(());
         };
-        let buffers: Option<&mut dyn katla_gfx::animation::AnimationBufferUploader> =
-            match &mut self.renderer {
-                katla_gfx::AnyRenderer::Vulkan(renderer) => {
-                    renderer.animation_buffers.as_mut().map(|buffers| {
-                        buffers as &mut dyn katla_gfx::animation::AnimationBufferUploader
-                    })
+        let skinning = features.animation.skinning_accesses().to_vec();
+        for name in [
+            &self.frame_graph_bindings.passes.geometry,
+            &self.frame_graph_bindings.passes.depth_prepass,
+            &self.frame_graph_bindings.passes.picking,
+            &self.frame_graph_bindings.passes.shadow,
+            &self.frame_graph_bindings.passes.outline,
+            &self.frame_graph_bindings.passes.stencil_indicator,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Some(pass) = self.frame_graph.pass_id(name) {
+                let mut accesses = skinning.clone();
+                if self.frame_graph_bindings.passes.geometry.as_deref() == Some(name.as_str()) {
+                    accesses.extend(features.lights.graphics_accesses()?);
                 }
-                #[cfg(target_os = "macos")]
-                katla_gfx::AnyRenderer::Metal(renderer) => renderer.animation_uploader_mut(),
-            };
-        let Some(buffers) = buffers else {
-            return Ok(());
-        };
-        gpu_anim.prepare(&mut self.world, buffers)?;
-        gpu_anim.update_params(&mut self.world, buffers);
-        self.frame_graph
-            .set_animation_skeleton_count(gpu_anim.skeleton_count() as u32);
-
-        use crate::components::DrawableComponent;
-        let mut copy_cmds = Vec::new();
-        for entity in gpu_anim.entities() {
-            if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity)
-                && let Some(info) = gpu_anim.entity_info(entity)
-                && drawable.skeleton_handle.is_some()
-            {
-                copy_cmds.push((
-                    drawable.skeleton_handle,
-                    info.joint_offset,
-                    info.joint_count,
-                ));
+                self.frame_graph
+                    .set_pass_commands(pass, Vec::new(), accesses)?;
             }
         }
-        self.frame_graph.set_skeleton_copy_commands(copy_cmds);
+        if let Some(pass) = self.frame_graph.pass_id("particles") {
+            self.frame_graph.set_pass_commands(
+                pass,
+                Vec::new(),
+                features.particles.graphics_accesses()?,
+            )?;
+        }
+        let mut ordinary = Vec::new();
+        let mut billboards = Vec::new();
+        for draw in draws.iter() {
+            let target = if draw.is_billboard {
+                &mut billboards
+            } else {
+                &mut ordinary
+            };
+            target.extend(draw.base_object_slot()..draw.base_object_slot() + draw.instance_count());
+        }
+        features.graphics.prepare_frame(
+            &mut self.frame_graph,
+            super::scene_features::GraphicsFrame {
+                ids: &self.pass_ids,
+                bindings: &self.frame_graph_bindings,
+                uniforms,
+                lights: &features.lights,
+                particles: &features.particles,
+                selected,
+                ordinary,
+                billboards,
+                frame_slot: token.slot(),
+                scene_size,
+            },
+        )?;
+        features
+            .animation
+            .retire_unused_imports(&mut self.frame_graph)?;
         Ok(())
     }
 }

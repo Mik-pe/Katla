@@ -36,20 +36,12 @@ impl ComputePipelineBuilder {
         self
     }
 
-    /// Set a custom entry point name (default: "cs_main").
-    /// Set the descriptor set layouts using wrapper types.
-    pub fn with_descriptor_layouts(mut self, layouts: Vec<VkDescriptorSetLayout>) -> Self {
-        self.descriptor_layouts = layouts.into_iter().map(|l| l.into()).collect();
-        self
-    }
-
     /// Add a descriptor set layout using wrapper type.
     pub fn add_descriptor_layout(mut self, layout: VkDescriptorSetLayout) -> Self {
         self.descriptor_layouts.push(layout.into());
         self
     }
 
-    /// Set the push constant ranges.
     /// Build the compute pipeline.
     pub fn build(self) -> Result<ComputePipeline, ComputePipelineError> {
         let compute_shader = self

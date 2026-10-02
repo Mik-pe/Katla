@@ -8,49 +8,71 @@ use ash::vk;
 
 impl Frame<'_, VulkanRenderer> {
     /// Execute prepared draws with pipeline state caching.
-    ///
-    /// Tracks the currently bound pipeline and skeleton descriptor to skip
-    /// redundant Vulkan state changes when consecutive draw calls share the
-    /// same material/pipeline or skeleton.
     pub(super) fn execute_draw_list(
         &mut self,
         cmd: &CommandBuffer,
         draws: PreparedDraws<'_>,
         color_format: crate::texture::ImageFormat,
+        packet: &crate::renderer::frame_bindings::PassBindings,
+        phase: &crate::renderer::frame_bindings::PassDrawPhase,
+        accesses: &[crate::render_graph::BufferAccess],
     ) -> Result<(), RenderGraphError> {
         if draws.is_empty() {
             return Ok(());
         }
 
-        self.ensure_materials_compiled(draws, color_format)?;
-
+        let pipelines = &phase.pipelines;
+        let selection = match &phase.draw {
+            crate::renderer::frame_bindings::PassDraw::ObjectIndices(indices) => {
+                Some(indices.as_slice())
+            }
+            _ => None,
+        };
         let mut current_pipeline = vk::Pipeline::null();
-        let mut current_layout = vk::PipelineLayout::null();
-        let mut current_skeleton = vk::DescriptorSet::null();
 
         for draw_call in draws.iter() {
-            let (pipeline, layout) = {
-                let variant = self
-                    .renderer
-                    .material_variant(draw_call.material, color_format)
-                    .map_err(|e| {
-                        RenderGraphError::InvalidConfiguration(format!(
-                            "Material variant lookup failed: {}",
-                            e
-                        ))
-                    })?
+            if selection.is_some_and(|indices| !indices.contains(&draw_call.instance_index)) {
+                continue;
+            }
+            let mesh_layout = &self
+                .renderer
+                .asset_registry
+                .get_mesh(draw_call.mesh)
+                .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?
+                .layout;
+            let material = if pipelines.is_empty() {
+                draw_call.material
+            } else {
+                pipelines
+                    .iter()
+                    .find(|pipeline| &pipeline.vertex_layout == mesh_layout)
                     .ok_or_else(|| {
-                        RenderGraphError::InvalidConfiguration(format!(
-                            "Material {material:?} has no pipeline variant for {color_format:?}",
-                            material = draw_call.material,
-                        ))
-                    })?;
-
-                self.renderer
-                    .asset_registry
-                    .get_pipeline_handles(variant.pipeline)?
+                        RenderGraphError::InvalidConfiguration(
+                            "No pass pipeline matches the submitted mesh layout".into(),
+                        )
+                    })?
+                    .material
             };
+            let variant = self
+                .renderer
+                .material_variant(material, color_format)
+                .map_err(|e| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Material variant lookup failed: {}",
+                        e
+                    ))
+                })?
+                .ok_or_else(|| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Material {material:?} has no pipeline variant for {color_format:?}",
+                        material = draw_call.material,
+                    ))
+                })?;
 
+            let (pipeline, _) = self
+                .renderer
+                .asset_registry
+                .get_pipeline_handles(variant.pipeline)?;
             if pipeline != current_pipeline {
                 unsafe {
                     self.renderer.context.device.cmd_bind_pipeline(
@@ -59,52 +81,17 @@ impl Frame<'_, VulkanRenderer> {
                         pipeline,
                     );
                 }
-                let frame_idx = self.renderer.current_frame();
-
-                // Bind Set 0: storage uniforms
-                let storage_ds = self.renderer.storage_descriptor_sets[frame_idx].vk_set();
-                cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-
-                // Bind Set 1: bindless textures
-                let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
-                cmd.bind_descriptor_sets(layout, 1, &[bindless_ds], &[]);
-
-                // Bind Set 2: skeleton (bound per-draw below) or empty placeholder
-                let empty_ds = self.renderer.empty_descriptor_set(frame_idx);
-                cmd.bind_descriptor_sets(layout, 2, &[empty_ds], &[]);
-
-                // Bind Set 3: light culling (push descriptors)
-                if let Some(lc) = self.renderer.light_culling_buffers()
-                    && let Err(e) = lc.push_fragment_descriptors(cmd.vk_command_buffer(), layout)
-                {
-                    log::warn!("Failed to push light culling fragment descriptors: {}", e);
-                }
-
-                // Bind Set 4: shadow descriptors
-                self.renderer
-                    .bind_shadow_descriptors(cmd.vk_command_buffer(), layout);
-
                 current_pipeline = pipeline;
-                current_layout = layout;
-                current_skeleton = vk::DescriptorSet::null();
             }
-
+            self.bind_graphics_resources(
+                cmd,
+                material,
+                variant.pipeline,
+                packet,
+                draw_call.skeleton,
+                accesses,
+            )?;
             let is_skinned = !draw_call.skeleton.is_none();
-            let skel_ds = if is_skinned {
-                self.renderer
-                    .get_skeleton_descriptor(draw_call.skeleton)
-                    .ok_or(RenderGraphError::InvalidSkeletonHandle(draw_call.skeleton))?
-                    .vk_set()
-            } else {
-                vk::DescriptorSet::null()
-            };
-
-            if skel_ds != current_skeleton {
-                if is_skinned {
-                    cmd.bind_descriptor_sets(current_layout, 2, &[skel_ds], &[]);
-                }
-                current_skeleton = skel_ds;
-            }
 
             let mesh = self
                 .renderer

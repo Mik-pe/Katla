@@ -33,6 +33,15 @@ impl AnyFrameGraph {
         AnyFrameGraph::Vulkan(FrameGraph::new())
     }
 
+    /// Capture compiled logical resources and observed native execution.
+    pub fn capture(&self) -> Result<super::capture::RenderGraphCapture, RenderGraphError> {
+        match self {
+            Self::Vulkan(graph) => graph.capture(),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.capture(),
+        }
+    }
+
     pub fn add_pass(&mut self, pass: PassDesc) -> PassId {
         match self {
             AnyFrameGraph::Vulkan(fg) => fg.add_pass(pass),
@@ -49,17 +58,80 @@ impl AnyFrameGraph {
         }
     }
 
-    /// Import an active-slot built-in buffer into the graph namespace.
-    pub fn import_builtin_buffer(
+    /// Import an ordinary application-owned buffer.
+    pub fn import_buffer(
         &mut self,
         name: impl Into<String>,
-        role: super::compute::BuiltinBuffer,
-        desc: super::resource::BufferDesc,
-    ) -> ResourceId {
+        handle: crate::handle::BufferHandle,
+        desc: super::BufferDesc,
+    ) -> Result<ResourceId, RenderGraphError> {
         match self {
-            Self::Vulkan(graph) => graph.import_builtin_buffer(name, role, desc),
+            Self::Vulkan(graph) => graph.import_buffer(name, handle, desc),
             #[cfg(target_os = "macos")]
-            Self::Metal(graph) => graph.import_builtin_buffer(name, role, desc),
+            Self::Metal(graph) => graph.import_buffer(name, handle, desc),
+        }
+    }
+
+    /// Select the acquired slot's buffer without changing its graph contract.
+    pub fn rebind_imported_buffer(
+        &mut self,
+        resource: ResourceId,
+        handle: crate::handle::BufferHandle,
+    ) -> Result<(), RenderGraphError> {
+        match self {
+            Self::Vulkan(graph) => graph.rebind_imported_buffer(resource, handle),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.rebind_imported_buffer(resource, handle),
+        }
+    }
+
+    /// Revalidate a resource contract after an imported buffer changes capacity.
+    pub fn redefine_imported_buffer(
+        &mut self,
+        resource: ResourceId,
+        handle: crate::handle::BufferHandle,
+        desc: super::BufferDesc,
+    ) -> Result<(), RenderGraphError> {
+        match self {
+            Self::Vulkan(graph) => graph.redefine_imported_buffer(resource, handle, desc),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.redefine_imported_buffer(resource, handle, desc),
+        }
+    }
+
+    /// Retire an imported allocation after all pass references have been removed.
+    pub fn remove_imported_buffer(&mut self, resource: ResourceId) -> Result<(), RenderGraphError> {
+        match self {
+            Self::Vulkan(graph) => graph.remove_imported_buffer(resource),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.remove_imported_buffer(resource),
+        }
+    }
+
+    /// Replace a pass's explicit compute/transfer workload and accesses.
+    pub fn set_pass_commands(
+        &mut self,
+        pass: PassId,
+        commands: Vec<super::ComputeCommand>,
+        accesses: Vec<super::BufferAccess>,
+    ) -> Result<(), RenderGraphError> {
+        match self {
+            Self::Vulkan(graph) => graph.set_pass_commands(pass, commands, accesses),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.set_pass_commands(pass, commands, accesses),
+        }
+    }
+
+    /// Bind application-owned graphics resources and pipelines to a pass.
+    pub fn set_pass_bindings(
+        &mut self,
+        pass: PassId,
+        bindings: crate::renderer::frame_bindings::PassBindings,
+    ) -> Result<(), RenderGraphError> {
+        match self {
+            Self::Vulkan(graph) => graph.set_pass_bindings(pass, bindings),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.set_pass_bindings(pass, bindings),
         }
     }
 
@@ -93,6 +165,27 @@ impl AnyFrameGraph {
         }
     }
 
+    /// Prepare one explicit compute descriptor without compiling graph topology.
+    pub fn prepare_compute_pipeline(
+        &self,
+        renderer: &mut crate::AnyRenderer,
+        descriptor: &super::ComputePipelineDesc,
+    ) -> Result<(), RenderGraphError> {
+        match (self, renderer) {
+            (Self::Vulkan(_), crate::AnyRenderer::Vulkan(renderer)) => {
+                RenderGraphBackend::prepare_compute_pipeline(renderer, descriptor)
+            }
+            #[cfg(target_os = "macos")]
+            (Self::Metal(_), crate::AnyRenderer::Metal(renderer)) => {
+                RenderGraphBackend::prepare_compute_pipeline(renderer, descriptor)
+            }
+            #[cfg(target_os = "macos")]
+            _ => Err(RenderGraphError::InvalidConfiguration(
+                "Graph backend differs from renderer".into(),
+            )),
+        }
+    }
+
     /// Warm reflected compute pipelines before the first frame is acquired.
     pub fn initialize_compute_pipelines(
         &mut self,
@@ -110,78 +203,6 @@ impl AnyFrameGraph {
             _ => Err(RenderGraphError::InvalidConfiguration(
                 "Graph backend differs from renderer".into(),
             )),
-        }
-    }
-
-    pub fn set_delta_time(&mut self, delta_time: f32) {
-        match self {
-            AnyFrameGraph::Vulkan(fg) => fg.set_delta_time(delta_time),
-            #[cfg(target_os = "macos")]
-            AnyFrameGraph::Metal(fg) => fg.set_delta_time(delta_time),
-        }
-    }
-
-    pub fn set_frame_count(&mut self, frame_count: usize) {
-        match self {
-            AnyFrameGraph::Vulkan(fg) => fg.set_frame_count(frame_count),
-            #[cfg(target_os = "macos")]
-            AnyFrameGraph::Metal(fg) => fg.set_frame_count(frame_count),
-        }
-    }
-
-    pub fn set_particle_emit_workgroup_count(&mut self, count: u32) {
-        match self {
-            AnyFrameGraph::Vulkan(fg) => fg.set_particle_emit_workgroup_count(count),
-            #[cfg(target_os = "macos")]
-            AnyFrameGraph::Metal(fg) => fg.set_particle_emit_workgroup_count(count),
-        }
-    }
-
-    pub fn set_particle_simulate_workgroup_count(&mut self, count: u32) {
-        match self {
-            AnyFrameGraph::Vulkan(fg) => fg.set_particle_simulate_workgroup_count(count),
-            #[cfg(target_os = "macos")]
-            AnyFrameGraph::Metal(fg) => fg.set_particle_simulate_workgroup_count(count),
-        }
-    }
-
-    /// Set the active animation workload for either backend.
-    pub fn set_animation_skeleton_count(&mut self, count: u32) {
-        match self {
-            Self::Vulkan(graph) => graph.set_animation_skeleton_count(count),
-            #[cfg(target_os = "macos")]
-            Self::Metal(graph) => graph.set_animation_skeleton_count(count),
-        }
-    }
-
-    pub fn set_skeleton_copy_commands(
-        &mut self,
-        commands: Vec<(crate::handle::SkeletonHandle, u32, u32)>,
-    ) {
-        match self {
-            AnyFrameGraph::Vulkan(fg) => fg.set_skeleton_copy_commands(commands),
-            #[cfg(target_os = "macos")]
-            AnyFrameGraph::Metal(fg) => fg.set_skeleton_copy_commands(commands),
-        }
-    }
-
-    pub fn set_tonemap_texture_index(
-        &mut self,
-        pass_id: PassId,
-        texture_index: u32,
-    ) -> Result<(), RenderGraphError> {
-        match self {
-            AnyFrameGraph::Vulkan(fg) => fg.set_tonemap_texture_index(pass_id, texture_index),
-            #[cfg(target_os = "macos")]
-            AnyFrameGraph::Metal(fg) => fg.set_tonemap_texture_index(pass_id, texture_index),
-        }
-    }
-
-    pub fn get_ldr_texture_base_index(&self) -> Option<u32> {
-        match self {
-            AnyFrameGraph::Vulkan(fg) => fg.get_ldr_texture_base_index(),
-            #[cfg(target_os = "macos")]
-            AnyFrameGraph::Metal(fg) => fg.get_ldr_texture_base_index(),
         }
     }
 

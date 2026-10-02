@@ -54,7 +54,7 @@ pub(crate) struct MetalPassRecord {
     pub(crate) uses_depth: bool,
     pub(crate) depth_attachment: Option<MetalDepthAttachmentOps>,
     pub(crate) material: Option<crate::handle::MaterialHandle>,
-    pub(crate) tonemap_params: Option<crate::render_graph::TonemapParams>,
+    pub(crate) bindings: crate::renderer::frame_bindings::PassBindings,
 }
 
 impl MetalPassRecord {
@@ -64,33 +64,7 @@ impl MetalPassRecord {
         format_at: &impl Fn(ResourceId) -> Option<ImageFormat>,
         name_at: &impl Fn(ResourceId) -> Option<String>,
     ) -> Result<Self, RenderGraphError> {
-        let kind = if pass.pass_type != PassType::Graphics {
-            PassKind::Geometry
-        } else {
-            pass.kind.ok_or_else(|| {
-                RenderGraphError::BackendError(format!(
-                    "Metal pass '{}' has no executable semantic kind",
-                    pass.name
-                ))
-            })?
-        };
-
-        match kind {
-            PassKind::Shadow
-            | PassKind::DepthPrepass
-            | PassKind::Geometry
-            | PassKind::ObjectId
-            | PassKind::Outline
-            | PassKind::Fullscreen
-            | PassKind::Ui
-            | PassKind::Particles => {}
-            PassKind::StencilIndicator | PassKind::Compositing => {
-                return Err(RenderGraphError::BackendError(format!(
-                    "Metal has no executable handler for pass '{}' ({kind:?})",
-                    pass.name
-                )));
-            }
-        }
+        let kind = pass.kind.unwrap_or(PassKind::Geometry);
 
         Ok(Self {
             pass_id: PassId(pass_index as u32),
@@ -166,7 +140,7 @@ impl MetalPassRecord {
                 None
             },
             material: pass.material,
-            tonemap_params: pass.tonemap_params,
+            bindings: pass.bindings.clone(),
         })
     }
 
@@ -396,7 +370,7 @@ impl MetalExecutionPlan {
                     ),
                     depth_attachment: None,
                     material: None,
-                    tonemap_params: None,
+                    bindings: Default::default(),
                 })
                 .collect(),
         }
@@ -619,7 +593,7 @@ mod tests {
     fn test_classifies_compiled_sync_ops_as_explicit_stage_coverage() {
         let geometry = pass("geometry", PassType::Graphics, Some(PassKind::Geometry));
         let tonemap = pass("tonemap", PassType::Graphics, Some(PassKind::Fullscreen));
-        let passes = vec![geometry, tonemap];
+        let passes = [geometry, tonemap];
 
         // Attachment→sampled RAW before tonemap, plus a frame-end contract op.
         let attachment_write = ImageSyncOp {
@@ -694,10 +668,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_executable_handler() {
+    fn test_accepts_untagged_graphics_without_implicit_attachments() {
         let passes = vec![pass("custom", PassType::Graphics, None)];
-        let error = compile(&passes, &[0]).unwrap_err().to_string();
-        assert!(error.contains("no executable semantic kind"));
+        let plan = compile(&passes, &[0]).unwrap();
+        assert_eq!(plan.passes()[0].kind, PassKind::Geometry);
+        assert!(!plan.passes()[0].uses_depth);
+        assert!(plan.passes()[0].depth_attachment.is_none());
+        assert!(plan.passes()[0].color_attachments.is_empty());
     }
 
     #[test]

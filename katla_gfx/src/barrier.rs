@@ -1,82 +1,7 @@
-//! Image barrier helpers for Vulkan 1.3 synchronization.
+//! Image layout transitions with explicit source and destination layouts.
 //!
-//! This module provides high-level helpers for image layout transitions
-//! with explicit source and destination layouts.
-//!
-//! # Core Philosophy
-//!
-//! The source layout determines whether contents are preserved:
-//! - `UNDEFINED` source = discard contents, don't care what was there
-//! - Specific layout source = preserve contents and synchronize properly
-//!
-//! # Basic Usage
-//!
-//! ```ignore
-//! use katla_gfx::barrier::ImageBarrier;
-//! use ash::vk;
-//!
-//! // Fresh images (discard contents)
-//! ImageBarrier::transition_from_undefined(cmd, device, image,
-//!     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-//!
-//! // Preserving contents (transitioning between used states)
-//! ImageBarrier::transition(cmd, device, image,
-//!     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,   // from
-//!     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);  // to
-//! ```
-//!
-//! # Common Workflows
-//!
-//! ## Swapchain Rendering
-//! ```ignore
-//! // Fresh swapchain image (discard previous frame's contents)
-//! ImageBarrier::transition_from_undefined(cmd, device, swapchain_image,
-//!     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-//!
-//! // After rendering, prepare for presentation
-//! ImageBarrier::transition(cmd, device, swapchain_image,
-//!     vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-//!     vk::ImageLayout::PRESENT_SRC_KHR);
-//! ```
-//!
-//! ## Texture Upload
-//! ```ignore
-//! // Prepare for buffer copy
-//! ImageBarrier::transition_from_undefined(cmd, device, texture_image,
-//!     vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-//!
-//! // After upload, prepare for sampling
-//! ImageBarrier::transition(cmd, device, texture_image,
-//!     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-//!     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-//! ```
-//!
-//! ## Texture Update (preserving existing contents)
-//! ```ignore
-//! // Transition away from shader read
-//! ImageBarrier::transition(cmd, device, texture_image,
-//!     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-//!     vk::ImageLayout::TRANSFER_DST_OPTIMAL);
-//!
-//! // Upload new data...
-//!
-//! // Restore to shader read
-//! ImageBarrier::transition(cmd, device, texture_image,
-//!     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-//!     vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-//! ```
-//!
-//! # Custom Subresource Ranges
-//!
-//! For custom ranges (mip levels, array layers):
-//! ```ignore
-//! use katla_gfx::sync::DEPTH_SUBRESOURCE_RANGE;
-//!
-//! ImageBarrier::transition_with_range(cmd, device, image,
-//!     vk::ImageLayout::UNDEFINED,
-//!     vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-//!     DEPTH_SUBRESOURCE_RANGE);
-//! ```
+//! An `UNDEFINED` source discards contents. Other source layouts preserve contents
+//! and synchronize their preceding accesses. Custom ranges use `transition_with_range`.
 
 use crate::sync::{
     AccessFlags2, DependencyInfo, ImageMemoryBarrier2, PipelineStage2Flags, VkImage,
@@ -188,57 +113,6 @@ impl ImageBarrier {
         dep_info.build(|dep_info| unsafe {
             device.cmd_pipeline_barrier2(*cmd_buffer, dep_info);
         });
-    }
-
-    //=========================================================================
-    // Convenience: Transition from UNDEFINED (99% case)
-    //=========================================================================
-
-    /// Transition from UNDEFINED layout (discard contents).
-    ///
-    /// This is the most common pattern for fresh images where you don't care
-    /// about preserving previous contents.
-    ///
-    /// Uses default subresource range (all mip levels and array layers).
-    /// For custom ranges, use [`Self::transition_from_undefined_with_range`].
-    ///
-    /// Equivalent to calling:
-    /// ```ignore
-    /// ImageBarrier::transition(cmd, device, image,
-    ///     vk::ImageLayout::UNDEFINED,
-    ///     new_layout);
-    /// ```
-    pub fn transition_from_undefined(
-        cmd_buffer: &vk::CommandBuffer,
-        device: &ash::Device,
-        image: vk::Image,
-        new_layout: vk::ImageLayout,
-    ) {
-        Self::transition(
-            cmd_buffer,
-            device,
-            image,
-            vk::ImageLayout::UNDEFINED,
-            new_layout,
-        );
-    }
-
-    /// Transition from UNDEFINED with custom subresource range.
-    pub fn transition_from_undefined_with_range(
-        cmd_buffer: &vk::CommandBuffer,
-        device: &ash::Device,
-        image: vk::Image,
-        new_layout: vk::ImageLayout,
-        subresource_range: vk::ImageSubresourceRange,
-    ) {
-        Self::transition_with_range(
-            cmd_buffer,
-            device,
-            image,
-            vk::ImageLayout::UNDEFINED,
-            new_layout,
-            subresource_range,
-        );
     }
 
     //=========================================================================

@@ -53,8 +53,7 @@ impl RenderGraphBackend for VulkanRenderer {
             })
         } else {
             texture
-                .allocation
-                .as_ref()
+                .allocation()
                 .map(|allocation| NativeTransientAllocation {
                     identity: unsafe { allocation.memory() }.as_raw(),
                     offset: allocation.offset(),
@@ -63,6 +62,25 @@ impl RenderGraphBackend for VulkanRenderer {
                     strategy: "vulkan_standalone",
                 })
         }
+    }
+
+    fn transient_buffer_allocation_info(
+        buffer: &Self::TransientBuffer,
+    ) -> Option<NativeTransientAllocation> {
+        buffer
+            .allocation
+            .as_ref()
+            .map(|allocation| NativeTransientAllocation {
+                identity: unsafe { allocation.memory() }.as_raw(),
+                offset: allocation.offset(),
+                bytes: allocation.size(),
+                logical_bytes: buffer.desc.size,
+                strategy: match buffer.desc.memory {
+                    BufferMemoryPolicy::DeviceLocal => "vulkan_device_local_buffer",
+                    BufferMemoryPolicy::CpuVisible => "vulkan_cpu_visible_buffer",
+                    BufferMemoryPolicy::Readback => "vulkan_readback_buffer",
+                },
+            })
     }
 
     fn create_transient_buffer(
@@ -113,68 +131,6 @@ impl RenderGraphBackend for VulkanRenderer {
         handle: crate::handle::BufferHandle,
     ) -> Option<&Self::TransientBuffer> {
         self.graph_buffers.get(handle)
-    }
-
-    fn builtin_buffer(&self, role: super::compute::BuiltinBuffer) -> Option<Self::TransientBuffer> {
-        use super::compute::BuiltinBuffer::*;
-        let (buffer, size) = match role {
-            AnimationParams | AnimationClips | AnimationChannels | AnimationTimes
-            | AnimationValues | AnimationJoints | AnimationWorld | AnimationOutput => {
-                self.animation_buffers.as_ref()?.graph_buffer(role)?
-            }
-            Skeleton(handle) => {
-                let skeleton = self.skeleton_buffers.get(handle)?;
-                (self.skeleton_buffer_handle(handle)?, skeleton.size())
-            }
-            LightData | LightTiles | LightHeaders | LightFrame => {
-                self.light_culling_buffers()?.graph_buffer(role)?
-            }
-            ParticleData
-            | ParticleDeadList
-            | ParticleAliveRead
-            | ParticleAliveWrite
-            | ParticleCounters
-            | ParticlePreviousCounters
-            | ParticleIndirect
-            | ParticleFrame
-            | ParticleEmitters => self
-                .particle_system
-                .as_ref()?
-                .graph_buffer(role, self.current_frame())?,
-        };
-        let usage = match role {
-            LightFrame | ParticleFrame => BufferUsages::UNIFORM,
-            Skeleton(_) => BufferUsages::STORAGE | BufferUsages::TRANSFER_DESTINATION,
-            ParticleIndirect => {
-                BufferUsages::STORAGE
-                    | BufferUsages::INDIRECT
-                    | BufferUsages::TRANSFER_DESTINATION
-                    | BufferUsages::TRANSFER_SOURCE
-            }
-            _ => {
-                BufferUsages::STORAGE
-                    | BufferUsages::TRANSFER_SOURCE
-                    | BufferUsages::TRANSFER_DESTINATION
-            }
-        };
-        Some(VulkanGraphBuffer::borrowed(
-            self.context.clone(),
-            buffer,
-            match role {
-                AnimationParams | AnimationWorld | AnimationOutput => {
-                    self.animation_buffers.as_ref()?.graph_buffer_offset(role)
-                }
-                LightData | LightTiles | LightHeaders | LightFrame => {
-                    self.light_culling_buffers()?.graph_buffer_offset(role)
-                }
-                _ => self
-                    .particle_system
-                    .as_ref()
-                    .and_then(|system| system.graph_buffer_offset(role, self.current_frame()))
-                    .unwrap_or(0),
-            },
-            BufferDesc::new(size, usage, BufferMemoryPolicy::DeviceLocal),
-        ))
     }
 
     fn buffer_offset(buffer: &Self::TransientBuffer) -> u64 {
@@ -277,13 +233,6 @@ impl RenderGraphBackend for VulkanRenderer {
 
     fn swapchain_image_view(&self, image_index: u32) -> Self::ImageView {
         self.frame_context.swapchain_image_views[image_index as usize]
-    }
-
-    fn depth_image_view(&self, frame_index: usize) -> Option<Self::ImageView> {
-        self.frame_context
-            .depth_render_textures
-            .get(frame_index)
-            .map(|dt| dt.image_view)
     }
 }
 

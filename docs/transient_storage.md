@@ -39,7 +39,7 @@ alone does not permit lazy storage.
 memoryless selection before initialization. It creates independent allocations
 without changing attachment operations or observable resource contents.
 
-Diagnostics schema 12 labels pre-allocation slot totals as `compiler_projection`.
+Diagnostics schema 13 labels pre-allocation slot totals as `compiler_projection`.
 After native allocation, `native_frame_allocations` contains deterministic IDs,
 frame-slot ownership, physical ranges, strategy and logical members. Runtime
 memory totals use native allocation sizes across all allocated frame slots. Alias

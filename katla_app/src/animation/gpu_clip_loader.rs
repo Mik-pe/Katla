@@ -7,7 +7,7 @@ use super::components::{AnimatedModel, AnimationPlayer};
 use super::samplers::Interpolation;
 use super::skin::{Skeleton, Skin};
 
-/// Prepared GPU animation data, ready for upload to PoseComputeBuffers.
+/// Prepared GPU animation data for scene-owned buffer uploads.
 pub(crate) struct GpuAnimData {
     /// Clip headers (one per clip)
     pub clip_headers: Vec<AnimClipHeader>,

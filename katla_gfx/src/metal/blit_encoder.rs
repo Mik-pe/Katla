@@ -3,6 +3,7 @@ use objc2::runtime::ProtocolObject;
 use objc2_metal::{MTL4CommandEncoder, MTL4ComputeCommandEncoder, MTLOrigin, MTLSize};
 
 use crate::backend::command::*;
+#[cfg(test)]
 use crate::backend::resource::GpuImage;
 
 use super::MetalBackend;
@@ -12,6 +13,7 @@ use super::texture::MetalTexture;
 pub(crate) struct MetalBlitEncoder {
     pub(crate) inner: Retained<ProtocolObject<dyn MTL4ComputeCommandEncoder>>,
     resources: std::rc::Rc<super::encoding_resources::EncodingResources>,
+    ended: std::cell::Cell<bool>,
 }
 
 impl MetalBlitEncoder {
@@ -19,13 +21,19 @@ impl MetalBlitEncoder {
         inner: Retained<ProtocolObject<dyn MTL4ComputeCommandEncoder>>,
         resources: std::rc::Rc<super::encoding_resources::EncodingResources>,
     ) -> Self {
-        Self { inner, resources }
+        Self {
+            inner,
+            resources,
+            ended: std::cell::Cell::new(false),
+        }
     }
 }
 
 impl GpuBlitEncoder<MetalBackend> for MetalBlitEncoder {
     fn end_encoding(self) {
-        self.inner.endEncoding();
+        if !self.ended.replace(true) {
+            self.inner.endEncoding();
+        }
     }
 
     fn copy_buffer_to_buffer(
@@ -50,37 +58,7 @@ impl GpuBlitEncoder<MetalBackend> for MetalBlitEncoder {
         }
     }
 
-    fn copy_buffer_to_texture(
-        &mut self,
-        src: &MetalBuffer,
-        dst: &MetalTexture,
-        regions: &[BufferImageCopy],
-    ) {
-        self.retain_buffer(src);
-        self.retain_texture(dst);
-        let bytes_per_pixel = dst.format().bytes_per_pixel() as usize;
-        for region in regions {
-            let bytes_per_row = region.image_width as usize * bytes_per_pixel;
-            unsafe {
-                self.inner.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin(
-                    &src.inner,
-                    region.buffer_offset as usize,
-                    bytes_per_row,
-                    bytes_per_row * region.image_height as usize,
-                    MTLSize {
-                        width: region.image_width as usize,
-                        height: region.image_height as usize,
-                        depth: region.image_depth as usize,
-                    },
-                    &dst.inner,
-                    region.base_array_layer as usize,
-                    region.mip_level as usize,
-                    MTLOrigin { x: 0, y: 0, z: 0 },
-                );
-            }
-        }
-    }
-
+    #[cfg(test)]
     fn copy_texture_to_texture(&mut self, src: &MetalTexture, dst: &MetalTexture) {
         self.retain_texture(src);
         self.retain_texture(dst);
@@ -142,6 +120,14 @@ impl MetalBlitEncoder {
                 objc2_metal::MTLStages::Blit,
                 objc2_metal::MTL4VisibilityOptions::Device,
             );
+        super::sync::capture_native_boundary(
+            &self.resources,
+            "transfer_visibility",
+            super::sync::NativeBoundary::Transfers,
+            objc2_metal::MTLStages::Blit,
+            objc2_metal::MTLStages::Blit,
+            objc2_metal::MTL4VisibilityOptions::Device,
+        );
     }
     pub(crate) fn generate_mipmaps(&mut self, texture: &MetalTexture) {
         self.retain_texture(texture);
@@ -151,6 +137,14 @@ impl MetalBlitEncoder {
                 objc2_metal::MTLStages::Blit,
                 objc2_metal::MTL4VisibilityOptions::Device,
             );
+        super::sync::capture_native_boundary(
+            &self.resources,
+            "transfer_visibility",
+            super::sync::NativeBoundary::Transfers,
+            objc2_metal::MTLStages::Blit,
+            objc2_metal::MTLStages::Blit,
+            objc2_metal::MTL4VisibilityOptions::Device,
+        );
         unsafe {
             self.inner.generateMipmapsForTexture(&texture.inner);
         }
@@ -168,6 +162,40 @@ impl MetalBlitEncoder {
             );
         }
     }
+    pub(crate) fn copy_texture_region_to_buffer(
+        &mut self,
+        texture: &MetalTexture,
+        region: crate::renderer::texture_readback::TextureReadbackRegion,
+        buffer: &MetalBuffer,
+        row_pitch: usize,
+    ) {
+        self.retain_texture(texture);
+        self.retain_buffer(buffer);
+        self.inner
+            .barrierAfterQueueStages_beforeStages_visibilityOptions(
+                objc2_metal::MTLStages::All,
+                objc2_metal::MTLStages::Blit,
+                objc2_metal::MTL4VisibilityOptions::Device,
+            );
+        super::sync::capture_native_boundary(
+            &self.resources,
+            "readback.acquire",
+            super::sync::NativeBoundary::UploadAcquire,
+            objc2_metal::MTLStages::All,
+            objc2_metal::MTLStages::Blit,
+            objc2_metal::MTL4VisibilityOptions::Device,
+        );
+        unsafe {
+            self.inner.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toBuffer_destinationOffset_destinationBytesPerRow_destinationBytesPerImage(
+                &texture.inner, region.array_layer as usize, region.mip_level as usize,
+                MTLOrigin { x: region.origin[0] as usize, y: region.origin[1] as usize, z: 0 },
+                MTLSize { width: region.size.width as usize, height: region.size.height as usize, depth: 1 },
+                &buffer.inner, 0, row_pitch, row_pitch * region.size.height as usize,
+            );
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn copy_texture_pixel_to_buffer(
         &mut self,
         texture: &MetalTexture,
@@ -183,9 +211,25 @@ impl MetalBlitEncoder {
                 objc2_metal::MTLStages::Blit,
                 objc2_metal::MTL4VisibilityOptions::Device,
             );
+        super::sync::capture_native_boundary(
+            &self.resources,
+            "readback.acquire",
+            super::sync::NativeBoundary::UploadAcquire,
+            objc2_metal::MTLStages::All,
+            objc2_metal::MTLStages::Blit,
+            objc2_metal::MTL4VisibilityOptions::Device,
+        );
         let pitch = texture.format().bytes_per_pixel() as usize;
         unsafe {
             self.inner.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toBuffer_destinationOffset_destinationBytesPerRow_destinationBytesPerImage(&texture.inner, 0, 0, MTLOrigin { x: x as usize, y: y as usize, z: 0 }, MTLSize {width:1,height:1,depth:1}, &buffer.inner, 0, pitch, pitch);
+        }
+    }
+}
+
+impl Drop for MetalBlitEncoder {
+    fn drop(&mut self) {
+        if !self.ended.replace(true) {
+            self.inner.endEncoding();
         }
     }
 }

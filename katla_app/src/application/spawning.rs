@@ -614,7 +614,10 @@ impl super::Application {
     /// emission texture is returned separately because it rides on the
     /// draw call, not on material state.
     fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> GltfTextureUpload {
-        let mut textures = katla_gfx::MaterialTextures::default();
+        let mut textures = self.scene_features.as_ref().map_or_else(
+            katla_gfx::MaterialTextures::default,
+            super::scene_features::SceneFeatures::material_textures,
+        );
         let mut emission = katla_gfx::TextureHandle::NONE;
         let mut handles = Vec::new();
 

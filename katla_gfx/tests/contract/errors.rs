@@ -9,7 +9,7 @@ use katla_gfx::renderer::features::RendererFeature;
 use katla_gfx::vertex::VertexPBR;
 use katla_gfx::{
     GpuRenderer, IndexType, MeshDescriptor, MeshUsage, PrimitiveTopology, RendererError,
-    TextureDescriptor, UIDrawList, Vertex,
+    TextureDescriptor, Vertex,
 };
 
 use crate::harness::{self, ContractRenderer};
@@ -169,12 +169,10 @@ fn test_contract_invalid_descriptors_fail_typed_without_disturbing_state() {
     renderer.finish();
 }
 
-/// `supports_feature` is the contract vocabulary for backend differences: it
-/// must answer exactly what the platform capability table declares, and an
-/// unsupported direct UI pass must behave as its documented explicit no-op.
+/// Optional device operations match the backend's declared capabilities.
 #[test]
 #[ignore = "requires a graphics device"]
-fn test_contract_capability_table_matches_and_unsupported_ops_are_documented() {
+fn test_contract_capability_table_matches_device_operations() {
     let mut renderer = ContractRenderer::open_without_api_validation("contract: capabilities");
 
     for feature in RendererFeature::ALL {
@@ -185,13 +183,6 @@ fn test_contract_capability_table_matches_and_unsupported_ops_are_documented() {
             feature.name()
         );
     }
-
-    // The capability split is the direct UI pass: Vulkan composites UI
-    // through the frame graph, so it reports `DirectUiPass` unsupported and
-    // calling it is the documented explicit no-op (it returns nothing and
-    // must not composite or panic). On Metal the same call is the supported
-    // path and equally must not disturb a frame outside a graph render.
-    renderer.gfx().render_ui_pass(UIDrawList::default());
 
     renderer.finish();
 }

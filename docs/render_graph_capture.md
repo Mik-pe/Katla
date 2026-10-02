@@ -1,174 +1,130 @@
 # Capturing and Comparing Render-Graph Diagnostics
 
-Render-graph diagnostics are a deterministic, backend-neutral snapshot of the
-compiled graph: passes, dependencies, typed accesses, synchronization
-transitions, culled passes, resource lifetimes, physical transient allocation
-slots, and each slot's tile-memory eligibility. They are the artifact to attach
-when a rendering change needs explaining, and the artifact CI uploads when a
-render-graph test fails.
+The passive capture joins a compiled graph, physical allocations, pass execution,
+and native encoder/synchronization/binding observations. It neither waits for GPU
+completion nor changes scheduling, synchronization, allocation, or encoding.
+Enable tracing before rendering the frame you want to inspect.
 
-The export contains no pointers, driver IDs, or file-system paths, so a capture
-taken on one machine compares byte-for-byte with a capture on another.
+```rust
+use katla_gfx::GpuRenderer;
 
-## Formats
+graph.set_execution_trace(true);
+renderer.render(&token, &mut graph, |frame| { /* submissions */ })?;
+renderer.present(token)?;
+let capture = graph.capture()?;
+println!("{capture}");
+for divergence in &capture.comparison {
+    eprintln!("{divergence}");
+}
+```
 
-`RenderGraphDiagnostics` (`katla_gfx::render_graph`) exposes three exports:
+The stored submission snapshot describes the state observed during encoding. Its
+feedback is normally `pending` before `present`. A caller may replace
+`capture.backend_execution.frame` with the renderer's passive
+`capture_submission_snapshot()` after presentation to observe newer feedback.
+`pending`, `completed`, and `failed` are explicit states; capture never forces one
+by waiting. Feedback identity combines the reusable frame slot and its acquisition
+generation. The command allocator ordinal identifies its bounded frame owner.
 
-| Export | Method | Use |
-|--------|--------|-----|
-| JSON | `to_json_pretty()` | Machine comparison; carries every field |
-| Text | `Display` | Human review; passes, accesses, transitions, allocation slots |
-| DOT | `to_dot()` | Graph view; logical resources, physical allocations, frame boundaries |
+## Local Vulkan and Metal capture
 
-The `schema_version` field is bumped whenever a format changes. A capture and a
-golden from different schema versions are not comparable.
-
-Schema 11 describes buffer resources as `kind: "buffer"`, with their origin,
-declared byte size, usage capabilities, memory policy, and live access interval.
-Typed buffer usages use snake-case names in JSON. Text and DOT include the same
-allocation requirements, even for buffers whose passes were culled. Image-only
-format and extent fields remain empty for buffers. The physical transient slots
-and memory-saving totals currently describe images; buffer allocation identities,
-aliasing, and per-frame ownership are not reported yet.
-
-Buffer stages distinguish vertex/index input (`VertexInput`), indirect command
-consumption (`DrawIndirect`), shader accesses, copies (`Transfer`), and CPU
-readback (`Host`). Graph validation rejects a usage at an incompatible stage.
-Uniform and storage declarations select their shader stage; `BufferAccess`
-helpers can use `with_stage` to override their default. A host-read declaration
-does not wait for completion: the caller must still await the owning submission
-before reading mapped memory.
-
-## Capturing a frame locally
-
-The application can dump the compiled graph once, right after a rendered frame —
-the graph at that point reflects the live resource set:
+The application dump flags enable tracing and export the joined frame. Vulkan
+runs on Linux; Metal runs on macOS with a Metal 4 capable physical GPU. Both use
+the same application graph. Headless mode replaces the surface with offscreen
+outputs and retains the selected application graph/runtime.
 
 ```bash
-# Text export to stdout
-cargo run -p game --release -- --headless -s --dump-render-graph
-
-# Text export to a file (keeps the log stream clean for diffing)
+# Vulkan: Linux with an available Vulkan driver.
 cargo run -p game --release -- --headless -s \
-    --dump-render-graph-file target/render-graph-diagnostics/local.txt
+    --dump-render-graph-file /tmp/vulkan-capture.json
+
+# Metal: enable native API validation before process launch.
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
+cargo run -p game --release -- --headless -s \
+    --dump-render-graph-file /tmp/metal-capture.json
 ```
 
-In windowed mode the flags also cap the run at three frames, so the capture
-finishes on its own; headless mode decides its own frame count (`-s` runs the
-100-frame validation pass) and dumps after the loop. `--headless` only changes
-where the frame is rendered, not the graph.
+A `.json` destination selects the machine-readable bundle; `.dot` selects Graphviz,
+and other extensions select text. `--dump-render-graph` prints text. Each native
+encoder is recorded at the actual encoder opening, and each synchronization
+observation at the native translation/emission site. An operation that needs no
+native barrier carries `emitted: false` and its explicit backend reason. Extra
+backend ownership barriers are labelled separately from compiler operations.
 
-The dump is backend-neutral text, so the same command records the same graph on
-Vulkan (Linux) and Metal (macOS). Native Metal argument-table layouts, residency membership and commit feedback
-are available in submission diagnostics. Their integration into this portable
-export remains on issue
-[#37](https://github.com/Mik-pe/Katla/issues/37).
+The comparison checks live/unknown passes, encoded pass order, color/depth targets,
+attachment operations, native encoder/pass order, undeclared bound resources and
+exact range-specific synchronization coverage and native stage/access/layout scopes against the canonical backend translator. Missing, duplicate, changed or
+unexpected synchronization produces a concrete failure. `SyncScopeMismatch` names required and observed native scopes; every emitted subresource barrier retains its actual range. A skipped empty pass is
+recorded, and does not count as an emitted encoder. Auxiliary native encoders can
+have no graph pass; their stable labels and positions remain visible.
 
-## Comparing two captures
+## Schema and formats
 
-Compare the captures directly; the order is deterministic and independent of
-hash-map iteration.
+Schema 13 adds the joined capture and explicit liveness reasons. `graph` retains
+the standalone `RenderGraphDiagnostics` snapshot, including typed image accesses
+(aspects, mip/layer ranges, access mode, usage and stage) and typed buffer accesses
+(byte ranges, usage and stage). Every compiled image/buffer transition includes
+producer/consumer access, source/destination state, resource version, hazard reason
+and encoder/queue boundary. A version identifies the preceding range-specific
+access frontier (`rN.access.P`) or imported/undefined initial state (`rN.initial`);
+it is diagnostic identity, not an additional scheduling mechanism.
+
+Resources report live/cull state and deterministic cull reasons. Passes identify
+side-effect roots, exported producers, required predecessors or unreachable work.
+Logical transient lifetimes and compatibility classes join physical allocation
+ordinals, frame slots, alias predecessor/successor order and saved bytes. Native
+records distinguish actual storage choices from compiler estimates. Tile-local
+storage requires whole-resource attachment use and discard stores throughout the
+live lifetime; exporting, sampling, storage or transfers disqualify it. Bandwidth
+savings remain unknown without hardware counters.
+
+Metal bindings include stable argument-table identity, reflected layout identity,
+immutable snapshot generation and residency membership. IDs follow stable
+encounter order. No native object pointers, driver handles, GPU addresses or user
+paths are exported. Native counts, storage decisions and observed feedback may
+legitimately differ across backends or capture times; the compiler contract is the
+portable comparison target. Deterministic ordering does not imply identical
+hardware facts.
+
+| Export | Method | Meaning |
+|--------|--------|---------|
+| JSON | `capture.to_json_pretty()` | Complete joined machine-readable bundle |
+| Text | `Display` | Logical/physical plan plus native execution and divergences |
+| DOT | `capture.to_dot()` | Logical resource ellipses, physical allocation nodes, native encoder hexagons |
+
+`graph.diagnostics()` remains useful before any GPU allocation or frame execution.
+It exports the pure compiler projection; it does not claim native execution.
+Capture with tracing disabled explicitly reports that native execution was not
+captured.
+
+## Comparison and failure artifacts
 
 ```bash
-cargo run -p game --release -- --headless -s --dump-render-graph-file /tmp/before.txt
-# ... make the rendering change ...
-cargo run -p game --release -- --headless -s --dump-render-graph-file /tmp/after.txt
-diff /tmp/before.txt /tmp/after.txt
+diff -u /tmp/before.json /tmp/after.json
+dot -Tsvg /tmp/metal-capture.dot -o /tmp/metal-capture.svg
 ```
 
-Read a diff as a claim about the compiler: a changed pass order, a new
-synchronization transition, a changed allocation slot, or a resource moving
-between live and culled. A diff that touches none of those but still changes
-pixels points at the backend encoder path, not the graph.
+Read compiler changes separately from native changes. A changed access, lifetime,
+order, synchronization requirement or physical slot belongs to the graph/compiler
+contract. A changed native observation with an unchanged contract belongs to its
+backend translation. The `comparison` list records those contract violations.
+Different schema versions require an intentional format migration.
 
-## Golden snapshots
-
-`katla_gfx/tests/goldens/` pins the canonical exports
-(`render_graph_diagnostics.{json,text,dot}`) of a representative
-shadow → geometry → lighting → present chain, imported frame constants,
-storage-to-indirect buffer synchronization, and a culled scratch-buffer pass.
-The golden test runs in the
-`cargo test -p katla_gfx --lib` CI step.
-
-When the export format or the compiler changes intentionally, regenerate and
-review the diff like code:
+`katla_gfx/tests/goldens/` covers both standalone graph exports and a representative
+joined capture with render/compute/blit encoder kinds, frame ownership, feedback,
+argument-table layout, residency, and buffer synchronization. The fixture is a
+serialization/contract test; native tests separately exercise actual GPU encoding.
+Focused tests inject order/resource/synchronization divergence, duplicate barriers,
+missing coverage and unexplained no-ops.
 
 ```bash
+cargo test -p katla_gfx --lib render_graph::diagnostics
 KATLA_BLESS_GOLDENS=1 cargo test -p katla_gfx --lib render_graph::diagnostics
 ```
 
-A drifting golden *without* `KATLA_BLESS_GOLDENS=1` writes the actual export to
-`target/render-graph-diagnostics/` and fails the test. CI uploads that directory
-as an artifact when a job fails, so a failing run does not require re-running
-locally to see what changed.
-
-## Tile-memory eligibility
-
-Each allocation slot reports whether every member's compiled accesses allow
-tile-resident storage. A slot is eligible only when all its members are written
-and read as whole-resource attachments, never sampled, stored, transferred,
-presented, or exported, and written by a live pass. The reason string names the
-first fact that disqualified it; the summary reports the physical bytes held in
-eligible slots.
-
-This is a fact about the compiled graph, not a backend decision: a tile-based
-backend may act on an eligible slot by keeping it in tile memory, while memoryless
-or lazily allocated storage uses the same verdict. Eligibility is derived from the
-`image_accesses` the graph compiled from, so it cannot disagree with scheduling.
-
-## Emitted encoder traces
-
-Diagnostics above describe the *compiled* plan. To see what a backend *actually
-encoded*, enable the execution trace:
-
-```rust
-graph.set_execution_trace(true);
-renderer.render(&token, &mut graph, |frame| { /* ... */ });
-println!("{}", graph.last_execution_trace());
-let divergences = graph.compare_execution_trace();
-```
-
-`ResourceExecutionTrace` records one entry per pass the backend dispatched, in
-encode order: pass index and name, outcome (`encoded` /
-`skipped_no_work`), draw and instance counts, and the color and depth targets
-the encoder bound, together with the load/store/clear operations supplied to
-the native descriptor. `compare_execution_trace()` is the point of it — it returns
-every divergence from the compiled plan:
-
-| Divergence | Meaning |
-|---|---|
-| `MissingPass` | a live compiled pass produced no encoder |
-| `UnknownPass` | an encoder exists for a pass the plan does not know |
-| `OrderMismatch` | encoded passes are out of compiled execution order |
-| `ColorTargetsMismatch` | the encoder bound different color targets |
-| `DepthTargetMismatch` | the encoder bound depth differently than declared |
-| `AttachmentOpsMismatch` | native color or depth/stencil operations differ from the declaration |
-
-Tracing is off by default so the steady-state path pays nothing. A pass the
-backend deliberately skips for lack of work is recorded as `skipped_no_work`
-but is *not* an ordering divergence.
-
-The trace is backend-neutral: the graph-level dispatch records it for both
-Vulkan and Metal, and the text export is deterministic across runs.
-
-Metal resolves each live pass's color and explicit `.depth_target("name")`
-resources for the active frame slot before creating any render encoder. The
-backbuffer resolves to the acquired drawable through the same path. Missing
-allocations, incompatible formats or extents, and unsupported built-in pipeline
-attachments return typed errors before encoding. Clear operations still execute
-when a live graphics pass has no draws; an empty graph emits no hidden canvas
-pass. Fullscreen inputs and parameters belong to each compiled pass record.
-
-## Known gaps
-
-Tracked on [#37](https://github.com/Mik-pe/Katla/issues/37):
-
-- Integrating native Metal argument-table layout, residency membership and commit
-  feedback into the portable capture bundle.
-- Extending the existing per-slot native allocation records with complete
-  submission ownership and queue identities.
-- Encoder-internal sub-pass detail (compute and blit encoder boundaries are
-  recorded as pass-level entries, not per-instruction).
-
-Native diagnostics and compiler records provide the underlying data. The full
-capture bundle must join them with exact submission identities.
+Review blessed JSON/text/DOT diffs like code. Failed golden checks write actual
+exports under `$CARGO_TARGET_DIR/render-graph-diagnostics` (the workspace `target`
+directory when unset). CI uploads graph/plan/execution artifacts on failures with
+read-only repository permissions. Native validation failures can write their
+joined capture to the same directory, preserving both the compiled contract and
+actual observations for review.

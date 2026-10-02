@@ -4,6 +4,8 @@
 //! concrete transient texture creation, bindless management, and
 //! frame indexing using Metal GPU resources.
 
+use objc2_metal::MTLBuffer;
+
 use crate::metal::buffer::MetalGraphBuffer;
 use crate::metal::metal_renderer::{FRAMES_IN_FLIGHT, MetalRenderer};
 use crate::metal::metal_transient_texture::MetalTransientTexture;
@@ -64,6 +66,26 @@ impl RenderGraphBackend for MetalRenderer {
                 "metal_placement_heap"
             } else {
                 "private_standalone"
+            },
+        })
+    }
+
+    fn transient_buffer_allocation_info(
+        buffer: &Self::TransientBuffer,
+    ) -> Option<NativeTransientAllocation> {
+        use crate::backend::resource::GpuBuffer;
+        Some(NativeTransientAllocation {
+            identity: buffer.buffer.inner.gpuAddress(),
+            offset: buffer.offset,
+            bytes: buffer.buffer.size(),
+            logical_bytes: buffer.desc.size,
+            strategy: if matches!(
+                buffer.desc.memory,
+                BufferMemoryPolicy::CpuVisible | BufferMemoryPolicy::Readback
+            ) {
+                "shared_buffer"
+            } else {
+                "private_buffer"
             },
         })
     }
@@ -171,60 +193,6 @@ impl RenderGraphBackend for MetalRenderer {
         Ok(())
     }
 
-    fn builtin_buffer(
-        &self,
-        role: crate::render_graph::BuiltinBuffer,
-    ) -> Option<Self::TransientBuffer> {
-        use crate::backend::resource::GpuBuffer;
-        use crate::render_graph::BuiltinBuffer::*;
-        use crate::render_graph::{BufferMemoryPolicy, BufferUsages};
-        let (buffer, offset, size) = match role {
-            Skeleton(handle) => {
-                let buffer = self.skeletons[self.frame_index()].get(handle)?;
-                (buffer, 0, buffer.size())
-            }
-            LightData | LightTiles | LightHeaders | LightFrame => {
-                let light = self.light_culling.as_ref()?;
-                let buffer = match role {
-                    LightData => light.light_buffer(),
-                    LightTiles => light.tile_index_buffer(),
-                    LightHeaders => light.tile_count_buffer(),
-                    _ => light.frame_buffer(),
-                };
-                (buffer, 0, buffer.size())
-            }
-            ParticleData
-            | ParticleDeadList
-            | ParticleAliveRead
-            | ParticleAliveWrite
-            | ParticleCounters
-            | ParticlePreviousCounters
-            | ParticleIndirect
-            | ParticleFrame
-            | ParticleEmitters => self
-                .particle_system
-                .as_ref()?
-                .buffer_slice(role, self.frame_index)?,
-            _ => {
-                let buffer = self.animation_system.as_ref()?.builtin_buffer(role)?;
-                (buffer, 0, buffer.size())
-            }
-        };
-        Some(MetalGraphBuffer {
-            buffer: buffer.clone(),
-            offset,
-            desc: BufferDesc::new(
-                size,
-                BufferUsages::STORAGE
-                    | BufferUsages::UNIFORM
-                    | BufferUsages::TRANSFER_SOURCE
-                    | BufferUsages::TRANSFER_DESTINATION
-                    | BufferUsages::INDIRECT,
-                BufferMemoryPolicy::CpuVisible,
-            ),
-        })
-    }
-
     fn current_frame(&self) -> usize {
         self.frame_index()
     }
@@ -285,9 +253,5 @@ impl RenderGraphBackend for MetalRenderer {
         self.drawable_texture_view
             .clone()
             .expect("No drawable texture view — render through an acquired frame")
-    }
-
-    fn depth_image_view(&self, _frame_index: usize) -> Option<Self::ImageView> {
-        self.depth_stencil_view.clone()
     }
 }

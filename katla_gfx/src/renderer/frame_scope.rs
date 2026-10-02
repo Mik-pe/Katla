@@ -4,8 +4,7 @@
 //! returns a [`FrameAcquisition`]: either a [`FrameToken`] owning one reusable frame
 //! slot (and, when windowed, one surface image), an explicitly unavailable surface,
 //! or an out-of-date surface that must be recreated. Every frame-local operation —
-//! uniforms, per-object data, lights, shadow cascades, graph execution — takes that
-//! token, so writes cannot be issued against a frame that was never acquired, has
+//! buffer writes, per-object data and graph execution — takes the token, so writes cannot be issued against a frame that was never acquired, has
 //! already been presented, or belongs to an abandoned acquisition. Successful
 //! rendering freezes frame-local writes; present commits the pending work once.
 //!
@@ -28,21 +27,25 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameToken {
     slot: usize,
-    generation: u64,
+    acquisition: u64,
 }
 
 impl FrameToken {
-    /// Create a token from a slot and generation counter.
+    /// Create a unique acquisition identity for one reusable frame slot.
     ///
-    /// Public so alternative in-crate renderers (test mocks) can implement
-    /// [`GpuRenderer`](crate::renderer::gpu_renderer::GpuRenderer). Constructing
-    /// a token externally is harmless: the renderer only accepts the token that
-    /// equals its open frame, and the generation counter is not observable.
-    pub fn new(slot: usize, generation: u64) -> Self {
-        Self { slot, generation }
+    /// Custom renderers retain the returned token as their active frame and
+    /// validate exact equality before accepting frame operations. A new token
+    /// cannot reproduce another renderer's acquisition identity.
+    pub fn new(slot: usize) -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT_ACQUISITION: AtomicU64 = AtomicU64::new(1);
+        let acquisition = NEXT_ACQUISITION
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .expect("frame acquisition identities exhausted");
+        Self { slot, acquisition }
     }
 
-    /// The reusable frame slot this frame owns, in `0..FRAMES_IN_FLIGHT`.
+    /// The reusable frame slot this frame owns, in `0..renderer.frame_slot_count()`.
     ///
     /// Per-frame resources indexed by slot (storage buffers, particle buffers, …)
     /// are associated with the frame through this value.
@@ -65,4 +68,34 @@ pub enum FrameAcquisition {
     /// The surface is stale and must be recreated (Vulkan swapchain out of date).
     /// No renderer state was touched; call the backend's resize path and acquire again.
     OutOfDate,
+}
+
+/// Surface status after a frame's GPU submission was accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceStatus {
+    /// Presentation succeeded, or the renderer has no presentation surface.
+    Presented,
+    /// The submission was accepted, but the surface must be recreated before acquiring again.
+    RecreateRequired,
+}
+
+/// An accepted GPU submission and its subsequent surface result.
+///
+/// Every returned outcome means the GPU work was committed. Callers must advance
+/// CPU state associated with that work before handling surface recreation or
+/// propagating a presentation error. An outer error from
+/// [`GpuRenderer::present`](crate::GpuRenderer::present) means no submission was accepted.
+#[derive(Debug)]
+pub struct PresentOutcome {
+    /// Presentation status, including errors that occurred after GPU submission.
+    pub surface: Result<SurfaceStatus, crate::error::RendererError>,
+}
+
+impl PresentOutcome {
+    /// An accepted submission whose presentation succeeded.
+    pub fn presented() -> Self {
+        Self {
+            surface: Ok(SurfaceStatus::Presented),
+        }
+    }
 }

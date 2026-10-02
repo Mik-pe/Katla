@@ -145,7 +145,7 @@ pub type EmitterHandle = Handle<EmitterMarker>;
 // Internal Marker Types (Render Layer)
 
 /// Marker type for buffer handles.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BufferMarker;
 
 /// Marker type for image handles.

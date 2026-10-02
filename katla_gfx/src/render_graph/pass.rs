@@ -66,12 +66,6 @@ pub struct PassDesc {
     pub buffer_accesses: Vec<BufferAccess>,
     /// Pass type (graphics, compute, transfer).
     pub pass_type: PassType,
-    /// Optional pipeline handle (for fullscreen/compute passes).
-    pub pipeline: Option<crate::handle::PipelineHandle>,
-    /// Optional tonemap parameters (for HDR tonemapping passes).
-    pub tonemap_params: Option<crate::render_graph::passes::TonemapParams>,
-    /// Optional overlay parameters (for wallhack overlay passes).
-    pub overlay_params: Option<crate::render_graph::passes::OverlayParams>,
     /// Optional material handle (for geometry passes).
     pub material: Option<crate::handle::MaterialHandle>,
     /// Output color format (for material format inference).
@@ -98,6 +92,9 @@ pub struct PassDesc {
     /// Backend-neutral commands executed by a compute or transfer pass.
     pub commands: Vec<super::compute::ComputeCommand>,
 
+    /// Explicit reflected graphics inputs owned by the application.
+    pub bindings: crate::renderer::frame_bindings::PassBindings,
+
     /// Semantic kind of this pass, used for dispatch routing.
     /// Set at build time by each pass template.
     pub kind: Option<PassKind>,
@@ -122,20 +119,27 @@ impl PassDesc {
             image_accesses,
             buffer_accesses: Vec::new(),
             pass_type,
-            pipeline: None,
-            tonemap_params: None,
-            overlay_params: None,
             material: None,
             output_format: None,
             color_attachments: Vec::new(),
-            uses_depth: true,
+            uses_depth: false,
             depth_target: None,
             depth_attachment: None,
             compositing_viewports: None,
             commands: Vec::new(),
+            bindings: Default::default(),
             kind: None,
             side_effect: false,
         }
+    }
+
+    /// Supply explicit pipeline and resource inputs without changing access declarations.
+    pub fn with_bindings(
+        mut self,
+        bindings: crate::renderer::frame_bindings::PassBindings,
+    ) -> Self {
+        self.bindings = bindings;
+        self
     }
 
     fn default_image_accesses(reads: &[ResourceId], writes: &[ResourceId]) -> Vec<ImageAccess> {
@@ -262,12 +266,6 @@ impl PassDesc {
         self.synchronize_resource_sets();
     }
 
-    /// Set the pipeline for this pass.
-    pub fn with_pipeline(mut self, pipeline: crate::handle::PipelineHandle) -> Self {
-        self.pipeline = Some(pipeline);
-        self
-    }
-
     /// Record backend-neutral compute and transfer commands.
     pub fn with_commands(
         mut self,
@@ -310,18 +308,8 @@ mod tests {
     }
 
     #[test]
-    fn test_pass_desc_with_pipeline() {
-        let desc = PassDesc::new("test", PassType::Graphics, vec![], vec![rid(1)])
-            .with_pipeline(crate::handle::PipelineHandle::from_raw(42, 0));
-
-        assert_eq!(desc.pipeline.unwrap().index(), 42);
-    }
-
-    #[test]
     fn test_pass_desc_defaults() {
         let desc = PassDesc::new("test", PassType::Graphics, vec![rid(1)], vec![rid(2)]);
-        assert!(desc.pipeline.is_none());
-        assert!(desc.tonemap_params.is_none());
         assert!(desc.material.is_none());
         assert!(desc.output_format.is_none());
         assert_eq!(desc.image_accesses.len(), 2);
@@ -333,7 +321,7 @@ mod tests {
         assert!(desc.commands.is_empty());
         assert!(desc.kind.is_none());
         assert!(!desc.side_effect);
-        assert!(desc.uses_depth);
+        assert!(!desc.uses_depth);
     }
 
     #[test]

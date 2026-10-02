@@ -28,6 +28,9 @@
 //!
 //! Run: `cargo test -p katla_gfx --test contract -- --ignored`
 
+#[path = "../support/scene_shader_data.rs"]
+mod scene_shader_data;
+
 mod errors;
 mod graphics;
 mod harness;

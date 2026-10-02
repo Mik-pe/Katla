@@ -11,6 +11,16 @@
 //! contract suites:
 //! `TMPDIR=$HOME/tmp cargo test -p katla_gfx --test pipeline_variants -- --ignored`).
 
+#[path = "support/ui_bindings.rs"]
+mod ui_bindings;
+
+#[path = "support/readback.rs"]
+mod readback;
+
+#[path = "support/camera_shader_data.rs"]
+mod camera_shader_data;
+use camera_shader_data::CameraShaderData;
+
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +30,9 @@ use katla_gfx::handle::PipelineHandle;
 
 use katla_gfx::render_graph::PassId;
 
-use katla_gfx::render_graph::{FrameGraph, FrameGraphBuilder, GeometryPass, UIPass};
+use katla_gfx::render_graph::{
+    FrameGraph, FrameGraphBuilder, GeometryPass, GraphResourceDesc, GraphResourceType, UIPass,
+};
 
 use katla_gfx::renderer::pipeline_variant::PipelineVariantKey;
 
@@ -31,8 +43,8 @@ use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::{VertexPBR, VertexUIInstance};
 
 use katla_gfx::{
-    CullMode, DepthState, FrameUniforms, GpuRenderer, PipelineDescriptor, UIDrawList,
-    UiDrawCommand, ValidationMode, VulkanRenderer,
+    CullMode, DepthState, GpuRenderer, PipelineDescriptor, UIDrawList, UiDrawCommand,
+    ValidationMode, VulkanRenderer,
 };
 
 /// Acquire one frame from the headless renderer (always ready offscreen).
@@ -50,13 +62,10 @@ const WIDTH: u32 = 64;
 const HEIGHT: u32 = 48;
 
 fn headless_renderer() -> VulkanRenderer {
-    // ValidationMode::Disabled: compiling the PBR pipeline under the system
-    // validation layer segfaults the Intel driver on this machine (same
-    // trade-off as the instancing suite).
     VulkanRenderer::init_headless(
         WIDTH,
         HEIGHT,
-        ValidationMode::Disabled,
+        ValidationMode::Enabled,
         CString::new("Pipeline variants test").unwrap(),
         CString::new("Katla").unwrap(),
     )
@@ -70,6 +79,7 @@ fn shaders() -> std::path::PathBuf {
 fn pbr_descriptor(shader: std::path::PathBuf) -> PipelineDescriptor {
     PipelineDescriptor::pbr(shader.to_string_lossy().into_owned())
         .with_depth(DepthState::disabled())
+        .with_depth_format(None)
         .with_cull(CullMode::None)
 }
 
@@ -140,7 +150,7 @@ fn triangle_draw_list(
     let mesh = renderer
         .create_mesh(
             &triangle_vertices(),
-            &vec![0u32, 1, 2],
+            &[0u32, 1, 2],
             katla_gfx::PrimitiveTopology::TriangleList,
         )
         .expect("test mesh creation");
@@ -158,16 +168,16 @@ fn render_once(
     graph: &mut FrameGraph<VulkanRenderer>,
     pass: PassId,
     draw_list: Option<&DrawList>,
-    frame: usize,
+    format: ImageFormat,
 ) -> Vec<u8> {
-    let uniforms = FrameUniforms {
+    let uniforms = CameraShaderData {
         view_matrix: identity(),
         proj_matrix: identity(),
         inv_view_proj_matrix: identity(),
         ..Default::default()
     };
     let frame_token = acquire_frame_token(&mut *renderer);
-    renderer.set_frame_uniforms(&frame_token, uniforms).unwrap();
+    graph.set_pass_bindings(pass, uniforms.bindings()).unwrap();
     if let Some(draw_list) = draw_list {
         renderer
             .execute_draw_calls(&frame_token, draw_list)
@@ -180,10 +190,19 @@ fn render_once(
             }
         })
         .unwrap();
-    renderer.present(frame_token).unwrap();
-    renderer.queue_async_readback(frame).unwrap();
-    let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
-    assert_eq!(pixels.len(), (WIDTH * HEIGHT * 4) as usize);
+    assert_eq!(
+        renderer
+            .present(frame_token)
+            .unwrap()
+            .surface
+            .expect("surface presentation"),
+        katla_gfx::SurfaceStatus::Presented
+    );
+    let (_, pixels) = readback::read_pixels(renderer, graph.resource_id("target").unwrap());
+    assert_eq!(
+        pixels.len(),
+        (WIDTH * HEIGHT * format.bytes_per_pixel()) as usize
+    );
     pixels
 }
 
@@ -192,16 +211,12 @@ fn render_once(
 fn test_deferred_material_compiles_variant_per_target_format() {
     let mut renderer = headless_renderer();
     let shaders = shaders();
-    renderer
-        .init_light_culling(WIDTH, HEIGHT, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
 
     // `Auto` color format: nothing compiles until a pass uses the material.
     let material = renderer
-        .compile_material(&pbr_descriptor(shaders.join("model_pbr.wgsl")))
+        .compile_material(&pbr_descriptor(
+            shaders.join("../../katla_gfx/tests/support/mesh.wgsl"),
+        ))
         .unwrap();
     assert_eq!(
         variant_count(&renderer),
@@ -209,14 +224,14 @@ fn test_deferred_material_compiles_variant_per_target_format() {
         "Auto material starts uncompiled"
     );
 
-    let hdr = render_variant_graph(
+    render_variant_graph(
         &mut renderer,
         material,
         ImageFormat::R16G16B16A16Sfloat,
         None,
         0,
     );
-    let ldr = render_variant_graph(&mut renderer, material, ImageFormat::B8G8R8A8Srgb, None, 1);
+    render_variant_graph(&mut renderer, material, ImageFormat::B8G8R8A8Srgb, None, 1);
 
     assert_eq!(
         variant_count(&renderer),
@@ -258,18 +273,12 @@ fn test_deferred_material_compiles_variant_per_target_format() {
 fn test_declared_format_material_gains_variant_for_second_format() {
     let mut renderer = headless_renderer();
     let shaders = shaders();
-    renderer
-        .init_light_culling(WIDTH, HEIGHT, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
 
     // Declared LDR format: that variant compiles eagerly, but the material
     // is not pinned to it — the first compilation context does not define
     // later valid uses.
-    let descriptor =
-        pbr_descriptor(shaders.join("model_pbr.wgsl")).with_color_format(ImageFormat::B8G8R8A8Srgb);
+    let descriptor = pbr_descriptor(shaders.join("../../katla_gfx/tests/support/mesh.wgsl"))
+        .with_color_format(ImageFormat::B8G8R8A8Srgb);
     let material = renderer.compile_material(&descriptor).unwrap();
     assert_eq!(
         variant_count(&renderer),
@@ -302,14 +311,8 @@ fn test_declared_format_material_gains_variant_for_second_format() {
 fn test_hot_reload_drops_only_matching_materials_variants() {
     let mut renderer = headless_renderer();
     let shaders = shaders();
-    renderer
-        .init_light_culling(WIDTH, HEIGHT, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
 
-    let shader_path = shaders.join("model_pbr.wgsl");
+    let shader_path = shaders.join("../../katla_gfx/tests/support/mesh.wgsl");
     let material = renderer
         .compile_material(
             &pbr_descriptor(shader_path.clone()).with_color_format(ImageFormat::B8G8R8A8Srgb),
@@ -350,19 +353,13 @@ fn test_hot_reload_drops_only_matching_materials_variants() {
 
 #[test]
 #[ignore = "requires a Vulkan device"]
-fn test_layout_invalidation_drops_all_variants_and_recompiles() {
+fn test_surface_resize_preserves_attachment_variants() {
     let mut renderer = headless_renderer();
     let shaders = shaders();
-    renderer
-        .init_light_culling(WIDTH, HEIGHT, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
 
     let material = renderer
         .compile_material(
-            &pbr_descriptor(shaders.join("model_pbr.wgsl"))
+            &pbr_descriptor(shaders.join("../../katla_gfx/tests/support/mesh.wgsl"))
                 .with_color_format(ImageFormat::B8G8R8A8Srgb),
         )
         .unwrap();
@@ -375,11 +372,13 @@ fn test_layout_invalidation_drops_all_variants_and_recompiles() {
     );
     assert_eq!(variant_count(&renderer), 2);
 
-    // A descriptor-layout change (light culling resize) is an input of
-    // every variant key: no variant survives, and the next use recompiles
-    // against the new layouts.
-    renderer.recreate_scene_render_targets(32, 24);
-    assert_eq!(variant_count(&renderer), 0, "all variants invalidated");
+    renderer.resize(32, 24).unwrap();
+    renderer.resize(WIDTH, HEIGHT).unwrap();
+    assert_eq!(
+        variant_count(&renderer),
+        2,
+        "surface dimensions do not change pipeline identity"
+    );
 
     render_variant_graph(
         &mut renderer,
@@ -388,7 +387,11 @@ fn test_layout_invalidation_drops_all_variants_and_recompiles() {
         None,
         1,
     );
-    assert_eq!(variant_count(&renderer), 1, "recompiles after invalidation");
+    assert_eq!(
+        variant_count(&renderer),
+        2,
+        "rendering reuses compatible variants after resize"
+    );
 
     renderer.destroy();
 }
@@ -408,16 +411,10 @@ fn test_one_material_renders_into_two_attachment_formats() {
         });
 
     let shaders = shaders();
-    renderer
-        .init_light_culling(WIDTH, HEIGHT, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
 
     let material = renderer
         .compile_material(
-            &pbr_descriptor(shaders.join("model_pbr.wgsl"))
+            &pbr_descriptor(shaders.join("../../katla_gfx/tests/support/mesh.wgsl"))
                 .with_color_format(ImageFormat::B8G8R8A8Srgb),
         )
         .unwrap();
@@ -442,28 +439,31 @@ fn test_one_material_renders_into_two_attachment_formats() {
     );
     assert_eq!(variant_count(&renderer), 2);
 
-    // The triangle covers the center probe in both captures. Readback
-    // copies the headless drawable (always BGRA), which normalizes byte
-    // order, so red dominates byte 2 in both — what differs is which
-    // pipeline variant each declared attachment format compiled and bound.
     let center = ((HEIGHT as usize / 2) * WIDTH as usize + WIDTH as usize / 2) * 4;
     let corner = 0;
-    for (name, pixels) in [("bgra", &bgra.1), ("rgba", &rgba.1)] {
+    let rgba_pixel = |pixels: &[u8], bgra: bool| -> [u8; 4] {
+        let mut pixel: [u8; 4] = pixels[center..center + 4].try_into().unwrap();
+        if bgra {
+            pixel.swap(0, 2);
+        }
+        pixel
+    };
+    for (name, pixels, bgra_order) in [("bgra", &bgra.1, true), ("rgba", &rgba.1, false)] {
         assert_ne!(
             &pixels[center..center + 4],
             &pixels[corner..corner + 4],
             "{name}: triangle must be drawn"
         );
+        let pixel = rgba_pixel(pixels, bgra_order);
         assert!(
-            pixels[center + 2] > pixels[center] && pixels[center] < 32,
-            "{name}: red must dominate the readback byte 2, got {:?}",
-            &pixels[center..center + 4]
+            pixel[0] > pixel[2] && pixel[2] < 32,
+            "{name}: real target red must dominate, got {pixel:?}"
         );
     }
     assert_eq!(
-        &bgra.1[center..center + 4],
-        &rgba.1[center..center + 4],
-        "the same draw shades identically into both attachment formats"
+        rgba_pixel(&bgra.1, true),
+        rgba_pixel(&rgba.1, false),
+        "the same draw shades identically into both native attachment formats"
     );
 
     assert!(
@@ -485,16 +485,26 @@ fn render_variant_graph(
     frame: usize,
 ) -> (usize, Vec<u8>) {
     let mut graph: FrameGraph<VulkanRenderer> = FrameGraphBuilder::new()
+        .create_resource(GraphResourceDesc {
+            name: "target".into(),
+            resource_type: GraphResourceType::ColorAttachment { clear_value: None },
+            format,
+            width: WIDTH,
+            height: HEIGHT,
+            tracks_swapchain_size: true,
+        })
+        .export_resource("target")
         .add_pass(
             GeometryPass::new("geometry")
-                .write_color("backbuffer", format)
+                .without_depth()
+                .write_color("target", format)
                 .clear_color([0.0, 0.0, 0.0, 1.0])
                 .material(material),
         )
         .build::<VulkanRenderer>()
         .unwrap();
     let pass = graph.pass_id("geometry").unwrap();
-    let pixels = render_once(renderer, &mut graph, pass, draw_list, frame);
+    let pixels = render_once(renderer, &mut graph, pass, draw_list, format);
     graph.cleanup();
     drop(graph);
     (frame, pixels)
@@ -525,17 +535,17 @@ fn test_deferred_material_compiles_pipeline_for_the_declared_format() {
         });
 
     let _atlas = renderer
-        .create_ui_font_atlas(1, 1, &[255, 0, 0, 255])
-        .expect("test font atlas creation");
+        .create_texture(
+            &katla_gfx::TextureDescriptor::rgba8_unorm(1, 1),
+            &[255, 0, 0, 255],
+        )
+        .expect("test texture creation");
     let white = renderer
         .create_texture(&katla_gfx::TextureDescriptor::rgba8_unorm(1, 1), &[255; 4])
         .expect("test texture creation");
     let white_slot = renderer.get_bindless_slot(white).unwrap();
     let shaders = shaders();
 
-    // UI pipelines are safe to compile under the validation layer (unlike
-    // PBR on this machine's system driver). `Auto` defers compilation to
-    // the first use.
     let descriptor =
         PipelineDescriptor::ui(shaders.join("ui/ui.wgsl").to_string_lossy().into_owned())
             .with_color_format(ImageFormat::Auto);
@@ -568,6 +578,7 @@ fn test_deferred_material_compiles_pipeline_for_the_declared_format() {
     let mut graph: FrameGraph<VulkanRenderer> = FrameGraphBuilder::new()
         .add_pass(
             GeometryPass::new("background")
+                .without_depth()
                 .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                 .clear_color([0.0, 0.0, 1.0, 1.0]),
         )
@@ -575,17 +586,27 @@ fn test_deferred_material_compiles_pipeline_for_the_declared_format() {
         .build::<VulkanRenderer>()
         .unwrap();
     let ui_pass = graph.pass_id("ui").unwrap();
+    graph
+        .set_pass_bindings(ui_pass, ui_bindings::bindings())
+        .unwrap();
 
-    for frame in 0..2 {
+    for _ in 0..2 {
         let frame_token = acquire_frame_token(&mut renderer);
         renderer
             .render(&frame_token, &mut graph, |frame_context| {
                 frame_context.submit_ui(ui_pass, &ui);
             })
             .unwrap();
-        renderer.present(frame_token).unwrap();
-        renderer.queue_async_readback(frame).unwrap();
-        let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
+        let (_, pixels) =
+            readback::read_pixels(&mut renderer, graph.resource_id("backbuffer").unwrap());
         // The green quad covers the left probe; the right probe stays the
         // background's blue.
         let probe = ((8usize) * WIDTH as usize + 8) * 4;

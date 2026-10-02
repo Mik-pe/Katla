@@ -15,7 +15,7 @@ use crate::components::{ParticleEmitterComponent, WorldTransform};
 /// System that manages particle emitters in the ECS.
 ///
 /// This system:
-/// - Creates emitters in the global particle system for entities with ParticleEmitterComponent
+/// - Creates scene-owned emitters for entities with ParticleEmitterComponent
 /// - Updates emitter configurations from component data
 /// - Destroys emitters when components are removed
 ///
@@ -42,13 +42,8 @@ impl ParticleSystem {
 
     /// Update particle emitters from ECS components.
     ///
-    /// This should be called each frame after the global particle system
-    /// has been initialized.
-    ///
-    /// Update particle emitters from ECS components.
-    ///
     /// Backend-agnostic: `particle_system` is any `ParticleEmitterDriver`
-    /// (Vulkan's `GlobalParticleSystem` or Metal's `MetalParticleSubsystem`).
+    /// implemented by application-owned scene features.
     ///
     /// * `delta_time` - Frame time in seconds (for timed emission)
     pub fn update(

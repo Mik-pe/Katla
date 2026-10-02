@@ -4,7 +4,7 @@ use super::argument_state::ArgumentState;
 use super::buffer::MetalBuffer;
 use super::encoding_resources::EncodingResources;
 use super::execution_plan::MetalPassRecord;
-use super::metal_renderer::{MetalRenderer, OBJECT_UNIFORM_SIZE};
+use super::metal_renderer::MetalRenderer;
 use super::pipeline::MetalGraphicsPipeline;
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
@@ -97,32 +97,6 @@ impl<'a> GraphicsPreflight<'a> {
         self.resources.retain_graphics_pipeline(pipeline);
         Ok(())
     }
-
-    fn common(&self, renderer: &MetalRenderer) -> Result<(), RendererError> {
-        if let (Some(frame), Some(objects)) = (
-            renderer.current_frame_uniform_buffer(),
-            renderer.current_object_storage_buffer(),
-        ) {
-            self.full_buffer(frame, 0, true, true)?;
-            self.full_buffer(objects, 1, true, true)?;
-        }
-        self.bindless(renderer)?;
-        if renderer.shared_sampler.is_some() {
-            self.sampler(0, true, true);
-        }
-        if let Some(lights) = &renderer.light_culling {
-            self.full_buffer(lights.light_buffer(), 3, false, true)?;
-            self.full_buffer(lights.tile_index_buffer(), 4, false, true)?;
-            self.full_buffer(lights.tile_count_buffer(), 5, false, true)?;
-        }
-        if let Some(shadow) = &renderer.shadow_cascade_buffers[renderer.frame_index()] {
-            self.full_buffer(shadow, 7, false, true)?;
-        }
-        if renderer.shadow_sampler.is_some() {
-            self.sampler(1, false, true);
-        }
-        Ok(())
-    }
 }
 
 impl MetalRenderer {
@@ -134,262 +108,452 @@ impl MetalRenderer {
         graph: &FrameGraph<Self>,
         slot: usize,
     ) -> Result<(), RendererError> {
-        let plan = GraphicsPreflight::new(resources);
-        match record.kind {
-            PassKind::Fullscreen => {
-                plan.bindless(self)?;
-                if let Some(buffer) = &self.dummy_vertex_buffer {
-                    plan.full_buffer(buffer, 10, true, false)?;
-                }
-                if self.shared_sampler.is_some() {
-                    plan.sampler(0, false, true);
-                }
-                plan.inline(
-                    std::mem::size_of::<crate::renderer::types::FrameUniforms>() as u64,
-                    0,
-                    true,
-                    true,
-                );
-                plan.pipeline(self.tonemap_pipeline.as_ref().ok_or_else(|| {
-                    RendererError::InvalidOperation("Tonemap pipeline missing".into())
-                })?)?;
-            }
-            PassKind::Particles => {
-                if let Some(system) = &self.particle_system
-                    && let Some(pipeline) = system.render_pipeline()
+        self.preflight_graphics_record_resources(resources, record, data, graph, slot)
+            .map_err(|error| {
+                preflight_context(error, || format!("Graphics pass '{}'", record.name))
+            })
+    }
+
+    fn preflight_graphics_record_resources(
+        &self,
+        resources: &EncodingResources,
+        record: &MetalPassRecord,
+        data: &PassExecutionData,
+        graph: &FrameGraph<Self>,
+        slot: usize,
+    ) -> Result<(), RendererError> {
+        use super::binding_schema::TableBindingKind;
+        use super::graphics_packet::{phases, table_slots};
+        use crate::backend::command::ShaderStages;
+        use crate::renderer::frame_bindings::PassDraw;
+        use crate::renderer::graphics_interface::{GraphicsBindingKind, GraphicsBindingLayout};
+        for phase in phases(record) {
+            if let PassDraw::Indirect { resource, offset } = phase.draw {
+                let buffer = graph.buffer_by_id(self, resource, slot).ok_or_else(|| {
+                    RendererError::InvalidOperation("Indirect drawing buffer missing".into())
+                })?;
+                let available = buffer
+                    .desc
+                    .size
+                    .min(buffer.buffer.size().saturating_sub(buffer.offset));
+                if !offset.is_multiple_of(4)
+                    || offset.checked_add(16).is_none_or(|end| end > available)
                 {
-                    use crate::render_graph::BuiltinBuffer::*;
-                    for (role, index) in [
-                        (ParticleData, 0),
-                        (ParticleDeadList, 1),
-                        (ParticleAliveWrite, 2),
-                        (ParticleAliveWrite, 3),
-                        (ParticleCounters, 4),
-                    ] {
-                        let (buffer, offset, bytes) = system
-                            .buffer_slice(role, self.frame_index)
-                            .ok_or_else(|| {
-                            RendererError::InvalidOperation("Particle render buffer missing".into())
-                        })?;
-                        plan.buffer(buffer, offset, bytes, index, true, false)?;
-                    }
-                    let frame = self.current_frame_uniform_buffer().ok_or_else(|| {
-                        RendererError::InvalidOperation("Particle frame uniforms missing".into())
-                    })?;
-                    plan.full_buffer(frame, 5, true, false)?;
-                    let indirect = system
-                        .builtin_buffer(ParticleIndirect, self.frame_index)
+                    return Err(RendererError::InvalidOperation(
+                        "Indirect draw exceeds its native buffer allocation".into(),
+                    ));
+                }
+                resources.residency.add_buffer(&buffer.buffer.inner)?;
+            }
+            let pipelines = if phase.pipelines.is_empty() {
+                &record.bindings.pipelines
+            } else {
+                &phase.pipelines
+            };
+            let selected = match phase.draw {
+                PassDraw::Submissions | PassDraw::ObjectIndices(_)
+                    if record.kind == PassKind::Ui
+                        && data.ui_draw_lists.iter().any(|list| !list.is_empty()) =>
+                {
+                    vec![(
+                        record.material.ok_or_else(|| {
+                            RendererError::InvalidOperation("UI material missing".into())
+                        })?,
+                        None,
+                    )]
+                }
+                PassDraw::Submissions | PassDraw::ObjectIndices(_) => data
+                    .prepared()
+                    .iter()
+                    .filter(|draw| match &phase.draw {
+                        PassDraw::ObjectIndices(indices) => indices.iter().any(|index| {
+                            *index >= draw.instance_index
+                                && *index
+                                    < draw
+                                        .instance_index
+                                        .saturating_add(draw.instance_count().max(1))
+                        }),
+                        _ => true,
+                    })
+                    .map(|draw| {
+                        self.packet_material(pipelines, draw)
+                            .map(|material| (material, Some(draw)))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                _ => vec![(
+                    pipelines
+                        .first()
+                        .map(|pipeline| pipeline.material)
+                        .or(record.material)
                         .ok_or_else(|| {
                             RendererError::InvalidOperation(
-                                "Particle indirect buffer missing".into(),
+                                "Generated geometry requires a pipeline".into(),
                             )
-                        })?;
-                    plan.buffer(indirect, 0, 16, 30, false, false)?;
-                    plan.pipeline(pipeline)?;
-                }
-            }
-            PassKind::Ui => {
-                if let Some(list) = data.ui_draw_lists.first().filter(|list| !list.is_empty()) {
-                    plan.bindless(self)?;
-                    if self.shared_sampler.is_some() {
-                        plan.sampler(0, false, true);
-                    }
-                    let material = record.material.ok_or_else(|| {
-                        RendererError::InvalidOperation("UI pass has no material".into())
-                    })?;
+                        })?,
+                    None,
+                )],
+            };
+            for (material_handle, draw) in selected {
+                let material = self.materials.get(material_handle).ok_or_else(|| {
+                    RendererError::InvalidOperation(format!(
+                        "Graphics material {material_handle:?} missing"
+                    ))
+                })?;
+                (|| -> Result<(), RendererError> {
                     let pipeline =
-                        self.material_pipeline(material, record.color_attachments[0].format)?;
-                    self.ui_renderers[slot].preflight_commands(&plan, list, &pipeline)?;
-                }
-            }
-            _ => {
-                if record.kind == PassKind::Geometry {
-                    plan.common(self)?;
-                    for access in &record.image_accesses {
-                        if access.usage == crate::render_graph::ResourceAccessUsage::Sampled
-                            && let Some(texture) =
-                                graph.transient_texture_by_id(access.resource, slot)
-                            && texture.format == crate::texture::ImageFormat::D32Sfloat
-                        {
-                            resources.residency.add_texture(&texture.view.inner)?;
-                            resources.residency.validate_texture(&texture.view.inner)?;
-                            plan.fragment.texture(1);
-                        }
-                    }
-                    if record.color_attachments[0].load_op == crate::render_pass::LoadOp::Clear
-                        && let Some(pipeline) = &self.sky_pipeline
+                        self.material_pipeline(material_handle, Self::packet_format(record))?;
+                    if material.interface.color_attachment_count() != record.color_attachments.len()
+                        || material.descriptor.color_attachment
+                            != !record.color_attachments.is_empty()
+                        || material.descriptor.depth_format
+                            != record.depth_attachment.map(|attachment| attachment.format)
                     {
-                        if let Some(buffer) = &self.dummy_vertex_buffer {
-                            plan.full_buffer(buffer, 10, true, false)?;
-                        }
-                        plan.pipeline(pipeline)?;
+                        return Err(RendererError::InvalidOperation(format!(
+                            "Graphics pipeline attachments do not match pass '{}'",
+                            record.name
+                        )));
                     }
-                }
-                for draw in data.prepared().iter() {
-                    if record.kind == PassKind::Shadow && draw.is_billboard {
-                        continue;
-                    }
-                    let mesh =
-                        self.meshes
-                            .get(draw.mesh)
-                            .ok_or_else(|| RendererError::StaleHandle {
-                                resource: "mesh".into(),
-                                detail: format!("graphics pass '{}'", record.name),
-                            })?;
-                    if mesh.index_count == 0 {
-                        continue;
-                    }
-                    let material = self.materials.get(draw.material).ok_or_else(|| {
-                        RendererError::StaleHandle {
-                            resource: "material".into(),
-                            detail: format!("graphics pass '{}'", record.name),
+                    let plan = GraphicsPreflight::new(resources);
+                    let mut provided = Vec::new();
+                    if record.kind == PassKind::Ui {
+                        for (index, stages) in table_slots(
+                            &pipeline,
+                            0,
+                            3,
+                            TableBindingKind::Buffer,
+                            ShaderStages::VERTEX_FRAGMENT,
+                        ) {
+                            plan.inline(16, index as usize, stages.vertex, stages.fragment);
                         }
-                    })?;
-                    let skinned = !draw.skeleton.is_none();
-                    let pipelines = match record.kind {
-                        PassKind::Geometry => {
-                            let key =
-                                crate::renderer::pipeline_variant::PipelineVariantKey::resolve(
-                                    &material.descriptor,
-                                    record.color_attachments[0].format,
-                                );
-                            vec![material.variants.get(&key)]
-                        }
-                        PassKind::Shadow => vec![if skinned {
-                            self.shadow
-                                .pipeline_skinned()
-                                .or_else(|| self.shadow.pipeline())
-                        } else {
-                            self.shadow.pipeline()
-                        }],
-                        PassKind::DepthPrepass => vec![if skinned {
-                            self.depth_prepass
-                                .pipeline_skinned()
-                                .or_else(|| self.depth_prepass.pipeline())
-                        } else if draw.is_billboard {
-                            self.depth_prepass
-                                .pipeline_billboard()
-                                .or_else(|| self.depth_prepass.pipeline())
-                        } else {
-                            self.depth_prepass.pipeline()
-                        }],
-                        PassKind::ObjectId => vec![if skinned {
-                            self.picking
-                                .pipeline_skinned()
-                                .or_else(|| self.picking.pipeline())
-                        } else {
-                            self.picking.pipeline()
-                        }],
-                        PassKind::Outline => vec![
-                            if skinned {
-                                self.outline
-                                    .stencil_mark_skinned_pipeline()
-                                    .or_else(|| self.outline.stencil_mark_pipeline())
-                            } else {
-                                self.outline.stencil_mark_pipeline()
+                        provided.push(GraphicsBindingLayout {
+                            group: 0,
+                            binding: 3,
+                            stages: ShaderStages::VERTEX_FRAGMENT,
+                            kind: GraphicsBindingKind::Buffer {
+                                usage: crate::render_graph::BufferUsage::Uniform,
+                                mode: crate::render_graph::ResourceAccessMode::Read,
+                                minimum_bytes: 16,
                             },
-                            if skinned {
-                                self.outline
-                                    .outline_draw_skinned_pipeline()
-                                    .or_else(|| self.outline.outline_draw_pipeline())
-                            } else {
-                                self.outline.outline_draw_pipeline()
-                            },
-                        ],
-                        _ => {
-                            return Err(RendererError::InvalidOperation(format!(
-                                "Unsupported graphics preflight {:?}",
-                                record.kind
-                            )));
-                        }
-                    };
-                    let frame = self.current_frame_uniform_buffer().ok_or_else(|| {
-                        RendererError::InvalidOperation("Frame uniforms missing".into())
-                    })?;
-                    let objects = self.current_object_storage_buffer().ok_or_else(|| {
-                        RendererError::InvalidOperation("Object storage missing".into())
-                    })?;
-                    plan.full_buffer(frame, 0, true, true)?;
-                    let object_offset = u64::from(draw.instance_index) * OBJECT_UNIFORM_SIZE;
-                    let object_bytes =
-                        u64::from(draw.instance_count().max(1)) * OBJECT_UNIFORM_SIZE;
-                    plan.buffer(objects, object_offset, object_bytes, 1, true, true)?;
-                    plan.buffer(
-                        &mesh.vertex_buffer,
-                        0,
-                        u64::from(mesh.vertex_count) * u64::from(mesh.vertex_stride),
-                        10,
-                        true,
-                        false,
-                    )?;
-                    plan.buffer(
-                        &mesh.index_buffer,
-                        0,
-                        u64::from(mesh.index_count) * 4,
-                        30,
-                        false,
-                        false,
-                    )?;
-                    if record.kind == PassKind::Shadow {
-                        let cascade = self.shadow_cascade_encode_buffers[slot]
-                            .as_ref()
-                            .ok_or_else(|| {
-                                RendererError::InvalidOperation(
-                                    "Shadow cascade data missing".into(),
-                                )
-                            })?;
-                        plan.full_buffer(cascade, 2, true, true)?;
-                        plan.inline(16, 3, true, false);
+                            array: false,
+                        });
                     }
-                    if record.kind == PassKind::DepthPrepass && draw.is_billboard {
+
+                    if let Some(objects) = self.current_object_storage_buffer() {
+                        for (index, stages) in table_slots(
+                            &pipeline,
+                            0,
+                            1,
+                            TableBindingKind::Buffer,
+                            ShaderStages::VERTEX_FRAGMENT,
+                        ) {
+                            plan.full_buffer(
+                                objects,
+                                index as usize,
+                                stages.vertex,
+                                stages.fragment,
+                            )?;
+                        }
+                        provided.push(GraphicsBindingLayout {
+                            group: 0,
+                            binding: 1,
+                            stages: ShaderStages::VERTEX_FRAGMENT,
+                            kind: GraphicsBindingKind::Buffer {
+                                usage: crate::render_graph::BufferUsage::Storage,
+                                mode: crate::render_graph::ResourceAccessMode::Read,
+                                minimum_bytes: objects.size(),
+                            },
+                            array: false,
+                        });
+                    }
+                    if self.bindless_manager.snapshot().is_some() {
                         plan.bindless(self)?;
-                        if self.shared_sampler.is_some() {
-                            plan.sampler(0, false, true);
-                        }
+                        provided.push(GraphicsBindingLayout {
+                            group: 1,
+                            binding: 0,
+                            stages: ShaderStages::VERTEX_FRAGMENT,
+                            kind: GraphicsBindingKind::Image { storage: false },
+                            array: true,
+                        });
                     }
-                    if skinned {
-                        let skeleton =
-                            self.skeletons[slot].get(draw.skeleton).ok_or_else(|| {
-                                RendererError::StaleHandle {
-                                    resource: "skeleton".into(),
-                                    detail: format!("graphics pass '{}'", record.name),
+                    if self.shared_sampler.is_some() {
+                        for (index, stages) in table_slots(
+                            &pipeline,
+                            1,
+                            1,
+                            TableBindingKind::Sampler,
+                            ShaderStages::VERTEX_FRAGMENT,
+                        ) {
+                            plan.sampler(index as usize, stages.vertex, stages.fragment);
+                        }
+                        provided.push(GraphicsBindingLayout {
+                            group: 1,
+                            binding: 1,
+                            stages: ShaderStages::VERTEX_FRAGMENT,
+                            kind: GraphicsBindingKind::Sampler { comparison: false },
+                            array: false,
+                        });
+                    }
+                    if let Some(draw) = draw {
+                        let mesh = self.meshes.get(draw.mesh).ok_or_else(|| {
+                            RendererError::InvalidOperation("Submitted mesh missing".into())
+                        })?;
+                        if mesh.index_count == 0 {
+                            return Ok(());
+                        }
+                        plan.full_buffer(&mesh.vertex_buffer, 10, true, false)?;
+                        plan.full_buffer(&mesh.index_buffer, 30, false, false)?;
+                        if !draw.skeleton.is_none() {
+                            let skeleton =
+                                self.skeletons[slot].get(draw.skeleton).ok_or_else(|| {
+                                    RendererError::InvalidOperation(
+                                        "Submitted skeleton missing".into(),
+                                    )
+                                })?;
+                            for group in [2, 3] {
+                                if record
+                                    .bindings
+                                    .buffers
+                                    .iter()
+                                    .any(|binding| binding.group == group && binding.binding == 0)
+                                    || record
+                                        .bindings
+                                        .constants
+                                        .iter()
+                                        .chain(&phase.constants)
+                                        .any(|binding| {
+                                            binding.group == group && binding.binding == 0
+                                        })
+                                {
+                                    continue;
                                 }
-                            })?;
-                        plan.full_buffer(
-                            skeleton,
-                            if record.kind == PassKind::Shadow {
-                                4
-                            } else {
-                                2
-                            },
-                            true,
-                            true,
-                        )?;
-                    }
-                    for (index, pipeline) in pipelines.into_iter().enumerate() {
-                        let Some(pipeline) = pipeline else {
-                            if record.kind == PassKind::Outline {
-                                continue;
+                                for (index, stages) in table_slots(
+                                    &pipeline,
+                                    group,
+                                    0,
+                                    TableBindingKind::Buffer,
+                                    ShaderStages::VERTEX_FRAGMENT,
+                                ) {
+                                    plan.full_buffer(
+                                        skeleton,
+                                        index as usize,
+                                        stages.vertex,
+                                        stages.fragment,
+                                    )?;
+                                    if let Some(existing) = provided.iter_mut().find(|binding| {
+                                        binding.group == group && binding.binding == 0
+                                    }) {
+                                        existing.stages.vertex |= stages.vertex;
+                                        existing.stages.fragment |= stages.fragment;
+                                    } else {
+                                        provided.push(GraphicsBindingLayout {
+                                            group,
+                                            binding: 0,
+                                            stages,
+                                            kind: GraphicsBindingKind::Buffer {
+                                                usage: crate::render_graph::BufferUsage::Storage,
+                                                mode: crate::render_graph::ResourceAccessMode::Read,
+                                                minimum_bytes: skeleton.size(),
+                                            },
+                                            array: false,
+                                        });
+                                    }
+                                }
                             }
-                            return Err(RendererError::InvalidOperation(format!(
-                                "Graphics pipeline missing for '{}'",
-                                record.name
-                            )));
-                        };
-                        if record.kind == PassKind::Outline && index == 1 {
-                            plan.inline(
-                                std::mem::size_of::<super::outline::OutlinePushConstants>() as u64,
-                                if skinned { 3 } else { 2 },
-                                true,
-                                true,
-                            );
                         }
-                        plan.pipeline(pipeline)?;
                     }
+                    let mut packet = record.bindings.clone();
+                    packet.phases.clear();
+                    for binding in &phase.constants {
+                        packet.constants.retain(|base| {
+                            base.group != binding.group || base.binding != binding.binding
+                        });
+                        packet.constants.push(binding.clone());
+                    }
+                    provided.retain(|implicit| {
+                        !packet.buffers.iter().any(|binding| {
+                            binding.group == implicit.group && binding.binding == implicit.binding
+                        }) && !packet.images.iter().any(|binding| {
+                            binding.group == implicit.group && binding.binding == implicit.binding
+                        }) && !packet.samplers.iter().any(|binding| {
+                            binding.group == implicit.group && binding.binding == implicit.binding
+                        }) && !packet.constants.iter().any(|binding| {
+                            binding.group == implicit.group && binding.binding == implicit.binding
+                        })
+                    });
+                    material
+                        .interface
+                        .validate_buffer_accesses(&packet, &record.buffer_accesses)
+                        .map_err(RendererError::InvalidOperation)?;
+                    material
+                        .interface
+                        .validate_bindings(&packet, &provided, |resource| {
+                            graph
+                                .buffer_by_id(self, resource, slot)
+                                .map(|buffer| buffer.desc.size)
+                        })
+                        .map_err(RendererError::InvalidOperation)?;
+                    self.preflight_packet_bindings(
+                        &plan, resources, &pipeline, &packet, graph, slot,
+                    )?;
+                    plan.pipeline(&pipeline)?;
+                    Ok(())
+                })()
+                .map_err(|error| {
+                    preflight_context(error, || {
+                        let buffers = record
+                            .bindings
+                            .buffers
+                            .iter()
+                            .map(|binding| {
+                                format!(
+                                    "{}:{}=resource {}",
+                                    binding.group, binding.binding, binding.resource.0
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!(
+                            "material {material_handle:?} shader '{}' [buffers: {buffers}]",
+                            material.descriptor.shader_path
+                        )
+                    })
+                })?;
+            }
+        }
+        if record.kind == PassKind::Ui
+            && let Some(list) = data.ui_draw_lists.first().filter(|list| !list.is_empty())
+        {
+            let material = record
+                .material
+                .ok_or_else(|| RendererError::InvalidOperation("UI material missing".into()))?;
+            (|| -> Result<(), RendererError> {
+                let plan = GraphicsPreflight::new(resources);
+                plan.bindless(self)?;
+                let pipeline = self.material_pipeline(material, Self::packet_format(record))?;
+                for (index, stages) in table_slots(
+                    &pipeline,
+                    1,
+                    1,
+                    TableBindingKind::Sampler,
+                    ShaderStages::FRAGMENT,
+                ) {
+                    plan.sampler(index as usize, stages.vertex, stages.fragment);
+                }
+                self.preflight_packet_bindings(
+                    &plan,
+                    resources,
+                    &pipeline,
+                    &record.bindings,
+                    graph,
+                    slot,
+                )?;
+                self.ui_renderers[slot].preflight_commands(&plan, list, &pipeline)?;
+                Ok(())
+            })()
+            .map_err(|error| {
+                preflight_context(error, || {
+                    let shader = self
+                        .materials
+                        .get(material)
+                        .map(|material| material.descriptor.shader_path.as_str())
+                        .unwrap_or("<missing>");
+                    format!("material {material:?} shader '{shader}'")
+                })
+            })?;
+        }
+        resources.check()
+    }
+    fn preflight_packet_bindings(
+        &self,
+        plan: &GraphicsPreflight<'_>,
+        resources: &EncodingResources,
+        pipeline: &MetalGraphicsPipeline,
+        packet: &crate::renderer::frame_bindings::PassBindings,
+        graph: &FrameGraph<Self>,
+        slot: usize,
+    ) -> Result<(), RendererError> {
+        use super::binding_schema::TableBindingKind;
+        use super::graphics_packet::table_slots;
+        for binding in &packet.buffers {
+            let buffer = graph
+                .buffer_by_id(self, binding.resource, slot)
+                .ok_or_else(|| RendererError::InvalidOperation("Graphics buffer missing".into()))?;
+            let bytes = binding
+                .range
+                .size
+                .min(buffer.desc.size.saturating_sub(binding.range.offset));
+            for (index, stages) in table_slots(
+                pipeline,
+                binding.group,
+                binding.binding,
+                TableBindingKind::Buffer,
+                binding.stages,
+            ) {
+                plan.buffer(
+                    &buffer.buffer,
+                    buffer.offset + binding.range.offset,
+                    bytes,
+                    index as usize,
+                    stages.vertex,
+                    stages.fragment,
+                )?;
+            }
+        }
+        for binding in &packet.images {
+            let view = self.packet_image_view(graph, binding, slot)?;
+            resources.residency.add_texture(&view.inner)?;
+            for (index, stages) in table_slots(
+                pipeline,
+                binding.group,
+                binding.binding,
+                TableBindingKind::Texture,
+                binding.stages,
+            ) {
+                if stages.vertex {
+                    plan.vertex.texture(index as usize);
+                }
+                if stages.fragment {
+                    plan.fragment.texture(index as usize);
                 }
             }
         }
-        resources.check()
+        for binding in &packet.samplers {
+            for (index, stages) in table_slots(
+                pipeline,
+                binding.group,
+                binding.binding,
+                TableBindingKind::Sampler,
+                binding.stages,
+            ) {
+                plan.sampler(index as usize, stages.vertex, stages.fragment);
+            }
+        }
+        for binding in &packet.constants {
+            for (index, stages) in table_slots(
+                pipeline,
+                binding.group,
+                binding.binding,
+                TableBindingKind::Buffer,
+                binding.stages,
+            ) {
+                plan.inline(
+                    binding.bytes.len() as u64,
+                    index as usize,
+                    stages.vertex,
+                    stages.fragment,
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+fn preflight_context(error: RendererError, context: impl FnOnce() -> String) -> RendererError {
+    match error {
+        RendererError::InvalidOperation(reason) => {
+            RendererError::InvalidOperation(format!("{}: {reason}", context()))
+        }
+        other => other,
     }
 }
 
@@ -432,16 +596,19 @@ mod tests {
         )
         .unwrap();
         let pipeline = context
-            .create_graphics_pipeline(
-                &shader.module.entry_points["vs_main"],
-                Some(&shader.module.entry_points["fs_main"]),
-                &[objc2_metal::MTLPixelFormat::BGRA8Unorm_sRGB],
-                None,
-                false,
-                crate::pipeline::CompareOp::Always,
-                objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::Clockwise,
-            )
+            .create_graphics_pipeline(crate::metal::context::GraphicsPipelineConfig {
+                vertex_function: &shader.module.entry_points["vs_main"],
+                fragment_function: Some(&shader.module.entry_points["fs_main"]),
+                color_formats: &[objc2_metal::MTLPixelFormat::BGRA8Unorm_sRGB],
+                depth_format: None,
+                depth_write_enabled: false,
+                depth_compare: crate::pipeline::CompareOp::Always,
+                cull_mode: objc2_metal::MTLCullMode::None,
+                front_face: objc2_metal::MTLWinding::Clockwise,
+                vertex_descriptor: &objc2_metal::MTLVertexDescriptor::new(),
+                alpha_blended: false,
+                portable: None,
+            })
             .unwrap();
         let resources = EncodingResources::new(&context.device, "graphics.required_bindings");
         let plan = GraphicsPreflight::new(&resources);

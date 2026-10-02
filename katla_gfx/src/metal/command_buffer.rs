@@ -14,17 +14,16 @@ use crate::render_pass::{ClearValue, LoadOp};
 
 use super::MetalBackend;
 use super::blit_encoder::MetalBlitEncoder;
-use super::buffer::MetalBuffer;
 use super::compute_encoder::MetalComputeEncoder;
 use super::format::{to_mtl_load_action, to_mtl_store_action};
 use super::render_encoder::MetalRenderEncoder;
-use super::texture::MetalTexture;
 
 pub(crate) struct MetalCommandBuffer {
     pub(crate) inner: Retained<ProtocolObject<dyn MTL4CommandBuffer>>,
     pub(crate) allocator: Retained<ProtocolObject<dyn MTL4CommandAllocator>>,
     pub(crate) completion: super::submission::SubmissionCompletion,
     pub(crate) resources: std::rc::Rc<super::encoding_resources::EncodingResources>,
+    pub(crate) recording: std::cell::Cell<bool>,
 }
 
 impl MetalCommandBuffer {
@@ -86,12 +85,15 @@ impl MetalCommandBuffer {
 impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
     fn begin(&mut self) {
         self.inner.beginCommandBufferWithAllocator(&self.allocator);
+        self.recording.set(true);
         self.inner
             .useResidencySet(self.resources.residency.native());
     }
 
     fn end(&mut self) {
-        self.inner.endCommandBuffer();
+        if self.recording.replace(false) {
+            self.inner.endCommandBuffer();
+        }
     }
 
     fn submit(&self, context: &<MetalBackend as GpuBackend>::Context) {
@@ -154,15 +156,20 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
         if let Some(label) = desc.debug_label {
             encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
         }
+        self.resources
+            .record_encoder(crate::render_graph::capture::CapturedEncoderKind::Render);
         MetalRenderEncoder::new(encoder, self.resources.clone())
     }
 
+    #[cfg(test)]
     fn begin_compute_pass_with_label(&mut self, label: &'static str) -> MetalComputeEncoder {
         let encoder = self
             .inner
             .computeCommandEncoder()
             .expect("Failed to create compute encoder");
         encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
+        self.resources
+            .record_encoder(crate::render_graph::capture::CapturedEncoderKind::Compute);
         MetalComputeEncoder::new(encoder, self.resources.clone())
     }
 
@@ -172,6 +179,8 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
             .computeCommandEncoder()
             .expect("Failed to create blit encoder");
         encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
+        self.resources
+            .record_encoder(crate::render_graph::capture::CapturedEncoderKind::Compute);
         MetalBlitEncoder::new(encoder, self.resources.clone())
     }
 
@@ -180,6 +189,8 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
             .inner
             .computeCommandEncoder()
             .expect("Failed to create compute encoder");
+        self.resources
+            .record_encoder(crate::render_graph::capture::CapturedEncoderKind::Compute);
         MetalComputeEncoder::new(encoder, self.resources.clone())
     }
 
@@ -188,23 +199,9 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
             .inner
             .computeCommandEncoder()
             .expect("Failed to create blit encoder");
+        self.resources
+            .record_encoder(crate::render_graph::capture::CapturedEncoderKind::Compute);
         MetalBlitEncoder::new(encoder, self.resources.clone())
-    }
-
-    fn copy_buffer_to_texture(
-        &mut self,
-        src: &MetalBuffer,
-        dst: &MetalTexture,
-        regions: &[BufferImageCopy],
-    ) {
-        let encoder = self
-            .inner
-            .computeCommandEncoder()
-            .expect("Failed to create blit encoder for copy");
-
-        let mut blit = super::blit_encoder::MetalBlitEncoder::new(encoder, self.resources.clone());
-        blit.copy_buffer_to_texture(src, dst, regions);
-        blit.inner.endEncoding();
     }
 }
 
@@ -224,6 +221,9 @@ impl MetalCommandBuffer {
 
 impl Drop for MetalCommandBuffer {
     fn drop(&mut self) {
+        if self.recording.replace(false) {
+            self.inner.endCommandBuffer();
+        }
         self.completion.wait();
     }
 }
@@ -334,5 +334,48 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
         cmd_buffer.wait_until_completed().unwrap();
+    }
+
+    #[test]
+    fn test_abandoned_native_encoders_and_command_recordings_release_allocator() {
+        let context = headless_context();
+        let allocator = context.create_command_allocator(0).unwrap();
+        let desc = TextureDescriptor::new(4, 4, ImageFormat::B8G8R8A8Srgb)
+            .with_usage(TextureUsage::COLOR_ATTACHMENT);
+        let (_, target) = context.create_texture(&desc).unwrap();
+        for kind in 0..3 {
+            let mut abandoned =
+                context.create_command_buffer_for_allocator(allocator.clone(), "abandoned");
+            abandoned.begin();
+            match kind {
+                0 => drop(abandoned.begin_render_pass(RenderPassInfo {
+                    color_attachments: vec![ColorAttachmentInfo {
+                        view: target.clone(),
+                        load_op: crate::render_pass::LoadOp::Clear,
+                        store_op: crate::render_pass::StoreOp::Store,
+                        clear_value: ClearValue::OPAQUE_BLACK,
+                    }],
+                    depth_attachment: None,
+                    debug_label: None,
+                })),
+                1 => drop(abandoned.begin_compute_pass()),
+                _ => drop(abandoned.begin_blit_pass()),
+            }
+            let completion = abandoned.completion.clone();
+            drop(abandoned);
+            assert!(
+                completion.wait().is_none(),
+                "abandoned work must never be committed"
+            );
+            allocator.reset();
+            let mut reused =
+                context.create_command_buffer_for_allocator(allocator.clone(), "reused");
+            reused.begin();
+            reused.end();
+            reused.submit(&context);
+            reused.wait_until_completed().unwrap();
+            drop(reused);
+            allocator.reset();
+        }
     }
 }

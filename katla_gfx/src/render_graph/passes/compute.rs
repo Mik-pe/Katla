@@ -3,14 +3,13 @@ use super::super::access::NamedBufferAccess;
 use super::super::builder::{InternalPassBuilder, PassBuilder, SimplePass};
 use super::super::{
     BufferByteRange, BufferUsage, ComputeBinding, ComputeCommand, ComputeDispatch,
-    ComputeDispatchSize, ComputeKernel, ComputePipelineDesc, PassType, RenderGraphError,
-    ResourceAccessStage,
+    ComputeDispatchSize, ComputePipelineDesc, PassType, RenderGraphError, ResourceAccessStage,
 };
 
 /// A reflected compute entry point with named buffer bindings.
 pub struct ComputePass {
     name: String,
-    kernel: ComputeKernel,
+    pipeline: ComputePipelineDesc,
     bindings: Vec<(u32, u32, String, BufferByteRange)>,
     size: ComputeDispatchSize,
     constants: Vec<u8>,
@@ -21,7 +20,7 @@ impl ComputePass {
     pub fn new(name: impl Into<String>, descriptor: ComputePipelineDesc) -> Self {
         Self {
             name: name.into(),
-            kernel: ComputeKernel::Shader(descriptor),
+            pipeline: descriptor,
             bindings: Vec::new(),
             size: ComputeDispatchSize::Direct([1, 1, 1]),
             constants: Vec::new(),
@@ -59,7 +58,7 @@ impl PassBuilder for ComputePass {
         let pass_name = self.name.clone();
         let mut builder = SimplePass::new(self.name, PassType::Compute).as_builder();
         builder.uses_depth = false;
-        let interface = self.kernel.interface();
+        let interface = self.pipeline.interface();
         if let Ok(ref reflected) = interface {
             for (group, binding, name, range) in &self.bindings {
                 if let Some(slot) = reflected
@@ -141,7 +140,7 @@ impl PassBuilder for ComputePass {
                 self.size
             };
             Ok(Box::new(vec![ComputeCommand::Dispatch(ComputeDispatch {
-                kernel: self.kernel,
+                pipeline: self.pipeline,
                 bindings,
                 constants: self.constants,
                 size,

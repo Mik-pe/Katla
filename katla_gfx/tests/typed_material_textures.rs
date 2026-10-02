@@ -2,7 +2,7 @@
 //!
 //! Materials refer to textures by handle per named role; backends resolve
 //! handles to binding-table slots only when preparing/encoding work. `NONE`
-//! and stale handles resolve to the role's default texture slot, so a dead
+//! and stale handles resolve to the generic fallback texture slot, so a dead
 //! handle can never sample whatever texture now occupies a recycled slot.
 //!
 //! Device tests need a Vulkan device (`#[ignore]`, run like the other GPU
@@ -11,7 +11,6 @@
 
 use std::ffi::CString;
 
-use katla_gfx::texture::ImageFormat;
 use katla_gfx::{
     GpuRenderer, MaterialHandle, MaterialTextures, PipelineDescriptor, ValidationMode,
     VulkanRenderer,
@@ -51,13 +50,17 @@ fn test_default_material_textures_are_all_none() {
 fn test_resolver_maps_handles_and_falls_back_per_role() {
     let mut renderer = headless_renderer();
 
+    let fallback = renderer.default_texture();
+    assert_eq!(renderer.texture_manager.len(), 1);
+    assert!(renderer.texture_manager.contains(fallback));
+    assert_eq!(renderer.get_bindless_slot(fallback), Some(0));
+    renderer.destroy_texture(fallback);
+    assert!(renderer.texture_manager.contains(fallback));
+
     let material = compile_ui_material(&mut renderer);
 
-    // Default material: every role falls back to its default texture slot.
-    assert_eq!(
-        renderer.resolve_material_texture_slots(material),
-        [0, 1, 2, 3]
-    );
+    // Absent material textures resolve to the descriptor-safe fallback.
+    assert_eq!(renderer.resolve_material_texture_slots(material), [0; 4]);
 
     // Bind one handle per role; the resolver must return exactly the
     // registered slots.
@@ -82,7 +85,7 @@ fn test_resolver_maps_handles_and_falls_back_per_role() {
     ];
     assert_eq!(renderer.resolve_material_texture_slots(material), expected);
 
-    // A stale handle must fall back to the role default, never to the
+    // A stale handle must fall back to the generic fallback, never to the
     // destroyed texture's slot (which stays withheld per #84 retirement).
     let destroyed_slot = renderer.get_bindless_slot(albedo).unwrap();
     renderer.destroy_texture(albedo);

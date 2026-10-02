@@ -75,7 +75,7 @@ impl From<ColorComponentFlags> for vk::ColorComponentFlags {
 ///
 /// This type wraps Vulkan shader stage flags and provides a type-safe API
 /// for specifying which shader stages are used in various operations.
-/// For the simpler Katla-native version, see [`ShaderStageFlags`].
+/// Portable graph bindings use [`crate::ShaderStages`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ShaderStages {
     pub vertex: bool,

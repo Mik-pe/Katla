@@ -22,6 +22,7 @@
 //! the top row. Scenarios should prefer flip-robust probes (center pixels,
 //! left/right splits, whole-frame scans).
 
+use crate::scene_shader_data::ShaderFrameData;
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -39,7 +40,7 @@ use katla_gfx::renderer::pipeline_descriptor::CullMode;
 use katla_gfx::renderer::pipeline_descriptor::{BlendMode, DepthState, PipelineDescriptor};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::VertexPBR;
-use katla_gfx::{FrameUniforms, GpuRenderer, MaterialHandle, TextureHandle, ValidationMode};
+use katla_gfx::{GpuRenderer, MaterialHandle, TextureHandle, ValidationMode};
 
 pub const WIDTH: u32 = 64;
 pub const HEIGHT: u32 = 48;
@@ -71,10 +72,7 @@ pub struct Capabilities {
 
 #[cfg(not(target_os = "macos"))]
 fn platform_features(feature: RendererFeature) -> bool {
-    !matches!(
-        feature,
-        RendererFeature::DirectUiPass | RendererFeature::TextureSubresourceUpload
-    )
+    matches!(feature, RendererFeature::TextureInPlaceUpdate)
 }
 
 #[cfg(target_os = "macos")]
@@ -106,9 +104,6 @@ pub const CAPS: Capabilities = Capabilities {
 pub struct ContractRenderer {
     renderer: katla_gfx::AnyRenderer,
     validation_errors: Option<Arc<Mutex<Vec<String>>>>,
-    /// Monotonic Vulkan readback ids (Metal reads back through its drawable).
-    #[cfg(not(target_os = "macos"))]
-    readback_index: usize,
 }
 
 impl ContractRenderer {
@@ -172,8 +167,6 @@ impl ContractRenderer {
         Self {
             renderer,
             validation_errors: Some(validation_errors),
-            #[cfg(not(target_os = "macos"))]
-            readback_index: 0,
         }
     }
 
@@ -200,21 +193,6 @@ impl ContractRenderer {
         }
     }
 
-    /// Compile the shared light-culling resources every graph frame needs.
-    pub fn init_frame_pipelines(&mut self) {
-        self.renderer
-            .init_light_culling(WIDTH, HEIGHT, &shaders().join("lighting/light_cull.wgsl"))
-            .expect("light culling init");
-    }
-
-    /// Compile the shadow descriptor layouts PBR pipelines require before
-    /// they can be compiled.
-    pub fn init_shadow_layouts(&mut self) {
-        self.renderer
-            .init_shadow_resources()
-            .expect("shadow resource init");
-    }
-
     /// The platform capability table.
     pub fn caps(&self) -> &'static Capabilities {
         &CAPS
@@ -228,20 +206,14 @@ impl ContractRenderer {
     pub fn render_frame(
         &mut self,
         graph: &mut AnyFrameGraph,
-        uniforms: Option<&FrameUniforms>,
+        uniforms: Option<&ShaderFrameData>,
         draw_list: Option<&katla_gfx::DrawList>,
         submit: impl FnOnce(&mut AnyFrame),
     ) -> Vec<u8> {
         #[cfg(target_os = "macos")]
-        let drawable = {
-            // A fresh Shared-storage texture per frame, kept alive by this
-            // clone: the renderer replaces its drawable each frame and the
-            // texture persists until readback (same flow as the app's
-            // headless captures).
+        {
             let texture = self.renderer.create_offscreen_texture(WIDTH, HEIGHT);
-            let keep = texture.clone();
             self.renderer.set_headless_drawable(texture);
-            keep
         };
 
         // Acquire the frame: this waits for the slot's previous GPU submission
@@ -250,11 +222,7 @@ impl ContractRenderer {
             FrameAcquisition::Ready(token) => token,
             other => panic!("headless harness must acquire a frame, got {other:?}"),
         };
-        if let Some(uniforms) = uniforms {
-            self.renderer
-                .set_frame_uniforms(&frame_token, uniforms.clone())
-                .expect("set_frame_uniforms");
-        }
+        install_graphics_data(graph, uniforms);
         if let Some(draw_list) = draw_list {
             self.renderer
                 .execute_draw_calls(&frame_token, draw_list)
@@ -264,26 +232,52 @@ impl ContractRenderer {
         self.renderer
             .render(&frame_token, graph, submit)
             .expect("render");
-        self.renderer.present(frame_token).expect("present");
+        assert_eq!(
+            self.renderer
+                .present(frame_token)
+                .expect("GPU submission accepted")
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
 
-        #[cfg(target_os = "macos")]
-        {
-            self.renderer.wait_for_device();
-            katla_gfx::AnyRenderer::readback_bgra_texture(&drawable, WIDTH, HEIGHT)
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let vulkan = self.renderer.as_vulkan().expect("vulkan backend");
-            vulkan
-                .queue_async_readback(self.readback_index)
-                .expect("queue_async_readback");
-            let (_, pixels) = vulkan
-                .wait_for_pending_readback()
-                .expect("wait_for_pending_readback")
-                .expect("headless readback");
-            self.readback_index += 1;
-            pixels
-        }
+        let source = self
+            .renderer
+            .graph_texture_source(
+                graph
+                    .resource_id("backbuffer")
+                    .expect("backbuffer resource"),
+            )
+            .expect("committed graph export");
+        let ticket = self
+            .renderer
+            .queue_texture_readback(
+                source,
+                katla_gfx::renderer::texture_readback::TextureReadbackRegion {
+                    origin: [0, 0],
+                    size: katla_gfx::Size2D::new(WIDTH, HEIGHT),
+                    mip_level: 0,
+                    array_layer: 0,
+                },
+            )
+            .expect("queue retained graph readback");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let pixels = loop {
+            if let Some(pixels) = self
+                .renderer
+                .poll_texture_readback(ticket)
+                .expect("graph readback")
+            {
+                break pixels;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "graph readback timed out"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
+        assert_eq!(pixels.bytes.len(), (WIDTH * HEIGHT * 4) as usize);
+        pixels.bytes
     }
 
     /// Tear the scenario down and assert the captured API validation log is
@@ -308,7 +302,7 @@ impl ContractRenderer {
 
 /// Compile a backend-neutral frame graph from the platform's backend.
 pub fn build_graph(build: impl FnOnce(FrameGraphBuilder) -> FrameGraphBuilder) -> AnyFrameGraph {
-    let builder = build(FrameGraphBuilder::new());
+    let builder = build(FrameGraphBuilder::new()).export_resource("backbuffer");
     #[cfg(target_os = "macos")]
     {
         AnyFrameGraph::from_metal(builder.build::<MetalRenderer>().expect("graph compiles"))
@@ -348,6 +342,72 @@ pub fn build_pbr_graph(
     })
 }
 
+/// Supply shader data without installing renderer-owned scene subsystems.
+fn install_graphics_data(graph: &mut AnyFrameGraph, uniforms: Option<&ShaderFrameData>) {
+    use katla_gfx::ShaderStages;
+    use katla_gfx::render_graph::{ImageSubresourceRange, RenderGraphDiagnosticPassType};
+    use katla_gfx::renderer::frame_bindings::{
+        ConstantBinding, ImageBinding, PassBindings, SamplerBinding, SamplingMode,
+    };
+    let passes = graph.diagnostics().expect("graph contract").passes;
+    for pass in passes
+        .into_iter()
+        .filter(|pass| pass.pass_type == RenderGraphDiagnosticPassType::Graphics)
+    {
+        let mut packet = PassBindings::default();
+        if let Some(uniforms) = uniforms {
+            packet.constants.push(ConstantBinding {
+                group: 0,
+                binding: 0,
+                stages: ShaderStages::VERTEX_FRAGMENT,
+                bytes: bytemuck::bytes_of(uniforms).to_vec(),
+            });
+        }
+        if pass.kind.as_deref() == Some("Ui") {
+            packet.samplers.push(SamplerBinding {
+                group: 0,
+                binding: 1,
+                stages: ShaderStages::FRAGMENT,
+                sampling: SamplingMode::Linear,
+            });
+        }
+        if let Some(shadow) = graph.resource_id("shadow_atlas")
+            && pass.reads.iter().any(|resource| resource.id == shadow.0)
+        {
+            for (binding, bytes) in [(0, vec![0; 256 * 32]), (1, vec![0; 4]), (2, vec![0; 4])] {
+                packet.constants.push(ConstantBinding {
+                    group: 3,
+                    binding,
+                    stages: ShaderStages::FRAGMENT,
+                    bytes,
+                });
+            }
+            packet.constants.push(ConstantBinding {
+                group: 4,
+                binding: 0,
+                stages: ShaderStages::FRAGMENT,
+                bytes: vec![0; 352],
+            });
+            packet.images.push(ImageBinding {
+                group: 4,
+                binding: 1,
+                resource: shadow,
+                range: ImageSubresourceRange::WHOLE_DEPTH,
+                stages: ShaderStages::FRAGMENT,
+            });
+            packet.samplers.push(SamplerBinding {
+                group: 4,
+                binding: 2,
+                stages: ShaderStages::FRAGMENT,
+                sampling: SamplingMode::DepthComparison,
+            });
+        }
+        graph
+            .set_pass_bindings(PassId(pass.index as u32), packet)
+            .expect("explicit graphics bindings");
+    }
+}
+
 /// Release a scenario graph's GPU resources before the renderer is destroyed.
 pub fn cleanup_graph(mut graph: AnyFrameGraph) {
     graph.cleanup();
@@ -369,10 +429,32 @@ pub fn compile_pbr_material(renderer: &mut katla_gfx::AnyRenderer) -> MaterialHa
         .with_blend(BlendMode::Opaque)
         .with_cull(CullMode::None)
         .with_depth(DepthState::disabled())
+        .with_depth_format(None)
         .with_color_format(ImageFormat::B8G8R8A8Srgb);
-    renderer
+    let material = renderer
         .compile_material(&descriptor)
-        .expect("PBR contract material compiles")
+        .expect("PBR contract material compiles");
+    let normal = renderer
+        .create_texture(
+            &katla_gfx::TextureDescriptor::rgba8_unorm(1, 1),
+            &[128, 128, 255, 255],
+        )
+        .expect("neutral normal texture");
+    let metallic_roughness = renderer
+        .create_texture(
+            &katla_gfx::TextureDescriptor::rgba8_unorm(1, 1),
+            &[0, 255, 255, 255],
+        )
+        .expect("neutral material texture");
+    renderer.set_material_textures(
+        material,
+        katla_gfx::MaterialTextures {
+            normal,
+            metallic_roughness,
+            ..Default::default()
+        },
+    );
+    material
 }
 
 /// The UI material used by composition scenarios (alpha-blended, unculled,
@@ -394,7 +476,10 @@ pub struct UiScene {
 
 pub fn init_ui_scene(renderer: &mut katla_gfx::AnyRenderer) -> UiScene {
     let atlas = renderer
-        .create_ui_font_atlas(1, 1, &[255, 0, 0, 255])
+        .create_texture(
+            &katla_gfx::TextureDescriptor::rgba8_unorm(1, 1),
+            &[255, 0, 0, 255],
+        )
         .expect("test font atlas creation");
     let white = renderer
         .create_texture(&katla_gfx::TextureDescriptor::rgba8_unorm(1, 1), &[255; 4])
@@ -502,8 +587,8 @@ pub fn clip_triangle() -> Vec<VertexPBR> {
 }
 
 /// Standard identity-camera uniforms for clip-space scenarios.
-pub fn clip_uniforms() -> FrameUniforms {
-    FrameUniforms {
+pub fn clip_uniforms() -> ShaderFrameData {
+    ShaderFrameData {
         view_matrix: identity(),
         proj_matrix: identity(),
         inv_view_proj_matrix: identity(),

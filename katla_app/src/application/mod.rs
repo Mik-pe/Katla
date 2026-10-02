@@ -21,6 +21,7 @@ pub mod editor;
 #[cfg(feature = "editor")]
 mod editor_methods;
 mod events;
+mod features;
 pub mod frame_graph_config;
 mod frame_loop;
 mod game_state;
@@ -31,11 +32,11 @@ mod init;
 pub(crate) mod interaction_test;
 #[cfg(not(feature = "editor"))]
 mod no_editor_methods;
-mod particle_drive;
 mod picking;
+mod preset;
 mod renderer;
 mod resource_loading;
-mod scene_compute_graph;
+mod scene_features;
 pub(crate) mod spawning;
 pub(crate) mod ui_test;
 
@@ -120,9 +121,6 @@ pub(crate) struct EditorState {
     /// Reverse map: EntityId -> Vec<instance_index> for outline selection.
     /// Populated each frame alongside entity_instance_map.
     pub(crate) entity_to_instance_indices: std::collections::HashMap<katla_ecs::EntityId, Vec<u32>>,
-    /// Pending picking operation: (frame_number, mouse_x_physical, mouse_y_physical).
-    /// Set on left-click in viewport, processed after the next render.
-    pub(crate) pending_pick: Option<(usize, f32, f32)>,
     /// Gizmo state (mode, drag, hover).
     pub(crate) gizmo_state: crate::gizmo::GizmoState,
     /// Gizmo GPU resources (meshes, material).
@@ -202,7 +200,6 @@ impl EditorState {
             draw_entity_map_entries: Vec::new(),
             entity_instance_map: std::collections::HashMap::new(),
             entity_to_instance_indices: std::collections::HashMap::new(),
-            pending_pick: None,
             gizmo_state: crate::gizmo::GizmoState::default(),
             gizmo_resources: crate::gizmo::GizmoResources::default(),
             physics_debug_resources:
@@ -358,6 +355,8 @@ pub struct Application {
     pub(crate) pass_ids: PassIds,
     pub(crate) frame_graph_bindings: frame_graph_config::FrameGraphBindings,
     pub(crate) frame_graph_runtime: frame_graph_config::FrameGraphRuntime,
+    pub(crate) editor_features: features::EditorFeatures,
+    pub(crate) scene_features: Option<scene_features::SceneFeatures>,
     pub(crate) camera: Camera,
     pub(crate) gltf_cache: GltfCache,
     pub(crate) timer: Timer,
@@ -366,6 +365,7 @@ pub struct Application {
     pub(crate) input_mapper: InputMapper,
     pub(crate) current_modifiers: ModifiersState,
     pub(crate) frame_count: usize,
+    pub(crate) frame_readback: Option<(usize, katla_gfx::TextureReadbackTicket)>,
     pub(crate) last_draw_call_count: usize,
     pub(crate) resources: ResourceManager,
     /// Immediate mode UI context

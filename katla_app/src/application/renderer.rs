@@ -5,10 +5,11 @@
 
 use super::Application;
 use crate::rendering::FrameContext;
+use crate::rendering::FrameUniforms;
 use katla_gfx::GpuRenderer;
-use katla_gfx::renderer::FrameUniforms;
 #[cfg(not(target_os = "macos"))]
 use katla_gfx::renderer::UIDrawList;
+use katla_gfx::renderer::frame_scope::{FrameToken, PresentOutcome, SurfaceStatus};
 
 // Shared backend-agnostic helper methods used by both Vulkan and Metal paths.
 impl Application {
@@ -20,8 +21,7 @@ impl Application {
     ) {
         use katla_gfx::renderer::frame_scope::FrameAcquisition;
 
-        self.frame_graph.set_delta_time(delta_time);
-        self.frame_graph.set_frame_count(frame_count);
+        let _ = (delta_time, frame_count);
         let ui_pass = self.pass_ids.ui;
 
         let frame_token = match self.renderer.acquire_frame() {
@@ -52,65 +52,36 @@ impl Application {
             return;
         }
 
-        if let Err(error) = self.renderer.present(frame_token) {
-            if matches!(&error, katla_gfx::RendererError::SwapchainOutOfDate) {
-                self.needs_swapchain_recreate = true;
-            } else {
-                log::error!("Frame present failed: {error}");
+        self.finish_frame(frame_token);
+    }
+
+    fn finish_frame(&mut self, frame: FrameToken) {
+        let result = self.renderer.present(frame);
+        match commit_frame_submission(result, || {
+            if let Some(features) = &mut self.scene_features {
+                features.particles.committed(&frame);
             }
+            #[cfg(feature = "editor")]
+            if self.frame_graph_runtime.uses_katla_scene() {
+                self.capture_picking_entities();
+            }
+        }) {
+            Ok(SurfaceStatus::Presented) => {}
+            Ok(SurfaceStatus::RecreateRequired) => {
+                self.needs_swapchain_recreate = true;
+            }
+            Err(error) => log::error!("Frame present failed: {error}"),
         }
     }
 
     fn update_recreated_transient_bindings(&mut self, textures: &[(String, u32)]) {
-        let hdr_resource = self.frame_graph_bindings.resources.hdr_color.clone();
-        let viewport_resource = self.frame_graph_bindings.resources.viewport.clone();
-
         for (name, slot) in textures {
-            if hdr_resource.as_deref() == Some(name.as_str()) {
-                if let Some(pass_id) = self.pass_ids.tonemap
-                    && let Err(error) = self.frame_graph.set_tonemap_texture_index(pass_id, *slot)
-                {
-                    log::warn!("Failed to refresh tonemap resource binding: {error}");
-                }
-            } else if viewport_resource.as_deref() == Some(name.as_str()) {
+            if self.frame_graph_bindings.resources.viewport.as_deref() == Some(name.as_str()) {
                 self.on_viewport_texture_recreated(*slot);
-                self.renderer.set_viewport_bindless_slot(*slot);
             }
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
-    fn refresh_vulkan_transient_views(&mut self) {
-        if let Some(shadow_atlas) = self.frame_graph_bindings.resources.shadow_atlas.as_deref() {
-            for frame_idx in 0..2 {
-                if let Some(view) = self
-                    .frame_graph
-                    .as_vulkan()
-                    .transient_texture_view_for_frame(shadow_atlas, frame_idx)
-                {
-                    self.renderer
-                        .unwrap_vulkan()
-                        .set_shadow_atlas_view(frame_idx, view);
-                }
-            }
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn refresh_metal_transient_views(&mut self) {
-        if let Some(name) = self.frame_graph_bindings.resources.hdr_color.as_deref()
-            && let Some(slot) = self
-                .frame_graph
-                .transient_texture_metal(name, 0)
-                .and_then(|texture| texture.bindless_slot)
-        {
-            self.renderer.set_geometry_hdr_bindless_slot(slot);
-        }
-    }
-
-    /// Collect drawable components from the ECS world and submit to FrameContext.
-    ///
-    /// This automatically allocates instance indices and builds the draw list.
     /// Also populates entity_instance_map for GPU picking resolution.
     pub(crate) fn collect_draws_with_context(
         &mut self,
@@ -125,7 +96,7 @@ impl Application {
         #[cfg(feature = "editor")]
         self.editor.draw_entity_map_entries.clear();
 
-        for (entity_id, drawable, transform) in self
+        for (_entity_id, drawable, transform) in self
             .world
             .query::<(&DrawableComponent, &TransformComponent)>()
         {
@@ -174,7 +145,7 @@ impl Application {
             #[cfg(feature = "editor")]
             {
                 let slot = draw.submit();
-                self.editor.draw_entity_map_entries.push((slot, entity_id));
+                self.editor.draw_entity_map_entries.push((slot, _entity_id));
             }
 
             #[cfg(not(feature = "editor"))]
@@ -296,17 +267,12 @@ impl Application {
             );
 
             self.renderer.wait_for_device();
-            self.renderer.recreate_scene_render_targets(w, h);
 
             if let Ok(textures) =
                 self.frame_graph
                     .recreate_transient_textures(&mut self.renderer, w, h)
             {
                 self.update_recreated_transient_bindings(&textures);
-                #[cfg(not(target_os = "macos"))]
-                self.refresh_vulkan_transient_views();
-                #[cfg(target_os = "macos")]
-                self.refresh_metal_transient_views();
             }
         }
     }
@@ -387,6 +353,21 @@ impl Application {
         // Acquire the frame: this waits for the slot's previous GPU submission
         // to complete before any writes to per-frame storage buffers.
         use katla_gfx::renderer::frame_scope::FrameAcquisition;
+        if let Some(features) = &mut self.scene_features {
+            let size = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+                self.panel_rt_size
+            } else {
+                self.renderer.swapchain_extent()
+            };
+            if let Err(error) =
+                features
+                    .lights
+                    .resize(&mut self.renderer, &mut self.frame_graph, size)
+            {
+                log::error!("Scene light resize failed: {error}");
+                return;
+            }
+        }
         let frame_token = match self.renderer.acquire_frame() {
             Ok(FrameAcquisition::Ready(token)) => token,
             Ok(FrameAcquisition::Unavailable) => return,
@@ -399,12 +380,6 @@ impl Application {
                 return;
             }
         };
-
-        if let Err(error) = self.prepare_scene_gpu(delta_time) {
-            log::error!("Scene GPU preparation failed: {error}");
-            let _ = self.renderer.abort(frame_token);
-            return;
-        }
 
         // Tile grid dimensions for Forward+ light culling.
         // Tile grid must match the panel-sized scene render targets (set in
@@ -428,9 +403,8 @@ impl Application {
             light_color: [1.0, 0.98, 0.95, 0.0],
             light_intensity: [
                 4.0,
-                self.renderer
-                    .depth_texture_base_index()
-                    .map(|base| base + frame_token.slot() as u32)
+                self.frame_graph
+                    .transient_texture_bindless_slot("scene_depth", frame_token.slot())
                     .unwrap_or(0) as f32,
                 0.0,
                 0.0,
@@ -440,47 +414,26 @@ impl Application {
             overlay: [0.0, 0.0, 0.0, 0.0],
             compositing: [0.0, 0.0, 0.0, 0.0],
         };
-        frame.set_frame_uniforms(frame_uniforms.clone());
+        frame.set_frame_uniforms(frame_uniforms);
 
         // Collect draw calls from ECS world using FrameContext
         self.collect_draws_with_context(&mut frame, &frustum);
 
         // Collect point lights for Forward+ culling
         self.collect_lights();
-        if let Err(e) = self
-            .renderer
-            .upload_lights(&frame_token, &self.point_lights_buffer)
-        {
-            log::error!("Failed to upload lights: {}", e);
-        }
-
-        // Must be before update_shadows so CSM uses the current frame's view/proj matrices
-        if let Err(e) = self
-            .renderer
-            .set_frame_uniforms(&frame_token, frame.frame_uniforms().clone())
-        {
-            log::error!("Failed to set frame uniforms: {}", e);
-            let _ = self.renderer.abort(frame_token);
-            return;
-        }
-
-        self.renderer.update_shadows([
-            frame_uniforms.light_direction[0],
-            frame_uniforms.light_direction[1],
-            frame_uniforms.light_direction[2],
-        ]);
-
-        if let Err(e) = self.renderer.upload_shadow_cascades(&frame_token) {
-            log::error!("Failed to upload shadow cascades: {}", e);
-            let _ = self.renderer.abort(frame_token);
-            return;
-        }
-
         let mut draw_list = frame.take_draw_list();
         self.last_draw_call_count = draw_list.len();
         draw_list.sort_by_material();
 
         let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
+
+        if let Err(error) =
+            self.prepare_scene_gpu(&frame_token, delta_time, &frame_uniforms, &draw_list)
+        {
+            log::error!("Scene GPU preparation failed: {error}");
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
 
         if let Err(e) = self.renderer.execute_draw_calls(&frame_token, &draw_list) {
             log::error!("Failed to execute draw calls: {}", e);
@@ -492,63 +445,6 @@ impl Application {
             "About to submit {} draw calls to geometry pass",
             draw_list.len()
         );
-
-        let frame_index = self.renderer.current_frame() as u32;
-        if let Some(ref mut particle_system) = self.renderer.unwrap_vulkan().particle_system {
-            match particle_system.update(delta_time, frame_index) {
-                Ok((_max_alive, emit_count)) => {
-                    let emit_workgroups = if emit_count > 0 {
-                        emit_count.div_ceil(katla_gfx::particles::PARTICLE_EMIT_WORKGROUP_SIZE)
-                    } else {
-                        0
-                    };
-
-                    if emit_workgroups == 0 && emit_count > 0 {
-                        log::warn!(
-                            "Frame {}: emit_count={} but emit_workgroups=0! Particles won't be emitted!",
-                            frame_count,
-                            emit_count
-                        );
-                    }
-
-                    // Simulate workgroups use a generous upper bound based on emitter configs:
-                    //   sum(emit_rate_i * base_lifetime_i * (1 + lifetime_variation_i))
-                    // No GPU readback needed — simulate shader self-bounds via counters.
-                    // Over-dispatching is cheap (extra workgroups exit immediately).
-                    let max_alive = particle_system.max_estimated_alive();
-                    let total_particles_to_simulate = max_alive + emit_count;
-                    let simulate_workgroups = if total_particles_to_simulate > 0 {
-                        total_particles_to_simulate
-                            .div_ceil(katla_gfx::particles::PARTICLE_SIMULATE_WORKGROUP_SIZE)
-                    } else {
-                        1 // ALWAYS run at least 1 workgroup for swap to happen
-                    };
-
-                    log::debug!(
-                        "Particle compute workgroups: emit {} particles = {} workgroups, simulate ~{} max_alive + {} emit = {} total particles = {} workgroups",
-                        emit_count,
-                        emit_workgroups,
-                        max_alive,
-                        emit_count,
-                        total_particles_to_simulate,
-                        simulate_workgroups
-                    );
-
-                    // Update frame graph with workgroup counts for this frame
-                    self.frame_graph
-                        .as_vulkan_mut()
-                        .set_particle_emit_workgroup_count(emit_workgroups);
-                    self.frame_graph
-                        .as_vulkan_mut()
-                        .set_particle_simulate_workgroup_count(simulate_workgroups);
-                }
-                Err(e) => {
-                    log::error!("Failed to update particle system: {}", e);
-                }
-            }
-        } else {
-            log::warn!("⚠️ No particle system in renderer!");
-        }
 
         // One frame-owned copy of each prepared list: every pass submission
         // shares the same reference-counted data instead of deep-cloning.
@@ -604,29 +500,12 @@ impl Application {
                 log::error!("Frame render failed, skipping frame: {}", e);
                 let _ = self.renderer.abort(frame_token);
             }
-            Ok(()) => {
-                if let Err(e) = self.renderer.present(frame_token) {
-                    match &e {
-                        katla_gfx::error::RendererError::SwapchainOutOfDate => {
-                            log::debug!(
-                                "Swapchain out of date, triggering recreation on next frame"
-                            );
-                            // Defer recreation to the next frame to avoid complex re-entrancy.
-                            // The next RedrawRequested will call recreate_swapchain via a flag.
-                            self.needs_swapchain_recreate = true;
-                        }
-                        _ => {
-                            log::error!("Frame present failed: {}", e);
-                        }
-                    }
-                }
-            }
+            Ok(()) => self.finish_frame(frame_token),
         }
     }
 
     /// Collect point lights from the ECS world for Forward+ tile-based light
-    /// culling. Upload happens through the acquired frame
-    /// (`GpuRenderer::upload_lights`).
+    /// culling. Scene features upload them into the acquired slot.
     fn collect_lights(&mut self) {
         use crate::components::{PointLight, TransformComponent};
         use katla_gfx::PointLightGPU;
@@ -659,10 +538,7 @@ impl Application {
         if size.width == 0 || size.height == 0 {
             return;
         }
-        if let Err(e) = self
-            .renderer
-            .recreate_swapchain(katla_gfx::Size2D::new(size.width, size.height))
-        {
+        if let Err(e) = self.renderer.resize(size.width, size.height) {
             log::error!("Failed to recreate swapchain: {}", e);
             return;
         }
@@ -676,8 +552,6 @@ impl Application {
         ) {
             self.update_recreated_transient_bindings(&recreated_textures);
         }
-
-        self.refresh_vulkan_transient_views();
 
         let aspect = extent.width as f32 / extent.height as f32;
         self.camera.aspect_ratio_changed(&mut self.world, aspect);
@@ -739,7 +613,10 @@ impl Application {
     /// Collect instance indices for the selected entity and all its children.
     ///
     /// Used to build the filtered draw list for the outline pass.
-    fn collect_selected_instance_indices(&self, root_entity: katla_ecs::EntityId) -> Vec<u32> {
+    pub(crate) fn collect_selected_instance_indices(
+        &self,
+        root_entity: katla_ecs::EntityId,
+    ) -> Vec<u32> {
         use crate::components::Children;
 
         let mut entity_set = std::collections::HashSet::new();
@@ -1042,7 +919,6 @@ impl Application {
                         phys.height,
                     ) {
                         self.update_recreated_transient_bindings(&textures);
-                        self.refresh_metal_transient_views();
                     }
                 }
             }
@@ -1094,6 +970,21 @@ impl Application {
         // Acquire the frame: waits for the slot's previous submission (and the
         // prior drawable) to complete before any per-frame CPU writes.
         use katla_gfx::renderer::frame_scope::FrameAcquisition;
+        if let Some(features) = &mut self.scene_features {
+            let size = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+                self.panel_rt_size
+            } else {
+                self.renderer.swapchain_extent()
+            };
+            if let Err(error) =
+                features
+                    .lights
+                    .resize(&mut self.renderer, &mut self.frame_graph, size)
+            {
+                log::error!("Scene light resize failed: {error}");
+                return;
+            }
+        }
         let frame_token = match self.renderer.acquire_frame() {
             Ok(FrameAcquisition::Ready(token)) => token,
             Ok(FrameAcquisition::Unavailable) => return,
@@ -1106,12 +997,6 @@ impl Application {
                 return;
             }
         };
-
-        if let Err(error) = self.prepare_scene_gpu(delta_time) {
-            log::error!("Scene GPU preparation failed: {error}");
-            let _ = self.renderer.abort(frame_token);
-            return;
-        }
 
         // Tile grid must match the panel-sized scene render targets (set in
         // recreate_panel_rt_resources). Fall back to the swapchain extent before
@@ -1133,9 +1018,8 @@ impl Application {
             light_color: [1.0, 0.98, 0.95, 0.0],
             light_intensity: [
                 4.0,
-                self.renderer
-                    .depth_texture_base_index()
-                    .map(|base| base + frame_token.slot() as u32)
+                self.frame_graph
+                    .transient_texture_bindless_slot("scene_depth", frame_token.slot())
                     .unwrap_or(0) as f32,
                 0.0,
                 0.0,
@@ -1145,39 +1029,11 @@ impl Application {
             overlay: [0.0, 0.0, 0.0, 0.0],
             compositing: [0.0, 0.0, 0.0, 0.0],
         };
-        frame.set_frame_uniforms(frame_uniforms.clone());
+        frame.set_frame_uniforms(frame_uniforms);
 
         self.collect_draws_with_context(&mut frame, &frustum);
 
         self.collect_lights();
-        if let Err(e) = self
-            .renderer
-            .upload_lights(&frame_token, &self.point_lights_buffer)
-        {
-            log::error!("Failed to upload lights: {}", e);
-        }
-
-        if let Err(e) = self
-            .renderer
-            .set_frame_uniforms(&frame_token, frame.frame_uniforms().clone())
-        {
-            log::error!("Failed to set frame uniforms: {}", e);
-            let _ = self.renderer.abort(frame_token);
-            return;
-        }
-
-        self.renderer.update_shadows([
-            frame_uniforms.light_direction[0],
-            frame_uniforms.light_direction[1],
-            frame_uniforms.light_direction[2],
-        ]);
-
-        if let Err(e) = self.renderer.upload_shadow_cascades(&frame_token) {
-            log::error!("Failed to upload shadow cascades: {}", e);
-            let _ = self.renderer.abort(frame_token);
-            return;
-        }
-
         let mut draw_list = frame.take_draw_list();
         self.last_draw_call_count = draw_list.len();
         draw_list.sort_by_material();
@@ -1186,6 +1042,14 @@ impl Application {
         // indices. Prepare them before uploading object uniforms so every submitted
         // draw references initialized GPU data.
         let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
+
+        if let Err(error) =
+            self.prepare_scene_gpu(&frame_token, delta_time, &frame_uniforms, &draw_list)
+        {
+            log::error!("Scene GPU preparation failed: {error}");
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
 
         if let Err(e) = self.renderer.execute_draw_calls(&frame_token, &draw_list) {
             log::error!("Failed to execute draw calls: {}", e);
@@ -1197,8 +1061,6 @@ impl Application {
             "About to submit {} draw calls to Metal renderer",
             draw_list.len()
         );
-
-        self.step_particle_simulation(delta_time);
 
         // One frame-owned copy of each prepared list: every pass submission
         // shares the same reference-counted data instead of deep-cloning.
@@ -1245,11 +1107,7 @@ impl Application {
                 log::error!("Metal frame render failed: {}", e);
                 let _ = self.renderer.abort(frame_token);
             }
-            Ok(()) => {
-                if let Err(e) = self.renderer.present(frame_token) {
-                    log::error!("Metal frame present failed: {}", e);
-                }
-            }
+            Ok(()) => self.finish_frame(frame_token),
         }
     }
 
@@ -1269,5 +1127,65 @@ impl Application {
                 intensity: point_light.intensity,
             });
         }
+    }
+}
+
+pub(super) fn commit_frame_submission(
+    result: Result<PresentOutcome, katla_gfx::RendererError>,
+    committed: impl FnOnce(),
+) -> Result<SurfaceStatus, katla_gfx::RendererError> {
+    let outcome = result?;
+    committed();
+    outcome.surface
+}
+
+#[cfg(test)]
+mod submission_tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn test_submitted_frame_commits_when_surface_requires_recreation() {
+        let committed = Cell::new(false);
+        let result = commit_frame_submission(
+            Ok(PresentOutcome {
+                surface: Ok(SurfaceStatus::RecreateRequired),
+            }),
+            || committed.set(true),
+        );
+        assert!(committed.get());
+        assert!(matches!(result, Ok(SurfaceStatus::RecreateRequired)));
+    }
+
+    #[test]
+    fn test_submitted_frame_commits_before_reporting_surface_failure() {
+        let committed = Cell::new(false);
+        let result = commit_frame_submission(
+            Ok(PresentOutcome {
+                surface: Err(katla_gfx::RendererError::SwapchainError(
+                    "surface lost".into(),
+                )),
+            }),
+            || committed.set(true),
+        );
+        assert!(committed.get());
+        assert!(matches!(
+            result,
+            Err(katla_gfx::RendererError::SwapchainError(_))
+        ));
+    }
+
+    #[test]
+    fn test_rejected_submission_does_not_commit_frame_state() {
+        let committed = Cell::new(false);
+        let result = commit_frame_submission(
+            Err(katla_gfx::RendererError::InvalidOperation(
+                "submission rejected".into(),
+            )),
+            || committed.set(true),
+        );
+        assert!(!committed.get());
+        assert!(result.is_err());
     }
 }

@@ -35,7 +35,7 @@ GitHub-hosted macOS runners may expose a virtualized Metal device with fewer cap
 - detects unsupported GPU capabilities before issuing invalid Objective-C or Metal calls;
 - returns typed errors instead of aborting across the Objective-C/Rust boundary.
 
-The job probes the default device before testing. A virtual GPU without Metal 4 receives an explicit **BLOCKED** native-acceptance notice in the job summary; the typed capability-rejection regression still runs. The GPU-only exclusion manifest is `katla_gfx/tests/metal4-required-tests.txt`; it retains 72 Metal device-independent tests and 628 runnable library tests in the current inventory. Add new native fixtures to that manifest rather than disabling an entire Metal module. This is a hardware limitation, not native GPU acceptance. Physical Apple Silicon validation is recorded separately in `metal4_validation.md`. No legacy command path or older macOS runner is introduced.
+The job probes the default device before testing. A virtual GPU without Metal 4 receives an explicit **BLOCKED** native-acceptance notice in the job summary; the typed capability-rejection regression still runs. The native GPU exclusion manifest is `katla_gfx/tests/metal4-required-tests.txt`. It excludes actual device-dependent fixtures, including capture, range preflight, core-only construction and retained readback. Reflection and binding layouts, cache metadata, synchronization, submission feedback, graph-only attachment checks and typed capability rejection remain runnable. Add new native fixtures to that manifest; do not disable an entire mixed module or pin documentation to inventory counts. This is a hardware limitation, not native GPU acceptance. Physical Apple Silicon validation is recorded separately in `metal4_validation.md`. No legacy command path or older macOS runner is introduced.
 
 ## Cross-backend contract suite
 
@@ -45,7 +45,7 @@ only when the default GPU supports Metal 4, with `MTL_DEBUG_LAYER=1` and
 `METAL_DEVICE_WRAPPER_TYPE=1`:
 
 ```bash
-cargo test -p katla_gfx --test contract --locked -- --ignored
+cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1
 ```
 
 The suite asserts the contracts Katla promises above the backend boundary
@@ -55,25 +55,31 @@ the harness module docs before adding a scenario.
 
 ## Failed render-graph artifacts
 
-Both jobs upload `target/render-graph-diagnostics/` as an artifact when the job
-fails (`actions/upload-artifact`, 7-day retention, no `if-no-files-found`
+Both jobs upload `target/render-graph-diagnostics/` as a plan/execution artifact
+when the job fails (`actions/upload-artifact`, 7-day retention, no `if-no-files-found`
 error). A drifting golden snapshot writes the actual export there before
 asserting, so a failing run ships the export that disagreed with the checked-in
-snapshot — no local re-run needed to see the difference. Capture the same
-artifact locally with `--dump-render-graph-file`; see
+snapshot. Native capture fixtures also write the joined capture, compiled plan,
+actual execution, text and DOT when comparison fails. Workflow permissions remain
+read-only. Capture the same artifact locally with `--dump-render-graph-file`; see
 `docs/render_graph_capture.md`.
 
 ## Local equivalents
 
 ```bash
 cargo fmt --all -- --check
-cargo check -p katla_gfx -p katla_app --locked
-cargo test -p katla_gfx --lib --locked
-cargo clippy -p katla_gfx -p katla_app --locked -- -D warnings
-cargo test -p katla_gfx --test contract --locked -- --ignored
+cargo check -p katla_gfx -p katla_app --all-targets --locked
+cargo test -p katla_gfx --lib --locked -- --test-threads=1
+cargo clippy -p katla_gfx -p katla_app --all-targets --locked -- -D warnings
+cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1
 ```
 
-Linux separately validates the graphics library and Vulkan path on Ubuntu 24.04.
+Checks and strict Clippy include graphics examples, tests and benchmarks through
+`--all-targets`. The application also compiles all targets without default features, so editor-only helpers cannot leak into GraphOnly builds. Linux separately validates the graphics library and Vulkan path
+on Ubuntu 24.04. On lavapipe, use the contract command with
+`--skip graphics::pbr` as in CI; the full contract suite remains a physical-device
+acceptance command.
+
 ## Linux apt source hygiene
 
 GitHub's `ubuntu-24.04` runners preinstall Google's Chrome apt source. Its
@@ -103,16 +109,38 @@ application acceptance and are distinct from these CPU checks.
 
 ## Native graph and frame ownership acceptance
 
-Graphics library tests execute real buffer readback for neutral direct/indirect
-compute, same-pass command chains, animation interpolation/rest poses and a small
-particle pool on the platform's backend. Linux requires an active Khronos
-validation messenger with synchronization validation enabled; CI runs native
-library fixtures serially to avoid lavapipe instance creation races. A separate
-Vulkan transient-alias integration step queues both frame slots across eight
-resize/rebuild cycles and checks validation messages and pixel contents.
+Both backends execute graph-owned generic compute, explicit resource bindings,
+constants, transfer commands and declared color/depth attachments. Shader
+reflection and interface checks happen during preparation. Headless constructor
+fixtures prove that core construction installs no animation, particle, lighting,
+shadow, picking or built-in compute service; application services build ordinary
+graph passes for those workloads.
 
-When Metal 4 is supported, the macos-26 graphics library step runs with both `MTL_DEBUG_LAYER=1` and
-`METAL_DEVICE_WRAPPER_TYPE=1`. Native tests cover three-slot ownership, stream
-replacement, UI isolation, private texture sampling, placement heaps, timestamp
-readback and frame aborts. Compilation or a screenshot alone is insufficient
-for these output/lifetime assertions.
+The native capture regressions run the same compute, transfer and graphics
+workload with capture disabled and enabled. They assert identical buffer and
+pixel outputs and actual encoder, synchronization, binding and submission work,
+then compare the captured native scopes with the compiled contract. Capture
+feedback snapshots do not wait for or retire pending submissions.
+
+Linux requires active Khronos validation with synchronization validation enabled.
+Native library fixtures run serially to avoid lavapipe instance creation races.
+Separate steps cover transient aliasing and resize cycles, and the ignored
+Vulkan capture/retained-readback fixtures:
+
+```bash
+cargo test -p katla_gfx --test transient_aliasing --locked -- --ignored --test-threads=1
+cargo test -p katla_gfx --lib renderer::capture_tests --locked -- --ignored --test-threads=1
+```
+
+When Metal 4 is supported, the `macos-26` library step uses `MTL_DEBUG_LAYER=1`
+and `METAL_DEVICE_WRAPPER_TYPE=1`. It covers capture equivalence, three-slot
+ownership, streamed resource replacement, retained graph readback, UI isolation,
+private textures, placement heaps, timestamp readback and frame aborts. The
+native capture regression can also run directly:
+
+```bash
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 cargo test -p katla_gfx --lib metal::capture_tests --locked -- --test-threads=1
+```
+
+Compilation and portable tests establish the API contract; native output and
+lifetime assertions establish GPU acceptance on a capable device.

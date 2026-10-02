@@ -287,7 +287,16 @@ impl StagedUploadBatch {
                     RendererError::VulkanError("Failed to create upload fence".into(), e)
                 })?
         };
-        self.context.gfx_queue.submit(&[&cmd], &[], &[], fence);
+        if let Err(error) = self.context.gfx_queue.submit(&[&cmd], &[], &[], fence) {
+            unsafe {
+                self.context.device.destroy_fence(fence, None);
+            }
+            cmd.return_to_pool();
+            return Err(RendererError::VulkanError(
+                "Failed to submit upload".into(),
+                error,
+            ));
+        }
         Ok((fence, cmd))
     }
 }

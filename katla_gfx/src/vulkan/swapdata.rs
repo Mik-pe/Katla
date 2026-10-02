@@ -9,6 +9,7 @@ pub struct SwapData {
     /// through frame slots. Resource retirement ages are measured with this.
     frame_counter: u64,
     in_flight_fences: Vec<vk::Fence>,
+    fence_recovery_failed: bool,
     /// Per-swapchain-image semaphores to avoid reuse issues
     image_available_semaphores: Vec<vk::Semaphore>,
     render_finished_semaphores: Vec<vk::Semaphore>,
@@ -62,12 +63,18 @@ impl SwapData {
             frame,
             frame_counter: 0,
             in_flight_fences,
+            fence_recovery_failed: false,
             image_available_semaphores,
             render_finished_semaphores,
         })
     }
 
     pub fn wait_for_fence(&self, device: &Device) -> Result<(), RendererError> {
+        if self.fence_recovery_failed {
+            return Err(RendererError::InvalidOperation(
+                "Frame fence recovery failed; recreate output before acquiring".into(),
+            ));
+        }
         unsafe {
             device
                 .wait_for_fences(&[self.in_flight_fences[self.frame]], true, u64::MAX)
@@ -78,6 +85,23 @@ impl SwapData {
                     ))
                 })?;
         }
+        Ok(())
+    }
+
+    pub(crate) fn recover_unsubmitted_fence(
+        &mut self,
+        device: &Device,
+    ) -> Result<(), RendererError> {
+        self.fence_recovery_failed = true;
+        let info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+        let replacement = unsafe { device.create_fence(&info, None) }.map_err(|error| {
+            RendererError::VulkanError("Failed to restore unsubmitted frame fence".into(), error)
+        })?;
+        let old = std::mem::replace(&mut self.in_flight_fences[self.frame], replacement);
+        unsafe {
+            device.destroy_fence(old, None);
+        }
+        self.fence_recovery_failed = false;
         Ok(())
     }
 

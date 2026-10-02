@@ -11,7 +11,7 @@ use crate::backend::command::{GpuBlitEncoder, GpuCommandBuffer};
 use crate::backend::resource::{GpuBuffer, GpuImageView};
 use crate::render_graph::{
     FrameGraph, FrameGraphBuilder, GraphResourceDesc, GraphResourceType, PassBuilder, PassKind,
-    PassType, SimplePass, TonemapOperator, TonemapParams,
+    PassType, SimplePass,
 };
 use crate::render_pass::{AttachmentOps, ClearValue, StoreOp};
 use crate::renderer::frame_scope::FrameAcquisition;
@@ -251,9 +251,15 @@ fn test_two_fullscreen_passes_sample_their_own_inputs_and_render_to_distinct_tar
     {
         return;
     }
-    renderer
-        .init_tonemap_pipeline(std::path::Path::new("tonemapping.wgsl"))
-        .unwrap();
+    let source = format!(
+        "{} @group(0) @binding(0) var image:texture_2d<f32>; @group(0) @binding(1) var image_sampler:sampler; @fragment fn fs_main()->@location(0) vec4<f32>{{return textureSample(image,image_sampler,vec2<f32>(0.5));}}",
+        super::test_support::FULLSCREEN_VERTEX
+    );
+    let material = super::test_support::material(
+        &mut renderer,
+        &source,
+        super::test_support::fullscreen_descriptor(ImageFormat::B8G8R8A8Srgb),
+    );
     let mut graph = FrameGraphBuilder::new()
         .create_resource(color("hdr_red", ImageFormat::R16G16B16A16Sfloat))
         .create_resource(color("hdr_green", ImageFormat::R16G16B16A16Sfloat))
@@ -277,13 +283,7 @@ fn test_two_fullscreen_passes_sample_their_own_inputs_and_render_to_distinct_tar
                 .read("hdr_red")
                 .write("ldr_red")
                 .attachment("ldr_red", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
-                .with_kind(PassKind::Fullscreen)
-                .tonemap(TonemapParams {
-                    exposure: 1.0,
-                    gamma: 1.0,
-                    mode: TonemapOperator::Linear,
-                    hdr_texture_index: None,
-                }),
+                .with_kind(PassKind::Fullscreen),
         )
         .add_pass(
             SimplePass::new("tonemap_green", PassType::Graphics)
@@ -291,24 +291,36 @@ fn test_two_fullscreen_passes_sample_their_own_inputs_and_render_to_distinct_tar
                 .read("hdr_green")
                 .write("ldr_green")
                 .attachment("ldr_green", AttachmentOps::clear(ClearValue::OPAQUE_BLACK))
-                .with_kind(PassKind::Fullscreen)
-                .tonemap(TonemapParams {
-                    exposure: 1.0,
-                    gamma: 1.0,
-                    mode: TonemapOperator::Linear,
-                    hdr_texture_index: None,
-                }),
+                .with_kind(PassKind::Fullscreen),
         )
         .build::<MetalRenderer>()
         .unwrap();
     graph.initialize_transient_textures(&renderer).unwrap();
-    graph
-        .register_transient_texture_bindless(&mut renderer, "hdr_red")
-        .unwrap();
-    graph
-        .register_transient_texture_bindless(&mut renderer, "hdr_green")
-        .unwrap();
-    renderer.bindless_manager.publish_snapshot().unwrap();
+    for (pass, input) in [("tonemap_red", "hdr_red"), ("tonemap_green", "hdr_green")] {
+        let mut packet =
+            super::test_support::vertices(material, crate::vertex::VertexLayout::new(vec![]), 3);
+        packet
+            .images
+            .push(crate::renderer::frame_bindings::ImageBinding {
+                group: 0,
+                binding: 0,
+                resource: graph.resource_id(input).unwrap(),
+                range: crate::render_graph::ImageSubresourceRange::WHOLE_COLOR,
+                stages: crate::backend::command::ShaderStages::FRAGMENT,
+            });
+        packet
+            .samplers
+            .push(crate::renderer::frame_bindings::SamplerBinding {
+                group: 0,
+                binding: 1,
+                stages: crate::backend::command::ShaderStages::FRAGMENT,
+                sampling: crate::renderer::frame_bindings::SamplingMode::Nearest,
+            });
+        graph
+            .set_pass_bindings(graph.pass_id(pass).unwrap(), packet)
+            .unwrap();
+    }
+    graph.collect_draw_lists(&mut renderer, |_| {}).unwrap();
     let trace = execute(&mut renderer, &graph);
     assert_eq!(trace.entries().len(), 4);
     assert_eq!(
@@ -406,17 +418,16 @@ fn test_unresolved_and_mismatched_attachment_extents_fail_before_native_encoding
 }
 
 #[test]
-fn test_depth_without_declared_resource_is_rejected_by_metal_compilation() {
+fn test_depth_kind_without_declared_resource_has_no_native_depth_attachment() {
     let graph = FrameGraphBuilder::new()
         .add_side_effect_pass(
             SimplePass::new("implicit_depth", PassType::Graphics).with_kind(PassKind::DepthPrepass),
         )
         .build::<MetalRenderer>()
         .unwrap();
-    let error = MetalExecutionPlan::compile(&graph, ImageFormat::B8G8R8A8Srgb, None)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("declared graph depth target"));
+    let plan = MetalExecutionPlan::compile(&graph, ImageFormat::B8G8R8A8Srgb, None).unwrap();
+    assert!(!plan.passes()[0].uses_depth);
+    assert!(plan.passes()[0].depth_attachment.is_none());
 }
 
 #[test]
@@ -630,6 +641,23 @@ fn test_native_two_ui_passes_preserve_distinct_uploaded_vertex_colors() {
     let green = draw_list([0, 255, 0, 255]);
     let red_pass = graph.pass_id("paint red UI").unwrap();
     let green_pass = graph.pass_id("paint green UI").unwrap();
+    for pass in [red_pass, green_pass] {
+        graph
+            .set_pass_bindings(
+                pass,
+                crate::renderer::frame_bindings::PassBindings {
+                    samplers: vec![crate::renderer::frame_bindings::SamplerBinding {
+                        group: 0,
+                        binding: 1,
+                        stages: crate::backend::command::ShaderStages::FRAGMENT,
+                        sampling: crate::renderer::frame_bindings::SamplingMode::Linear,
+                    }],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+
     let view = drawable(&renderer);
     renderer.set_headless_drawable(view.inner);
     let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
@@ -723,7 +751,14 @@ fn test_native_abort_discards_recorded_frame_and_uploads() {
             .render(&frame, &mut clear, |_| panic!("second render callback"))
             .is_err()
     );
-    assert!(GpuRenderer::set_frame_uniforms(&mut renderer, &frame, Default::default()).is_err());
+    assert!(
+        GpuRenderer::execute_draw_calls(
+            &mut renderer,
+            &frame,
+            &crate::renderer::types::DrawList::new()
+        )
+        .is_err()
+    );
     assert_eq!(pixel(&renderer, &view), [255, 0, 0, 255]);
     renderer.abort(frame).unwrap();
     assert!(renderer.pending_frame.is_none());
@@ -781,16 +816,18 @@ fn test_native_abort_discards_recorded_frame_and_uploads() {
 #[test]
 fn test_native_picking_retains_submitted_graph_source_and_global_instance_ids() {
     use crate::PipelineDescriptor;
-    use crate::renderer::types::{DrawCall, DrawList, FrameUniforms, InstanceData};
+    use crate::renderer::types::{DrawCall, DrawList, InstanceData};
     use std::rc::Rc;
     let mut renderer = renderer();
     renderer.resize(64, 64).unwrap();
-    renderer
-        .init_picking_pipeline(std::path::Path::new("depth_prepass.wgsl"))
-        .unwrap();
-    let material = renderer
-        .compile_material(&PipelineDescriptor::pbr("model_pbr.wgsl"))
-        .unwrap();
+    let source = "struct Object{model:mat4x4<f32>,color:vec4<f32>,textures:vec4<u32>,params:vec4<f32>}; @group(0) @binding(1) var<storage,read> objects:array<Object>; struct Varying{@builtin(position) position:vec4<f32>, @location(0) @interpolate(flat) id:u32}; @vertex fn vs_main(@location(0) p:vec3<f32>,@builtin(instance_index) i:u32)->Varying{var v:Varying;v.position=objects[i].model*vec4<f32>(p,1.);v.id=i+1u;return v;} @fragment fn fs_main(v:Varying)->@location(0) vec4<u32>{return vec4<u32>(v.id,0u,0u,0u);}";
+    let material = super::test_support::material(
+        &mut renderer,
+        source,
+        PipelineDescriptor::pbr("")
+            .with_color_format(ImageFormat::R32Uint)
+            .with_cull(crate::CullMode::None),
+    );
     let mesh = crate::primitives::create_cube(&mut renderer, [0.5, 0.5, 0.5]).unwrap();
     let identity = [
         1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
@@ -858,69 +895,171 @@ fn test_native_picking_retains_submitted_graph_source_and_global_instance_ids() 
     let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
         panic!("headless frame")
     };
-    GpuRenderer::set_frame_uniforms(
-        &mut renderer,
-        &frame,
-        FrameUniforms {
-            view_matrix: identity,
-            proj_matrix: identity,
-            inv_view_proj_matrix: identity,
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    graph
+        .set_pass_bindings(
+            pass,
+            crate::renderer::frame_bindings::PassBindings {
+                pipelines: vec![crate::renderer::frame_bindings::PassPipeline {
+                    vertex_layout: crate::vertex::VertexLayout::pbr(),
+                    material,
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
     renderer
         .render(&frame, &mut graph, |frame| {
             frame.submit(pass, list.clone());
         })
         .unwrap();
-    assert!(renderer.queue_picking_readback(101, 16, 32).is_err());
+    let ids = graph.resource_id("ids").unwrap();
+    assert!(renderer.graph_texture_source(ids).is_none());
     renderer.present(frame).unwrap();
-    let source = renderer.frame_slots[frame.slot()]
-        .picking_target
-        .as_ref()
+    let source = renderer.graph_texture_source(ids).unwrap();
+    assert_eq!(source.frame_slot, frame.slot());
+    let left = renderer
+        .queue_texture_readback(
+            source,
+            crate::renderer::texture_readback::TextureReadbackRegion::pixel(16, 32),
+        )
         .unwrap();
     assert_eq!(
-        source.generation,
-        renderer.frame_slots[frame.slot()].generation
+        super::test_support::readback(&mut renderer, left).single_u32(),
+        Some(8)
     );
-    assert_eq!(
-        source.view.inner,
-        graph
-            .transient_texture("ids", frame.slot())
-            .unwrap()
-            .view
-            .inner
+    let right = renderer
+        .queue_texture_readback(
+            source,
+            crate::renderer::texture_readback::TextureReadbackRegion::pixel(48, 32),
+        )
+        .unwrap();
+    let mut other =
+        MetalRenderer::new(MetalContext::init_headless_with_size(16, 16).unwrap()).unwrap();
+    assert!(
+        other
+            .queue_texture_readback(
+                source,
+                crate::renderer::texture_readback::TextureReadbackRegion::pixel(0, 0)
+            )
+            .is_err()
     );
-    renderer.queue_picking_readback(101, 16, 32).unwrap();
-    renderer.picking.wait_for_test_readback();
-    assert_eq!(renderer.check_picking_readback(), Some((101, 8)));
-    renderer.queue_picking_readback(102, 48, 32).unwrap();
+    let mut forged = source;
+    forged.generation += 1;
+    assert!(
+        renderer
+            .queue_texture_readback(
+                forged,
+                crate::renderer::texture_readback::TextureReadbackRegion::pixel(0, 0)
+            )
+            .is_err()
+    );
     let FrameAcquisition::Ready(aborted) = renderer.acquire_frame().unwrap() else {
         panic!("headless frame")
     };
     renderer.render(&aborted, &mut graph, |_| {}).unwrap();
-    assert_eq!(renderer.last_submitted_slot, Some(frame.slot()));
-    assert!(
-        renderer.frame_slots[aborted.slot()]
-            .picking_target
-            .is_none()
-    );
+    assert_eq!(renderer.graph_texture_source(ids), Some(source));
     renderer.abort(aborted).unwrap();
-    assert_eq!(renderer.last_submitted_slot, Some(frame.slot()));
     renderer.resize(80, 80).unwrap();
     graph
         .recreate_transient_textures(&mut renderer, 80, 80)
         .unwrap();
-    renderer.picking.wait_for_test_readback();
-    assert_eq!(renderer.check_picking_readback(), Some((102, 9)));
+    assert_eq!(
+        super::test_support::readback(&mut renderer, right).single_u32(),
+        Some(9)
+    );
     let FrameAcquisition::Ready(recycled) = renderer.acquire_frame().unwrap() else {
         panic!("headless frame")
     };
-    assert_eq!(recycled.slot(), aborted.slot());
     renderer.render(&recycled, &mut graph, |_| {}).unwrap();
     renderer.present(recycled).unwrap();
-    renderer.queue_picking_readback(103, 32, 32).unwrap();
-    renderer.picking.wait_for_test_readback();
-    assert_eq!(renderer.check_picking_readback(), Some((103, 0)));
+    let latest = renderer.graph_texture_source(ids).unwrap();
+    assert_ne!(latest.id, source.id);
+    assert!(
+        renderer
+            .queue_texture_readback(
+                source,
+                crate::renderer::texture_readback::TextureReadbackRegion::pixel(0, 0)
+            )
+            .is_err()
+    );
+    let empty = renderer
+        .queue_texture_readback(
+            latest,
+            crate::renderer::texture_readback::TextureReadbackRegion::pixel(32, 32),
+        )
+        .unwrap();
+    assert_eq!(
+        super::test_support::readback(&mut renderer, empty).single_u32(),
+        Some(0)
+    );
+}
+
+#[test]
+fn test_native_colorless_pipeline_warmup_resolves_auto_before_depth_encoding() {
+    use crate::pipeline::{CompareOp, CullMode};
+    use crate::renderer::pipeline_descriptor::{DepthState, PipelineDescriptor, PipelineStages};
+    let mut renderer = renderer();
+    let mut descriptor = PipelineDescriptor::pbr("")
+        .with_vertex_layout(crate::vertex::VertexLayout::empty())
+        .with_color_attachment(false)
+        .with_depth_format(Some(ImageFormat::D32Sfloat))
+        .with_depth(DepthState {
+            test: true,
+            write: true,
+            compare: CompareOp::LessOrEqual,
+        })
+        .with_cull(CullMode::None);
+    descriptor.stages = PipelineStages::Graphics {
+        vertex_entry: "vs_main".into(),
+        fragment_entry: None,
+    };
+    let material = super::test_support::material(
+        &mut renderer,
+        super::test_support::FULLSCREEN_VERTEX,
+        descriptor,
+    );
+    assert_eq!(renderer.materials.get(material).unwrap().variants.len(), 1);
+    for format in [
+        ImageFormat::Auto,
+        ImageFormat::B8G8R8A8Srgb,
+        ImageFormat::R16G16B16A16Sfloat,
+        ImageFormat::R32Uint,
+    ] {
+        renderer
+            .ensure_material_variant_impl(material, format)
+            .unwrap();
+        renderer.material_pipeline(material, format).unwrap();
+    }
+    let mut depth = color("depth", ImageFormat::D32Sfloat);
+    depth.resource_type = GraphResourceType::DepthAttachment {
+        clear_value: 1.,
+        sampled: false,
+    };
+    let mut graph = FrameGraphBuilder::new()
+        .create_resource(depth)
+        .export_resource("depth")
+        .add_pass(
+            SimplePass::new("depth only", PassType::Graphics)
+                .depth_ops(
+                    AttachmentOps::clear(ClearValue::DepthStencil {
+                        depth: 1.,
+                        stencil: 0,
+                    }),
+                    AttachmentOps::dont_care(),
+                )
+                .depth_target("depth"),
+        )
+        .build::<MetalRenderer>()
+        .unwrap();
+    graph
+        .set_pass_bindings(
+            graph.pass_id("depth only").unwrap(),
+            super::test_support::vertices(material, crate::vertex::VertexLayout::empty(), 3),
+        )
+        .unwrap();
+    let frame = super::test_support::acquire(&mut renderer, 16);
+    renderer.render(&frame, &mut graph, |_| {}).unwrap();
+    renderer.present(frame).unwrap();
+    renderer.wait_for_last_submission().unwrap();
+    assert_eq!(renderer.materials.get(material).unwrap().variants.len(), 1);
 }

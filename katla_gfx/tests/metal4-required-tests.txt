@@ -1,7 +1,6 @@
 # Native GPU tests excluded only when the default macOS device lacks Metal 4.
-# Keep device-independent Metal reflection, binding, cache and synchronization tests.
-metal::animation::tests::test_animation_buffers_
-metal::animation::tests::test_animation_system_skeleton_copy_commands
+# Retain reflection/binding layouts, cache metadata, synchronization, submission
+# feedback, graph-only checks and typed capability rejection on that device.
 metal::argument_buffer::tests::test_benchmark_
 metal::argument_buffer::tests::test_graph_slot_snapshot_reuse_and_streaming_invalidation
 metal::argument_buffer::tests::test_non_graph_slot_update_is_rejected
@@ -14,33 +13,42 @@ metal::attachment_tests::test_two_fullscreen_passes_sample_their_own_inputs_and_
 metal::attachment_tests::test_ui_only_clear_without_draws_uses_imported_drawable_contract
 metal::attachment_tests::test_unresolved_and_mismatched_attachment_extents_fail_before_native_encoding
 metal::buffer_history_retirement::tests::
-metal::builtin_compute_tests::
+metal::capture_tests::
 metal::command_buffer::tests::
-metal::context::tests::
+metal::compute_range_tests::
+metal::context::tests::test_metal_buffer_creation_cpu_accessible
+metal::context::tests::test_metal_buffer_creation_gpu_only
+metal::context::tests::test_metal_buffer_creation_large
+metal::context::tests::test_metal_buffer_gpu_address
+metal::context::tests::test_metal_buffer_write_read
+metal::context::tests::test_metal_command_buffer_creation
+metal::context::tests::test_metal_compute_pipeline_creation
+metal::context::tests::test_metal_context_headless
+metal::context::tests::test_metal_feature_detection
+metal::context::tests::test_metal_full_rendering_smoke
+metal::context::tests::test_metal_graphics_pipeline_creation
+metal::context::tests::test_metal_sampler_creation
+metal::context::tests::test_metal_texture_creation_depth
+metal::context::tests::test_metal_texture_creation_rgba16_float
+metal::context::tests::test_metal_texture_creation_rgba8_srgb
 metal::diagnostics::tests::test_labeled_metal4_render_pass_receives_native_commit_feedback
 metal::diagnostics::tests::test_metal4_command_buffer_receives_native_commit_feedback
 metal::encoding_resources::tests::
 metal::frame_slot_tests::
 metal::graphics_preflight::tests::
-metal::light_culling::tests::
 metal::material_api::tests::
 metal::mesh_api::tests::
-metal::metal_renderer::tests::test_headless_render_not_white
+metal::metal_renderer::tests::test_headless_custom_pass_renders_without_scene_initialization
+metal::metal_renderer::tests::test_foreign_renderer_token_rejects_write_render_and_present_without_consuming_owner
+metal::metal_renderer::tests::test_present_requires_recorded_submission_and_keeps_aborted_slot_reusable
 metal::metal_renderer::tests::test_metal_
-metal::particle::tests::test_burst
-metal::particle::tests::test_create_emitter
-metal::particle::tests::test_destroy_emitter
-metal::particle::tests::test_exceeds_shader_limit_rejected
-metal::particle::tests::test_update_
-metal::particle::tests::test_valid_creation
-metal::particle::tests::test_zero_max_particles_rejected
-metal::picking::tests::test_picking_readback_y_matches_tonemapped_display
-metal::picking::tests::test_picking_y_axis_matches_screen_space
+metal::picking_tests::tests::
 metal::pipeline_archive::tests::test_metal4_pipeline_latency_benchmark
 metal::pipeline_archive::tests::test_native_
 metal::pipeline_archive::tests::test_render_key_determinism_and_option_invalidation
 metal::residency::tests::
 metal::shader::tests::
+metal::texture_readback::tests::test_device_drain_completes_pending_texture_readbacks_before_single_poll
 metal::texture_upload::tests::test_bindless_argument_buffer_storage_probe
 metal::texture_upload::tests::test_replace_region_vs_blit_content_identical
 metal::texture_upload::tests::test_roundtrip_preserves_bytes
@@ -51,5 +59,5 @@ metal::texture_upload::tests::test_texture_upload_benchmark
 metal::texture_upload::tests::test_unsubmitted_upload_abort_replays_without_early_reuse
 metal::timestamp_queries::tests::test_native_
 metal::transient_heap::tests::
-render_graph::builtin_compute_tests::
+render_graph::native_compute_tests::
 render_graph::compute_tests::

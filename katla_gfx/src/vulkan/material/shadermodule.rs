@@ -91,6 +91,11 @@ fn resolve_includes(
     Ok(result)
 }
 
+pub(crate) fn resolved_source(path: &Path) -> Result<String, ShaderError> {
+    let raw = std::fs::read_to_string(path).map_err(ShaderError::IoError)?;
+    resolve_includes(&raw, path, &mut HashSet::new())
+}
+
 impl ShaderModule {
     pub fn from_bytes(
         device: Device,
@@ -203,24 +208,6 @@ impl ShaderCache {
             device,
             shaders: std::collections::HashMap::new(),
         }
-    }
-
-    /// Get the entry point name for a given shader stage from a WGSL file.
-    fn get_entry_point(stage: vk::ShaderStageFlags) -> &'static str {
-        match stage {
-            vk::ShaderStageFlags::VERTEX => "vs_main",
-            vk::ShaderStageFlags::FRAGMENT => "fs_main",
-            vk::ShaderStageFlags::COMPUTE => "cs_main",
-            _ => "main",
-        }
-    }
-
-    pub fn load_shader(
-        &mut self,
-        path: impl AsRef<Path>,
-        stage: vk::ShaderStageFlags,
-    ) -> Result<vk::ShaderModule, ShaderError> {
-        self.load_shader_with_entry(path, stage, Self::get_entry_point(stage))
     }
 
     /// Load and cache a shader module for a specific entry point.

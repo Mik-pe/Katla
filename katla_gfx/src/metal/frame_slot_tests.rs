@@ -10,7 +10,7 @@ use crate::render_graph::{
 };
 use crate::render_pass::{AttachmentOps, ClearValue};
 use crate::renderer::frame_scope::FrameAcquisition;
-use crate::renderer::types::{DrawList, FrameUniforms, UIDrawList};
+use crate::renderer::types::UIDrawList;
 use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
 use crate::vertex::VertexUI;
 use objc2_metal::MTLBuffer;
@@ -24,6 +24,18 @@ fn test_native_three_frame_slots_preserve_uploads_through_resize() {
     let stream = renderer
         .create_texture_impl(&stream_desc, &[0, 0, 0, 255])
         .unwrap();
+    let buffers = (0..3)
+        .map(|_| {
+            renderer
+                .create_buffer(crate::render_graph::BufferDesc::new(
+                    16,
+                    crate::render_graph::BufferUsages::STORAGE
+                        | crate::render_graph::BufferUsages::TRANSFER_SOURCE,
+                    crate::render_graph::BufferMemoryPolicy::CpuVisible,
+                ))
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
     for cycle in 0..8u32 {
         let extent = 16 + cycle * 2;
         renderer.resize(extent, extent).unwrap();
@@ -62,12 +74,15 @@ fn test_native_three_frame_slots_preserve_uploads_through_resize() {
             };
             assert_eq!(frame.slot(), expected_slot);
             let marker = (cycle * 3 + expected_slot as u32 + 1) as f32;
-            let uniforms = FrameUniforms {
-                camera_position: [marker, marker + 1.0, marker + 2.0, 1.0],
-                ..Default::default()
-            };
-            renderer.set_frame_uniforms(uniforms.clone());
-            renderer.execute_draw_calls(&DrawList::new()).unwrap();
+            let marker_bytes = [marker, marker + 1., marker + 2., 1.];
+            renderer
+                .write_buffer(
+                    &frame,
+                    buffers[frame.slot()],
+                    0,
+                    bytemuck::cast_slice(&marker_bytes),
+                )
+                .unwrap();
             let vertex = VertexUI::new(
                 [marker, marker + 1.0],
                 [0.0, 1.0],
@@ -87,9 +102,11 @@ fn test_native_three_frame_slots_preserve_uploads_through_resize() {
             renderer.render(&frame, &mut graph, |_| {}).unwrap();
             renderer.present(frame).unwrap();
             assert!(renderer.frame_slots[frame.slot()].submission.is_some());
-            let uniform_buffer = renderer.frame_uniform_buffers[frame.slot()]
-                .as_ref()
-                .unwrap();
+            let uniform_buffer = &renderer
+                .graph_buffers
+                .get(buffers[frame.slot()])
+                .unwrap()
+                .buffer;
             let ui_buffer = renderer.ui_renderers[frame.slot()].vertex_buffer().unwrap();
             addresses.push((
                 uniform_buffer.inner.gpuAddress(),
@@ -101,10 +118,7 @@ fn test_native_three_frame_slots_preserve_uploads_through_resize() {
                     .inner
                     .clone(),
             ));
-            let uniform_readback = renderer
-                .context
-                .create_buffer(std::mem::size_of::<FrameUniforms>() as u64, true)
-                .unwrap();
+            let uniform_readback = renderer.context.create_buffer(16, true).unwrap();
             let ui_readback = renderer
                 .context
                 .create_buffer(std::mem::size_of::<VertexUI>() as u64, true)
@@ -114,13 +128,7 @@ fn test_native_three_frame_slots_preserve_uploads_through_resize() {
             let mut command = renderer.context.create_command_buffer();
             command.begin();
             let mut encoder = command.begin_blit_pass_with_label("frame slot probes");
-            encoder.copy_buffer_to_buffer(
-                uniform_buffer,
-                0,
-                &uniform_readback,
-                0,
-                std::mem::size_of::<FrameUniforms>() as u64,
-            );
+            encoder.copy_buffer_to_buffer(uniform_buffer, 0, &uniform_readback, 0, 16);
             encoder.copy_buffer_to_buffer(
                 ui_buffer,
                 0,
@@ -154,7 +162,7 @@ fn test_native_three_frame_slots_preserve_uploads_through_resize() {
                 ui_readback,
                 color_readback,
                 stream_readback,
-                uniforms.camera_position,
+                marker_bytes,
                 vertex,
                 stream_pixel,
             ));
@@ -169,8 +177,8 @@ fn test_native_three_frame_slots_preserve_uploads_through_resize() {
         for (slot, command, uniform, ui, color, stream, camera, vertex, stream_pixel) in probes {
             command.wait_until_completed().unwrap();
             renderer.wait_for_slot(slot).unwrap();
-            let actual = unsafe { std::ptr::read_unaligned(uniform.map().cast::<FrameUniforms>()) };
-            assert_eq!(actual.camera_position, camera);
+            let actual = unsafe { std::ptr::read_unaligned(uniform.map().cast::<[f32; 4]>()) };
+            assert_eq!(actual, camera);
             uniform.unmap();
             let actual = unsafe { std::ptr::read_unaligned(ui.map().cast::<VertexUI>()) };
             assert_eq!(actual, vertex);

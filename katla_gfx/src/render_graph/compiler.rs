@@ -71,6 +71,12 @@ pub struct ExecutionPlan {
     pub(super) dag: Vec<PassDagNode>,
     /// Groups of live pass indices that can execute concurrently, ordered by level.
     pub(super) parallel_groups: Vec<Vec<usize>>,
+    /// Whether observable roots selected pass liveness.
+    pub(super) culling_enabled: bool,
+    /// Actual side-effect and final-export seeds, in stable declaration order.
+    pub(super) liveness_roots: Vec<usize>,
+    /// Producers of the latest disjoint versions of each exported resource.
+    pub(super) final_export_writers: BTreeMap<ResourceId, Vec<usize>>,
     /// One liveness bit per declared pass.
     pub(super) live_passes: Vec<bool>,
     /// Declared pass indices removed by liveness analysis.
@@ -184,7 +190,6 @@ struct OutstandingAccess<R> {
 struct ResourceAccessState<R> {
     writers: Vec<OutstandingAccess<R>>,
     readers: Vec<OutstandingAccess<R>>,
-    last_writer: Option<usize>,
 }
 
 impl<R: AccessRange> Default for ResourceAccessState<R> {
@@ -192,7 +197,6 @@ impl<R: AccessRange> Default for ResourceAccessState<R> {
         Self {
             writers: Vec::new(),
             readers: Vec::new(),
-            last_writer: None,
         }
     }
 }
@@ -250,7 +254,6 @@ impl<R: AccessRange> ResourceAccessState<R> {
             *versions = remaining;
         }
         self.writers.push(OutstandingAccess { pass, range });
-        self.last_writer = Some(pass);
     }
 
     fn add_reader(&mut self, pass: usize, range: R) {
@@ -353,7 +356,7 @@ pub struct GraphCompiler {
     pub(crate) passes: Vec<PassInfo>,
     pub(crate) dependency_graph: Vec<DependencyNode>,
     pub(crate) data_predecessors: Vec<BTreeSet<usize>>,
-    pub(crate) final_writers: HashMap<ResourceId, usize>,
+    pub(crate) final_writers: HashMap<ResourceId, BTreeSet<usize>>,
     pub(crate) exported_resources: BTreeSet<ResourceId>,
     pub(crate) imported_contracts: BTreeMap<ResourceId, ImportedImageContract>,
     pub(crate) external_image_accesses: Vec<ImageAccess>,
@@ -468,20 +471,18 @@ impl GraphCompiler {
             }
         }
 
-        // A buffer write also supersedes any image write to the same resource
-        // id and vice versa; the namespace is shared, so a resource a pass
-        // writes as both keeps the later declaration as its final writer.
-        self.final_writers = image_states
-            .into_iter()
-            .filter_map(|(resource, state)| state.last_writer.map(|writer| (resource, writer)))
-            .collect();
+        self.final_writers.clear();
+        for (resource, state) in image_states {
+            self.final_writers
+                .entry(resource)
+                .or_default()
+                .extend(state.writers.into_iter().map(|writer| writer.pass));
+        }
         for (resource, state) in buffer_states {
-            if let Some(writer) = state.last_writer {
-                self.final_writers
-                    .entry(resource)
-                    .and_modify(|existing| *existing = (*existing).max(writer))
-                    .or_insert(writer);
-            }
+            self.final_writers
+                .entry(resource)
+                .or_default()
+                .extend(state.writers.into_iter().map(|writer| writer.pass));
         }
 
         self.data_predecessors = data_predecessors;
@@ -502,8 +503,8 @@ impl GraphCompiler {
             }
         }
         for resource in &self.exported_resources {
-            if let Some(&writer) = self.final_writers.get(resource) {
-                work.push_back(writer);
+            if let Some(writers) = self.final_writers.get(resource) {
+                work.extend(writers.iter().copied());
             }
         }
 
@@ -860,10 +861,32 @@ impl GraphCompiler {
             self.external_uploads_pending,
         );
 
+        let final_export_writers = self
+            .exported_resources
+            .iter()
+            .filter_map(|resource| {
+                self.final_writers
+                    .get(resource)
+                    .map(|writers| (*resource, writers.iter().copied().collect::<Vec<_>>()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let liveness_roots = self
+            .passes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, pass)| pass.side_effect.then_some(index))
+            .chain(final_export_writers.values().flatten().copied())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
         Ok(ExecutionPlan {
             sorted_passes,
             dag,
             parallel_groups,
+            culling_enabled: self.culling_enabled,
+            liveness_roots,
+            final_export_writers,
             live_passes,
             culled_passes,
             resource_lifetimes,
@@ -1519,6 +1542,74 @@ mod tests {
         GraphCompiler::with_exports(passes, exports.iter().copied())
             .compile()
             .unwrap()
+    }
+
+    #[test]
+    fn test_export_retains_latest_disjoint_buffer_versions() {
+        let plan = compile_with_exports(
+            vec![
+                buffer_pass(
+                    "initial",
+                    vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 128)],
+                ),
+                buffer_pass(
+                    "first half",
+                    vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 64)],
+                ),
+                buffer_pass(
+                    "second half",
+                    vec![buffer_access(rid(1), ResourceAccessMode::Write, 64, 64)],
+                ),
+            ],
+            &[rid(1)],
+        );
+        assert_eq!(plan.sorted_passes, vec![1, 2]);
+        assert_eq!(plan.culled_passes, vec![0]);
+        assert_eq!(plan.liveness_roots, vec![1, 2]);
+    }
+
+    #[test]
+    fn test_export_retains_partially_overwritten_buffer_producer() {
+        let plan = compile_with_exports(
+            vec![
+                buffer_pass(
+                    "initial",
+                    vec![buffer_access(rid(1), ResourceAccessMode::Write, 0, 128)],
+                ),
+                buffer_pass(
+                    "middle",
+                    vec![buffer_access(rid(1), ResourceAccessMode::Write, 32, 64)],
+                ),
+            ],
+            &[rid(1)],
+        );
+        assert_eq!(plan.sorted_passes, vec![0, 1]);
+        assert_eq!(plan.liveness_roots, vec![0, 1]);
+    }
+
+    #[test]
+    fn test_export_retains_latest_mips_layers_and_aspects() {
+        let ranges = [
+            ImageSubresourceRange::new(ImageAspects::COLOR, 0, 1, 0, 1),
+            ImageSubresourceRange::new(ImageAspects::COLOR, 1, 1, 0, 1),
+            ImageSubresourceRange::new(ImageAspects::COLOR, 0, 1, 1, 1),
+            ImageSubresourceRange::new(ImageAspects::DEPTH, 0, 1, 0, 1),
+            ImageSubresourceRange::new(ImageAspects::STENCIL, 0, 1, 0, 1),
+        ];
+        let mut passes = vec![typed_pass(
+            "overwritten",
+            vec![access(rid(1), ResourceAccessMode::Write, ranges[0])],
+        )];
+        passes.extend(ranges.map(|range| {
+            typed_pass(
+                "latest",
+                vec![access(rid(1), ResourceAccessMode::Write, range)],
+            )
+        }));
+        let plan = compile_with_exports(passes, &[rid(1)]);
+        assert_eq!(plan.sorted_passes, vec![1, 2, 3, 4, 5]);
+        assert_eq!(plan.culled_passes, vec![0]);
+        assert_eq!(plan.liveness_roots, vec![1, 2, 3, 4, 5]);
     }
 
     #[test]

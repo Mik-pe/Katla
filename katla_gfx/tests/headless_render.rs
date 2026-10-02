@@ -1,5 +1,11 @@
 //! Full Vulkan frame submission and readback without a presentation surface.
 
+#[path = "support/ui_bindings.rs"]
+mod ui_bindings;
+
+#[path = "support/readback.rs"]
+mod readback;
+
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 
@@ -23,7 +29,6 @@ fn acquire_frame_token(
 
 #[test]
 #[ignore = "requires a Vulkan device"]
-
 fn test_headless_render_and_readback_across_frame_slots() {
     let mut renderer = VulkanRenderer::init_headless(
         64,
@@ -43,7 +48,11 @@ fn test_headless_render_and_readback_across_frame_slots() {
             }
         });
     let mut graph = FrameGraphBuilder::new()
-        .add_pass(GeometryPass::new("clear").write_color("backbuffer", ImageFormat::B8G8R8A8Srgb))
+        .add_pass(
+            GeometryPass::new("clear")
+                .without_depth()
+                .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb),
+        )
         .build::<VulkanRenderer>()
         .unwrap();
 
@@ -51,13 +60,26 @@ fn test_headless_render_and_readback_across_frame_slots() {
     for frame in 0..5 {
         let frame_token = acquire_frame_token(&mut renderer);
         renderer.render(&frame_token, &mut graph, |_| {}).unwrap();
-        renderer.present(frame_token).unwrap();
-        renderer.queue_async_readback(frame).unwrap();
-        let (captured_frame, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
-        assert_eq!(captured_frame, frame);
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
+        let (source, pixels) =
+            readback::read_pixels(&mut renderer, graph.resource_id("backbuffer").unwrap());
+        assert_eq!(source.submission, frame + 1);
         assert_eq!(pixels.len(), 64 * 48 * 4);
         // The declared backbuffer ops are Clear->Store with opaque black.
-        assert!(pixels.chunks_exact(4).all(|p| p == [0, 0, 0, 255]));
+        assert!(
+            pixels
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|p| *p == [0, 0, 0, 255])
+        );
         if let Some(previous) = &previous {
             assert_eq!(&pixels, previous);
         }
@@ -66,8 +88,11 @@ fn test_headless_render_and_readback_across_frame_slots() {
     graph.cleanup();
     drop(graph);
     let atlas = renderer
-        .create_ui_font_atlas(1, 1, &[255, 0, 0, 255])
-        .expect("test font atlas creation");
+        .create_texture(
+            &katla_gfx::TextureDescriptor::rgba8_unorm(1, 1),
+            &[255, 0, 0, 255],
+        )
+        .expect("test texture creation");
     let white = renderer
         .create_texture(&katla_gfx::TextureDescriptor::rgba8_unorm(1, 1), &[255; 4])
         .expect("test texture creation");
@@ -79,15 +104,19 @@ fn test_headless_render_and_readback_across_frame_slots() {
             shaders.join("ui/ui.wgsl").to_string_lossy().into_owned(),
         ))
         .unwrap();
-    renderer
-        .init_light_culling(64, 48, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
     let mut graph = FrameGraphBuilder::new()
-        .add_pass(GeometryPass::new("clear").write_color("backbuffer", ImageFormat::B8G8R8A8Srgb))
+        .add_pass(
+            GeometryPass::new("clear")
+                .without_depth()
+                .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb),
+        )
         .add_pass(UIPass::new("ui").write("backbuffer").material(material))
         .build::<VulkanRenderer>()
         .unwrap();
     let ui_pass = graph.pass_id("ui").unwrap();
+    graph
+        .set_pass_bindings(ui_pass, ui_bindings::bindings())
+        .unwrap();
     let mut ui = UIDrawList {
         screen_size: [64.0, 48.0],
         scale_factor: 1.0,
@@ -121,8 +150,7 @@ fn test_headless_render_and_readback_across_frame_slots() {
     ];
     for frame in 0..4 {
         if frame == 2 {
-            // Resizing lighting invalidates material layouts, including both UI pipelines.
-            renderer.resize_light_culling(32, 32);
+            renderer.resize(64, 48).unwrap();
         }
         let frame_token = acquire_frame_token(&mut renderer);
         renderer
@@ -130,9 +158,16 @@ fn test_headless_render_and_readback_across_frame_slots() {
                 frame.submit_ui(ui_pass, &ui);
             })
             .unwrap();
-        renderer.present(frame_token).unwrap();
-        renderer.queue_async_readback(frame).unwrap();
-        let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
+        let (_, pixels) =
+            readback::read_pixels(&mut renderer, graph.resource_id("backbuffer").unwrap());
         for (x, bgra) in [
             (8, [0, 255, 0, 255]),
             (24, [0, 0, 255, 255]),

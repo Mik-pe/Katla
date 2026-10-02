@@ -59,6 +59,8 @@ pub struct FrameGraphResourceBindings {
     pub object_id: Option<String>,
     pub hdr_color: Option<String>,
     pub viewport: Option<String>,
+    /// LDR input sampled by an optional wallhack overlay.
+    pub tonemap_output: Option<String>,
     pub shadow_atlas: Option<String>,
     pub stencil_indicator: Option<String>,
 }
@@ -77,6 +79,7 @@ impl FrameGraphBindings {
             ("object_id", &self.resources.object_id),
             ("hdr_color", &self.resources.hdr_color),
             ("viewport", &self.resources.viewport),
+            ("tonemap_output", &self.resources.tonemap_output),
             ("shadow_atlas", &self.resources.shadow_atlas),
             ("stencil_indicator", &self.resources.stencil_indicator),
         ] {
@@ -99,7 +102,7 @@ impl FrameGraphBindings {
         Self {
             passes: FrameGraphPassBindings {
                 depth_prepass: Some("depth_prepass".into()),
-                picking: Some("depth_prepass".into()),
+                picking: Some("object_id".into()),
                 geometry: Some("geometry".into()),
                 shadow: Some("shadow".into()),
                 outline: Some("outline".into()),
@@ -112,6 +115,7 @@ impl FrameGraphBindings {
                 object_id: Some("object_id".into()),
                 hdr_color: Some("hdr_color".into()),
                 viewport: Some("viewport_0".into()),
+                tonemap_output: Some("tonemap_color".into()),
                 shadow_atlas: Some("shadow_atlas".into()),
                 stencil_indicator: Some("stencil_indicator".into()),
             },
@@ -137,7 +141,8 @@ impl FrameGraphBindings {
                 object_id: Some("object_id".into()),
                 hdr_color: Some("hdr_color".into()),
                 viewport: Some("viewport_0".into()),
-                shadow_atlas: None,
+                tonemap_output: None,
+                shadow_atlas: Some("shadow_atlas".into()),
                 stencil_indicator: None,
             },
         }

@@ -1,200 +1,177 @@
-use crate::render_graph::error::RenderGraphError;
-use crate::render_graph::frame::parallel_geometry::{RenderPassParams, execute_parallel_recording};
-use crate::render_graph::frame::{Frame, PassExecutionData};
-use crate::render_graph::pass::{PassDesc, PassKind};
+use super::{Frame, PassExecutionData};
+use crate::render_graph::{PassDesc, RenderGraphError};
 use crate::renderer::VulkanRenderer;
+use crate::renderer::frame_bindings::{PassDraw, PassDrawPhase};
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
-/// Minimum number of draw calls to justify parallel recording overhead.
-const PARALLEL_DRAW_THRESHOLD: usize = 32;
-
 impl Frame<'_, VulkanRenderer> {
-    /// Execute a graphics pass with dynamic rendering.
-    ///
-    /// Uses parallel secondary command buffer recording for geometry passes with
-    /// enough draw calls and no UI draw lists. Falls back to sequential recording
-    /// for small batches or passes with UI.
     pub(super) fn execute_graphics_pass(
         &mut self,
         cmd: &CommandBuffer,
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        log::debug!(
-            "[GRAPHICS] PASS '{}' with frame_idx={}, draw_lists={}, ui_draw_lists={}",
-            pass.name,
-            self.current_frame(),
-            data.draw_lists.len(),
-            data.ui_draw_lists.len()
-        );
-
-        let total_draws = data.prepared_counts().draw_calls;
-        let use_parallel = pass.kind == Some(PassKind::Geometry)
-            && data.ui_draw_lists.is_empty()
-            && total_draws >= PARALLEL_DRAW_THRESHOLD;
-
-        // Resolve draw commands first (needs &mut self), before we borrow self for attachments.
-        let resolved_commands = if use_parallel {
-            log::debug!(
-                "[GRAPHICS] Parallel recording for '{}' ({} draws)",
-                pass.name,
-                total_draws
-            );
-            Some(
-                self.resolve_draw_commands(
-                    data.prepared(),
-                    self.current_frame(),
-                    pass.output_format
-                        .unwrap_or(crate::texture::ImageFormat::Auto),
-                )?,
-            )
-        } else {
-            None
-        };
-
         let extent = self.color_target_extent(pass);
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,
         };
-
-        let mut color_attachments = self.resolve_color_attachments(pass)?;
-        if color_attachments.is_empty() {
+        let color = self.resolve_color_attachments(pass)?;
+        let (depth, stencil) = self.resolve_frame_depth_attachments(pass)?;
+        if color.is_empty() && depth.is_none() {
             return Err(RenderGraphError::InvalidConfiguration(
-                "Pass has no color outputs. Use .write_color() for transient textures or declare output explicitly".to_string()
+                "Graphics pass has no declared attachments".into(),
             ));
         }
-
-        let (depth_attachment, stencil_attachment) = self.resolve_frame_depth_attachments(pass)?;
-
-        if let Some(commands) = resolved_commands {
-            let params = RenderPassParams {
-                color_attachment: color_attachments.remove(0),
-                depth_attachment,
-                stencil_attachment,
-                render_area,
-                extent,
-            };
-            let lc_buffers = self.renderer.light_culling_buffers();
-            let push_descriptor_ext = self.renderer.context.push_descriptor_khr.as_ref();
-            execute_parallel_recording(
-                &self.renderer.context.device,
-                &self.renderer.context.gfx_cmdpool,
-                cmd,
-                &commands,
-                &params,
-                lc_buffers,
-                push_descriptor_ext,
-            )
+        let format = pass
+            .output_format
+            .unwrap_or(crate::texture::ImageFormat::Auto);
+        let default_phase = PassDrawPhase {
+            pipelines: pass.bindings.pipelines.clone(),
+            constants: Vec::new(),
+            viewport: None,
+            draw: if data.prepared().is_empty()
+                && pass
+                    .material
+                    .and_then(|material| self.renderer.asset_registry.get_material(material))
+                    .is_some_and(|material| material.descriptor.vertex.is_empty())
+                && data.ui_draw_lists.is_empty()
+            {
+                PassDraw::Vertices {
+                    count: 3,
+                    instances: 1,
+                }
+            } else {
+                PassDraw::Submissions
+            },
+        };
+        let phases = if pass.bindings.phases.is_empty() {
+            std::slice::from_ref(&default_phase)
         } else {
-            cmd.begin_rendering(
-                &color_attachments,
-                depth_attachment.as_ref(),
-                stencil_attachment.as_ref(),
-                render_area,
-                1,
-            );
-
-            cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
-                0.0,
-                0.0,
-                extent.width as f32,
-                extent.height as f32,
-            )]);
-            cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
-                extent.width,
-                extent.height,
-            )]);
-
-            let color_format = pass
-                .output_format
-                .unwrap_or(crate::texture::ImageFormat::Auto);
-            self.execute_draw_list(cmd, data.prepared(), color_format)?;
-
-            for ui_draw_list in &data.ui_draw_lists {
-                self.execute_ui_draw_list(cmd, pass, ui_draw_list)?;
+            &pass.bindings.phases
+        };
+        for phase in phases {
+            for pipeline in &phase.pipelines {
+                self.renderer
+                    .ensure_material_compiled(pipeline.material, format)?;
             }
-
-            cmd.end_rendering();
-
-            Ok(())
         }
-    }
-
-    /// Execute a fullscreen pass (draws a fullscreen triangle).
-    pub(super) fn execute_fullscreen_pass(
-        &mut self,
-        cmd: &CommandBuffer,
-        pass: &PassDesc,
-        pipeline_handle: crate::handle::PipelineHandle,
-    ) -> Result<(), RenderGraphError> {
-        let current_frame = self.current_frame();
-        log::debug!(
-            "[FULLSCREEN] Pass '{}' execution: frame_idx={}, writes={:?}, reads={:?}",
-            pass.name,
-            current_frame,
-            pass.writes,
-            pass.reads
-        );
-
-        let extent = self.color_target_extent(pass);
-        let render_area = vk::Rect2D {
-            offset: vk::Offset2D { x: 0, y: 0 },
-            extent,
-        };
-
-        let color_attachments = self.resolve_color_attachments(pass)?;
-        if color_attachments.is_empty() {
-            return Err(RenderGraphError::InvalidConfiguration(
-                "Fullscreen pass has no color outputs.".to_string(),
-            ));
+        if let Some(material) = pass.material {
+            self.renderer.ensure_material_compiled(material, format)?;
         }
-
-        cmd.begin_rendering(&color_attachments, None, None, render_area, 1);
-
-        cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
-            0.0,
-            0.0,
-            extent.width as f32,
-            extent.height as f32,
-        )]);
+        if phases.iter().any(|phase| phase.pipelines.is_empty()) {
+            self.ensure_materials_compiled(data.prepared(), format)?;
+        }
+        cmd.begin_rendering(&color, depth.as_ref(), stencil.as_ref(), render_area, 1);
+        self.capture_render_encoder(pass, &color, depth.as_ref(), stencil.as_ref());
         cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
             extent.width,
             extent.height,
         )]);
-
-        let (pipeline, layout) = self
-            .renderer
-            .asset_registry
-            .get_pipeline_handles(pipeline_handle)?;
-
-        unsafe {
-            self.renderer.context.device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::GRAPHICS,
-                pipeline,
-            );
+        for phase in phases {
+            let viewport = phase.viewport.unwrap_or_else(|| {
+                crate::Rect::new([0.0, 0.0], [extent.width as f32, extent.height as f32])
+            });
+            cmd.set_viewport(&[crate::sync::VkViewport::from_rect(
+                viewport.min[0],
+                viewport.min[1],
+                viewport.width(),
+                viewport.height(),
+            )]);
+            let mut packet = pass.bindings.clone();
+            packet.phases.clear();
+            for constant in &phase.constants {
+                packet.constants.retain(|existing| {
+                    (existing.group, existing.binding) != (constant.group, constant.binding)
+                });
+                packet.constants.push(constant.clone());
+            }
+            match &phase.draw {
+                PassDraw::Submissions | PassDraw::ObjectIndices(_) => self.execute_draw_list(
+                    cmd,
+                    data.prepared(),
+                    format,
+                    &packet,
+                    phase,
+                    &pass.buffer_accesses,
+                )?,
+                PassDraw::Vertices { .. } | PassDraw::Indirect { .. } => {
+                    let material = phase
+                        .pipelines
+                        .first()
+                        .map(|pipeline| pipeline.material)
+                        .or(pass.material)
+                        .ok_or_else(|| {
+                            RenderGraphError::PipelineNotSet(
+                                "Generated geometry requires a material".into(),
+                            )
+                        })?;
+                    let variant = self
+                        .renderer
+                        .material_variant(material, format)?
+                        .ok_or_else(|| {
+                            RenderGraphError::PipelineNotSet(
+                                "Generated geometry variant unavailable".into(),
+                            )
+                        })?;
+                    let (pipeline, _) = self
+                        .renderer
+                        .asset_registry
+                        .get_pipeline_handles(variant.pipeline)?;
+                    unsafe {
+                        self.renderer.context.device.cmd_bind_pipeline(
+                            cmd.vk_command_buffer(),
+                            vk::PipelineBindPoint::GRAPHICS,
+                            pipeline,
+                        );
+                    }
+                    self.bind_graphics_resources(
+                        cmd,
+                        material,
+                        variant.pipeline,
+                        &packet,
+                        crate::SkeletonHandle::NONE,
+                        &pass.buffer_accesses,
+                    )?;
+                    match phase.draw {
+                        PassDraw::Vertices { count, instances } => {
+                            cmd.draw_array(count, instances, 0, 0)
+                        }
+                        PassDraw::Indirect { resource, offset } => {
+                            let buffer = self
+                                .graph
+                                .buffer_by_id(self.renderer, resource, self.current_frame())
+                                .ok_or_else(|| {
+                                    RenderGraphError::ResourceNotFound(
+                                        "Indirect draw buffer unavailable".into(),
+                                    )
+                                })?;
+                            if offset.checked_add(16).is_none_or(|end| end > buffer.size()) {
+                                return Err(RenderGraphError::InvalidConfiguration(
+                                    "Indirect draw exceeds buffer".into(),
+                                ));
+                            }
+                            unsafe {
+                                self.renderer.context.device.cmd_draw_indirect(
+                                    cmd.vk_command_buffer(),
+                                    buffer.vk_buffer(),
+                                    buffer.offset + offset,
+                                    1,
+                                    16,
+                                );
+                            }
+                            self.capture_bound_resource(resource);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            }
         }
-
-        let storage_ds =
-            self.renderer.storage_descriptor_sets[self.renderer.current_frame()].vk_set();
-        cmd.bind_descriptor_sets(layout, 0, &[storage_ds], &[]);
-
-        let bindless_ds = self.renderer.bindless_manager.descriptor_set().vk();
-        cmd.bind_descriptor_sets(layout, 1, &[bindless_ds], &[]);
-
-        let skip_draw = pass
-            .tonemap_params
-            .as_ref()
-            .is_some_and(|p| p.hdr_texture_index.is_none());
-
-        if !skip_draw {
-            cmd.draw_array(3, 1, 0, 0);
+        for list in &data.ui_draw_lists {
+            self.execute_ui_draw_list(cmd, pass, list)?;
         }
-
         cmd.end_rendering();
-
         Ok(())
     }
 }

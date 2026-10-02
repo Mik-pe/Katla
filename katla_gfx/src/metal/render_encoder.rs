@@ -12,8 +12,6 @@ use crate::backend::resource::GpuBuffer;
 use super::MetalBackend;
 use super::buffer::MetalBuffer;
 use super::format::to_mtl_index_type;
-use super::sampler::MetalSamplerState;
-use super::texture::MetalTextureView;
 
 pub(crate) struct MetalRenderEncoder {
     pub(crate) inner: Retained<ProtocolObject<dyn MTL4RenderCommandEncoder>>,
@@ -27,6 +25,7 @@ pub(crate) struct MetalRenderEncoder {
     resources: std::rc::Rc<super::encoding_resources::EncodingResources>,
     vertex_table: Retained<ProtocolObject<dyn MTL4ArgumentTable>>,
     fragment_table: Retained<ProtocolObject<dyn MTL4ArgumentTable>>,
+    ended: std::cell::Cell<bool>,
 }
 
 impl MetalRenderEncoder {
@@ -39,6 +38,7 @@ impl MetalRenderEncoder {
         inner.setArgumentTable_atStages(&vertex_table, MTLRenderStages::Vertex);
         inner.setArgumentTable_atStages(&fragment_table, MTLRenderStages::Fragment);
         Self {
+            ended: std::cell::Cell::new(false),
             inner,
             resources,
             vertex_table,
@@ -51,6 +51,10 @@ impl MetalRenderEncoder {
             vertex_layout: None,
             fragment_layout: None,
         }
+    }
+
+    pub(crate) fn observe_graph_resource(&self, resource: u32) {
+        self.resources.observe_resource(resource);
     }
 
     pub(crate) fn use_buffer(
@@ -178,6 +182,7 @@ impl MetalRenderEncoder {
             let Some(layout) = layout else {
                 continue;
             };
+            self.resources.capture_binding(table, layout);
             if let Err(error) = state.validate(layout) {
                 self.resources.fail(error);
                 return false;
@@ -245,7 +250,9 @@ impl MetalRenderEncoder {
 
 impl GpuRenderEncoder<MetalBackend> for MetalRenderEncoder {
     fn end_encoding(self) {
-        self.inner.endEncoding();
+        if !self.ended.replace(true) {
+            self.inner.endEncoding();
+        }
     }
 
     fn bind_graphics_pipeline(
@@ -261,6 +268,14 @@ impl GpuRenderEncoder<MetalBackend> for MetalRenderEncoder {
         }
         self.inner.setCullMode(pipeline.cull_mode);
         self.inner.setFrontFacingWinding(pipeline.front_face);
+        self.inner.setTriangleFillMode(if pipeline.wireframe {
+            objc2_metal::MTLTriangleFillMode::Lines
+        } else {
+            objc2_metal::MTLTriangleFillMode::Fill
+        });
+        if let Some(reference) = pipeline.stencil_reference {
+            self.set_stencil_reference_value(reference);
+        }
         if let Some((bias, slope, clamp)) = pipeline.depth_bias {
             self.inner.setDepthBias_slopeScale_clamp(bias, slope, clamp);
         }
@@ -289,14 +304,6 @@ impl GpuRenderEncoder<MetalBackend> for MetalRenderEncoder {
         stages: ShaderStages,
     ) {
         self.bind_native_buffer(&buffer.inner, offset, index, stages);
-    }
-
-    fn bind_texture(&mut self, view: &MetalTextureView, index: u32, stages: ShaderStages) {
-        self.bind_native_texture(&view.inner, index, stages);
-    }
-
-    fn bind_sampler(&mut self, sampler: &MetalSamplerState, index: u32, stages: ShaderStages) {
-        self.bind_native_sampler(&sampler.inner, index, stages);
     }
 
     fn set_push_constants(&mut self, data: &[u8], index: u32, stages: ShaderStages) {
@@ -330,10 +337,6 @@ impl GpuRenderEncoder<MetalBackend> for MetalRenderEncoder {
             width: width as usize,
             height: height as usize,
         });
-    }
-
-    fn set_depth_bias(&mut self, bias: f32, slope: f32, clamp: f32) {
-        self.inner.setDepthBias_slopeScale_clamp(bias, slope, clamp);
     }
 
     fn draw(
@@ -392,5 +395,13 @@ impl GpuRenderEncoder<MetalBackend> for MetalRenderEncoder {
     fn set_stencil_reference_value(&mut self, reference: u32) {
         self.inner
             .setStencilFrontReferenceValue_backReferenceValue(reference, reference);
+    }
+}
+
+impl Drop for MetalRenderEncoder {
+    fn drop(&mut self) {
+        if !self.ended.replace(true) {
+            self.inner.endEncoding();
+        }
     }
 }

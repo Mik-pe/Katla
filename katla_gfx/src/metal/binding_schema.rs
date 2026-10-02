@@ -7,18 +7,6 @@ use naga::back::msl;
 pub(crate) enum ShaderProfile {
     /// Standard graphics pipeline (bindless textures at buffer 9).
     Graphics,
-    /// Particle billboard render shader (storage at [[buffer(0..4)]], frame
-    /// uniforms at [[buffer(5)]]; no bindless textures).
-    ParticleRender,
-    /// UI shaders (different binding layout).
-    Ui,
-    /// Outline draw shaders (outline_params instead of bindless textures).
-    Outline,
-    /// Skinned outline draw shaders (joints + outline_params, no bindless).
-    OutlineSkinned,
-    /// Skinned shadow depth shaders (cascades + params + joints; joints at
-    /// [[buffer(4)]] to avoid colliding with shadow_params at buffer 3).
-    ShadowSkinned,
 }
 
 fn binding_map(
@@ -118,52 +106,9 @@ impl ShaderProfile {
     pub(crate) fn resources(self) -> msl::EntryPointResources {
         match self {
             Self::Graphics => binding_map(
-                &[
-                    (0, 0, 0),
-                    (0, 1, 1),
-                    (1, 0, 9),
-                    (2, 0, 2),
-                    (2, 1, 3),
-                    (3, 0, 3),
-                    (3, 1, 4),
-                    (3, 2, 5),
-                    (3, 3, 6),
-                    (4, 0, 7),
-                ],
-                &[(4, 1, 1)],
-                &[(1, 1, 0), (4, 2, 1)],
-                Some(8),
-            ),
-            Self::Ui => binding_map(
-                &[(0, 3, 3), (0, 4, 11), (1, 0, 9)],
+                &[(0, 0, 0), (0, 1, 1), (1, 0, 9)],
                 &[],
-                &[(0, 1, 0), (1, 1, 1)],
-                Some(8),
-            ),
-            Self::ParticleRender => binding_map(
-                &[
-                    (0, 0, 0),
-                    (0, 1, 1),
-                    (0, 2, 2),
-                    (0, 3, 3),
-                    (0, 4, 4),
-                    (1, 0, 5),
-                ],
-                &[],
-                &[],
-                None,
-            ),
-            Self::Outline => binding_map(&[(0, 0, 0), (0, 1, 1), (1, 0, 2)], &[], &[], None),
-            Self::OutlineSkinned => binding_map(
-                &[(0, 0, 0), (0, 1, 1), (2, 0, 2), (3, 0, 3)],
-                &[],
-                &[],
-                None,
-            ),
-            Self::ShadowSkinned => binding_map(
-                &[(0, 0, 0), (0, 1, 1), (2, 0, 2), (2, 1, 3), (3, 0, 4)],
-                &[],
-                &[],
+                &[(1, 1, 0)],
                 Some(8),
             ),
         }

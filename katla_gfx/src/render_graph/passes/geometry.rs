@@ -1,7 +1,6 @@
 //! Geometry render pass template.
 //!
-//! Renders 3D geometry with color outputs. Depth is handled automatically
-//! using the global depth buffer.
+//! Renders 3D geometry with graph-owned color and depth outputs.
 
 use crate::render_graph::access::{
     ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
@@ -14,27 +13,9 @@ use crate::texture::ImageFormat;
 
 /// Geometry render pass template.
 ///
-/// Renders 3D geometry with color outputs. Depth is implicit and uses
-/// the global depth buffer managed by the renderer.
+/// Renders 3D geometry with color outputs. Bind depth with
+/// [`PassBuilder::depth_target`] or explicitly choose [`Self::without_depth`].
 ///
-/// # Example
-///
-/// ```ignore
-/// use katla_gfx::render_graph::GeometryPass;
-/// use katla_gfx::texture::ImageFormat;
-///
-/// let geometry = GeometryPass::new("geometry")
-///     .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-///     .clear_color([0.1, 0.1, 0.15, 1.0]);
-///
-/// let graph = FrameGraph::builder()
-///     .add_pass(geometry)
-///     .build(&renderer)?;
-///
-/// graph.execute(&renderer, |ctx| {
-///     ctx.pass("geometry").draw_list(&draw_list);
-/// })?;
-/// ```
 #[derive(Debug, Clone)]
 pub struct GeometryPass {
     /// Pass name for debugging and referencing.
@@ -258,9 +239,6 @@ impl PassBuilder for GeometryPass {
             writes,
             image_accesses,
             buffer_accesses: Vec::new(),
-            pipeline: None,
-            tonemap_params: None,
-            overlay_params: None,
             material: self.material,
             output_format,
             build_fn: Box::new(|_| Ok(Box::new(()))),

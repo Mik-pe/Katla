@@ -11,21 +11,6 @@ use super::super::pass::{PassKind, PassType};
 
 /// Shadow mapping pass template for directional light cascaded shadow maps.
 ///
-/// # Example
-///
-/// ```ignore
-/// let shadows = ShadowPass::new("shadows")
-///     .write_depth("shadow_atlas", ImageFormat::D32Sfloat)
-///     .resolution(4096, 4096);
-///
-/// let graph = FrameGraph::builder()
-///     .add_pass(shadows)
-///     .add_pass(GeometryPass::new("geometry")
-///         .read("shadow_atlas")
-///         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-///         .write_depth("depth", ImageFormat::D32Sfloat))
-///     .build(&renderer)?;
-/// ```
 pub struct ShadowPass {
     name: String,
     depth_output: Option<(String, ImageFormat)>,
@@ -59,7 +44,7 @@ impl PassBuilder for ShadowPass {
     fn as_builder(self) -> InternalPassBuilder {
         let writes: Vec<String> = self.depth_output.iter().map(|(n, _)| n.clone()).collect();
         // The shadow atlas is a fresh depth target every frame: clear to the
-        // far plane (1.0, reverse-Z) and store for the geometry pass to sample.
+        // far plane (1.0) and store for the geometry pass to sample.
         let depth_attachment = Some(DepthStencilAttachmentOps::clear(ClearValue::DepthStencil {
             depth: 1.0,
             stencil: 0,
@@ -88,14 +73,11 @@ impl PassBuilder for ShadowPass {
             writes,
             image_accesses,
             buffer_accesses: Vec::new(),
-            pipeline: None,
-            tonemap_params: None,
-            overlay_params: None,
             material: None,
             output_format: None,
             build_fn: Box::new(|_| Ok(Box::new(()))),
             uses_depth: true,
-            depth_target: None,
+            depth_target: self.depth_output.as_ref().map(|(name, _)| name.clone()),
             color_attachments: Vec::new(),
             depth_attachment,
             kind: Some(PassKind::Shadow),

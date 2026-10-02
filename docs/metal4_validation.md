@@ -45,4 +45,14 @@ Animated particle overlays, animated poses and the footer's performance values a
 
 ## Follow-up scope
 
-Issue #37 still tracks joining native residency/binding/feedback information into the complete portable graph-capture bundle. Issue #93 remains the broader ECS roadmap. Neither is counted as completed by this ten-issue batch.
+At this delivery, #37 still tracked joining native residency/binding/feedback information into the portable graph-capture bundle, and #93 tracked separating the graphics core from scene/editor features. Neither was counted in this ten-issue batch. The subsequent implementation is described in [graphics core ownership](graphics_core.md) and [render-graph capture](render_graph_capture.md).
+
+## Graphics-core and capture follow-up acceptance
+
+The follow-up above `144aefd452fea6e342b23f20fb8c20b5847f5612` implements #93 and #37 and cleans ECS/gfx responsibilities. These observations are separate from the preceding ten-issue measurements. Rust 1.99 strict Clippy passes ECS, gfx and app across all targets and features. The full all-feature workspace library suite passes 2,164 tests (23 ignored), and the native Metal contract suite passes all 13 scenarios. Two native app builder tests prove that GraphOnly needs no fonts or scene initialization and that the default ambient-occlusion texture is independent of the font atlas. ECS additionally passes integration/doctests and 48 focused Miri tests.
+
+Native Metal regressions cover foreign-renderer acquisition tokens, discarded command allocator reuse, colorless warmup, compute consumers, passive capture equivalence and draining retained readback tickets. Native Vulkan tests cover submission rejection/recovery, post-submit surface outcomes, completed-buffer ownership across fence reuse, headless resize, retained source tickets, actual compute ranges, resource handles and aliasing. The final Linux graphics library passes 553 tests (15 ignored), the supported contract selection passes seven scenarios, and 35 public native resource/render fixtures pass. The existing six lavapipe PBR driver-crash exclusions remain; all corresponding Metal scenarios pass.
+
+The final editor executes 130 headless and windowed frames with both Metal validation environment flags. All eight UI interaction checks pass, including exact GPU selection, deselection, theme controls and component addition/removal. The final image has exact RGB equality with the corrected intermediate build in all eight measured static regions. Against the preceding delivery, sky and static editor regions remain identical; material and ground regions intentionally differ because the old default AO index selected the font atlas. The app now supplies an explicit white AO texture, verified by the native builder regression. No throughput or performance improvement is claimed. [Follow-up provenance](benchmarks/graphics-core-environment.json) records source/binary/image hashes, region differences, commands and local receipts.
+
+Hosted macos-26 native GPU acceptance remains capability-dependent. A successful portable CI job on a virtual device without Metal 4 does not replace the physical M5 acceptance above.

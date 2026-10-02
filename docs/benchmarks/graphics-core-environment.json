@@ -1,0 +1,185 @@
+{
+  "captured_utc": "2026-10-02T13:16:57.343400+00:00",
+  "baseline_commit": "144aefd452fea6e342b23f20fb8c20b5847f5612",
+  "source": {
+    "sha256": "ea00b46b04dbb8b49e309401a9a7d935c2ae6097b86f1345d25ca90076fb7f87",
+    "file_count": 498,
+    "scope": "Sorted gfx/app/ECS Rust, WGSL, root and crate manifests, Cargo.lock; relative path NUL content NUL"
+  },
+  "host": {
+    "gpu": "Apple M5, 10 GPU cores",
+    "cpu_cores": 10,
+    "memory_gib": 24,
+    "os": "macOS 27.0 (26A428)",
+    "rust": "1.99.0",
+    "profile": "dev, opt-level=1",
+    "validation": [
+      "MTL_DEBUG_LAYER=1",
+      "METAL_DEVICE_WRAPPER_TYPE=1"
+    ]
+  },
+  "baseline_binary_sha256": "94e4384ef4a426c77bed159532da03890f22323ae0ef97568c0a707213dfea68",
+  "final_binary_sha256": "375bb301db04902ed96c2fc65fb5dfca4c953a6f7b5659a9871c0b9ee7b4fcd9",
+  "baseline_capture_sha256": "669df3f5167518110a8594b11d1013d9ccae4ff9dfcdea3296e1a461c48d1110",
+  "final_capture_sha256": "87a4b81e5a20a1a206876dbad4df491ca22b4e0d087e60e8427ccfc47301701e",
+  "commands": {
+    "scene": "katla --headless -s --scene assets/scenes/default.katla --screenshot final-scene.png",
+    "interactions": "katla --headless --scene assets/scenes/default.katla --interaction-test interactions",
+    "windowed": "katla -s --scene assets/scenes/default.katla"
+  },
+  "results": {
+    "workspace_library_passed": 2164,
+    "workspace_library_ignored": 23,
+    "app_final_passed": 293,
+    "metal_contract_passed": 13,
+    "native_app_builder_passed": 2,
+    "linux_gfx_library_passed": 553,
+    "linux_gfx_library_ignored": 15,
+    "linux_supported_contract_passed": 7,
+    "linux_public_native_fixtures_passed": 35,
+    "ecs_miri_passed": 48,
+    "editor_interaction_passed": 8,
+    "editor_interaction_total": 8,
+    "headless_frames": 130,
+    "windowed_frames": 130
+  },
+  "static_rgb_comparison": {
+    "cyan_sphere": {
+      "bounds": [
+        612,
+        410,
+        738,
+        490
+      ],
+      "mean_absolute_rgb_error": 7.622321428571429,
+      "maximum_rgb_error": 128,
+      "corrected_intermediate_maximum_rgb_error": 0
+    },
+    "ground_lower": {
+      "bounds": [
+        600,
+        890,
+        1600,
+        1030
+      ],
+      "mean_absolute_rgb_error": 2.281633333333333,
+      "maximum_rgb_error": 5,
+      "corrected_intermediate_maximum_rgb_error": 0
+    },
+    "sky_left": {
+      "bounds": [
+        500,
+        140,
+        700,
+        195
+      ],
+      "mean_absolute_rgb_error": 0.0,
+      "maximum_rgb_error": 0,
+      "corrected_intermediate_maximum_rgb_error": 0
+    },
+    "ui_top": {
+      "bounds": [
+        0,
+        0,
+        2560,
+        70
+      ],
+      "mean_absolute_rgb_error": 0.0,
+      "maximum_rgb_error": 0,
+      "corrected_intermediate_maximum_rgb_error": 0
+    },
+    "ui_left": {
+      "bounds": [
+        0,
+        70,
+        440,
+        1040
+      ],
+      "mean_absolute_rgb_error": 0.0,
+      "maximum_rgb_error": 0,
+      "corrected_intermediate_maximum_rgb_error": 0
+    },
+    "inspector": {
+      "bounds": [
+        2120,
+        140,
+        2560,
+        1040
+      ],
+      "mean_absolute_rgb_error": 0.0,
+      "maximum_rgb_error": 0,
+      "corrected_intermediate_maximum_rgb_error": 0
+    },
+    "sphere_shadow": {
+      "bounds": [
+        600,
+        690,
+        765,
+        780
+      ],
+      "mean_absolute_rgb_error": 2.8438832772166105,
+      "maximum_rgb_error": 6,
+      "corrected_intermediate_maximum_rgb_error": 0
+    },
+    "purple_plane": {
+      "bounds": [
+        760,
+        388,
+        820,
+        430
+      ],
+      "mean_absolute_rgb_error": 4.267857142857142,
+      "maximum_rgb_error": 9,
+      "corrected_intermediate_maximum_rgb_error": 0
+    }
+  },
+  "intentional_material_difference": "Previous default Metal AO descriptor index selected the font atlas. The app now binds an explicit white AO texture independent of atlas registration.",
+  "limits": [
+    "No performance improvement is claimed.",
+    "Six lavapipe PBR driver-crash scenarios are excluded; their native Metal contract counterparts pass.",
+    "Hosted macos-26 portable CI without Metal4 does not prove physical native GPU acceptance.",
+    "Application no-default compilation succeeds with optional unused-code warnings."
+  ],
+  "receipts": {
+    "workspace": {
+      "local_log": "/tmp/katla-remainder-final-workspace.log",
+      "sha256": "894d2bc54a9fd118e70799976cc4a9b17b8f272545c8f1443ffe39e8f9580723"
+    },
+    "strict_clippy": {
+      "local_log": "/tmp/katla-app-no-default-fix-clippy.log",
+      "sha256": "287d507adb042201d75ab0e9c017695b109d7d2988bca1579eb1d99bf35bf990"
+    },
+    "no_default_check": {
+      "local_log": "/tmp/katla-app-no-default-fix-check.log",
+      "sha256": "6697a37e1d1bd6cf481eae2b81d53629685686c79ea6c2e5981769c1fee0171f"
+    },
+    "final_app_tests": {
+      "local_log": "/tmp/katla-app-final-cfg-lib-tests.log",
+      "sha256": "46dce2534bfc791839034125566946043dff724176efbcd48c14aed547f8db7c"
+    },
+    "metal_contracts": {
+      "local_log": "/tmp/katla-remainder-final-metal-contract.log",
+      "sha256": "45fc45ebc08d98f8c74d449a9b5d090f48c226e843bc8092c6169f6efbc64af2"
+    },
+    "scene": {
+      "local_log": "/tmp/katla-remainder-final-scene.log",
+      "sha256": "37722b2019df72fccc497f8aeb44b74c7805499da30a8802e50d9e8454b198b6"
+    },
+    "interactions": {
+      "local_log": "/tmp/katla-remainder-final-interactions.log",
+      "sha256": "4129aeecc96972c97390cc979b526ab018d58b293e482cf866d1c8bcecc36cf3"
+    },
+    "windowed": {
+      "local_log": "/tmp/katla-remainder-final-windowed.log",
+      "sha256": "c94a530387509dd220e6989523483255a82d2e45052afb8b5a4336eea354aaee"
+    },
+    "linux_gfx": {
+      "local_log": "/tmp/katla-remainder-final-linux-lib.log",
+      "sha256": "ff81d57ea001fef5d7a3e1c076bb585cbca27c503fb59747a4fd93b43a0d4e30"
+    },
+    "linux_resource_fixtures": {
+      "local_log": "/tmp/katla-remainder-final-linux-resource-fixtures.log",
+      "sha256": "19a65abcb9f03a1cd4f23b4869c6002a7dc66bed3fd98d55b966a35e9fb37927"
+    }
+  }
+}

@@ -11,7 +11,7 @@ pub struct VulkanGraphBuffer {
     context: Rc<VulkanContext>,
     pub(crate) buffer: vk::Buffer,
     pub(crate) offset: u64,
-    allocation: Option<Allocation>,
+    pub(crate) allocation: Option<Allocation>,
     pub(crate) desc: BufferDesc,
 }
 
@@ -31,21 +31,6 @@ impl VulkanGraphBuffer {
         }
     }
 
-    pub(crate) fn borrowed(
-        context: Rc<VulkanContext>,
-        buffer: vk::Buffer,
-        offset: u64,
-        desc: BufferDesc,
-    ) -> Self {
-        Self {
-            context,
-            buffer,
-            offset,
-            allocation: None,
-            desc,
-        }
-    }
-
     pub(crate) fn size(&self) -> u64 {
         self.desc.size
     }
@@ -61,6 +46,54 @@ impl VulkanGraphBuffer {
             .invalidate_mapped_memory(allocation, 0, self.desc.size)?;
         let pointer = self.context.map_buffer(allocation)?;
         Ok(unsafe { std::slice::from_raw_parts(pointer, self.desc.size as usize) }.to_vec())
+    }
+
+    pub(crate) fn read_range(
+        &self,
+        range: super::BufferByteRange,
+    ) -> Result<Vec<u8>, crate::RendererError> {
+        if self.desc.memory != super::BufferMemoryPolicy::Readback
+            || range
+                .offset
+                .checked_add(range.size)
+                .is_none_or(|end| end > self.desc.size)
+        {
+            return Err(crate::RendererError::InvalidOperation(
+                "Readback requires a valid range in an explicit readback allocation".into(),
+            ));
+        }
+        let allocation = self.allocation.as_ref().ok_or_else(|| {
+            crate::RendererError::InvalidOperation("Readback allocation unavailable".into())
+        })?;
+        self.context
+            .invalidate_mapped_memory(allocation, range.offset, range.size)?;
+        let pointer = self.context.map_buffer(allocation)?;
+        Ok(unsafe {
+            std::slice::from_raw_parts(pointer.add(range.offset as usize), range.size as usize)
+        }
+        .to_vec())
+    }
+
+    pub(crate) fn write(&self, offset: u64, data: &[u8]) -> Result<(), crate::RendererError> {
+        if self.desc.memory != super::BufferMemoryPolicy::CpuVisible
+            || offset
+                .checked_add(data.len() as u64)
+                .is_none_or(|end| end > self.desc.size)
+        {
+            return Err(crate::RendererError::InvalidOperation(
+                "Buffer write requires a CPU-visible allocation and a valid byte range".into(),
+            ));
+        }
+        let allocation = self.allocation.as_ref().ok_or_else(|| {
+            crate::RendererError::InvalidOperation("Cannot write a borrowed allocation".into())
+        })?;
+        let pointer = self.context.map_buffer(allocation)?;
+        unsafe {
+            std::ptr::copy_nonoverlapping(data.as_ptr(), pointer.add(offset as usize), data.len());
+        }
+        self.context
+            .flush_mapped_memory(allocation, offset, data.len() as u64)?;
+        Ok(())
     }
 
     pub fn vk_buffer(&self) -> vk::Buffer {

@@ -62,9 +62,13 @@ impl SceneSnapshot {
         for id in &to_remove {
             if let Some(emitter) = app.world.get_component_mut::<ParticleEmitterComponent>(*id)
                 && let Some(handle) = emitter.emitter_handle.take()
-                && let Some(ps) = &mut app.renderer.unwrap_vulkan().particle_system
+                && let Some(features) = &mut app.scene_features
             {
-                ps.destroy_emitter(handle, emitter.kill_on_destroy);
+                katla_gfx::ParticleEmitterDriver::destroy_emitter(
+                    &mut features.particles,
+                    handle,
+                    emitter.kill_on_destroy,
+                );
             }
         }
 

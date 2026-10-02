@@ -4,6 +4,13 @@
 //! mesh uploaded with `u32` indices; the recorded format (not a hardcoded
 //! `UINT32`) must reach `vkCmdBindIndexBuffer`.
 
+#[path = "support/readback.rs"]
+mod readback;
+
+#[path = "support/camera_shader_data.rs"]
+mod camera_shader_data;
+use camera_shader_data::CameraShaderData;
+
 use std::ffi::CString;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -12,8 +19,8 @@ use katla_gfx::render_graph::{FrameGraphBuilder, GeometryPass};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::VertexPBR;
 use katla_gfx::{
-    CullMode, DepthState, DrawCall, DrawList, FrameUniforms, GpuRenderer, IndexType,
-    PipelineDescriptor, ValidationMode, VulkanRenderer,
+    CullMode, DepthState, DrawCall, DrawList, GpuRenderer, IndexType, PipelineDescriptor,
+    ValidationMode, VulkanRenderer,
 };
 
 /// Acquire one frame from the headless renderer (always ready offscreen).
@@ -78,7 +85,7 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
     let mut renderer = VulkanRenderer::init_headless(
         64,
         48,
-        ValidationMode::Disabled,
+        ValidationMode::Enabled,
         CString::new("Index format test").unwrap(),
         CString::new("Katla").unwrap(),
     )
@@ -93,7 +100,7 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
             }
         });
 
-    let uniforms = FrameUniforms {
+    let uniforms = CameraShaderData {
         view_matrix: identity(),
         proj_matrix: identity(),
         inv_view_proj_matrix: identity(),
@@ -101,24 +108,17 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
     };
 
     let shaders = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/shaders");
-    renderer
-        .init_light_culling(64, 48, &shaders.join("lighting/light_cull.wgsl"))
-        .unwrap();
-    // PBR pipelines declare Set 4 for shadow data; the descriptor layouts must
-    // exist before the material is compiled or pipeline creation is invalid.
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
     let material = renderer
         .compile_material(
             &PipelineDescriptor::pbr(
                 shaders
-                    .join("model_pbr.wgsl")
+                    .join("../../katla_gfx/tests/support/mesh.wgsl")
                     .to_string_lossy()
                     .into_owned(),
             )
             .with_color_format(ImageFormat::B8G8R8A8Srgb)
             .with_depth(DepthState::disabled())
+            .with_depth_format(None)
             .with_cull(CullMode::None),
         )
         .unwrap();
@@ -172,6 +172,7 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
     let mut graph = FrameGraphBuilder::new()
         .add_pass(
             GeometryPass::new("geometry")
+                .without_depth()
                 .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                 .clear_color([0.0, 0.0, 0.0, 1.0])
                 .material(material),
@@ -181,12 +182,10 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
     let geometry_pass = graph.pass_id("geometry").unwrap();
 
     let mut captured = Vec::new();
-    for (frame, mesh) in [(0, mesh_u16), (1, mesh_u32), (2, mesh_u16), (3, mesh_u32)] {
-        // Per-frame-slot storage: uniforms + object data must be refreshed
-        // every frame (the recommended wait → uniforms → objects → render order).
+    for (_frame, mesh) in [(0, mesh_u16), (1, mesh_u32), (2, mesh_u16), (3, mesh_u32)] {
         let frame_token = acquire_frame_token(&mut renderer);
-        renderer
-            .set_frame_uniforms(&frame_token, uniforms.clone())
+        graph
+            .set_pass_bindings(geometry_pass, uniforms.bindings())
             .unwrap();
         let draw_list = draw_list_for(mesh);
         renderer
@@ -197,9 +196,16 @@ fn test_u16_and_u32_indexed_meshes_render_identically() {
                 frame_context.submit(geometry_pass, Rc::new(draw_list));
             })
             .unwrap();
-        renderer.present(frame_token).unwrap();
-        renderer.queue_async_readback(frame).unwrap();
-        let (_, pixels) = renderer.wait_for_pending_readback().unwrap().unwrap();
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
+        let (_, pixels) =
+            readback::read_pixels(&mut renderer, graph.resource_id("backbuffer").unwrap());
         assert_eq!(pixels.len(), 64 * 48 * 4);
 
         // The triangle must actually be rasterized: center covered, corner not.

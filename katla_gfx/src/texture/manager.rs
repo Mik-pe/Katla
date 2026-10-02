@@ -1,31 +1,21 @@
 //! Texture manager for centralized texture creation and storage.
 //!
 //! TextureManager provides a clean API for creating, storing, and looking up
-//! textures using opaque TextureHandle values. It also manages default textures
-//! for common use cases.
+//! textures using opaque TextureHandle values and one descriptor-safe fallback.
 
 use crate::handle::{ResourceStorage, TextureHandle, TextureMarker};
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::texture::Texture;
-use ash::vk;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::descriptor::TextureDescriptor;
 
-/// Default texture slot indices.
-/// These match BindlessTextureManager's default slots for consistency.
-pub const DEFAULT_ALBEDO_SLOT: u32 = 0;
-pub const DEFAULT_NORMAL_SLOT: u32 = 1;
-pub const DEFAULT_MR_SLOT: u32 = 2;
-pub const DEFAULT_OCCLUSION_SLOT: u32 = 3;
-pub const DEFAULT_EMISSION_SLOT: u32 = 4;
-
 /// Centralized texture creation and storage.
 ///
 /// TextureManager provides:
 /// - Handle-based texture creation (no direct Vulkan exposure)
-/// - Default textures for common use cases
+/// - One descriptor-safe fallback texture
 /// - Lookup by handle for internal rendering operations
 /// - Optional bindless slot tracking
 pub struct TextureManager {
@@ -33,60 +23,26 @@ pub struct TextureManager {
     textures: ResourceStorage<Rc<Texture>, TextureMarker>,
     /// Vulkan context for texture creation.
     context: Rc<VulkanContext>,
-    /// Pre-created default textures.
-    default_white: TextureHandle,
-    default_normal: TextureHandle,
-    default_metallic_roughness: TextureHandle,
-    default_occlusion: TextureHandle,
-    default_emission: TextureHandle,
+    /// Descriptor-safe fallback texture.
+    default_texture: TextureHandle,
     /// Optional bindless slot tracking.
     /// Maps TextureHandle -> bindless slot index.
     bindless_slots: HashMap<TextureHandle, u32>,
 }
 
 impl TextureManager {
-    /// Create a new TextureManager with pre-created default textures.
-    pub fn new(context: Rc<VulkanContext>) -> Result<Self, vk::Result> {
+    /// Create storage and one descriptor-safe fallback.
+    pub fn new(context: Rc<VulkanContext>) -> Result<Self, crate::error::RendererError> {
         let mut textures = ResourceStorage::new();
-
-        // Pre-create default textures
-        let default_white =
-            Self::create_default_texture(&mut textures, &context, Texture::create_default_albedo);
-        let default_normal =
-            Self::create_default_texture(&mut textures, &context, Texture::create_default_normal);
-        let default_metallic_roughness = Self::create_default_texture(
-            &mut textures,
-            &context,
-            Texture::create_default_metallic_roughness,
-        );
-        let default_occlusion = Self::create_default_texture(
-            &mut textures,
-            &context,
-            Texture::create_default_occlusion,
-        );
-        let default_emission =
-            Self::create_default_texture(&mut textures, &context, Texture::create_default_emission);
-
+        let texture =
+            Texture::from_descriptor(&context, &TextureDescriptor::rgba8_unorm(1, 1), &[255; 4])?;
+        let default_texture = textures.insert(Rc::new(texture));
         Ok(Self {
             textures,
             context,
-            default_white,
-            default_normal,
-            default_metallic_roughness,
-            default_occlusion,
-            default_emission,
+            default_texture,
             bindless_slots: HashMap::new(),
         })
-    }
-
-    /// Helper to create a default texture and return its handle.
-    fn create_default_texture(
-        textures: &mut ResourceStorage<Rc<Texture>, TextureMarker>,
-        context: &Rc<VulkanContext>,
-        create_fn: fn(Rc<VulkanContext>) -> Texture,
-    ) -> TextureHandle {
-        let texture = Rc::new(create_fn(context.clone()));
-        textures.insert(texture)
     }
 
     // ========================================================================
@@ -182,45 +138,9 @@ impl TextureManager {
         self.create(desc, &data)
     }
 
-    // ========================================================================
-    // Default Textures
-    // ========================================================================
-
-    /// Get the default white (albedo) texture.
-    pub fn default_white(&self) -> TextureHandle {
-        self.default_white
-    }
-
-    /// Get the default flat normal texture.
-    pub fn default_normal(&self) -> TextureHandle {
-        self.default_normal
-    }
-
-    /// Get the default metallic/roughness texture.
-    pub fn default_metallic_roughness(&self) -> TextureHandle {
-        self.default_metallic_roughness
-    }
-
-    /// Get the default occlusion texture.
-    pub fn default_occlusion(&self) -> TextureHandle {
-        self.default_occlusion
-    }
-
-    /// Get the default emission texture.
-    pub fn default_emission(&self) -> TextureHandle {
-        self.default_emission
-    }
-
-    /// Get a default texture by slot index (matches bindless slots).
-    pub fn default_by_slot(&self, slot: u32) -> Option<TextureHandle> {
-        match slot {
-            DEFAULT_ALBEDO_SLOT => Some(self.default_white),
-            DEFAULT_NORMAL_SLOT => Some(self.default_normal),
-            DEFAULT_MR_SLOT => Some(self.default_metallic_roughness),
-            DEFAULT_OCCLUSION_SLOT => Some(self.default_occlusion),
-            DEFAULT_EMISSION_SLOT => Some(self.default_emission),
-            _ => None,
-        }
+    /// The descriptor-safe fallback; application texture policy is explicit.
+    pub fn default_texture(&self) -> TextureHandle {
+        self.default_texture
     }
 
     // ========================================================================
@@ -424,16 +344,9 @@ impl TextureManager {
             .collect()
     }
 
-    /// Check if a texture handle refers to a default texture.
-    ///
-    /// Default textures (white albedo, flat normal, metallic/roughness, occlusion, emission)
-    /// are protected and must never be destroyed.
+    /// Whether this is the fallback retained for descriptor validity.
     pub fn is_default_texture(&self, handle: TextureHandle) -> bool {
-        handle == self.default_white
-            || handle == self.default_normal
-            || handle == self.default_metallic_roughness
-            || handle == self.default_occlusion
-            || handle == self.default_emission
+        handle == self.default_texture
     }
 
     /// Check if a texture handle is registered with the bindless system.
@@ -488,31 +401,16 @@ impl TextureManager {
         self.textures.remove(handle)
     }
 
-    /// Clear all textures except defaults.
-    ///
-    /// Default textures are always kept alive.
+    /// Invalidate application textures while retaining the descriptor fallback.
     pub fn clear(&mut self) {
-        // Remove every non-default texture individually so removed slots bump
-        // their generations (stale handles stay invalid) while the default
-        // textures keep their slots and stay valid under existing handles.
-        let defaults = [
-            self.default_white,
-            self.default_normal,
-            self.default_metallic_roughness,
-            self.default_occlusion,
-            self.default_emission,
-        ];
-
-        // Clear bindless tracking; defaults re-register below.
-        self.bindless_slots.clear();
-
         let non_defaults: Vec<TextureHandle> = self
             .textures
             .iter_enumerated()
             .map(|(handle, _)| handle)
-            .filter(|handle| !defaults.contains(handle))
+            .filter(|handle| *handle != self.default_texture)
             .collect();
         for handle in non_defaults {
+            self.bindless_slots.remove(&handle);
             self.textures.remove(handle);
         }
     }
@@ -559,34 +457,5 @@ mod tests {
         assert!(usage.contains(TextureUsage::SAMPLED));
         assert!(usage.contains(TextureUsage::STORAGE));
         assert!(!usage.contains(TextureUsage::COLOR_ATTACHMENT));
-    }
-
-    #[test]
-    fn test_bindless_slot_registration() {
-        // This test verifies the bindless slot tracking API
-        // Note: Actual Vulkan context is required for full integration tests
-
-        // Test that we can query default textures by slot
-        // This doesn't require a Vulkan context since defaults are pre-known
-        assert_eq!(DEFAULT_ALBEDO_SLOT, 0);
-        assert_eq!(DEFAULT_NORMAL_SLOT, 1);
-        assert_eq!(DEFAULT_MR_SLOT, 2);
-        assert_eq!(DEFAULT_OCCLUSION_SLOT, 3);
-        assert_eq!(DEFAULT_EMISSION_SLOT, 4);
-    }
-
-    #[test]
-    fn test_bindless_slot_count() {
-        // Verify we have exactly 5 default slots
-        // DEFAULT_TEXTURE_COUNT is defined in bindless_texture module as 5
-        let expected_default_count = 5;
-        assert_eq!(DEFAULT_ALBEDO_SLOT, 0);
-        assert_eq!(DEFAULT_NORMAL_SLOT, 1);
-        assert_eq!(DEFAULT_MR_SLOT, 2);
-        assert_eq!(DEFAULT_OCCLUSION_SLOT, 3);
-        assert_eq!(DEFAULT_EMISSION_SLOT, 4);
-
-        // Count from 0 to 4 inclusive = 5 slots
-        assert_eq!(DEFAULT_EMISSION_SLOT + 1, expected_default_count);
     }
 }

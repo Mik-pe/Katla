@@ -79,7 +79,6 @@ fn solid_texture(renderer: &mut ContractRenderer, color: [u8; 4]) -> katla_gfx::
 #[ignore = "requires a graphics device"]
 fn test_contract_stale_texture_handles_never_alias_reused_slots() {
     let mut renderer = ContractRenderer::open("contract: stale texture handles");
-    renderer.init_frame_pipelines();
     let scene = harness::init_ui_scene(renderer.gfx());
 
     let red = solid_texture(&mut renderer, [255, 0, 0, 255]);
@@ -123,7 +122,6 @@ fn test_contract_stale_texture_handles_never_alias_reused_slots() {
 #[ignore = "requires a graphics device"]
 fn test_contract_double_destroy_after_slot_reuse_is_harmless() {
     let mut renderer = ContractRenderer::open("contract: double destroy after reuse");
-    renderer.init_frame_pipelines();
     let scene = harness::init_ui_scene(renderer.gfx());
 
     let red = solid_texture(&mut renderer, [255, 0, 0, 255]);
@@ -161,7 +159,6 @@ fn test_contract_double_destroy_after_slot_reuse_is_harmless() {
 #[ignore = "requires a graphics device"]
 fn test_contract_destroyed_texture_slot_is_withheld_until_frames_drain() {
     let mut renderer = ContractRenderer::open("contract: slot withholding");
-    renderer.init_frame_pipelines();
     let scene = harness::init_ui_scene(renderer.gfx());
     let mut graph = single_color_graph(scene.material);
 
@@ -238,7 +235,6 @@ fn test_contract_destroyed_texture_slot_is_withheld_until_frames_drain() {
 #[ignore = "requires a graphics device"]
 fn test_contract_frame_slots_keep_frames_independent() {
     let mut renderer = ContractRenderer::open_without_api_validation("contract: frame slots");
-    renderer.init_frame_pipelines();
 
     let mut red_graph = harness::build_graph(|builder| {
         builder.add_pass(

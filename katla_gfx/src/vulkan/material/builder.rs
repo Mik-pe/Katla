@@ -4,10 +4,9 @@ use ash::vk;
 
 use super::super::context::VulkanContext;
 use crate::pipeline::{BlendFactor, BlendOp, CompareOp, CullMode, FrontFace, PolygonMode};
-use crate::sync::VkRenderPass;
 use crate::texture::ImageFormat;
 use crate::vulkan::pipeline_state::{DynamicState, PrimitiveTopology};
-use crate::vulkan::vertexbinding::{VertexBinding, VertexFormat};
+use crate::vulkan::vertexbinding::VertexBinding;
 
 pub struct PipelineBuilder {
     context: Rc<VulkanContext>,
@@ -98,6 +97,16 @@ impl PipelineBuilder {
         self
     }
 
+    pub(crate) fn with_optional_fragment(
+        mut self,
+        vertex: vk::ShaderModule,
+        fragment: Option<vk::ShaderModule>,
+    ) -> Self {
+        self.vertex_shader = Some(vertex);
+        self.fragment_shader = fragment;
+        self
+    }
+
     pub(crate) fn with_entry_points(
         mut self,
         vertex: &std::ffi::CStr,
@@ -120,28 +129,6 @@ impl PipelineBuilder {
         let (binding_descs, attribute_descs) = binding.get_soa_descriptions();
         self.vertex_bindings.extend(binding_descs);
         self.vertex_attributes.extend(attribute_descs);
-        self
-    }
-
-    /// Add a single SOA vertex attribute at a specific shader location.
-    ///
-    /// Each call adds one binding at `binding = location` and one attribute
-    /// at the same location, suitable for per-attribute SOA vertex buffers.
-    pub fn with_soa_attribute(mut self, location: u32, format: VertexFormat) -> Self {
-        let stride = format.get_offset();
-        self.vertex_bindings.push(
-            vk::VertexInputBindingDescription::default()
-                .binding(location)
-                .stride(stride)
-                .input_rate(vk::VertexInputRate::VERTEX),
-        );
-        self.vertex_attributes.push(
-            vk::VertexInputAttributeDescription::default()
-                .binding(location)
-                .location(location)
-                .format(format.get_vk_format())
-                .offset(0),
-        );
         self
     }
 
@@ -224,20 +211,20 @@ impl PipelineBuilder {
         let shader_vert = self
             .vertex_shader
             .ok_or(PipelineError::MissingVertexShader)?;
-        let shader_frag = self
-            .fragment_shader
-            .ok_or(PipelineError::MissingFragmentShader)?;
-
-        let shader_stages = vec![
+        let mut shader_stages = vec![
             vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::VERTEX)
                 .module(shader_vert)
                 .name(&self.vertex_shader_entry_point),
-            vk::PipelineShaderStageCreateInfo::default()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(shader_frag)
-                .name(&self.fragment_shader_entry_point),
         ];
+        if let Some(fragment) = self.fragment_shader {
+            shader_stages.push(
+                vk::PipelineShaderStageCreateInfo::default()
+                    .stage(vk::ShaderStageFlags::FRAGMENT)
+                    .module(fragment)
+                    .name(&self.fragment_shader_entry_point),
+            );
+        }
 
         let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
             .vertex_binding_descriptions(&self.vertex_bindings)
@@ -410,15 +397,6 @@ impl PipelineBuilder {
             descriptor_set_layouts,
         })
     }
-
-    /// Build a pipeline for dynamic rendering (Vulkan 1.3).
-    ///
-    /// This is a convenience method that creates a pipeline without a render pass,
-    /// suitable for use with dynamic rendering. The color and depth formats must
-    /// be set via `with_rendering_formats()` before calling this method.
-    pub fn build_dynamic(self) -> Result<Pipeline, PipelineError> {
-        self.build(VkRenderPass::from(vk::RenderPass::null()))
-    }
 }
 
 pub struct Pipeline {
@@ -474,7 +452,6 @@ impl Drop for Pipeline {
 #[derive(Debug)]
 pub enum PipelineError {
     MissingVertexShader,
-    MissingFragmentShader,
     LayoutCreationFailed(vk::Result),
     CreationFailed(vk::Result),
 }
@@ -483,7 +460,6 @@ impl std::fmt::Display for PipelineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::MissingVertexShader => write!(f, "Vertex shader not provided"),
-            Self::MissingFragmentShader => write!(f, "Fragment shader not provided"),
             Self::LayoutCreationFailed(e) => write!(f, "Failed to create pipeline layout: {:?}", e),
             Self::CreationFailed(e) => write!(f, "Failed to create graphics pipeline: {:?}", e),
         }

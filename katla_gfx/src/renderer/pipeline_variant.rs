@@ -45,19 +45,22 @@ impl PipelineVariantKey {
     ///
     /// A concrete `requested_color` wins over the descriptor's declaration;
     /// `Auto` falls back to the descriptor's declared format, and to
-    /// [`FALLBACK_COLOR_FORMAT`] when both are `Auto`. The depth/stencil
-    /// format is derived once here so both backends build the variant for
-    /// the same attachments: UI layouts, Vulkan compositing options, and
-    /// depth-test-disabled state render without a depth attachment;
-    /// everything else uses [`DEFAULT_DEPTH_FORMAT`].
+    /// [`FALLBACK_COLOR_FORMAT`] when both are `Auto`. Without a color attachment,
+    /// every color format resolves to the same canonical value.
+    /// The depth/stencil format comes directly from the descriptor so both backends build
+    /// the variant for the declared attachments.
     pub fn resolve(descriptor: &PipelineDescriptor, requested_color: ImageFormat) -> Self {
         let mut resolved = descriptor.clone();
-        resolved.color_format = match requested_color {
-            ImageFormat::Auto => match descriptor.color_format {
-                ImageFormat::Auto => FALLBACK_COLOR_FORMAT,
-                declared => declared,
-            },
-            requested => requested,
+        resolved.color_format = if !descriptor.color_attachment {
+            FALLBACK_COLOR_FORMAT
+        } else {
+            match requested_color {
+                ImageFormat::Auto => match descriptor.color_format {
+                    ImageFormat::Auto => FALLBACK_COLOR_FORMAT,
+                    declared => declared,
+                },
+                requested => requested,
+            }
         };
         Self {
             depth_format: derive_depth_format(&resolved),
@@ -90,17 +93,32 @@ impl PipelineVariantKey {
 /// One shared derivation so a key never disagrees with the pipeline built
 /// from it.
 fn derive_depth_format(descriptor: &PipelineDescriptor) -> Option<ImageFormat> {
-    if descriptor.is_ui_layout() || !descriptor.depth.test || descriptor.native.vulkan.compositing {
-        None
-    } else {
-        Some(DEFAULT_DEPTH_FORMAT)
-    }
+    descriptor.depth_format
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::renderer::pipeline_descriptor::{DepthState, PipelineDescriptor};
+    use crate::renderer::pipeline_descriptor::PipelineDescriptor;
+
+    #[test]
+    fn test_depth_only_variants_ignore_color_formats() {
+        let descriptor =
+            PipelineDescriptor::depth_only("depth", crate::vertex::VertexLayout::position());
+        let auto = PipelineVariantKey::resolve(&descriptor, ImageFormat::Auto);
+        for format in [
+            ImageFormat::R16G16B16A16Sfloat,
+            ImageFormat::R8G8B8A8Unorm,
+            ImageFormat::B8G8R8A8Srgb,
+        ] {
+            let declared = descriptor.clone().with_color_format(format);
+            assert_eq!(PipelineVariantKey::resolve(&declared, format), auto);
+            assert_eq!(
+                PipelineVariantKey::resolve(&declared, ImageFormat::Auto),
+                auto
+            );
+        }
+    }
 
     #[test]
     fn test_same_inputs_resolve_equal_keys() {
@@ -164,18 +182,16 @@ mod tests {
         );
         assert_eq!(depth.depth_format(), Some(DEFAULT_DEPTH_FORMAT));
 
-        let no_depth =
-            PipelineDescriptor::pbr("shaders/pbr.wgsl").with_depth(DepthState::disabled());
+        let no_depth = PipelineDescriptor::pbr("shaders/pbr.wgsl").with_depth_format(None);
         assert_eq!(
             PipelineVariantKey::resolve(&no_depth, ImageFormat::R16G16B16A16Sfloat).depth_format(),
             None
         );
-
-        let compositing = PipelineDescriptor::pbr("shaders/pbr.wgsl").with_vulkan_compositing(true);
+        let custom = PipelineDescriptor::pbr("shaders/pbr.wgsl")
+            .with_depth_format(Some(ImageFormat::D32Sfloat));
         assert_eq!(
-            PipelineVariantKey::resolve(&compositing, ImageFormat::R16G16B16A16Sfloat)
-                .depth_format(),
-            None
+            PipelineVariantKey::resolve(&custom, ImageFormat::R16G16B16A16Sfloat).depth_format(),
+            Some(ImageFormat::D32Sfloat)
         );
 
         let ui = PipelineVariantKey::resolve(

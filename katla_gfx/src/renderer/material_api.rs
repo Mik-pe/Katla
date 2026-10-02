@@ -1,9 +1,6 @@
 use super::registry::MaterialTextures;
 use super::*;
 use crate::renderer::pipeline_variant::PipelineVariantKey;
-use crate::texture::{
-    DEFAULT_ALBEDO_SLOT, DEFAULT_MR_SLOT, DEFAULT_NORMAL_SLOT, DEFAULT_OCCLUSION_SLOT,
-};
 
 impl VulkanRenderer {
     /// Register a material from a validated compilation descriptor.
@@ -80,31 +77,13 @@ impl VulkanRenderer {
         material: MaterialHandle,
         requested_format: crate::texture::ImageFormat,
     ) -> Result<Option<crate::renderer::registry::MaterialVariant>, RendererError> {
-        if !self.asset_registry.get_material(material).is_some() {
+        if self.asset_registry.get_material(material).is_none() {
             return Err(RendererError::InvalidOperation(format!(
                 "Material handle {material:?} not found"
             )));
         }
         let key = self.material_variant_key(material, requested_format)?;
         Ok(self.asset_registry.material_variant(material, &key))
-    }
-
-    /// Drop every compiled variant of every material and retire the
-    /// pipelines.
-    ///
-    /// Called after descriptor layout changes (e.g., light culling resize):
-    /// each variant key includes the affected layouts, so no variant
-    /// survives and the next use recompiles against the new layouts.
-    pub(crate) fn invalidate_compiled_materials(&mut self) {
-        let variants = self.asset_registry.material_variant_count();
-        let materials = self.asset_registry.material_count();
-        log::info!(
-            "Invalidating {variants} compiled pipeline variants across {materials} materials \
-             after descriptor layout change"
-        );
-        for pipeline in self.asset_registry.invalidate_all_material_variants() {
-            self.retire(pipeline);
-        }
     }
 
     /// Set the typed texture bindings for a material.
@@ -137,10 +116,10 @@ impl VulkanRenderer {
             .map(|m| m.textures)
             .unwrap_or_default();
         [
-            self.resolve_texture_slot(textures.albedo, DEFAULT_ALBEDO_SLOT),
-            self.resolve_texture_slot(textures.normal, DEFAULT_NORMAL_SLOT),
-            self.resolve_texture_slot(textures.metallic_roughness, DEFAULT_MR_SLOT),
-            self.resolve_texture_slot(textures.occlusion, DEFAULT_OCCLUSION_SLOT),
+            self.resolve_texture_slot(textures.albedo, 0),
+            self.resolve_texture_slot(textures.normal, 0),
+            self.resolve_texture_slot(textures.metallic_roughness, 0),
+            self.resolve_texture_slot(textures.occlusion, 0),
         ]
     }
 
@@ -148,28 +127,6 @@ impl VulkanRenderer {
         self.texture_manager
             .get_bindless_slot(handle)
             .unwrap_or(fallback_slot)
-    }
-
-    /// Returns the default white PBR material handle.
-    ///
-    /// The default material is a simple bindless PBR material that renders
-    /// geometry with white albedo and default PBR parameters.
-    ///
-    /// # Panics
-    /// Panics if `init_default_material()` has not been called.
-    ///
-    /// # Example
-    /// ```ignore
-    /// // Initialize first (typically during application startup)
-    /// renderer.init_default_material(binding, PathBuf::from("shaders/pbr.wgsl"));
-    ///
-    /// // Then use the default material
-    /// let material = renderer.default_material();
-    /// let draw = DrawCall::new(mesh, material);
-    /// ```
-    pub fn default_material(&self) -> MaterialHandle {
-        self.default_material_handle
-            .expect("default_material() called before init_default_material()")
     }
 
     /// Drop every compiled variant of materials whose shader matches the

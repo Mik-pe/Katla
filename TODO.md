@@ -4,32 +4,13 @@
 
 Individual tasks should be small enough to complete in a single focused session. For large features (new subsystems, architectural changes, cross-cutting refactors), the TODO item is scoped as **exploration, ideation, and architecture** — research patterns, evaluate alternatives, and produce a concrete implementation plan as smaller TODO items. The output of such a task is a breakdown, not working code.
 
-## Backend Abstraction Cleanup
+## Graphics core and application composition
 
-### B. Design backend-agnostic texture view type
-
-- [x] **Explore backend-agnostic texture view type** — Evaluated three approaches: (1) wgpu-hal-style Api trait with associated types (already used internally, doesn't solve the AnyFrameGraph boundary), (2) enum wrapper `AnyTextureView` with `Vulkan(VkImageView)` / `Metal(MetalTextureView)` variants, (3) `dyn Trait` object (requires new non-generic trait, overengineered). **Decision: enum wrapper** — consistent with existing `AnyRenderer`/`AnyFrameGraph` enum dispatch pattern, no architectural changes needed.
-
-- [ ] Create `AnyTextureView` enum in `katla_gfx/src/render_graph/any_texture_view.rs` — `Vulkan(VkImageView)` and `Metal(MetalTextureView)` variants, `Send + Sync`, expose basic accessors (format, dimensions) via the existing `GpuImageView` trait or simple delegated methods
-- [ ] Add `transient_image_view(name, frame_idx) -> Option<AnyTextureView>` to `AnyFrameGraph` — replaces `transient_image_view_metal()`
-- [ ] Add `transient_texture(name, frame_idx) -> Option<&AnyTransientTexture>` to `AnyFrameGraph` — replaces `transient_texture_metal()`
-- [ ] Remove `transient_image_view_metal()` and `transient_texture_metal()` Metal-only methods from `AnyFrameGraph`
-- [ ] Update `AnyRenderer` to add `set_geometry_hdr_view` / `set_tonemap_output_view` taking `AnyTextureView` — dispatch to Vulkan (no-op or forward) / Metal (unwrap and call concrete method)
-- [ ] Update `katla_app` callers (`builder.rs`, `renderer.rs`) to use new backend-agnostic methods instead of Metal-specific ones
-- [ ] Remove `#[cfg(target_os = "macos")]` gates from `AnyFrameGraph` / `AnyFrame` that are now handled by the enum variants
-
-### C. Unify pipeline initialization — eliminate Metal-specific methods on AnyRenderer
-
-- [ ] ~~Add `set_geometry_hdr_view` and `set_tonemap_output_view` to `GpuRenderer` trait~~ — superseded by B items above; the enum wrapper approach keeps these on `AnyRenderer` rather than the trait
-
-### E. Align Metal backend with the compiled frame graph
-
-- [x] Dispatch particle rendering from compiled pass records on Metal
-- [x] Execute backend-neutral compute and transfer commands on both backends
-- [x] Resolve Metal attachments, buffers and synchronization from the canonical compiled graph
-- [x] Remove the hardcoded Metal pass sequence and out-of-graph compute path
-- [ ] Add compositing pass dispatch through `RenderGraphBackend` on Metal
-- [ ] Add stencil-indicator pass dispatch through `RenderGraphBackend` on Metal
+- [x] Keep core resource, frame, submission and graph operations backend-neutral.
+- [x] Compose animation, particles, lights, shadows, picking, outlines and postprocessing through app-owned resources and shader packets.
+- [x] Execute generic compute, transfer and graphics commands on both backends without hidden feature dispatch.
+- [x] Retain exact committed graph exports and queued readback ownership across resize and slot reuse.
+- [x] Capture compiled synchronization, physical allocations and actual native encoder/binding/residency/feedback traces without changing execution.
 
 ## Audio System
 
@@ -137,7 +118,6 @@ Individual tasks should be small enough to complete in a single focused session.
 ### Metal rendering bugs
 - [x] Billboard icons don't show in Metal
 - [ ] **Investigate animated fox (skinned mesh) not showing in Metal** — Determine root cause (missing joint buffer bind, shader mismatch, pipeline state) before scoping fix. Could be trivial or require significant plumbing.
-- [ ] **Investigate particle systems not showing in Metal** — Determine root cause (compute dispatch path, particle buffer upload, draw call) before scoping fix. Could be trivial or require significant plumbing.
 
 ### Post-processing pipeline
 - [ ] Add post-process pass infrastructure — reusable fullscreen-quad pass builder in the render graph that takes an input color texture and outputs a processed color texture
@@ -841,15 +821,14 @@ to disable or gate. Verification and architecture are in `docs/ecs.md`.
 - [x] **Fix Metal backend parity for `update_texture()`** — Default impl is no-op, Vulkan implements it, Metal inherits no-op. Either implement for Metal or remove default impl
 
 ### P1 - Backend Parity (Must Fix)
-- [ ] **Explore frame lifecycle unification across backends** — Vulkan uses frame graph via `render()`, Metal uses hardcoded `render_frame()`. Research how to route Metal through `FrameGraph<B>::execute()`, identify which passes need `RenderGraphBackend` dispatch implementations on Metal. Produce concrete implementation TODO items.
-- [ ] **Implement `recompile_materials_for_shader()` for Metal** — Currently no-op (inherited default). Metal backend needs real implementation
-- [ ] **Implement `init_animation_pipeline()` for Metal** — Currently no-op (inherited default). Metal backend needs real implementation
-- [ ] **Remove `render_frame()` from Metal backend** — Replace with frame graph execution through `render()` method once parity is achieved. **Depends on:** section E completion + frame lifecycle unification exploration.
-- [ ] **Remove Metal-specific methods from `AnyRenderer`** — `queue_metal_picking_readback()`, `check_metal_picking_readback()`, `has_pending_metal_picking_readback()` should be moved to `GpuRenderer` trait or removed. `set_geometry_hdr_view()` / `set_tonemap_output_view()` are covered by section B. **Depends on:** section B completion.
+- [x] Consume the same compiled graph and explicit frame-token contract on Vulkan and Metal.
+- [x] Prepare shader replacements asynchronously and publish complete pipeline variants on Metal.
+- [x] Run app-owned animation through ordinary prepared compute descriptors on both backends.
+- [x] Remove feature-specific forwarding from AnyRenderer; use typed generic graph exports and readback.
 
 ### P2 - Resource Management
 - [x] **Fix pending readback cleanup** — Upgraded warn to error log level in `VulkanRenderer::destroy()` and fixed stale comment referencing nonexistent `cleanup_on_exit()`.
-- [x] **Use `Option` for nullable Vulkan handles** — GlobalParticleBuffer converted to Option<vk::Buffer>; remaining structs still need conversion.
+- [x] Remove the obsolete native particle buffer managers and their nullable handles.
 - [x] **Add runtime bindless texture limit warnings** — `MAX_BINDLESS_TEXTURES = 4096` has no runtime check. Add warning when approaching limit, error when exceeded
 
 ### P3 - Error Handling
@@ -866,9 +845,10 @@ to disable or gate. Verification and architecture are in `docs/ecs.md`.
 
 These were observed while working on other tasks and noted here for future cleanup. Each is real but not blocking the current roadmap.
 
+- [ ] **Retire emitter slots until GPU particle references are gone** — Deleting and immediately replacing an emitter can overwrite the old kill/config data because particles carry only its index. Add a GPU generation or retirement contract and native delete/recreate coverage, including destruction without killing existing particles.
+
 - [x] **SceneSnapshot doesn't preserve physics components** — Fixed: `spawn_from_descriptor()` now restores RigidBody, ColliderShape, PhysicsMaterial, TriggerVolume, CollisionFilter from EntityDescriptor. Physics bodies survive play/stop cycles.
 
-- [ ] **Metal particle subsystem is entirely `#[cfg(test)]`** — `katla_gfx/src/metal/particle.rs` (967 lines) has `create_emitter`, `update_emitter`, `destroy_emitter`, `burst`, `get_emitters`, `update`, and `dispatch_compute` all gated behind `#[cfg(test)]`. The subsystem is initialized by `MetalRenderer::init_particle_system()` (line ~1220) but is **unreachable from production code** — it can never receive emitters, never step compute, never render. **Impact**: particles only work on Vulkan. The "Particles pass dispatch through `RenderGraphBackend` on Metal" TODO item (E in Backend Abstraction Cleanup) is the correct unblocker. **Fix scope**: multi-day. Remove the `#[cfg(test)]` gates, then wire `MetalParticleSubsystem::update` + `dispatch_compute` into the Metal frame render path (mirroring `katla_app/src/application/renderer.rs:300-352` which currently does `unwrap_vulkan().particle_system` only), and add a `ParticlePass` for Metal through the render graph.
 
 - [x] **Default scene path inconsistency between test sync and runtime** — Fixed: added `default_scene_path()` that resolves via `CARGO_MANIFEST_DIR` to the workspace root, used by both tests and runtime. Tests now write/read the canonical workspace-root `assets/scenes/default.katla` regardless of cwd.
 
@@ -879,7 +859,7 @@ These were observed while working on other tasks and noted here for future clean
   - [ ] Make `sync` module `pub(crate)` — likely internal-only
   - [ ] Make `pipeline` module `pub(crate)` — likely internal-only
   - [ ] Review remaining 80+ items and restrict visibility where possible
-- [ ] **Consolidate frame lifecycle methods** — `begin_frame()`/`end_frame()` vs `render()` vs `wait_for_frame()` — confusing, multiple ways to do same thing
+- [x] Use acquire/render/present-or-abort with explicit accepted-submission and surface outcomes.
 - [ ] **Replace `Rc<RefCell<ShaderCache>>` with better pattern** — Interior mutability + reference counting. Consider `Arc<Mutex<ShaderCache>>` or restructure to avoid shared mutation
 
 ### P6 - Code Quality
@@ -889,7 +869,7 @@ These were observed while working on other tasks and noted here for future clean
   - [ ] Unify resource manager naming — `asset_registry` vs `mesh_manager` vs `texture_manager`, pick consistent suffix
   - [ ] Unify GPU resource naming — `bindless_manager` vs `storage_manager`, pick consistent prefix/suffix
 - [ ] **Add missing documentation for `GpuRenderer` trait** — many public items lack `///` docs. Add docs grouped by functionality:
-  - [ ] Document lifecycle methods — `init()`, `begin_frame()`, `end_frame()`, `render()`, `wait_for_frame()`, `destroy()`
+  - [x] Document acquire, render, present, abort, device drain and exact resource retirement.
   - [ ] Document resource creation methods — texture, buffer, pipeline creation methods
   - [ ] Document drawing methods — draw, dispatch, and pass-related methods
   - [ ] Document query/state methods — timestamp queries, readback, synchronization

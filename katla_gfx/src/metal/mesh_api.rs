@@ -72,6 +72,7 @@ impl MetalRenderer {
             index_count,
             vertex_count: vertices.len() as u32,
             vertex_stride: std::mem::size_of::<T>() as u32,
+            layout: T::layout(),
             usage: MeshUsage::Static,
         };
         self.persistent_buffers
@@ -133,6 +134,7 @@ impl MetalRenderer {
             index_count,
             vertex_count: descriptor.vertex_count,
             vertex_stride: stride as u32,
+            layout: descriptor.layout.clone(),
             usage: descriptor.usage,
         };
         self.persistent_buffers

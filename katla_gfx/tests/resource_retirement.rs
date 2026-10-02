@@ -15,11 +15,15 @@ use std::ffi::CString;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use katla_gfx::render_graph::{FrameGraph, FrameGraphBuilder, GeometryPass};
+use katla_gfx::render_graph::{
+    BufferAccess, BufferByteRange, BufferDesc, BufferMemoryPolicy, BufferUsages, ComputeBinding,
+    ComputeCommand, ComputeDispatch, ComputeDispatchSize, ComputePipelineDesc, FrameGraph,
+    FrameGraphBuilder, GeometryPass, PassDesc, PassType, RenderGraphBackend,
+};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::{
-    FrameUniforms, GpuRenderer, MaterialHandle, MeshHandle, PipelineDescriptor, PrimitiveTopology,
-    ValidationMode, VulkanRenderer,
+    GpuRenderer, MaterialHandle, MeshHandle, PipelineDescriptor, PrimitiveTopology, ValidationMode,
+    VulkanRenderer,
 };
 
 /// Acquire one frame from the headless renderer (always ready offscreen).
@@ -42,11 +46,7 @@ fn headless_renderer() -> VulkanRenderer {
     VulkanRenderer::init_headless(
         WIDTH,
         HEIGHT,
-        // ValidationMode::Disabled: compiling the PBR pipeline under the
-        // system validation layer segfaults the Intel driver on this machine
-        // (same caveat as the other GPU contract tests). The validation
-        // callback below still captures messages when layers are present.
-        ValidationMode::Disabled,
+        ValidationMode::Enabled,
         CString::new("Resource retirement test").unwrap(),
         CString::new("Katla").unwrap(),
     )
@@ -55,24 +55,6 @@ fn headless_renderer() -> VulkanRenderer {
 
 fn shaders() -> PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/shaders")
-}
-
-fn identity() -> [f32; 16] {
-    let mut m = [0.0f32; 16];
-    m[0] = 1.0;
-    m[5] = 1.0;
-    m[10] = 1.0;
-    m[15] = 1.0;
-    m
-}
-
-fn uniforms() -> FrameUniforms {
-    FrameUniforms {
-        view_matrix: identity(),
-        proj_matrix: identity(),
-        inv_view_proj_matrix: identity(),
-        ..Default::default()
-    }
 }
 
 fn compile_ui_material(renderer: &mut VulkanRenderer) -> MaterialHandle {
@@ -85,18 +67,13 @@ fn compile_ui_material(renderer: &mut VulkanRenderer) -> MaterialHandle {
 
 /// Build the minimal rendering graph and prepare the renderer for it.
 fn ready_graph(
-    renderer: &mut VulkanRenderer,
+    _renderer: &mut VulkanRenderer,
     material: MaterialHandle,
 ) -> FrameGraph<VulkanRenderer> {
-    renderer
-        .init_light_culling(WIDTH, HEIGHT, &shaders().join("lighting/light_cull.wgsl"))
-        .unwrap();
-    renderer
-        .init_shadow_resources(None, katla_gfx::CascadeParams::default())
-        .unwrap();
     FrameGraphBuilder::new()
         .add_pass(
             GeometryPass::new("geometry")
+                .without_depth()
                 .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                 .clear_color([0.0, 0.0, 0.0, 1.0])
                 .material(material),
@@ -109,18 +86,21 @@ fn ready_graph(
 fn render_idle_frames(
     renderer: &mut VulkanRenderer,
     graph: &mut FrameGraph<VulkanRenderer>,
-    uniforms: &FrameUniforms,
     count: usize,
 ) {
     for _ in 0..count {
         let frame_token = acquire_frame_token(&mut *renderer);
         renderer
-            .set_frame_uniforms(&frame_token, uniforms.clone())
-            .unwrap();
-        renderer
             .render(&frame_token, graph, |_| {})
             .expect("empty frame render");
-        renderer.present(frame_token).unwrap();
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
     }
 }
 
@@ -151,7 +131,6 @@ fn test_destroy_texture_retires_image_and_withholds_bindless_slot() {
 
     let material = compile_ui_material(&mut renderer);
     let mut graph = ready_graph(&mut renderer, material);
-    let frame = uniforms();
 
     // A registered texture occupies a bindless slot.
     let first = renderer.create_texture_solid([255, 0, 0, 255]).unwrap();
@@ -185,7 +164,7 @@ fn test_destroy_texture_retires_image_and_withholds_bindless_slot() {
 
     // Frames advance the retirement age; the image frees and the slot is
     // released only then.
-    render_idle_frames(&mut renderer, &mut graph, &frame, DRAIN_FRAMES);
+    render_idle_frames(&mut renderer, &mut graph, DRAIN_FRAMES);
     assert_eq!(
         renderer.pending_retirements().total(),
         0,
@@ -220,7 +199,6 @@ fn test_destroy_material_and_skeleton_retire_native_objects() {
     // destroyed mid-flight while frames still render through the graph.
     let graph_material = compile_ui_material(&mut renderer);
     let mut graph = ready_graph(&mut renderer, graph_material);
-    let frame = uniforms();
 
     let victim = compile_ui_material(&mut renderer);
     renderer.destroy_material(victim);
@@ -235,13 +213,103 @@ fn test_destroy_material_and_skeleton_retire_native_objects() {
     );
 
     let skeleton = renderer.create_skeleton(4).unwrap();
-    assert!(renderer.get_skeleton_descriptor(skeleton).is_some());
-    renderer.destroy_skeleton(skeleton);
-    assert!(renderer.get_skeleton_descriptor(skeleton).is_none());
-    let snapshot = renderer.pending_retirements();
-    assert_eq!(snapshot.skeleton_buffers, 1, "{snapshot:?}");
+    let joint_shader = ComputePipelineDesc {
+        wgsl: "@group(0) @binding(0) var<storage, read> joints: array<mat4x4<f32>>; @group(0) @binding(1) var<storage, read_write> result: array<f32>; @compute @workgroup_size(1) fn cs_main() { result[0] = joints[0][0][0]; }".into(),
+        entry: "cs_main".into(),
+    };
+    renderer.prepare_compute_pipeline(&joint_shader).unwrap();
+    let mut slot_buffers = Vec::new();
+    let mut outputs = Vec::new();
+    for _ in 0..renderer.frame_slot_count() {
+        let token = acquire_frame_token(&mut renderer);
+        let joints = renderer.skeleton_buffer_handle(&token, skeleton).unwrap();
+        assert!(
+            !slot_buffers.contains(&joints),
+            "joint storage is independent per slot"
+        );
+        let joints_desc = renderer.buffer_descriptor(joints).unwrap();
+        assert_eq!(joints_desc.size, 4 * 64);
+        assert!(joints_desc.usages.contains(BufferUsages::STORAGE));
+        slot_buffers.push(joints);
 
-    render_idle_frames(&mut renderer, &mut graph, &frame, DRAIN_FRAMES);
+        let output_desc = BufferDesc::new(
+            16,
+            BufferUsages::STORAGE | BufferUsages::READBACK,
+            BufferMemoryPolicy::Readback,
+        );
+        let output = renderer.create_buffer(output_desc).unwrap();
+        let mut read_graph = FrameGraph::<VulkanRenderer>::new();
+        let source = read_graph
+            .import_buffer("joints", joints, joints_desc)
+            .unwrap();
+        let destination = read_graph
+            .import_buffer("joint_value", output, output_desc)
+            .unwrap();
+        let dispatch = ComputeDispatch {
+            pipeline: joint_shader.clone(),
+            bindings: vec![
+                ComputeBinding {
+                    group: 0,
+                    binding: 0,
+                    resource: source,
+                    range: BufferByteRange::WHOLE,
+                },
+                ComputeBinding {
+                    group: 0,
+                    binding: 1,
+                    resource: destination,
+                    range: BufferByteRange::WHOLE,
+                },
+            ],
+            constants: Vec::new(),
+            size: ComputeDispatchSize::Direct([1, 1, 1]),
+        };
+        read_graph.add_pass(
+            PassDesc::new("read_joints", PassType::Compute, vec![], vec![])
+                .with_buffer_accesses(dispatch.accesses().unwrap())
+                .with_commands([ComputeCommand::Dispatch(dispatch)]),
+        );
+        read_graph.add_pass(
+            PassDesc::new("host_value", PassType::Transfer, vec![], vec![])
+                .with_buffer_accesses([BufferAccess::readback_read(destination)]),
+        );
+        renderer.render(&token, &mut read_graph, |_| {}).unwrap();
+        assert_eq!(
+            renderer
+                .present(token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
+        read_graph.cleanup();
+        outputs.push(output);
+    }
+    renderer.destroy_skeleton(skeleton);
+    for handle in slot_buffers {
+        assert!(
+            renderer.buffer_descriptor(handle).is_none(),
+            "destroy invalidates every ordinary joint handle"
+        );
+    }
+    for output in outputs {
+        let bytes = renderer
+            .read_buffer_completed(output, BufferByteRange::new(0, 4))
+            .unwrap()
+            .expect("destroy waits until real joint consumers complete");
+        assert_eq!(
+            f32::from_ne_bytes(bytes.try_into().unwrap()),
+            1.0,
+            "the GPU consumed the initialized joint matrix"
+        );
+        renderer.destroy_buffer(output).unwrap();
+    }
+
+    let token = acquire_frame_token(&mut renderer);
+    assert!(renderer.skeleton_buffer_handle(&token, skeleton).is_err());
+    renderer.abort(token).unwrap();
+
+    render_idle_frames(&mut renderer, &mut graph, DRAIN_FRAMES);
     assert_eq!(renderer.pending_retirements().total(), 0);
 
     graph.cleanup();
@@ -265,7 +333,6 @@ fn test_repeated_create_destroy_keeps_retirements_bounded_and_valid() {
 
     let material = compile_ui_material(&mut renderer);
     let mut graph = ready_graph(&mut renderer, material);
-    let frame = uniforms();
 
     // Interleave creation and destruction of every resource class across
     // rendered frames; pending retirements must stay bounded and drain
@@ -277,11 +344,15 @@ fn test_repeated_create_destroy_keeps_retirements_bounded_and_valid() {
         let iter_material = compile_ui_material(&mut renderer);
 
         let frame_token = acquire_frame_token(&mut renderer);
-        renderer
-            .set_frame_uniforms(&frame_token, frame.clone())
-            .unwrap();
         renderer.render(&frame_token, &mut graph, |_| {}).unwrap();
-        renderer.present(frame_token).unwrap();
+        assert_eq!(
+            renderer
+                .present(frame_token)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
 
         // Destroy this iteration's resources; the next iteration's
         // replacements must not collide with any in-flight native object.
@@ -298,7 +369,7 @@ fn test_repeated_create_destroy_keeps_retirements_bounded_and_valid() {
         let _ = iteration;
     }
 
-    render_idle_frames(&mut renderer, &mut graph, &frame, DRAIN_FRAMES);
+    render_idle_frames(&mut renderer, &mut graph, DRAIN_FRAMES);
     let snapshot = renderer.pending_retirements();
     assert_eq!(
         snapshot.total(),

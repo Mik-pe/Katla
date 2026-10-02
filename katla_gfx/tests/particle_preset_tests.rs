@@ -6,8 +6,6 @@
 //! - Permission errors on preset directory
 //! - Preset save/load operations
 
-mod common;
-
 use katla_gfx::particles::{EmitterConfig, EmitterPreset};
 use std::fs::{self, File};
 use std::io::Write;

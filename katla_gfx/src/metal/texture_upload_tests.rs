@@ -339,18 +339,19 @@ fn test_bindless_argument_buffer_storage_probe() {
     let vs = compiled.module.entry_points.get("vs_main").unwrap();
     let fs = compiled.module.entry_points.get("fs_main").unwrap();
     let pipeline = ctx
-        .create_graphics_pipeline_with_vertex_descriptor(
-            vs,
-            Some(fs),
-            &[objc2_metal::MTLPixelFormat::RGBA8Unorm],
-            None,
-            false,
-            CompareOp::Always,
-            objc2_metal::MTLCullMode::None,
-            objc2_metal::MTLWinding::Clockwise,
-            Some(&objc2_metal::MTLVertexDescriptor::new()),
-            false,
-        )
+        .create_graphics_pipeline(crate::metal::context::GraphicsPipelineConfig {
+            vertex_function: vs,
+            fragment_function: Some(fs),
+            color_formats: &[objc2_metal::MTLPixelFormat::RGBA8Unorm],
+            depth_format: None,
+            depth_write_enabled: false,
+            depth_compare: CompareOp::Always,
+            cull_mode: objc2_metal::MTLCullMode::None,
+            front_face: objc2_metal::MTLWinding::Clockwise,
+            vertex_descriptor: &objc2_metal::MTLVertexDescriptor::new(),
+            alpha_blended: false,
+            portable: None,
+        })
         .unwrap();
 
     let mut results: Vec<Vec<u8>> = Vec::new();

@@ -67,23 +67,3 @@ harness = false
 [[bench]]
 name = "mesh_upload"
 harness = false
-
-[[example]]
-name = "particle_validation"
-required-features = ["validation"]
-
-[[example]]
-name = "animation_validation"
-required-features = ["validation"]
-
-[[example]]
-name = "light_shadow_validation"
-required-features = ["validation"]
-
-[[example]]
-name = "picking_validation"
-required-features = ["validation"]
-
-[[example]]
-name = "outline_validation"
-required-features = ["validation"]

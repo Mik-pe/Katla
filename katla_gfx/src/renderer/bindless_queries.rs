@@ -80,21 +80,6 @@ impl VulkanRenderer {
         self.texture_manager.iter_bindless_textures()
     }
 
-    /// Get the font atlas bindless texture slot.
-    ///
-    /// Returns None if the font atlas has not been registered with the
-    /// bindless system yet.
-    ///
-    /// # Example
-    /// ```ignore
-    /// if let Some(slot) = renderer.get_font_atlas_bindless_slot() {
-    ///     println!("Font atlas is at bindless slot {}", slot);
-    /// }
-    /// ```
-    pub fn get_font_atlas_bindless_slot(&self) -> Option<u32> {
-        self.ui_renderer.font_atlas_bindless_slot()
-    }
-
     /// Get information about bindless texture slot utilization.
     ///
     /// Returns (occupied_count, available_count, total_count).

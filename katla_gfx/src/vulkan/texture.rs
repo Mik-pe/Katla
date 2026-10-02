@@ -1,7 +1,7 @@
 use super::context::VulkanContext;
 use crate::barrier::ImageBarrier;
 use crate::sync::{VkDescriptorSet, VkImage, VkImageView, VkSampler};
-use crate::texture::{ImageFormat, TextureUsage};
+use crate::texture::ImageFormat;
 use crate::vulkan::context::VulkanFrameCtx;
 
 use std::mem::ManuallyDrop;
@@ -527,87 +527,6 @@ impl Texture {
         }
 
         true
-    }
-
-    /// Create a default albedo texture (white 1x1).
-    /// Used when a material doesn't have an albedo texture.
-    pub fn create_default_albedo(context: Rc<VulkanContext>) -> Self {
-        // White pixel: RGBA (255, 255, 255, 255)
-        let pixel_data: [u8; 4] = [255, 255, 255, 255];
-        Self::create_image(
-            context,
-            1,
-            1,
-            ImageFormat::R8G8B8A8Srgb,
-            TextureUsage::default(),
-            &pixel_data,
-        )
-    }
-
-    /// Create a default normal map (flat normal 1x1).
-    /// In tangent space, a flat surface normal is (0, 0, 1).
-    /// Normalized and mapped to [0,255]: (128, 128, 255, 255)
-    /// Note: Normal maps are LINEAR data, not SRGB.
-    pub fn create_default_normal(context: Rc<VulkanContext>) -> Self {
-        // Flat normal: RGB (128, 128, 255) = tangent-space Z-up normal
-        let pixel_data: [u8; 4] = [128, 128, 255, 255];
-        Self::create_image(
-            context,
-            1,
-            1,
-            ImageFormat::R8G8B8A8Unorm,
-            TextureUsage::default(),
-            &pixel_data,
-        )
-    }
-
-    /// Create a default metallic/roughness texture.
-    /// GLTF packed format: G = roughness, B = metallic
-    /// Default: white (1, 1, 1) so material params control the values
-    /// Note: MR textures are LINEAR data, not SRGB.
-    pub fn create_default_metallic_roughness(context: Rc<VulkanContext>) -> Self {
-        // White: G=1, B=1 - material params multiply with 1.0
-        let pixel_data: [u8; 4] = [255, 255, 255, 255];
-        Self::create_image(
-            context,
-            1,
-            1,
-            ImageFormat::R8G8B8A8Unorm,
-            TextureUsage::default(),
-            &pixel_data,
-        )
-    }
-
-    /// Create a default occlusion texture (white 1x1).
-    /// White = full visibility (no occlusion).
-    /// Note: AO textures are LINEAR data, not SRGB.
-    pub fn create_default_occlusion(context: Rc<VulkanContext>) -> Self {
-        // White pixel: full visibility
-        let pixel_data: [u8; 4] = [255, 255, 255, 255];
-        Self::create_image(
-            context,
-            1,
-            1,
-            ImageFormat::R8G8B8A8Unorm,
-            TextureUsage::default(),
-            &pixel_data,
-        )
-    }
-
-    /// Create a default emission texture (black 1x1).
-    /// Black = no emission / self-illumination.
-    /// Note: Emission textures are LINEAR HDR data, not SRGB.
-    pub fn create_default_emission(context: Rc<VulkanContext>) -> Self {
-        // Black pixel: no emission
-        let pixel_data: [u8; 4] = [0, 0, 0, 255];
-        Self::create_image(
-            context,
-            1,
-            1,
-            ImageFormat::R8G8B8A8Unorm,
-            TextureUsage::default(),
-            &pixel_data,
-        )
     }
 
     pub(crate) fn image(&self) -> VkImage {

@@ -8,6 +8,7 @@
 //! left/right probes where possible, so a vertical flip cannot flip the
 //! verdict.
 
+use crate::scene_shader_data::ShaderFrameData;
 use std::rc::Rc;
 
 use katla_gfx::render_graph::any_frame_graph::AnyFrameGraph;
@@ -17,7 +18,7 @@ use katla_gfx::renderer::{DrawCall, DrawList, InstanceData};
 use katla_gfx::texture::ImageFormat;
 use katla_gfx::vertex::{VertexPBR, VertexUIInstance};
 use katla_gfx::{
-    FrameUniforms, GpuRenderer, IndexType, MaterialHandle, MeshDescriptor, MeshHandle, MeshUsage,
+    GpuRenderer, IndexType, MaterialHandle, MeshDescriptor, MeshHandle, MeshUsage,
     PrimitiveTopology, UIDrawList, UiDrawCommand, Vertex,
 };
 
@@ -42,13 +43,11 @@ mod pbr {
         mesh: MeshHandle,
         graph: AnyFrameGraph,
         geometry_pass: PassId,
-        uniforms: FrameUniforms,
+        uniforms: ShaderFrameData,
     }
 
     fn geometry_scenario(label: &str) -> GeometryScenario {
         let mut renderer = ContractRenderer::open_without_api_validation(label);
-        renderer.init_frame_pipelines();
-        renderer.init_shadow_layouts();
         let material = harness::compile_pbr_material(renderer.gfx());
         let vertices = harness::clip_triangle();
         let mesh = renderer
@@ -105,7 +104,7 @@ mod pbr {
         pass: PassId,
         list: &DrawList,
     ) -> Vec<u8> {
-        let uniforms = scenario.uniforms.clone();
+        let uniforms = scenario.uniforms;
         scenario
             .renderer
             .render_frame(graph, Some(&uniforms), Some(list), |frame| {
@@ -740,7 +739,6 @@ mod pbr {
 #[ignore = "requires a graphics device"]
 fn test_contract_declared_load_extends_and_clear_replaces() {
     let mut renderer = ContractRenderer::open("contract: attachment load/store");
-    renderer.init_frame_pipelines();
     let scene = harness::init_ui_scene(renderer.gfx());
 
     let ui = {

@@ -876,7 +876,7 @@ fn test_build_default_scene_pbr_grid() {
     let spheres: Vec<_> = scene
         .entities
         .iter()
-        .filter(|e| e.name.as_ref().map_or(false, |n| n.starts_with("Sphere_")))
+        .filter(|e| e.name.as_ref().is_some_and(|n| n.starts_with("Sphere_")))
         .collect();
     assert_eq!(spheres.len(), 25, "PBR grid must have 25 spheres");
 
@@ -1512,7 +1512,7 @@ fn test_gltf_round_trip() {
         parent: None,
         transform: TransformDescriptor {
             position: [3.0, 0.0, 0.0],
-            rotation: [0.0, 0.38268343, 0.0, 0.92387953],
+            rotation: [0.0, 0.38268343, 0.0, 0.923_879_5],
             scale: [0.01, 0.01, 0.01],
         },
         source: EntitySource::GltfModel {
@@ -2478,7 +2478,7 @@ fn test_load_spawn_integration() {
         parent: None,
         transform: TransformDescriptor {
             position: [3.0, 0.0, 0.0],
-            rotation: [0.0, 0.38268343, 0.0, 0.92387953],
+            rotation: [0.0, 0.38268343, 0.0, 0.923_879_5],
             scale: [0.01, 0.01, 0.01],
         },
         source: EntitySource::GltfModel {
@@ -2776,8 +2776,8 @@ fn test_transform_persistence() {
     scene.version = SCENE_VERSION;
 
     // Create entity with non-default transform
-    let original_position = [3.14, 2.71, -1.62];
-    let original_rotation = [0.0, 0.38268343, 0.0, 0.92387953]; // 45° around Y
+    let original_position = [std::f32::consts::PI, 2.71, -1.62];
+    let original_rotation = [0.0, 0.38268343, 0.0, 0.923_879_5]; // 45° around Y
     let original_scale = [2.0, 0.5, 3.0];
 
     scene.entities.push(EntityDescriptor {
@@ -2814,7 +2814,12 @@ fn test_transform_persistence() {
 
     // Simulate editing: modify the transform values
     let edited_position = [5.0, 10.0, -3.5];
-    let edited_rotation = [0.0, 0.70710678, 0.0, 0.70710678]; // 90° around Y
+    let edited_rotation = [
+        0.0,
+        std::f32::consts::FRAC_1_SQRT_2,
+        0.0,
+        std::f32::consts::FRAC_1_SQRT_2,
+    ]; // 90° around Y
     let edited_scale = [4.0, 1.0, 2.0];
 
     scene.entities[0].transform = TransformDescriptor {

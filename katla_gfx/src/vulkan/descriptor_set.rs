@@ -56,14 +56,6 @@ impl DescriptorSet {
     pub(crate) fn vk(&self) -> vk::DescriptorSet {
         self.set
     }
-
-    /// Get the descriptor set layout, if one was stored during creation.
-    ///
-    /// Returns `None` for descriptor sets created via `from_raw()` without a layout
-    /// (e.g., UI descriptor sets whose layout is owned by the pipeline).
-    pub(crate) fn layout(&self) -> Option<vk::DescriptorSetLayout> {
-        self.owned_layout
-    }
 }
 
 impl Drop for DescriptorSet {

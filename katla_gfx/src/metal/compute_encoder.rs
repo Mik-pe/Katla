@@ -1,15 +1,19 @@
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
-    MTL4ArgumentTable, MTL4CommandEncoder, MTL4ComputeCommandEncoder, MTLBuffer, MTLSamplerState,
-    MTLSize, MTLTexture,
+    MTL4ArgumentTable, MTL4CommandEncoder, MTL4ComputeCommandEncoder, MTLBuffer, MTLSize,
 };
+
+#[cfg(test)]
+use objc2_metal::{MTLSamplerState, MTLTexture};
 
 use crate::backend::command::*;
 
 use super::MetalBackend;
 use super::buffer::MetalBuffer;
+#[cfg(test)]
 use super::sampler::MetalSamplerState;
+#[cfg(test)]
 use super::texture::MetalTextureView;
 
 pub(crate) struct MetalComputeEncoder {
@@ -19,6 +23,7 @@ pub(crate) struct MetalComputeEncoder {
     layout: Option<super::binding_schema::ArgumentTableLayout>,
     resources: std::rc::Rc<super::encoding_resources::EncodingResources>,
     table: Retained<ProtocolObject<dyn MTL4ArgumentTable>>,
+    ended: std::cell::Cell<bool>,
 }
 
 impl MetalComputeEncoder {
@@ -29,6 +34,7 @@ impl MetalComputeEncoder {
         let table = resources.argument_table("compute arguments");
         inner.setArgumentTable(Some(&table));
         Self {
+            ended: std::cell::Cell::new(false),
             inner,
             resources,
             table,
@@ -73,6 +79,7 @@ impl MetalComputeEncoder {
     }
     fn prepare_arguments(&self) -> bool {
         if let Some(layout) = &self.layout {
+            self.resources.capture_binding(&self.table, layout);
             if let Err(error) = self.state.validate(layout) {
                 self.resources.fail(error);
                 return false;
@@ -108,7 +115,9 @@ impl MetalComputeEncoder {
 
 impl GpuComputeEncoder<MetalBackend> for MetalComputeEncoder {
     fn end_encoding(self) {
-        self.inner.endEncoding();
+        if !self.ended.replace(true) {
+            self.inner.endEncoding();
+        }
     }
 
     fn bind_compute_pipeline(
@@ -127,10 +136,12 @@ impl GpuComputeEncoder<MetalBackend> for MetalComputeEncoder {
         };
     }
 
+    #[cfg(test)]
     fn bind_storage_buffer(&mut self, buffer: &MetalBuffer, offset: u64, index: u32) {
         self.bind_native_buffer(&buffer.inner, offset, index);
     }
 
+    #[cfg(test)]
     fn bind_texture(&mut self, view: &MetalTextureView, index: u32) {
         self.state.texture(index as usize);
         self.resources
@@ -143,6 +154,7 @@ impl GpuComputeEncoder<MetalBackend> for MetalComputeEncoder {
         }
     }
 
+    #[cfg(test)]
     fn bind_sampler(&mut self, sampler: &MetalSamplerState, index: u32) {
         self.state.sampler(index as usize);
         self.resources.retain_sampler(&sampler.inner);
@@ -169,5 +181,13 @@ impl GpuComputeEncoder<MetalBackend> for MetalComputeEncoder {
             },
             self.workgroup_size,
         );
+    }
+}
+
+impl Drop for MetalComputeEncoder {
+    fn drop(&mut self) {
+        if !self.ended.replace(true) {
+            self.inner.endEncoding();
+        }
     }
 }

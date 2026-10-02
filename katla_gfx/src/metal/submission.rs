@@ -48,6 +48,21 @@ impl SubmissionCompletion {
             .is_some()
     }
 
+    pub(crate) fn feedback_snapshot(&self) -> crate::render_graph::capture::CapturedFeedback {
+        let state = self
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        match &state.feedback {
+            None => crate::render_graph::capture::CapturedFeedback::Pending,
+            Some(feedback) if feedback.error.is_some() => {
+                crate::render_graph::capture::CapturedFeedback::Failed
+            }
+            Some(_) => crate::render_graph::capture::CapturedFeedback::Completed,
+        }
+    }
+
     pub(crate) fn wait(&self) -> Option<CommitFeedback> {
         let mut state = self.state.0.lock().expect("submission mutex poisoned");
         while state.submitted && state.feedback.is_none() {
@@ -79,6 +94,22 @@ mod tests {
         completion.finish(CommitFeedback::default());
         assert!(completion.is_complete());
     }
+    #[test]
+    fn test_feedback_snapshot_observes_without_retiring_pending_submission() {
+        let completion = SubmissionCompletion::default();
+        assert!(completion.mark_submitted());
+        assert_eq!(
+            completion.feedback_snapshot(),
+            crate::render_graph::capture::CapturedFeedback::Pending
+        );
+        assert!(!completion.is_complete());
+        completion.finish(CommitFeedback::default());
+        assert_eq!(
+            completion.feedback_snapshot(),
+            crate::render_graph::capture::CapturedFeedback::Completed
+        );
+    }
+
     #[test]
     fn test_feedback_waits_for_exact_submission() {
         let first = SubmissionCompletion::default();

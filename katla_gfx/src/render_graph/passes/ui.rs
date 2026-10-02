@@ -18,23 +18,6 @@ use crate::render_pass::{AttachmentOps, LoadOp};
 ///
 /// Renders 2D UI geometry with alpha blending and optional clipping.
 ///
-/// # Example
-///
-/// ```ignore
-/// use katla_gfx::render_graph::{FrameGraph, GeometryPass, UIPass};
-///
-/// let graph = FrameGraph::builder()
-///     .add_pass(GeometryPass::new("geometry")
-///         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-///         .write_depth("depth", ImageFormat::D32Sfloat))
-///     .add_pass(UIPass::new("ui")
-///         .write("color"))  // Composited on top
-///     .build()?;
-///
-/// graph.execute(&renderer, |ctx| {
-///     ctx.pass("ui").draw_ui(&ui_draw_list);
-/// })?;
-/// ```
 #[derive(Debug, Clone)]
 pub struct UIPass {
     /// Pass name for debugging.
@@ -185,9 +168,6 @@ impl PassBuilder for UIPass {
             writes,
             image_accesses,
             buffer_accesses: Vec::new(),
-            pipeline: None,
-            tonemap_params: None,
-            overlay_params: None,
             material,
             output_format: None,
             build_fn: Box::new(

@@ -93,3 +93,17 @@ impl From<Box<dyn std::error::Error>> for AppError {
 
 /// Result type for app operations.
 pub type AppResult<T> = Result<T, AppError>;
+
+impl From<katla_gfx::RendererError> for AppError {
+    fn from(source: katla_gfx::RendererError) -> Self {
+        Self::Graphics { source }
+    }
+}
+
+impl From<katla_gfx::render_graph::RenderGraphError> for AppError {
+    fn from(source: katla_gfx::render_graph::RenderGraphError) -> Self {
+        Self::Graphics {
+            source: source.into(),
+        }
+    }
+}

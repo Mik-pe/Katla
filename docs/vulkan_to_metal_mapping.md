@@ -25,4 +25,4 @@ Both backends consume Katla's compiled render-graph contracts. Native API differ
 
 Metal 4 treats resources as untracked. Encoder order, unified memory, and tracked heap descriptors do not eliminate graph hazards. Imported resources, external uploads, multiple reader frontiers, and final output contracts all participate in the compiled synchronization plan. Native resources are also unretained by command buffers: Katla keeps their complete ownership payload through exact terminal feedback.
 
-Three frame slots preserve the same bounded ownership model on both backends. CPU uploads occur after acquisition. Builtin animation, light culling, and particle work are ordinary declared compute and transfer commands; application WGSL kernels follow the same reflection and execution path.
+Metal uses three frame slots and Vulkan uses two; both expose their bounded slot count to application resource owners. CPU uploads occur after acquisition. App-owned animation, light culling and particle services use ordinary declared compute and transfer commands. Custom WGSL kernels follow the same reflection and execution path.

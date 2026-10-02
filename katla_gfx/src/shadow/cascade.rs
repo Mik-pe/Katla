@@ -539,8 +539,8 @@ mod tests {
             1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
         ];
         let result = mat4_mul(&id, &id);
-        for i in 0..16 {
-            assert!((result[i] - id[i]).abs() < 1e-6);
+        for (actual, expected) in result.iter().zip(id) {
+            assert!((actual - expected).abs() < 1e-6);
         }
     }
 
@@ -551,13 +551,13 @@ mod tests {
         ];
         let inv = mat4_inverse(&id);
         let result = mat4_mul(&id, &inv);
-        for i in 0..16 {
+        for (i, actual) in result.iter().enumerate() {
             let expected = if i % 5 == 0 { 1.0 } else { 0.0 };
             assert!(
-                (result[i] - expected).abs() < 1e-5,
+                (actual - expected).abs() < 1e-5,
                 "m[{}] = {}, expected {}",
                 i,
-                result[i],
+                actual,
                 expected
             );
         }
@@ -599,9 +599,7 @@ mod tests {
         let maxs = [10.0, 10.0, -5.0];
         let (proj, snapped_view) = snap_to_texel(&light_view, &mins, &maxs, 1024);
         let result = mat4_mul(&proj, &snapped_view);
-        for i in 0..16 {
-            assert!(!result[i].is_nan());
-        }
+        assert!(result.iter().all(|value| value.is_finite()));
     }
 
     #[test]
@@ -717,12 +715,8 @@ mod tests {
         assert_eq!(pancaked[14], -near / (far - near));
 
         // The full slice depth must survive the pancake.
-        for i in 0..16 {
-            assert!(
-                !pancaked[i].is_nan(),
-                "pancaked projection has NaN at [{}]",
-                i
-            );
+        for (i, value) in pancaked.iter().enumerate() {
+            assert!(value.is_finite(), "pancaked projection has NaN at [{}]", i);
         }
     }
 

@@ -13,6 +13,7 @@
 // Set 1 (Emitter Configs):
 //   Binding 0: Uniform buffer (frame data)
 //   Binding 1: Storage buffer (emitter configurations array)
+//   Binding 2: Storage buffer (active emitter indices)
 
 #include "common.wgsl"
 
@@ -41,6 +42,9 @@ var<uniform> frame_data: FrameData;
 // Per-emitter configurations (Set 1: updated via push descriptors)
 @group(1) @binding(1)
 var<storage, read> emitters: array<EmitterConfig>;
+
+@group(1) @binding(2)
+var<storage, read> emitter_indices: array<u32>;
 
 // Pseudo-random number generation
 fn hash(seed: u32) -> u32 {
@@ -169,15 +173,15 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
 
     if (idx >= frame_data.total_emit_count) { return; }
-    let emitter_count = min(frame_data.emitter_count, arrayLength(&emitters));
+    let emitter_count = min(frame_data.emitter_count, arrayLength(&emitter_indices));
     let capacity = min(frame_data.max_particles, min(arrayLength(&particles), min(arrayLength(&dead_list), arrayLength(&alive_list))));
     if (emitter_count == 0u || capacity == 0u) { return; }
 
     let wg_id = idx / 256u;
     let local_id = idx % 256u;
-    let emitter_idx = (wg_id + local_id) % emitter_count;
+    let emitter_idx = emitter_indices[(wg_id + local_id) % emitter_count];
 
-    if (emitter_idx >= emitter_count) {
+    if (emitter_idx >= arrayLength(&emitters)) {
         return;
     }
 

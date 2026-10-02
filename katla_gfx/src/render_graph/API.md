@@ -1,411 +1,133 @@
-# Frame Graph Pass Builder API Guide
+# Render graph API
 
-This guide explains how to use Katla's frame graph pass builder system to construct rendering pipelines.
+`FrameGraph<B>` owns declared graph resources, compiled liveness and synchronization,
+per-frame transient allocations, and execution diagnostics. `B` implements
+`RenderGraphBackend`; `AnyFrameGraph` dispatches the same graph operations at runtime.
+The renderer owns native resource storage and frame/submission retirement. The
+application owns feature composition, shader selection and frame inputs.
 
-## Overview
-
-The frame graph system allows you to declare render passes and their resource dependencies. The graph then:
-- Compiles the execution order
-- Generates appropriate Vulkan barriers
-- Manages transient resource lifetime
-
-## Pass Types
-
-Katla provides several pre-built pass templates:
-
-| Pass | Description | Use Case |
-|------|-------------|----------|
-| `GeometryPass` | Renders 3D geometry with depth | Standard 3D rendering |
-| `FullscreenPass` | Fullscreen triangle post-processing | Tonemapping, blur, effects |
-| `UIPass` | 2D UI rendering with alpha blending | Debug overlays, in-game HUD |
-| `ShadowPass` | Shadow map generation | Directional/spot light shadows |
-
-## Quick Start
+An empty graph is valid and emits no scene, UI or postprocessing passes:
 
 ```rust
-use katla_gfx::{FrameGraph, GeometryPass, FullscreenPass, UIPass};
-use katla_gfx::render_graph::{GraphResourceDesc, GraphResourceType};
-use katla_gfx::texture::ImageFormat;
-use katla_gfx::render_pass::{ClearValue, LoadOp, StoreOp};
+use katla_gfx::{FrameGraphBuilder, VulkanRenderer};
 
-let extent = renderer.swapchain_extent();
-
-let graph = renderer.create_frame_graph()
-    // Create an HDR texture for geometry output
-    .create_resource(GraphResourceDesc {
-        name: "hdr_color".to_string(),
-        resource_type: GraphResourceType::ColorAttachment {
-            clear_value: Some([0.1, 0.1, 0.1, 1.0]),
-        },
-        format: ImageFormat::R16G16B16A16Sfloat,
-        width: extent.width,
-        height: extent.height,
-    })
-    // Sky pass (renders to HDR texture)
-    .add_pass(FullscreenPass::new("sky")
-        .write("hdr_color", ImageFormat::R16G16B16A16Sfloat)
-        .pipeline(sky_pipeline))
-    // Geometry pass (renders 3D scene to HDR)
-    .add_pass(GeometryPass::new("geometry")
-        .write_color_with(
-            "hdr_color",
-            ImageFormat::R16G16B16A16Sfloat,
-            LoadOp::Load,     // Load sky pass output
-            StoreOp::Store,
-            ClearValue::OPAQUE_BLACK,
-        )
-        .write_depth("depth", ImageFormat::D32Sfloat))
-    // Tonemap pass (HDR -> LDR, output to backbuffer)
-    .add_pass(FullscreenPass::new("tonemap")
-        .read("hdr_color")
-        .write_backbuffer()
-        .pipeline(tonemap_pipeline)
-        .tonemap(tonemap_params))
-    // UI pass (drawn on top of tonemapped output)
-    .add_pass(UIPass::new("ui")
-        .write("backbuffer")
-        .material(ui_material))
-    .build()?;
+let graph = FrameGraphBuilder::new().build::<VulkanRenderer>()?;
 ```
 
-## Pass Builder Methods
+The same builder can produce `FrameGraph<MetalRenderer>` on macOS. Graph construction
+never initializes an editor. Built-in pass templates declare attachment operations;
+they do not install shaders, allocate a font atlas, select objects or create scene
+buffers. Supply the pipelines and resource bindings the chosen feature requires.
 
-### GeometryPass
+## Images and attachments
 
-Renders 3D geometry with depth testing and writing.
+Declare color/depth images with `create_resource(GraphResourceDesc)`. Imported
+textures use `import_resource(name, TextureHandle, ImportedImageContract)`. An imported
+contract states the arriving image state and any required final state. Undefined
+contents cannot be loaded. The acquired backbuffer is an imported graph image;
+windowed execution requires its final present state.
 
-```rust
-GeometryPass::new("geometry")
-    // Color output
-    .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-
-    // OR with explicit load/store ops
-    .write_color_with(
-        "color",
-        ImageFormat::R16G16B16A16Sfloat,
-        LoadOp::Clear,
-        StoreOp::Store,
-        ClearValue::OPAQUE_BLACK,
-    )
-
-    // Depth buffer (required)
-    .write_depth("depth", ImageFormat::D32Sfloat)
-
-    // Optional: Read resources (e.g., shadow maps)
-    .read("shadow_map")
-
-    // Optional: Associate a material
-    .material(material_handle);
-```
-
-### FullscreenPass
-
-Renders a fullscreen triangle for post-processing.
+Every depth-using pass binds an explicit graph target. A color image, a buffer, the
+backbuffer or a missing target produces a structural error before native encoding.
+Imported depth texture formats are checked when the backend resolves the image.
 
 ```rust
-FullscreenPass::new("tonemap")
-    // Read from a texture (e.g., HDR color)
-    .read("hdr_color")
-
-    // Write to backbuffer (swapchain)
-    .write_backbuffer()
-
-    // OR write to a custom texture
-    .write("output", ImageFormat::B8G8R8A8Srgb)
-
-    // Set the graphics pipeline
-    .pipeline(pipeline_handle)
-
-    // Optional: Tonemap parameters
-    .tonemap(tonemap_params);
-```
-
-### UIPass
-
-Renders 2D UI with alpha blending.
-
-```rust
-UIPass::new("ui")
-    // Write to backbuffer or any color texture
-    .write("backbuffer")
-
-    // Set UI material
-    .material(ui_material)
-
-    // Optional: Read resources (e.g., font atlas, thumbnails)
-    .read("font_atlas");
-```
-
-### ShadowPass
-
-Renders shadow maps for lighting.
-
-```rust
-ShadowPass::new("shadow")
-    .write_depth("shadow_map", ImageFormat::D32Sfloat)
-    .resolution(4096, 4096);
-```
-
-## Resource Declaration
-
-### Transient Resources
-
-Resources created and managed by the frame graph:
-
-```rust
-.create_resource(GraphResourceDesc {
-    name: "hdr_color".to_string(),
-    resource_type: GraphResourceType::ColorAttachment {
-        clear_value: Some([0.1, 0.1, 0.1, 1.0]),
-    },
-    format: ImageFormat::R16G16B16A16Sfloat,
-    width: 1920,
-    height: 1080,
-})
-```
-
-### Resource Types
-
-| Type | Description |
-|------|-------------|
-| `ColorAttachment` | Color output texture |
-| `DepthAttachment` | Depth buffer |
-
-### Importing External Resources
-
-Imported images declare a state contract: the state the image arrives in
-(`initial`) and, optionally, the state the graph must leave it in
-(`required_final`). Loading an imported image's contents requires a
-non-`Undefined` initial state; a required final state differing from the
-initial one requires a live pass to access the image.
-
-```rust
-// use katla_gfx::render_graph::{ImportedImageContract, ResourceState};
-
-.import_resource(
-    "external_texture",
-    texture_handle,
-    ImportedImageContract::arrives_in(ResourceState::ShaderRead),
-)
-
-// The built-in backbuffer arrives with observable contents by default;
-// presenting applications declare the final state:
-.backbuffer_contract(
-    ImportedImageContract::arrives_in(ResourceState::ColorAttachment)
-        .must_end_in(ResourceState::PresentSrc),
-)
-```
-
-## Resource Lifecycles
-
-The frame graph automatically manages resource transitions:
-
-1. **First write** - Resource transitions from `UNDEFINED` to `COLOR_ATTACHMENT_OPTIMAL`
-2. **Subsequent writes** - Uses `LOAD` op to preserve previous pass output
-3. **Read after write** - Automatically transitions to `SHADER_READ_ONLY_OPTIMAL`
-4. **Multiple passes writing** - Each pass can use `LOAD` to preserve and add to the output
-
-### Backbuffer Special Case
-
-The backbuffer (swapchain) is a special resource:
-- Use `write_backbuffer()` instead of `write("backbuffer")` (more discoverable)
-- First pass writing to backbuffer uses `CLEAR` op
-- Subsequent passes use `LOAD` op to preserve previous output
-
-```rust
-// First pass: clears to solid color
-.add_pass(FullscreenPass::new("tonemap")
-    .write_backbuffer()  // CLEAR op
-    .pipeline(tonemap_pipeline))
-
-// Second pass: loads tonemapped output and draws UI on top
-.add_pass(UIPass::new("ui")
-    .write_backbuffer()  // LOAD op (preserves tonemap output)
-    .material(ui_material))
-```
-
-## Execution
-
-Rendering one frame starts by acquiring a frame token, and submissions move
-into frame-owned storage so several passes share one copy:
-
-```rust
-let frame = match renderer.acquire_frame()? {
-    FrameAcquisition::Ready(frame) => frame,
-    FrameAcquisition::Unavailable => return Ok(()),
-    FrameAcquisition::OutOfDate => { /* recreate the surface, then retry */ return Ok(()); }
+use katla_gfx::render_graph::{
+    FrameGraphBuilder, GeometryPass, GraphResourceDesc, GraphResourceType, PassBuilder,
 };
-renderer.set_frame_uniforms(&frame, uniforms)?;
+use katla_gfx::{VulkanRenderer, texture::ImageFormat};
 
-// One prepared copy per list; every pass submission shares it.
-let opaque = std::rc::Rc::new(opaque_draw_list);
-renderer.render(&frame, &mut frame_graph, |frame| {
-    frame.submit("geometry", std::rc::Rc::clone(&opaque));
-    frame.submit("geometry", std::rc::Rc::new(transparent_draw_list));
-
-    // Submit UI draw list
-    frame.submit_ui("ui", &ui_draw_list);
-})?;
-renderer.present(frame)?;
-```
-
-Passes without submitted draw lists still execute (useful for fullscreen post-processing passes).
-
-## Load/Store Operations
-
-| LoadOp | Description |
-|--------|-------------|
-| `Load` | Preserve existing contents |
-| `Clear` | Clear to clear_value |
-| `DontCare` | Contents undefined (may not be preserved) |
-
-| StoreOp | Description |
-|---------|-------------|
-| `Store` | Keep results for later use |
-| `DontCare` | Discard after pass |
-
-## Clear Values
-
-```rust
-// Color clear value
-ClearValue::Color([r, g, b, a])
-
-// Depth clear value
-ClearValue::DepthStencil { depth: 1.0, stencil: 0 }
-
-// Predefined colors
-ClearValue::OPAQUE_BLACK   // [0, 0, 0, 1]
-ClearValue::TRANSPARENT_BLACK  // [0, 0, 0, 0]
-```
-
-## Common Patterns
-
-### Deferred Rendering
-
-```rust
-let graph = renderer.create_frame_graph()
-    // Geometry pass - outputs position, normal, albedo
-    .create_resource(gbuffer_pos_desc)
-    .create_resource(gbuffer_normal_desc)
-    .create_resource(gbuffer_albedo_desc)
-    .add_pass(GeometryPass::new("geometry")
-        .write_color("gbuffer_pos", ImageFormat::RGBA16SFLOAT)
-        .write_color("gbuffer_normal", ImageFormat::RGBA16SFLOAT)
-        .write_color("gbuffer_albedo", ImageFormat::B8G8R8A8Srgb)
-        .write_depth("depth", ImageFormat::D32Sfloat))
-    // Lighting pass - reads gbuffer, outputs to backbuffer
-    .add_pass(FullscreenPass::new("lighting")
-        .read("gbuffer_pos")
-        .read("gbuffer_normal")
-        .read("gbuffer_albedo")
-        .write_backbuffer()
-        .pipeline(lighting_pipeline))
-    .build()?;
-```
-
-### Forward Rendering with Tonemapping
-
-```rust
-let graph = renderer.create_frame_graph()
-    // HDR render target
-    .create_resource(hdr_desc)
-    // Scene pass (HDR)
+let graph = FrameGraphBuilder::new()
+    .create_resource(GraphResourceDesc {
+        name: "depth".into(),
+        resource_type: GraphResourceType::DepthAttachment { clear_value: 0.0, sampled: false },
+        format: ImageFormat::D32Sfloat,
+        width: 640,
+        height: 480,
+        tracks_swapchain_size: false,
+    })
     .add_pass(GeometryPass::new("scene")
-        .write_color("hdr_color", ImageFormat::R16G16B16A16Sfloat)
-        .write_depth("depth", ImageFormat::D32Sfloat))
-    // Tonemap (HDR -> LDR)
-    .add_pass(FullscreenPass::new("tonemap")
-        .read("hdr_color")
-        .write_backbuffer()
-        .pipeline(tonemap_pipeline))
-    .build()?;
+        .write_color("backbuffer", ImageFormat::Auto)
+        .depth_target("depth"))
+    .build::<VulkanRenderer>()?;
 ```
 
-### Cascaded Shadow Maps
+Choose `GeometryPass::without_depth()` for a depth-free pass. Load/store/clear
+operations come from the pass declaration. `ShadowPass::write_depth` binds its named
+output as its depth target. Arbitrary scene/HDR/object-ID/viewport textures remain
+graph resources, with no renderer-owned fallback.
 
-```rust
-let graph = renderer.create_frame_graph()
-    // Cascade 0
-    .add_pass(ShadowPass::new("shadow_cascade_0")
-        .write_depth("shadow_cascade_0", ImageFormat::D32Sfloat)
-        .resolution(2048, 2048))
-    // Cascade 1
-    .add_pass(ShadowPass::new("shadow_cascade_1")
-        .write_depth("shadow_cascade_1", ImageFormat::D32Sfloat)
-        .resolution(1024, 1024))
-    // Scene pass reads shadow maps
-    .add_pass(GeometryPass::new("scene")
-        .read("shadow_cascade_0")
-        .read("shadow_cascade_1")
-        .write_color("color", ImageFormat::B8G8R8A8Srgb)
-        .write_depth("depth", ImageFormat::D32Sfloat))
-    .build()?;
-```
+Pass liveness starts from exported resources and explicit side effects. The
+backbuffer is exported by default. Export offscreen results needed after execution,
+including object-ID images and readback buffers. Unused passes are culled, including
+compute pipeline warmup for those passes. Exporting a resource retains the producer
+of every surviving byte range, mip, layer and aspect. A later write replaces only
+the range it covers; fully overwritten producers are culled.
 
-## Error Handling
+## Buffer resources and frame ownership
 
-```rust
-use katla_gfx::render_graph::RenderGraphError;
+`create_buffer(GraphBufferDesc)` declares graph-owned per-slot storage.
+`import_buffer(name, BufferHandle, BufferDesc)` imports an ordinary application-owned
+allocation. Descriptors declare byte capacity, usages and memory policy. Every
+consumer supplies typed `BufferAccess` values with access mode, shader stage/transfer
+role and exact byte range. Coarse read/write lists cannot replace these declarations.
 
-match graph.build() {
-    Ok(graph) => { /* use graph */ }
-    Err(RenderGraphError::ResourceNotFound(name)) => {
-        eprintln!("Resource not found: {}", name);
-    }
-    Err(RenderGraphError::InvalidPipelineHandle(handle)) => {
-        eprintln!("Invalid pipeline handle: {:?}", handle);
-    }
-    Err(e) => {
-        eprintln!("Failed to build frame graph: {:?}", e);
-    }
-}
-```
+After acquiring a frame, applications select their own slot's handles with
+`rebind_imported_buffer(resource, handle)`. The declared descriptor stays unchanged.
+Native resolution checks the actual allocation descriptor before encoding, including
+already initialized graphs. `GpuRenderer::write_buffer` takes the acquired token and
+checks CPU visibility, ownership and bounds.
 
-## Performance Notes
+`redefine_imported_buffer(resource, handle, desc)` supports application-controlled
+capacity changes and invalidates compilation. `remove_imported_buffer(resource)`
+requires all command, packet, access and export references to be removed first. IDs
+stay reserved, so retiring an import never shifts another resource's ID.
 
-1. **Build once, execute many** - Frame graphs are built at startup and executed every frame
-2. **Resource reuse** - Transient resources are allocated once and reused across frames
-3. **Barrier efficiency** - The graph generates minimal barriers based on actual usage
-4. **Pass culling** - Passes with no draw lists still execute but are very cheap
+## Compute and drawing inputs
 
-## Advanced: Custom Passes
+A compute dispatch names a `ComputePipelineDesc` containing the exact WGSL source and
+entry point. Reflection supplies its binding interface. `ComputeDispatch` provides
+`pipeline: ComputePipelineDesc`, complete bindings and explicit direct workgroups or an indirect command range.
+There are no built-in buffer roles, named compute kernels or implicit frame-workload
+parameters. Zero direct dimensions express an empty workload. Copy/fill commands use
+typed transfer accesses; indirect dispatch/draw commands use typed indirect reads.
 
-For specialized rendering, you can create custom passes by implementing the `PassBuilder` trait:
+Graphics inputs use `PassBindings`: layout-selected material pipelines, graph buffer
+and sampled image bindings, independent sampler slots, immutable constant blocks and
+ordinary draw phases. A phase can draw submissions, selected object indices,
+shader-generated vertices or a declared indirect command. Optional viewports have
+finite coordinates and positive extents. Stable object-storage indices survive
+layout-selected material overrides.
 
-```rust
-use katla_gfx::render_graph::PassBuilder;
+`PassDesc::with_bindings` and `set_pass_bindings(PassId, packet)` preserve the explicit
+access contract. Bindings must fit the declared byte/subresource ranges and include
+every selected shader stage. Native preflight also checks reflected slot types,
+stages and minimum spans. Constants identify their reflected group/binding/stages;
+no hidden tonemap, overlay, light or shadow write mutates object storage.
 
-pub struct CustomPass {
-    name: String,
-    reads: Vec<String>,
-    writes: Vec<String>,
-}
+`set_pass_commands(PassId, commands, accesses)` replaces an explicitly authored
+compute/transfer workload and its buffer accesses together. Applications refresh
+pass IDs after inserting passes. Shader/pipeline preparation occurs before encoding
+and uses the compiled live pass order. Services can explicitly prepare an authored
+compute descriptor before acquiring a frame when its pass becomes live later.
 
-impl PassBuilder for CustomPass {
-    fn as_builder(self) -> InternalPassBuilder {
-        InternalPassBuilder {
-            name: self.name,
-            pass_type: PassType::Graphics,
-            reads: self.reads,
-            writes: self.writes,
-            pipeline: None,
-            tonemap_params: None,
-            material: None,
-            output_format: None,
-            build_fn: Box::new(|_resource_map| {
-                Ok(Box::new(CustomPassData))
-            }),
-            uses_depth: false,
-        }
-    }
-}
-```
+## Exported image readback
 
-## See Also
+`GpuRenderer::graph_texture_source(resource)` returns the latest committed exported
+image generation. An aborted frame does not replace it. The source identifies its
+frame slot, acquisition generation and submission. `queue_texture_readback` takes
+that exact source and a subresource/region; `poll_texture_readback` returns pending or
+one completed typed result without waiting. Native ownership retains the queued
+source across graph resize and later slot reuse. Applications interpret pixel data
+and map object identifiers to their own entities.
 
-- [`FrameGraph`](../render_graph/struct.FrameGraph.html)
-- [`GeometryPass`](../render_graph/passes/geometry/struct.GeometryPass.html)
-- [`FullscreenPass`](../render_graph/passes/fullscreen/struct.FullscreenPass.html)
-- [`UIPass`](../render_graph/passes/ui/struct.UIPass.html)
-- [`ShadowPass`](../render_graph/passes/shadow/struct.ShadowPass.html)
-- [`VulkanRenderer::render()`](../renderer/struct.VulkanRenderer.html#method.render)
+## Diagnostics
+
+Enable execution tracing with `set_execution_trace(true)`. `capture()` joins the
+logical/compiled graph, native allocations and observed encoder/submission records.
+Capture does not add waits, barriers, compilation or submission work. Compare the
+trace against the compiled contract before treating an execution as validated.
+
+See [capture and comparison documentation](../../../docs/render_graph_capture.md)
+and [core graphics ownership](../../../docs/graphics_core.md) for complete capture,
+minimal-renderer and editor composition examples.

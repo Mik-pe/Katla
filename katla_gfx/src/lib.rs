@@ -158,7 +158,7 @@
 //! - **Backends** - `vulkan` and `metal` are internal; native Vulkan types are
 //!   reachable only through [`vulkan_native`] (validation feature) and the
 //!   explicitly named [`VulkanRenderer`] / [`MetalRenderer`] / [`VulkanContext`]
-//! - **Internal** - `pipeline`, `sync`, `animation`, `shadow`, `lighting` (implementation details)
+//! - **Internal** - `pipeline`, `sync`, `animation`, `shadow` (implementation details)
 //!
 //! # Resource Handles
 //!
@@ -197,10 +197,6 @@ pub mod render_graph;
 pub mod animation;
 
 // Lighting — Vulkan-specific internals
-#[cfg(feature = "validation")]
-pub mod lighting;
-#[cfg(not(feature = "validation"))]
-pub(crate) mod lighting;
 
 // Shadow module — always available. Internal Vulkan implementations are self-gated.
 pub mod shadow;
@@ -218,9 +214,7 @@ pub(crate) mod metal;
 
 // Re-export animation types — shared data types always available
 pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
-pub use animation::{
-    AnimationBufferUploader, AnimationUpload, PoseComputeBuffers, PoseComputePipeline,
-};
+pub use animation::{AnimationBufferUploader, AnimationUpload};
 
 // Re-export types used by katla_app
 pub use renderer::PointLightGPU;
@@ -228,7 +222,6 @@ pub use shadow::cascade::CascadeParams;
 
 // Internal modules (implementation details)
 pub(crate) mod barrier;
-pub(crate) mod gpu_buffer;
 pub(crate) mod viewport;
 
 // Re-export viewport types (backend-agnostic)
@@ -305,8 +298,8 @@ pub use renderer::registry::{
     validate_dynamic_update,
 };
 pub use renderer::{
-    DrawCall, DrawList, FrameUniforms, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData,
-    PreparedDrawCounts, PreparedDraws,
+    DrawCall, DrawList, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData, PreparedDrawCounts,
+    PreparedDraws,
 };
 
 // Backend-neutral resource metadata
@@ -321,11 +314,20 @@ pub use renderer::retirement::RetirementSnapshot;
 pub use metal::metal_renderer::MetalRenderer;
 
 // Backend-agnostic renderer trait
+pub use backend::command::ShaderStages;
 pub use renderer::features::RendererFeature;
+pub use renderer::frame_bindings::{
+    BufferBinding, ConstantBinding, ImageBinding, PassBindings, PassDraw, PassDrawPhase,
+    PassPipeline, SamplerBinding, SamplingMode,
+};
+pub use renderer::frame_scope::{FrameAcquisition, FrameToken, PresentOutcome, SurfaceStatus};
 pub use renderer::gpu_renderer::GpuRenderer;
 pub use renderer::pipeline_descriptor::{BlendMode, DepthState, PipelineDescriptor};
 pub use renderer::pipeline_kind::PipelineKind;
 pub use renderer::pipeline_variant::PipelineVariantKey;
+pub use renderer::texture_readback::{
+    GraphTextureSource, TextureReadbackData, TextureReadbackRegion, TextureReadbackTicket,
+};
 
 // Enum-based renderer dispatch (both backends)
 pub use renderer::any_renderer::AnyRenderer;
@@ -342,7 +344,6 @@ pub use render_graph::any_frame_graph::AnyFrameGraph;
 
 // Modern particle system — shared config types always available
 pub use particles::EmitterConfig;
-pub use particles::GlobalParticleSystem;
 pub use particles::particle_drive::ParticleEmitterDriver;
 
 // Render graph system — pass types and descriptors are backend-agnostic
@@ -351,9 +352,8 @@ pub use render_graph::{
     BufferAccess, BufferByteRange, BufferDesc, BufferMemoryPolicy, BufferUsage, BufferUsages,
     FullscreenPass, GeometryPass, GraphBufferDesc, GraphResourceDesc, GraphResourceType,
     ImageAccess, ImageAspects, ImageSubresourceRange, ImportedImageContract, OutlinePass,
-    OverlayParams, OverlayPass, ParticlePass, RenderGraphError, ResourceAccessMode,
-    ResourceAccessStage, ResourceAccessUsage, ShadowPass, StencilIndicatorPass, TonemapOperator,
-    TonemapParams,
+    OverlayPass, ParticlePass, RenderGraphError, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage, ShadowPass, StencilIndicatorPass,
 };
 pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 

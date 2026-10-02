@@ -10,7 +10,7 @@ pub struct ParticleInspectorState {
     pub panel: DraggablePanelState,
 }
 
-/// Pre-collected data for the particle inspector, gathered from World + GlobalParticleSystem.
+/// Pre-collected particle inspector data from ECS and scene features.
 #[derive(Debug, Clone, Default)]
 pub struct ParticleInspectorData {
     pub emitter_entities: Vec<EntityId>,
