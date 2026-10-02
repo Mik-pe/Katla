@@ -166,6 +166,7 @@ impl Build for EditorOverlayView {
             layers.push((Alignment::TopLeading, mixer.boxed()));
         }
 
+        let scene_dialog = super::scene_dialog::SceneDialogView.build(ctx);
         layers.extend([
             // DockSpace chrome — tabs, splitters, drag overlay
             (Alignment::TopLeading, dockspace.boxed()),
@@ -176,6 +177,7 @@ impl Build for EditorOverlayView {
             (Alignment::TopLeading, co_creator),
             (Alignment::TopLeading, particle_inspector),
             (Alignment::TopLeading, preferences),
+            (Alignment::TopLeading, scene_dialog),
         ]);
 
         zstack(layers).boxed()

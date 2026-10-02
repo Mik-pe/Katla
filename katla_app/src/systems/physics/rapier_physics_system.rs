@@ -78,6 +78,7 @@ fn spawn_new_bodies(world: &mut World) {
         let gravity_scale = rb_ref.as_ref().map(|rb| rb.gravity_scale).unwrap_or(1.0);
         let ccd_enabled = rb_ref.as_ref().map(|rb| rb.ccd_enabled).unwrap_or(false);
 
+        let linear_velocity = rb_ref.map(|rb| rb.linear_velocity).unwrap_or_default();
         let collision_filter = world.get_component::<CollisionFilter>(entity).copied();
 
         let mesh_data = resolve_mesh_data(&shape, world);
@@ -86,7 +87,7 @@ fn spawn_new_bodies(world: &mut World) {
             let Some(physics) = world.get_resource_mut::<PhysicsWorld>() else {
                 continue;
             };
-            physics.create_body_ex(
+            let handles = physics.create_body_ex(
                 &shape,
                 mesh_data.as_ref(),
                 &transform,
@@ -97,7 +98,13 @@ fn spawn_new_bodies(world: &mut World) {
                 gravity_scale,
                 ccd_enabled,
                 collision_filter.as_ref(),
-            )
+            );
+            if body_type != BodyType::Static
+                && let Err(error) = physics.set_body_velocity(handles.0, linear_velocity)
+            {
+                log::error!("Cannot initialize scene body velocity: {error}");
+            }
+            handles
         };
 
         if let Some(rb) = world.get_component_mut::<RigidBody>(entity) {
@@ -376,6 +383,34 @@ mod tests {
 
         let rb = world.get_component::<RigidBody>(entity).unwrap();
         assert!(rb.is_spawned());
+    }
+
+    #[test]
+    fn test_scene_velocity_survives_native_body_creation() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        let velocity = Vec3::new(2.0, 3.0, 4.0);
+        let mut body = RigidBody::dynamic();
+        body.linear_velocity = velocity;
+        let entity = world.spawn((
+            TransformComponent::default(),
+            ColliderShape::Sphere(SphereShape::new(0.5)),
+            body,
+        ));
+        spawn_new_bodies(&mut world);
+        let handle = world
+            .get_component::<RigidBody>(entity)
+            .unwrap()
+            .body_handle
+            .unwrap();
+        assert_eq!(
+            world
+                .get_resource::<PhysicsWorld>()
+                .unwrap()
+                .body_velocity(handle)
+                .unwrap(),
+            velocity
+        );
     }
 
     #[test]

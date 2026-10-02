@@ -2,11 +2,11 @@ use super::descriptors::{
     AnimationDescriptor, AudioEmitterDescriptor, ColliderShapeDescriptor,
     CollisionFilterDescriptor, DirectionalLightDescriptor, DrawableDescriptor, EntityDescriptor,
     ParticleEmitterDescriptor, PerspectiveDescriptor, PhysicsMaterialDescriptor,
-    PointLightDescriptor, RigidBodyDescriptor, Scene, ScriptDescriptor, TransformDescriptor,
-    TriggerVolumeDescriptor, VelocityDescriptor,
+    PointLightDescriptor, RigidBodyDescriptor, RigidBodyPropertiesDescriptor, Scene,
+    ScriptDescriptor, TransformDescriptor, TriggerVolumeDescriptor, VelocityDescriptor,
 };
 use super::entity_source::EntitySource;
-use log::{info, warn};
+use log::{debug, info, warn};
 use std::path::Path;
 
 use katla_gfx::GpuRenderer;
@@ -32,9 +32,8 @@ pub const SCENE_VERSION: u32 = 1;
 
 /// RON serialization extensions configuration.
 ///
-/// Uses `extensions` so that comments and trailing commas in scene files
-/// are preserved across save/load cycles, and unknown fields are silently
-/// ignored for forward compatibility.
+/// Enables concise optional and newtype values. Comments and formatting are
+/// accepted when reading but regenerated when saving.
 const RON_EXTENSIONS: Extensions = Extensions::IMPLICIT_SOME
     .union(Extensions::UNWRAP_NEWTYPES)
     .union(Extensions::UNWRAP_VARIANT_NEWTYPES);
@@ -54,19 +53,8 @@ impl SceneManager {
     /// Queries all entities with `TransformComponent` and gathers their
     /// serializable data using `EntitySource` to determine origin.
     pub fn save_scene(app: &Application) -> Scene {
-        Self::save_scene_with_created_at(app, None)
-    }
-
-    /// Serialize the current world state into a `Scene` descriptor.
-    ///
-    /// If `existing_created_at` is provided, it is used as `created_at`
-    /// (preserving the original creation time across saves). Otherwise
-    /// `created_at` is set to the current time (first save).
-    pub fn save_scene_with_created_at(
-        app: &Application,
-        existing_created_at: Option<String>,
-    ) -> Scene {
-        let mut scene = Scene::new("Untitled");
+        let mut scene = app.scene_document.saved.clone();
+        scene.entities.clear();
         scene.version = SCENE_VERSION;
         let timestamp = {
             use std::time::SystemTime;
@@ -75,46 +63,55 @@ impl SceneManager {
                 .ok()
                 .map(|d| d.as_secs().to_string())
         };
-        scene.created_at = existing_created_at.or_else(|| timestamp.clone());
+        scene.created_at = scene.created_at.or_else(|| timestamp.clone());
         scene.modified_at = timestamp;
         scene.engine_version = Some(env!("CARGO_PKG_VERSION").to_string());
 
-        let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
-
+        let mut serialized_names = std::collections::HashMap::new();
+        let mut used_names = std::collections::HashSet::new();
+        let entities: Vec<_> = app
+            .world
+            .query_ref::<&TransformComponent>()
+            .map(|(id, _)| id)
+            .filter(|id| {
+                app.world
+                    .get_component::<crate::components::EditorHidden>(*id)
+                    .is_none()
+                    && app.world.get_component::<EntitySource>(*id).is_some()
+            })
+            .collect();
+        let reserved_names: std::collections::HashSet<_> = entities
+            .iter()
+            .filter_map(|id| {
+                app.world
+                    .get_component::<NameComponent>(*id)
+                    .map(|name| name.name.clone())
+            })
+            .collect();
+        for id in entities {
+            let base = app
+                .world
+                .get_component::<NameComponent>(id)
+                .map(|name| name.name.clone())
+                .unwrap_or_else(|| format!("Entity {}", id.id()));
+            let mut name = base.clone();
+            let mut suffix = 2;
+            while used_names.contains(&name) || (name != base && reserved_names.contains(&name)) {
+                name = format!("{base} ({suffix})");
+                suffix += 1;
+            }
+            used_names.insert(name.clone());
+            serialized_names.insert(id, name);
+        }
         for (entity_id, transform) in app.world.query_ref::<&TransformComponent>() {
-            // Skip editor-hidden entities (camera, etc.)
-            if app
-                .world
-                .get_component::<crate::components::EditorHidden>(entity_id)
-                .is_some()
-            {
+            let Some(name) = serialized_names.get(&entity_id).cloned() else {
                 continue;
-            }
-
-            let name = app
-                .world
-                .get_component::<NameComponent>(entity_id)
-                .map(|n| n.name.clone());
-
-            if let Some(ref n) = name
-                && !seen_names.insert(n.clone())
-            {
-                warn!(
-                    "Duplicate entity name '{}' -- parent resolution may be incorrect",
-                    n
-                );
-            }
-
-            // Parent relationship (by name lookup)
+            };
+            let name = Some(name);
             let parent = app
                 .world
                 .get_component::<crate::components::Parent>(entity_id)
-                .and_then(|p| {
-                    app.world
-                        .get_component::<NameComponent>(p.parent)
-                        .map(|n| n.name.clone())
-                });
-
+                .and_then(|parent| serialized_names.get(&parent.parent).cloned());
             let t = &transform.transform;
             let transform_desc = TransformDescriptor {
                 position: [t.position.x(), t.position.y(), t.position.z()],
@@ -241,6 +238,23 @@ impl SceneManager {
                         BodyType::Kinematic => RigidBodyDescriptor::Kinematic,
                     });
 
+            let rigid_body_properties =
+                app.world.get_component::<RigidBody>(entity_id).map(|body| {
+                    RigidBodyPropertiesDescriptor {
+                        gravity_scale: body.gravity_scale,
+                        ccd_enabled: body.ccd_enabled,
+                        linear_velocity: [
+                            body.linear_velocity.x(),
+                            body.linear_velocity.y(),
+                            body.linear_velocity.z(),
+                        ],
+                    }
+                });
+            let reverb_zone = app
+                .world
+                .get_component::<crate::components::ReverbZone>(entity_id)
+                .cloned();
+
             let collider_shape = app
                 .world
                 .get_component::<ColliderShape>(entity_id)
@@ -251,13 +265,13 @@ impl SceneManager {
                         half_height: c.half_height,
                         radius: c.radius,
                     },
-                    ColliderShape::Trimesh(handle) => ColliderShapeDescriptor::Trimesh {
-                        mesh_handle_index: handle.index(),
-                        mesh_handle_generation: handle.generation(),
+                    ColliderShape::Trimesh(_) => ColliderShapeDescriptor::Trimesh {
+                        mesh_handle_index: 0,
+                        mesh_handle_generation: 0,
                     },
-                    ColliderShape::ConvexHull(handle) => ColliderShapeDescriptor::ConvexHull {
-                        mesh_handle_index: handle.index(),
-                        mesh_handle_generation: handle.generation(),
+                    ColliderShape::ConvexHull(_) => ColliderShapeDescriptor::ConvexHull {
+                        mesh_handle_index: 0,
+                        mesh_handle_generation: 0,
                     },
                     ColliderShape::Heightfield(h) => ColliderShapeDescriptor::Heightfield {
                         rows: h.rows,
@@ -303,6 +317,8 @@ impl SceneManager {
                 directional_light,
                 audio_emitter,
                 rigid_body,
+                rigid_body_properties,
+                reverb_zone,
                 collider_shape,
                 physics_material,
                 trigger_volume,
@@ -310,7 +326,8 @@ impl SceneManager {
             });
         }
 
-        info!(
+        scene.entities.sort_by(|a, b| a.name.cmp(&b.name));
+        debug!(
             "Serialized scene '{}' with {} entities",
             scene.name,
             scene.entities.len()
@@ -320,35 +337,24 @@ impl SceneManager {
 
     /// Save a scene to a RON file.
     ///
-    /// Preserves the original `created_at` from the existing file (if any)
-    /// so that the creation timestamp survives across repeated saves.
-    pub fn save_to_file(app: &Application, path: &Path) -> Result<(), String> {
-        let existing_created_at = std::fs::read_to_string(path)
-            .ok()
-            .and_then(|content| ron::from_str::<Scene>(&content).ok())
-            .and_then(|scene| scene.created_at);
-
-        let scene = Self::save_scene_with_created_at(app, existing_created_at);
-
+    /// Preserves the loaded document metadata and updates its path and saved
+    /// baseline only after the complete file has been atomically replaced.
+    pub fn save_to_file(app: &mut Application, path: &Path) -> Result<(), String> {
+        let scene = Self::save_scene(app);
         let ron_string = ron::ser::to_string_pretty(&scene, ron_pretty_config())
-            .map_err(|e| format!("Failed to serialize scene: {}", e))?;
-
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create directory {:?}: {}", parent, e))?;
-        }
-
-        std::fs::write(path, ron_string)
-            .map_err(|e| format!("Failed to write scene to {:?}: {}", path, e))?;
-
-        info!("Saved scene '{}' to {:?}", scene.name, path);
+            .map_err(|e| format!("Failed to serialize scene: {e}"))?;
+        crate::util::config::write_atomic(path, ron_string.as_bytes())
+            .map_err(|e| format!("Failed to save scene to {}: {e}", path.display()))?;
+        app.scene_document.saved = scene;
+        app.scene_document.path = Some(path.to_path_buf());
+        info!("Saved scene to {}", path.display());
         Ok(())
     }
 
     /// Load a scene from a RON file and populate the world.
     ///
-    /// Clears existing entities and replays each entity descriptor through
-    /// the appropriate spawn functions. Runs format migrations if the scene
+    /// Stages descriptors before retiring the previous scene, preserving it
+    /// if a model or resource cannot be loaded. Runs migrations if the scene
     /// version is older than [`SCENE_VERSION`].
     pub fn load_from_file(app: &mut Application, path: &Path) -> Result<(), String> {
         let content = std::fs::read_to_string(path)
@@ -357,13 +363,15 @@ impl SceneManager {
         let scene: Scene =
             ron::from_str(&content).map_err(|e| format!("Failed to parse scene file: {}", e))?;
 
-        Self::load_scene(app, scene)
+        Self::load_scene(app, scene)?;
+        app.scene_document.path = Some(path.to_path_buf());
+        Ok(())
     }
 
     /// Load a scene descriptor into the world.
     ///
-    /// Clears existing entities and replays each entity descriptor through
-    /// the appropriate spawn functions. Runs format migrations if the scene
+    /// Stages descriptors before retiring the previous scene, preserving it
+    /// if a model or resource cannot be loaded. Runs migrations if the scene
     /// version is older than [`SCENE_VERSION`]. Returns an error if the scene
     /// version is newer than this build supports.
     pub fn load_scene(app: &mut Application, mut scene: Scene) -> Result<(), String> {
@@ -374,7 +382,7 @@ impl SceneManager {
             .map_err(|e| format!("Cannot load scene '{}': {}", scene.name, e))?;
 
         info!(
-            "Loading scene '{}' (version {}{} with {} entities",
+            "Loading scene '{}' (version {}{}) with {} entities",
             scene.name,
             loaded_version,
             if loaded_version != scene.version {
@@ -385,68 +393,35 @@ impl SceneManager {
             scene.entities.len()
         );
 
-        // Wait for all in-flight GPU work to complete before freeing resources.
-        // With FRAMES_IN_FLIGHT=2, the previous frame may still reference
-        // these buffers on the GPU.
+        validate_hierarchy(&scene)?;
         app.renderer.wait_for_device();
-
-        // Release all GPU resources before clearing entities.
-        // The tracker returns handles whose ref count dropped to zero;
-        // the renderer then frees the actual GPU memory.
-        let to_destroy = app.gpu_resource_tracker.release_all();
-        for handle in &to_destroy.meshes {
-            app.renderer.destroy_mesh(*handle);
-        }
-        for handle in &to_destroy.materials {
-            app.renderer.destroy_material(*handle);
-        }
-        for handle in &to_destroy.textures {
-            app.renderer.destroy_texture(*handle);
-        }
-        for handle in &to_destroy.skeletons {
-            app.renderer.destroy_skeleton(*handle);
-        }
-
-        info!(
-            "Released GPU resources: {} meshes, {} materials, {} textures, {} skeletons",
-            to_destroy.meshes.len(),
-            to_destroy.materials.len(),
-            to_destroy.textures.len(),
-            to_destroy.skeletons.len()
-        );
-
-        app.world.clear_entities();
-
-        // Re-create the editor camera entity (destroyed by clear_entities).
-        // The camera is EditorHidden so it is never saved to disk and must be
-        // re-spawned on every scene load.
-        app.camera = crate::application::camera::Camera::new(&mut app.world);
-
-        // Build a name -> entity_id mapping for parent resolution
-        let mut name_to_entity: std::collections::HashMap<String, katla_ecs::EntityId> =
-            std::collections::HashMap::new();
-
-        // First pass: spawn all entities, track by index and name
-        let mut spawned_ids: Vec<Option<katla_ecs::EntityId>> =
-            Vec::with_capacity(scene.entities.len());
+        let previous_entities: std::collections::HashSet<_> = app.world.entity_ids().collect();
+        let mut previous_tracker = app.gpu_resource_tracker.clone();
+        let mut spawned_ids = Vec::with_capacity(scene.entities.len());
+        let mut name_to_entity = std::collections::HashMap::new();
         for desc in &scene.entities {
             match Self::spawn_entity(app, desc) {
-                Ok(entity_id) => {
-                    if let Some(ref name) = desc.name {
-                        if name_to_entity.contains_key(name) {
-                            warn!(
-                                "Duplicate entity name '{}' on load -- keeping first occurrence for parent resolution",
-                                name
-                            );
-                        } else {
-                            name_to_entity.insert(name.clone(), entity_id);
-                        }
+                Ok(entity) => {
+                    if let Some(name) = &desc.name {
+                        name_to_entity.entry(name.clone()).or_insert(entity);
                     }
-                    spawned_ids.push(Some(entity_id));
+                    spawned_ids.push(Some(entity));
                 }
-                Err(e) => {
-                    warn!("Skipping entity: {}", e);
-                    spawned_ids.push(None);
+                Err(error) => {
+                    let prepared: Vec<_> = app
+                        .world
+                        .entity_ids()
+                        .filter(|id| !previous_entities.contains(id))
+                        .collect();
+                    for id in prepared {
+                        app.world.destroy_entity(id);
+                    }
+                    let abandoned = app.gpu_resource_tracker.rollback_to(previous_tracker);
+                    destroy_resources(app, abandoned);
+                    return Err(format!(
+                        "Cannot load scene '{}': {error}. The current scene was kept.",
+                        scene.name
+                    ));
                 }
             }
         }
@@ -483,11 +458,40 @@ impl SceneManager {
             }
         }
 
-        info!(
-            "Scene '{}' loaded successfully ({} entities)",
-            scene.name,
-            scene.entities.len()
-        );
+        for id in previous_entities {
+            if app
+                .world
+                .get_component::<crate::components::EditorHidden>(id)
+                .is_some()
+            {
+                if let Some(drawable) = app.world.get_component::<DrawableComponent>(id) {
+                    previous_tracker.release_drawable(
+                        drawable.mesh_handle,
+                        drawable.material_handle,
+                        drawable.skeleton_handle,
+                    );
+                }
+                continue;
+            }
+            if let Some(emitter) = app.world.get_component_mut::<ParticleEmitterComponent>(id)
+                && let Some(handle) = emitter.emitter_handle.take()
+                && let Some(features) = &mut app.scene_features
+            {
+                katla_gfx::ParticleEmitterDriver::destroy_emitter(
+                    &mut features.particles,
+                    handle,
+                    emitter.kill_on_destroy,
+                );
+            }
+            app.world.destroy_entity(id);
+        }
+        let retired = app.gpu_resource_tracker.retire_snapshot(previous_tracker);
+        destroy_resources(app, retired);
+        app.scene_document.saved = scene;
+        app.scene_document.saved = Self::save_scene(app);
+        app.scene_document.path = None;
+        #[cfg(feature = "editor")]
+        app.editor.clear_entity_references();
         Ok(())
     }
 
@@ -755,13 +759,26 @@ impl SceneManager {
             );
         }
 
+        if let Some(zone) = &desc.reverb_zone {
+            app.world.add_component(entity_id, zone.clone());
+        }
+
         // Apply rigid body
         if let Some(ref rb_desc) = desc.rigid_body {
-            let rb = match rb_desc {
+            let mut rb = match rb_desc {
                 RigidBodyDescriptor::Static => RigidBody::static_body(),
                 RigidBodyDescriptor::Dynamic => RigidBody::dynamic(),
                 RigidBodyDescriptor::Kinematic => RigidBody::kinematic(),
             };
+            if let Some(properties) = &desc.rigid_body_properties {
+                rb.gravity_scale = properties.gravity_scale;
+                rb.ccd_enabled = properties.ccd_enabled;
+                rb.linear_velocity = katla_math::Vec3::new(
+                    properties.linear_velocity[0],
+                    properties.linear_velocity[1],
+                    properties.linear_velocity[2],
+                );
+            }
             app.world.add_component(entity_id, rb);
         }
 
@@ -778,20 +795,18 @@ impl SceneManager {
                     half_height,
                     radius,
                 } => ColliderShape::Capsule(CapsuleShape::new(*half_height, *radius)),
-                ColliderShapeDescriptor::Trimesh {
-                    mesh_handle_index,
-                    mesh_handle_generation,
-                } => ColliderShape::Trimesh(katla_gfx::MeshHandle::from_raw(
-                    *mesh_handle_index,
-                    *mesh_handle_generation,
-                )),
-                ColliderShapeDescriptor::ConvexHull {
-                    mesh_handle_index,
-                    mesh_handle_generation,
-                } => ColliderShape::ConvexHull(katla_gfx::MeshHandle::from_raw(
-                    *mesh_handle_index,
-                    *mesh_handle_generation,
-                )),
+                ColliderShapeDescriptor::Trimesh { .. } => ColliderShape::Trimesh(
+                    app.world
+                        .get_component::<DrawableComponent>(entity_id)
+                        .ok_or("Mesh collider requires a drawable")?
+                        .mesh_handle,
+                ),
+                ColliderShapeDescriptor::ConvexHull { .. } => ColliderShape::ConvexHull(
+                    app.world
+                        .get_component::<DrawableComponent>(entity_id)
+                        .ok_or("Convex collider requires a drawable")?
+                        .mesh_handle,
+                ),
                 ColliderShapeDescriptor::Heightfield {
                     rows,
                     cols,
@@ -844,4 +859,53 @@ fn color_from_desc(drawable: &Option<DrawableDescriptor>) -> katla_math::Color {
         .and_then(|d| d.color)
         .map(|c| katla_math::Color::new(c[0], c[1], c[2], c[3]))
         .unwrap_or(katla_math::Color::WHITE)
+}
+
+fn destroy_resources(
+    app: &mut Application,
+    resources: crate::gpu_resource_tracker::GpuResourcesToDestroy,
+) {
+    for handle in resources.meshes {
+        app.geometry_cache.remove(handle);
+        if let Some(cache) = app
+            .world
+            .get_resource_mut::<crate::geometry_cache::GeometryCache>()
+        {
+            cache.remove(handle);
+        }
+        app.renderer.destroy_mesh(handle);
+    }
+    for handle in resources.materials {
+        app.renderer.destroy_material(handle);
+    }
+    for handle in resources.textures {
+        app.renderer.destroy_texture(handle);
+    }
+    for handle in resources.skeletons {
+        app.renderer.destroy_skeleton(handle);
+    }
+}
+
+pub(crate) fn validate_hierarchy(scene: &Scene) -> Result<(), String> {
+    let mut names = std::collections::HashMap::new();
+    for (index, entity) in scene.entities.iter().enumerate() {
+        if let Some(name) = &entity.name {
+            names.entry(name.as_str()).or_insert(index);
+        }
+    }
+    for (index, entity) in scene.entities.iter().enumerate() {
+        let mut visited = std::collections::HashSet::from([index]);
+        let mut parent = entity.parent.as_deref();
+        while let Some(name) = parent {
+            let parent_index = names
+                .get(name)
+                .copied()
+                .ok_or_else(|| format!("Parent '{name}' does not exist"))?;
+            if !visited.insert(parent_index) {
+                return Err(format!("Scene hierarchy contains a cycle at '{name}'"));
+            }
+            parent = scene.entities[parent_index].parent.as_deref();
+        }
+    }
+    Ok(())
 }

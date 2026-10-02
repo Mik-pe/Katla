@@ -236,6 +236,14 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ## Editor
 
+### Document and interaction follow-ups
+
+- [ ] **Replace path entry with a browsable file picker** — Add directory navigation, scene filtering and a remembered folder while retaining overwrite and unsaved-change guards.
+- [ ] **Preserve custom component and joint state** — Extend scene descriptors or design a component serialization registry so Play/Stop restores application-defined components and joints as well as built-in editor components.
+- [ ] **Persist the complete dock tree** — Retain panel tabs, split ratios and moved panels across launches; current GUI storage retains panel sizes only.
+- [ ] **Complete undo coverage for component properties** — Give every inspector edit and component add/remove a reversible command; existing undo history does not cover every property.
+- [ ] **Make partial model uploads transactional** — Release mesh/material/texture allocations when shader or skeleton creation fails before drawable tracking is installed.
+
 ### Panels and tooling
 
 #### Asset browser context windows

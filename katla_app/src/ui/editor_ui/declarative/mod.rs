@@ -8,6 +8,7 @@ pub(super) mod inspector;
 pub(super) mod mixer;
 pub(super) mod particle_inspector;
 pub(super) mod preferences;
+pub(crate) mod scene_dialog;
 pub(super) mod status_bar;
 pub(super) mod toolbar;
 pub(super) mod viewport_grid;

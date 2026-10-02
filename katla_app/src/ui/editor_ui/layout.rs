@@ -124,6 +124,12 @@ impl EditorUI {
             save_confirmation_timer: self.save_confirmation_timer,
         });
 
+        self.view_tree
+            .env_mut()
+            .set(super::declarative::scene_dialog::SceneDialogData {
+                dialog: self.scene_dialog.clone(),
+            });
+
         // Toolbar
         self.view_tree.env_mut().set(ToolbarDrawCtx {
             show_grid: params.preferences.show_grid,
@@ -137,6 +143,9 @@ impl EditorUI {
             warning: self.theme.warning,
             accent: self.theme.accent,
             error: self.theme.error,
+            scene_title: self.scene_title.clone(),
+            can_undo: params.undo_count > 0,
+            can_redo: params.redo_count > 0,
         });
 
         // Gizmo
@@ -297,11 +306,29 @@ impl EditorUI {
         self.process_dock_actions();
 
         // ── Process declarative actions ──
+        let dialog_actions: Vec<super::declarative::scene_dialog::SceneDialogAction> =
+            self.view_tree.actions_mut().drain();
+        for action in dialog_actions {
+            use super::declarative::scene_dialog::SceneDialogAction;
+            self.pending_actions.push(match action {
+                SceneDialogAction::Submit(id) => EditorAction::SubmitScenePath(
+                    self.view_tree
+                        .state_arena()
+                        .get::<String>(id)
+                        .unwrap_or_default(),
+                ),
+                SceneDialogAction::Cancel => EditorAction::CancelSceneDialog,
+                SceneDialogAction::Save => EditorAction::SaveSceneChanges,
+                SceneDialogAction::Discard => EditorAction::DiscardSceneChanges,
+                SceneDialogAction::Overwrite => EditorAction::OverwriteSceneFile,
+            });
+        }
         for action in self.view_tree.actions_mut().drain::<ToolbarAction>() {
             self.pending_actions.push(match action {
                 ToolbarAction::NewScene => EditorAction::NewScene,
                 ToolbarAction::OpenScene => EditorAction::OpenScene,
                 ToolbarAction::SaveScene => EditorAction::SaveScene,
+                ToolbarAction::SaveSceneAs => EditorAction::SaveSceneAs,
                 ToolbarAction::Quit => EditorAction::Quit,
                 ToolbarAction::Undo => EditorAction::Undo,
                 ToolbarAction::Redo => EditorAction::Redo,

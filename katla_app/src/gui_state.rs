@@ -2,7 +2,7 @@
 
 use std::io;
 
-use log::warn;
+use log::{debug, warn};
 
 /// GUI layout state that persists between sessions.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -32,7 +32,7 @@ impl GuiState {
         let content = match crate::util::load_config_file("gui_state.toml") {
             Some(c) => c,
             None => {
-                warn!("Could not load GUI state file");
+                debug!("Using default GUI layout");
                 return Self::default();
             }
         };
@@ -59,8 +59,11 @@ impl GuiState {
     }
 
     fn clamp(&mut self) {
-        self.left_panel_width = self.left_panel_width.clamp(100.0, 600.0);
-        self.right_panel_width = self.right_panel_width.clamp(100.0, 600.0);
-        self.asset_browser_height = self.asset_browser_height.clamp(100.0, 500.0);
+        self.left_panel_width =
+            crate::preferences::finite_clamp(self.left_panel_width, 220.0, 100.0, 600.0);
+        self.right_panel_width =
+            crate::preferences::finite_clamp(self.right_panel_width, 280.0, 100.0, 600.0);
+        self.asset_browser_height =
+            crate::preferences::finite_clamp(self.asset_browser_height, 200.0, 100.0, 500.0);
     }
 }

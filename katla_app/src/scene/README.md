@@ -1,10 +1,13 @@
 # Scene Format
 
-Runtime-mutable scene serialization for the Katla engine. Scenes are saved as human-readable `.scene` files using RON (Rusty Object Notation).
+Runtime-mutable scene serialization for the Katla engine. Scenes are saved as human-readable `.katla` files using RON (Rusty Object Notation).
 
 ## File Structure
 
-- `mod.rs` -- `SceneManager` (save/load), RON config, tests
+- `mod.rs` -- public scene exports
+- `serialization.rs` -- scene save/load, hierarchy validation and resource retirement
+- `document.rs` -- chosen path and last saved editor baseline
+- `tests.rs` -- format and migration tests
 - `entity_source.rs` -- `EntitySource` ECS component
 - `descriptors.rs` -- RON-serializable data types (`Scene`, `EntityDescriptor`, etc.)
 
@@ -28,17 +31,10 @@ When changing the scene format:
 
 ### Writing a Migration
 
-In `SceneManager::load_scene`, check the version before the spawn loop:
-
-```rust
-let entities = if scene.version < CURRENT_VERSION {
-    migrate_scene(scene.version, scene.entities)?
-} else {
-    scene.entities
-};
-```
-
-Create `fn migrate_scene(from_version: u32, entities: Vec<EntityDescriptor>) -> Result<Vec<EntityDescriptor>, String>` that handles the transformation. Each migration step should be idempotent and handle missing data gracefully (use defaults or skip).
+Add a step in `migration.rs` and dispatch it from `run_migrations`. The loader
+runs migrations and validates missing parents and cycles before preparing any
+entities. A newer unsupported version returns an error and preserves the current
+scene.
 
 ### Testing Migrations
 
@@ -48,9 +44,16 @@ Create `fn migrate_scene(from_version: u32, entities: Vec<EntityDescriptor>) -> 
 
 ## What Gets Serialized
 
-Per entity: name, parent, transform (pos/rot/scale), entity source type, drawable material params, point light params, particle emitter config, animation state, velocity.
+Per entity: name, parent, local transform, source, drawable parameters, point and
+directional lights, particle emitter configuration, animation, velocity, script,
+perspective, audio emitter, reverb zone, rigid body type/settings/linear velocity,
+collider shape, physics material, trigger and collision filter. New optional
+`rigid_body_properties` and `reverb_zone` fields default to absent in older files.
 
-GPU handles (MeshHandle, MaterialHandle, TextureHandle, SkeletonHandle, EmitterHandle) are never serialized. Scene files store *what to load*, and spawn functions re-create GPU state on load.
+Scene files describe what to load. Spawn functions recreate GPU resources and
+native physics bodies. The legacy mesh index/generation fields in mesh collider
+descriptors are written as zero; loading binds the collider to the new drawable's
+mesh rather than trusting a previous process's handle.
 
 Animation snapshots retain source/target completion flags and target looping/count
 independently. Reloading a completed clip does not emit completion again, and a
@@ -62,4 +65,38 @@ under the optional-field rule above.
 - GPU handles -- re-created on load from source descriptions
 - `WorldTransform`, `TransformDirty` -- computed at runtime by systems
 - `EditorHidden` -- editor state, not scene state
-- Camera components -- editor-only
+- The editor camera -- retained separately; authored perspective components are saved
+
+## Document and scene lifecycle
+
+`SceneManager::save_to_file` takes a mutable application. It serializes to a
+sibling temporary file, syncs it and renames it into place before changing the
+saved baseline or chosen path. Name, author and creation timestamp follow the
+loaded document through repeated saves and Save As. RON comments are accepted
+on input but regenerated formatting does not preserve them.
+
+Loading prepares the new entities while the current scene still exists. A
+failed spawn removes prepared entities, restores tracked resource counts and
+returns an error. A successful load retires old scene entities and unreferenced
+resources, clears editor selection/history, retains editor-hidden entities and
+records the normalized loaded baseline. CPU geometry is removed with retired
+scene meshes. Shared handles and all app-owned protected materials remain live.
+Duplicate or unnamed entities receive unique serialized names; parent references
+use that same mapping so a round trip cannot silently select the wrong parent.
+
+Play captures the serialized scene and document identity. Stop restores through
+the same loader, then restores the path and original saved baseline, preserving
+pre-play unsaved changes. A failed restore keeps the snapshot and play mode for
+retry. Custom components outside the descriptor schema are not captured.
+
+For native scene lifecycle regressions:
+
+```bash
+cargo test -p katla_app --lib document_tests -- --ignored --test-threads=1
+```
+
+Regenerate the canonical scene deliberately after changing its serialized form:
+
+```bash
+cargo test -p katla_app --lib test_regenerate_default_scene -- --ignored
+```

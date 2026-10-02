@@ -72,3 +72,27 @@ The reference uses SF Pro, green selection and blue secondary controls. Katla's
 chosen identity uses Roboto, orange actions and cyan selection. Reference details
 include 4pt spacing increments, 6px field gaps, 12px panel padding and 6–10px corner
 radii. Borders should be subtle rather than form a grid around every control.
+
+## Editor interaction contract
+
+The title displays the loaded scene name and an asterisk for unsaved authored
+changes. Animation timing and derived clip durations do not mark the scene dirty.
+Open and Save As show a path entry dialog for `.katla` files. Save uses the current
+path and prompts when the scene is untitled. Save As asks before replacing an
+existing file. New, Open and window close offer Save, Discard Changes and Cancel
+when the document has edits. Errors appear in a modal and keep the current scene.
+File operations require stopping play mode before changing the editor document.
+
+Shortcuts use Command on macOS and Control elsewhere: S saves, Shift+S saves as,
+O opens, N creates a scene, Z undoes, Shift+Z or Y redoes, and comma opens
+preferences. They use the same deferred actions as the menus. Text entry and
+scene modals capture keys; held-key repeats do not repeat document commands.
+Within the viewport, F focuses selection, W/E/R choose transform mode and Escape
+clears selection. Game controls also require viewport focus during play; losing
+window focus releases held controls.
+
+Hierarchy search includes matching children beneath collapsed ancestors.
+Empty undo/redo menus are disabled. Camera speed, snap-to-grid and grid spacing
+persist in preferences. Translation snapping applies only to manipulated axes.
+Missing preference files are normal on first launch; invalid or nonfinite values
+fall back to usable bounds.

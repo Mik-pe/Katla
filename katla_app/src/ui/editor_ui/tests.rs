@@ -363,6 +363,9 @@ fn test_editor_overlay_produces_dockspace_in_zstack() {
             highlight: Color::WHITE,
             warning: Color::WHITE,
             accent: Color::WHITE,
+            scene_title: "Test Scene".into(),
+            can_undo: false,
+            can_redo: false,
             error: Color::WHITE,
         });
     view_tree.env_mut().set(EditorUI::default_dock_tree());

@@ -70,7 +70,12 @@ impl Build for HierarchyView {
         let visible_count = filtered_entities
             .iter()
             .filter(|e| {
-                is_entity_visible_fast(e, &parent_map, &draw_ctx.hierarchy_state.expanded_entities)
+                !search_filter.is_empty()
+                    || is_entity_visible_fast(
+                        e,
+                        &parent_map,
+                        &draw_ctx.hierarchy_state.expanded_entities,
+                    )
             })
             .count();
 
@@ -84,11 +89,13 @@ impl Build for HierarchyView {
                 let mut selected_row: Option<f32> = None;
                 let mut visible_rows = 0.0f32;
                 for entity in &filtered_entities {
-                    if is_entity_visible_fast(
-                        entity,
-                        &parent_map,
-                        &draw_ctx.hierarchy_state.expanded_entities,
-                    ) {
+                    if !search_filter.is_empty()
+                        || is_entity_visible_fast(
+                            entity,
+                            &parent_map,
+                            &draw_ctx.hierarchy_state.expanded_entities,
+                        )
+                    {
                         if entity.id == selected_id {
                             selected_row = Some(visible_rows);
                         }

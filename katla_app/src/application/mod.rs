@@ -24,6 +24,7 @@ mod events;
 mod features;
 pub mod frame_graph_config;
 mod frame_loop;
+#[cfg(feature = "editor")]
 mod game_state;
 #[cfg(feature = "editor")]
 mod gizmo;
@@ -158,6 +159,7 @@ pub(crate) struct EditorState {
     pub(crate) entity_gpu_handles: HashMap<katla_ecs::EntityId, editor::GpuCleanupData>,
     /// Currently playing audio preview voice handle in asset browser.
     pub(crate) preview_voice: Option<katla_audio::VoiceHandle>,
+    pub(crate) pending_document_action: Option<editor::document::DocumentAction>,
 }
 
 #[cfg(feature = "editor")]
@@ -183,6 +185,7 @@ impl EditorState {
             ui_renderer,
             editor_ui: {
                 let mut editor = crate::ui::EditorUI::with_theme(theme);
+                editor.set_editor_settings(preferences.editor.clone());
                 editor.show_grid = preferences.show_grid;
                 editor.show_stats = preferences.show_stats;
                 editor.show_physics_debug = preferences.show_physics_debug;
@@ -222,6 +225,7 @@ impl EditorState {
             inspector_drag_snapshot: None,
             entity_gpu_handles: HashMap::new(),
             preview_voice: None,
+            pending_document_action: None,
         };
         state.editor_ui.set_available_components(available);
         state
@@ -380,6 +384,7 @@ pub struct Application {
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
     /// Whether the application should exit (set by editor actions, checked in window_event)
     pub(crate) quit_requested: bool,
+    pub(crate) scene_document: crate::scene::document::SceneDocument,
     /// Flag to prevent double cleanup
     cleaned_up: bool,
     /// Audio system for managing playback of sound effects
@@ -572,6 +577,9 @@ impl ApplicationHandler for Application {
                 self.forward_scroll_to_camera(delta);
             }
             WindowEvent::CloseRequested => {
+                #[cfg(feature = "editor")]
+                self.request_document_action(editor::document::DocumentAction::Quit);
+                #[cfg(not(feature = "editor"))]
                 event_loop.exit();
             }
             WindowEvent::Occluded(occluded) => {
@@ -605,7 +613,7 @@ impl ApplicationHandler for Application {
                     if let Some(action) = action {
                         let send_input = self.should_send_game_input();
 
-                        if send_input {
+                        if send_input || event.state == ElementState::Released {
                             let pressed = matches!(event.state, ElementState::Pressed);
                             if let Some(input) =
                                 self.world.get_resource_mut::<crate::input::InputState>()
@@ -633,7 +641,7 @@ impl ApplicationHandler for Application {
                             .current_modifiers
                             .contains(winit::keyboard::ModifiersState::CONTROL);
 
-                        if !ctrl_held {
+                        if !ctrl_held && !self.current_modifiers.super_key() {
                             if let winit::keyboard::Key::Character(ch) = &event.logical_key {
                                 for c in ch.chars() {
                                     self.ui_context.input_mut().add_char(c);
@@ -646,6 +654,17 @@ impl ApplicationHandler for Application {
                             }
                         }
                     }
+                }
+            }
+            WindowEvent::Focused(false) => {
+                self.current_modifiers = ModifiersState::empty();
+                let input = self.ui_context.input_mut();
+                input.keys_released.extend(input.held_keys.drain());
+                input.any_key_down = false;
+                input.mouse_released = input.mouse_down;
+                input.mouse_down.fill(false);
+                if let Some(input) = self.world.get_resource_mut::<crate::input::InputState>() {
+                    input.release_all();
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -725,3 +744,6 @@ impl Application {
         }
     }
 }
+
+#[cfg(all(test, feature = "editor"))]
+mod document_tests;

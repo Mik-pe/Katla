@@ -254,6 +254,14 @@ pub enum RigidBodyDescriptor {
     Kinematic,
 }
 
+/// Rigid body settings and velocity, without native physics handles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RigidBodyPropertiesDescriptor {
+    pub gravity_scale: f32,
+    pub ccd_enabled: bool,
+    pub linear_velocity: [f32; 3],
+}
+
 /// Collider shape data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ColliderShapeDescriptor {
@@ -302,7 +310,7 @@ pub struct CollisionFilterDescriptor {
 /// Uses `#[serde(deny_unknown_fields)] = false` (the default) so that
 /// scene files from newer engine versions with additional fields can be
 /// loaded by older versions without error. Unknown fields are silently ignored.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityDescriptor {
     pub name: Option<String>,
     pub parent: Option<String>,
@@ -323,6 +331,10 @@ pub struct EntityDescriptor {
     pub audio_emitter: Option<AudioEmitterDescriptor>,
     #[serde(default)]
     pub rigid_body: Option<RigidBodyDescriptor>,
+    #[serde(default)]
+    pub rigid_body_properties: Option<RigidBodyPropertiesDescriptor>,
+    #[serde(default)]
+    pub reverb_zone: Option<crate::components::ReverbZone>,
     #[serde(default)]
     pub collider_shape: Option<ColliderShapeDescriptor>,
     #[serde(default)]

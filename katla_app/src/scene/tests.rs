@@ -51,6 +51,8 @@ fn test_scene_with_entities_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Player".to_string()),
@@ -85,6 +87,8 @@ fn test_scene_with_entities_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     let loaded: Scene = round_trip(&scene);
@@ -159,6 +163,8 @@ fn test_all_entity_source_variants_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         };
         let loaded: EntityDescriptor = round_trip(&desc);
         assert_eq!(loaded.source, desc.source);
@@ -199,6 +205,8 @@ fn test_point_light_descriptor_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -251,6 +259,8 @@ fn test_particle_emitter_descriptor_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -296,6 +306,8 @@ fn test_gltf_entity_with_animation_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -342,6 +354,8 @@ fn test_parent_child_relationships_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Child".to_string()),
@@ -370,6 +384,8 @@ fn test_parent_child_relationships_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     let loaded: Scene = round_trip(&scene);
@@ -471,6 +487,8 @@ fn test_scene_serialized_output_is_human_readable() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     let ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
@@ -527,6 +545,8 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // PBR spheres (5x5 grid = 25 entities, but we'll do a few)
@@ -566,6 +586,8 @@ fn test_full_default_scene_like_serialization() {
                 physics_material: None,
                 trigger_volume: None,
                 collision_filter: None,
+                rigid_body_properties: None,
+                reverb_zone: None,
             });
         }
     }
@@ -601,6 +623,8 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Fox with animation
@@ -636,6 +660,8 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Point light
@@ -671,6 +697,8 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Particle emitter
@@ -715,6 +743,8 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     assert_eq!(scene.entities.len(), entity_count);
@@ -909,7 +939,7 @@ fn test_build_default_scene_pbr_grid() {
 fn test_default_scene_matches_disk() {
     // This is the 1:1 parity test: the canonical scene built in code
     // must exactly match what's on disk. If this fails, regenerate the
-    // file by running: cargo test -p katla_app -- test_regenerate_default_scene --nocapture
+    // file by running: cargo test -p katla_app -- test_regenerate_default_scene --ignored --nocapture
     let scene = build_default_scene();
     let canonical_ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
 
@@ -931,9 +961,10 @@ fn test_default_scene_matches_disk() {
 }
 
 #[test]
+#[ignore = "rewrites the canonical scene fixture"]
 fn test_regenerate_default_scene() {
     // Utility test to regenerate the canonical default scene file.
-    // Run with: cargo test -p katla_app -- test_regenerate_default_scene --nocapture
+    // Run with: cargo test -p katla_app -- test_regenerate_default_scene --ignored --nocapture
     let scene = build_default_scene();
     let canonical_ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
 
@@ -1339,6 +1370,8 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         },
         EntityDescriptor {
             name: Some("MySphere".to_string()),
@@ -1372,6 +1405,8 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         },
         EntityDescriptor {
             name: Some("MyPlane".to_string()),
@@ -1404,6 +1439,8 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         },
         EntityDescriptor {
             name: Some("MyCylinder".to_string()),
@@ -1437,6 +1474,8 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         },
         EntityDescriptor {
             name: Some("MyTorus".to_string()),
@@ -1471,6 +1510,8 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         },
     ];
 
@@ -1551,6 +1592,8 @@ fn test_gltf_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -1606,6 +1649,8 @@ fn test_point_light_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -1671,6 +1716,8 @@ fn test_particle_emitter_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         };
 
         let loaded: EntityDescriptor = round_trip(&desc);
@@ -1783,6 +1830,8 @@ fn test_animation_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     };
     let loaded_desc: EntityDescriptor = round_trip(&desc);
     let loaded_anim = loaded_desc.animation.unwrap();
@@ -1817,6 +1866,8 @@ fn test_hierarchy_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("ChildA".to_string()),
@@ -1845,6 +1896,8 @@ fn test_hierarchy_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Grandchild".to_string()),
@@ -1871,6 +1924,8 @@ fn test_hierarchy_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     let loaded: Scene = round_trip(&scene);
@@ -1910,6 +1965,8 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Sphere1".to_string()),
@@ -1934,6 +1991,8 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Plane1".to_string()),
@@ -1957,6 +2016,8 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Cylinder1".to_string()),
@@ -1981,6 +2042,8 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Torus1".to_string()),
@@ -2006,6 +2069,8 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Model1".to_string()),
@@ -2028,6 +2093,8 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Emitter1".to_string()),
@@ -2048,6 +2115,8 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Light1".to_string()),
@@ -2068,6 +2137,8 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     assert_eq!(scene.entities.len(), 8);
@@ -2196,6 +2267,8 @@ fn test_velocity_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     };
 
     let loaded: EntityDescriptor = round_trip(&desc);
@@ -2228,6 +2301,8 @@ fn test_velocity_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     };
     let loaded_zero: EntityDescriptor = round_trip(&desc_zero);
     let vel_zero = loaded_zero.velocity.unwrap();
@@ -2346,6 +2421,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     scene.entities.push(EntityDescriptor {
@@ -2380,6 +2457,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     scene.entities.push(EntityDescriptor {
@@ -2413,6 +2492,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     scene.entities.push(EntityDescriptor {
@@ -2447,6 +2528,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     scene.entities.push(EntityDescriptor {
@@ -2482,6 +2565,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // GLTF model with animation (VAL-CROSS-005: animated model state round-trip)
@@ -2529,6 +2614,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Particle emitter
@@ -2573,6 +2660,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Point light
@@ -2608,6 +2697,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Parent-child hierarchy (VAL-CROSS-006)
@@ -2636,6 +2727,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("ChildA".to_string()),
@@ -2664,6 +2757,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
         name: Some("Grandchild".to_string()),
@@ -2690,6 +2785,8 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     assert_eq!(scene.entities.len(), 11, "Scene must have 11 entities");
@@ -2826,6 +2923,8 @@ fn test_transform_persistence() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Simulate editing: modify the transform values
@@ -3198,6 +3297,8 @@ fn test_full_editor_workflow() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Add a light entity
@@ -3233,6 +3334,8 @@ fn test_full_editor_workflow() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     // Add a sphere with velocity
@@ -3271,6 +3374,8 @@ fn test_full_editor_workflow() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        rigid_body_properties: None,
+        reverb_zone: None,
     });
 
     assert_eq!(
@@ -3430,4 +3535,16 @@ fn test_full_editor_workflow() {
         assert_eq!(first.point_light, second.point_light, "PointLight mismatch");
         assert_eq!(first.velocity, second.velocity, "Velocity mismatch");
     }
+}
+
+#[test]
+fn test_invalid_hierarchy_is_rejected_before_scene_preparation() {
+    let mut scene = build_default_scene();
+    scene.entities[0].parent = Some("missing parent".into());
+    assert!(super::serialization::validate_hierarchy(&scene).is_err());
+    scene.entities[0].parent = scene.entities[1].name.clone();
+    scene.entities[1].parent = scene.entities[0].name.clone();
+    assert!(super::serialization::validate_hierarchy(&scene).is_err());
+    scene.entities[1].parent = None;
+    assert!(super::serialization::validate_hierarchy(&scene).is_ok());
 }

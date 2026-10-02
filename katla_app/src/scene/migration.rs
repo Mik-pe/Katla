@@ -206,6 +206,8 @@ mod tests {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         });
 
         scene.entities.push(EntityDescriptor {
@@ -231,6 +233,8 @@ mod tests {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            rigid_body_properties: None,
+            reverb_zone: None,
         });
 
         // Serialize the pre-migration state

@@ -41,6 +41,14 @@ impl InputState {
         }
     }
 
+    /// Release held controls when the window or viewport loses focus.
+    pub fn release_all(&mut self) {
+        self.keyboard_keys.fill(false);
+        self.mouse_buttons.fill(ButtonState::Released);
+        self.mouse_delta = (0.0, 0.0);
+        self.mouse_wheel_delta = 0.0;
+    }
+
     pub fn set_action_state(&mut self, key: impl Into<Action>, pressed: bool) {
         self.keyboard_keys[key.into() as usize] = pressed;
     }
@@ -173,5 +181,29 @@ mod tests {
                 assert_eq!(state.mouse_delta, (*x - prev_x, *y - prev_y));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod focus_tests {
+    use super::*;
+    #[test]
+    fn test_focus_loss_releases_held_camera_and_game_controls() {
+        let mut input = InputState::new();
+        input.set_action_state(Action::MoveForward, true);
+        input.set_action_state(Action::LookEnable, true);
+        input.mouse_buttons.fill(ButtonState::Pressed);
+        input.mouse_delta = (12.0, 5.0);
+        input.mouse_wheel_delta = 4.0;
+        input.release_all();
+        assert!(input.keyboard_keys.iter().all(|held| !held));
+        assert!(
+            input
+                .mouse_buttons
+                .iter()
+                .all(|state| *state == ButtonState::Released)
+        );
+        assert_eq!(input.mouse_delta, (0.0, 0.0));
+        assert_eq!(input.mouse_wheel_delta, 0.0);
     }
 }

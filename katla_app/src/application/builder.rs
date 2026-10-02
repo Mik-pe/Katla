@@ -610,6 +610,7 @@ impl ApplicationBuilder {
             play_mode: super::game_state::PlayMode::Editing,
             #[cfg(feature = "editor")]
             scene_snapshot: None,
+            scene_document: crate::scene::document::SceneDocument::default(),
             #[cfg(feature = "editor")]
             asset_watcher: None,
             layout_dumped: false,
@@ -629,16 +630,14 @@ impl ApplicationBuilder {
     #[cfg(feature = "editor")]
     fn install_console_logger() -> std::sync::Arc<std::sync::Mutex<crate::ui::console::LogBuffer>> {
         use crate::ui::console::ConsoleLoggerHandle;
-        let console_handle = ConsoleLoggerHandle::init(
-            log::LevelFilter::Debug,
-            Box::new(
-                env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-                    .build(),
-            ),
-        );
+        let secondary =
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+                .build();
+        let level = secondary.filter();
+        let console_handle = ConsoleLoggerHandle::init(level, Box::new(secondary));
         let buffer = console_handle.buffer();
         log::set_boxed_logger(console_handle.into_logger()).ok();
-        log::set_max_level(log::LevelFilter::Info);
+        log::set_max_level(level);
         buffer
     }
 
@@ -898,6 +897,7 @@ impl ApplicationBuilder {
             play_mode: super::game_state::PlayMode::Editing,
             #[cfg(feature = "editor")]
             scene_snapshot: None,
+            scene_document: crate::scene::document::SceneDocument::default(),
             #[cfg(feature = "editor")]
             asset_watcher: Self::create_asset_watcher(),
             layout_dumped: false,

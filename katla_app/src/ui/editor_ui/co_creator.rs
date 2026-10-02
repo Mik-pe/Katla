@@ -49,10 +49,6 @@ impl CoCreatorState {
         self.panel.open();
     }
 
-    pub fn close(&mut self) {
-        self.panel.close();
-    }
-
     /// Add a user message and queue it for processing.
     pub fn submit_message(&mut self, text: &str) {
         if text.trim().is_empty() {
@@ -225,7 +221,7 @@ mod tests {
         state.open();
         assert!(state.is_open());
 
-        state.close();
+        state.panel.close();
         assert!(!state.is_open());
     }
 }

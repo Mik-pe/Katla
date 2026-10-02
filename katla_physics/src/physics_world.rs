@@ -416,6 +416,20 @@ impl PhysicsWorld {
         Ok(Vec3::new(vel.x, vel.y, vel.z))
     }
 
+    /// Set world-space linear velocity, including initial scene velocity.
+    pub fn set_body_velocity(
+        &mut self,
+        handle: RigidBodyHandle,
+        velocity: Vec3,
+    ) -> Result<(), PhysicsError> {
+        let body = self
+            .bodies
+            .get_mut(handle)
+            .ok_or(PhysicsError::BodyNotFound(handle))?;
+        body.set_linvel(vec3_to_rapier(&velocity), true);
+        Ok(())
+    }
+
     /// Apply a force to a dynamic body at its center of mass.
     pub fn apply_force(&mut self, body: RigidBodyHandle, force: Vec3) {
         if let Some(b) = self.bodies.get_mut(body) {

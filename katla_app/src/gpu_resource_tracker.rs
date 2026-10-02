@@ -4,7 +4,7 @@
 //! so that shared resources are only destroyed when no entity references them anymore.
 //! This prevents use-after-free when multiple entities share the same mesh or material.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 
@@ -13,13 +13,14 @@ use katla_gfx::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
 /// Each resource type (mesh, material, texture, skeleton) has an independent
 /// reference count. Resources are only destroyed when their ref count drops to zero.
 /// The default material is protected and never destroyed.
+#[derive(Clone)]
 pub struct GpuResourceTracker {
     mesh_refs: HashMap<MeshHandle, u32>,
     material_refs: HashMap<MaterialHandle, u32>,
     texture_refs: HashMap<TextureHandle, u32>,
     skeleton_refs: HashMap<SkeletonHandle, u32>,
-    /// Material handle that must never be destroyed (default PBR material).
-    protected_material: MaterialHandle,
+    /// App-owned materials that outlive individual scene drawables.
+    protected_materials: HashSet<MaterialHandle>,
 }
 
 impl GpuResourceTracker {
@@ -33,16 +34,16 @@ impl GpuResourceTracker {
             material_refs: HashMap::new(),
             texture_refs: HashMap::new(),
             skeleton_refs: HashMap::new(),
-            protected_material,
+            protected_materials: HashSet::from([protected_material]),
         }
     }
 
-    /// Update the protected material handle.
+    /// Protect an additional app-owned material.
     ///
     /// Used when the protected material isn't known at tracker creation time
     /// (e.g., it's compiled during `Application::init()`).
     pub fn set_protected_material(&mut self, material: MaterialHandle) {
-        self.protected_material = material;
+        self.protected_materials.insert(material);
     }
 
     /// Track all GPU resources referenced by a `DrawableComponent`.
@@ -86,8 +87,8 @@ impl GpuResourceTracker {
             to_destroy.meshes.push(mesh);
         }
 
-        let is_protected = material == self.protected_material || material.is_none();
-        if !is_protected && Self::release_ref(&mut self.material_refs, material) {
+        let is_protected = self.protected_materials.contains(&material) || material.is_none();
+        if Self::release_ref(&mut self.material_refs, material) && !is_protected {
             to_destroy.materials.push(material);
         }
 
@@ -115,7 +116,7 @@ impl GpuResourceTracker {
         to_destroy.meshes.extend(self.mesh_refs.keys().copied());
 
         for &handle in self.material_refs.keys() {
-            if handle != self.protected_material {
+            if !self.protected_materials.contains(&handle) {
                 to_destroy.materials.push(handle);
             }
         }
@@ -133,6 +134,69 @@ impl GpuResourceTracker {
         self.skeleton_refs.clear();
 
         to_destroy
+    }
+
+    /// Retire a prepared scene's predecessor without freeing shared resources.
+    pub(crate) fn retire_snapshot(&mut self, previous: Self) -> GpuResourcesToDestroy {
+        fn retire<H: Copy + Eq + std::hash::Hash>(
+            refs: &mut HashMap<H, u32>,
+            old: HashMap<H, u32>,
+        ) -> Vec<H> {
+            let mut retired = Vec::new();
+            for (handle, count) in old {
+                if let Some(current) = refs.get_mut(&handle) {
+                    *current = current.saturating_sub(count);
+                    if *current == 0 {
+                        refs.remove(&handle);
+                        retired.push(handle);
+                    }
+                }
+            }
+            retired
+        }
+        GpuResourcesToDestroy {
+            meshes: retire(&mut self.mesh_refs, previous.mesh_refs),
+            materials: retire(&mut self.material_refs, previous.material_refs)
+                .into_iter()
+                .filter(|h| !self.protected_materials.contains(h))
+                .collect(),
+            textures: retire(&mut self.texture_refs, previous.texture_refs),
+            skeletons: retire(&mut self.skeleton_refs, previous.skeleton_refs),
+        }
+    }
+
+    /// Discard only resources introduced by a failed scene preparation.
+    pub(crate) fn rollback_to(&mut self, previous: Self) -> GpuResourcesToDestroy {
+        let abandoned = GpuResourcesToDestroy {
+            meshes: self
+                .mesh_refs
+                .keys()
+                .filter(|h| !previous.mesh_refs.contains_key(h))
+                .copied()
+                .collect(),
+            materials: self
+                .material_refs
+                .keys()
+                .filter(|h| {
+                    !previous.material_refs.contains_key(h) && !self.protected_materials.contains(h)
+                })
+                .copied()
+                .collect(),
+            textures: self
+                .texture_refs
+                .keys()
+                .filter(|h| !previous.texture_refs.contains_key(h))
+                .copied()
+                .collect(),
+            skeletons: self
+                .skeleton_refs
+                .keys()
+                .filter(|h| !previous.skeleton_refs.contains_key(h))
+                .copied()
+                .collect(),
+        };
+        *self = previous;
+        abandoned
     }
 
     /// Get the number of tracked mesh references.
@@ -419,5 +483,41 @@ mod tests {
         assert_eq!(d3.meshes.len(), 1);
         assert_eq!(d3.materials.len(), 1);
         assert_eq!(tracker.mesh_count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod scene_tracking_tests {
+    use super::*;
+    #[test]
+    fn test_replacing_scene_retains_shared_mesh_and_all_protected_materials() {
+        let material = MaterialHandle::from_raw(1, 0);
+        let billboard = MaterialHandle::from_raw(2, 0);
+        let mesh = MeshHandle::from_raw(3, 0);
+        let mut tracker = GpuResourceTracker::new(material);
+        tracker.set_protected_material(billboard);
+        tracker.track_drawable(mesh, material, SkeletonHandle::NONE);
+        let previous = tracker.clone();
+        tracker.track_drawable(mesh, material, SkeletonHandle::NONE);
+        let retired = tracker.retire_snapshot(previous);
+        assert!(retired.meshes.is_empty());
+        assert!(retired.materials.is_empty());
+        assert_eq!(tracker.mesh_ref_count(mesh), 1);
+        assert!(tracker.release_all().materials.is_empty());
+    }
+    #[test]
+    fn test_failed_preparation_releases_new_handles_without_losing_previous_counts() {
+        let material = MaterialHandle::from_raw(1, 0);
+        let old = MeshHandle::from_raw(2, 0);
+        let new = MeshHandle::from_raw(3, 0);
+        let mut tracker = GpuResourceTracker::new(material);
+        tracker.track_drawable(old, material, SkeletonHandle::NONE);
+        let previous = tracker.clone();
+        tracker.track_drawable(old, material, SkeletonHandle::NONE);
+        tracker.track_drawable(new, material, SkeletonHandle::NONE);
+        let abandoned = tracker.rollback_to(previous);
+        assert_eq!(abandoned.meshes, vec![new]);
+        assert!(abandoned.materials.is_empty());
+        assert_eq!(tracker.mesh_ref_count(old), 1);
     }
 }

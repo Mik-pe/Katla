@@ -36,8 +36,11 @@ impl Application {
     }
 
     pub(crate) fn should_send_game_input(&self) -> bool {
-        if self.play_mode == super::game_state::PlayMode::Playing {
-            return true;
+        if self.editor.editor_ui.prev_want_capture_keyboard
+            || self.editor.editor_ui.scene_dialog.is_some()
+            || self.editor.editor_ui.preferences_panel_visible()
+        {
+            return false;
         }
         self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
             && !self.editor.gizmo_state.is_dragging()
@@ -230,6 +233,11 @@ impl Application {
                                 height,
                                 error
                             );
+                            for asset in &mut self.editor.editor_ui.asset_browser.assets {
+                                if asset.path == path {
+                                    asset.thumbnail_state = ThumbnailState::Failed;
+                                }
+                            }
                             continue;
                         }
                     };

@@ -1,5 +1,6 @@
 pub mod default_scene;
 pub mod descriptors;
+pub(crate) mod document;
 pub mod entity_source;
 pub mod migration;
 pub mod serialization;

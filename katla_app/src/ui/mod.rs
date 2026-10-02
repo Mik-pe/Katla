@@ -5,7 +5,7 @@
 #[cfg(feature = "editor")]
 pub mod console;
 #[cfg(feature = "editor")]
-mod editor_ui;
+pub(crate) mod editor_ui;
 #[cfg(feature = "editor")]
 mod particle_inspector;
 #[cfg(feature = "editor")]

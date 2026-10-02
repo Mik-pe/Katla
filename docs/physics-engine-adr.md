@@ -118,4 +118,7 @@ and Heightfield shapes in local space. The app synchronizes world transforms.
 PhysicsActive gates simulation and defaults false outside play mode.
 CollisionFilter uses reciprocal layer/mask bitfields. Mesh colliders refer to
 MeshHandle; the app supplies MeshColliderData before constructing colliders.
-See [component exports](../katla_physics/src/lib.rs) for current types.
+When creating native bodies, the app initializes their linear velocity from the
+RigidBody component. Scene serialization retains gravity scale, CCD and velocity
+while recreating native handles. See [component exports](../katla_physics/src/lib.rs)
+for current types.

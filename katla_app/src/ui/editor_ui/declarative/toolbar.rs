@@ -23,6 +23,9 @@ pub(crate) struct ToolbarDrawCtx {
     pub warning: Color,
     pub accent: Color,
     pub error: Color,
+    pub scene_title: String,
+    pub can_undo: bool,
+    pub can_redo: bool,
 }
 
 /// Actions emitted by the declarative toolbar.
@@ -31,6 +34,7 @@ pub(crate) enum ToolbarAction {
     NewScene,
     OpenScene,
     SaveScene,
+    SaveSceneAs,
     Quit,
     Undo,
     Redo,
@@ -64,7 +68,7 @@ impl Build for ToolbarView {
         let create_open_id: StateId = ctx.state(false);
 
         let file_menu = build_file_menu(ctx);
-        let edit_menu = build_edit_menu(ctx);
+        let edit_menu = build_edit_menu(ctx, &draw_ctx);
         let view_menu = build_view_menu(ctx, &draw_ctx);
         let create_menu = build_create_menu(ctx);
 
@@ -97,6 +101,9 @@ fn build_file_menu(ctx: &mut BuildContext) -> Vec<katla_ui::declarative::MenuEnt
         menu_entry("Open...").on_click(ctx.on_click(|actions| {
             actions.emit(ToolbarAction::OpenScene);
         })),
+        menu_entry("Save As...").on_click(ctx.on_click(|actions| {
+            actions.emit(ToolbarAction::SaveSceneAs);
+        })),
         menu_entry("Save").on_click(ctx.on_click(|actions| {
             actions.emit(ToolbarAction::SaveScene);
         })),
@@ -111,8 +118,11 @@ fn build_file_menu(ctx: &mut BuildContext) -> Vec<katla_ui::declarative::MenuEnt
     ]
 }
 
-fn build_edit_menu(ctx: &mut BuildContext) -> Vec<katla_ui::declarative::MenuEntry> {
-    vec![
+fn build_edit_menu(
+    ctx: &mut BuildContext,
+    draw_ctx: &ToolbarDrawCtx,
+) -> Vec<katla_ui::declarative::MenuEntry> {
+    let mut entries = vec![
         menu_entry("Undo").on_click(ctx.on_click(|actions| {
             actions.emit(ToolbarAction::Undo);
         })),
@@ -127,7 +137,10 @@ fn build_edit_menu(ctx: &mut BuildContext) -> Vec<katla_ui::declarative::MenuEnt
         menu_entry("Preferences...").on_click(ctx.on_click(|actions| {
             actions.emit(ToolbarAction::OpenPreferences);
         })),
-    ]
+    ];
+    entries[0].disabled = !draw_ctx.can_undo;
+    entries[1].disabled = !draw_ctx.can_redo;
+    entries
 }
 
 fn build_view_menu(
@@ -206,7 +219,7 @@ fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
     } else {
         draw_ctx.text_muted
     };
-    text(title)
+    text(format!("{} — {title}", draw_ctx.scene_title))
         .color(title_color)
         .font_size(FontSize::Medium)
         .boxed()

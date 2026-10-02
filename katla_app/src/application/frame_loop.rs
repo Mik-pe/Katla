@@ -154,6 +154,12 @@ impl Application {
             }
         }
 
+        if !self.should_send_game_input()
+            && let Some(input) = self.world.get_resource_mut::<crate::input::InputState>()
+        {
+            input.release_all();
+        }
+
         // Update world (runs ECS systems in parallel where possible)
         self.world.update_parallel(dt);
 

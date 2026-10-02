@@ -17,6 +17,12 @@ global-input pass without blocking panel hit testing. The editor applies dock
 actions after ViewTree::frame(); splitter ratios use local split bounds and moves
 retain the exact dragged tab identity.
 
+The scene dialog is mounted after dock panels and reserves its state hooks even
+when closed. Path-entry callbacks emit a StateId; after `ViewTree::frame` the app
+reads the current string from StateArena before processing the document action.
+This preserves text entered in the submit frame. Cancel clears the pending
+scene replacement or quit action.
+
 For appearance, use [editor visual design](editor_ui_design.md). The sections
 below retain the design rationale and API sketches; source is the current API.
 

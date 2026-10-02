@@ -64,7 +64,7 @@ pub(crate) struct ConsoleLogger {
 
 impl Log for ConsoleLogger {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        metadata.level() <= self.level_filter
+        metadata.level() <= self.level_filter && self.secondary.enabled(metadata)
     }
 
     fn log(&self, record: &Record<'_>) {
@@ -111,5 +111,39 @@ impl ConsoleLoggerHandle {
 
     pub fn into_logger(self) -> Box<dyn Log> {
         Box::new(self.logger)
+    }
+}
+
+#[cfg(test)]
+mod logger_tests {
+    use super::*;
+    struct FilteredLog;
+    impl Log for FilteredLog {
+        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
+            metadata.target() == "selected"
+        }
+        fn log(&self, _: &Record<'_>) {}
+        fn flush(&self) {}
+    }
+    #[test]
+    fn test_console_respects_secondary_target_filter() {
+        let handle = ConsoleLoggerHandle::init(LevelFilter::Debug, Box::new(FilteredLog));
+        let buffer = handle.buffer();
+        let logger = handle.into_logger();
+        logger.log(
+            &Record::builder()
+                .level(log::Level::Debug)
+                .target("selected")
+                .args(format_args!("visible"))
+                .build(),
+        );
+        logger.log(
+            &Record::builder()
+                .level(log::Level::Debug)
+                .target("other")
+                .args(format_args!("hidden"))
+                .build(),
+        );
+        assert_eq!(buffer.lock().unwrap().entries().count(), 1);
     }
 }

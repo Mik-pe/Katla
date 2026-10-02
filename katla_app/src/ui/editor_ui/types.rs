@@ -312,8 +312,14 @@ pub enum Panel {
 pub enum EditorAction {
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
-    /// Save the current scene to the default path.
+    /// Save to the current scene path, choosing one for an untitled scene.
     SaveScene,
+    SaveSceneAs,
+    SubmitScenePath(String),
+    CancelSceneDialog,
+    SaveSceneChanges,
+    DiscardSceneChanges,
+    OverwriteSceneFile,
     /// Open a scene from a file dialog.
     OpenScene,
     /// Create a new empty scene.
@@ -351,9 +357,15 @@ pub enum EditorAction {
     /// Set the gizmo transform mode.
     SetGizmoMode(u8), // 0=Translate, 1=Rotate, 2=Scale
     /// Add a registered component type to an entity.
-    AddComponent { entity: EntityId, component: String },
+    AddComponent {
+        entity: EntityId,
+        component: String,
+    },
     /// Remove a registered component type from an entity.
-    RemoveComponent { entity: EntityId, component: String },
+    RemoveComponent {
+        entity: EntityId,
+        component: String,
+    },
     /// AI Co-Creator request from the chat panel.
     CoCreatorRequest(String),
     /// Set the LLM provider kind ("disabled", "open_ai", "open_ai_compatible").
@@ -388,7 +400,9 @@ pub enum EditorAction {
         field: crate::ui::particle_inspector::EmitterField,
     },
     /// Play/stop audio preview in asset browser.
-    AudioPreviewToggle { path: std::path::PathBuf },
+    AudioPreviewToggle {
+        path: std::path::PathBuf,
+    },
 }
 
 /// Which panel is currently focused (receives input).
@@ -510,23 +524,7 @@ pub enum PreferencesTab {
     Ai,
 }
 
-/// Session-only editor settings (not persisted between sessions).
-#[derive(Debug, Clone)]
-pub struct EditorSettings {
-    pub snap_to_grid: bool,
-    pub camera_speed: f32,
-    pub grid_size: f32,
-}
-
-impl Default for EditorSettings {
-    fn default() -> Self {
-        Self {
-            snap_to_grid: true,
-            camera_speed: 50.0,
-            grid_size: 1.0,
-        }
-    }
-}
+pub use crate::preferences::EditorSettings;
 
 /// Actions emitted by the preferences panel.
 #[derive(Debug, Clone)]
@@ -559,9 +557,10 @@ pub fn is_entity_visible_fast(
     parent_map: &std::collections::HashMap<EntityId, Option<EntityId>>,
     expanded: &HashSet<EntityId>,
 ) -> bool {
+    let mut visited = HashSet::from([entity.id]);
     let mut current = entity.parent_id;
     while let Some(parent_id) = current {
-        if !expanded.contains(&parent_id) {
+        if !visited.insert(parent_id) || !expanded.contains(&parent_id) {
             return false;
         }
         current = parent_map.get(&parent_id).copied().flatten();

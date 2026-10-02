@@ -21,6 +21,11 @@ impl GeometryCache {
         self.entries.insert(handle, Arc::new(data));
     }
 
+    /// Remove CPU geometry when its GPU mesh is retired.
+    pub fn remove(&mut self, handle: MeshHandle) {
+        self.entries.remove(&handle);
+    }
+
     pub fn get(&self, handle: MeshHandle) -> Option<&Arc<MeshGeometryData>> {
         self.entries.get(&handle)
     }

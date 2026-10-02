@@ -288,7 +288,11 @@ impl Application {
                                     ),
                                 };
                                 if let Some(delta) = delta {
-                                    transform.transform.position = start_origin + delta;
+                                    transform.transform.position = snap_translation(
+                                        start_origin,
+                                        delta,
+                                        self.editor.editor_ui.editor_settings(),
+                                    );
                                     self.editor.gizmo_state.origin = transform.transform.position;
                                 }
                             }
@@ -477,86 +481,29 @@ impl Application {
         }
     }
 
-    /// Handle editor keyboard shortcuts: focus entity (F), particle inspector (Ctrl+P), save (Ctrl+S).
+    /// Route editor shortcuts through the same action queue as the menus.
     pub(crate) fn handle_editor_keyboard_shortcuts(
         &mut self,
         event: &winit::event::KeyEvent,
         keycode: KeyCode,
     ) {
-        if event.state != ElementState::Pressed {
+        if event.state != ElementState::Pressed
+            || event.repeat
+            || self.editor.editor_ui.prev_want_capture_keyboard
+            || self.editor.editor_ui.scene_dialog.is_some()
+        {
             return;
         }
-
+        if let Some(action) = editor_shortcut(keycode, self.current_modifiers) {
+            self.editor.editor_ui.pending_actions.push(action);
+            return;
+        }
         if keycode == KeyCode::KeyF
+            && self.current_modifiers.is_empty()
             && self.editor.editor_ui.focused_panel == crate::ui::FocusedPanel::Viewport
-            && !self.current_modifiers.control_key()
-            && !self.current_modifiers.shift_key()
-            && !self.current_modifiers.alt_key()
-            && let Some(entity_id) = self.editor.editor_ui.selected_entity
+            && let Some(entity) = self.editor.editor_ui.selected_entity
         {
-            self.focus_camera_on_entity(entity_id);
-        }
-
-        if keycode == KeyCode::KeyP && self.current_modifiers.control_key() {
-            let state = &mut self.editor.editor_ui.particle_inspector_state;
-            if state.panel.is_visible() {
-                state.panel.close();
-            } else {
-                state.panel.open();
-            }
-            info!(
-                "Particle inspector: {}",
-                if state.panel.is_visible() {
-                    "visible"
-                } else {
-                    "hidden"
-                }
-            );
-        }
-
-        if keycode == KeyCode::KeyS
-            && self.current_modifiers.control_key()
-            && !self.current_modifiers.shift_key()
-            && !self.current_modifiers.alt_key()
-            && !self.editor.editor_ui.prev_want_capture_keyboard
-        {
-            self.editor
-                .editor_ui
-                .pending_actions
-                .push(crate::ui::EditorAction::SaveScene);
-        }
-
-        if keycode == KeyCode::KeyA
-            && self.current_modifiers.control_key()
-            && self.current_modifiers.shift_key()
-            && !self.current_modifiers.alt_key()
-        {
-            let co_creator = &mut self.editor.editor_ui.co_creator;
-            if co_creator.is_open() {
-                co_creator.close();
-            } else {
-                co_creator.open();
-            }
-        }
-
-        if keycode == KeyCode::KeyZ
-            && self.current_modifiers.control_key()
-            && !self.current_modifiers.shift_key()
-            && !self.current_modifiers.alt_key()
-            && !self.editor.editor_ui.prev_want_capture_keyboard
-            && self.editor.perform_undo(&mut self.world)
-        {
-            info!("Undo performed");
-        }
-
-        if keycode == KeyCode::KeyZ
-            && self.current_modifiers.control_key()
-            && self.current_modifiers.shift_key()
-            && !self.current_modifiers.alt_key()
-            && !self.editor.editor_ui.prev_want_capture_keyboard
-            && self.editor.perform_redo(&mut self.world)
-        {
-            info!("Redo performed");
+            self.focus_camera_on_entity(entity);
         }
     }
 
@@ -565,7 +512,7 @@ impl Application {
         &mut self,
         event: &winit::event::KeyEvent,
         keycode: KeyCode,
-        event_loop: &winit::event_loop::ActiveEventLoop,
+        _event_loop: &winit::event_loop::ActiveEventLoop,
     ) {
         if event.state != ElementState::Pressed {
             return;
@@ -573,7 +520,12 @@ impl Application {
         if self.editor.editor_ui.focused_panel != crate::ui::FocusedPanel::Viewport {
             return;
         }
-        if self.ui_context.input().want_capture_keyboard {
+        if event.repeat
+            || !self.current_modifiers.is_empty()
+            || self.ui_context.input().want_capture_keyboard
+            || self.editor.editor_ui.prev_want_capture_keyboard
+            || self.editor.editor_ui.scene_dialog.is_some()
+        {
             return;
         }
 
@@ -592,7 +544,105 @@ impl Application {
         }
 
         if keycode == KeyCode::Escape {
-            event_loop.exit()
+            self.editor.editor_ui.selected_entity = None;
+            self.editor.gizmo_state.hovered_handle = None;
         }
+    }
+}
+
+fn editor_shortcut(
+    key: KeyCode,
+    modifiers: winit::keyboard::ModifiersState,
+) -> Option<crate::ui::EditorAction> {
+    use crate::ui::{EditorAction, Panel};
+    let command = if cfg!(target_os = "macos") {
+        modifiers.super_key()
+    } else {
+        modifiers.control_key()
+    };
+    if !command || modifiers.alt_key() {
+        return None;
+    }
+    match (key, modifiers.shift_key()) {
+        (KeyCode::KeyS, false) => Some(EditorAction::SaveScene),
+        (KeyCode::KeyS, true) => Some(EditorAction::SaveSceneAs),
+        (KeyCode::KeyO, false) => Some(EditorAction::OpenScene),
+        (KeyCode::KeyN, false) => Some(EditorAction::NewScene),
+        (KeyCode::KeyZ, false) => Some(EditorAction::Undo),
+        (KeyCode::KeyZ, true) | (KeyCode::KeyY, false) => Some(EditorAction::Redo),
+        (KeyCode::Comma, false) => Some(EditorAction::OpenPanel(Panel::Preferences)),
+        (KeyCode::KeyP, false) => Some(EditorAction::OpenPanel(Panel::ParticleInspector)),
+        (KeyCode::KeyA, true) => Some(EditorAction::OpenPanel(Panel::CoCreator)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod shortcut_tests {
+    use super::*;
+    #[test]
+    fn test_platform_shortcuts_distinguish_save_as_and_redo() {
+        use crate::ui::EditorAction;
+        use winit::keyboard::ModifiersState;
+        let command = if cfg!(target_os = "macos") {
+            ModifiersState::SUPER
+        } else {
+            ModifiersState::CONTROL
+        };
+        assert!(matches!(
+            editor_shortcut(KeyCode::KeyS, command),
+            Some(EditorAction::SaveScene)
+        ));
+        assert!(matches!(
+            editor_shortcut(KeyCode::KeyS, command | ModifiersState::SHIFT),
+            Some(EditorAction::SaveSceneAs)
+        ));
+        assert!(matches!(
+            editor_shortcut(KeyCode::KeyZ, command | ModifiersState::SHIFT),
+            Some(EditorAction::Redo)
+        ));
+        assert!(editor_shortcut(KeyCode::KeyS, command | ModifiersState::ALT).is_none());
+        assert!(editor_shortcut(KeyCode::KeyS, ModifiersState::empty()).is_none());
+    }
+}
+
+fn snap_translation(
+    origin: katla_math::Vec3,
+    delta: katla_math::Vec3,
+    settings: &crate::preferences::EditorSettings,
+) -> katla_math::Vec3 {
+    let position = origin + delta;
+    if !settings.snap_to_grid || !settings.grid_size.is_finite() || settings.grid_size <= 0.0 {
+        return position;
+    }
+    let snap = |value: f32, movement: f32| {
+        if movement == 0.0 {
+            value
+        } else {
+            (value / settings.grid_size).round() * settings.grid_size
+        }
+    };
+    katla_math::Vec3::new(
+        snap(position.x(), delta.x()),
+        snap(position.y(), delta.y()),
+        snap(position.z(), delta.z()),
+    )
+}
+
+#[cfg(test)]
+mod snapping_tests {
+    use super::*;
+    #[test]
+    fn test_grid_snap_only_moves_manipulated_axes() {
+        let settings = crate::preferences::EditorSettings {
+            grid_size: 0.5,
+            ..Default::default()
+        };
+        let result = snap_translation(
+            katla_math::Vec3::new(0.1, 0.2, 0.3),
+            katla_math::Vec3::new(0.7, 0.0, 0.0),
+            &settings,
+        );
+        assert_eq!(result, katla_math::Vec3::new(1.0, 0.2, 0.3));
     }
 }

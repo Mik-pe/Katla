@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use log::{debug, info, warn};
 
@@ -77,9 +77,61 @@ pub fn save_config_file(filename: &str, content: &str) -> io::Result<()> {
         )
     })?;
 
-    let mut file = fs::File::create(&path)?;
-    file.write_all(content.as_bytes())?;
-
+    write_atomic(&path, content.as_bytes())?;
     debug!("Saved config file: {:?}", path);
     Ok(())
+}
+
+/// Replace a file only after its complete contents have reached disk.
+pub(crate) fn write_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    fs::create_dir_all(parent)?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "A file name is required"))?;
+    let temporary = parent.join(format!(
+        ".{}.{}-{}.tmp",
+        name.to_string_lossy(),
+        std::process::id(),
+        NEXT_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(contents)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_atomic_write_replaces_complete_file_and_cleans_failed_temporary() {
+        let directory = std::env::temp_dir().join(format!("katla-atomic-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("scene.katla");
+        write_atomic(&path, b"first").unwrap();
+        write_atomic(&path, b"second").unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"second");
+        let target_directory = directory.join("directory");
+        fs::create_dir(&target_directory).unwrap();
+        assert!(write_atomic(&target_directory, b"cannot replace directory").is_err());
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 2);
+        assert_eq!(fs::read(&path).unwrap(), b"second");
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

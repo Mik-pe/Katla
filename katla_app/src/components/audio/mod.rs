@@ -73,7 +73,7 @@ impl AudioEmitter {
 /// When the audio listener is inside the box, the zone's reverb parameters are blended
 /// into the global zone reverb bus. Multiple overlapping zones have their parameters
 /// averaged.
-#[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Component, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ReverbZone {
     /// Reverb feedback/decay (0.0-0.99). Higher = longer tail.
     pub decay: f32,

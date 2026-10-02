@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod component_registry;
+pub(crate) mod document;
 #[cfg(feature = "mcp")]
 pub(crate) mod mcp;
 
@@ -345,6 +346,14 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     let fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
     let _entity_count = app.world.entity_count();
 
+    if app.frame_count.is_multiple_of(15) {
+        let dirty = app.has_unsaved_scene();
+        app.editor.editor_ui.scene_title = format!(
+            "{}{}",
+            app.scene_document.saved.name,
+            if dirty { " *" } else { "" }
+        );
+    }
     // Collect entity info for editor UI
     let entity_info = collect_entity_info(app);
 
@@ -892,6 +901,7 @@ fn apply_inspector_slider_changes(app: &mut Application) {
 ///
 /// Should be called after generate_ui_draw_list to extract any editor actions.
 pub fn process_editor_actions(app: &mut Application) {
+    app.preferences.editor = app.editor.editor_ui.editor_settings().clone();
     let editor_actions = app.editor.editor_ui.take_actions();
 
     // Process editor actions
@@ -915,77 +925,30 @@ pub fn process_editor_actions(app: &mut Application) {
                 record_entity_gpu_handles(app, spawned_entity);
                 app.editor.push_undo(undo_group);
             }
-            EditorAction::SaveScene => {
-                let path = crate::scene::default_scene_path();
-                match crate::scene::SceneManager::save_to_file(app, &path) {
-                    Ok(()) => {
-                        info!("Scene saved to {:?}", path);
-                        app.editor.editor_ui.show_save_confirmation();
-                    }
-                    Err(e) => log::error!("Failed to save scene: {}", e),
+            EditorAction::SaveScene => app.save_editor_scene(None),
+            EditorAction::SaveSceneAs => app.choose_scene_file(true),
+            EditorAction::OpenScene => app.choose_scene_file(false),
+            EditorAction::SubmitScenePath(path) => app.submit_scene_path(path),
+            EditorAction::NewScene => app.request_document_action(document::DocumentAction::New),
+            EditorAction::Quit => app.request_document_action(document::DocumentAction::Quit),
+            EditorAction::CancelSceneDialog => {
+                app.editor.editor_ui.scene_dialog = None;
+                app.editor.pending_document_action = None;
+            }
+            EditorAction::SaveSceneChanges => app.save_editor_scene(None),
+            EditorAction::DiscardSceneChanges => {
+                app.editor.editor_ui.scene_dialog = None;
+                if let Some(action) = app.editor.pending_document_action.take() {
+                    app.execute_document_action(action);
                 }
             }
-            EditorAction::OpenScene => {
-                let path = crate::scene::default_scene_path();
-                match crate::scene::SceneManager::load_from_file(app, &path) {
-                    Ok(()) => {
-                        app.editor.clear_entity_references();
-                        info!("Scene loaded from {:?}", path);
-                    }
-                    Err(e) => log::error!("Failed to load scene: {}", e),
+            EditorAction::OverwriteSceneFile => {
+                if let Some(
+                    crate::ui::editor_ui::declarative::scene_dialog::SceneDialog::Overwrite(path),
+                ) = app.editor.editor_ui.scene_dialog.take()
+                {
+                    app.save_editor_scene(Some(path));
                 }
-            }
-            EditorAction::NewScene => {
-                let to_remove: Vec<EntityId> = app
-                    .world
-                    .entity_ids()
-                    .filter(|id| app.world.get_component::<EditorHidden>(*id).is_none())
-                    .collect();
-
-                // Clean up particle emitters before destroying entities
-                if let Some(features) = &mut app.scene_features {
-                    for id in &to_remove {
-                        if let Some(emitter) =
-                            app.world.get_component_mut::<ParticleEmitterComponent>(*id)
-                            && let Some(handle) = emitter.emitter_handle.take()
-                        {
-                            katla_gfx::ParticleEmitterDriver::destroy_emitter(
-                                &mut features.particles,
-                                handle,
-                                emitter.kill_on_destroy,
-                            );
-                        }
-                    }
-                }
-
-                // Wait for all in-flight GPU work to complete before freeing resources.
-                // With FRAMES_IN_FLIGHT=2, the previous frame may still reference
-                // these buffers on the GPU.
-                app.renderer.wait_for_device();
-
-                // Release all GPU resources before destroying entities
-                let to_destroy = app.gpu_resource_tracker.release_all();
-                for handle in &to_destroy.meshes {
-                    app.renderer.destroy_mesh(*handle);
-                }
-                for handle in &to_destroy.materials {
-                    app.renderer.destroy_material(*handle);
-                }
-                for handle in &to_destroy.textures {
-                    app.renderer.destroy_texture(*handle);
-                }
-                for handle in &to_destroy.skeletons {
-                    app.renderer.destroy_skeleton(*handle);
-                }
-
-                for id in to_remove {
-                    app.world.destroy_entity(id);
-                }
-                app.editor.clear_entity_references();
-                info!("New scene created");
-            }
-            EditorAction::Quit => {
-                app.quit_requested = true;
             }
             EditorAction::Undo => {
                 app.editor.perform_undo(&mut app.world);
@@ -1210,8 +1173,12 @@ pub fn process_editor_actions(app: &mut Application) {
             },
             EditorAction::PlayStop => {
                 if app.play_mode != super::game_state::PlayMode::Editing {
-                    if let Some(snapshot) = app.scene_snapshot.take() {
-                        snapshot.restore(app);
+                    if let Some(snapshot) = app.scene_snapshot.take()
+                        && let Err(error) = snapshot.restore(app)
+                    {
+                        app.scene_snapshot = Some(snapshot);
+                        app.show_scene_error(error);
+                        continue;
                     }
                     app.editor.clear_entity_references();
                     app.play_mode = super::game_state::PlayMode::Editing;

@@ -9,7 +9,7 @@
 
 mod asset_browser;
 mod co_creator;
-mod declarative;
+pub(crate) mod declarative;
 mod layout;
 #[cfg(test)]
 mod tests;
@@ -53,9 +53,7 @@ pub struct EditorRenderParams<'a> {
     pub loader: &'a mut BackgroundLoader,
     pub thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
     pub llm_config: &'a katla_agent::LlmConfig,
-    #[expect(dead_code)]
     pub undo_count: usize,
-    #[expect(dead_code)]
     pub redo_count: usize,
     pub agent_undo_count: usize,
     pub audio_levels: katla_audio::LevelsSnapshot,
@@ -67,11 +65,13 @@ pub struct EditorRenderParams<'a> {
 pub struct EditorUI {
     /// Currently selected entity.
     pub selected_entity: Option<EntityId>,
+    pub(crate) scene_dialog: Option<declarative::scene_dialog::SceneDialog>,
+    pub(crate) scene_title: String,
     /// Preferences panel state (visibility).
     preferences_panel: DraggablePanelState,
     /// Selected preferences category (sidebar index).
     preferences_category: usize,
-    /// Session-only editor settings (not persisted).
+    /// Persisted editor viewport settings.
     editor_settings: EditorSettings,
     /// Hierarchy panel state (scroll, expanded entities, context menu).
     hierarchy_state: HierarchyState,
@@ -165,6 +165,8 @@ impl EditorUI {
     pub fn new() -> Self {
         Self {
             selected_entity: None,
+            scene_dialog: None,
+            scene_title: "Untitled".into(),
             preferences_panel: DraggablePanelState::default(),
             preferences_category: 0,
             editor_settings: EditorSettings::default(),
@@ -631,6 +633,10 @@ impl EditorUI {
         if self.save_confirmation_timer > 0.0 {
             self.save_confirmation_timer = (self.save_confirmation_timer - dt).max(0.0);
         }
+    }
+
+    pub(crate) fn set_editor_settings(&mut self, settings: EditorSettings) {
+        self.editor_settings = settings;
     }
 
     pub fn editor_settings(&self) -> &EditorSettings {

@@ -2,9 +2,28 @@
 
 use std::io;
 
-use log::{error, warn};
+use log::{debug, error, warn};
 
 use crate::ui::ColorScheme;
+
+/// Editor viewport settings, persisted with application preferences.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct EditorSettings {
+    pub snap_to_grid: bool,
+    pub camera_speed: f32,
+    pub grid_size: f32,
+}
+
+impl Default for EditorSettings {
+    fn default() -> Self {
+        Self {
+            snap_to_grid: true,
+            camera_speed: 50.0,
+            grid_size: 1.0,
+        }
+    }
+}
 
 /// Audio volume settings.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -45,6 +64,7 @@ pub struct Preferences {
     pub font_scale: f32,
     #[serde(default)]
     pub audio: AudioSettings,
+    pub editor: EditorSettings,
 }
 
 impl Default for Preferences {
@@ -57,6 +77,7 @@ impl Default for Preferences {
             show_reverb_debug: false,
             font_scale: 1.0,
             audio: AudioSettings::default(),
+            editor: EditorSettings::default(),
         }
     }
 }
@@ -67,7 +88,7 @@ impl Preferences {
         let content = match crate::util::load_config_file("preferences.toml") {
             Some(c) => c,
             None => {
-                error!("Could not load preferences file");
+                debug!("Using default preferences");
                 return Self::default();
             }
         };
@@ -98,11 +119,21 @@ impl Preferences {
             warn!("Unknown theme '{}', using rcp", self.theme);
             self.theme = "rcp".to_string();
         }
-        self.font_scale = self.font_scale.clamp(0.5, 3.0);
-        self.audio.master_volume = self.audio.master_volume.clamp(0.0, 1.0);
-        self.audio.sfx_volume = self.audio.sfx_volume.clamp(0.0, 1.0);
-        self.audio.music_volume = self.audio.music_volume.clamp(0.0, 1.0);
-        self.audio.ambient_volume = self.audio.ambient_volume.clamp(0.0, 1.0);
+        self.font_scale = finite_clamp(self.font_scale, 1.0, 0.5, 3.0);
+        self.editor.camera_speed = finite_clamp(self.editor.camera_speed, 50.0, 1.0, 200.0);
+        self.editor.grid_size = finite_clamp(self.editor.grid_size, 1.0, 0.01, 100.0);
+        self.audio.master_volume = finite_clamp(self.audio.master_volume, 1.0, 0.0, 1.0);
+        self.audio.sfx_volume = finite_clamp(self.audio.sfx_volume, 1.0, 0.0, 1.0);
+        self.audio.music_volume = finite_clamp(self.audio.music_volume, 1.0, 0.0, 1.0);
+        self.audio.ambient_volume = finite_clamp(self.audio.ambient_volume, 1.0, 0.0, 1.0);
+    }
+}
+
+pub(crate) fn finite_clamp(value: f32, default: f32, min: f32, max: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(min, max)
+    } else {
+        default
     }
 }
 
@@ -135,6 +166,7 @@ font_scale = 1.25
             show_physics_debug: false,
             show_reverb_debug: false,
             font_scale: 1.5,
+            editor: EditorSettings::default(),
             audio: AudioSettings {
                 master_volume: 0.8,
                 sfx_volume: 1.0,
@@ -155,5 +187,27 @@ font_scale = 1.25
         let mut prefs: Preferences = toml::from_str(content).unwrap();
         prefs.validate();
         assert_eq!(prefs.theme, "rcp");
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    #[test]
+    fn test_viewport_settings_round_trip_and_nonfinite_inputs_use_defaults() {
+        let mut preferences = Preferences::default();
+        preferences.editor.snap_to_grid = false;
+        preferences.editor.camera_speed = 75.0;
+        preferences.editor.grid_size = 0.5;
+        let encoded = toml::to_string(&preferences).unwrap();
+        let restored: Preferences = toml::from_str(&encoded).unwrap();
+        assert_eq!(preferences.editor, restored.editor);
+        preferences.font_scale = f32::NAN;
+        preferences.audio.master_volume = f32::INFINITY;
+        preferences.editor.grid_size = f32::NEG_INFINITY;
+        preferences.validate();
+        assert_eq!(preferences.font_scale, 1.0);
+        assert_eq!(preferences.audio.master_volume, 1.0);
+        assert_eq!(preferences.editor.grid_size, 1.0);
     }
 }
