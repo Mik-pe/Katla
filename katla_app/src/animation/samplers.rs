@@ -45,8 +45,12 @@ impl<'a> CachedSampler<'a> {
     }
 
     pub fn sample(&mut self, time: f32) -> super::clips::SampledValue {
+        let Some(&first_time) = self.sampler.inputs.first() else {
+            return super::clips::SampledValue::Unknown;
+        };
+        let time = time.clamp(first_time, self.sampler.duration());
         self.last_index = self.sampler.find_keyframe_index_from(time, self.last_index);
-        self.sampler.sample(time)
+        self.sampler.sample_at_index(time, self.last_index)
     }
 
     pub fn last_index(&self) -> usize {

@@ -177,3 +177,93 @@ fn test_animation_clip_sample_into() {
 
     assert_eq!(buffer.samples().len(), 1);
 }
+
+#[test]
+fn test_sampler_clamps_to_channel_interval() {
+    for interpolation in [
+        Interpolation::Linear,
+        Interpolation::Step,
+        Interpolation::CubicSpline,
+    ] {
+        let values = if interpolation == Interpolation::CubicSpline {
+            vec![
+                [90.0; 3], [2.0; 3], [0.0; 3], [0.0; 3], [12.0; 3], [80.0; 3],
+            ]
+        } else {
+            vec![[2.0; 3], [12.0; 3]]
+        };
+        let sampler = AnimationSampler::new_translation(vec![0.5, 1.0], values, interpolation);
+        for (time, expected) in [(-1.0, 2.0), (0.0, 2.0), (1.0, 12.0), (2.0, 12.0)] {
+            let crate::animation::SampledValue::Vec3(value) = sampler.sample(time) else {
+                panic!("expected translation")
+            };
+            assert_eq!(value, [expected; 3], "{interpolation:?} at {time}");
+        }
+    }
+}
+
+#[test]
+fn test_cubic_single_keyframe_returns_value_slot() {
+    let sampler = AnimationSampler::new_scale(
+        vec![0.5],
+        vec![[90.0; 3], [2.0; 3], [80.0; 3]],
+        Interpolation::CubicSpline,
+    );
+    for time in [-1.0, 0.5, 2.0] {
+        let crate::animation::SampledValue::Vec3(value) = sampler.sample(time) else {
+            panic!("expected scale")
+        };
+        assert_eq!(value, [2.0; 3]);
+    }
+    let sampler =
+        AnimationSampler::new_weights(vec![0.5], vec![90.0, 2.0, 80.0], Interpolation::CubicSpline);
+    let crate::animation::SampledValue::Float(value) = sampler.sample(2.0) else {
+        panic!("expected weight")
+    };
+    assert_eq!(value, 2.0);
+}
+
+#[test]
+fn test_cubic_rotation_is_normalized() {
+    let sampler = AnimationSampler::new_rotation(
+        vec![0.0, 1.0],
+        vec![
+            [0.0; 4],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0; 4],
+            [0.0; 4],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0; 4],
+        ],
+        Interpolation::CubicSpline,
+    );
+    for time in [0.0, 0.25, 0.5, 0.75, 1.0, 2.0] {
+        let crate::animation::SampledValue::Quat(value) = sampler.sample(time) else {
+            panic!("expected rotation")
+        };
+        let length = value.iter().map(|v| v * v).sum::<f32>().sqrt();
+        assert!((length - 1.0).abs() < 1e-5, "at {time}: {value:?}");
+        if time >= 1.0 {
+            assert_eq!(value, [0.0, 0.0, 1.0, 0.0]);
+        }
+    }
+}
+
+#[test]
+fn test_cached_sampler_matches_seek_and_loop_samples() {
+    let sampler = AnimationSampler::new_translation(
+        vec![0.5, 1.0, 2.0],
+        vec![[2.0; 3], [12.0; 3], [22.0; 3]],
+        Interpolation::Linear,
+    );
+    let mut cached = crate::animation::samplers::CachedSampler::new(&sampler);
+    for time in [0.0, 0.75, 1.5, 2.5, 0.0, 1.0, 0.5] {
+        let crate::animation::SampledValue::Vec3(value) = cached.sample(time) else {
+            panic!("expected translation")
+        };
+        let crate::animation::SampledValue::Vec3(expected) = sampler.sample(time) else {
+            panic!("expected translation")
+        };
+        assert_eq!(value, expected);
+    }
+}

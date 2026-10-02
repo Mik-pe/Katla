@@ -200,17 +200,19 @@ impl AnimationSampler {
             return SampledValue::Unknown;
         }
 
-        let time = time.clamp(0.0, self.duration());
+        let time = time.clamp(self.inputs[0], self.duration());
+        self.sample_at_index(time, self.find_keyframe_index(time))
+    }
 
+    pub(super) fn sample_at_index(&self, time: f32, index: usize) -> SampledValue {
         match self.interpolation {
-            Interpolation::Linear => self.sample_linear(time),
-            Interpolation::Step => self.sample_step(time),
-            Interpolation::CubicSpline => self.sample_cubic_spline(time),
+            Interpolation::Linear => self.sample_linear(time, index),
+            Interpolation::Step => self.get_keyframe_value(index),
+            Interpolation::CubicSpline => self.sample_cubic_spline(time, index),
         }
     }
 
-    fn sample_linear(&self, time: f32) -> SampledValue {
-        let index = self.find_keyframe_index(time);
+    fn sample_linear(&self, time: f32, index: usize) -> SampledValue {
         if index >= self.inputs.len() - 1 {
             return self.get_keyframe_value(index);
         }
@@ -226,13 +228,7 @@ impl AnimationSampler {
         self.interpolate_values(index, index + 1, alpha)
     }
 
-    fn sample_step(&self, time: f32) -> SampledValue {
-        let index = self.find_keyframe_index(time);
-        self.get_keyframe_value(index)
-    }
-
-    fn sample_cubic_spline(&self, time: f32) -> SampledValue {
-        let index = self.find_keyframe_index(time);
+    fn sample_cubic_spline(&self, time: f32, index: usize) -> SampledValue {
         if index >= self.inputs.len() - 1 {
             return self.get_keyframe_value(index);
         }
@@ -336,7 +332,7 @@ impl AnimationSampler {
                 h.h00 * z0 + h.h10 * mz0 + h.h01 * z1 + h.h11 * mz1,
                 h.h00 * w0 + h.h10 * mw0 + h.h01 * w1 + h.h11 * mw1,
             ];
-            SampledValue::Quat(result)
+            SampledValue::Quat(Self::normalize_rotation(result))
         } else if let Some(ref scales) = self.scales {
             let result = Self::interpolate_cubic_vec3(scales, index0, index1, h, dt);
             SampledValue::Vec3(result)
@@ -392,15 +388,34 @@ impl AnimationSampler {
         self.find_keyframe_index(time)
     }
 
+    fn normalize_rotation(value: [f32; 4]) -> [f32; 4] {
+        let length = value.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if length < 1e-6 {
+            [0.0, 0.0, 0.0, 1.0]
+        } else {
+            value.map(|v| v / length)
+        }
+    }
+
     fn get_keyframe_value(&self, index: usize) -> SampledValue {
+        let index = if self.interpolation == Interpolation::CubicSpline {
+            index * 3 + 1
+        } else {
+            index
+        };
         if let Some(ref translations) = self.translations {
-            SampledValue::Vec3(translations[index.min(translations.len() - 1)])
+            SampledValue::Vec3(translations[index])
         } else if let Some(ref rotations) = self.rotations {
-            SampledValue::Quat(rotations[index.min(rotations.len() - 1)])
+            let value = rotations[index];
+            SampledValue::Quat(if self.interpolation == Interpolation::CubicSpline {
+                Self::normalize_rotation(value)
+            } else {
+                value
+            })
         } else if let Some(ref scales) = self.scales {
-            SampledValue::Vec3(scales[index.min(scales.len() - 1)])
+            SampledValue::Vec3(scales[index])
         } else if let Some(ref weights) = self.weights {
-            SampledValue::Float(weights[index.min(weights.len() - 1)])
+            SampledValue::Float(weights[index])
         } else {
             SampledValue::Unknown
         }
