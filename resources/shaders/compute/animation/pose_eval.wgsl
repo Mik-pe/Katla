@@ -3,11 +3,8 @@ const PATH_ROTATION: u32 = 1u;
 const PATH_SCALE: u32 = 2u;
 const INTERP_LINEAR: u32 = 0u;
 const INTERP_STEP: u32 = 1u;
-const INTERP_CUBIC_SPLINE: u32 = 2u;
 const NO_PARENT: u32 = 0xFFFFFFFFu;
 
-const FLAG_PLAYING: u32 = 1u;
-const FLAG_LOOPING: u32 = 2u;
 const FLAG_BLENDING: u32 = 4u;
 
 struct SkeletonAnimParams {
@@ -136,7 +133,7 @@ fn mat4_from_trs(translation: vec3f, rotation: vec4f, scale: vec3f) -> mat4x4f {
 // ---------------------------------------------------------------------------
 
 fn find_keyframe(offset: u32, count: u32, time: f32) -> u32 {
-    if (count == 0u) {
+    if (count <= 1u) {
         return 0u;
     }
 
@@ -145,7 +142,7 @@ fn find_keyframe(offset: u32, count: u32, time: f32) -> u32 {
     }
 
     if (time >= keyframe_times[offset + count - 1u]) {
-        return count - 2u;
+        return count - 1u;
     }
 
     var lo = 0u;
@@ -167,6 +164,27 @@ fn find_keyframe(offset: u32, count: u32, time: f32) -> u32 {
 // Channel evaluation (single path type)
 // ---------------------------------------------------------------------------
 
+fn cubic_weights(alpha: f32, duration: f32) -> vec4f {
+    let t2 = alpha * alpha;
+    let t3 = t2 * alpha;
+    return vec4f(
+        2.0 * t3 - 3.0 * t2 + 1.0,
+        (t3 - 2.0 * t2 + alpha) * duration,
+        -2.0 * t3 + 3.0 * t2,
+        (t3 - t2) * duration,
+    );
+}
+
+// glTF stores each cubic keyframe as [in-tangent, value, out-tangent].
+fn cubic_component(base0: u32, base1: u32, width: u32, component: u32, weights: vec4f) -> f32 {
+    return dot(weights, vec4f(
+        keyframe_values[base0 + width + component],
+        keyframe_values[base0 + 2u * width + component],
+        keyframe_values[base1 + width + component],
+        keyframe_values[base1 + component],
+    ));
+}
+
 fn evaluate_channel_vec3(channel: AnimChannelInfo, time: f32) -> vec3f {
     if (channel.keyframe_count == 0u) {
         return vec3f(0.0);
@@ -179,7 +197,7 @@ fn evaluate_channel_vec3(channel: AnimChannelInfo, time: f32) -> vec3f {
     let t1 = keyframe_times[channel.time_offset + k1];
 
     let dur = t1 - t0;
-    let alpha = select(0.0, (time - t0) / dur, dur > 1e-6);
+    let alpha = clamp(select(0.0, (time - t0) / dur, dur > 1e-6), 0.0, 1.0);
     let vo = channel.value_offset;
 
     if (channel.interpolation == INTERP_LINEAR) {
@@ -201,45 +219,14 @@ fn evaluate_channel_vec3(channel: AnimChannelInfo, time: f32) -> vec3f {
             keyframe_values[vo + k0 * 3u + 2u],
         );
     } else {
-        // Cubic spline: glTF layout per keyframe = [value(N), tangent_out(N), tangent_in(N)]
-        // For vec3 (N=3): 9 floats per keyframe
-        // Offsets: 0..2 = value, 3..5 = tangent_out, 6..8 = tangent_in
-        let comp = 3u;
-        let bk0 = vo + k0 * 9u;
-        let bk1 = vo + k1 * 9u;
-
-        let dt = dur;
-        let t2 = alpha * alpha;
-        let t3 = t2 * alpha;
-
-        var result = vec3f(0.0);
-        let a_v = 2.0 * t3 - 3.0 * t2 + 1.0;
-        let b_v = t3 - 2.0 * t2 + alpha;
-        let c_v = -2.0 * t3 + 3.0 * t2;
-        let d_v = t3 - t2;
-
-        // X component
-        let p0_x = keyframe_values[bk0 + 0u];
-        let m0_x = keyframe_values[bk0 + comp + 0u] * dt;
-        let p1_x = keyframe_values[bk1 + 0u];
-        let m1_x = keyframe_values[bk1 + 2u * comp + 0u] * dt;
-        result[0] = a_v * p0_x + b_v * m0_x + c_v * p1_x + d_v * m1_x;
-
-        // Y component
-        let p0_y = keyframe_values[bk0 + 1u];
-        let m0_y = keyframe_values[bk0 + comp + 1u] * dt;
-        let p1_y = keyframe_values[bk1 + 1u];
-        let m1_y = keyframe_values[bk1 + 2u * comp + 1u] * dt;
-        result[1] = a_v * p0_y + b_v * m0_y + c_v * p1_y + d_v * m1_y;
-
-        // Z component
-        let p0_z = keyframe_values[bk0 + 2u];
-        let m0_z = keyframe_values[bk0 + comp + 2u] * dt;
-        let p1_z = keyframe_values[bk1 + 2u];
-        let m1_z = keyframe_values[bk1 + 2u * comp + 2u] * dt;
-        result[2] = a_v * p0_z + b_v * m0_z + c_v * p1_z + d_v * m1_z;
-
-        return result;
+        let base0 = vo + k0 * 9u;
+        let base1 = vo + k1 * 9u;
+        let weights = cubic_weights(alpha, dur);
+        return vec3f(
+            cubic_component(base0, base1, 3u, 0u, weights),
+            cubic_component(base0, base1, 3u, 1u, weights),
+            cubic_component(base0, base1, 3u, 2u, weights),
+        );
     }
 }
 
@@ -255,7 +242,7 @@ fn evaluate_channel_quat(channel: AnimChannelInfo, time: f32) -> vec4f {
     let t1 = keyframe_times[channel.time_offset + k1];
 
     let dur = t1 - t0;
-    let alpha = select(0.0, (time - t0) / dur, dur > 1e-6);
+    let alpha = clamp(select(0.0, (time - t0) / dur, dur > 1e-6), 0.0, 1.0);
     let vo = channel.value_offset;
 
     if (channel.interpolation == INTERP_LINEAR) {
@@ -280,51 +267,15 @@ fn evaluate_channel_quat(channel: AnimChannelInfo, time: f32) -> vec4f {
             keyframe_values[vo + k0 * 4u + 3u],
         );
     } else {
-        // Cubic spline for quaternion: glTF layout [value(4), tangent_out(4), tangent_in(4)] = 12 values
-        let comp = 4u;
-        let bk0 = vo + k0 * 12u;
-        let bk1 = vo + k1 * 12u;
-
-        let dt = dur;
-        let t2 = alpha * alpha;
-        let t3 = t2 * alpha;
-
-        let a_v = 2.0 * t3 - 3.0 * t2 + 1.0;
-        let b_v = t3 - 2.0 * t2 + alpha;
-        let c_v = -2.0 * t3 + 3.0 * t2;
-        let d_v = t3 - t2;
-
-        var result = vec4f(0.0);
-
-        // Component 0
-        let p0_0 = keyframe_values[bk0 + 0u];
-        let m0_0 = keyframe_values[bk0 + comp + 0u] * dt;
-        let p1_0 = keyframe_values[bk1 + 0u];
-        let m1_0 = keyframe_values[bk1 + 2u * comp + 0u] * dt;
-        result[0] = a_v * p0_0 + b_v * m0_0 + c_v * p1_0 + d_v * m1_0;
-
-        // Component 1
-        let p0_1 = keyframe_values[bk0 + 1u];
-        let m0_1 = keyframe_values[bk0 + comp + 1u] * dt;
-        let p1_1 = keyframe_values[bk1 + 1u];
-        let m1_1 = keyframe_values[bk1 + 2u * comp + 1u] * dt;
-        result[1] = a_v * p0_1 + b_v * m0_1 + c_v * p1_1 + d_v * m1_1;
-
-        // Component 2
-        let p0_2 = keyframe_values[bk0 + 2u];
-        let m0_2 = keyframe_values[bk0 + comp + 2u] * dt;
-        let p1_2 = keyframe_values[bk1 + 2u];
-        let m1_2 = keyframe_values[bk1 + 2u * comp + 2u] * dt;
-        result[2] = a_v * p0_2 + b_v * m0_2 + c_v * p1_2 + d_v * m1_2;
-
-        // Component 3
-        let p0_3 = keyframe_values[bk0 + 3u];
-        let m0_3 = keyframe_values[bk0 + comp + 3u] * dt;
-        let p1_3 = keyframe_values[bk1 + 3u];
-        let m1_3 = keyframe_values[bk1 + 2u * comp + 3u] * dt;
-        result[3] = a_v * p0_3 + b_v * m0_3 + c_v * p1_3 + d_v * m1_3;
-
-        return quat_normalize(result);
+        let base0 = vo + k0 * 12u;
+        let base1 = vo + k1 * 12u;
+        let weights = cubic_weights(alpha, dur);
+        return quat_normalize(vec4f(
+            cubic_component(base0, base1, 4u, 0u, weights),
+            cubic_component(base0, base1, 4u, 1u, weights),
+            cubic_component(base0, base1, 4u, 2u, weights),
+            cubic_component(base0, base1, 4u, 3u, weights),
+        ));
     }
 }
 
@@ -339,9 +290,7 @@ fn evaluate_clip(
     joint_count: u32,
 ) {
     let clip = clip_headers[clip_idx];
-    let at_end = time >= clip.duration;
-    let raw_time = select(time % clip.duration, time, clip.duration <= 0.0);
-    let eval_time = select(raw_time, clip.duration - 1e-4, at_end);
+    let eval_time = clamp(time, 0.0, max(clip.duration, 0.0));
 
     for (var j = 0u; j < joint_count; j = j + 1u) {
         var trans = joints[joint_offset + j].rest_translation;

@@ -72,3 +72,23 @@ METAL_DEVICE_WRAPPER_TYPE=1 MTL_DEBUG_LAYER=1 \
 `render_graph::native_compute_tests` covers ordinary imported shader workloads for
 animation and small particle pools. These native fixtures exercise the same
 contracts used by application services.
+
+## Animation sampling
+
+The application animation player owns playback time, looping and clip transitions.
+GPU pose evaluation clamps that time to the clip and each channel's keyframe
+interval; it does not wrap time a second time or subtract an epsilon from the
+last sample. STEP includes the final keyframe, and single-keyframe channels stay
+constant.
+
+CPU imports and GPU sampling share glTF's CUBICSPLINE layout:
+`[in-tangent, value, out-tangent]` for each keyframe. Hermite tangents scale by the
+interval duration, and cubic quaternion samples normalize after interpolation.
+The native animation fixtures validate translation, rotation, scale, endpoint
+clamping and single-keyframe channels across queued frame slots:
+
+```sh
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
+  cargo test -p katla_gfx --lib render_graph::native_compute_tests::animation \
+  --locked -- --nocapture --test-threads=1
+```
