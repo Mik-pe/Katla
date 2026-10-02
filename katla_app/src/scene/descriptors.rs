@@ -83,8 +83,71 @@ pub struct AnimationDescriptor {
     pub target_time: f32,
     #[serde(default)]
     pub target_duration: f32,
+    /// Whether the current clip has already emitted completion.
+    #[serde(default)]
+    pub completed: bool,
+    /// Whether the fade target has already emitted completion.
+    #[serde(default)]
+    pub target_completed: bool,
+    /// Independent looping policy committed when the fade completes.
+    #[serde(default)]
+    pub target_loop_animation: bool,
+    /// Loop count carried into the target's playback state.
+    #[serde(default)]
+    pub target_loop_count: u32,
     #[serde(default)]
     pub loop_count: u32,
+}
+
+impl From<&crate::animation::AnimationPlayer> for AnimationDescriptor {
+    fn from(player: &crate::animation::AnimationPlayer) -> Self {
+        Self {
+            current_clip: player.current_clip.clone(),
+            playing: player.playing,
+            loop_animation: player.loop_animation,
+            speed: player.speed,
+            time: player.time,
+            duration: player.duration,
+            blending: player.blending,
+            target_clip: player.target_clip.clone(),
+            blend_weight: player.blend_weight,
+            blend_time: player.blend_time,
+            blend_duration: player.blend_duration,
+            target_time: player.target_time,
+            target_duration: player.target_duration,
+            loop_count: player.loop_count,
+            completed: player.completed,
+            target_completed: player.target_completed,
+            target_loop_animation: player.target_loop_animation,
+            target_loop_count: player.target_loop_count,
+        }
+    }
+}
+
+impl AnimationDescriptor {
+    pub(crate) fn restore(&self, player: &mut crate::animation::AnimationPlayer) {
+        player.stop();
+        player.current_clip = self.current_clip.clone();
+        player.playing = self.playing;
+        player.loop_animation = self.loop_animation;
+        player.speed = self.speed;
+        player.time = self.time;
+        player.duration = self.duration;
+        player.loop_count = self.loop_count;
+        player.completed = self.completed;
+        if self.blending && self.target_clip.is_some() {
+            player.blending = self.blending;
+            player.target_clip = self.target_clip.clone();
+            player.blend_weight = self.blend_weight;
+            player.blend_time = self.blend_time;
+            player.blend_duration = self.blend_duration;
+            player.target_time = self.target_time;
+            player.target_duration = self.target_duration;
+            player.target_completed = self.target_completed;
+            player.target_loop_animation = self.target_loop_animation;
+            player.target_loop_count = self.target_loop_count;
+        }
+    }
 }
 
 impl Default for AnimationDescriptor {
@@ -103,6 +166,10 @@ impl Default for AnimationDescriptor {
             blend_duration: 0.0,
             target_time: 0.0,
             target_duration: 0.0,
+            completed: false,
+            target_completed: false,
+            target_loop_animation: false,
+            target_loop_count: 0,
             loop_count: 0,
         }
     }

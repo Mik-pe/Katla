@@ -21,6 +21,7 @@ pub struct PendingMcpRequest {
 
 #[derive(Debug, Clone)]
 pub enum McpOpKind {
+    Animation(crate::animation::AnimationOp),
     Scene(SceneOp),
     Resource(ResourceOp),
     LoadScene { path: String },
@@ -29,6 +30,7 @@ pub enum McpOpKind {
 
 #[derive(Debug, Clone)]
 pub enum McpOp {
+    Animation(crate::animation::AnimationOp),
     SpawnEntity {
         position: [f32; 3],
         rotation: [f32; 3],
@@ -101,6 +103,7 @@ pub enum McpOp {
 impl McpOp {
     pub fn into_op(self) -> McpOpKind {
         match self {
+            Self::Animation(op) => McpOpKind::Animation(op),
             Self::SpawnEntity {
                 position,
                 rotation,
@@ -393,6 +396,17 @@ struct SaveSceneParams {
 #[rmcp::tool_router]
 impl KatlaMcpServer {
     #[rmcp::tool(
+        name = "animation",
+        description = "Inspect clips and fade progress, or play a named clip. Defaults: fade_seconds 0.25, looping true, speed 1. Positive fades reject an already active fade; zero switches immediately."
+    )]
+    async fn animation(
+        &self,
+        Parameters(op): Parameters<crate::animation::AnimationOp>,
+    ) -> Json<McpToolResult> {
+        self.forward_op(McpOp::Animation(op)).await
+    }
+
+    #[rmcp::tool(
         name = "spawn_entity",
         description = "Spawn a new entity in the scene with a transform"
     )]
@@ -675,5 +689,55 @@ impl ServerHandler for KatlaMcpServer {
         ServerInfo::default()
             .with_instructions("Katla 3D engine scene tools. Use these tools to spawn, modify, query, and destroy entities in the live scene.")
             .with_server_info(Implementation::new("katla-mcp", "0.1.0"))
+    }
+}
+
+#[cfg(test)]
+mod animation_tests {
+    use super::*;
+    use crate::animation::AnimationOp;
+
+    #[test]
+    fn test_animation_tool_forwards_typed_request_and_response() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let (server, bridge, _shutdown) = McpBridge::new();
+            use std::future::Future;
+            let mut call = Box::pin(server.animation(Parameters(AnimationOp::Play {
+                entity_id: 42,
+                clip: "Run".into(),
+                fade_seconds: 0.25,
+                looping: true,
+                speed: 1.0,
+            })));
+            std::future::poll_fn(|cx| {
+                assert!(call.as_mut().poll(cx).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            let request = bridge
+                .poll_requests()
+                .pop()
+                .expect("tool reaches application bridge");
+            assert!(matches!(
+                request.op.into_op(),
+                McpOpKind::Animation(AnimationOp::Play {
+                    entity_id: 42,
+                    fade_seconds: 0.25,
+                    ..
+                })
+            ));
+            request
+                .response_tx
+                .send(McpResponse {
+                    result: Ok(serde_json::json!({"playback":{"transition":{"progress":0.5}}})),
+                })
+                .unwrap();
+            let response = call.await.0;
+            assert!(response.success);
+            assert_eq!(
+                response.data.unwrap()["playback"]["transition"]["progress"],
+                0.5
+            );
+        });
     }
 }

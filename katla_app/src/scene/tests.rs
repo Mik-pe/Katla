@@ -1535,6 +1535,10 @@ fn test_gltf_round_trip() {
             blend_duration: 0.0,
             target_time: 0.0,
             target_duration: 0.0,
+            completed: false,
+            target_completed: false,
+            target_loop_animation: false,
+            target_loop_count: 0,
             loop_count: 3,
         }),
         velocity: None,
@@ -1705,6 +1709,10 @@ fn test_animation_round_trip() {
         blend_duration: 0.0,
         target_time: 0.0,
         target_duration: 0.0,
+        completed: false,
+        target_completed: false,
+        target_loop_animation: false,
+        target_loop_count: 0,
         loop_count: 5,
     };
 
@@ -1732,6 +1740,10 @@ fn test_animation_round_trip() {
         blend_duration: 0.5,
         target_time: 1.0,
         target_duration: 3.0,
+        completed: false,
+        target_completed: false,
+        target_loop_animation: false,
+        target_loop_count: 0,
         loop_count: 0,
     };
 
@@ -2501,6 +2513,10 @@ fn test_load_spawn_integration() {
             blend_duration: 0.5,
             target_time: 1.0,
             target_duration: 3.0,
+            completed: false,
+            target_completed: false,
+            target_loop_animation: false,
+            target_loop_count: 0,
             loop_count: 2,
         }),
         velocity: None,

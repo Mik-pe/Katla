@@ -316,6 +316,15 @@ const RESOURCE_TOOL_NAMES: &[&str] = &[
 
 /// Execute a single tool call against the ECS world.
 fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
+    if tool_call.name == "animation" {
+        return match serde_json::from_value(tool_call.arguments.clone())
+            .map_err(|error| error.to_string())
+            .and_then(|op| crate::animation::control::execute(&mut app.world, op))
+        {
+            Ok(state) => state.to_string(),
+            Err(error) => format!("Error: {error}"),
+        };
+    }
     if tool_call.name == "spawn_model" {
         return execute_spawn_model(app, tool_call);
     }

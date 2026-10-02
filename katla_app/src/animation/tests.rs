@@ -35,7 +35,7 @@ fn test_animation_player_set_clip() {
 fn test_animation_player_crossfade() {
     let mut player = AnimationPlayer::new("Walk").with_duration(5.0);
 
-    player.crossfade_to("Run", 3.0, 0.5);
+    player.crossfade_to("Run", 3.0, 0.5).unwrap();
 
     assert!(player.blending);
     assert_eq!(player.target_clip.as_ref().unwrap(), "Run");
@@ -45,35 +45,13 @@ fn test_animation_player_crossfade() {
 }
 
 #[test]
-fn test_animation_crossfade_completion_transitions_state() {
-    let mut player = AnimationPlayer::new("Walk").with_duration(5.0);
-    player.crossfade_to("Run", 3.0, 0.5);
-
-    assert!(player.blending);
-    assert_eq!(player.target_clip.as_ref().unwrap(), "Run");
-
-    // Simulate advancing blend_time past blend_duration
-    player.blend_time = 0.6; // past blend_duration of 0.5
-    player.blend_weight = 0.0;
-
-    // Complete the crossfade by calling set_clip (what the system does)
-    let target_name = player.target_clip.clone().unwrap();
-    let target_duration = player.target_duration;
-    player.set_clip(&target_name, target_duration);
-
-    assert!(!player.blending);
-    assert_eq!(player.current_clip.as_ref().unwrap(), "Run");
-    assert!(player.target_clip.is_none());
-}
-
-#[test]
 fn test_animation_crossfade_zero_duration() {
     let mut player = AnimationPlayer::new("Walk").with_duration(5.0);
 
-    // Crossfade with duration 0.0 - should not cause division-by-zero (NaN)
-    player.crossfade_to("Run", 3.0, 0.0);
+    player.crossfade_to("Run", 3.0, 0.0).unwrap();
 
-    assert!(player.blending);
+    assert!(!player.blending);
+    assert_eq!(player.current_clip.as_deref(), Some("Run"));
     assert_eq!(player.blend_duration, 0.0);
     assert_eq!(player.blend_time, 0.0);
     assert_eq!(player.blend_weight, 1.0); // Should still be valid, no NaN

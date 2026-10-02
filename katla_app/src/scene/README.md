@@ -52,6 +52,11 @@ Per entity: name, parent, transform (pos/rot/scale), entity source type, drawabl
 
 GPU handles (MeshHandle, MaterialHandle, TextureHandle, SkeletonHandle, EmitterHandle) are never serialized. Scene files store *what to load*, and spawn functions re-create GPU state on load.
 
+Animation snapshots retain source/target completion flags and target looping/count
+independently. Reloading a completed clip does not emit completion again, and a
+pending fade resumes with the same target policy. These fields use `serde(default)`
+under the optional-field rule above.
+
 ## What Does NOT Get Serialized
 
 - GPU handles -- re-created on load from source descriptions

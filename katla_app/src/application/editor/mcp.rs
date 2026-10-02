@@ -27,6 +27,9 @@ pub(crate) fn poll(app: &mut crate::application::Application, protected: &Protec
     let requests = app.editor.mcp_state.bridge.poll_requests();
     for req in requests {
         let response = match req.op.into_op() {
+            McpOpKind::Animation(op) => McpResponse {
+                result: crate::animation::control::execute(&mut app.world, op),
+            },
             McpOpKind::Scene(scene_op) => {
                 if let Err(msg) = check_protected_entity(&scene_op, protected) {
                     McpResponse { result: Err(msg) }

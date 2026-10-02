@@ -66,6 +66,15 @@ jobs:
       - name: Test graphics library
         run: cargo test -p katla_gfx --lib --locked --quiet -- --test-threads=1
 
+      - name: Test agent-driven animation fades on Vulkan
+        run: |
+          cargo test -p katla_app -p katla_agent --lib --all-features --locked animation
+          cargo test -p katla_app --lib native_transition_tests --all-features --locked -- --ignored --test-threads=1
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          CARGO_INCREMENTAL: "0"
+
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --all-targets --locked --quiet -- -D warnings
 
@@ -116,7 +125,8 @@ jobs:
         run: |
           cargo check -p katla_ecs --all-targets --all-features --locked
           cargo test -p katla_ecs --all-features --locked
-          cargo test -p katla_app -p katla_script --lib --locked
+          cargo test -p katla_app -p katla_agent --lib --all-features --locked
+          cargo test -p katla_script --lib --locked
           cargo clippy -p katla_ecs --all-targets --all-features --locked -- -D warnings
 
       - name: Check graphics and application crates
@@ -133,6 +143,13 @@ jobs:
             echo "::notice::Native Metal 4 acceptance BLOCKED: the hosted virtual GPU lacks Metal 4. Portable tests and typed capability rejection still run."
             echo "Native Metal 4 acceptance: **BLOCKED** — default GPU lacks Metal 4. This job validates the current SDK, portable graphics tests and typed rejection; physical GPU acceptance is recorded separately." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Verify agent-driven animation fades on native Metal
+        if: steps.metal4.outputs.supported == 'true'
+        run: cargo test -p katla_app --lib native_transition_tests --all-features --locked -- --ignored --test-threads=1
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
 
       - name: Verify Metal 4 capability rejection precedes native creation
         run: cargo test -p katla_gfx --lib --locked --quiet metal::context::tests::test_metal_context_capability_precedes_native_creation -- --exact
@@ -157,7 +174,7 @@ jobs:
           METAL_DEVICE_WRAPPER_TYPE: "1"
 
       - name: Lint graphics and application crates
-        run: cargo clippy -p katla_gfx -p katla_app --all-targets --locked --quiet -- -D warnings
+        run: cargo clippy -p katla_gfx -p katla_app -p katla_agent --all-targets --all-features --locked --quiet -- -D warnings
 
       - name: Cross-backend contract suite (Metal with API validation)
         if: steps.metal4.outputs.supported == 'true'

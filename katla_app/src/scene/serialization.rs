@@ -182,22 +182,7 @@ impl SceneManager {
             let animation = app
                 .world
                 .get_component::<AnimationPlayer>(entity_id)
-                .map(|a| AnimationDescriptor {
-                    current_clip: a.current_clip.clone(),
-                    playing: a.playing,
-                    loop_animation: a.loop_animation,
-                    speed: a.speed,
-                    time: a.time,
-                    duration: a.duration,
-                    blending: a.blending,
-                    target_clip: a.target_clip.clone(),
-                    blend_weight: a.blend_weight,
-                    blend_time: a.blend_time,
-                    blend_duration: a.blend_duration,
-                    target_time: a.target_time,
-                    target_duration: a.target_duration,
-                    loop_count: a.loop_count,
-                });
+                .map(AnimationDescriptor::from);
 
             let velocity = app
                 .world
@@ -699,31 +684,7 @@ impl SceneManager {
             }
 
             if let Some(player) = app.world.get_component_mut::<AnimationPlayer>(entity_id) {
-                if let Some(ref clip) = anim_desc.current_clip {
-                    let duration = if anim_desc.duration > 0.0 {
-                        anim_desc.duration
-                    } else {
-                        player.duration
-                    };
-                    player.set_clip(clip.clone(), duration);
-                }
-                player.playing = anim_desc.playing;
-                player.loop_animation = anim_desc.loop_animation;
-                player.speed = anim_desc.speed;
-                player.time = anim_desc.time;
-                player.duration = anim_desc.duration;
-                player.loop_count = anim_desc.loop_count;
-                if anim_desc.blending
-                    && let Some(ref target) = anim_desc.target_clip
-                {
-                    player.target_clip = Some(target.clone());
-                    player.blending = true;
-                    player.blend_weight = anim_desc.blend_weight;
-                    player.blend_time = anim_desc.blend_time;
-                    player.blend_duration = anim_desc.blend_duration;
-                    player.target_time = anim_desc.target_time;
-                    player.target_duration = anim_desc.target_duration;
-                }
+                anim_desc.restore(player);
             }
         }
 

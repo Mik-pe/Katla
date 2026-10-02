@@ -87,6 +87,27 @@ upstream metadata intermittently arrives hash-mismatched, which fails
 `apt-get update` before any build step runs. The Linux graphics job removes
 that source before updating — no Katla job uses Chrome.
 
+## Animation transitions
+
+The shared MCP/editor `animation` request is covered by application and agent
+library tests with all features enabled. Fixed delta times exercise the real
+typed playback system, completion events, pause, target looping and scene
+snapshot restoration. The Linux graphics job also runs the ignored
+`animation::native_transition_tests` fixture on Vulkan with active validation:
+an agent request advances the player and its ordinary graph parameters, then
+GPU joint-matrix readback checks the start, midpoint and completed target.
+The `macos-26` job runs the same fixture with Metal API validation after its
+Metal 4 capability probe. A skipped native Metal fixture means hardware
+acceptance remains blocked; Linux output and CPU tests still run.
+
+```bash
+cargo test -p katla_app -p katla_agent --lib --all-features --locked
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 cargo test -p katla_app --lib native_transition_tests --all-features --locked -- --ignored --test-threads=1
+```
+
+See the [transition contract](animation-transitions.md) for timing and agent
+request semantics.
+
 ## ECS ownership checks
 
 The existing Linux and explicit `macos-26` jobs check, test and lint the ECS with

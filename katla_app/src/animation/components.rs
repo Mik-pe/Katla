@@ -25,26 +25,18 @@ pub struct AnimationPlayer {
     pub blending: bool,
     pub events: Vec<AnimationEvent>,
     pub loop_count: u32,
+    pub(crate) completed: bool,
+    pub(crate) target_completed: bool,
+    pub(crate) target_loop_animation: bool,
+    pub(crate) target_loop_count: u32,
 }
 
 impl AnimationPlayer {
     pub fn new(clip_name: impl Into<String>) -> Self {
         Self {
             current_clip: Some(clip_name.into()),
-            duration: 0.0,
-            time: 0.0,
             playing: true,
-            loop_animation: false,
-            speed: 1.0,
-            blend_weight: 1.0,
-            target_clip: None,
-            target_duration: 0.0,
-            target_time: 0.0,
-            blend_duration: 0.0,
-            blend_time: 0.0,
-            blending: false,
-            events: Vec::new(),
-            loop_count: 0,
+            ..Self::stopped()
         }
     }
 
@@ -70,6 +62,10 @@ impl AnimationPlayer {
             blending: false,
             events: Vec::new(),
             loop_count: 0,
+            completed: false,
+            target_completed: false,
+            target_loop_animation: false,
+            target_loop_count: 0,
         }
     }
 
@@ -93,12 +89,35 @@ impl AnimationPlayer {
         self.duration = duration;
         self.time = 0.0;
         self.loop_count = 0;
-        self.blending = false;
-        self.target_clip = None;
-        self.blend_weight = 1.0;
+        self.completed = false;
+        self.clear_transition();
     }
 
-    pub fn crossfade_to(&mut self, clip: impl Into<String>, duration: f32, blend_duration: f32) {
+    /// Fade to a clip using resolved asset duration and the current looping policy.
+    ///
+    /// Rejects invalid timing and overlapping fades before modifying playback.
+    /// Zero blend duration switches immediately. A fade resumes paused playback.
+    pub fn crossfade_to(
+        &mut self,
+        clip: impl Into<String>,
+        duration: f32,
+        blend_duration: f32,
+    ) -> Result<(), &'static str> {
+        if !duration.is_finite()
+            || duration < 0.0
+            || !blend_duration.is_finite()
+            || blend_duration < 0.0
+        {
+            return Err("Animation durations must be finite and nonnegative");
+        }
+        if blend_duration == 0.0 || self.current_clip.is_none() {
+            self.set_clip(clip, duration);
+            self.play();
+            return Ok(());
+        }
+        if self.blending {
+            return Err("A fade is already active");
+        }
         self.target_clip = Some(clip.into());
         self.target_duration = duration;
         self.target_time = 0.0;
@@ -106,6 +125,11 @@ impl AnimationPlayer {
         self.blend_time = 0.0;
         self.blending = true;
         self.blend_weight = 1.0;
+        self.target_completed = false;
+        self.target_loop_animation = self.loop_animation;
+        self.target_loop_count = 0;
+        self.play();
+        Ok(())
     }
 
     pub fn play(&mut self) {
@@ -120,13 +144,13 @@ impl AnimationPlayer {
         self.playing = false;
         self.time = 0.0;
         self.loop_count = 0;
-        self.blending = false;
-        self.target_clip = None;
-        self.blend_weight = 1.0;
+        self.completed = false;
+        self.clear_transition();
     }
 
     pub fn seek(&mut self, time: f32) {
         self.time = time.clamp(0.0, self.duration.max(0.0));
+        self.completed = false;
     }
 
     pub fn get_duration(&self) -> f32 {
@@ -138,7 +162,20 @@ impl AnimationPlayer {
     }
 
     pub fn is_complete(&self) -> bool {
-        !self.playing && self.time >= self.duration && !self.loop_animation
+        self.completed && !self.blending
+    }
+
+    pub(super) fn clear_transition(&mut self) {
+        self.target_clip = None;
+        self.target_duration = 0.0;
+        self.target_time = 0.0;
+        self.target_completed = false;
+        self.target_loop_count = 0;
+        self.target_loop_animation = false;
+        self.blend_duration = 0.0;
+        self.blend_time = 0.0;
+        self.blending = false;
+        self.blend_weight = 1.0;
     }
 }
 

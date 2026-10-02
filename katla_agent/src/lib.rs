@@ -1,6 +1,7 @@
 #[cfg(feature = "llm-assistant")]
 pub mod co_creator;
 
+pub mod animation;
 pub mod context;
 pub mod tools;
 

@@ -144,6 +144,11 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
 
     vec![
         ToolDefinition {
+            name: "animation".into(),
+            description: "Inspect an animated entity to discover clips and fade progress, or play a named clip with a crossfade. Default fade is 0.25 seconds, looping true, speed 1. Zero fade switches immediately. A positive fade during another fade returns an error without changing the pose; inspect and retry after completion.".into(),
+            parameters: crate::animation::AnimationOp::tool_schema(),
+        },
+        ToolDefinition {
             name: "spawn_entity".to_string(),
             description: "Spawn a new entity in the scene with a transform.".to_string(),
             parameters: json!({

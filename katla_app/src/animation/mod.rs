@@ -19,7 +19,7 @@
 //!
 //! // Crossfade to another animation
 //! if let Some(player) = world.get_component_mut::<AnimationPlayer>(entity) {
-//!     player.crossfade_to("Run", 1.5, 0.5); // 0.5 second blend
+//!     player.crossfade_to("Run", 1.5, 0.5)?;
 //! }
 //!
 //! // Check for animation events
@@ -35,12 +35,16 @@
 
 pub mod clips;
 pub mod components;
+#[cfg(any(test, feature = "mcp", feature = "llm"))]
+pub(crate) mod control;
 pub mod gltf_loader;
 pub(crate) mod gpu_clip_loader;
 pub mod samplers;
 pub mod skin;
 pub mod systems;
 
+#[cfg(test)]
+mod native_transition_tests;
 #[cfg(test)]
 mod tests;
 
