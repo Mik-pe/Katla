@@ -105,6 +105,7 @@ struct ClipClock<'a> {
     loop_count: &'a mut u32,
 }
 
+#[inline]
 fn advance_clip(name: &str, clock: ClipClock<'_>, advance: f64, events: &mut Vec<AnimationEvent>) {
     let ClipClock {
         time,
