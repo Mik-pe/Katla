@@ -1,7 +1,8 @@
 use super::*;
-use crate::{Read, System, SystemExecutionOrder, TypedSystem, Write};
+use crate::{Component, Read, System, SystemExecutionOrder, TypedSystem, Write};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Barrier, Mutex};
 
 #[derive(Component, Default)]

@@ -127,8 +127,10 @@ at the boundary.
 
 World owns identity, lifecycle events and the storage registries. Private modules
 separate query construction, resource access, system execution and integrity
-validation without changing the World API. Registration, query alias checks and
-scheduling use the same read/write conflict rule: identical types conflict when
+validation without changing the World API. Typed parameter families separate
+resource borrows, local state, structural commands and event logs; shared access
+validation and tuple composition remain together. Registration, query alias checks
+and scheduling use the same read/write conflict rule: identical types conflict when
 either access writes. Component and resource claims remain separate namespaces.
 
 ## Unsafe boundaries and verification
