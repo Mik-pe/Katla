@@ -29,11 +29,12 @@ katla_ui      → katla_math, katla_gfx, katla_icons
 katla_physics → katla_ecs, katla_gfx, katla_math, rapier3d
 katla_audio   → (nothing — zero internal deps)
 katla_script  → katla_ecs, katla_math, katla_derive, mlua
-katla_gfx     → katla_math, katla_icons
+katla_gfx     → (nothing — zero internal deps)
 katla_app     → katla_gfx, katla_ecs, katla_math, katla_ui, katla_physics, katla_audio, katla_script
 ```
 
-Violating these will cause compile errors. Do not work around them.
+Preserve these boundaries when changing manifests. The GPU core must not depend
+on application, ECS, math or UI crates; scene composition belongs in katla_app.
 
 External libraries do not relax these internal boundaries. katla_ecs uses
 katla_derive for component macros and Rayon for scoped workers. The proc-macro

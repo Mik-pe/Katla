@@ -163,13 +163,18 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Add shader compilation validation in CI — ensure all shaders compile without errors on push
 
 ### Animation system
-- [ ] Design `AnimationClip` asset — bone index, keyframe times, position/rotation/scale tracks, duration, loop flag
-- [ ] Add `AnimationPlayer` component — holds active clip, playback time, speed, blending weight, derives `Component`
-- [ ] Implement skeletal animation sampling — interpolate between keyframes (LERP for position/scale, SLERP for rotation)
-- [ ] Add animation blending — blend two AnimationPlayer outputs (crossfade) on shared skeleton
+- [ ] **ANIM-P1-001: Prepare hierarchy traversal independently of skin order** — Compile a parent-before-child evaluation order at asset preparation without changing skin joint/vertex indices. Include non-joint ancestors and their animated tracks. CPU `Skeleton::compute_world_transforms` and GPU pose evaluation currently assume parent joints occur earlier; valid glTF skin arrays need not be topological. Native regressions must cover child-first skin indices and intermediary non-joint nodes.
+- [ ] **ANIM-P1-002: Version static animation data explicitly** — Replace `GpuAnimationSystem`'s name/count fingerprint with a generation owned by the animation asset/replacement boundary. Changes to keyframes, hierarchy, rest poses and inverse bind matrices must invalidate the upload even when clip names and joint counts stay constant. Avoid hashing all keyframes every frame; test same-name/same-size replacements and upload failure/retry.
+- [ ] **ANIM-P1-003: Define degenerate and completed playback behavior** — A zero-duration looping clip currently reaches modulo zero, and a non-looping source can stop playback before its pending crossfade completes. Define constant-clip timing and independent transition progression; test finite times, completion events and target looping policy.
+- [ ] **ANIM-P2-004: Measure animation preparation and GPU scaling** — Benchmark representative skeleton/joint/clip counts, including query preparation, parameter writes, dispatch and GPU duration. `evaluate_joint` scans every clip channel for each joint; evaluate a prepared joint-to-track index after the measurements identify its cost. Compare end-to-end CPU and GPU evaluation before changing dispatch granularity.
+- [ ] **GFX-PERF-001: Profile representative frames on an idle host** — Capture release CPU/GPU timelines with validation disabled for timing and enabled separately for correctness. Compare repeated runs with fixed scene/animation times, record frame p50/p95 and resource/submit preparation. Existing Metal 4 validation captures have a slower whole-frame median than the baseline and do not establish a throughput improvement; retain their raw evidence.
+- [x] Add `AnimationClip` data — node-targeted channels, keyframe times, TRS/weight samplers and duration; playback owns looping
+- [x] Add `AnimationPlayer` component — active clip, playback time, speed, looping and crossfade state
+- [x] Implement CPU/GPU channel sampling — LINEAR, STEP and glTF CUBICSPLINE, interval clamping and quaternion normalization; hierarchy ordering remains ANIM-P1-001
+- [x] Add local-pose crossfade — blend source/target TRS before hierarchy composition; native tests cover endpoints, child bone length and signed/zero scales
 - [ ] Design `AnimatorStateMachine` — states (clips), transitions (conditions, duration, exit time), parameters (bool, float triggers)
 - [ ] Add `AnimatorComponent` — holds state machine instance, parameters, current state; updates AnimationPlayer each frame
-- [ ] Add `AnimationSystem` (ECS System trait) — advance animation time, evaluate state machine transitions, sample clips, write skeleton pose
+- [ ] Integrate the animator state machine with typed `AnimationUpdateSystem` and GPU pose evaluation — clip timing/crossfade already exist; transition conditions and state-machine ownership remain
 
 ### Reflections
 - [ ] **Explore planar reflection architecture** — Research reflection rendering techniques (reflected camera, oblique clipping, mirror textures). Produce concrete implementation TODO items.
