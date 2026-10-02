@@ -122,44 +122,8 @@ impl Frame<'_, VulkanRenderer> {
                         .descriptor_count(count)
                 })
                 .collect();
-            let device = &self.renderer.context.device;
-            let pool = unsafe {
-                device.create_descriptor_pool(
-                    &vk::DescriptorPoolCreateInfo::default()
-                        .max_sets(1)
-                        .pool_sizes(&sizes),
-                    None,
-                )
-            }
-            .map_err(|error| {
-                RenderGraphError::BackendError(format!("Graphics descriptor pool: {error}"))
-            })?;
-            let group_layout = [layouts[reflected.group as usize]];
-            let set = match unsafe {
-                device.allocate_descriptor_sets(
-                    &vk::DescriptorSetAllocateInfo::default()
-                        .descriptor_pool(pool)
-                        .set_layouts(&group_layout),
-                )
-            } {
-                Ok(sets) => sets[0],
-                Err(error) => {
-                    unsafe {
-                        device.destroy_descriptor_pool(pool, None);
-                    }
-                    return Err(RenderGraphError::BackendError(format!(
-                        "Graphics descriptor allocation: {error}"
-                    )));
-                }
-            };
-            self.renderer.graphics_descriptor_sets[slot].push(
-                crate::vulkan::descriptor_set::DescriptorSet::from_raw(
-                    set,
-                    pool,
-                    None,
-                    device.clone(),
-                ),
-            );
+            let set = self.renderer.graphics_descriptors[slot]
+                .allocate(layouts[reflected.group as usize], &sizes)?;
             sets.insert(reflected.group, set);
         }
         let mut bound_bindless = false;

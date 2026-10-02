@@ -1,24 +1,4 @@
-//! Unified descriptor set builder.
-//!
-//! Provides a single builder pattern for creating descriptor sets that can bind
-//! any combination of buffers, images, and samplers.
-//!
-//! # Example
-//!
-//! ```ignore
-//! // Buffer-only descriptor set
-//! let desc_set = DescriptorSetBuilder::new(&context)
-//!     .storage_buffer(0, &particle_buffer)
-//!     .uniform_buffer(1, &frame_data_buffer)
-//!     .build(layout)?;
-//!
-//! // Mixed descriptor set (images + samplers + buffers)
-//! let desc_set = DescriptorSetBuilder::new(&context)
-//!     .sampled_image(0, font_texture.image_view())
-//!     .sampler(1, sampler)
-//!     .uniform_buffer(3, &uniform_buffer)
-//!     .build(layout)?;
-//! ```
+//! Owned descriptor sets with automatic pool and layout cleanup.
 
 use ash::vk;
 

@@ -3,6 +3,7 @@ pub(crate) mod bindless_texture;
 pub(crate) mod commandbuffer;
 pub(crate) mod commandpool;
 pub(crate) mod context;
+pub(crate) mod descriptor_arena;
 pub(crate) mod descriptor_set;
 pub(crate) mod material;
 pub(crate) mod pipeline_state;

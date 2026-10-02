@@ -1,4 +1,4 @@
-//! Native parents retained by command pools and their allocated buffers.
+//! Native parents retained by device-owned allocations.
 
 use std::cell::Cell;
 use std::rc::Rc;

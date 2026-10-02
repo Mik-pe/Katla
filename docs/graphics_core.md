@@ -195,6 +195,16 @@ variants resolve from the declared native attachments, including depth-only
 passes and targets smaller than the output. Incompatible attachment extents
 return a typed error before beginning rendering.
 
+Graphics descriptor sets allocate from reusable pools owned by each frame slot.
+Pool budgets account for both sets and each reflected descriptor type, growing
+only when existing capacity is exhausted. Slot acquisition resets used pools
+after its exact fence completes and its command buffer resets; resize reuses
+the pools after device retirement. Individual sets are never freed or rewritten
+while an earlier submission can use them. Pools retain their native device and
+release together at renderer teardown. Native allocation failures propagate
+without consuming the tracked descriptor budget; retrying an exhausted fresh
+pool returns an error instead of growing indefinitely.
+
 Explicit pass bindings take precedence over implicit draw bindings on both
 backends; duplicate explicit slots remain invalid. Skinned Vulkan draws resolve
 the shader's skeleton storage slot at group 2 or 3. Sampled depth/stencil

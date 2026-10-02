@@ -24,6 +24,8 @@ pub(crate) mod bindless_queries;
 pub(crate) mod buffer_api;
 #[cfg(test)]
 mod capture_tests;
+#[cfg(test)]
+mod descriptor_tests;
 pub(crate) mod destroy_api;
 pub(crate) mod frame_lifecycle;
 pub mod frame_scope;
@@ -195,7 +197,7 @@ pub struct VulkanRenderer {
     >,
     pub(crate) texture_readbacks:
         std::collections::HashMap<u64, graph_readback::VulkanTextureReadback>,
-    pub(crate) graphics_descriptor_sets: Vec<Vec<crate::vulkan::descriptor_set::DescriptorSet>>,
+    pub(crate) graphics_descriptors: Vec<crate::vulkan::descriptor_arena::DescriptorArena>,
     pub(crate) graphics_constants:
         Vec<Vec<crate::render_graph::transient_buffer::VulkanGraphBuffer>>,
     pub(crate) graphics_image_views: Vec<Vec<vk::ImageView>>,
@@ -368,6 +370,14 @@ impl VulkanRenderer {
         let material_compiler = MaterialCompiler::new(context.clone(), &bindless_manager);
         info!("Material compiler initialized");
 
+        let graphics_descriptors = (0..FRAMES_IN_FLIGHT)
+            .map(|_| {
+                crate::vulkan::descriptor_arena::DescriptorArena::new(
+                    context.gfx_cmdpool.owner.native.clone(),
+                )
+            })
+            .collect();
+
         Ok(Self {
             context,
             frame_context,
@@ -383,7 +393,7 @@ impl VulkanRenderer {
             pending_texture_exports: Vec::new(),
             committed_texture_exports: Default::default(),
             texture_readbacks: Default::default(),
-            graphics_descriptor_sets: (0..FRAMES_IN_FLIGHT).map(|_| Vec::new()).collect(),
+            graphics_descriptors,
             graphics_constants: (0..FRAMES_IN_FLIGHT).map(|_| Vec::new()).collect(),
             graphics_image_views: (0..FRAMES_IN_FLIGHT).map(|_| Vec::new()).collect(),
             graphics_samplers: Default::default(),
@@ -501,8 +511,8 @@ impl VulkanRenderer {
         self.drain_retirements_all();
         self.context.drain_all_submissions();
 
-        for sets in &mut self.graphics_descriptor_sets {
-            sets.clear();
+        for arena in &mut self.graphics_descriptors {
+            arena.clear();
         }
         for buffers in &mut self.graphics_constants {
             buffers.clear();
@@ -556,8 +566,8 @@ impl VulkanRenderer {
         }
         self.wait_for_device();
         self.frame_clear();
-        for sets in &mut self.graphics_descriptor_sets {
-            sets.clear();
+        for arena in &mut self.graphics_descriptors {
+            arena.reset()?;
         }
         for constants in &mut self.graphics_constants {
             constants.clear();
@@ -1030,7 +1040,12 @@ mod tests {
         assert!(renderer.graph_compute_pipelines.is_empty());
         assert!(renderer.graphics_samplers.is_empty());
         assert!(renderer.graphics_constants.iter().all(Vec::is_empty));
-        assert!(renderer.graphics_descriptor_sets.iter().all(Vec::is_empty));
+        assert!(
+            renderer
+                .graphics_descriptors
+                .iter()
+                .all(|arena| arena.pool_count() == 0)
+        );
         assert!(!renderer.ui_renderer.is_installed());
         renderer.destroy();
     }
