@@ -1,0 +1,290 @@
+{
+  "captured_utc": "2026-10-02T12:50:01.404631+00:00",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0\nBuildVersion:\t\t26A428",
+  "cpu": "Apple M5",
+  "command": "cargo bench -p katla_ecs --bench ecs_benchmarks --locked -- get_component_mut_dirty_marking --warm-up-time 0.1 --measurement-time 0.3 --sample-size 10 --noplot",
+  "unit": "nanoseconds per complete dirty-marking pass",
+  "setup": "Each pass begins with a populated World and cleared change tracking; Criterion excludes setup.",
+  "production_sha256": {
+    "katla_ecs/src/agent/harness.rs": "4673460b42fec744e8fdb89f659973ebb8122e665e037fb41b0a99b9eecbd041",
+    "katla_ecs/src/agent/mod.rs": "f555b3f9129509ba85570e14a6268c9b02da43d2c236eed85648a90b07a96895",
+    "katla_ecs/src/agent/observation.rs": "1f1ffce15adca3db504a867aa20fb82c8a125f9ec3116341c3daee0c18b795bb",
+    "katla_ecs/src/agent/session.rs": "4c4feba9ef78e3f866f0f9c949eb80f2d0bbd58c754cd328860f9694d2eeb4f3",
+    "katla_ecs/src/agent/tests.rs": "2c56c7cc3d4878d80888facb86905bf0bf22f74198819f4df40dc5c29e505e9a",
+    "katla_ecs/src/components.rs": "563014f59bc3dc181ec7a66bf96c353467289b6897b34966e2f24a324cc44c32",
+    "katla_ecs/src/entity.rs": "796aab007e1d246e0336634322f390747841707577da4fa449dd7486c61d0479",
+    "katla_ecs/src/entity_allocator.rs": "cd5542e8b56a6a6897b59d3e1dc2b1af26c9470bb86749daae64a04da274e0be",
+    "katla_ecs/src/entity_slot.rs": "e62eb37f54a1cb86e0eddb7d692273baed4a30098527338c94f3a7aa4d9488a7",
+    "katla_ecs/src/events.rs": "a02de0cb7e769e60eff7c3614aaf5c5f060a3c2f2c51d06a95baee8fbef50819",
+    "katla_ecs/src/inspect.rs": "f553ccc5468ba6f7128f380d5468cec8ed0accf65a4005cbbecb00077143b9d2",
+    "katla_ecs/src/lib.rs": "b1a13f72c1ceb145a077d6482509bf1be60bd853314b7029e5ebcbdac7b68f28",
+    "katla_ecs/src/params/tests.rs": "9d68099705560e351c32bca71416bdf210c2aeabaf5b498468fd2bc21d6722e2",
+    "katla_ecs/src/params.rs": "da7a498e235cef06a2dc2c9d83297859452114513af0a5e53f7906a0ac600598",
+    "katla_ecs/src/query/filter.rs": "94317b3e4b631a476848bb7af454d5e2b6577a3df7a3cbd0f3035334b90c47bc",
+    "katla_ecs/src/query/macros.rs": "fe67806bf2077dded12db9eb08f5dd5f6caf32f5b314982a53f427ff26b5fe18",
+    "katla_ecs/src/query/mod.rs": "f6d6cd74b814aeb577b22d2e7244e91aff4948c04848ffe27ea722230efea735",
+    "katla_ecs/src/query/par_query.rs": "0a0a01c47aa2437e742d9c04fea3c90c6bb76288be130777760ca8550938a462",
+    "katla_ecs/src/resource.rs": "5765ffedf38428518d00cf9aa388f7d7e1e931e2cdd46f70189c0aa8e5daabb7",
+    "katla_ecs/src/scene_tool/command.rs": "9710a405d4f068eff668fd00509af2271119df0afb3daafb1492467ee9e2f5b8",
+    "katla_ecs/src/scene_tool/executor.rs": "3b028c8a4f012b592d974654f6a18203aba066faeedd0f8eb432537f2269df0c",
+    "katla_ecs/src/scene_tool/mod.rs": "aefcb7985440c7f83785f75f8f77ca254543d4bfb3664e6d7776d7fc431177db",
+    "katla_ecs/src/scene_tool/registry.rs": "25749ee37a8980750bce03f0ae56d7628e5e125ea636a8cb6f44d3d88512ae1b",
+    "katla_ecs/src/scene_tool/tests.rs": "4aa552967576d407c3e81a32af3e91ef1c999ca77eed61a680f3f9a9c9794be3",
+    "katla_ecs/src/scheduler/tests/components.rs": "b16e476df9b78212e64aeb673b9580e2103aa83620a29aab8ed299d915294867",
+    "katla_ecs/src/scheduler/tests/mod.rs": "bf2ac5e9c1b502d1b3bee08105d8d55b07acc8580c4aa5d25233eb1ae2df1a31",
+    "katla_ecs/src/scheduler/tests/resources.rs": "0df96ffc6bb0e11c8be2d1e7d998c30b2bba496e21afcd76f3ca4577e0b05e7a",
+    "katla_ecs/src/scheduler.rs": "6f5adaf1150df612c99cc57291ee11adbdf7a65a2980fcb79e7a9b04d7dd055b",
+    "katla_ecs/src/sparse_set.rs": "365a37a9c0b7ae7abe4c338e984baac6907274914c415b5955b64ff9f8aeda0e",
+    "katla_ecs/src/spawn.rs": "bd4f463ce353e2d4939c8059c35f2985ef9286b84749c7c07ade59bd13ed9232",
+    "katla_ecs/src/storage.rs": "fddba52f59575a72b5e545600bdecee255f1cb5d9b7452914d3f4b1239a785f7",
+    "katla_ecs/src/system.rs": "3bef0e95aaac83aa13f1d4cae095bf18a603febd3ab7a06643764d3d050c79d8",
+    "katla_ecs/src/typed_query.rs": "59d11eb0535bdc280b0a2442886057e795e5ad93a88931a1a7af9418f3259a73",
+    "katla_ecs/src/world/queries.rs": "859276b49a9b19ab8c525c92067abdaae985fcd4600f965af265437e053f821a",
+    "katla_ecs/src/world/resources.rs": "dde4f8e1a38f0d0a6651d4143776cf8cba01e3a8073d839568b892f858d448e3",
+    "katla_ecs/src/world/systems.rs": "3fecc46147a8458da597b59ed664ff55cdc2efbb95791917c083243013426bb1",
+    "katla_ecs/src/world/tests/changes.rs": "0c10ca6d2e35f6f29c786998cc758863fca3b7dfdb460173b5ba76212fdc28cd",
+    "katla_ecs/src/world/tests/entities.rs": "8209bf0c7e6d559a1d5776b90011dc735459f1d52a64e0dc7fb6abd538c9f07d",
+    "katla_ecs/src/world/tests/events.rs": "bbfe109aea00703d5d1b5a6fa324ce7b50f95a6156d46b3e147c201d8ade9327",
+    "katla_ecs/src/world/tests/mod.rs": "ae0805268da42a6bc25bd8e0150b6c405b68fc457a534c3b9c41c370e7acfb6e",
+    "katla_ecs/src/world/tests/parallel_queries.rs": "ded6dc34eb5932191b9e7e2f3e11183f6c87e733148a11b18181a7a127780828",
+    "katla_ecs/src/world/tests/queries.rs": "fe84c742a0a0e524db374fc8cda97d9d20576b84e6adbf74be413a9200c5c46b",
+    "katla_ecs/src/world/tests/systems.rs": "d2113329813f3d18f861367a95f39f4439c668a4dfa594fada1fc66ba4b022cb",
+    "katla_ecs/src/world/tests/tracking.rs": "5450a04d9692eb051741aa073fd912ee2586cdeb84b4c93ab1721d6b35cc6841",
+    "katla_ecs/src/world/tests/validation.rs": "aa9febf56bf357a9b11bc8120876475e27a34a856a3dd259d0e535b59432ed4b",
+    "katla_ecs/src/world/validation.rs": "f3265fe557ee4909b3b198f1590c0120cdf5cdb37b56df1989fb4af1918335ea",
+    "katla_ecs/src/world.rs": "fd5c7ca4575b7b28a89a801d0a46c5c38faca4e2438b2d2cd0b58faf0fb87e14",
+    "katla_derive/src/lib.rs": "18250029afd555a927f4abb0e95426b705ab90fc3432352dd6cafb2867aefd5e"
+  },
+  "harness_sha256": "799ab440db1196ab7e4bc23ad78eb29853e9854b1feeb6313f50001421f332ff",
+  "results": {
+    "1000": {
+      "estimates_ns": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 12289.431637061403,
+            "upper_bound": 13357.453822571475
+          },
+          "point_estimate": 12826.638409681611,
+          "standard_error": 274.4634687134894
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 11917.233333333334,
+            "upper_bound": 13744.397660818713
+          },
+          "point_estimate": 12848.004385964912,
+          "standard_error": 679.7655256940654
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 40.145849794091866,
+            "upper_bound": 1364.6032231418715
+          },
+          "point_estimate": 1332.3595637727904,
+          "standard_error": 455.74105537043556
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 11954.755903008718,
+            "upper_bound": 12745.280268572666
+          },
+          "point_estimate": 12186.104974557606,
+          "standard_error": 207.16558273819015
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 669.0410555400586,
+            "upper_bound": 967.8063890823436
+          },
+          "point_estimate": 917.8638698650408,
+          "standard_error": 83.15784860141366
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          171.0,
+          342.0,
+          513.0,
+          684.0,
+          855.0,
+          1026.0,
+          1197.0,
+          1368.0,
+          1539.0,
+          1710.0
+        ],
+        "times": [
+          2350292.0,
+          4656960.0,
+          7053206.0,
+          9275710.0,
+          11783133.0,
+          12405913.0,
+          14525630.0,
+          16151853.0,
+          18257276.0,
+          20378469.0
+        ]
+      }
+    },
+    "10000": {
+      "estimates_ns": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 110122.9412364244,
+            "upper_bound": 113059.4950628655
+          },
+          "point_estimate": 111613.94948203843,
+          "standard_error": 754.1378622112413
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 109566.54385964913,
+            "upper_bound": 113926.55263157895
+          },
+          "point_estimate": 111964.65939849624,
+          "standard_error": 1233.3587432140891
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 707.8768326958328,
+            "upper_bound": 4161.573096468203
+          },
+          "point_estimate": 3145.544299944907,
+          "standard_error": 903.0740698880161
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 111442.25925164473,
+            "upper_bound": 113935.11244019138
+          },
+          "point_estimate": 113012.11319207109,
+          "standard_error": 636.8308688859778
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1511.4786483002417,
+            "upper_bound": 3068.583861303535
+          },
+          "point_estimate": 2515.5315970147776,
+          "standard_error": 399.54680453149825
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          19.0,
+          38.0,
+          57.0,
+          76.0,
+          95.0,
+          114.0,
+          133.0,
+          152.0,
+          171.0,
+          190.0
+        ],
+        "times": [
+          2067833.0,
+          4079331.0,
+          6289832.0,
+          8658418.0,
+          10682001.0,
+          12490586.0,
+          14827798.0,
+          17439872.0,
+          19357708.0,
+          21706749.0
+        ]
+      }
+    },
+    "100000": {
+      "estimates_ns": {
+        "mean": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1126932.662455357,
+            "upper_bound": 1143253.7412172619
+          },
+          "point_estimate": 1134974.614047619,
+          "standard_error": 4186.908033638748
+        },
+        "median": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1122253.1875,
+            "upper_bound": 1145453.25
+          },
+          "point_estimate": 1137822.1535714285,
+          "standard_error": 5417.097146205166
+        },
+        "median_abs_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 820.8308854274867,
+            "upper_bound": 25226.8886271333
+          },
+          "point_estimate": 16767.321437320432,
+          "standard_error": 6648.703225713036
+        },
+        "slope": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 1123499.365408416,
+            "upper_bound": 1139378.2617138063
+          },
+          "point_estimate": 1131372.887012987,
+          "standard_error": 4020.7517357647557
+        },
+        "std_dev": {
+          "confidence_interval": {
+            "confidence_level": 0.95,
+            "lower_bound": 7977.165139768805,
+            "upper_bound": 17658.016533576832
+          },
+          "point_estimate": 13963.866694943385,
+          "standard_error": 2503.932781128302
+        }
+      },
+      "samples": {
+        "sampling_mode": "Linear",
+        "iters": [
+          2.0,
+          4.0,
+          6.0,
+          8.0,
+          10.0,
+          12.0,
+          14.0,
+          16.0,
+          18.0,
+          20.0
+        ],
+        "times": [
+          2278750.0,
+          4606126.0,
+          6838541.0,
+          8931459.0,
+          11584415.0,
+          13499418.0,
+          15943499.0,
+          17848626.0,
+          20305332.0,
+          22736459.0
+        ]
+      }
+    }
+  }
+}

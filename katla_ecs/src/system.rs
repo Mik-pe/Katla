@@ -11,16 +11,6 @@ pub enum ComponentAccess {
     Write(TypeId),
 }
 
-impl ComponentAccess {
-    pub fn read<T: 'static>() -> Self {
-        ComponentAccess::Read(TypeId::of::<T>())
-    }
-
-    pub fn write<T: 'static>() -> Self {
-        ComponentAccess::Write(TypeId::of::<T>())
-    }
-}
-
 /// Describes how a system accesses a resource type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResourceAccess {
@@ -30,15 +20,33 @@ pub enum ResourceAccess {
     Write(TypeId),
 }
 
-impl ResourceAccess {
-    pub fn read<T: 'static>() -> Self {
-        ResourceAccess::Read(TypeId::of::<T>())
-    }
+macro_rules! impl_access {
+    ($access:ident) => {
+        impl $access {
+            pub fn read<T: 'static>() -> Self {
+                Self::Read(TypeId::of::<T>())
+            }
 
-    pub fn write<T: 'static>() -> Self {
-        ResourceAccess::Write(TypeId::of::<T>())
-    }
+            pub fn write<T: 'static>() -> Self {
+                Self::Write(TypeId::of::<T>())
+            }
+
+            pub(crate) fn type_id(self) -> TypeId {
+                match self {
+                    Self::Read(id) | Self::Write(id) => id,
+                }
+            }
+
+            pub(crate) fn conflicts_with(self, other: Self) -> bool {
+                self.type_id() == other.type_id()
+                    && (matches!(self, Self::Write(_)) || matches!(other, Self::Write(_)))
+            }
+        }
+    };
 }
+
+impl_access!(ComponentAccess);
+impl_access!(ResourceAccess);
 
 /// An exclusive system running on the caller thread with the entire World.
 ///

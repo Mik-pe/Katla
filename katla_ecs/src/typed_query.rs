@@ -4,7 +4,7 @@ use crate::query::QueryFilter;
 use crate::sparse_set::{KeyCursor, SparseView};
 use crate::{Component, ComponentAccess, ComponentStorageManager, EntityId};
 use rayon::prelude::*;
-use std::{any::TypeId, marker::PhantomData, sync::Arc};
+use std::{marker::PhantomData, sync::Arc};
 
 mod sealed {
     pub trait Sealed {}
@@ -206,12 +206,6 @@ descriptor_tuple!(A:0,B:1,C:2,D:3,E:4,F:5);
 descriptor_tuple!(A:0,B:1,C:2,D:3,E:4,F:5,G:6);
 descriptor_tuple!(A:0,B:1,C:2,D:3,E:4,F:5,G:6,H:7);
 
-fn type_id(access: ComponentAccess) -> TypeId {
-    match access {
-        ComponentAccess::Read(id) | ComponentAccess::Write(id) => id,
-    }
-}
-
 /// Typed query parameter, with references supplied only by a runtime view.
 pub struct Query<D: QueryDescriptor, F: QueryFilter = ()>(PhantomData<(D, F)>);
 impl<D: QueryDescriptor, F: QueryFilter> Query<D, F> {
@@ -221,15 +215,14 @@ impl<D: QueryDescriptor, F: QueryFilter> Query<D, F> {
         for (i, &a) in accesses.iter().enumerate() {
             for &b in &accesses[..i] {
                 assert!(
-                    type_id(a) != type_id(b)
-                        || matches!((a, b), (ComponentAccess::Read(_), ComponentAccess::Read(_))),
+                    !a.conflicts_with(b),
                     "Query contains overlapping mutable component access"
                 );
             }
         }
         for filter in F::type_ids() {
             assert!(
-                !accesses.iter().any(|&a| type_id(a) == filter),
+                !accesses.iter().any(|&a| a.type_id() == filter),
                 "Filter type overlaps with query component type"
             );
         }
@@ -280,7 +273,7 @@ impl<D: QueryDescriptor, F: QueryFilter> PreparedQuery<D, F> {
             let driver = accesses
                 .iter()
                 .copied()
-                .map(type_id)
+                .map(ComponentAccess::type_id)
                 .min_by_key(|&id| storage.type_len(id))
                 .expect("nonempty descriptor");
             cache.ids = storage
@@ -289,7 +282,7 @@ impl<D: QueryDescriptor, F: QueryFilter> PreparedQuery<D, F> {
                 .filter(|&id| {
                     accesses
                         .iter()
-                        .all(|&a| storage.contains_type(type_id(a), id))
+                        .all(|&a| storage.contains_type(a.type_id(), id))
                         && unsafe { F::matches(storage, id) }
                 })
                 .collect();

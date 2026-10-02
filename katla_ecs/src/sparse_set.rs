@@ -256,15 +256,10 @@ where
         if let Some((moved_key, _)) = self.dense.get(dense_idx) {
             let moved_idx = moved_key.sparse_index();
             let (moved_page, moved_offset) = Self::page_coords(moved_idx);
-            // SAFETY: moved_key was already in the set, so its page exists.
-            unsafe {
-                let page = self
-                    .pages
-                    .get_unchecked_mut(moved_page)
-                    .as_mut()
-                    .unwrap_unchecked();
-                page[moved_offset] = Some(dense_idx);
-            }
+            let page = self.pages[moved_page]
+                .as_mut()
+                .expect("dense key has an allocated sparse page");
+            page[moved_offset] = Some(dense_idx);
         }
 
         true
@@ -403,6 +398,30 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_sparse_set_remove_repairs_moved_key_across_pages() {
+        let mut set = SparseSet::new();
+        let first = crate::EntityId::new(1, 4);
+        let middle = crate::EntityId::new(PAGE_SIZE as u32 + 1, 5);
+        let last = crate::EntityId::new(2 * PAGE_SIZE as u32 + 3, 6);
+        set.insert(first, 10);
+        set.insert(middle, 20);
+        set.insert(last, 30);
+
+        assert!(set.remove(first));
+        assert_eq!(set.dense(), &[(last, 30), (middle, 20)]);
+        assert_eq!(set.get(last), Some(&30));
+        assert_eq!(set.get(middle), Some(&20));
+        assert!(set.get(first).is_none());
+
+        assert!(set.remove(last));
+        assert_eq!(set.get(middle), Some(&20));
+        assert!(set.remove(middle));
+        assert!(set.is_empty());
+        set.insert(first, 40);
+        assert_eq!(set.get(first), Some(&40));
+    }
 
     #[test]
     fn test_generational_keys_reject_stale_access() {

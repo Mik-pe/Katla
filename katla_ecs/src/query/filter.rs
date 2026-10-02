@@ -339,6 +339,35 @@ mod tests {
     }
 
     #[test]
+    fn test_filtered_mutable_rows_can_be_retained_while_advancing() {
+        let mut world = World::new();
+        let first = world.spawn((Pos { x: 1.0 }, Vel { dx: 0.1 }));
+        let excluded = world.spawn((Pos { x: 2.0 }, Vel { dx: 0.2 }, Static));
+        let last = world.spawn((Pos { x: 3.0 }, Vel { dx: 0.3 }));
+
+        {
+            let mut query = world.query_filtered::<(&mut Pos, &Vel), Without<Static>>();
+            let (first_id, first_pos, first_vel) = query.next().unwrap();
+            let (last_id, last_pos, last_vel) = query.next().unwrap();
+            assert!(query.next().is_none());
+            assert_eq!((first_id, last_id), (first, last));
+            first_pos.x += first_vel.dx;
+            last_pos.x += last_vel.dx;
+        }
+
+        {
+            let mut rows: Vec<_> = world.query_filtered::<&mut Pos, With<Static>>().collect();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].0, excluded);
+            rows[0].1.x = 20.0;
+        }
+
+        assert_eq!(world.get_component::<Pos>(first).unwrap().x, 1.1);
+        assert_eq!(world.get_component::<Pos>(excluded).unwrap().x, 20.0);
+        assert_eq!(world.get_component::<Pos>(last).unwrap().x, 3.3);
+    }
+
+    #[test]
     fn test_with_and_without_excludes_all() {
         let mut world = World::new();
         let _e1 = world.spawn((Pos { x: 1.0 }, Vel { dx: 0.1 }));

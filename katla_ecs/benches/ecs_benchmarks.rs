@@ -1,4 +1,4 @@
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use katla_ecs::{Component, EntityId, World};
 
 #[derive(Component, Default)]
@@ -173,6 +173,29 @@ fn bench_get_component(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_get_component_mut(c: &mut Criterion) {
+    let mut group = c.benchmark_group("get_component_mut_dirty_marking");
+    for size in [1_000, 10_000, 100_000] {
+        group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
+            b.iter_batched_ref(
+                || {
+                    let mut world = World::new();
+                    let ids = spawn_entities(&mut world, size, false);
+                    world.clear_changed();
+                    (world, ids)
+                },
+                |(world, ids)| {
+                    for &id in ids.iter() {
+                        black_box(world.get_component_mut::<Position>(id).unwrap()).x += 1.0;
+                    }
+                },
+                BatchSize::LargeInput,
+            );
+        });
+    }
+    group.finish();
+}
+
 fn bench_add_remove_component(c: &mut Criterion) {
     let mut group = c.benchmark_group("add_remove_component");
     for size in [1_000, 10_000, 100_000] {
@@ -200,6 +223,7 @@ criterion_group!(
     bench_query_4_component,
     bench_query_mut_1_component,
     bench_get_component,
+    bench_get_component_mut,
     bench_add_remove_component,
 );
 criterion_main!(benches);

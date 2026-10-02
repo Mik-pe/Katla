@@ -1,6 +1,5 @@
 //! Sealed typed system parameters and deferred structural commands.
 
-use std::any::TypeId;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,34 +26,30 @@ pub struct ParamAccess {
 impl ParamAccess {
     pub(crate) fn add_components(&mut self, accesses: Vec<ComponentAccess>) {
         for access in accesses {
-            let (id, write) = match access {
-                ComponentAccess::Read(id) => (id, false),
-                ComponentAccess::Write(id) => (id, true),
-            };
             assert!(
-                !self.components.iter().any(|other| match other {
-                    ComponentAccess::Read(other_id) => *other_id == id && write,
-                    ComponentAccess::Write(other_id) => *other_id == id,
-                }),
+                !self
+                    .components
+                    .iter()
+                    .any(|other| access.conflicts_with(*other)),
                 "conflicting component parameters in the same system"
             );
             self.components.push(access);
         }
     }
     fn resource<R: Resource>(&mut self, write: bool) {
-        let id = TypeId::of::<R>();
+        let access = if write {
+            ResourceAccess::write::<R>()
+        } else {
+            ResourceAccess::read::<R>()
+        };
         assert!(
-            !self.resources.iter().any(|other| match other {
-                ResourceAccess::Read(other_id) => *other_id == id && write,
-                ResourceAccess::Write(other_id) => *other_id == id,
-            }),
+            !self
+                .resources
+                .iter()
+                .any(|other| access.conflicts_with(*other)),
             "conflicting resource parameters in the same system"
         );
-        self.resources.push(if write {
-            ResourceAccess::Write(id)
-        } else {
-            ResourceAccess::Read(id)
-        });
+        self.resources.push(access);
     }
 }
 

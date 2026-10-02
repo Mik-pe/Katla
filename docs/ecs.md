@@ -121,17 +121,31 @@ Editor inspection, scene tools, serialization, scripts and physics continue to
 use the same generational World component API. Exclusive systems can perform
 structural changes directly because no typed batch overlaps them.
 
+## Implementation boundaries
+
+World owns identity, lifecycle events and the storage registries. Private modules
+separate query construction, resource access, system execution and integrity
+validation without changing the World API. Registration, query alias checks and
+scheduling use the same read/write conflict rule: identical types conflict when
+either access writes. Component and resource claims remain separate namespaces.
+
 ## Unsafe boundaries and verification
 
 The remaining unsafe operations resolve independently claimed storage cells,
 borrow preselected component addresses, and construct lifetime-bound views.
-They do not create multiple exclusive references to World. Sealed descriptors
+The outer World storage cell keeps a filtered iterator's registry pointer valid
+while its query borrows disjoint component columns. Removing that cell without
+changing query preparation invalidates the pointer under Miri. These operations
+do not create multiple exclusive references to World. Sealed descriptors
 and parameter implementations keep pointer preparation unavailable to safe game
 code. Every mutable row is unique and all references end before structural work.
 
 CPU tests cover held query rows, duplicate claims, filtered access, cache churn,
 commands, resource access, ordering, panics, events, change tracking and stale IDs.
-Miri exercises the pointer and lifetime boundaries. Native app tests cover the
+Miri exercises the pointer and lifetime boundaries, including retained mutable
+filtered rows and dense removal across sparse pages. Unit tests assert bulk
+lifecycle and change-tracking results; performance belongs in benchmarks rather
+than elapsed-time thresholds. Native app tests cover the
 migrated camera/animation behavior and exclusive script thread affinity. See
 [CI](ci.md) and [benchmarks](ecs_benchmarks.md) for reproducible validation.
 
