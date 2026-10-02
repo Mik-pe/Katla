@@ -323,3 +323,40 @@ fn test_aliasing_disabled_keeps_standalone_storage() {
     let errors = errors.lock().unwrap();
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+#[test]
+#[ignore = "requires a Vulkan device"]
+fn test_sampled_depth_stencil_uses_a_retained_depth_only_view() {
+    use katla_gfx::render_graph::{GraphResourceType, TransientSlotPolicy};
+    let (mut renderer, errors) = headless_renderer("sampled-depth-stencil");
+    let desc = GraphResourceDesc {
+        name: "depth-stencil".into(),
+        resource_type: GraphResourceType::DepthAttachment {
+            clear_value: 0.0,
+            sampled: true,
+        },
+        format: ImageFormat::D32SfloatS8Uint,
+        width: 16,
+        height: 16,
+        tracks_swapchain_size: false,
+    };
+    let textures = renderer
+        .create_transient_slot(
+            &[desc],
+            TransientSlotPolicy {
+                frame_slot: 0,
+                allocation_slot: 0,
+                optimize: false,
+                memoryless: false,
+                storage: false,
+                transfer_destination: false,
+            },
+        )
+        .unwrap();
+    let slot = RenderGraphBackend::register_bindless_texture(&mut renderer, &textures[0]).unwrap();
+    RenderGraphBackend::update_bindless_texture(&mut renderer, slot, &textures[0].clone()).unwrap();
+    renderer.destroy();
+    drop(textures);
+    let errors = errors.lock().unwrap();
+    assert!(errors.is_empty(), "{errors:?}");
+}

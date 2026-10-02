@@ -250,41 +250,67 @@ fn next_output_contents(
 }
 
 impl<'a> Frame<'a, VulkanRenderer> {
-    pub(super) fn color_target_extent(&self, pass: &PassDesc) -> ash::vk::Extent2D {
-        if self
-            .graph
-            .resource_id(BACKBUFFER_NAME)
-            .is_some_and(|id| pass.writes_to(id))
-        {
-            return self.renderer.frame_context.extent;
-        }
-        pass.color_attachments
+    pub(super) fn graphics_target_config(
+        &self,
+        pass: &PassDesc,
+    ) -> Result<(ash::vk::Extent2D, crate::ImageFormat), RenderGraphError> {
+        let mut extent = None;
+        for id in pass
+            .color_attachments
             .iter()
-            .find_map(|(id, _)| {
+            .map(|(id, _)| *id)
+            .chain(pass.depth_target)
+        {
+            let dimensions = if self.graph.resource_id(BACKBUFFER_NAME) == Some(id) {
+                Some(self.renderer.frame_context.extent)
+            } else {
                 self.graph
-                    .transient_texture_by_id(*id, self.current_frame())
+                    .transient_texture_by_id(id, self.current_frame())
                     .map(|texture| texture.extent)
                     .or_else(|| {
-                        self.imported_texture(*id).map(|texture| ash::vk::Extent2D {
+                        self.imported_texture(id).map(|texture| ash::vk::Extent2D {
                             width: texture.width,
                             height: texture.height,
                         })
                     })
-            })
-            .or_else(|| {
-                pass.depth_target.and_then(|id| {
-                    self.graph
-                        .transient_texture_by_id(id, self.current_frame())
-                        .map(|texture| texture.extent)
-                        .or_else(|| {
-                            self.imported_texture(id).map(|texture| ash::vk::Extent2D {
-                                width: texture.width,
-                                height: texture.height,
-                            })
-                        })
+            }
+            .ok_or_else(|| {
+                RenderGraphError::ResourceNotFound(format!(
+                    "Pass '{}' attachment {}",
+                    pass.name, id.0
+                ))
+            })?;
+            if dimensions.width == 0
+                || dimensions.height == 0
+                || extent.is_some_and(|previous| previous != dimensions)
+            {
+                return Err(RenderGraphError::InvalidConfiguration(format!(
+                    "Pass '{}' has incompatible attachment extents",
+                    pass.name
+                )));
+            }
+            extent = Some(dimensions);
+        }
+        let extent = extent.ok_or_else(|| {
+            RenderGraphError::InvalidConfiguration(format!(
+                "Pass '{}' has no declared attachments",
+                pass.name
+            ))
+        })?;
+        let format = pass
+            .color_attachments
+            .first()
+            .map(|(id, _)| {
+                self.color_target_format(*id).try_into().map_err(|_| {
+                    RenderGraphError::InvalidConfiguration(format!(
+                        "Pass '{}' has an unsupported color attachment format",
+                        pass.name
+                    ))
                 })
             })
-            .unwrap_or(self.renderer.frame_context.extent)
+            .transpose()?
+            .unwrap_or(crate::ImageFormat::Auto);
+        Ok((extent, format))
     }
 
     fn imported_texture(&self, id: super::ResourceId) -> Option<&crate::vulkan::texture::Texture> {
@@ -322,6 +348,16 @@ impl<'a> Frame<'a, VulkanRenderer> {
 
     /// Resolve the format of a declared color target (for clear-value typing).
     fn color_target_format(&self, id: crate::render_graph::handles::ResourceId) -> ash::vk::Format {
+        if self.graph.resource_id(BACKBUFFER_NAME) == Some(id) {
+            return self
+                .renderer
+                .frame_context
+                .swapchain
+                .as_ref()
+                .map_or(ash::vk::Format::B8G8R8A8_SRGB, |swapchain| {
+                    swapchain.format.format
+                });
+        }
         self.graph
             .transient_texture_by_id(id, self.current_frame())
             .map(|texture| texture.format)

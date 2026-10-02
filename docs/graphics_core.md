@@ -174,3 +174,17 @@ Rejected submissions release their unsubmitted command buffers, fences and
 staging allocations. Submitted one-time command buffers and optional staging
 allocations remain owned until fence completion or an idle device drain, even
 if a CPU wait fails.
+
+
+Vulkan resets a retired slot's command buffer before releasing its descriptor
+and inline-data storage. This also discards partial recording and dynamic
+rendering state from a rejected frame. Graphics render areas and color pipeline
+variants resolve from the declared native attachments, including depth-only
+passes and targets smaller than the output. Incompatible attachment extents
+return a typed error before beginning rendering.
+
+Explicit pass bindings take precedence over implicit draw bindings on both
+backends; duplicate explicit slots remain invalid. Skinned Vulkan draws resolve
+the shader's skeleton storage slot at group 2 or 3. Sampled depth/stencil
+transients retain a separate depth-only view, shared across texture clones;
+the combined attachment view is never installed in sampled descriptors.

@@ -226,7 +226,9 @@ impl GraphicsInterface {
     ) -> Result<(), String> {
         let mut supplied = BTreeMap::new();
         for layout in provided {
-            insert_binding(&mut supplied, *layout)?;
+            if !packet.contains_binding(layout.group, layout.binding) {
+                insert_binding(&mut supplied, *layout)?;
+            }
         }
         for binding in &packet.buffers {
             let size = buffer_size(binding.resource)
@@ -583,6 +585,46 @@ mod tests {
                 .validate_bindings(&PassBindings::default(), &provided, |_| None)
                 .unwrap_err()
                 .contains("Incompatible")
+        );
+    }
+    #[test]
+    fn test_explicit_constants_replace_implicit_draw_bindings() {
+        let source = "struct Cascades { matrix: mat4x4f }; @group(2) @binding(0) var<uniform> cascades: Cascades; @vertex fn vs_main() -> @builtin(position) vec4f { return cascades.matrix * vec4f(0.0, 0.0, 0.0, 1.0); }";
+        let interface = GraphicsInterface::reflect(
+            source,
+            &PipelineStages::Graphics {
+                vertex_entry: "vs_main".into(),
+                fragment_entry: None,
+            },
+        )
+        .unwrap();
+        let provided = [GraphicsBindingLayout {
+            group: 2,
+            binding: 0,
+            stages: ShaderStages::VERTEX,
+            kind: GraphicsBindingKind::Buffer {
+                usage: BufferUsage::Storage,
+                mode: ResourceAccessMode::Read,
+                minimum_bytes: 64,
+            },
+            array: false,
+        }];
+        let mut packet = PassBindings::default();
+        packet.constants.push(ConstantBinding {
+            group: 2,
+            binding: 0,
+            stages: ShaderStages::VERTEX,
+            bytes: vec![0; 64],
+        });
+        interface
+            .validate_bindings(&packet, &provided, |_| None)
+            .unwrap();
+        packet.constants.push(packet.constants[0].clone());
+        assert!(
+            interface
+                .validate_bindings(&packet, &provided, |_| None)
+                .unwrap_err()
+                .contains("Duplicate")
         );
     }
 }

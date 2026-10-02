@@ -369,17 +369,6 @@ impl MetalRenderer {
                         });
                         packet.constants.push(binding.clone());
                     }
-                    provided.retain(|implicit| {
-                        !packet.buffers.iter().any(|binding| {
-                            binding.group == implicit.group && binding.binding == implicit.binding
-                        }) && !packet.images.iter().any(|binding| {
-                            binding.group == implicit.group && binding.binding == implicit.binding
-                        }) && !packet.samplers.iter().any(|binding| {
-                            binding.group == implicit.group && binding.binding == implicit.binding
-                        }) && !packet.constants.iter().any(|binding| {
-                            binding.group == implicit.group && binding.binding == implicit.binding
-                        })
-                    });
                     material
                         .interface
                         .validate_buffer_accesses(&packet, &record.buffer_accesses)

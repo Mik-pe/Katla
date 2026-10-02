@@ -97,6 +97,7 @@ impl VulkanRenderer {
         let fence = self.swap_data.in_flight_fence();
         self.retire_buffer_consumers(fence);
         let slot = self.current_frame();
+        self.frame_context.command_buffers[slot].reset()?;
         self.graphics_descriptor_sets[slot].clear();
         self.graphics_constants[slot].clear();
         for view in self.graphics_image_views[slot].drain(..) {

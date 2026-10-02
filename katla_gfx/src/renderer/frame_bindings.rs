@@ -55,6 +55,26 @@ pub struct PassBindings {
     pub phases: Vec<PassDrawPhase>,
 }
 
+impl PassBindings {
+    pub(crate) fn contains_binding(&self, group: u32, binding: u32) -> bool {
+        self.buffers
+            .iter()
+            .any(|value| value.group == group && value.binding == binding)
+            || self
+                .images
+                .iter()
+                .any(|value| value.group == group && value.binding == binding)
+            || self
+                .samplers
+                .iter()
+                .any(|value| value.group == group && value.binding == binding)
+            || self
+                .constants
+                .iter()
+                .any(|value| value.group == group && value.binding == binding)
+    }
+}
+
 /// Geometry source used by one phase of a graphics pass.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PassDraw {

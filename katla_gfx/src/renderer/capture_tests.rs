@@ -543,3 +543,160 @@ fn test_completed_buffer_owner_remains_ready_when_frame_fence_is_reused() {
     }
     renderer.destroy();
 }
+
+#[test]
+#[ignore = "requires a Vulkan device"]
+fn test_failed_graph_recording_resets_dynamic_rendering_before_retry() {
+    let mut renderer = submission_renderer();
+    let errors = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = errors.clone();
+    renderer
+        .context
+        .set_validation_callback(move |message, level| {
+            if level == crate::ValidationLevel::Error {
+                captured.lock().unwrap().push(message.to_owned());
+            }
+        });
+    let shader = format!(
+        "{} @group(2) @binding(0) var<uniform> tint:vec4f; @fragment fn fs_main()->@location(0) vec4f{{return tint;}}",
+        FULLSCREEN_VERTEX
+    );
+    let material = material(
+        &mut renderer,
+        &shader,
+        fullscreen_descriptor(ImageFormat::B8G8R8A8Srgb),
+    );
+    let mut broken = FrameGraphBuilder::new()
+        .add_pass(
+            GeometryPass::new("missing-binding")
+                .without_depth()
+                .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb),
+        )
+        .build::<VulkanRenderer>()
+        .unwrap();
+    broken
+        .set_pass_bindings(
+            broken.pass_id("missing-binding").unwrap(),
+            vertices(material, crate::VertexLayout::empty(), 3),
+        )
+        .unwrap();
+    let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
+        panic!("headless acquisition")
+    };
+    assert!(
+        renderer
+            .render(&frame, &mut broken, |_| {})
+            .unwrap_err()
+            .to_string()
+            .contains("Missing graphics binding")
+    );
+    let mut clear = FrameGraphBuilder::new()
+        .add_pass(
+            GeometryPass::new("clear")
+                .without_depth()
+                .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb),
+        )
+        .build::<VulkanRenderer>()
+        .unwrap();
+    let FrameAcquisition::Ready(retry) = renderer.acquire_frame().unwrap() else {
+        panic!("headless retry")
+    };
+    assert_eq!(retry.slot(), frame.slot());
+    renderer.render(&retry, &mut clear, |_| {}).unwrap();
+    renderer.present(retry).unwrap().surface.unwrap();
+    broken.cleanup();
+    clear.cleanup();
+    renderer.destroy();
+    let errors = errors.lock().unwrap();
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[test]
+#[ignore = "requires a Vulkan device"]
+fn test_declared_small_depth_and_hdr_targets_resolve_native_extent_and_format() {
+    let mut renderer = submission_renderer();
+    let errors = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = errors.clone();
+    renderer
+        .context
+        .set_validation_callback(move |message, level| {
+            if level == crate::ValidationLevel::Error {
+                captured.lock().unwrap().push(message.to_owned());
+            }
+        });
+    let shader = format!(
+        "{} @fragment fn fs_main()->@location(0) vec4f{{return vec4f(0.,0.,1.,1.);}}",
+        FULLSCREEN_VERTEX
+    );
+    let shader_path = std::env::temp_dir().join(format!(
+        "katla-hdr-target-{}.wgsl",
+        super::texture_readback::fresh_readback_id()
+    ));
+    std::fs::write(&shader_path, shader).unwrap();
+    let mut descriptor = fullscreen_descriptor(ImageFormat::B8G8R8A8Srgb);
+    descriptor.shader_path = shader_path.to_string_lossy().into_owned();
+    let material = renderer.compile_material(&descriptor).unwrap();
+    let mut graph = FrameGraphBuilder::new()
+        .create_resource(GraphResourceDesc {
+            name: "small-depth".into(),
+            resource_type: GraphResourceType::DepthAttachment {
+                clear_value: 0.0,
+                sampled: false,
+            },
+            format: ImageFormat::D32SfloatS8Uint,
+            width: 4,
+            height: 4,
+            tracks_swapchain_size: false,
+        })
+        .create_resource(GraphResourceDesc {
+            name: "hdr".into(),
+            resource_type: GraphResourceType::ColorAttachment { clear_value: None },
+            format: ImageFormat::R16G16B16A16Sfloat,
+            width: 4,
+            height: 4,
+            tracks_swapchain_size: false,
+        })
+        .export_resource("hdr")
+        .build::<VulkanRenderer>()
+        .unwrap();
+    let depth_id = graph.resource_id("small-depth").unwrap();
+    let hdr = graph.resource_id("hdr").unwrap();
+    let mut depth =
+        PassDesc::new("depth-clear", PassType::Graphics, vec![], vec![depth_id]).with_side_effect();
+    depth.uses_depth = true;
+    depth.depth_target = Some(depth_id);
+    depth.depth_attachment =
+        Some(crate::render_pass::DepthStencilAttachmentOps::reverse_z_default());
+    depth.image_accesses = vec![ImageAccess::depth_attachment_write(depth_id)];
+    graph.add_pass(depth);
+    let mut draw = PassDesc::new("hdr-draw", PassType::Graphics, vec![], vec![hdr]);
+    draw.color_attachments
+        .push((hdr, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
+    draw.image_accesses = vec![ImageAccess::color_attachment_write(hdr)];
+    draw.bindings = vertices(material, crate::VertexLayout::empty(), 3);
+    graph.add_pass(draw);
+    graph.compile().unwrap();
+    let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
+        panic!("headless acquisition")
+    };
+    renderer.render(&frame, &mut graph, |_| {}).unwrap();
+    renderer.present(frame).unwrap().surface.unwrap();
+    let source = renderer.graph_texture_source(hdr).unwrap();
+    let ticket = renderer
+        .queue_texture_readback(source, crate::TextureReadbackRegion::pixel(3, 3))
+        .unwrap();
+    renderer.wait_for_device();
+    assert_eq!(
+        renderer
+            .poll_texture_readback(ticket)
+            .unwrap()
+            .unwrap()
+            .bytes,
+        [0, 0, 0, 0, 0, 60, 0, 60]
+    );
+    std::fs::remove_file(shader_path).unwrap();
+    graph.cleanup();
+    renderer.destroy();
+    let errors = errors.lock().unwrap();
+    assert!(errors.is_empty(), "{errors:?}");
+}

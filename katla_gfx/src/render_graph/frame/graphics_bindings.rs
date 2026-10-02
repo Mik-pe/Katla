@@ -55,13 +55,13 @@ impl Frame<'_, VulkanRenderer> {
                     .iter()
                     .any(|value| value.group == binding.group && value.binding == binding.binding))
                 || (binding.group == 1 && bindless_group)
-                || (binding.group == 2
+                || (matches!(binding.group, 2 | 3)
                     && binding.binding == 0
                     && !skeleton.is_none()
                     && !packet
                         .buffers
                         .iter()
-                        .any(|value| value.group == 2 && value.binding == 0))
+                        .any(|value| value.group == binding.group && value.binding == 0))
             {
                 provided.push(*binding);
             }
@@ -233,7 +233,9 @@ impl Frame<'_, VulkanRenderer> {
                             .buffer(self.renderer.storage_manager.buffer(slot))
                             .offset(offset)
                             .range(size)
-                    } else if reflected.group == 2 && reflected.binding == 0 && !skeleton.is_none()
+                    } else if matches!(reflected.group, 2 | 3)
+                        && reflected.binding == 0
+                        && !skeleton.is_none()
                     {
                         let handle = self
                             .renderer

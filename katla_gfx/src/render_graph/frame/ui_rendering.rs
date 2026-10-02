@@ -40,9 +40,7 @@ impl Frame<'_, VulkanRenderer> {
             "UI pass has no material specified. Use .material() on UIPass.".to_string(),
         ))?;
 
-        let format = pass
-            .output_format
-            .unwrap_or(crate::texture::ImageFormat::Auto);
+        let (_, format) = self.graphics_target_config(pass)?;
         self.renderer
             .ensure_material_compiled(material_handle, format)
             .map_err(|e| {

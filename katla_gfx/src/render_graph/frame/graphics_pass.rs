@@ -12,7 +12,7 @@ impl Frame<'_, VulkanRenderer> {
         pass: &PassDesc,
         data: PassExecutionData,
     ) -> Result<(), RenderGraphError> {
-        let extent = self.color_target_extent(pass);
+        let (extent, format) = self.graphics_target_config(pass)?;
         let render_area = vk::Rect2D {
             offset: vk::Offset2D { x: 0, y: 0 },
             extent,
@@ -24,9 +24,6 @@ impl Frame<'_, VulkanRenderer> {
                 "Graphics pass has no declared attachments".into(),
             ));
         }
-        let format = pass
-            .output_format
-            .unwrap_or(crate::texture::ImageFormat::Auto);
         let default_phase = PassDrawPhase {
             pipelines: pass.bindings.pipelines.clone(),
             constants: Vec::new(),

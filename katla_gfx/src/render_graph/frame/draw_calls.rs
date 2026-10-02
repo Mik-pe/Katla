@@ -223,9 +223,7 @@ impl Frame<'_, VulkanRenderer> {
             if pass.kind != Some(crate::render_graph::pass::PassKind::Geometry) {
                 continue;
             }
-            let Some(format) = pass.output_format else {
-                continue;
-            };
+            let (_, format) = self.graphics_target_config(pass)?;
             for draw_list in &data.draw_lists {
                 for draw_call in &draw_list.draws {
                     if seen.insert((draw_call.material, format)) {
