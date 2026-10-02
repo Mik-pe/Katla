@@ -3,12 +3,15 @@
 ## Runtime contracts
 
 ScriptEngine is thread-affine and executes through exclusive World systems.
-Per-entity instances receive on_spawn, on_update and on_destroy. Sandboxing strips
+Per-entity instances receive on_spawn, on_update and on_destroy. on_spawn runs
+once before the first on_update while ScriptsActive is true; attaching in edit
+mode or pausing does not invoke it. Replacing/reloading creates a fresh lifecycle. Sandboxing strips
 debug, io, package, require and dangerous os functions. The instruction limit is
 10 million, timeout five seconds; ten consecutive errors disable an instance.
 Engine interactions use pending-command resources with one-frame visibility,
 never synchronous cross-system calls. Paths are relative to the script directory;
-bare names resolve to .luau. New bindings require the Lua function, ScriptCommand
+bare names resolve to .luau. Configured roots and files resolve canonically,
+including scene-loaded absolute paths; parent/symlink escapes are rejected. New bindings require the Lua function, ScriptCommand
 variant, pending resource and app processing logic. See the
 [current command/resource exports](../katla_script/src/lib.rs) for the inventory.
 
@@ -19,6 +22,12 @@ Gameplay event callbacks receive `(name, data, world)` with a fresh command prox
 Subscriptions belong to the script entity and expire on destruction, replacement,
 reload or disabling. Callback emissions wait for the next tick. Trigger signals
 use this same event bus; see [scene events](scene-events.md) for authoring and timing.
+
+`world:burst_particles(entity, count)` and
+`world:set_particles_active(entity, active)` enqueue bounded particle commands
+through `PendingParticleCommands`. The app processes them in order after script
+updates; activation can precede a burst in the same callback. Trigger payloads
+include lossless `trigger` and `other` entity userdata usable by these bindings.
 
 The sections below retain implementation rationale and design sketches. These
 runtime contracts and source define current behavior.

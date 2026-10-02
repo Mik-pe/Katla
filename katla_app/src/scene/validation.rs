@@ -148,6 +148,32 @@ impl Scene {
                     Err(never) => match never {},
                 }
             }
+            for (index, rule) in entity.trigger_rules.iter().enumerate() {
+                for action in &rule.actions {
+                    let target = match action {
+                        katla_agent::events::EventAction::BurstParticles { target, .. }
+                        | katla_agent::events::EventAction::SetParticlesActive { target, .. } => {
+                            target
+                        }
+                        _ => continue,
+                    };
+                    let key = match target {
+                        katla_agent::events::EventTarget::Trigger => entity.id,
+                        katla_agent::events::EventTarget::Entity { entity } => *entity,
+                        katla_agent::events::EventTarget::Other => continue,
+                    };
+                    if !ids
+                        .get(&key)
+                        .is_some_and(|index| self.entities[*index].particle_emitter.is_some())
+                    {
+                        issues.push(SceneIssue {
+                            entity: Some(entity.id),
+                            field: format!("trigger_rules[{index}]"),
+                            message: format!("particle target {key} requires an emitter"),
+                        });
+                    }
+                }
+            }
             if let Some(parent) = entity.parent {
                 if !ids.contains_key(&parent) {
                     issues.push(SceneIssue {
@@ -526,8 +552,11 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
         }
         f.require(
             "particle_emitter.burst_queue",
-            p.burst_queue.len() <= 1024,
-            "burst queue exceeds 1024 entries",
+            p.burst_queue.len() <= 1024
+                && p.burst_queue
+                    .iter()
+                    .all(|count| (1..=100_000).contains(count)),
+            "burst queue requires at most 1024 entries of 1..100000 particles",
         );
     }
     if let Some(joint) = &entity.joint {

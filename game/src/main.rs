@@ -96,7 +96,21 @@ fn main() {
         info!("UI test mode: screenshots will be saved to: {}", dir);
     }
 
-    // Build with conditional configuration
+    let resources = match katla_app::resources::ResourceManager::discover() {
+        Ok(resources) => resources,
+        Err(error) => {
+            error!("Resource discovery failed: {error}");
+            std::process::exit(1);
+        }
+    };
+    let script_system = match ScriptSystem::new() {
+        Ok(system) => system,
+        Err(error) => {
+            error!("Script initialization failed: {error}");
+            std::process::exit(1);
+        }
+    };
+
     let builder = ApplicationBuilder::new()
         // Register systems with proper execution order
         .with_exclusive_system(
@@ -108,9 +122,8 @@ fn main() {
         .with_exclusive_system(Box::new(RapierPhysicsSystem), SystemExecutionOrder::NORMAL)
         .with_exclusive_system(
             Box::new(
-                ScriptSystem::new()
-                    .expect("failed to create script system")
-                    .with_scripts_dir("resources/scripts")
+                script_system
+                    .with_scripts_dir(resources.scripts.to_string_lossy())
                     .with_transform_provider(|world| {
                         world
                             .query_ref::<&TransformComponent>()
@@ -201,6 +214,7 @@ fn main() {
                         register!(katla_app::components::scene::Children);
                         register!(katla_app::components::scene::Parent);
                         register!(katla_script::ScriptComponent);
+                        register!(katla_app::components::ParticleEmitterComponent);
                         map
                     }),
             ),

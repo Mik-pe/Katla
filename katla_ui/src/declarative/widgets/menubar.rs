@@ -291,7 +291,7 @@ impl Widget for MenuBar {
         &mut self.children
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 }

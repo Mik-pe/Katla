@@ -25,7 +25,7 @@ mod features;
 pub mod frame_graph_config;
 mod frame_loop;
 #[cfg(feature = "editor")]
-mod game_state;
+pub(crate) mod game_state;
 #[cfg(feature = "editor")]
 mod gizmo;
 mod headless;
@@ -273,6 +273,20 @@ impl EditorState {
                 return true;
             }
             self.redo_stack.push(group);
+        }
+        false
+    }
+
+    pub(crate) fn perform_agent_redo(&mut self, world: &mut katla_ecs::World) -> bool {
+        if let Some(mut group) = self.agent_redo_stack.pop() {
+            if group.redo_all(world).is_ok() {
+                self.agent_undo_stack.push(group);
+                self.editor_ui.inspector_edit_entity = None;
+                self.inspector_slider_was_active = false;
+                self.inspector_drag_snapshot = None;
+                return true;
+            }
+            self.agent_redo_stack.push(group);
         }
         false
     }

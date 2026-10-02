@@ -270,7 +270,7 @@ fn test_invalid_authoring_does_not_spawn_or_replace() {
     };
     assert!(control::execute(&mut world, request).is_err());
     assert_eq!(world.entity_ids().count(), count);
-    let invalid = TriggerRule {
+    let invalid: TriggerRule = TriggerRule {
         event: TriggerPhase::Enter,
         other_entity: None,
         once: false,
@@ -470,4 +470,150 @@ fn test_native_scene_trigger_reference_roundtrip() {
     assert!(SceneManager::save_to_file(&mut app, &path).is_err());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "existing file");
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn test_trigger_particle_actions_preserve_order_report_errors_and_remap_targets() {
+    let (mut world, visitor, trigger) = setup();
+    let emitter = crate::components::ParticleEmitterComponent {
+        active: false,
+        ..Default::default()
+    };
+    world.add_component(visitor, emitter);
+    let rules = vec![TriggerRule {
+        event: TriggerPhase::Enter,
+        other_entity: None,
+        once: false,
+        actions: vec![
+            EventAction::SetParticlesActive {
+                target: EventTarget::Entity {
+                    entity: visitor.id(),
+                },
+                active: true,
+            },
+            EventAction::BurstParticles {
+                target: EventTarget::Entity {
+                    entity: visitor.id(),
+                },
+                count: 32,
+            },
+            EventAction::SetParticlesActive {
+                target: EventTarget::Other,
+                active: false,
+            },
+            EventAction::BurstParticles {
+                target: EventTarget::Other,
+                count: 8,
+            },
+            EventAction::Emit {
+                name: "continued_after_particle_error".into(),
+            },
+        ],
+    }];
+    let result = control::execute(
+        &mut world,
+        TriggerOp::SetRules {
+            entity_id: trigger.id(),
+            rules: rules.clone(),
+        },
+    );
+    assert!(result.is_ok());
+    runtime::dispatch(
+        &mut world,
+        katla_physics::TriggerEvent::Enter {
+            trigger_entity: trigger.id(),
+            other_entity: visitor.id(),
+        },
+    );
+    let emitter = world
+        .get_component::<crate::components::ParticleEmitterComponent>(visitor)
+        .unwrap();
+    assert!(!emitter.active);
+    assert_eq!(emitter.burst_queue, vec![32]);
+    assert_eq!(
+        world
+            .get_component::<TriggerRules>(trigger)
+            .unwrap()
+            .last_errors
+            .len(),
+        1
+    );
+    assert!(world.get_resource::<PendingPhysicsEvents>().unwrap().0.iter().any(|event| matches!(&event.event_type, PhysicsCollisionEventType::TriggerSignal(name) if name == "continued_after_particle_error")));
+    let mapped = rules[0]
+        .map_entities(|id| Ok::<_, String>(id + 100))
+        .unwrap();
+    assert!(
+        matches!(mapped.actions[1], EventAction::BurstParticles { target:EventTarget::Entity { entity }, count:32 } if entity == visitor.id()+100)
+    );
+    let invalid: TriggerRule = TriggerRule {
+        event: TriggerPhase::Enter,
+        other_entity: None,
+        once: false,
+        actions: vec![EventAction::BurstParticles {
+            target: EventTarget::Other,
+            count: 100_001,
+        }],
+    };
+    assert!(invalid.validate().is_err());
+}
+
+#[test]
+fn test_trigger_particle_rules_require_an_attached_emitter_before_replacement() {
+    let (mut world, _, trigger) = setup();
+    let original = world
+        .get_component::<TriggerRules>(trigger)
+        .unwrap()
+        .rules
+        .clone();
+    let rules = vec![TriggerRule {
+        event: TriggerPhase::Enter,
+        other_entity: None,
+        once: false,
+        actions: vec![EventAction::BurstParticles {
+            target: EventTarget::Trigger,
+            count: 32,
+        }],
+    }];
+    assert!(
+        control::execute(
+            &mut world,
+            TriggerOp::SetRules {
+                entity_id: trigger.id(),
+                rules: rules.clone(),
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(
+        world.get_component::<TriggerRules>(trigger).unwrap().rules,
+        original
+    );
+    world.add_component(
+        trigger,
+        crate::components::ParticleEmitterComponent::default(),
+    );
+    assert!(
+        control::execute(
+            &mut world,
+            TriggerOp::SetRules {
+                entity_id: trigger.id(),
+                rules: rules.clone(),
+            }
+        )
+        .is_ok()
+    );
+    let count = world.entity_ids().count();
+    assert!(
+        control::execute(
+            &mut world,
+            TriggerOp::CreateBox {
+                name: "Invalid particle trigger".into(),
+                position: [0.0; 3],
+                half_extents: [1.0; 3],
+                rules,
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(world.entity_ids().count(), count);
 }

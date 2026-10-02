@@ -52,7 +52,7 @@ pub struct AssetBrowserState {
     /// Asset index from the first click in a possible double-click sequence.
     last_click_index: Option<usize>,
     /// Time of the first click in a possible double-click sequence.
-    last_click_time: Option<Instant>,
+    last_click_time: Option<f64>,
 }
 
 impl AssetBrowserState {
@@ -98,9 +98,21 @@ impl AssetBrowserState {
             .map(|a| (a.path.clone(), a.thumbnail_state.clone()))
             .collect();
 
+        let path_at = |index: Option<usize>| {
+            index
+                .and_then(|i| self.assets.get(i))
+                .map(|a| a.path.clone())
+        };
+        let clicked_path = path_at(self.last_click_index);
+        let selected_path = path_at(self.selected_index);
+        let context_path = path_at(self.context_menu_asset);
+        let rename_path = path_at(self.rename_asset);
+        let selected_paths: Vec<_> = self
+            .selected_indices
+            .iter()
+            .filter_map(|i| path_at(Some(*i)))
+            .collect();
         self.assets.clear();
-        self.last_click_index = None;
-        self.last_click_time = None;
 
         if let Some(parent) = self.current_path.parent()
             && parent != self.current_path
@@ -169,6 +181,32 @@ impl AssetBrowserState {
         }
 
         self.last_scan = Some(Instant::now());
+        let index_of = |path: &PathBuf| self.assets.iter().position(|a| &a.path == path);
+        self.last_click_index = clicked_path.as_ref().and_then(index_of);
+        if self.last_click_index.is_none() {
+            self.last_click_time = None;
+        }
+        self.selected_index = selected_path.as_ref().and_then(index_of);
+        self.selected_indices = selected_paths.iter().filter_map(index_of).collect();
+        self.context_menu_asset = context_path.as_ref().and_then(index_of);
+        if context_path.is_some() && self.context_menu_asset.is_none() {
+            self.context_menu_open = false;
+        }
+        self.rename_asset = rename_path.as_ref().and_then(index_of);
+        if rename_path.is_some() && self.rename_asset.is_none() {
+            self.rename_mode = false;
+        }
+    }
+
+    fn reset_navigation_state(&mut self) {
+        self.selected_index = None;
+        self.selected_indices.clear();
+        self.last_click_index = None;
+        self.last_click_time = None;
+        self.context_menu_asset = None;
+        self.context_menu_open = false;
+        self.rename_asset = None;
+        self.rename_mode = false;
         self.scroll_state.scroll_offset = 0.0;
     }
 
@@ -201,8 +239,7 @@ impl AssetBrowserState {
             self.nav_history_pos = self.nav_history.len() - 1;
 
             self.current_path = path.clone();
-            self.selected_index = None;
-            self.selected_indices.clear();
+            self.reset_navigation_state();
             self.scan_directory(thumbnail_texture_handles);
         }
     }
@@ -236,6 +273,7 @@ impl AssetBrowserState {
         if self.nav_history_pos > 0 {
             self.nav_history_pos -= 1;
             self.current_path = self.nav_history[self.nav_history_pos].clone();
+            self.reset_navigation_state();
             self.scan_directory(thumbnail_texture_handles);
         }
     }
@@ -248,6 +286,7 @@ impl AssetBrowserState {
         if self.nav_history_pos < self.nav_history.len() - 1 {
             self.nav_history_pos += 1;
             self.current_path = self.nav_history[self.nav_history_pos].clone();
+            self.reset_navigation_state();
             self.scan_directory(thumbnail_texture_handles);
         }
     }
@@ -300,26 +339,21 @@ impl AssetBrowserState {
         }
     }
 
-    /// Register a click and return true only for a valid second click on the same asset.
-    pub(crate) fn register_click(&mut self, asset_index: usize) -> bool {
-        self.register_click_at(asset_index, Instant::now())
-    }
-
-    fn register_click_at(&mut self, asset_index: usize, now: Instant) -> bool {
-        let is_double_click = self.last_click_index == Some(asset_index)
+    /// Use the input event timestamp so delayed frames do not change click timing.
+    pub(crate) fn register_click(&mut self, asset_index: usize, time: f64) -> bool {
+        let is_double_click = time.is_finite()
+            && self.last_click_index == Some(asset_index)
             && self.last_click_time.is_some_and(|last| {
-                now.checked_duration_since(last)
-                    .is_some_and(|elapsed| elapsed.as_secs_f64() <= DOUBLE_CLICK_TIME)
+                let elapsed = time - last;
+                (0.0..=DOUBLE_CLICK_TIME).contains(&elapsed)
             });
-
         if is_double_click {
             self.last_click_index = None;
             self.last_click_time = None;
         } else {
             self.last_click_index = Some(asset_index);
-            self.last_click_time = Some(now);
+            self.last_click_time = time.is_finite().then_some(time);
         }
-
         is_double_click
     }
 
@@ -337,27 +371,62 @@ impl Default for AssetBrowserState {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
 
     #[test]
-    fn double_click_requires_same_asset_within_time_window() {
+    fn test_double_click_requires_same_asset_within_time_window() {
         let mut state = AssetBrowserState::new();
-        let start = Instant::now();
+        let start = 1.0;
 
-        assert!(!state.register_click_at(1, start));
-        assert!(!state.register_click_at(2, start + Duration::from_millis(100)));
-        assert!(state.register_click_at(2, start + Duration::from_millis(200)));
+        assert!(!state.register_click(1, start));
+        assert!(!state.register_click(2, start + 0.1));
+        assert!(state.register_click(2, start + 0.2));
     }
 
     #[test]
-    fn click_after_timeout_starts_a_new_sequence() {
+    fn test_click_after_timeout_starts_a_new_sequence() {
         let mut state = AssetBrowserState::new();
-        let start = Instant::now();
+        let start = 1.0;
 
-        assert!(!state.register_click_at(3, start));
-        assert!(!state.register_click_at(3, start + Duration::from_millis(600)));
-        assert!(state.register_click_at(3, start + Duration::from_millis(700)));
+        assert!(!state.register_click(3, start));
+        assert!(!state.register_click(3, start + 0.6));
+        assert!(state.register_click(3, start + 0.7));
+    }
+    #[test]
+    fn test_background_rescan_preserves_click_selection_and_scroll_by_path() {
+        let root = std::env::temp_dir().join(format!("katla-asset-rescan-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("z.katprefab"), "").unwrap();
+        let mut state = AssetBrowserState::new();
+        state.current_path = root.clone();
+        let handles = HashMap::new();
+        state.scan_directory(&handles);
+        let index = state
+            .assets
+            .iter()
+            .position(|a| a.name == "z.katprefab")
+            .unwrap();
+        state.selected_index = Some(index);
+        state.context_menu_asset = Some(index);
+        state.context_menu_open = true;
+        state.scroll_state.scroll_offset = 42.0;
+        assert!(!state.register_click(index, 1.0));
+        std::fs::write(root.join("a.katprefab"), "").unwrap();
+        state.scan_directory(&handles);
+        let fresh_index = state
+            .assets
+            .iter()
+            .position(|a| a.name == "z.katprefab")
+            .unwrap();
+        assert_ne!(fresh_index, index);
+        assert_eq!(state.selected_index, Some(fresh_index));
+        assert_eq!(state.context_menu_asset, Some(fresh_index));
+        assert_eq!(state.scroll_state.scroll_offset, 42.0);
+        assert!(state.register_click(fresh_index, 1.2));
+        std::fs::remove_file(root.join("z.katprefab")).unwrap();
+        state.scan_directory(&handles);
+        assert!(state.selected_index.is_none());
+        assert!(!state.context_menu_open);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -193,7 +193,7 @@ impl Widget for LabeledSlider {
         true
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 }

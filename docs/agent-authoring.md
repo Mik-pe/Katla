@@ -1,7 +1,7 @@
 # Scene and material authoring for agents
 
 Connect to the running editor using [shared editor MCP](shared-editor-view.md).
-Keep the editor in edit mode. `editor_view` returns a committed viewport PNG;
+Author in edit mode; use `simulation` for gameplay verification. `editor_view` returns a committed viewport PNG;
 use it before editing and again to verify the result. Native Vulkan/Metal output
 is the visual authority. Geometry queries alone cannot establish occlusion.
 
@@ -28,7 +28,9 @@ maximum 256. Symlinks are skipped. Search before choosing a model filename:
 Pass the returned path directly to `spawn_model`, for example
 `{"path":"models/Lantern.glb", "position":[1,0,-2]}`. Model paths are relative
 to the resource root, independent of the editor's working directory. Absolute
-paths and parent traversal are rejected. An empty search query lists assets.
+paths and parent traversal are rejected. An empty search query lists assets. `assets` paths are resource-relative for
+`spawn_model` and script attachment. `project_paths` include the resource-root
+directory and are ready for the project-relative `prefab` tool.
 Use `list_resources`/`read_resource` for project files such as scene documents.
 
 ## Edit surfaces without touching GPU handles
@@ -89,10 +91,60 @@ placing furniture and leave space for door approaches and circulation. Observe
 from inside the room and from above. `editor_view focus` can fit a particular
 object; `set_camera` takes world-space position and target.
 
+## Connect prefab behavior
+
+Start with `prefab describe` to obtain complete mesh and prefab JSON examples.
+Write referenced `.katmesh` recipes first, then `.katprefab` composition; validate
+before writing and instantiate for a native preview. Instantiation returns named
+`nodes` with lossless IDs, parents and scene keys. Pick the specific child by its
+role rather than assuming a template ID survives instantiation. Mesh parts with
+one material/lifecycle combine into one geometry stream; independent materials
+or behaviors belong on separate child entities. See [prefabs](prefabs.md).
+
+`behavior describe` returns the actual complete particle descriptor and a sample
+script using `on_spawn` for one-time subscriptions. These operations are shared by MCP and the co-creator:
+
+```json
+{"action":"set_script","entity_id":"4294967302","path":"scripts/prefab-effect.luau"}
+```
+
+`set_script` requires an existing resource-relative `.luau` file below the scripts
+root. It compiles before replacing the attachment. `set_particles` requires a
+`document` matching the scene particle descriptor, validated before mutation;
+use the example returned by `describe`. It replaces authored configuration while
+preserving a live native emitter handle. Both edits have agent undo/redo. Explicit
+`path: null` or `document: null` detaches; omitting the field is an error.
+`inspect` reports the current script, full particle descriptor and world position.
+Particle colors use linear RGBA; material tool colors use sRGB.
+
+Create a sensor using `trigger create_box` with empty rules, parent it under the
+prefab root, attach particles/script, then `set_rules`. Ordered trigger actions
+support animations, `set_particles_active`, `burst_particles` and named Luau
+`emit` events. `behavior burst` previews 1–100,000 particles on an active emitter;
+`set_active` is undoable during authoring and transient during simulation.
+The shipped `scripts/prefab-effect.luau` listens to `prefab_activated`, filters by
+its own trigger identity, activates its emitter and queues a burst. Include the
+sensor and referenced visitor in the same captured subtree; external references
+reject capture instead of binding to an unrelated object.
+
+Use `simulation play`, inspect trigger diagnostics and `behavior inspect`, then
+`editor_view observe` for native output. Pause and resume are explicit; `play`
+while already paused leaves it paused. Stop reconstructs the authored snapshot,
+replaces runtime IDs and clears history. Query fresh IDs afterward. Script/particle
+attachment authoring and prefab instantiate/capture/remove require edit mode;
+bursts/toggles can preview at runtime. Capture after Stop persists authored
+behavior, not transient gameplay state. Particle simulation continues visually
+while paused; the pause gate applies to gameplay scripts and physics.
+
+The [native prefab acceptance script](../scripts/validate_prefabs.py) drives this
+complete workflow in a disposable editor and writes PNGs plus a receipt.
+
 ## Verify and persist
 
 Use `material inspect`, scene queries, then `editor_view observe` to check actual
-appearance. `editor_view undo` reverses the latest agent edit. Scene saves preserve
+appearance. `simulation inspect` also reports whole-scene completed GPU particle
+counters with source submission, so they can lag the current frame.
+`editor_view undo` reverses the latest agent edit. Scene saves preserve
 base color, metallic, roughness and occlusion through the existing v3 format.
 `save_scene` writes to the explicit destination you supply; loading a scene
 replaces the current document and clears its history.

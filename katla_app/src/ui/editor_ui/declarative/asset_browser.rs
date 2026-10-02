@@ -498,6 +498,7 @@ pub(crate) fn process_declarative_actions(
     thumbnail_texture_handles: &HashMap<PathBuf, TextureHandle>,
     viewport_bounds: Rect2D,
     actions: Vec<AssetBrowserAction>,
+    mouse_press_time: f64,
 ) -> Vec<EditorAction> {
     let mut pending = Vec::new();
 
@@ -519,7 +520,7 @@ pub(crate) fn process_declarative_actions(
                 state.refresh(thumbnail_texture_handles);
             }
             AssetBrowserAction::AssetClicked(index) => {
-                let activate = state.register_click(index);
+                let activate = state.register_click(index, mouse_press_time);
                 state.selected_index = Some(index);
                 state.selected_indices.clear();
 
@@ -632,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn asset_activation_requires_second_click() {
+    fn test_asset_activation_requires_second_click() {
         let mut state = AssetBrowserState::new();
         let audio_path = PathBuf::from("resources/sound.wav");
         state.assets.push(audio_asset("resources/sound.wav"));
@@ -644,6 +645,7 @@ mod tests {
             &handles,
             bounds,
             vec![AssetBrowserAction::AssetClicked(0)],
+            1.0,
         );
         assert!(first.is_empty());
 
@@ -652,6 +654,7 @@ mod tests {
             &handles,
             bounds,
             vec![AssetBrowserAction::AssetClicked(0)],
+            1.2,
         );
         assert!(matches!(
             second.as_slice(),
@@ -673,6 +676,7 @@ mod tests {
             &HashMap::new(),
             Rect2D::default(),
             vec![AssetBrowserAction::ConfirmDelete],
+            1.0,
         );
 
         assert!(!state.confirm_dialog_open);
@@ -699,6 +703,7 @@ mod tests {
                 action: "Open".to_string(),
                 asset_index: None,
             }],
+            1.0,
         );
 
         assert!(matches!(
@@ -726,6 +731,7 @@ mod tests {
                 action: "Delete".to_string(),
                 asset_index: None,
             }],
+            1.0,
         );
 
         assert!(actions.is_empty());

@@ -249,8 +249,16 @@ impl Widget for DraggablePanel {
         }
     }
 
-    fn interactive(&self) -> bool {
-        true
+    fn should_draw_children(&self, state: &StateArena) -> bool {
+        self.interactive(state)
+    }
+
+    fn interactive(&self, state: &StateArena) -> bool {
+        state
+            .get::<DraggablePanelState>(self.state_id)
+            .unwrap_or_default()
+            .visibility
+            .is_visible()
     }
 
     fn is_focus_scope(&self) -> bool {
@@ -346,6 +354,8 @@ mod tests {
 
         let state: DraggablePanelState = arena.get(panel.state_id).unwrap_or_default();
         assert_eq!(state.visibility, DraggablePanelVisibility::Hidden);
+        assert!(!panel.interactive(&arena));
+        assert!(!panel.should_draw_children(&arena));
     }
 
     #[test]

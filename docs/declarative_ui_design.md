@@ -2,6 +2,10 @@
 
 ## Runtime contracts
 
+`Widget::interactive` reads the state arena. Closed context menus/modals and
+hidden floating panels do not participate in hit testing; mounted invisible
+popups must let clicks reach visible controls beneath them.
+
 The declarative Build/ViewTree API is the normal application interface. The
 immediate-mode context is a low-level custom-widget primitive. Drain typed
 actions every frame; per-node state survives until its node is removed.

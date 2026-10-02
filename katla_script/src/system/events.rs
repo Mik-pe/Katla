@@ -136,7 +136,17 @@ impl ScriptSystem {
             }
 
             if let Err(error) = table
-                .set("trigger_entity", event.entity_a)
+                .set(
+                    "trigger",
+                    crate::bindings::entity::LuaEntityId(EntityId::from_raw(event.entity_a)),
+                )
+                .and_then(|_| {
+                    table.set(
+                        "other",
+                        crate::bindings::entity::LuaEntityId(EntityId::from_raw(event.entity_b)),
+                    )
+                })
+                .and_then(|_| table.set("trigger_entity", event.entity_a))
                 .and_then(|_| table.set("other_entity", event.entity_b))
             {
                 error!("Failed to build trigger event payload: {error}");

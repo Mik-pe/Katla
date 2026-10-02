@@ -76,12 +76,11 @@ pub struct GetComponentAttributesArgs {
     pub component: String,
 }
 
-/// Typed arguments for the `set_parent` tool.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(default)]
+/// Lossless IDs for the co-creator `set_parent` tool.
+#[derive(Debug, Clone, Deserialize)]
 pub struct SetParentArgs {
-    pub entity_id: u64,
-    pub parent_id: Option<u64>,
+    pub entity_id: String,
+    pub parent_id: Option<String>,
 }
 
 /// Typed arguments for the `spawn_model` tool.

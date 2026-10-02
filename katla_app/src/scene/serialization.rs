@@ -198,6 +198,12 @@ impl SceneManager {
             }
             app.world.destroy_entity(id);
         }
+        if let Some(commands) = app
+            .world
+            .get_resource_mut::<katla_script::PendingParticleCommands>()
+        {
+            commands.0.clear();
+        }
         let retired = app.gpu_resource_tracker.retire_snapshot(previous_tracker);
         destroy_resources(app, retired);
         app.scene_document.assets = Some(context);

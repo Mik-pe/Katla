@@ -1,6 +1,7 @@
 //! Editor subsystem - handles UI rendering, entity management, and editor actions.
 
 pub mod agent;
+pub(crate) mod behavior;
 pub mod component_registry;
 pub(crate) mod document;
 #[cfg(feature = "mcp")]
@@ -9,6 +10,7 @@ pub(crate) mod material;
 #[cfg(feature = "mcp")]
 pub(crate) mod mcp;
 mod scene_query;
+pub(crate) mod simulation;
 mod transform_registry;
 #[cfg(feature = "mcp")]
 mod viewport;
@@ -915,6 +917,10 @@ pub fn process_editor_actions(app: &mut Application) {
     for action in editor_actions {
         match action {
             EditorAction::InstantiatePrefab(path) => {
+                if app.play_mode != super::game_state::PlayMode::Editing {
+                    app.show_scene_error("Stop simulation before instantiating prefab assets");
+                    continue;
+                }
                 match crate::prefab::instantiate_asset(
                     app,
                     &path,
@@ -1144,81 +1150,27 @@ pub fn process_editor_actions(app: &mut Application) {
                 );
             }
             EditorAction::PlayStart => {
-                if app.play_mode == super::game_state::PlayMode::Editing {
-                    match super::game_state::SceneSnapshot::capture(app) {
-                        Ok(snapshot) => app.scene_snapshot = Some(snapshot),
-                        Err(error) => {
-                            app.show_scene_error(error);
-                            continue;
-                        }
-                    }
-                    app.play_mode = super::game_state::PlayMode::Playing;
-                    if let Some(active) =
-                        app.world.get_resource_mut::<katla_script::ScriptsActive>()
-                    {
-                        active.0 = true;
-                    }
-                    if let Some(physics) =
-                        app.world.get_resource_mut::<katla_physics::PhysicsActive>()
-                    {
-                        physics.0 = true;
-                    }
-                    info!("Entered play mode");
+                if let Err(error) =
+                    simulation::execute(app, katla_agent::behavior::SimulationOp::Play)
+                {
+                    app.show_scene_error(error);
                 }
             }
-            EditorAction::PlayPause => match app.play_mode {
-                super::game_state::PlayMode::Playing => {
-                    app.play_mode = super::game_state::PlayMode::Paused;
-                    if let Some(active) =
-                        app.world.get_resource_mut::<katla_script::ScriptsActive>()
-                    {
-                        active.0 = false;
-                    }
-                    if let Some(physics) =
-                        app.world.get_resource_mut::<katla_physics::PhysicsActive>()
-                    {
-                        physics.0 = false;
-                    }
-                    info!("Play mode paused");
+            EditorAction::PlayPause => {
+                let op = if app.play_mode == super::game_state::PlayMode::Paused {
+                    katla_agent::behavior::SimulationOp::Resume
+                } else {
+                    katla_agent::behavior::SimulationOp::Pause
+                };
+                if let Err(error) = simulation::execute(app, op) {
+                    app.show_scene_error(error);
                 }
-                super::game_state::PlayMode::Paused => {
-                    app.play_mode = super::game_state::PlayMode::Playing;
-                    if let Some(active) =
-                        app.world.get_resource_mut::<katla_script::ScriptsActive>()
-                    {
-                        active.0 = true;
-                    }
-                    if let Some(physics) =
-                        app.world.get_resource_mut::<katla_physics::PhysicsActive>()
-                    {
-                        physics.0 = true;
-                    }
-                    info!("Play mode resumed");
-                }
-                super::game_state::PlayMode::Editing => {}
-            },
+            }
             EditorAction::PlayStop => {
-                if app.play_mode != super::game_state::PlayMode::Editing {
-                    if let Some(snapshot) = app.scene_snapshot.take()
-                        && let Err(error) = snapshot.restore(app)
-                    {
-                        app.scene_snapshot = Some(snapshot);
-                        app.show_scene_error(error);
-                        continue;
-                    }
-                    app.editor.clear_entity_references();
-                    app.play_mode = super::game_state::PlayMode::Editing;
-                    if let Some(active) =
-                        app.world.get_resource_mut::<katla_script::ScriptsActive>()
-                    {
-                        active.0 = false;
-                    }
-                    if let Some(physics) =
-                        app.world.get_resource_mut::<katla_physics::PhysicsActive>()
-                    {
-                        physics.0 = false;
-                    }
-                    info!("Stopped play mode, scene restored");
+                if let Err(error) =
+                    simulation::execute(app, katla_agent::behavior::SimulationOp::Stop)
+                {
+                    app.show_scene_error(error);
                 }
             }
             EditorAction::SetEmitterField { entity, field } => {

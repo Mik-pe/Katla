@@ -6,6 +6,7 @@ pub use protocol::{MessageRole, ToolCall};
 pub mod co_creator;
 
 pub mod animation;
+pub mod behavior;
 pub mod context;
 pub mod events;
 pub mod material;

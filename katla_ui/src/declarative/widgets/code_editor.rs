@@ -1419,7 +1419,7 @@ impl Widget for CodeEditor {
         true
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 
@@ -2031,7 +2031,7 @@ mod tests {
         let sid = make_editor_state_id(&mut arena, "hello");
         let editor = CodeEditor { state_id: sid };
         assert!(editor.focusable());
-        assert!(editor.interactive());
+        assert!(editor.interactive(&StateArena::new()));
         assert!(editor.needs_clip_children());
     }
 
@@ -2061,7 +2061,7 @@ mod tests {
         let sid = make_editor_state_id(&mut arena, "hello");
         let editor = CodeEditor { state_id: sid };
         assert!(editor.focusable());
-        assert!(editor.interactive());
+        assert!(editor.interactive(&StateArena::new()));
     }
 
     // --- VAL-EDITOR-049: Select all + delete clears buffer ---

@@ -773,3 +773,57 @@ fn test_env_table_pairs_visibility() {
         state
     );
 }
+
+#[test]
+fn test_particle_bindings_emit_bounded_deferred_commands() {
+    let script = TempScript::new(
+        "function on_update(entity, world, dt)\n world:set_particles_active(entity, true)\n world:burst_particles(entity, 32)\nend\n",
+    );
+    let mut engine = ScriptEngine::new().unwrap();
+    let entity = make_test_entity(1);
+    let handle = engine.create_instance(entity, script.to_str()).unwrap();
+    let commands = engine
+        .execute_on_update(handle, entity, make_proxy(), 0.016)
+        .unwrap();
+    assert!(
+        matches!(commands[0], ScriptCommand::SetParticlesActive { entity:e, active:true } if e == entity)
+    );
+    assert!(
+        matches!(commands[1], ScriptCommand::BurstParticles { entity:e, count:32 } if e == entity)
+    );
+    let invalid = TempScript::new(
+        "function on_update(entity, world, dt) world:burst_particles(entity, 0) end",
+    );
+    let handle = engine.create_instance(entity, invalid.to_str()).unwrap();
+    assert!(
+        engine
+            .execute_on_update(handle, entity, make_proxy(), 0.016)
+            .is_err()
+    );
+}
+
+#[test]
+fn test_canonical_script_root_accepts_scene_paths_and_rejects_escapes() {
+    let outside = TempScript::new("function on_update(entity, world, dt) end");
+    let directory = std::env::temp_dir().join(unique_script_name());
+    std::fs::create_dir_all(&directory).unwrap();
+    let canonical = directory.join("inside.luau");
+    std::fs::write(&canonical, "function on_update(entity, world, dt) end").unwrap();
+    let mut engine = ScriptEngine::new().unwrap();
+    engine.set_scripts_dir(format!("{}/.", directory.display()));
+    engine.load_script(canonical.to_str().unwrap()).unwrap();
+    assert!(matches!(
+        engine.load_script(outside.to_str()),
+        Err(crate::ScriptError::PathOutsideScriptsDir { .. })
+    ));
+    #[cfg(unix)]
+    {
+        let link = directory.join("escape.luau");
+        std::os::unix::fs::symlink(&outside.path, &link).unwrap();
+        assert!(matches!(
+            engine.load_script(link.to_str().unwrap()),
+            Err(crate::ScriptError::PathOutsideScriptsDir { .. })
+        ));
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}

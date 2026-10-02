@@ -10,8 +10,12 @@ use katla_math::{AABB, Frustum, Mat4, Quat, Vec3, Vec4};
 use serde_json::{Value, json};
 
 pub(super) fn apply(app: &mut Application, op: &EditorViewOp) -> Result<(), String> {
-    if app.play_mode != crate::application::game_state::PlayMode::Editing {
-        return Err("Shared editor view is available only in edit mode".into());
+    if !matches!(op, EditorViewOp::Observe { .. })
+        && app.play_mode != crate::application::game_state::PlayMode::Editing
+    {
+        return Err(
+            "Editor view edits require edit mode; observe is available during simulation".into(),
+        );
     }
     match op {
         EditorViewOp::Observe { .. } => {}
@@ -44,9 +48,16 @@ pub(super) fn apply(app: &mut Application, op: &EditorViewOp) -> Result<(), Stri
                 app.editor_features.latest_pick_sequence += 1;
             }
         }
-        EditorViewOp::Undo => {
-            if !app.editor.perform_agent_undo(&mut app.world) {
-                return Err("No agent scene change to undo".into());
+        EditorViewOp::Undo | EditorViewOp::Redo => {
+            let changed = if matches!(op, EditorViewOp::Undo) {
+                app.editor.perform_agent_undo(&mut app.world)
+            } else {
+                app.editor.perform_agent_redo(&mut app.world)
+            };
+            if !changed {
+                return Err(
+                    "No agent scene change available in the requested history direction".into(),
+                );
             }
             super::process_gpu_cleanup_for_destroyed_entities(app);
             if app

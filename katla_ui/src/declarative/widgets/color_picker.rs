@@ -95,7 +95,7 @@ impl Widget for ColorPicker {
         true
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 }

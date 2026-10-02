@@ -126,11 +126,16 @@ traversal and symlink escapes are rejected. Entity IDs are full decimal strings.
    return errors before replacing files.
 4. Call `{"action":"instantiate","path":"resources/prefabs/chair.katprefab","position":[2,0,0]}`.
    Rotation defaults to identity XYZW; scale defaults to `[1,1,1]`. Retain the
-   returned `root_entity` and `entities`.
+   returned `root_entity`, `entities` and named `nodes` mappings.
 5. Use `editor_view` focus/observe and scene queries to inspect the rendered
-   result. Remove the previous preview with `{"action":"remove","root_entity":"..."}`
-   before creating another revision.
-6. Export an edited live subtree using `{"action":"capture","path":"resources/prefabs/custom-chair.katprefab","root_entity":"..."}`.
+   result. Instantiate the next revision successfully, then remove the old preview
+   with `{"action":"remove","root_entity":"..."}`. Failed revisions leave the old preview available.
+6. Attach behavior using `behavior describe`, `set_script` and `set_particles`; use
+   `trigger` to connect gameplay actions. See [the agent workflow](agent-authoring.md#connect-prefab-behavior).
+   `simulation play/pause/resume/stop` verifies gameplay. Stop restores authored
+   state and replaces runtime IDs; query the new IDs before saving or capture.
+   Instantiate, remove, capture and attachment authoring require edit mode.
+7. Export an edited live subtree using `{"action":"capture","path":"resources/prefabs/custom-chair.katprefab","root_entity":"..."}`.
    Save the containing scene to persist placement and instance edits.
 
 The Rust API mirrors this flow with `MeshAsset::{load,compile,save}`,
@@ -153,3 +158,20 @@ RUST_LOG=info cargo test -p katla_app --lib prefab::native_tests --all-features 
 Vulkan and capability-gated Metal CI run the shared native fixture. Native
 rendering acceptance also loads the workshop through the ordinary PBR graph;
 use API validation and inspect all four placements, not only successful loading.
+
+The disposable agent acceptance script exercises real MCP and the native renderer,
+including named nodes, strict attachment preflight, undo/redo, captured prefab
+re-instantiation, remapped trigger visitors, Luau-driven particle activation and
+bursts, Play/Pause/Resume/Stop and scene reload:
+
+```bash
+RUST_LOG=info python3 scripts/validate_prefabs.py --output /tmp/katla-prefab-proof \
+  --stdio-command target/debug/katla --headless --frames 2000
+```
+
+It writes committed viewport PNGs and `receipt.json`, and removes its temporary
+project assets. Run it in a disposable editor, not a shared authoring session.
+Asset browser double-click timing uses input event timestamps, so delayed render
+frames do not alter the time between clicks. Background rescans preserve click
+identity, selection, context targets and scrolling by asset path. The native interaction walkthrough
+also verifies that closed popup hit areas do not block prefab double-click selection and toolbar Play/Stop restoration.

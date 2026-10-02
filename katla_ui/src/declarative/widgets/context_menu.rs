@@ -161,8 +161,8 @@ impl Widget for ContextMenu {
         &mut self.children
     }
 
-    fn interactive(&self) -> bool {
-        true
+    fn interactive(&self, state: &StateArena) -> bool {
+        state.get(self.open_id).unwrap_or_default()
     }
 }
 

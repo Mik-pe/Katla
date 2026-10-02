@@ -50,6 +50,14 @@ positive fade. There is no automatic retry; use a zero fade for an intentional
 cut or design the rule to wait through scripted state. Actions after a failure
 still execute, and inspect exposes the failure.
 
+`burst_particles` accepts a target and `count` in 1–100,000. The emitter must
+already be active; use `set_particles_active` with `active: true` earlier in the
+same rule to activate it. `behavior set_particles` attaches and configures the
+emitter. Explicit particle targets must have an emitter. A trigger targeting
+itself needs its attachment before `set_rules`; create it with empty rules first.
+Particle queues hold at most 1,024 bursts. Action failures remain visible through
+`inspect` and do not stop later actions.
+
 `create_box` validates the complete request before spawning. It creates a
 kinematic sensor with a transform and no drawable/GPU resources. The box can
 move through ordinary transform edits. Half extents are finite positive local
@@ -103,7 +111,9 @@ the new playback clock advances on the next tick.
 `PendingPhysicsEvents` retains only the latest physics batch until consumed by
 `ScriptSystem`; no script consumer can leave an unbounded multi-frame backlog.
 Named signals and `collision_enter`/`collision_exit` use the existing Luau event
-bus. Signals contain `trigger_entity` and `other_entity`; the collision payload's
+bus. Signals contain lossless `trigger` and `other` entity userdata for world
+commands and instance filtering (`data.trigger == entity`). Numeric
+`trigger_entity` and `other_entity` remain available for diagnostics; the collision payload's
 `entity_a`/`entity_b` fields identify the same pair. Lua can still emit arbitrary
 script events with `world:emit(name, data)`.
 
@@ -135,7 +145,7 @@ world proxy is a snapshot; use the current callback argument for mutations.
 ## Persistence and validation
 
 Scene version 3 uses stable document-local keys for visitor filters and explicit
-animation targets. Saving maps complete live generational IDs to those keys;
+animation/particle targets. Saving maps complete live generational IDs to those keys;
 loading resolves keys after every entity has spawned. Names may be duplicated,
 changed or absent without redirecting a rule. Runtime overlaps, consumed once
 rules and diagnostics reset rather than entering the scene file.

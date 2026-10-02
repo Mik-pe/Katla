@@ -37,6 +37,12 @@ pub(crate) fn poll(app: &mut crate::application::Application) {
     let requests = app.editor.mcp_state.bridge.poll_requests();
     for req in requests {
         let response = match req.op.clone().into_op() {
+            McpOpKind::Behavior(op) => McpResponse {
+                result: super::behavior::execute(app, op),
+            },
+            McpOpKind::Simulation(op) => McpResponse {
+                result: super::simulation::execute(app, op),
+            },
             McpOpKind::Prefab(op) => McpResponse {
                 result: crate::prefab::control::execute(app, op),
             },
@@ -47,7 +53,7 @@ pub(crate) fn poll(app: &mut crate::application::Application) {
                 result: super::material::execute(app, op, true),
             },
             McpOpKind::Trigger(op) => McpResponse {
-                result: crate::events::control::execute(&mut app.world, op),
+                result: crate::events::control::author(app, op),
             },
             McpOpKind::Animation(op) => McpResponse {
                 result: crate::animation::control::execute(&mut app.world, op),

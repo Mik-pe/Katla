@@ -61,7 +61,9 @@ impl ParticleSystem {
                 !world.entity_exists(**id)
                     || world
                         .get_component::<ParticleEmitterComponent>(**id)
-                        .is_none()
+                        .is_none_or(|emitter| {
+                            emitter.emitter_handle != self.entity_emitters.get(*id).copied()
+                        })
             })
             .copied()
             .collect();
@@ -89,6 +91,8 @@ impl ParticleSystem {
         // Query all particle emitter components
         for (entity_id, emitter) in world.query::<&mut ParticleEmitterComponent>() {
             if emitter.active {
+                self.entity_kill_on_destroy
+                    .insert(entity_id, emitter.kill_on_destroy);
                 if let Some(pos) = world_positions.get(&entity_id) {
                     emitter.config.position = *pos;
                 }

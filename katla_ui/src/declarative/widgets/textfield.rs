@@ -157,7 +157,7 @@ impl Widget for TextField {
         true
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 }

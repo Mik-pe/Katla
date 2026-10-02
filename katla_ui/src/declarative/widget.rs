@@ -200,8 +200,9 @@ pub trait Widget: Any + 'static {
     /// pinning its scroll offset) override this.
     fn post_layout(&self, _state: &mut StateArena, _bounds: Rect2D, _children_bounds: &[Rect2D]) {}
 
-    /// Whether this widget participates in hit testing for input.
-    fn interactive(&self) -> bool {
+    /// Whether this widget participates in hit testing in its current state.
+    /// Hidden popups must return false so clicks reach the widgets beneath them.
+    fn interactive(&self, _state: &StateArena) -> bool {
         false
     }
 
@@ -353,8 +354,8 @@ impl Widget for Box<dyn Widget> {
         (**self).post_layout(state, bounds, children_bounds)
     }
 
-    fn interactive(&self) -> bool {
-        (**self).interactive()
+    fn interactive(&self, state: &StateArena) -> bool {
+        (**self).interactive(state)
     }
 
     fn wants_global_input(&self, state: &StateArena) -> bool {
@@ -553,7 +554,7 @@ mod tests {
         assert!(!w.needs_clip_children());
         assert!(w.should_draw_children(&StateArena::new()));
         assert_eq!(w.scroll_offset(&StateArena::new()), 0.0);
-        assert!(!w.interactive());
+        assert!(!w.interactive(&StateArena::new()));
         assert!(w.as_transition().is_none());
     }
 

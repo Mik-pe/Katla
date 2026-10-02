@@ -42,3 +42,5 @@ pub use rendering::FrameContext;
 pub mod mesh_asset;
 /// Reusable scene subtrees and their authoring tools.
 pub mod prefab;
+
+mod particle_control;

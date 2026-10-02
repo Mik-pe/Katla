@@ -8,6 +8,34 @@ use katla_math::Vec3;
 use katla_physics::{BoxShape, ColliderShape, RigidBody, TriggerVolume};
 use serde_json::{Value, json};
 
+#[cfg(feature = "editor")]
+pub(crate) fn author(
+    app: &mut crate::application::Application,
+    op: TriggerOp,
+) -> Result<Value, String> {
+    if !matches!(op, TriggerOp::Inspect { .. })
+        && app.play_mode != crate::application::game_state::PlayMode::Editing
+    {
+        return Err("Stop simulation before authoring trigger rules".into());
+    }
+    execute(&mut app.world, op)
+}
+
+fn requires_trigger_particles(rules: &[TriggerRule]) -> bool {
+    rules.iter().flat_map(|r| &r.actions).any(|action| {
+        matches!(
+            action,
+            EventAction::BurstParticles {
+                target: EventTarget::Trigger,
+                ..
+            } | EventAction::SetParticlesActive {
+                target: EventTarget::Trigger,
+                ..
+            }
+        )
+    })
+}
+
 pub(crate) fn execute(world: &mut World, op: TriggerOp) -> Result<Value, String> {
     let entity = match op {
         TriggerOp::Inspect { entity_id } => EntityId::from_raw(entity_id),
@@ -25,6 +53,15 @@ pub(crate) fn execute(world: &mut World, op: TriggerOp) -> Result<Value, String>
                 );
             }
             validate_references(world, &rules)?;
+            if requires_trigger_particles(&rules)
+                && world
+                    .get_component::<crate::components::ParticleEmitterComponent>(entity)
+                    .is_none()
+            {
+                return Err(
+                    "Attach particles to the trigger before setting particle actions".into(),
+                );
+            }
             world.add_component(entity, TriggerRules::new(rules)?);
             entity
         }
@@ -49,6 +86,11 @@ pub(crate) fn execute(world: &mut World, op: TriggerOp) -> Result<Value, String>
                 return Err("Box needs finite position and positive half_extents".into());
             }
             validate_references(world, &rules)?;
+            if requires_trigger_particles(&rules) {
+                return Err(
+                    "Create the trigger with empty rules, attach particles, then set_rules".into(),
+                );
+            }
             let rules = TriggerRules::new(rules)?;
             world.spawn((
                 NameComponent::new(name),
@@ -81,7 +123,7 @@ pub(crate) fn execute(world: &mut World, op: TriggerOp) -> Result<Value, String>
     };
     Ok(json!({"entity_id":entity.id().to_string(),
         "name":world.get_component::<NameComponent>(entity).map(|name| &name.name),
-        "position":world.get_component::<TransformComponent>(entity).map(|transform| transform.transform.position.to_array()),
+        "position":crate::systems::resolve_world_transforms(world).get(&entity).map(|pose| pose.transform.position.to_array()),
         "shape":world.get_component::<ColliderShape>(entity),
         "simulation_active":world.get_resource::<katla_physics::PhysicsActive>().is_some_and(|active| active.0),
         "overlapping_entities":volume.overlapping_entities.iter().map(u64::to_string).collect::<Vec<_>>(),
@@ -101,6 +143,22 @@ fn validate_references(world: &World, rules: &[TriggerRule]) -> Result<(), Strin
             }
         })?;
         for action in &rule.actions {
+            if let EventAction::BurstParticles {
+                target: EventTarget::Entity { entity },
+                ..
+            }
+            | EventAction::SetParticlesActive {
+                target: EventTarget::Entity { entity },
+                ..
+            } = action
+                && world
+                    .get_component::<crate::components::ParticleEmitterComponent>(
+                        EntityId::from_raw(*entity),
+                    )
+                    .is_none()
+            {
+                return Err(format!("Entity {entity} has no particle emitter"));
+            }
             if let EventAction::PlayAnimation {
                 target: EventTarget::Entity { entity },
                 clip,

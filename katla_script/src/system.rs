@@ -84,6 +84,10 @@ pub struct PendingTriggerQueryResults(
 #[derive(Default)]
 pub struct PendingTriggerQueryCommands(pub Vec<crate::bindings::world::ScriptCommand>);
 
+/// Particle commands consumed by the app after the ECS script tick.
+#[derive(Default)]
+pub struct PendingParticleCommands(pub Vec<ScriptCommand>);
+
 /// A collision event from the physics system.
 ///
 /// Dispatched to scripts as `"collision_enter"` or `"collision_exit"` events.
@@ -377,6 +381,7 @@ impl ScriptSystem {
         let mut force_cmds = Vec::new();
         let mut velocity_cmds = Vec::new();
         let mut trigger_query_cmds = Vec::new();
+        let mut particle_cmds = Vec::new();
         let mut core_cmds = Vec::new();
         for cmd in commands {
             match &cmd {
@@ -397,10 +402,19 @@ impl ScriptSystem {
                 ScriptCommand::QueryTriggerOverlaps { .. } => {
                     trigger_query_cmds.push(cmd);
                 }
+                ScriptCommand::BurstParticles { .. } | ScriptCommand::SetParticlesActive { .. } => {
+                    particle_cmds.push(cmd);
+                }
                 _ => core_cmds.push(cmd),
             }
         }
 
+        if !particle_cmds.is_empty() {
+            world
+                .get_resource_mut_or_insert_with::<PendingParticleCommands>()
+                .0
+                .extend(particle_cmds);
+        }
         if !audio_cmds.is_empty()
             && let Some(pending) = world.get_resource_mut::<PendingAudioCommands>()
         {
@@ -470,7 +484,9 @@ impl ScriptSystem {
                     | ScriptCommand::ApplyForce { .. }
                     | ScriptCommand::ApplyImpulse { .. }
                     | ScriptCommand::SetVelocity { .. }
-                    | ScriptCommand::QueryTriggerOverlaps { .. } => {}
+                    | ScriptCommand::QueryTriggerOverlaps { .. }
+                    | ScriptCommand::BurstParticles { .. }
+                    | ScriptCommand::SetParticlesActive { .. } => {}
                 }
             }
         }
@@ -591,6 +607,26 @@ impl System for ScriptSystem {
         let mut all_commands = Vec::with_capacity(active.len());
 
         for (handle, entity) in active {
+            let call_spawn = self
+                .engine
+                .instances
+                .get_mut(handle.index as usize)
+                .and_then(Option::as_mut)
+                .filter(|instance| {
+                    instance.generation == handle.generation && !instance.spawn_called
+                })
+                .is_some_and(|instance| {
+                    instance.spawn_called = true;
+                    true
+                });
+            if call_spawn {
+                let mut proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
+                proxy.with_event_bus(Rc::clone(&self.shared_event_bus), entity, handle);
+                match self.engine.execute_on_spawn(handle, entity, proxy) {
+                    Ok(commands) => all_commands.extend(commands),
+                    Err(error) => error!("Entity {entity} on_spawn failed: {error}"),
+                }
+            }
             let mut proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
             proxy.with_event_bus(Rc::clone(&self.shared_event_bus), entity, handle);
             match self
@@ -707,6 +743,60 @@ mod scheduler_tests {
         world.update(0.016);
         assert_eq!(calls.get(), 2);
     }
+    #[test]
+    fn test_spawn_hook_waits_for_play_runs_once_and_restarts_after_attachment_replacement() {
+        let directory =
+            std::env::temp_dir().join(format!("katla-spawn-hook-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("spawn.luau"),
+            r#"
+            function on_spawn(entity, world)
+                world:set_position(entity, Vec3.new(7, 0, 0))
+            end
+            function on_update(entity, world, dt)
+                world:set_position(entity, Vec3.new(8, 0, 0))
+            end
+        "#,
+        )
+        .unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = Rc::clone(&received);
+        let mut scripts = ScriptSystem::new()
+            .unwrap()
+            .with_scripts_dir(directory.to_string_lossy())
+            .with_command_consumer(move |_, commands| {
+                captured.borrow_mut().extend_from_slice(commands)
+            });
+        let mut world = World::new();
+        world.insert_resource(ScriptsActive(false));
+        let entity = world.spawn((ScriptComponent::new("spawn"),));
+        scripts.update(&mut world, 0.016);
+        assert!(received.borrow().is_empty());
+        world.insert_resource(ScriptsActive(true));
+        scripts.update(&mut world, 0.016);
+        let commands = std::mem::take(&mut *received.borrow_mut());
+        assert_eq!(commands.len(), 2);
+        assert!(
+            matches!(&commands[0], ScriptCommand::SetPosition(id, p) if *id == entity && p.x() == 7.0)
+        );
+        assert!(
+            matches!(&commands[1], ScriptCommand::SetPosition(id, p) if *id == entity && p.x() == 8.0)
+        );
+        scripts.update(&mut world, 0.016);
+        assert_eq!(std::mem::take(&mut *received.borrow_mut()).len(), 1);
+        world.insert_resource(ScriptsActive(false));
+        scripts.update(&mut world, 0.016);
+        assert!(received.borrow().is_empty());
+        world.insert_resource(ScriptsActive(true));
+        scripts.update(&mut world, 0.016);
+        assert_eq!(std::mem::take(&mut *received.borrow_mut()).len(), 1);
+        world.add_component(entity, ScriptComponent::new("spawn"));
+        scripts.update(&mut world, 0.016);
+        assert_eq!(received.borrow().len(), 2);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
     fn test_trigger_signal_callbacks_apply_commands_defer_emits_and_expire() {
         let directory = std::env::temp_dir().join(format!(

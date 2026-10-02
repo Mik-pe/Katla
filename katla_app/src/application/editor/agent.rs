@@ -156,6 +156,24 @@ pub(super) fn execute_tool_call(
     app: &mut super::super::Application,
     tool_call: &ToolCall,
 ) -> String {
+    if tool_call.name == "behavior" {
+        return match serde_json::from_value(tool_call.arguments.clone())
+            .map_err(|e| e.to_string())
+            .and_then(|op| super::behavior::execute(app, op))
+        {
+            Ok(value) => value.to_string(),
+            Err(error) => format!("Error: {error}"),
+        };
+    }
+    if tool_call.name == "simulation" {
+        return match serde_json::from_value(tool_call.arguments.clone())
+            .map_err(|e| e.to_string())
+            .and_then(|op| super::simulation::execute(app, op))
+        {
+            Ok(value) => value.to_string(),
+            Err(error) => format!("Error: {error}"),
+        };
+    }
     if tool_call.name == "prefab" {
         return match serde_json::from_value(tool_call.arguments.clone())
             .map_err(|error| error.to_string())
@@ -189,7 +207,7 @@ pub(super) fn execute_tool_call(
         )
         .map_err(|error| error.to_string())
         .and_then(|op| op.resolve_ids())
-        .and_then(|op| crate::events::control::execute(&mut app.world, op))
+        .and_then(|op| crate::events::control::author(app, op))
         {
             Ok(state) => state.to_string(),
             Err(error) => format!("Error: {error}"),
@@ -544,9 +562,15 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
         "set_parent" => {
             let args: SetParentArgs = serde_json::from_value(tool_call.arguments.clone())
                 .map_err(|e| format!("Invalid set_parent args: {e}"))?;
+            let resolve = |value: &str| {
+                value
+                    .parse::<u64>()
+                    .map(EntityId::from_raw)
+                    .map_err(|_| "Expected a full decimal generational entity ID string".to_owned())
+            };
             Ok(SceneOp::SetParent {
-                entity: EntityId::from_raw(args.entity_id),
-                parent: args.parent_id.map(EntityId::from_raw),
+                entity: resolve(&args.entity_id)?,
+                parent: args.parent_id.as_deref().map(resolve).transpose()?,
             })
         }
         _ => Err(format!("Unknown tool: {}", tool_call.name)),
@@ -1316,5 +1340,24 @@ mod tests {
         let result = tool_call_to_scene_op(&tc);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown tool"));
+    }
+    #[test]
+    fn test_co_creator_reparents_prefab_node_ids_without_losing_generational_bits() {
+        let call = ToolCall {
+            id: "parent".into(),
+            name: "set_parent".into(),
+            arguments: serde_json::json!({"entity_id":u64::MAX.to_string(),"parent_id":(u64::MAX-1).to_string()}),
+        };
+        assert!(
+            matches!(tool_call_to_scene_op(&call).unwrap(), SceneOp::SetParent { entity, parent:Some(parent) } if entity.id() == u64::MAX && parent.id() == u64::MAX-1)
+        );
+        let mut detach = call.clone();
+        detach.arguments["parent_id"] = serde_json::Value::Null;
+        assert!(matches!(
+            tool_call_to_scene_op(&detach).unwrap(),
+            SceneOp::SetParent { parent: None, .. }
+        ));
+        detach.arguments["entity_id"] = serde_json::json!(u64::MAX);
+        assert!(tool_call_to_scene_op(&detach).is_err());
     }
 }

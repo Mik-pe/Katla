@@ -94,6 +94,7 @@ enum State {
     PressRemoveComponent,
     ReleaseRemoveComponent,
     CheckRemoveComponent,
+    PrefabWalkthrough,
     Done,
 }
 
@@ -180,7 +181,8 @@ impl InteractionTestRunner {
     fn ui_press(app: &mut Application, pos: (f32, f32)) {
         let input = app.ui_context.input_mut();
         input.set_mouse_pos(Vec2::new(pos.0, pos.1));
-        input.set_mouse_button(katla_ui::mouse_button::LEFT, true);
+        let time = input.last_click_time[katla_ui::mouse_button::LEFT] + 0.1;
+        input.set_mouse_button_with_time(katla_ui::mouse_button::LEFT, true, time);
     }
 
     /// Synthetic UI release on the following frame.
@@ -228,7 +230,9 @@ impl InteractionTestRunner {
 
     #[cfg(feature = "editor")]
     fn click_widget(app: &mut Application, kind: &str, label: &str, remove: bool) {
-        use katla_ui::declarative::widgets::{button::Button, section::Section, text::Text};
+        use katla_ui::declarative::widgets::{
+            button::Button, image_button::ImageButton, section::Section, text::Text,
+        };
         let tree = app.editor.editor_ui.view_tree();
         let position = tree.iter_nodes().find_map(|(id, node)| {
             let any = node.widget.as_any();
@@ -239,6 +243,12 @@ impl InteractionTestRunner {
                 "section" => any
                     .downcast_ref::<Section>()
                     .is_some_and(|w| w.title == label),
+                "icon" => any
+                    .downcast_ref::<ImageButton>()
+                    .is_some_and(|w| w.tooltip.as_deref() == Some(label)),
+                "prefix" => any
+                    .downcast_ref::<Text>()
+                    .is_some_and(|w| w.content.starts_with(label)),
                 "text" => any
                     .downcast_ref::<Text>()
                     .is_some_and(|w| w.content == label),
@@ -263,6 +273,7 @@ impl InteractionTestRunner {
             ))
         });
         if let Some(position) = position {
+            log::info!("Interaction click {kind} {label} at {position:?}");
             Self::ui_press(app, position);
         } else {
             log::error!("Interaction target missing: {kind} {label}");
@@ -483,6 +494,15 @@ impl InteractionTestRunner {
                 Self::ui_release(app);
                 self.state = State::CheckRemoveComponent;
             }
+            State::PrefabWalkthrough => match frame {
+                150 => Self::ui_press(app, (72.0, 540.0)),
+                151 | 155 | 157 | 161 | 163 | 169 | 175 => Self::ui_release(app),
+                154 | 156 => Self::click_widget(app, "text", "prefabs", false),
+                160 | 162 => Self::click_widget(app, "prefix", "chair.kat", false),
+                168 => Self::click_widget(app, "icon", "Play", false),
+                174 => Self::click_widget(app, "icon", "Stop", false),
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -676,10 +696,54 @@ impl InteractionTestRunner {
                     ),
                 );
                 self.screenshots_taken += 1;
-                self.state = State::Done;
+                self.state = State::PrefabWalkthrough;
                 Some(self.screenshot_path("17_component_removed"))
             }
-            State::Done if frame == 157 => {
+            State::PrefabWalkthrough if frame == 166 => {
+                let selected = app.editor.editor_ui.selected_entity;
+                let name = Self::selected_name(app);
+                let size =
+                    selected.and_then(|id| crate::systems::subtree_render_bounds(&app.world, id));
+                let children = selected.map(|root| {
+                    app.world
+                        .query_ref::<&crate::components::Parent>()
+                        .filter(|(_, p)| p.parent == root)
+                        .count()
+                });
+                self.record(
+                    "double_click_prefab_creates_complete_selected_subtree",
+                    name.as_deref() == Some("Chair") && children == Some(2) && size.is_some(),
+                    format!("selected={name:?}, children={children:?}, bounds={size:?}"),
+                );
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("18_prefab_instantiated"))
+            }
+            State::PrefabWalkthrough if frame == 172 => {
+                self.record(
+                    "play_button_starts_prefab_preview",
+                    app.play_mode == crate::application::game_state::PlayMode::Playing,
+                    format!("mode={:?}", app.play_mode),
+                );
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("19_prefab_play"))
+            }
+            State::PrefabWalkthrough if frame == 178 => {
+                let roots = app
+                    .world
+                    .query_ref::<&NameComponent>()
+                    .filter(|(_, name)| name.name == "Chair")
+                    .count();
+                self.record(
+                    "stop_button_restores_authored_prefab",
+                    app.play_mode == crate::application::game_state::PlayMode::Editing
+                        && roots == 1,
+                    format!("mode={:?}, roots={roots}", app.play_mode),
+                );
+                self.state = State::Done;
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("20_prefab_stopped"))
+            }
+            State::Done if frame >= 179 => {
                 let passed = self.checks.iter().filter(|c| c.passed).count();
                 info!(
                     "Interaction test summary: {}/{} checks passed",

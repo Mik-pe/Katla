@@ -124,7 +124,7 @@ impl Widget for ImageButton {
         if self.enabled { self.on_click } else { None }
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 }

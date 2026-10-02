@@ -11,6 +11,10 @@ pub enum ScriptCommand {
     SetTransform(EntityId, Transform),
     /// Set only the position of an entity.
     SetPosition(EntityId, Vec3),
+    /// Queue a burst on a particle emitter through the app bridge.
+    BurstParticles { entity: EntityId, count: u32 },
+    /// Toggle an existing emitter through the app bridge.
+    SetParticlesActive { entity: EntityId, active: bool },
     /// Spawn a new entity.
     /// The `return_index` is used to match the spawned entity with the result
     /// when querying via `get_all_with` or similar.

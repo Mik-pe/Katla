@@ -99,6 +99,16 @@ jobs:
           CARGO_INCREMENTAL: "0"
           RUST_LOG: "info"
 
+      - name: Verify agent prefab workflow in the native Vulkan editor
+        run: |
+          cargo build -p game --locked
+          python3 scripts/validate_prefabs.py --output target/prefab-agent-proof \
+            --stdio-command target/debug/katla --headless --frames 2000
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_INCREMENTAL: "0"
+          RUST_LOG: "info"
+
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --all-targets --locked --quiet -- -D warnings
 
@@ -193,6 +203,17 @@ jobs:
         run: |
           cargo test -p katla_app --lib document_tests --all-features --locked -- --ignored --test-threads=1
           cargo test -p katla_app --lib prefab::native_tests --all-features --locked -- --ignored --test-threads=1
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
+          RUST_LOG: "info"
+
+      - name: Verify agent prefab workflow in the native Metal editor
+        if: steps.metal4.outputs.supported == 'true'
+        run: |
+          cargo build -p game --locked
+          python3 scripts/validate_prefabs.py --output target/prefab-agent-proof \
+            --stdio-command target/debug/katla --headless --frames 2000
         env:
           MTL_DEBUG_LAYER: "1"
           METAL_DEVICE_WRAPPER_TYPE: "1"

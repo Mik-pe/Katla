@@ -44,6 +44,8 @@ pub enum McpOpKind {
     SearchAssets(crate::tools::search::AssetSearch),
     Material(crate::material::MaterialOp),
     Prefab(crate::prefab::PrefabOp),
+    Behavior(crate::behavior::BehaviorOp),
+    Simulation(crate::behavior::SimulationOp),
     Animation(crate::animation::AnimationOp),
     Trigger(crate::events::TriggerOp),
     Editor(EditorViewOp),
@@ -77,6 +79,8 @@ pub enum EditorViewOp {
     },
     /// Undo the last agent scene operation using the editor's existing agent history.
     Undo,
+    /// Redo the last undone agent operation.
+    Redo,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +88,8 @@ pub enum McpOp {
     SearchAssets(crate::tools::search::AssetSearch),
     Material(crate::material::MaterialOp),
     Prefab(crate::prefab::PrefabOp),
+    Behavior(crate::behavior::BehaviorOp),
+    Simulation(crate::behavior::SimulationOp),
     Animation(crate::animation::AnimationOp),
     Trigger(crate::events::TriggerOp),
     Editor(EditorViewOp),
@@ -163,6 +169,8 @@ impl McpOp {
             Self::SearchAssets(op) => McpOpKind::SearchAssets(op),
             Self::Material(op) => McpOpKind::Material(op),
             Self::Prefab(op) => McpOpKind::Prefab(op),
+            Self::Behavior(op) => McpOpKind::Behavior(op),
+            Self::Simulation(op) => McpOpKind::Simulation(op),
             Self::Animation(op) => McpOpKind::Animation(op),
             Self::Trigger(op) => McpOpKind::Trigger(op),
             Self::Editor(op) => McpOpKind::Editor(op),
@@ -545,8 +553,40 @@ struct PrefabParams {
     op: crate::prefab::PrefabOp,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct BehaviorParams {
+    #[serde(flatten)]
+    op: crate::behavior::BehaviorOp,
+}
+#[derive(Deserialize, JsonSchema)]
+struct SimulationParams {
+    #[serde(flatten)]
+    op: crate::behavior::SimulationOp,
+}
+
 #[rmcp::tool_router]
 impl KatlaMcpServer {
+    #[rmcp::tool(
+        name = "behavior",
+        description = "Attach validated Luau scripts, configure particles and preview bursts. describe gives particle JSON and a script example. inspect returns attachments. set_script uses resource-relative scripts/name.luau, set_particles a full descriptor; null detaches. Authored changes are undoable in edit mode. IDs are decimal strings."
+    )]
+    async fn behavior(
+        &self,
+        Parameters(params): Parameters<BehaviorParams>,
+    ) -> Json<McpToolResult> {
+        self.forward_op(McpOp::Behavior(params.op)).await
+    }
+    #[rmcp::tool(
+        name = "simulation",
+        description = "Inspect or explicitly play/pause/resume/stop the editor preview. Stop restores authored state and replaces runtime IDs; query again afterward. Use play to verify scripts and triggers, stop before saving or prefab capture."
+    )]
+    async fn simulation(
+        &self,
+        Parameters(params): Parameters<SimulationParams>,
+    ) -> Json<McpToolResult> {
+        self.forward_op(McpOp::Simulation(params.op)).await
+    }
+
     #[rmcp::tool(
         name = "prefab",
         description = "Author .katmesh and .katprefab assets. describe returns JSON examples; validate/write checks complete recipes; instantiate appends a preview; capture saves a live subtree; remove deletes a preview. Read/edit named parts, then observe editor_view for the rendered result. IDs are decimal strings; paths are project-relative."
@@ -579,7 +619,7 @@ impl KatlaMcpServer {
 
     #[rmcp::tool(
         name = "trigger",
-        description = "Create a sensor box, replace its enter/exit rules, or inspect rules and overlaps. Actions play named animations or emit Luau events. Entity IDs are decimal generational strings from scene context; use other to act on the visitor. Rules run in play mode."
+        description = "Create a sensor box, replace its enter/exit rules, or inspect rules and overlaps. Actions play named animations, burst/toggle particle emitters, or emit Luau events. Entity IDs are decimal generational strings from scene context; use other to act on the visitor. Rules run in play mode."
     )]
     async fn trigger(&self, Parameters(op): Parameters<TriggerParams>) -> Json<McpToolResult> {
         let op = match op.op.resolve_ids() {
@@ -608,7 +648,7 @@ impl KatlaMcpServer {
 
     #[rmcp::tool(
         name = "editor_view",
-        description = "Read the shared editor viewport or move/focus/select once, then read back a fresh committed frame. Returns PNG plus camera, optional selection, projected frustum candidates, and GPU-picked center/pointer. Frustum intersection is NOT occlusion visibility or room membership. Do not edit ambiguous candidates without clarification. entity_id is the stable generational string from context; stale IDs fail. Camera movement is ephemeral; manual input takes over immediately."
+        description = "Read the shared editor viewport or move/focus/select once, then read back a fresh committed frame. Returns PNG plus camera, optional selection, projected frustum candidates, and GPU-picked center/pointer. Frustum intersection is NOT occlusion visibility or room membership. Do not edit ambiguous candidates without clarification. entity_id is the stable generational string from context; stale IDs fail. Undo/redo use agent history. Observe is available during Play/Pause; editing the view/history requires edit mode. Camera movement is ephemeral; manual input takes over immediately."
     )]
     async fn editor_view(
         &self,
@@ -917,7 +957,7 @@ impl ServerHandler for KatlaMcpServer {
             .enable_tools()
             .build();
         info
-            .with_instructions("Katla scene authoring: first editor_view observe and query_entities to understand the scene. Search assets with search_assets (model extensions glb/gltf); use returned paths with spawn_model. Spawn named primitives, group them with set_parent, and inspect material presets before applying PBR factors to entity_ids. Y is up, units are meters, rotations are degrees. IDs are decimal generational strings. Observe after edits, editor_view undo reverses agent edits, save_scene persists authored changes.")
+            .with_instructions("Katla scene authoring: first editor_view observe and query_entities to understand the scene. Search assets with search_assets (model extensions glb/gltf); use returned paths with spawn_model. Spawn named primitives, group them with set_parent, and inspect material presets before applying PBR factors to entity_ids. Y is up, units are meters, rotations are degrees. IDs are decimal generational strings. For reusable assets, prefab describe/read/validate/write builds .katmesh/.katprefab, instantiate returns named nodes; search_assets project_paths are prefab tool paths. behavior describe/set_script/set_particles connects validated Luau and particle descriptors. trigger rules link animations, particle bursts/toggles and script events. simulation play/pause/stop controls preview; stop restores authored state and replaces IDs, so query again before capture/save. Observe after edits, editor_view undo reverses agent edits, save_scene persists authored changes.")
             .with_server_info(Implementation::new("katla-mcp", "0.1.0"))
     }
 }
@@ -997,7 +1037,16 @@ mod tests {
     #[test]
     fn test_editor_view_tool_has_object_input_schema() {
         let tools = KatlaMcpServer::tool_router().list_all();
-        for name in ["editor_view", "animation", "trigger"] {
+        for name in [
+            "editor_view",
+            "animation",
+            "trigger",
+            "prefab",
+            "material",
+            "search_assets",
+            "behavior",
+            "simulation",
+        ] {
             let tool = tools.iter().find(|t| t.name == name).unwrap();
             assert_eq!(
                 tool.input_schema.get("type"),

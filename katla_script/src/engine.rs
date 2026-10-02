@@ -88,6 +88,7 @@ pub(crate) struct ScriptInstance {
     pub generation: u32,
     /// Number of consecutive errors from this instance.
     pub(crate) error_count: u32,
+    pub(crate) spawn_called: bool,
 }
 
 /// Extracted hook function references from a script.
@@ -439,34 +440,35 @@ impl ScriptEngine {
 
         let input_path = Path::new(path);
 
-        // If it's already an absolute path that exists, check it's in scripts_dir
-        if input_path.is_absolute() {
-            if input_path.exists() {
-                if let Some(dir) = &self.scripts_dir {
-                    let dir_path = Path::new(dir);
-                    if !input_path.starts_with(dir_path) {
-                        return Err(ScriptError::PathOutsideScriptsDir {
-                            path: path.to_string(),
-                            scripts_dir: dir.clone(),
-                        });
-                    }
-                }
-                return Ok(input_path.to_path_buf());
-            }
-            // Absolute path doesn't exist, will fail later
-            return Ok(input_path.to_path_buf());
-        }
-
-        // Relative path: resolve relative to scripts_dir or default
-        let full_path = if let Some(dir) = &self.scripts_dir {
-            Path::new(dir).join(path).with_extension("luau")
+        let full_path = if input_path.is_absolute() {
+            input_path.to_path_buf()
         } else {
-            Path::new("resources/scripts")
+            Path::new(self.scripts_dir.as_deref().unwrap_or("resources/scripts"))
                 .join(path)
                 .with_extension("luau")
         };
-
-        Ok(full_path)
+        let resolved = full_path
+            .canonicalize()
+            .map_err(|error| ScriptError::LoadFailed {
+                path: full_path.display().to_string(),
+                source: mlua::Error::external(error),
+            })?;
+        if let Some(directory) = &self.scripts_dir {
+            let directory =
+                Path::new(directory)
+                    .canonicalize()
+                    .map_err(|error| ScriptError::LoadFailed {
+                        path: directory.clone(),
+                        source: mlua::Error::external(error),
+                    })?;
+            if !resolved.starts_with(&directory) {
+                return Err(ScriptError::PathOutsideScriptsDir {
+                    path: resolved.display().to_string(),
+                    scripts_dir: directory.display().to_string(),
+                });
+            }
+        }
+        Ok(resolved)
     }
 
     pub fn reset_instruction_counter(&self) {
@@ -616,6 +618,7 @@ impl ScriptEngine {
             hooks,
             generation: handle.generation,
             error_count: 0,
+            spawn_called: false,
         };
 
         if slot < self.instances.len() {

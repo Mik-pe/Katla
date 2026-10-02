@@ -183,6 +183,8 @@ impl Application {
             }
         }
 
+        crate::particle_control::process_script_commands(&mut self.world);
+
         // Process script raycast commands against PhysicsWorld
         {
             let raycast_cmds: Vec<_> = self

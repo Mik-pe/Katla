@@ -271,6 +271,31 @@ impl UserData for ScriptWorldProxy {
             },
         );
 
+        methods.add_method_mut(
+            "burst_particles",
+            |_, this, (entity, count): (LuaEntityId, u32)| {
+                if count == 0 || count > 100_000 {
+                    return Err(mlua::Error::runtime(
+                        "Particle burst requires 1..100000 particles",
+                    ));
+                }
+                this.commands.push(ScriptCommand::BurstParticles {
+                    entity: entity.0,
+                    count,
+                });
+                Ok(())
+            },
+        );
+        methods.add_method_mut(
+            "set_particles_active",
+            |_, this, (entity, active): (LuaEntityId, bool)| {
+                this.commands.push(ScriptCommand::SetParticlesActive {
+                    entity: entity.0,
+                    active,
+                });
+                Ok(())
+            },
+        );
         methods.add_method_mut("spawn_entity", |_, this, ()| {
             let return_index = this.commands.len();
             this.commands

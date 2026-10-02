@@ -497,6 +497,7 @@ impl EditorUI {
             params.thumbnail_texture_handles,
             viewport_bounds,
             ab_actions,
+            ui.input().last_click_time[mouse_button::LEFT],
         );
         self.pending_actions.extend(asset_actions);
         let remaining = process_asset_actions(

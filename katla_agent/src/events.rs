@@ -38,6 +38,13 @@ pub enum EventAction<T = u64> {
         #[serde(default = "default_speed")]
         speed: f32,
     },
+    /// Queue a bounded burst on a particle emitter.
+    BurstParticles { target: EventTarget<T>, count: u32 },
+    /// Enable or disable an existing particle emitter.
+    SetParticlesActive {
+        target: EventTarget<T>,
+        active: bool,
+    },
     /// Delivers a named Luau event with trigger_entity and other_entity fields.
     Emit { name: String },
 }
@@ -55,6 +62,19 @@ pub struct TriggerRule<T = u64> {
     pub actions: Vec<EventAction<T>>,
 }
 
+fn map_target<T, U, E>(
+    target: &EventTarget<T>,
+    resolve: &mut impl FnMut(&T) -> Result<U, E>,
+) -> Result<EventTarget<U>, E> {
+    Ok(match target {
+        EventTarget::Trigger => EventTarget::Trigger,
+        EventTarget::Other => EventTarget::Other,
+        EventTarget::Entity { entity } => EventTarget::Entity {
+            entity: resolve(entity)?,
+        },
+    })
+}
+
 impl<T> TriggerRule<T> {
     /// Map entity references between document keys, transport values and live IDs.
     pub fn map_entities<U, E>(
@@ -66,6 +86,16 @@ impl<T> TriggerRule<T> {
         for action in &self.actions {
             actions.push(match action {
                 EventAction::Emit { name } => EventAction::Emit { name: name.clone() },
+                EventAction::BurstParticles { target, count } => EventAction::BurstParticles {
+                    target: map_target(target, &mut resolve)?,
+                    count: *count,
+                },
+                EventAction::SetParticlesActive { target, active } => {
+                    EventAction::SetParticlesActive {
+                        target: map_target(target, &mut resolve)?,
+                        active: *active,
+                    }
+                }
                 EventAction::PlayAnimation {
                     target,
                     clip,
@@ -73,13 +103,7 @@ impl<T> TriggerRule<T> {
                     looping,
                     speed,
                 } => {
-                    let target = match target {
-                        EventTarget::Trigger => EventTarget::Trigger,
-                        EventTarget::Other => EventTarget::Other,
-                        EventTarget::Entity { entity } => EventTarget::Entity {
-                            entity: resolve(entity)?,
-                        },
-                    };
+                    let target = map_target(target, &mut resolve)?;
                     EventAction::PlayAnimation {
                         target,
                         clip: clip.clone(),
@@ -105,6 +129,9 @@ impl<T> TriggerRule<T> {
         }
         for action in &self.actions {
             match action {
+                EventAction::BurstParticles { count, .. } if *count == 0 || *count > 100_000 => {
+                    return Err("Particle burst requires 1..100000 particles".into());
+                }
                 EventAction::Emit { name } if name.trim().is_empty() || name.len() > 128 => {
                     return Err("Event name requires 1..128 bytes".into());
                 }
@@ -208,7 +235,8 @@ impl TriggerOp {
         let action = serde_json::json!({
             "type":"object","additionalProperties":false,"required":["action"],
             "properties": {
-                "action":{"type":"string","enum":["play_animation","emit"]},
+                "action":{"type":"string","enum":["play_animation","emit","burst_particles","set_particles_active"]},
+                "count":{"type":"integer","minimum":1,"maximum":100000}, "active":{"type":"boolean"},
                 "target":target, "clip":{"type":"string"},
                 "fade_seconds":{"type":"number","minimum":0,"default":0.25},
                 "looping":{"type":"boolean","default":true},

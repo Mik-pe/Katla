@@ -15,6 +15,7 @@ pub use engine::ScriptVarValue;
 pub use error::ScriptError;
 pub use event_bus::EventBus;
 pub use system::PendingAudioCommands;
+pub use system::PendingParticleCommands;
 pub use system::PendingPhysicsEvents;
 pub use system::PendingPhysicsForceCommands;
 pub use system::PendingRaycastCommands;

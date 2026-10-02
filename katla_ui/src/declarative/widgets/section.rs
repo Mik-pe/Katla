@@ -166,7 +166,7 @@ impl Widget for Section {
         state.get(self.expanded_id).unwrap_or_default()
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 }

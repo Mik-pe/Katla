@@ -275,8 +275,8 @@ impl Widget for Modal {
         state.get(self.open_id).unwrap_or_default()
     }
 
-    fn interactive(&self) -> bool {
-        true
+    fn interactive(&self, state: &StateArena) -> bool {
+        state.get(self.open_id).unwrap_or_default()
     }
 
     /// An open modal receives input globally so Escape closes it and an

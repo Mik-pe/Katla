@@ -61,6 +61,16 @@ pub(crate) fn dispatch(world: &mut World, event: TriggerEvent) {
                     speed,
                 )
             }
+            EventAction::BurstParticles { target, count } => {
+                crate::particle_control::burst(world, recipient(target, trigger, other), count)
+            }
+            EventAction::SetParticlesActive { target, active } => {
+                crate::particle_control::set_active(
+                    world,
+                    recipient(target, trigger, other),
+                    active,
+                )
+            }
             EventAction::Emit { name } => match world.get_resource_mut::<PendingPhysicsEvents>() {
                 Some(pending) => {
                     pending.0.push(PhysicsCollisionEvent {
@@ -96,4 +106,12 @@ pub(crate) fn reset(world: &mut World) {
     if let Some(pending) = world.get_resource_mut::<PendingPhysicsEvents>() {
         pending.0.clear();
     }
+}
+
+fn recipient(target: EventTarget, trigger: u64, other: u64) -> EntityId {
+    EntityId::from_raw(match target {
+        EventTarget::Trigger => trigger,
+        EventTarget::Other => other,
+        EventTarget::Entity { entity } => entity,
+    })
 }

@@ -188,6 +188,8 @@ impl Application {
                 .map(|r| std::mem::take(&mut r.0));
         }
 
+        crate::particle_control::process_script_commands(&mut self.world);
+
         // Run per-frame update hook
         if let Some(ref mut hook) = self.on_update {
             hook(&mut self.world, dt);

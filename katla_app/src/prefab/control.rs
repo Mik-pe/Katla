@@ -14,6 +14,14 @@ use std::path::{Path, PathBuf};
 
 /// Execute an AI asset operation, returning structured feedback for the next edit.
 pub fn execute(app: &mut Application, op: PrefabOp) -> Result<Value, String> {
+    #[cfg(feature = "editor")]
+    if matches!(
+        &op,
+        PrefabOp::Instantiate { .. } | PrefabOp::Capture { .. } | PrefabOp::Remove { .. }
+    ) && app.play_mode != crate::application::game_state::PlayMode::Editing
+    {
+        return Err("Stop simulation before editing or capturing prefab instances".into());
+    }
     match op {
         PrefabOp::Describe => describe(),
         PrefabOp::Read { path } => {
@@ -57,8 +65,14 @@ pub fn execute(app: &mut Application, op: PrefabOp) -> Result<Value, String> {
                     scale,
                 },
             )?;
+            let nodes: Vec<_> = instance.entities.iter().map(|id| json!({
+                "entity_id":id.id().to_string(),
+                "name":app.world.get_component::<crate::components::NameComponent>(*id).map(|n| &n.name),
+                "parent_id":app.world.get_component::<crate::components::Parent>(*id).map(|p| p.parent.id().to_string()),
+                "scene_key":app.world.get_component::<crate::scene::identity::SceneIdentity>(*id).map(|key| key.id.0)
+            })).collect();
             Ok(
-                json!({"root_entity":instance.root.id().to_string(),"entities":instance.entities.iter().map(|entity| entity.id().to_string()).collect::<Vec<_>>(),"path":path}),
+                json!({"root_entity":instance.root.id().to_string(),"entities":instance.entities.iter().map(|entity| entity.id().to_string()).collect::<Vec<_>>(),"nodes":nodes,"path":path}),
             )
         }
         PrefabOp::Capture { path, root_entity } => {
@@ -181,7 +195,7 @@ pub(super) fn describe() -> Result<Value, String> {
         "geometry_kinds":["cube","sphere","plane","cylinder","cone","torus","triangles"],
         "triangles_fields":{"positions":"array of XYZ positions","indices":"CCW index triples","normals":"optional per-position XYZ normals","uvs":"optional per-position UV pairs"},
         "limits":{"parts":1024,"vertices":1_000_000,"indices":6_000_000,"file_bytes":super::MAX_ASSET_BYTES},
-        "workflow":"Read/describe; edit named parts in JSON; validate; write .katmesh first then .katprefab; instantiate; inspect using editor_view; remove old preview before instantiating a revision. Capture exports an edited subtree. Writing assets does not mutate live instances; re-instantiation or scene reload reads the new assets.",
+        "workflow":"Read/describe; edit named parts in JSON; validate; write .katmesh first then .katprefab; instantiate; inspect using editor_view; instantiate a revision successfully before removing the old preview. Capture exports an edited subtree. Writing assets does not mutate live instances; re-instantiation or scene reload reads the new assets.",
         "transforms":"meters, right-handed Y up, rotation quaternion XYZW, root identity; placement supplied when instantiating",
         "materials":"one PBR material per mesh entity; use separate prefab children for different materials or independent gameplay parts"
     }))

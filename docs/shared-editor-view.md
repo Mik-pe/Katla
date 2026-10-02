@@ -15,12 +15,13 @@ to stderr, and stdout belongs to the protocol.
 - `set_camera`: world `position` and `target` arrays.
 - `select`: a generational `entity_id` string, or null to clear selection.
 - `focus`: `entity_id` and optional `select` (default false).
-- `undo`: undo the last agent scene operation.
+- `undo` / `redo`: undo or redo the last agent scene operation.
 
 Every successful action returns metadata and a PNG of the next committed editor
 viewport. Camera changes are immediate and ephemeral: no game camera or scene
 file is changed. Manual navigation can immediately take over. Focus animation
-also cancels on manual navigation. Tools require edit mode. A stopped render loop
+also cancels on manual navigation. `observe` also works during Play/Pause; camera, selection, focus and history
+changes require edit mode. Use `simulation` for explicit preview transitions. A stopped render loop
 fails requests after 15 seconds rather than waiting indefinitely.
 
 The image and object-ID samples are queued from the same committed submission,

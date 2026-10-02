@@ -123,7 +123,7 @@ impl Widget for RadioButton {
         true
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 }

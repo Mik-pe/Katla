@@ -53,7 +53,7 @@ fn hit_test_recursive(
         }
     }
 
-    if node.widget.interactive() {
+    if node.widget.interactive(tree.state_arena()) {
         Some(HitResult { id: node_id })
     } else {
         None
@@ -549,7 +549,7 @@ mod tests {
             _info: &DrawInfo,
         ) {
         }
-        fn interactive(&self) -> bool {
+        fn interactive(&self, _state: &StateArena) -> bool {
             true
         }
         fn take_children(&mut self) -> ChildWidgets {
@@ -867,5 +867,59 @@ mod tests {
             value > 95.0,
             "dragging beyond right edge should clamp to max, got {value}"
         );
+    }
+}
+
+#[cfg(test)]
+mod popup_hit_tests {
+    use super::*;
+    use crate::declarative::{
+        Alignment, Build, BuildContext, Widget, WidgetBox, button, context_entry, context_menu,
+        zstack,
+    };
+
+    struct PopupOverButton;
+    impl Build for PopupOverButton {
+        fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
+            let open = ctx.state(false);
+            zstack([
+                (Alignment::TopLeading, button("Underlying asset").boxed()),
+                (
+                    Alignment::TopLeading,
+                    context_menu(vec![context_entry("Open")], open).boxed(),
+                ),
+            ])
+            .boxed()
+        }
+    }
+
+    #[test]
+    fn test_closed_context_menu_passes_hits_to_underlying_asset_and_open_menu_owns_hits() {
+        use crate::declarative::widgets::{button::Button, context_menu::ContextMenu};
+        let mut tree = ViewTree::new();
+        tree.build_from(&PopupOverButton);
+        let button_id = tree
+            .iter_nodes()
+            .find(|(_, n)| n.widget.as_any().is::<Button>())
+            .unwrap()
+            .0;
+        let (menu_id, open_id) = tree
+            .iter_nodes()
+            .find_map(|(id, n)| {
+                n.widget
+                    .as_any()
+                    .downcast_ref::<ContextMenu>()
+                    .map(|menu| (id, menu.open_id))
+            })
+            .unwrap();
+        // Both widgets occupy the same visible cell; the closed popup remains mounted.
+        let bounds = Rect2D::from_origin_size(Vec2::new(0.0, 0.0), Vec2::new(200.0, 100.0));
+        let bounds_map = tree.iter_nodes().map(|(id, _)| (id, bounds)).collect();
+        let point = Vec2::new(160.0, 40.0);
+        assert_eq!(hit_test(&tree, point, &bounds_map).unwrap().id, button_id);
+        tree.state_arena_mut().set(open_id, true);
+        assert_eq!(hit_test(&tree, point, &bounds_map).unwrap().id, menu_id);
+        tree.state_arena_mut().set(open_id, false);
+        assert_eq!(hit_test(&tree, point, &bounds_map).unwrap().id, button_id);
     }
 }

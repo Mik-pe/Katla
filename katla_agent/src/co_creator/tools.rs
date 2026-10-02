@@ -6,6 +6,16 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
 
     vec![
         ToolDefinition {
+            name: "behavior".into(),
+            description: "Attach or detach a validated Luau script and configure particles on a live entity. describe supplies particle JSON and script example; inspect returns attachments. set_script path is resource-relative; set_particles takes a full descriptor. Null detaches. Authoring is undoable in edit mode. burst explicitly previews 1..100000 particles; set_active controls an existing emitter.".into(),
+            parameters: crate::behavior::BehaviorOp::tool_schema(),
+        },
+        ToolDefinition {
+            name: "simulation".into(),
+            description: "Inspect or explicitly play, pause, resume and stop the editor preview. Stop restores authored scene and allocates fresh runtime IDs; query again before editing. Use to verify scripts and trigger behavior. Save/capture authoring in edit mode.".into(),
+            parameters: crate::behavior::SimulationOp::tool_schema(),
+        },
+        ToolDefinition {
             name: "prefab".into(),
             description: "Create reusable meshes and prefabs. Start with describe for JSON examples and geometry kinds, then validate/write assets, instantiate a preview and inspect it with editor_view. Read/edit named parts to iterate; capture exports an edited subtree; remove deletes a preview subtree. Paths are project-relative .katmesh/.katprefab. root_entity is a full decimal entity ID string. One mesh is baked to one material draw and shared across identical instances.".into(),
             parameters: crate::prefab::PrefabOp::tool_schema(),
@@ -34,7 +44,7 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "trigger".into(),
-            description: "Create a sensor box with enter/exit rules, set_rules on an existing trigger, or inspect its rules and overlaps. create_box requires name, position, half_extents and rules. set_rules requires entity_id and rules. Actions: play_animation (target, clip, optional fade_seconds/looping/speed) or emit (name). target kinds: trigger, other, entity (with entity ID). Optional other_entity filters visitors. once fires once per play session. Runs only in play mode.".into(),
+            description: "Create a sensor box with enter/exit rules, set_rules on an existing trigger, or inspect its rules and overlaps. create_box requires name, position, half_extents and rules. set_rules requires entity_id and rules. Actions: play_animation (target, clip, optional fade_seconds/looping/speed), burst_particles (target, count), set_particles_active (target, active), or emit (name). target kinds: trigger, other, entity (with entity ID). Optional other_entity filters visitors. once fires once per play session. Runs only in play mode.".into(),
             parameters: crate::events::TriggerOp::tool_schema(),
         },
         ToolDefinition {
@@ -218,8 +228,8 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
             parameters: json!({
                 "type": "object",
                 "properties": {
-                    "entity_id": { "type": "integer", "description": "The entity to reparent" },
-                    "parent_id": { "type": "integer", "description": "New parent entity ID, or null to clear" }
+                    "entity_id": { "type": "string", "description": "Full decimal generational entity ID" },
+                    "parent_id": { "type": ["string", "null"], "description": "New parent ID string, or null to clear" }
                 },
                 "required": ["entity_id"]
             }),

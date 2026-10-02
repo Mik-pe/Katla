@@ -697,7 +697,7 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
         }
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         false
     }
 
@@ -1262,7 +1262,7 @@ mod tests {
     fn test_dockspace_interactive() {
         let (_, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
-        assert!(!ds.interactive());
+        assert!(!ds.interactive(&StateArena::new()));
         assert!(ds.wants_global_input(&StateArena::new()));
     }
 

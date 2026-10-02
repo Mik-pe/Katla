@@ -118,7 +118,7 @@ impl Widget for Button {
         self.on_click
     }
 
-    fn interactive(&self) -> bool {
+    fn interactive(&self, _state: &StateArena) -> bool {
         true
     }
 }
