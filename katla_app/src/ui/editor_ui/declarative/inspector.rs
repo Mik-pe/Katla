@@ -16,10 +16,9 @@ use crate::ui::editor_ui::types::{ColliderShapeType, EntityInfo, InspectorEditSt
 /// for state-slot reservation. The list must stay stable: sibling views share
 /// this view's positional state-slot counter, so reordering or conditionally
 /// reserving slots would shift every later view's slots frame-to-frame.
-const SECTION_TYPES: [&str; 17] = [
+const SECTION_TYPES: [&str; 16] = [
     "Transform",
     "NameComponent",
-    "Drawable",
     "PointLight",
     "DirectionalLight",
     "PerspectiveComponent",
@@ -56,7 +55,6 @@ fn component_display_name(type_name: &str) -> &'static str {
         "PhysicsMaterial" => "Physics Material",
         other => match other {
             "Transform" => "Transform",
-            "Drawable" => "Drawable",
             _ => "Component",
         },
     }
@@ -131,6 +129,17 @@ impl Build for InspectorView {
         // Add-component filter text, reserved unconditionally like the slots
         // above (lives entirely in view state, no env round-trip needed).
         let filter_id: StateId = ctx.state(String::new());
+        let material_controls = super::material::MaterialControls::reserve(ctx);
+        let selected = draw_ctx
+            .entities
+            .iter()
+            .find(|e| draw_ctx.selected_entity == Some(e.id));
+        let material_section = material_controls.build(
+            ctx,
+            selected.and_then(|e| e.material.map(|m| (e.id, m))),
+            &draw_ctx.theme,
+            draw_ctx.bounds.width(),
+        );
 
         let content = if let Some(entity) = draw_ctx
             .entities
@@ -155,6 +164,10 @@ impl Build for InspectorView {
                 .spacing(2.0)
                 .boxed(),
             );
+
+            if let Some(material) = material_section {
+                sections.push(material);
+            }
 
             for (index, type_name) in SECTION_TYPES.iter().enumerate() {
                 if !entity.components.iter().any(|c| c == type_name) {
@@ -338,9 +351,6 @@ impl InspectorView {
             }
             "NameComponent" => {
                 rows.push(property_row("Name", entity.name.clone()).boxed());
-            }
-            "Drawable" => {
-                rows.push(property_row("Type", entity.entity_type.clone()).boxed());
             }
             "PointLight" => {
                 if let Some(light) = &entity.point_light {

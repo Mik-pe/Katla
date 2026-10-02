@@ -96,3 +96,17 @@ Empty undo/redo menus are disabled. Camera speed, snap-to-grid and grid spacing
 persist in preferences. Translation snapping applies only to manipulated axes.
 Missing preference files are normal on first launch; invalid or nonfinite values
 fall back to usable bounds.
+
+Mesh selection exposes a Material section with an sRGB swatch, six named PBR
+starting points, and live RGBA, metallic, roughness and occlusion sliders.
+Each pointer gesture creates one editor undo step; presets create one step each.
+The same validated factors are editable in batches through the `material` agent
+tool. These per-object multipliers preserve model textures and pipeline handles
+and persist in the scene document. See [agent authoring](agent-authoring.md) for
+color semantics, search and room recipes.
+
+`cargo run -- --interaction-test /tmp/katla-interactions` drives real UI
+hit testing and native viewport picking. The walkthrough clicks presets, drags
+material sliders outside their rows, uses Edit menu undo/redo, and collapses the
+material section to add and remove a component. It writes screenshots and a
+`receipt.json`, and exits with an error for failed or incomplete checks.

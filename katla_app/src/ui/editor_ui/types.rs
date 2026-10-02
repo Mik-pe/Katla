@@ -145,6 +145,8 @@ pub struct EntityInfo {
     pub rigid_body: Option<RigidBodyInfo>,
     /// Physics material data (if entity has PhysicsMaterial)
     pub physics_material: Option<PhysicsMaterialInfo>,
+    /// Editable surface material factors in sRGB authoring space.
+    pub material: Option<katla_agent::material::MaterialValues>,
 }
 
 /// Point light inspector data.
@@ -310,6 +312,10 @@ pub enum Panel {
 /// Action requested from the editor UI.
 #[derive(Debug, Clone)]
 pub enum EditorAction {
+    /// Preview a material edit and group a pointer gesture into one undo.
+    EditMaterial(katla_agent::material::MaterialOp),
+    /// Apply a material preset as one undoable edit.
+    MaterialPreset(katla_agent::material::MaterialOp),
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
     /// Save to the current scene path, choosing one for an untitled scene.

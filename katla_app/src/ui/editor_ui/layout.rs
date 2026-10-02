@@ -310,6 +310,8 @@ impl EditorUI {
         self.process_dock_actions();
 
         // ── Process declarative actions ──
+        self.pending_actions
+            .extend(self.view_tree.actions_mut().drain::<EditorAction>());
         let dialog_actions: Vec<super::declarative::scene_dialog::SceneDialogAction> =
             self.view_tree.actions_mut().drain();
         for action in dialog_actions {

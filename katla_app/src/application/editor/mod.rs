@@ -5,6 +5,7 @@ pub mod component_registry;
 pub(crate) mod document;
 #[cfg(feature = "mcp")]
 pub(crate) mod external_chat;
+pub(crate) mod material;
 #[cfg(feature = "mcp")]
 pub(crate) mod mcp;
 mod scene_query;
@@ -967,6 +968,16 @@ pub fn process_editor_actions(app: &mut Application) {
                 app.editor.perform_agent_undo(&mut app.world);
                 process_gpu_cleanup_for_destroyed_entities(app);
             }
+            EditorAction::EditMaterial(op) => {
+                if let Err(error) = material::edit_live(app, op) {
+                    log::warn!("Material edit failed: {error}");
+                }
+            }
+            EditorAction::MaterialPreset(op) => {
+                if let Err(error) = material::execute(app, op, false) {
+                    log::warn!("Material preset failed: {error}");
+                }
+            }
             EditorAction::SelectEntity(entity_id) => {
                 info!("Selected entity {:?}", entity_id);
             }
@@ -1267,6 +1278,10 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
         }
+    }
+
+    if !app.ui_context.input().mouse_down[katla_ui::input::mouse_button::LEFT] {
+        material::finish_drag(app);
     }
 
     // Poll for MCP server requests
@@ -1731,6 +1746,7 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
                 collider_shape: collider_shape.clone(),
                 rigid_body: rigid_body.clone(),
                 physics_material: physics_material.clone(),
+                material: None,
             });
 
             // Recursively add children
@@ -1755,6 +1771,12 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         add_entity_and_children(root_id, None, &entity_data, &children_map, &mut result, 0);
     }
 
+    for entity in &mut result {
+        entity.material = app
+            .world
+            .get_component::<DrawableComponent>(entity.id)
+            .map(material::values);
+    }
     result
 }
 

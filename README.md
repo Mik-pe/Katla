@@ -80,3 +80,7 @@ cargo test -p katla_gfx --test headless_render -- --ignored
 ## Is this vibecoded? 🤖
 **It sure is, I ain't got time to write all of this**  
 This repo has become my playground for vibecoding to see how good or bad it can be.
+
+For live scene construction, asset search and PBR material editing, start with
+the [agent authoring guide](docs/agent-authoring.md). Preview a room recipe with
+`python3 scripts/author_room.py --dry-run`; apply it to a running editor over MCP.

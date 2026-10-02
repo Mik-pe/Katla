@@ -33,3 +33,5 @@ pub(super) use preferences::{PreferencesDrawCtx, PreferencesPanelSync};
 pub(super) use status_bar::StatusBarData;
 pub(super) use toolbar::{ToolbarAction, ToolbarDrawCtx};
 pub(super) use viewport_grid::ViewportGridDrawCtx;
+
+mod material;

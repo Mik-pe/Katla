@@ -100,6 +100,7 @@ pub(crate) enum DumpLayoutTarget {
 /// Editor-only state grouped behind a single cfg gate.
 #[cfg(feature = "editor")]
 pub(crate) struct EditorState {
+    pub(crate) material_drag: Option<editor::material::MaterialCommand>,
     /// UI renderer for converting UI draw lists to GPU format
     pub(crate) ui_renderer: crate::ui::UIRenderer,
     /// Game engine editor UI
@@ -170,6 +171,7 @@ impl EditorState {
             crate::application::editor::component_registry::build_editor_component_registry();
         let available = component_registry.type_names();
         let mut state = Self {
+            material_drag: None,
             ui_renderer,
             editor_ui: {
                 let mut editor = crate::ui::EditorUI::with_theme(theme);
@@ -237,6 +239,7 @@ impl EditorState {
     /// (e.g. scene restore after play mode, new scene).
     pub(crate) fn clear_entity_references(&mut self) {
         self.editor_ui.clear_entity_references();
+        self.material_drag = None;
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.agent_undo_stack.clear();

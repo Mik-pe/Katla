@@ -12,5 +12,6 @@ mod placement_test;
 #[cfg(test)]
 mod templates_test;
 
+pub mod search;
 #[cfg(test)]
 mod tuning_test;

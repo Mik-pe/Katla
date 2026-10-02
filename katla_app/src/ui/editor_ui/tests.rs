@@ -193,6 +193,7 @@ fn test_hierarchy_entity_selection_works() {
             collider_shape: None,
             rigid_body: None,
             physics_material: None,
+            material: None,
         },
         EntityInfo {
             id: entity2,
@@ -216,6 +217,7 @@ fn test_hierarchy_entity_selection_works() {
             collider_shape: None,
             rigid_body: None,
             physics_material: None,
+            material: None,
         },
     ];
 

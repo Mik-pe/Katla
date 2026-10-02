@@ -17,6 +17,7 @@ engineering work belongs in [TODO](../TODO.md).
 | Native/compiled trace mismatch | [Capture and comparison](render_graph_capture.md) | [Vulkan/Metal mapping](vulkan_to_metal_mapping.md) |
 | Editor UI behavior | [Declarative UI](declarative_ui_design.md) | [Visual design and inspiration](editor_ui_design.md) |
 | External agent sharing the editor viewport | [Shared editor view over MCP](shared-editor-view.md) | [Graphics ownership](graphics_core.md) |
+| Agent asset search, room building or material editing | [Authoring guide and examples](agent-authoring.md) | [Scene format](../katla_app/src/scene/README.md), [Editor visual design](editor_ui_design.md) |
 | Trigger boxes, event rules or gameplay actions | [Scene events](scene-events.md) | [Animation transitions](animation-transitions.md), [Luau](katla_script_architecture.md), [Physics](physics-engine-adr.md) |
 | Scripts | [Luau runtime contracts](katla_script_architecture.md#runtime-contracts) | [ECS ownership](ecs.md) |
 | Physics | [Rapier decision and runtime contract](physics-engine-adr.md) | [Character controller design](character-controller-design.md) |

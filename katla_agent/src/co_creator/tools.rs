@@ -6,6 +6,28 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
 
     vec![
         ToolDefinition {
+            name: "material".into(),
+            description: "Discover presets, inspect a mesh material, or patch base_color (sRGB RGBA), metallic, roughness and ao in 0..1 on entity_ids as one undoable batch. Preset defaults can be overridden. Textures are preserved. IDs are decimal strings.".into(),
+            parameters: json!({"type":"object","properties":{
+                "action":{"type":"string","enum":["presets","inspect","set"]},
+                "entity_id":{"type":"string"},
+                "entity_ids":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":256},
+                "preset":{"type":"string","enum":["plaster","oak","concrete","ceramic","brushed_metal","fabric"]},
+                "base_color":{"type":"array","items":{"type":"number","minimum":0,"maximum":1},"minItems":4,"maxItems":4},
+                "metallic":{"type":"number","minimum":0,"maximum":1},
+                "roughness":{"type":"number","minimum":0,"maximum":1},
+                "ao":{"type":"number","minimum":0,"maximum":1}
+            },"required":["action"],"additionalProperties":false}),
+        },
+        ToolDefinition {
+            name: "search_assets".into(),
+            description: "Search resource-relative asset paths by all words in query and optional extensions. Use returned model paths directly with spawn_model.".into(),
+            parameters: json!({"type":"object","properties":{
+                "query":{"type":"string"},"extensions":{"type":"array","items":{"type":"string"}},
+                "limit":{"type":"integer","minimum":1,"maximum":256}
+            },"additionalProperties":false}),
+        },
+        ToolDefinition {
             name: "trigger".into(),
             description: "Create a sensor box with enter/exit rules, set_rules on an existing trigger, or inspect its rules and overlaps. create_box requires name, position, half_extents and rules. set_rules requires entity_id and rules. Actions: play_animation (target, clip, optional fade_seconds/looping/speed) or emit (name). target kinds: trigger, other, entity (with entity ID). Optional other_entity filters visitors. once fires once per play session. Runs only in play mode.".into(),
             parameters: crate::events::TriggerOp::tool_schema(),
@@ -247,13 +269,13 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "spawn_model".to_string(),
-            description: "Spawn a GLTF model from the project's assets directory.".to_string(),
+            description: "Spawn a GLTF model using a resource-relative path returned by search_assets.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Path to the GLTF file relative to the assets directory (e.g., 'models/character.glb')"
+                        "description": "Path to the GLTF file relative to the discovered resources directory (e.g., 'models/character.glb')"
                     },
                     "position": {
                         "type": "array",
@@ -331,6 +353,9 @@ mod tests {
         let tools = build_tool_definitions();
         assert!(!tools.is_empty());
         assert!(tools.iter().any(|t| t.name == "spawn_entity"));
+        assert!(tools.iter().any(|t| t.name == "material"
+            && t.parameters["properties"]["entity_ids"]["items"]["type"] == "string"));
+        assert!(tools.iter().any(|t| t.name == "search_assets"));
         assert!(tools.iter().any(|tool| tool.name == "trigger"
             && tool.parameters["properties"]["rules"]["maxItems"] == 64));
         assert!(tools.iter().any(|t| t.name == "destroy_entity"));

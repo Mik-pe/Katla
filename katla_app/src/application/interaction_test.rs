@@ -2,8 +2,8 @@
 //! UI hit-testing pipeline and the viewport GPU-picking path, capturing a
 //! screenshot at each state plus programmatic checks.
 //!
-//! Click coordinates are logical pixels in the 1280x720 headless layout,
-//! measured from `--dump-layout` output of the default scene.
+//! Scene and dock click coordinates use the 1280x720 default layout. Inspector
+//! targets are resolved from the live widget tree.
 
 use log::info;
 
@@ -37,15 +37,6 @@ mod target {
     pub const PREFERENCES_DARK_SWATCH: (f32, f32) = (800.0, 192.0);
     /// Close button of the Preferences modal (top-right).
     pub const PREFERENCES_CLOSE: (f32, f32) = (900.0, 120.0);
-    /// "+ Add Component" expander at the foot of the inspector panel
-    /// (measured from screenshot 11 with Sphere_1_0 selected).
-    pub const INSPECTOR_ADD_COMPONENT: (f32, f32) = (1120.0, 390.0);
-    /// "Collider" row (2nd alphabetically) in the opened Add Component list,
-    /// visible without scrolling.
-    pub const ADD_COMPONENT_COLLIDER: (f32, f32) = (1120.0, 492.0);
-    /// "×" remove button on the "Collider" section header in the inspector
-    /// (hit zone is the rightmost 20px of the section header).
-    pub const INSPECTOR_COLLIDER_REMOVE: (f32, f32) = (1258.0, 391.0);
 }
 
 /// What the runner should do next. `begin_frame` performs press/release/scroll
@@ -84,6 +75,16 @@ enum State {
     ShotClose,
     PressHierarchyAgain,
     ReleaseHierarchyAgain,
+    PressPreset,
+    ReleasePreset,
+    CheckPreset,
+    DragMaterial,
+    CheckMaterialDrag,
+    UndoMaterial,
+    CheckMaterialUndo,
+    RedoMaterial,
+    CheckMaterialRedo,
+    CollapseMaterial,
     PressAddComponent,
     ReleaseAddComponent,
     ShotAddOpen,
@@ -108,6 +109,8 @@ pub struct InteractionTestRunner {
     state: State,
     screenshots_taken: usize,
     checks: Vec<Check>,
+    #[cfg(feature = "editor")]
+    material_history_before: usize,
 }
 
 impl InteractionTestRunner {
@@ -128,6 +131,8 @@ impl InteractionTestRunner {
             state: State::Idle,
             screenshots_taken: 0,
             checks: Vec::new(),
+            #[cfg(feature = "editor")]
+            material_history_before: 0,
         }
     }
 
@@ -221,6 +226,102 @@ impl InteractionTestRunner {
         ));
     }
 
+    #[cfg(feature = "editor")]
+    fn click_widget(app: &mut Application, kind: &str, label: &str, remove: bool) {
+        use katla_ui::declarative::widgets::{button::Button, section::Section, text::Text};
+        let tree = app.editor.editor_ui.view_tree();
+        let position = tree.iter_nodes().find_map(|(id, node)| {
+            let any = node.widget.as_any();
+            let matches = match kind {
+                "button" => any
+                    .downcast_ref::<Button>()
+                    .is_some_and(|w| w.label == label),
+                "section" => any
+                    .downcast_ref::<Section>()
+                    .is_some_and(|w| w.title == label),
+                "text" => any
+                    .downcast_ref::<Text>()
+                    .is_some_and(|w| w.content == label),
+                _ => false,
+            };
+            if !matches {
+                return None;
+            }
+            let bounds = tree.resolved_bounds().get(&id)?;
+            let y = if kind == "section" {
+                bounds.min.y() + 10.0
+            } else {
+                bounds.center().y()
+            };
+            Some((
+                if remove {
+                    bounds.max.x() - 8.0
+                } else {
+                    bounds.center().x()
+                },
+                y,
+            ))
+        });
+        if let Some(position) = position {
+            Self::ui_press(app, position);
+        } else {
+            log::error!("Interaction target missing: {kind} {label}");
+        }
+    }
+
+    #[cfg(feature = "editor")]
+    fn drag_material(app: &mut Application, value: f32, outside_row: bool) {
+        use katla_ui::declarative::widgets::labeled_slider::LabeledSlider;
+        let tree = app.editor.editor_ui.view_tree();
+        let position = tree.iter_nodes().find_map(|(id, node)| {
+            let slider = node.widget.as_any().downcast_ref::<LabeledSlider>()?;
+            if slider.label != "Roughness" {
+                return None;
+            }
+            let track = slider.track_bounds(*tree.resolved_bounds().get(&id)?);
+            Some((
+                track.min.x() + track.width() * value,
+                track.center().y() + if outside_row { 32.0 } else { 0.0 },
+            ))
+        });
+        if let Some(position) = position {
+            Self::ui_press(app, position);
+        }
+    }
+
+    #[cfg(feature = "editor")]
+    fn selected_material(app: &Application) -> Option<katla_agent::material::MaterialValues> {
+        let entity = app.editor.editor_ui.selected_entity?;
+        app.world
+            .get_component::<crate::components::DrawableComponent>(entity)
+            .map(crate::application::editor::material::values)
+    }
+
+    /// Fail a walkthrough with missing steps or failed behavioral checks.
+    #[cfg(feature = "editor")]
+    pub fn validate(&self) -> crate::AppResult<()> {
+        let receipt = serde_json::json!({
+            "complete": self.state == State::Done,
+            "screenshots": self.screenshots_taken,
+            "checks": self.checks.iter().map(|check| serde_json::json!({
+                "name": check.name, "passed": check.passed, "detail": check.detail,
+            })).collect::<Vec<_>>(),
+        });
+        std::fs::write(
+            format!("{}/receipt.json", self.output_dir),
+            receipt.to_string(),
+        )
+        .map_err(|error| crate::AppError::Other {
+            message: format!("Writing walkthrough receipt: {error}"),
+        })?;
+        if self.state != State::Done || self.checks.iter().any(|check| !check.passed) {
+            return Err(crate::AppError::Other {
+                message: "Interaction walkthrough incomplete or failed; see receipt.json".into(),
+            });
+        }
+        Ok(())
+    }
+
     /// Called before each headless frame renders. `frame` is the index of the
     /// frame about to render (equals `Application::frame_count`).
     #[cfg(feature = "editor")]
@@ -310,29 +411,75 @@ impl InteractionTestRunner {
             }
             State::ReleaseHierarchyAgain if frame == 85 => {
                 Self::ui_release(app);
-                self.state = State::PressAddComponent;
+                self.state = State::PressPreset;
             }
-            State::PressAddComponent if frame == 88 => {
-                Self::ui_press(app, target::INSPECTOR_ADD_COMPONENT);
+            State::PressPreset if frame == 88 => {
+                self.material_history_before = app.editor.undo_stack.len();
+                Self::click_widget(app, "button", "Brushed metal", false);
+                self.state = State::ReleasePreset;
+            }
+            State::ReleasePreset if frame == 89 => {
+                Self::ui_release(app);
+                self.state = State::CheckPreset;
+            }
+            State::DragMaterial if (94..=97).contains(&frame) => match frame {
+                94 => Self::drag_material(app, 0.25, false),
+                95 => Self::drag_material(app, 0.5, true),
+                96 => Self::drag_material(app, 0.75, true),
+                _ => {
+                    Self::ui_release(app);
+                    self.state = State::CheckMaterialDrag;
+                }
+            },
+            State::UndoMaterial if (102..=107).contains(&frame) => match frame {
+                102 => Self::ui_press(app, (76.0, 20.0)),
+                103 => Self::ui_release(app),
+                106 => Self::ui_press(app, (100.0, 52.0)),
+                107 => {
+                    Self::ui_release(app);
+                    self.state = State::CheckMaterialUndo;
+                }
+                _ => {}
+            },
+            State::RedoMaterial if (112..=117).contains(&frame) => match frame {
+                112 => Self::ui_press(app, (76.0, 20.0)),
+                113 => Self::ui_release(app),
+                116 => Self::ui_press(app, (100.0, 80.0)),
+                117 => {
+                    Self::ui_release(app);
+                    self.state = State::CheckMaterialRedo;
+                }
+                _ => {}
+            },
+            State::CollapseMaterial if (122..=123).contains(&frame) => {
+                if frame == 122 {
+                    Self::click_widget(app, "section", "Material", false);
+                } else {
+                    Self::ui_release(app);
+                    self.state = State::PressAddComponent;
+                }
+            }
+            State::PressAddComponent if frame == 128 => {
+                Self::click_widget(app, "button", "+ Add Component", false);
                 self.state = State::ReleaseAddComponent;
             }
-            State::ReleaseAddComponent if frame == 89 => {
+            State::ReleaseAddComponent if frame == 129 => {
                 Self::ui_release(app);
                 self.state = State::ShotAddOpen;
             }
-            State::PressAddRow if frame == 95 => {
-                Self::ui_press(app, target::ADD_COMPONENT_COLLIDER);
+            State::PressAddRow if frame == 135 => {
+                Self::click_widget(app, "text", "Collider", false);
                 self.state = State::ReleaseAddRow;
             }
-            State::ReleaseAddRow if frame == 96 => {
+            State::ReleaseAddRow if frame == 136 => {
                 Self::ui_release(app);
                 self.state = State::CheckAddComponent;
             }
-            State::PressRemoveComponent if frame == 103 => {
-                Self::ui_press(app, target::INSPECTOR_COLLIDER_REMOVE);
+            State::PressRemoveComponent if frame == 143 => {
+                Self::click_widget(app, "section", "Collider", true);
                 self.state = State::ReleaseRemoveComponent;
             }
-            State::ReleaseRemoveComponent if frame == 104 => {
+            State::ReleaseRemoveComponent if frame == 144 => {
                 Self::ui_release(app);
                 self.state = State::CheckRemoveComponent;
             }
@@ -436,12 +583,73 @@ impl InteractionTestRunner {
                 self.state = State::PressHierarchyAgain;
                 Some(self.screenshot_path("10_preferences_closed"))
             }
-            State::ShotAddOpen if frame == 92 => {
+            State::CheckPreset if frame == 92 => {
+                let values = Self::selected_material(app);
+                self.record(
+                    "material_preset_applies",
+                    values.is_some_and(|v| {
+                        v.metallic == 1.0
+                            && v.roughness
+                                == katla_agent::material::MaterialPreset::BrushedMetal
+                                    .values()
+                                    .roughness
+                    }),
+                    format!("material: {values:?}"),
+                );
+                self.state = State::DragMaterial;
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("11_material_preset"))
+            }
+            State::CheckMaterialDrag if frame == 100 => {
+                let values = Self::selected_material(app);
+                self.record(
+                    "material_drag_follows_pointer",
+                    values.is_some_and(|v| (v.roughness - 0.75).abs() < 0.001),
+                    format!("material: {values:?}"),
+                );
+                let history = app.editor.undo_stack.len() - self.material_history_before;
+                self.record(
+                    "material_drag_is_one_undo",
+                    history == 2,
+                    format!("preset plus gesture history entries: {history}"),
+                );
+                self.state = State::UndoMaterial;
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("12_material_drag"))
+            }
+            State::CheckMaterialUndo if frame == 110 => {
+                let values = Self::selected_material(app);
+                self.record(
+                    "edit_menu_undo_restores_material",
+                    values.is_some_and(|v| {
+                        v.roughness
+                            == katla_agent::material::MaterialPreset::BrushedMetal
+                                .values()
+                                .roughness
+                    }),
+                    format!("material: {values:?}"),
+                );
+                self.state = State::RedoMaterial;
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("13_material_undo"))
+            }
+            State::CheckMaterialRedo if frame == 120 => {
+                let values = Self::selected_material(app);
+                self.record(
+                    "edit_menu_redo_restores_material",
+                    values.is_some_and(|v| (v.roughness - 0.75).abs() < 0.001),
+                    format!("material: {values:?}"),
+                );
+                self.state = State::CollapseMaterial;
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("14_material_redo"))
+            }
+            State::ShotAddOpen if frame == 132 => {
                 self.screenshots_taken += 1;
                 self.state = State::PressAddRow;
-                Some(self.screenshot_path("11_add_component_open"))
+                Some(self.screenshot_path("15_add_component_open"))
             }
-            State::CheckAddComponent if frame == 99 => {
+            State::CheckAddComponent if frame == 139 => {
                 let has_collider =
                     Self::selected_has_component::<katla_physics::ColliderShape>(app);
                 self.record(
@@ -454,9 +662,9 @@ impl InteractionTestRunner {
                 );
                 self.screenshots_taken += 1;
                 self.state = State::PressRemoveComponent;
-                Some(self.screenshot_path("12_component_added"))
+                Some(self.screenshot_path("16_component_added"))
             }
-            State::CheckRemoveComponent if frame == 107 => {
+            State::CheckRemoveComponent if frame == 147 => {
                 let has_collider =
                     Self::selected_has_component::<katla_physics::ColliderShape>(app);
                 self.record(
@@ -469,9 +677,9 @@ impl InteractionTestRunner {
                 );
                 self.screenshots_taken += 1;
                 self.state = State::Done;
-                Some(self.screenshot_path("13_component_removed"))
+                Some(self.screenshot_path("17_component_removed"))
             }
-            State::Done if frame == 117 => {
+            State::Done if frame == 157 => {
                 let passed = self.checks.iter().filter(|c| c.passed).count();
                 info!(
                     "Interaction test summary: {}/{} checks passed",

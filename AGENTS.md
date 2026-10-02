@@ -10,6 +10,7 @@ area being changed; [docs/README.md](docs/README.md) is the task-oriented index.
 - Rendering: [graphics ownership](docs/graphics_core.md), [graph API](katla_gfx/src/render_graph/API.md); for Metal, [backend contracts](docs/metal_backend.md).
 - ECS: [ownership and systems](docs/ecs.md); for storage/performance decisions, [benchmarks](docs/ecs_benchmarks.md).
 - Editor UI: [declarative architecture](docs/declarative_ui_design.md) and [visual design](docs/editor_ui_design.md).
+- Live scene authoring, room building and material editing: [agent guide](docs/agent-authoring.md).
 - Scripts or physics: [Luau integration](docs/katla_script_architecture.md) or [Rapier decision](docs/physics-engine-adr.md).
 - Validation/CI: [CI policy](docs/ci.md), [cross-backend contracts](docs/contract-suite.md), [native Metal evidence](docs/metal4_validation.md).
 

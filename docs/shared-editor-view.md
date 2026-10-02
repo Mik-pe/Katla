@@ -51,8 +51,10 @@ nearby objects beyond the image, and ask for clarification when necessary.
 The prepared room has two differently colored doors, walls, a window and a low
 cabinet. Place the camera inside at `[0,1.6,1]`, looking at `[0,1.2,-6]`, with no
 selection. Discuss the left/right door, focus a candidate, widen it using
-`set_field`, then use `undo`. For furnishing, query project resources and reuse
-scene spawn/model tools. This exercises engine affordances; it does not certify
+`set_field`, then use `undo`. For furnishing, use `search_assets` to discover resource-relative model paths,
+`material` to inspect and edit per-object PBR factors, and the scene spawn/model
+tools. The [agent authoring guide](agent-authoring.md) includes room recipes and
+copyable requests. This exercises engine affordances; it does not certify
 an external model's semantic room understanding.
 
 `python3 scripts/validate_shared_view.py /tmp/katla-editor.sock` reloads this

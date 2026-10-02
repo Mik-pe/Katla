@@ -132,6 +132,8 @@ impl Application {
             );
         } else if let Some(ref runner) = interaction_test {
             runner.log_summary();
+            #[cfg(feature = "editor")]
+            runner.validate()?;
             info!(
                 "Interaction test screenshots saved to {}",
                 self.info.interaction_test_path.as_deref().unwrap_or("?")

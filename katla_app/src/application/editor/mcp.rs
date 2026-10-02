@@ -37,6 +37,12 @@ pub(crate) fn poll(app: &mut crate::application::Application) {
     let requests = app.editor.mcp_state.bridge.poll_requests();
     for req in requests {
         let response = match req.op.clone().into_op() {
+            McpOpKind::SearchAssets(op) => McpResponse {
+                result: katla_agent::tools::search::search_assets(&app.resources.root, &op),
+            },
+            McpOpKind::Material(op) => McpResponse {
+                result: super::material::execute(app, op, true),
+            },
             McpOpKind::Trigger(op) => McpResponse {
                 result: crate::events::control::execute(&mut app.world, op),
             },

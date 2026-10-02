@@ -260,8 +260,9 @@ Individual tasks should be small enough to complete in a single focused session.
 #### Material editor
 - [ ] Design material editor layout — texture slots (albedo, normal, metallic, roughness, emission), numeric sliders, live preview
 - [ ] Add texture slot widgets — drag-and-drop from asset browser, thumbnail preview, clear button
-- [ ] Add PBR property sliders — metallic (0-1), roughness (0-1), emission color/intensity
-- [ ] Add live material preview — apply changes in real-time to selected entity in viewport
+- [x] Add per-object PBR factor controls — sRGB RGBA, metallic, roughness and occlusion, shared presets and validated agent batch edits
+- [ ] Add emission color/intensity controls and texture assignment
+- [x] Add live material preview — apply PBR factors to the selected entity, group pointer gestures for undo/redo and persist factors in the scene
 - [ ] Add material serialization — save edited material back to .mat file
 
 #### Terrain editor

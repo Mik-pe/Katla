@@ -27,6 +27,64 @@ fn light(app: &mut Application, name: &str) -> katla_ecs::EntityId {
 
 #[test]
 #[ignore = "requires native Vulkan or Metal"]
+fn test_live_material_gesture_undo_redo_and_scene_capture() {
+    use crate::components::DrawableComponent;
+    use katla_agent::material::MaterialOp;
+    let mut app = app();
+    let entity = light(&mut app, "Material sample");
+    app.world.add_component(
+        entity,
+        DrawableComponent::with_handles(
+            katla_gfx::MeshHandle::NONE,
+            katla_gfx::MaterialHandle::NONE,
+        ),
+    );
+    app.world
+        .add_component(entity, EntitySource::Cube { size: [1.0; 3] });
+    for (index, roughness) in [0.2, 0.3, 0.4].into_iter().enumerate() {
+        app.ui_context.input_mut().mouse_down[katla_ui::input::mouse_button::LEFT] = index < 2;
+        app.editor
+            .editor_ui
+            .pending_actions
+            .push(crate::ui::EditorAction::EditMaterial(MaterialOp::Set {
+                entity_ids: vec![entity.id().to_string()],
+                preset: None,
+                base_color: None,
+                metallic: None,
+                roughness: Some(roughness),
+                ao: None,
+            }));
+        editor::process_editor_actions(&mut app);
+        if index < 2 {
+            assert!(app.editor.undo_stack.is_empty());
+        }
+    }
+    assert_eq!(app.editor.undo_stack.len(), 1);
+    assert!(app.editor.perform_undo(&mut app.world));
+    assert_eq!(
+        app.world
+            .get_component::<DrawableComponent>(entity)
+            .unwrap()
+            .roughness,
+        0.5
+    );
+    assert!(app.editor.perform_redo(&mut app.world));
+    assert_eq!(
+        app.world
+            .get_component::<DrawableComponent>(entity)
+            .unwrap()
+            .roughness,
+        0.4
+    );
+    let scene = SceneManager::save_scene(&mut app).unwrap();
+    assert_eq!(scene.entities[0].drawable.as_ref().unwrap().roughness, 0.4);
+    assert_eq!(scene.entities[0].drawable.as_ref().unwrap().color, None);
+    app.editor.clear_entity_references();
+    assert!(app.editor.material_drag.is_none());
+}
+
+#[test]
+#[ignore = "requires native Vulkan or Metal"]
 fn test_failed_scene_load_preserves_existing_world_and_document() {
     let mut app = app();
     let existing = light(&mut app, "Keep me");

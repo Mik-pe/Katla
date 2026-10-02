@@ -156,6 +156,24 @@ pub(super) fn execute_tool_call(
     app: &mut super::super::Application,
     tool_call: &ToolCall,
 ) -> String {
+    if tool_call.name == "search_assets" {
+        return match serde_json::from_value(tool_call.arguments.clone())
+            .map_err(|e| e.to_string())
+            .and_then(|op| katla_agent::tools::search::search_assets(&app.resources.root, &op))
+        {
+            Ok(result) => result.to_string(),
+            Err(error) => format!("Error: {error}"),
+        };
+    }
+    if tool_call.name == "material" {
+        return match serde_json::from_value(tool_call.arguments.clone())
+            .map_err(|e| e.to_string())
+            .and_then(|op| super::material::execute(app, op, true))
+        {
+            Ok(result) => result.to_string(),
+            Err(error) => format!("Error: {error}"),
+        };
+    }
     if tool_call.name == "trigger" {
         return match serde_json::from_value::<katla_agent::events::TriggerOp<String>>(
             tool_call.arguments.clone(),
@@ -587,7 +605,16 @@ fn execute_spawn_model(app: &mut super::super::Application, tool_call: &ToolCall
     let position = args.position.unwrap_or([0.0, 0.0, 0.0]);
     let default_animation = args.default_animation.as_deref();
 
-    match app.spawn_gltf_model(&args.path, position, default_animation) {
+    let path = std::path::Path::new(&args.path);
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return "Error: spawn_model expects a resource-relative path from search_assets".into();
+    }
+    let path = app.resources.root.join(path);
+    match app.spawn_gltf_model(&path, position, default_animation) {
         Ok(entity) => {
             let json = serde_json::json!({
                 "success": true,

@@ -6,6 +6,24 @@ fn entity(id: u64) -> EntityDescriptor {
 }
 
 #[test]
+fn test_material_studio_fixture_roundtrips_surface_factors() {
+    let scene =
+        SceneManager::parse(include_str!("../../../assets/scenes/material-studio.katla")).unwrap();
+    scene.validate().unwrap();
+    let steel = scene
+        .entities
+        .iter()
+        .find(|e| e.name.as_deref() == Some("Materials / Brushed steel"))
+        .unwrap();
+    assert_eq!(steel.drawable.as_ref().unwrap().metallic, 1.0);
+    assert_eq!(steel.drawable.as_ref().unwrap().roughness, 0.32);
+    assert_eq!(
+        SceneManager::parse(&SceneManager::to_ron(&scene).unwrap()).unwrap(),
+        scene
+    );
+}
+
+#[test]
 fn test_v1_fixture_migrates_into_strict_current_schema() {
     let scene = SceneManager::parse(include_str!("fixtures/v1.katla")).unwrap();
     assert_eq!(scene.version, SCENE_VERSION);

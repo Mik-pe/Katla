@@ -41,6 +41,8 @@ impl PendingMcpRequest {
 
 #[derive(Debug, Clone)]
 pub enum McpOpKind {
+    SearchAssets(crate::tools::search::AssetSearch),
+    Material(crate::material::MaterialOp),
     Animation(crate::animation::AnimationOp),
     Trigger(crate::events::TriggerOp),
     Editor(EditorViewOp),
@@ -78,6 +80,8 @@ pub enum EditorViewOp {
 
 #[derive(Debug, Clone)]
 pub enum McpOp {
+    SearchAssets(crate::tools::search::AssetSearch),
+    Material(crate::material::MaterialOp),
     Animation(crate::animation::AnimationOp),
     Trigger(crate::events::TriggerOp),
     Editor(EditorViewOp),
@@ -154,6 +158,8 @@ pub enum McpOp {
 impl McpOp {
     pub fn into_op(self) -> McpOpKind {
         match self {
+            Self::SearchAssets(op) => McpOpKind::SearchAssets(op),
+            Self::Material(op) => McpOpKind::Material(op),
             Self::Animation(op) => McpOpKind::Animation(op),
             Self::Trigger(op) => McpOpKind::Trigger(op),
             Self::Editor(op) => McpOpKind::Editor(op),
@@ -519,6 +525,12 @@ struct EditorViewParams {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct MaterialParams {
+    #[serde(flatten)]
+    op: crate::material::MaterialOp,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct AnimationParams {
     #[serde(flatten)]
     op: crate::animation::AnimationOp,
@@ -526,6 +538,28 @@ struct AnimationParams {
 
 #[rmcp::tool_router]
 impl KatlaMcpServer {
+    #[rmcp::tool(
+        name = "search_assets",
+        description = "Find project assets recursively by words in their paths and optional extensions. Example query chair, extensions [glb,gltf]. Returns sorted resource-relative paths ready for spawn_model, total and truncation. Empty query lists assets; never invent model filenames."
+    )]
+    async fn search_assets(
+        &self,
+        Parameters(op): Parameters<crate::tools::search::AssetSearch>,
+    ) -> Json<McpToolResult> {
+        self.forward_op(McpOp::SearchAssets(op)).await
+    }
+
+    #[rmcp::tool(
+        name = "material",
+        description = "Discover presets, inspect an object material, or set PBR factors on 1..256 mesh objects as one undoable batch. Use action presets first. base_color is sRGB RGBA in 0..1. Partial patches preserve other factors; preset supplies defaults, explicit factors override it. Textures are preserved. Use query_entities to find objects and editor_view to see results."
+    )]
+    async fn material(
+        &self,
+        Parameters(params): Parameters<MaterialParams>,
+    ) -> Json<McpToolResult> {
+        self.forward_op(McpOp::Material(params.op)).await
+    }
+
     #[rmcp::tool(
         name = "trigger",
         description = "Create a sensor box, replace its enter/exit rules, or inspect rules and overlaps. Actions play named animations or emit Luau events. Entity IDs are decimal generational strings from scene context; use other to act on the visitor. Rules run in play mode."
@@ -783,7 +817,7 @@ impl KatlaMcpServer {
 
     #[rmcp::tool(
         name = "spawn_model",
-        description = "Spawn a GLTF model from the project's assets directory"
+        description = "Spawn a GLTF model using a resource-relative path returned by search_assets"
     )]
     async fn spawn_model(
         &self,
@@ -866,7 +900,7 @@ impl ServerHandler for KatlaMcpServer {
             .enable_tools()
             .build();
         info
-            .with_instructions("Katla 3D engine scene tools. Use these tools to spawn, modify, query, and destroy entities in the live scene.")
+            .with_instructions("Katla scene authoring: first editor_view observe and query_entities to understand the scene. Search assets with search_assets (model extensions glb/gltf); use returned paths with spawn_model. Spawn named primitives, group them with set_parent, and inspect material presets before applying PBR factors to entity_ids. Y is up, units are meters, rotations are degrees. IDs are decimal generational strings. Observe after edits, editor_view undo reverses agent edits, save_scene persists authored changes.")
             .with_server_info(Implementation::new("katla-mcp", "0.1.0"))
     }
 }
@@ -875,6 +909,23 @@ impl ServerHandler for KatlaMcpServer {
 mod animation_tests {
     use super::*;
     use crate::animation::AnimationOp;
+
+    #[test]
+    fn test_material_mcp_schema_has_object_root() {
+        let schema = serde_json::to_value(schemars::schema_for!(MaterialParams)).unwrap();
+        assert_eq!(schema["type"], "object");
+        let params: MaterialParams = serde_json::from_value(
+            serde_json::json!({"action":"set","entity_ids":["4294967302"],"roughness":0.3}),
+        )
+        .unwrap();
+        assert!(matches!(
+            params.op,
+            crate::material::MaterialOp::Set {
+                roughness: Some(0.3),
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn test_animation_tool_forwards_typed_request_and_response() {
