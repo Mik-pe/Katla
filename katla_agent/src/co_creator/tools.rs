@@ -6,6 +6,11 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
 
     vec![
         ToolDefinition {
+            name: "trigger".into(),
+            description: "Create a sensor box with enter/exit rules, set_rules on an existing trigger, or inspect its rules and overlaps. create_box requires name, position, half_extents and rules. set_rules requires entity_id and rules. Actions: play_animation (target, clip, optional fade_seconds/looping/speed) or emit (name). target kinds: trigger, other, entity (with entity ID). Optional other_entity filters visitors. once fires once per play session. Runs only in play mode.".into(),
+            parameters: crate::events::TriggerOp::tool_schema(),
+        },
+        ToolDefinition {
             name: "animation".into(),
             description: "Inspect an animated entity to discover clips and fade progress, or play a named clip with a crossfade. Default fade is 0.25 seconds, looping true, speed 1. Zero fade switches immediately. A positive fade during another fade returns an error without changing the pose; inspect and retry after completion.".into(),
             parameters: crate::animation::AnimationOp::tool_schema(),
@@ -326,6 +331,8 @@ mod tests {
         let tools = build_tool_definitions();
         assert!(!tools.is_empty());
         assert!(tools.iter().any(|t| t.name == "spawn_entity"));
+        assert!(tools.iter().any(|tool| tool.name == "trigger"
+            && tool.parameters["properties"]["rules"]["maxItems"] == 64));
         assert!(tools.iter().any(|t| t.name == "destroy_entity"));
         assert!(tools.iter().any(|t| t.name == "set_field"));
         assert!(tools.iter().any(|t| t.name == "query_entities"));

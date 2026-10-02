@@ -11,11 +11,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Component, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TriggerVolume {
     #[serde(skip)]
+    #[inspect(skip)]
     pub overlapping_entities: Vec<u64>,
 }
 
-/// Collision event emitted when a trigger volume overlap state changes.
-#[derive(Debug, Clone)]
+/// Directed transition from a sensor to a visitor when overlap membership changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TriggerEvent {
     Enter {
         trigger_entity: u64,

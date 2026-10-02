@@ -71,6 +71,7 @@ pub fn build_default_scene() -> Scene {
         }),
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -126,6 +127,7 @@ pub fn build_default_scene() -> Scene {
                 }),
                 trigger_volume: None,
                 collision_filter: None,
+                trigger_rules: vec![],
                 rigid_body_properties: None,
                 reverb_zone: None,
             });
@@ -167,6 +169,7 @@ pub fn build_default_scene() -> Scene {
         }),
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -208,6 +211,7 @@ pub fn build_default_scene() -> Scene {
         }),
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -252,6 +256,7 @@ pub fn build_default_scene() -> Scene {
         }),
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -290,6 +295,7 @@ pub fn build_default_scene() -> Scene {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -326,6 +332,7 @@ pub fn build_default_scene() -> Scene {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -375,6 +382,7 @@ pub fn build_default_scene() -> Scene {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -405,6 +413,7 @@ pub fn build_default_scene() -> Scene {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -451,6 +460,7 @@ pub fn build_default_scene() -> Scene {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -497,6 +507,7 @@ pub fn build_default_scene() -> Scene {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -543,6 +554,7 @@ pub fn build_default_scene() -> Scene {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -601,6 +613,7 @@ pub fn build_default_scene() -> Scene {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         });

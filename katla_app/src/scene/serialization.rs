@@ -28,7 +28,7 @@ use katla_script::ScriptComponent;
 use ron::extensions::Extensions;
 
 /// Current scene format version.
-pub const SCENE_VERSION: u32 = 1;
+pub const SCENE_VERSION: u32 = 2;
 
 /// RON serialization extensions configuration.
 ///
@@ -323,6 +323,32 @@ impl SceneManager {
                 physics_material,
                 trigger_volume,
                 collision_filter,
+                trigger_rules: app
+                    .world
+                    .get_component::<crate::events::TriggerRules>(entity_id)
+                    .map(|rules| {
+                        rules
+                            .rules()
+                            .iter()
+                            .map(|rule| {
+                                let mapped = rule.map_entities(|id| {
+                                    Ok::<_, std::convert::Infallible>(
+                                        serialized_names
+                                            .get(&katla_ecs::EntityId::from_raw(*id))
+                                            .cloned()
+                                            .unwrap_or_else(|| {
+                                                format!("__katla_missing_entity_{id}")
+                                            }),
+                                    )
+                                });
+                                match mapped {
+                                    Ok(rule) => rule,
+                                    Err(never) => match never {},
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             });
         }
 
@@ -341,6 +367,7 @@ impl SceneManager {
     /// baseline only after the complete file has been atomically replaced.
     pub fn save_to_file(app: &mut Application, path: &Path) -> Result<(), String> {
         let scene = Self::save_scene(app);
+        validate_trigger_rules(&scene)?;
         let ron_string = ron::ser::to_string_pretty(&scene, ron_pretty_config())
             .map_err(|e| format!("Failed to serialize scene: {e}"))?;
         crate::util::config::write_atomic(path, ron_string.as_bytes())
@@ -394,6 +421,7 @@ impl SceneManager {
         );
 
         validate_hierarchy(&scene)?;
+        validate_trigger_rules(&scene)?;
         app.renderer.wait_for_device();
         let previous_entities: std::collections::HashSet<_> = app.world.entity_ids().collect();
         let mut previous_tracker = app.gpu_resource_tracker.clone();
@@ -423,6 +451,25 @@ impl SceneManager {
                         scene.name
                     ));
                 }
+            }
+        }
+
+        for (index, desc) in scene.entities.iter().enumerate() {
+            if desc.trigger_rules.is_empty() {
+                continue;
+            }
+            let mut rules = Vec::with_capacity(desc.trigger_rules.len());
+            for rule in &desc.trigger_rules {
+                rules.push(rule.map_entities(|name| {
+                    name_to_entity
+                        .get(name)
+                        .map(|id| id.id())
+                        .ok_or_else(|| format!("Trigger target '{name}' was not spawned"))
+                })?);
+            }
+            if let Some(entity) = spawned_ids[index] {
+                app.world
+                    .add_component(entity, crate::events::TriggerRules::new(rules)?);
             }
         }
 
@@ -603,6 +650,12 @@ impl SceneManager {
                         crate::components::billboard::BillboardIcon::Fire,
                     );
                     entity_id
+                }
+                EntitySource::Trigger => {
+                    app.world
+                        .spawn((TransformComponent::from_position(katla_math::Vec3::new(
+                            pos[0], pos[1], pos[2],
+                        )),))
                 }
                 EntitySource::Light => {
                     let point_light = desc
@@ -905,6 +958,40 @@ pub(crate) fn validate_hierarchy(scene: &Scene) -> Result<(), String> {
                 return Err(format!("Scene hierarchy contains a cycle at '{name}'"));
             }
             parent = scene.entities[parent_index].parent.as_deref();
+        }
+    }
+    Ok(())
+}
+
+/// Validate references and authored rules before scene loading changes the World.
+pub(crate) fn validate_trigger_rules(scene: &Scene) -> Result<(), String> {
+    let mut names = std::collections::HashMap::<&str, usize>::new();
+    for entity in &scene.entities {
+        if let Some(name) = &entity.name {
+            *names.entry(name).or_default() += 1;
+        }
+    }
+    for entity in &scene.entities {
+        crate::events::validate_rules(&entity.trigger_rules)?;
+        if !entity.trigger_rules.is_empty()
+            && (entity.trigger_volume.is_none()
+                || entity.collider_shape.is_none()
+                || entity.rigid_body.is_none())
+        {
+            return Err("Trigger rules require TriggerVolume, ColliderShape and RigidBody".into());
+        }
+        for rule in &entity.trigger_rules {
+            rule.map_entities(|name| {
+                if !name.starts_with("__katla_missing_entity_")
+                    && names.get(name.as_str()) == Some(&1)
+                {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "Trigger reference '{name}' must identify one scene entity"
+                    ))
+                }
+            })?;
         }
     }
     Ok(())

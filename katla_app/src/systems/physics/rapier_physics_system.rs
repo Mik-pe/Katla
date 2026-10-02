@@ -41,6 +41,11 @@ impl System for RapierPhysicsSystem {
             step_simulation(world, delta_time);
             sync_transforms_back(world);
             process_trigger_events(world);
+        } else {
+            crate::events::runtime::reset(world);
+            if let Some(physics) = world.get_resource_mut::<PhysicsWorld>() {
+                physics.reset_trigger_overlaps();
+            }
         }
     }
 
@@ -301,60 +306,49 @@ fn sync_transforms_back(world: &mut World) {
 }
 
 fn process_trigger_events(world: &mut World) {
+    if let Some(pending) = world.get_resource_mut::<PendingPhysicsEvents>() {
+        pending.0.clear();
+    }
     let events: Vec<TriggerEvent> = match world.get_resource_mut::<PhysicsWorld>() {
-        Some(physics) => physics.drain_collision_events(),
+        Some(physics) => physics.drain_trigger_events(),
         None => return,
     };
 
-    if events.is_empty() {
-        return;
-    }
-
-    let mut trigger_overlaps: std::collections::HashMap<u64, Vec<u64>> =
-        std::collections::HashMap::new();
-
-    let mut script_events = Vec::new();
-
     for event in events {
-        match event {
+        let (trigger_entity, other_entity, entering) = match event {
             TriggerEvent::Enter {
                 trigger_entity,
                 other_entity,
-            } => {
-                trigger_overlaps
-                    .entry(trigger_entity)
-                    .or_default()
-                    .push(other_entity);
-                script_events.push(PhysicsCollisionEvent {
-                    event_type: PhysicsCollisionEventType::CollisionEnter,
-                    entity_a: trigger_entity,
-                    entity_b: other_entity,
-                });
-            }
+            } => (trigger_entity, other_entity, true),
             TriggerEvent::Exit {
                 trigger_entity,
                 other_entity,
-            } => {
-                script_events.push(PhysicsCollisionEvent {
-                    event_type: PhysicsCollisionEventType::CollisionExit,
-                    entity_a: trigger_entity,
-                    entity_b: other_entity,
-                });
+            } => (trigger_entity, other_entity, false),
+        };
+        if let Some(volume) =
+            world.get_component_mut::<TriggerVolume>(EntityId::from_raw(trigger_entity))
+        {
+            if entering {
+                if !volume.overlapping_entities.contains(&other_entity) {
+                    volume.overlapping_entities.push(other_entity);
+                    volume.overlapping_entities.sort_unstable();
+                }
+            } else {
+                volume.overlapping_entities.retain(|id| *id != other_entity);
             }
         }
-    }
-
-    for (trigger_id, overlapping) in trigger_overlaps {
-        let entity = EntityId::from_raw(trigger_id);
-        if let Some(tv) = world.get_component_mut::<TriggerVolume>(entity) {
-            tv.overlapping_entities = overlapping;
+        if let Some(pending) = world.get_resource_mut::<PendingPhysicsEvents>() {
+            pending.0.push(PhysicsCollisionEvent {
+                event_type: if entering {
+                    PhysicsCollisionEventType::CollisionEnter
+                } else {
+                    PhysicsCollisionEventType::CollisionExit
+                },
+                entity_a: trigger_entity,
+                entity_b: other_entity,
+            });
         }
-    }
-
-    if !script_events.is_empty()
-        && let Some(pending) = world.get_resource_mut::<PendingPhysicsEvents>()
-    {
-        pending.0.extend(script_events);
+        crate::events::runtime::dispatch(world, event);
     }
 }
 

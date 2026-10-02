@@ -75,6 +75,17 @@ jobs:
           CARGO_PROFILE_TEST_DEBUG: "0"
           CARGO_INCREMENTAL: "0"
 
+      - name: Test deterministic trigger rules and Luau event delivery
+        run: |
+          cargo test -p katla_app -p katla_agent --lib --all-features --locked events
+          cargo test -p katla_app --lib events::tests::test_native_scene_trigger_reference_roundtrip --all-features --locked -- --ignored --test-threads=1
+          cargo test -p katla_physics -p katla_script --locked
+          cargo clippy -p katla_physics -p katla_script --all-targets --all-features --locked -- -D warnings
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          CARGO_INCREMENTAL: "0"
+
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --all-targets --locked --quiet -- -D warnings
 
@@ -132,8 +143,8 @@ jobs:
           cargo check -p katla_ecs --all-targets --all-features --locked
           cargo test -p katla_ecs --all-features --locked
           cargo test -p katla_app -p katla_agent --lib --all-features --locked
-          cargo test -p katla_script --lib --locked
-          cargo clippy -p katla_ecs --all-targets --all-features --locked -- -D warnings
+          cargo test -p katla_physics -p katla_script --locked
+          cargo clippy -p katla_ecs -p katla_physics -p katla_script --all-targets --all-features --locked -- -D warnings
 
       - name: Check graphics and application crates
         run: |
@@ -153,6 +164,13 @@ jobs:
       - name: Verify agent-driven animation fades on native Metal
         if: steps.metal4.outputs.supported == 'true'
         run: cargo test -p katla_app --lib native_transition_tests --all-features --locked -- --ignored --test-threads=1
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
+
+      - name: Verify trigger rule persistence in a native application
+        if: steps.metal4.outputs.supported == 'true'
+        run: cargo test -p katla_app --lib events::tests::test_native_scene_trigger_reference_roundtrip --all-features --locked -- --ignored --test-threads=1
         env:
           MTL_DEBUG_LAYER: "1"
           METAL_DEVICE_WRAPPER_TYPE: "1"

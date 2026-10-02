@@ -42,6 +42,7 @@ impl PendingMcpRequest {
 #[derive(Debug, Clone)]
 pub enum McpOpKind {
     Animation(crate::animation::AnimationOp),
+    Trigger(crate::events::TriggerOp),
     Editor(EditorViewOp),
     Scene(SceneOp),
     Resource(ResourceOp),
@@ -78,6 +79,7 @@ pub enum EditorViewOp {
 #[derive(Debug, Clone)]
 pub enum McpOp {
     Animation(crate::animation::AnimationOp),
+    Trigger(crate::events::TriggerOp),
     Editor(EditorViewOp),
     SpawnEntity {
         position: [f32; 3],
@@ -153,6 +155,7 @@ impl McpOp {
     pub fn into_op(self) -> McpOpKind {
         match self {
             Self::Animation(op) => McpOpKind::Animation(op),
+            Self::Trigger(op) => McpOpKind::Trigger(op),
             Self::Editor(op) => McpOpKind::Editor(op),
             Self::SpawnEntity {
                 position,
@@ -389,6 +392,12 @@ impl TryFrom<String> for EntityReference {
     }
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct TriggerParams {
+    #[serde(flatten)]
+    op: crate::events::TriggerOp<String>,
+}
+
 #[derive(Deserialize, JsonSchema, Default)]
 struct SpawnEntityParams {
     position: [f32; 3],
@@ -517,6 +526,24 @@ struct AnimationParams {
 
 #[rmcp::tool_router]
 impl KatlaMcpServer {
+    #[rmcp::tool(
+        name = "trigger",
+        description = "Create a sensor box, replace its enter/exit rules, or inspect rules and overlaps. Actions play named animations or emit Luau events. Entity IDs are decimal generational strings from scene context; use other to act on the visitor. Rules run in play mode."
+    )]
+    async fn trigger(&self, Parameters(op): Parameters<TriggerParams>) -> Json<McpToolResult> {
+        let op = match op.op.resolve_ids() {
+            Ok(op) => op,
+            Err(message) => {
+                return Json(McpToolResult {
+                    success: false,
+                    message,
+                    data: None,
+                });
+            }
+        };
+        self.forward_op(McpOp::Trigger(op)).await
+    }
+
     #[rmcp::tool(
         name = "animation",
         description = "Inspect clips and fade progress, or play a named clip. Defaults: fade_seconds 0.25, looping true, speed 1. Positive fades reject an already active fade; zero switches immediately."
@@ -902,7 +929,7 @@ mod tests {
     #[test]
     fn test_editor_view_tool_has_object_input_schema() {
         let tools = KatlaMcpServer::tool_router().list_all();
-        for name in ["editor_view", "animation"] {
+        for name in ["editor_view", "animation", "trigger"] {
             let tool = tools.iter().find(|t| t.name == name).unwrap();
             assert_eq!(
                 tool.input_schema.get("type"),
@@ -930,5 +957,65 @@ mod tests {
             params.op,
             EditorViewOp::Select { entity_id: None }
         ));
+    }
+}
+
+#[cfg(test)]
+mod events_tests {
+    use super::*;
+    use crate::events::TriggerOp;
+    #[test]
+    fn test_trigger_tool_rejects_invalid_ids_before_forwarding() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let (server, bridge, _shutdown) = McpBridge::new();
+            let response = server
+                .trigger(Parameters(TriggerParams {
+                    op: TriggerOp::Inspect {
+                        entity_id: "18446744073709551616".into(),
+                    },
+                }))
+                .await
+                .0;
+            assert!(!response.success);
+            assert!(response.message.contains("decimal u64 string"));
+            assert!(bridge.poll_requests().is_empty());
+        });
+    }
+
+    #[test]
+    fn test_trigger_tool_forwards_authoring_request_and_response() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            use std::future::Future;
+            let (server, bridge, _shutdown) = McpBridge::new();
+            let op = TriggerOp::<String>::CreateBox {
+                name: "Entrance".into(),
+                position: [0.0; 3],
+                half_extents: [1.0; 3],
+                rules: vec![],
+            };
+            let mut call = Box::pin(server.trigger(Parameters(TriggerParams { op })));
+            std::future::poll_fn(|cx| {
+                assert!(call.as_mut().poll(cx).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            let request = bridge.poll_requests().pop().unwrap();
+            assert!(matches!(
+                request.op.into_op(),
+                McpOpKind::Trigger(TriggerOp::CreateBox {
+                    half_extents: [1.0, 1.0, 1.0],
+                    ..
+                })
+            ));
+            request
+                .response_tx
+                .send(McpResponse {
+                    result: Ok(serde_json::json!({"entity_id":"17","rules":[]})),
+                })
+                .unwrap();
+            let response = call.await.0;
+            assert!(response.success);
+            assert_eq!(response.data.unwrap()["entity_id"], "17");
+        });
     }
 }

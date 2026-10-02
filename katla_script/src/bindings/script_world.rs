@@ -9,6 +9,7 @@ use mlua::{Lua, RegistryKey, UserData, UserDataMethods};
 use crate::bindings::entity::LuaEntityId;
 use crate::bindings::math::{LuaTransform, LuaVec3};
 use crate::bindings::world::ScriptCommand;
+use crate::component::ScriptInstanceHandle;
 
 /// Result of a raycast operation.
 ///
@@ -78,13 +79,21 @@ pub struct SharedEventBus {
     /// Events emitted by scripts during the current frame.
     pub pending_emits: Vec<(String, mlua::Value)>,
     /// Handlers registered by scripts via on_event.
-    pub pending_subscriptions: Vec<(String, RegistryKey)>,
+    pub pending_subscriptions: Vec<(String, EntityId, ScriptInstanceHandle, RegistryKey)>,
 }
 
 /// Proxy object passed to Lua scripts as the `world` parameter.
 ///
 /// This provides the script API for interacting with the game world.
 /// All mutating operations queue commands that are processed after script execution.
+///
+/// The proxy owns thread-affine snapshots and subscriptions; it cannot cross threads.
+///
+/// ```compile_fail
+/// use katla_script::bindings::script_world::ScriptWorldProxy;
+/// let world = ScriptWorldProxy::new();
+/// std::thread::spawn(move || drop(world));
+/// ```
 ///
 /// # Lua API
 ///
@@ -121,18 +130,13 @@ pub struct SharedEventBus {
 ///
 /// ## Events
 /// - `world:emit(name, data)` - Emit an event
-/// - `world:on_event(name, callback)` - Subscribe to an event
+/// - `world:on_event(name, callback)` - Subscribe once; callback receives `(name, data, world)`
 pub struct ScriptWorldProxy {
     pub(crate) commands: Vec<ScriptCommand>,
     pub(crate) shared: Rc<SharedWorldData>,
     pub(crate) event_bus: Rc<RefCell<SharedEventBus>>,
-    pub(crate) vm: Option<*const Lua>,
+    pub(crate) event_owner: Option<(EntityId, ScriptInstanceHandle)>,
 }
-
-// SAFETY: The vm pointer is only read to create registry values during method calls,
-// which happen within a single Lua thread. It is never sent across threads.
-unsafe impl Send for ScriptWorldProxy {}
-unsafe impl Sync for ScriptWorldProxy {}
 
 impl Default for ScriptWorldProxy {
     fn default() -> Self {
@@ -150,13 +154,18 @@ impl ScriptWorldProxy {
             commands: Vec::new(),
             shared,
             event_bus: Rc::new(RefCell::new(SharedEventBus::default())),
-            vm: None,
+            event_owner: None,
         }
     }
 
-    pub(crate) fn with_event_bus(&mut self, event_bus: Rc<RefCell<SharedEventBus>>, vm: &Lua) {
+    pub(crate) fn with_event_bus(
+        &mut self,
+        event_bus: Rc<RefCell<SharedEventBus>>,
+        owner: EntityId,
+        instance: ScriptInstanceHandle,
+    ) {
+        self.event_owner = Some((owner, instance));
         self.event_bus = event_bus;
-        self.vm = Some(vm as *const Lua);
     }
 
     pub fn with_transforms(transforms: Vec<(EntityId, katla_math::Transform)>) -> Self {
@@ -172,7 +181,7 @@ impl ScriptWorldProxy {
                 trigger_overlap_results: HashMap::new(),
             }),
             event_bus: Rc::new(RefCell::new(SharedEventBus::default())),
-            vm: None,
+            event_owner: None,
         }
     }
 
@@ -315,11 +324,14 @@ impl UserData for ScriptWorldProxy {
         methods.add_method_mut(
             "on_event",
             |lua, this, (name, callback): (String, mlua::Function)| {
+                let (owner, instance) = this.event_owner.ok_or_else(|| {
+                    mlua::Error::runtime("Event subscriptions require an active script entity")
+                })?;
                 let key = lua.create_registry_value(callback)?;
                 this.event_bus
                     .borrow_mut()
                     .pending_subscriptions
-                    .push((name, key));
+                    .push((name, owner, instance, key));
                 Ok(())
             },
         );

@@ -13,7 +13,7 @@ Runtime-mutable scene serialization for the Katla engine. Scenes are saved as hu
 
 ## Format Versioning
 
-The `Scene.version` field tracks the format version. Current version is **1**.
+The `Scene.version` field tracks the format version. Current version is **2**.
 
 ### Migration Rules
 
@@ -47,7 +47,7 @@ scene.
 Per entity: name, parent, local transform, source, drawable parameters, point and
 directional lights, particle emitter configuration, animation, velocity, script,
 perspective, audio emitter, reverb zone, rigid body type/settings/linear velocity,
-collider shape, physics material, trigger and collision filter. New optional
+collider shape, physics material, trigger, collision filter and optional trigger rules. New optional
 `rigid_body_properties` and `reverb_zone` fields default to absent in older files.
 
 Scene files describe what to load. Spawn functions recreate GPU resources and
@@ -59,6 +59,12 @@ Animation snapshots retain source/target completion flags and target looping/cou
 independently. Reloading a completed clip does not emit completion again, and a
 pending fade resumes with the same target policy. These fields use `serde(default)`
 under the optional-field rule above.
+
+Trigger rules map live generational references to unique scene names and resolve
+them after loading all entities. Version 2 adds a sensor-only `Trigger` source;
+version 1 scene data migrates unchanged. Consumed once rules, overlaps and
+diagnostics reset on reload. Invalid/stale references reject file saving. See
+[scene events](../../../docs/scene-events.md).
 
 ## What Does NOT Get Serialized
 

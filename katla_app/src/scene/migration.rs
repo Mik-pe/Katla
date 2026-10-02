@@ -57,10 +57,8 @@ impl SceneMigrator for MigrateV0ToV1 {
     }
 }
 
-/// Built-in v1 → v2 migration stub.
-///
-/// Currently a no-op placeholder. When scene format fields are added
-/// or renamed in a future version, this migration will transform the data.
+/// Version 2 adds sensor-only entity sources and optional trigger rules.
+/// Existing version 1 entities keep their data unchanged.
 struct MigrateV1ToV2;
 
 impl SceneMigrator for MigrateV1ToV2 {
@@ -73,9 +71,7 @@ impl SceneMigrator for MigrateV1ToV2 {
     }
 
     fn migrate(&self, _scene: &mut Scene) {
-        // Stub: no data transformation needed yet.
-        // Future migrations will modify entity descriptors,
-        // add new fields, or rename existing ones here.
+        // Optional trigger rules deserialize empty; previous entity sources keep their meaning.
     }
 }
 
@@ -143,7 +139,7 @@ mod tests {
     use crate::scene::SCENE_VERSION;
 
     #[test]
-    fn test_v1_v2_migration_stub() {
+    fn test_v1_v2_preserves_prior_entity_data() {
         let mut scene = Scene::new("Test");
         scene.version = 1;
 
@@ -152,7 +148,7 @@ mod tests {
         assert_eq!(migration.target_version(), 2);
         migration.migrate(&mut scene);
 
-        // Stub doesn't change scene data
+        // Existing entities retain their authored data.
         assert_eq!(scene.name, "Test");
         assert!(scene.entities.is_empty());
     }
@@ -162,7 +158,7 @@ mod tests {
         let mut scene = Scene::new("Old Scene");
         scene.version = 1;
 
-        // Scene is at v1, which matches SCENE_VERSION=1, so no migration runs.
+        // Version 1 entities migrate without changing their authored data.
         let result = run_migrations(&mut scene);
         assert!(result.is_ok());
         assert_eq!(scene.version, SCENE_VERSION);
@@ -206,6 +202,7 @@ mod tests {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         });
@@ -233,6 +230,7 @@ mod tests {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         });

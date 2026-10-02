@@ -12,6 +12,14 @@ bare names resolve to .luau. New bindings require the Lua function, ScriptComman
 variant, pending resource and app processing logic. See the
 [current command/resource exports](../katla_script/src/lib.rs) for the inventory.
 
+ScriptWorldProxy also remains thread-affine: it holds owned Rc snapshots and
+subscriptions without a raw VM pointer or unsafe Send/Sync exception.
+
+Gameplay event callbacks receive `(name, data, world)` with a fresh command proxy.
+Subscriptions belong to the script entity and expire on destruction, replacement,
+reload or disabling. Callback emissions wait for the next tick. Trigger signals
+use this same event bus; see [scene events](scene-events.md) for authoring and timing.
+
 The sections below retain implementation rationale and design sketches. These
 runtime contracts and source define current behavior.
 

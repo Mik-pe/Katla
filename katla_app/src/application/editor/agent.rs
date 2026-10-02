@@ -156,6 +156,18 @@ pub(super) fn execute_tool_call(
     app: &mut super::super::Application,
     tool_call: &ToolCall,
 ) -> String {
+    if tool_call.name == "trigger" {
+        return match serde_json::from_value::<katla_agent::events::TriggerOp<String>>(
+            tool_call.arguments.clone(),
+        )
+        .map_err(|error| error.to_string())
+        .and_then(|op| op.resolve_ids())
+        .and_then(|op| crate::events::control::execute(&mut app.world, op))
+        {
+            Ok(state) => state.to_string(),
+            Err(error) => format!("Error: {error}"),
+        };
+    }
     if tool_call.name == "animation" {
         return match serde_json::from_value(tool_call.arguments.clone())
             .map_err(|error| error.to_string())

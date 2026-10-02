@@ -343,6 +343,9 @@ pub struct EntityDescriptor {
     pub trigger_volume: Option<TriggerVolumeDescriptor>,
     #[serde(default)]
     pub collision_filter: Option<CollisionFilterDescriptor>,
+    /// Names are resolved to generational IDs after all scene entities are spawned.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trigger_rules: Vec<katla_agent::events::TriggerRule<String>>,
 }
 
 /// Top-level scene file structure.
@@ -371,7 +374,7 @@ impl Scene {
     /// Create a new empty scene.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
-            version: 1,
+            version: super::SCENE_VERSION,
             name: name.into(),
             author: None,
             created_at: None,

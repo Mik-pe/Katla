@@ -37,6 +37,9 @@ pub(crate) fn poll(app: &mut crate::application::Application) {
     let requests = app.editor.mcp_state.bridge.poll_requests();
     for req in requests {
         let response = match req.op.clone().into_op() {
+            McpOpKind::Trigger(op) => McpResponse {
+                result: crate::events::control::execute(&mut app.world, op),
+            },
             McpOpKind::Animation(op) => McpResponse {
                 result: crate::animation::control::execute(&mut app.world, op),
             },

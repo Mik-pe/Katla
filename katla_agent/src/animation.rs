@@ -22,13 +22,13 @@ pub enum AnimationOp {
     },
 }
 
-fn default_fade() -> f32 {
+pub(crate) fn default_fade() -> f32 {
     0.25
 }
-fn default_looping() -> bool {
+pub(crate) fn default_looping() -> bool {
     true
 }
-fn default_speed() -> f32 {
+pub(crate) fn default_speed() -> f32 {
     1.0
 }
 

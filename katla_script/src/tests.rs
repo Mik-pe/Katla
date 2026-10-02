@@ -422,8 +422,10 @@ fn test_script_reads_transform() {
     engine.load_script(script.to_str()).unwrap();
     let handle = engine.create_instance(entity, script.to_str()).unwrap();
 
-    let mut transform = katla_math::Transform::default();
-    transform.position = Vec3::new(5.0, 0.0, 0.0);
+    let transform = katla_math::Transform {
+        position: Vec3::new(5.0, 0.0, 0.0),
+        ..Default::default()
+    };
     let proxy = ScriptWorldProxy::from_shared(Rc::new(SharedWorldData {
         transforms: vec![(entity, transform)].into_iter().collect(),
         live_entities: vec![entity],

@@ -38,6 +38,8 @@ pub enum EntitySource {
     },
     ParticleEmitter,
     Light,
+    /// Sensor volume without a drawable or GPU allocation.
+    Trigger,
 }
 
 impl EntitySource {
@@ -73,6 +75,7 @@ impl EntitySource {
                 .to_string(),
             Self::ParticleEmitter => "Particle Emitter".to_string(),
             Self::Light => "Light".to_string(),
+            Self::Trigger => "Trigger".to_string(),
         }
     }
 }

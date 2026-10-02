@@ -5,6 +5,7 @@ pub mod billboard;
 pub(crate) mod billboard_icons;
 pub mod components;
 pub mod error;
+pub mod events;
 pub mod geometry_cache;
 #[cfg(feature = "editor")]
 pub mod gizmo;

@@ -1,3 +1,6 @@
+//! Script event channels with entity-owned subscriptions and deferred dispatch.
+
+use katla_ecs::EntityId;
 use std::collections::HashMap;
 
 use mlua::RegistryKey;
@@ -16,14 +19,16 @@ pub struct ScriptEvent {
 /// Internal storage for event subscriptions.
 /// Maps event names to lists of Lua function registry keys.
 struct EventSubscription {
-    handler_keys: Vec<RegistryKey>,
+    handler_keys: Vec<(EntityId, RegistryKey)>,
 }
 
 /// String-keyed event bus for gameplay events.
 ///
 /// Scripts emit events via `world:emit("name", data)` and subscribe via
 /// `world:on_event("name", callback)`. Each frame, the `ScriptSystem` drains
-/// pending events and dispatches them to all registered handlers in insertion order.
+/// pending events and dispatches them to entity-owned handlers in insertion order.
+/// Callbacks receive `(name, data, world)` with a fresh deferred-command proxy.
+/// Emissions from callbacks are dispatched on the next tick.
 ///
 /// # Usage in Lua
 ///
@@ -32,7 +37,7 @@ struct EventSubscription {
 /// world:emit("player_died", { killer = "dragon", score = 100 })
 ///
 /// -- Subscribe to an event
-/// world:on_event("player_died", function(name, data)
+/// world:on_event("player_died", function(name, data, world)
 ///     print("Player died! Killer: " .. data.killer)
 /// end)
 /// ```
@@ -60,14 +65,14 @@ impl EventBus {
     }
 
     /// Register a Lua function as a handler for the given event name.
-    pub fn subscribe(&mut self, name: String, handler_key: RegistryKey) {
+    pub fn subscribe(&mut self, name: String, owner: EntityId, handler_key: RegistryKey) {
         self.subscriptions
             .entry(name)
             .or_insert_with(|| EventSubscription {
                 handler_keys: Vec::new(),
             })
             .handler_keys
-            .push(handler_key);
+            .push((owner, handler_key));
     }
 
     /// Drain all pending events, returning them for dispatch.
@@ -77,22 +82,25 @@ impl EventBus {
     }
 
     /// Get the handler registry keys for a given event name.
-    pub fn handlers(&self, name: &str) -> &[RegistryKey] {
+    pub fn handlers(&self, name: &str) -> &[(EntityId, RegistryKey)] {
         match self.subscriptions.get(name) {
             Some(sub) => &sub.handler_keys,
             None => &[],
         }
     }
 
-    /// Remove all subscriptions for a given script path (used during hot reload
-    /// to clear old handlers before re-registering).
-    pub fn clear_subscriptions_for_keys(&mut self, keys_to_remove: &[RegistryKey]) {
+    /// Release callbacks when an entity's script is destroyed, disabled or reloaded.
+    pub fn remove_owner(&mut self, owner: EntityId) {
         for sub in self.subscriptions.values_mut() {
-            sub.handler_keys
-                .retain(|k| !keys_to_remove.iter().any(|r| r == k));
+            sub.handler_keys.retain(|(entity, _)| *entity != owner);
         }
         self.subscriptions
             .retain(|_, sub| !sub.handler_keys.is_empty());
+    }
+
+    /// Discard undelivered events when script execution is suspended.
+    pub fn discard_pending(&mut self) {
+        self.pending.clear();
     }
 }
 

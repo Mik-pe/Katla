@@ -14,6 +14,8 @@ use crate::bindings::world::ScriptCommand;
 use crate::component::{ScriptComponent, ScriptInstanceHandle};
 use crate::engine::ScriptEngine;
 use crate::event_bus::EventBus;
+
+mod events;
 use crate::watcher::ScriptWatcher;
 
 /// Maximum number of consecutive errors before a script instance is disabled.
@@ -96,12 +98,14 @@ pub struct PhysicsCollisionEvent {
 }
 
 /// Type of physics collision event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhysicsCollisionEventType {
     /// Two entities have started colliding.
     CollisionEnter,
     /// Two entities have stopped colliding.
     CollisionExit,
+    /// Named signal from an authored trigger rule, delivered through the same event bus.
+    TriggerSignal(String),
 }
 
 /// Resource holding collision events produced by the physics system each frame.
@@ -473,25 +477,28 @@ impl ScriptSystem {
     }
 
     fn process_destroyed(&mut self, world: &World) {
-        let destroyed: Vec<EntityId> = world
-            .entity_events()
+        let destroyed: Vec<_> = self
+            .engine
+            .instances
             .iter()
-            .filter_map(|event| match event {
-                EntityEvent::Destroyed(id) => Some(*id),
-                _ => None,
+            .enumerate()
+            .filter_map(|(index, instance)| {
+                let instance = instance.as_ref()?;
+                let handle = ScriptInstanceHandle {
+                    index: index as u32,
+                    generation: instance.generation,
+                };
+                let current = world
+                    .get_component::<ScriptComponent>(instance.entity)
+                    .and_then(|script| script.instance_handle);
+                (current != Some(handle)).then_some((handle, instance.entity))
             })
             .collect();
-
-        for id in destroyed {
-            let handle = match world.get_component::<ScriptComponent>(id) {
-                Some(script) => script.instance_handle,
-                _ => continue,
-            };
-            if let Some(handle) = handle {
-                self.engine.call_on_destroy(handle, id).ok();
-                self.engine.remove_instance(handle);
-                debug!("Destroyed script instance for entity {id}");
-            }
+        for (handle, entity) in destroyed {
+            self.engine.call_on_destroy(handle, entity).ok();
+            self.engine.remove_instance(handle);
+            self.event_bus.remove_owner(entity);
+            debug!("Destroyed script instance for entity {entity}");
         }
     }
 
@@ -510,6 +517,15 @@ impl ScriptSystem {
                 continue;
             }
 
+            for instance in self
+                .engine
+                .instances
+                .iter()
+                .flatten()
+                .filter(|instance| instance.script_path == script_path)
+            {
+                self.event_bus.remove_owner(instance.entity);
+            }
             let reloaded_handles = self.engine.hot_reload_instances(&script_path);
 
             // Update ScriptComponent handles in the ECS world since
@@ -529,110 +545,11 @@ impl ScriptSystem {
             }
         }
     }
-
-    /// Drain pending events from the event bus and dispatch to registered script handlers.
-    fn process_events(&mut self) {
-        let events = self.event_bus.drain_pending();
-        if events.is_empty() {
-            return;
-        }
-
-        for event in events {
-            let handler_count = self.event_bus.handlers(&event.name).len();
-            let handler_indices: Vec<usize> = (0..handler_count).collect();
-            for idx in handler_indices {
-                let handlers = self.event_bus.handlers(&event.name);
-                let handler_key = match handlers.get(idx) {
-                    Some(k) => k,
-                    None => continue,
-                };
-                let func: Result<mlua::Function, _> = self.engine.vm.registry_value(handler_key);
-                let func = match func {
-                    Ok(f) => f,
-                    Err(_) => continue,
-                };
-
-                self.engine.reset_instruction_counter();
-                if let Err(e) = func.call::<()>((event.name.clone(), event.data.clone())) {
-                    error!("Event handler for '{}' failed: {e}", event.name);
-                }
-            }
-        }
-    }
-
-    /// Flush pending emits and subscriptions from a SharedEventBus into the real EventBus.
-    fn flush_script_events(
-        &mut self,
-        shared_bus: &Rc<RefCell<crate::bindings::script_world::SharedEventBus>>,
-    ) {
-        let mut bus = shared_bus.borrow_mut();
-
-        // Flush subscriptions first so handlers are registered before events arrive
-        for (name, key) in bus.pending_subscriptions.drain(..) {
-            self.event_bus.subscribe(name, key);
-        }
-
-        // Flush emitted events into the real event bus
-        for (name, data) in bus.pending_emits.drain(..) {
-            self.event_bus.emit(name, data);
-        }
-    }
-
-    /// Drain pending physics collision events and emit them as script events.
-    fn dispatch_physics_events(&mut self, world: &mut World) {
-        let events: Vec<PhysicsCollisionEvent> =
-            match world.get_resource_mut::<PendingPhysicsEvents>() {
-                Some(r) => std::mem::take(&mut r.0),
-                None => return,
-            };
-
-        if events.is_empty() {
-            return;
-        }
-
-        let has_collision_enter = !self.event_bus.handlers("collision_enter").is_empty();
-        let has_collision_exit = !self.event_bus.handlers("collision_exit").is_empty();
-
-        if !has_collision_enter && !has_collision_exit {
-            return;
-        }
-
-        for event in events {
-            let event_name = match event.event_type {
-                PhysicsCollisionEventType::CollisionEnter => "collision_enter",
-                PhysicsCollisionEventType::CollisionExit => "collision_exit",
-            };
-
-            // Skip if no handlers registered for this event type
-            if self.event_bus.handlers(event_name).is_empty() {
-                continue;
-            }
-
-            let table = match self.engine.vm.create_table() {
-                Ok(t) => t,
-                Err(e) => {
-                    error!("Failed to create physics event table: {e}");
-                    continue;
-                }
-            };
-
-            if let Err(e) = table.set("entity_a", event.entity_a) {
-                error!("Failed to set entity_a: {e}");
-                continue;
-            }
-            if let Err(e) = table.set("entity_b", event.entity_b) {
-                error!("Failed to set entity_b: {e}");
-                continue;
-            }
-
-            self.event_bus
-                .emit(event_name.to_string(), mlua::Value::Table(table));
-        }
-    }
 }
 
 impl System for ScriptSystem {
     fn update(&mut self, world: &mut World, delta_time: f32) {
+        self.process_destroyed(world);
         self.process_hot_reload(world);
         self.process_spawns(world);
 
@@ -642,18 +559,15 @@ impl System for ScriptSystem {
             .unwrap_or(false);
 
         if !active {
+            self.event_bus.discard_pending();
+            if let Some(pending) = world.get_resource_mut::<PendingPhysicsEvents>() {
+                pending.0.clear();
+            }
             self.process_destroyed(world);
             return;
         }
 
         let shared = Rc::new(self.build_shared_data(world));
-
-        // Clear the reusable shared event bus from previous frame
-        {
-            let mut bus = self.shared_event_bus.borrow_mut();
-            bus.pending_emits.clear();
-            bus.pending_subscriptions.clear();
-        }
 
         // Collect active handles in a single pass
         let active: Vec<(ScriptInstanceHandle, EntityId)> = self
@@ -678,7 +592,7 @@ impl System for ScriptSystem {
 
         for (handle, entity) in active {
             let mut proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
-            proxy.with_event_bus(Rc::clone(&self.shared_event_bus), &self.engine.vm);
+            proxy.with_event_bus(Rc::clone(&self.shared_event_bus), entity, handle);
             match self
                 .engine
                 .execute_on_update(handle, entity, proxy, delta_time)
@@ -696,6 +610,7 @@ impl System for ScriptSystem {
                             "Disabling script for entity {entity} after {MAX_SCRIPT_ERRORS} errors"
                         );
                         self.engine.remove_instance(handle);
+                        self.event_bus.remove_owner(entity);
                     }
                 }
             }
@@ -703,12 +618,14 @@ impl System for ScriptSystem {
 
         // Flush all pending events from scripts in a single batch
         let event_bus = Rc::clone(&self.shared_event_bus);
-        self.flush_script_events(&event_bus);
+        self.flush_script_events(&event_bus, world);
 
         self.apply_commands(all_commands, world);
 
         self.dispatch_physics_events(world);
-        self.process_events();
+        self.process_events(world);
+        // Callback emissions are queued for the next tick, never recursively dispatched.
+        self.flush_script_events(&event_bus, world);
         self.process_destroyed(world);
         self.apply_script_var_edits(world);
         self.populate_inspector_data(world);
@@ -789,5 +706,181 @@ mod scheduler_tests {
         world.update_parallel(0.016);
         world.update(0.016);
         assert_eq!(calls.get(), 2);
+    }
+    #[test]
+    fn test_trigger_signal_callbacks_apply_commands_defer_emits_and_expire() {
+        let directory = std::env::temp_dir().join(format!(
+            "katla-event-script-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(
+            directory.join("events.luau"),
+            r#"
+            local subscribed = false
+            function on_destroy(entity)
+                host_destroyed()
+            end
+            function on_update(entity, world, dt)
+                if subscribed then return end
+                subscribed = true
+                world:on_event("race_started", function(name, data, current_world)
+                    assert(data.trigger_entity == 42 and data.other_entity == 43)
+                    current_world:set_position(entity, Vec3.new(9, 0, 0))
+                    current_world:emit("followup", {})
+                end)
+                world:on_event("followup", function(name, data, current_world)
+                    current_world:set_position(entity, Vec3.new(12, 0, 0))
+                end)
+            end
+        "#,
+        )
+        .unwrap();
+        let commands = Rc::new(RefCell::new(Vec::new()));
+        let captured = Rc::clone(&commands);
+        let mut scripts = ScriptSystem::new()
+            .unwrap()
+            .with_scripts_dir(directory.to_str().unwrap())
+            .with_command_consumer(move |_, batch| captured.borrow_mut().extend_from_slice(batch));
+        let destroy_calls = Rc::new(Cell::new(0));
+        let captured = Rc::clone(&destroy_calls);
+        let callback = scripts
+            .engine
+            .vm
+            .create_function(move |_, ()| {
+                captured.set(captured.get() + 1);
+                Ok(())
+            })
+            .unwrap();
+        scripts
+            .engine
+            .vm
+            .globals()
+            .set("host_destroyed", callback)
+            .unwrap();
+        let mut world = World::new();
+        world.insert_resource(ScriptsActive(true));
+        world.insert_resource(PendingPhysicsEvents(vec![PhysicsCollisionEvent {
+            event_type: PhysicsCollisionEventType::TriggerSignal("race_started".into()),
+            entity_a: 42,
+            entity_b: 43,
+        }]));
+        let entity = world.spawn((ScriptComponent::new("events"),));
+        scripts.update(&mut world, 0.016);
+        assert!(
+            matches!(&commands.borrow()[0], ScriptCommand::SetPosition(id, position) if *id == entity && position.x() == 9.0)
+        );
+        assert_eq!(commands.borrow().len(), 1);
+        scripts.update(&mut world, 0.016);
+        assert!(
+            matches!(&commands.borrow()[1], ScriptCommand::SetPosition(id, position) if *id == entity && position.x() == 12.0)
+        );
+        // Destroyed components are unavailable; instance ownership must still remove callbacks.
+        world.destroy_entity(entity);
+        world
+            .get_resource_mut::<PendingPhysicsEvents>()
+            .unwrap()
+            .0
+            .push(PhysicsCollisionEvent {
+                event_type: PhysicsCollisionEventType::TriggerSignal("race_started".into()),
+                entity_a: 42,
+                entity_b: 43,
+            });
+        scripts.update(&mut world, 0.016);
+        assert_eq!(commands.borrow().len(), 2);
+        assert_eq!(destroy_calls.get(), 1);
+        scripts.update(&mut world, 0.016);
+        assert_eq!(destroy_calls.get(), 1);
+        assert!(scripts.event_bus.handlers("race_started").is_empty());
+        assert!(scripts.engine.instances.iter().all(Option::is_none));
+        drop(scripts);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn test_failed_event_callbacks_disable_without_resurrecting_subscriptions() {
+        let mut scripts = ScriptSystem::new().unwrap();
+        let mut world = World::new();
+        let owner = world.spawn((ScriptComponent::new("inline"),));
+        let function = scripts
+            .engine
+            .vm
+            .load(
+                r#"
+            local subscribed = false
+            function on_update(entity, world, dt)
+                if subscribed then return end
+                subscribed = true
+                world:on_event("bad", function(name, data, current_world)
+                    current_world:on_event("ghost", function() end)
+                    error("intentional callback failure")
+                end)
+            end
+        "#,
+            )
+            .into_function()
+            .unwrap();
+        let key = scripts.engine.vm.create_registry_value(function).unwrap();
+        scripts.engine.loaded_scripts.insert("inline".into(), key);
+        world.insert_resource(ScriptsActive(true));
+        for _ in 0..MAX_SCRIPT_ERRORS {
+            world.insert_resource(PendingPhysicsEvents(vec![PhysicsCollisionEvent {
+                event_type: PhysicsCollisionEventType::TriggerSignal("bad".into()),
+                entity_a: 1,
+                entity_b: 2,
+            }]));
+            scripts.update(&mut world, 0.016);
+        }
+        assert!(scripts.engine.instances.iter().all(Option::is_none));
+        assert!(scripts.event_bus.handlers("bad").is_empty());
+        assert!(scripts.event_bus.handlers("ghost").is_empty());
+        assert!(world.get_component::<ScriptComponent>(owner).is_some());
+    }
+    #[test]
+    fn test_replaced_script_cannot_resubscribe_through_its_destroy_hook() {
+        let mut scripts = ScriptSystem::new().unwrap();
+        let function = scripts
+            .engine
+            .vm
+            .load(
+                r#"
+            local cached_world = nil
+            function on_update(entity, world, dt)
+                if cached_world then return end
+                cached_world = world
+                world:on_event("alive", function() end)
+            end
+            function on_destroy(entity)
+                cached_world:on_event("ghost", function() end)
+            end
+        "#,
+            )
+            .into_function()
+            .unwrap();
+        let key = scripts.engine.vm.create_registry_value(function).unwrap();
+        scripts.engine.loaded_scripts.insert("inline".into(), key);
+        let mut world = World::new();
+        world.insert_resource(ScriptsActive(true));
+        let owner = world.spawn((ScriptComponent::new("inline"),));
+        scripts.update(&mut world, 0.016);
+        let previous = world
+            .get_component::<ScriptComponent>(owner)
+            .unwrap()
+            .instance_handle;
+        assert_eq!(scripts.event_bus.handlers("alive").len(), 1);
+        world.add_component(owner, ScriptComponent::new("inline"));
+        scripts.update(&mut world, 0.016);
+        assert_ne!(
+            world
+                .get_component::<ScriptComponent>(owner)
+                .unwrap()
+                .instance_handle,
+            previous
+        );
+        assert_eq!(scripts.event_bus.handlers("alive").len(), 1);
+        assert!(scripts.event_bus.handlers("ghost").is_empty());
     }
 }

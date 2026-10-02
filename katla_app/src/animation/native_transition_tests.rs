@@ -17,6 +17,16 @@ use super::*;
 #[test]
 #[ignore = "requires a native GPU with API validation; CI runs this after capability probing"]
 fn test_native_agent_fade_reaches_target_after_source_completion() {
+    assert_native_fade(false);
+}
+
+#[test]
+#[ignore = "requires a native GPU with API validation; CI runs this after capability probing"]
+fn test_native_trigger_enter_fades_to_target_joint_matrix() {
+    assert_native_fade(true);
+}
+
+fn assert_native_fade(from_trigger: bool) {
     let model = AnimatedModel {
         animations: [("source", 0.1, 2.0), ("target", 0.2, 12.0)]
             .into_iter()
@@ -55,17 +65,47 @@ fn test_native_agent_fade_reaches_target_after_source_completion() {
     let mut world = World::new();
     let entity = world.spawn((model, AnimationPlayer::new("source")));
     world.register_typed_system(AnimationUpdateSystem, SystemExecutionOrder::NORMAL);
-    control::execute(
-        &mut world,
-        AnimationOp::Play {
-            entity_id: entity.id(),
-            clip: "target".into(),
-            fade_seconds: 1.0,
-            looping: false,
-            speed: 1.0,
-        },
-    )
-    .unwrap();
+    if from_trigger {
+        use crate::components::TransformComponent;
+        use katla_physics::{ColliderShape, PhysicsActive, PhysicsWorld, RigidBody, SphereShape};
+        world.add_component(entity, TransformComponent::default());
+        world.add_component(entity, ColliderShape::Sphere(SphereShape::new(0.5)));
+        world.add_component(entity, RigidBody::kinematic());
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
+        let op = serde_json::from_value::<katla_agent::events::TriggerOp<String>>(serde_json::json!({
+            "action":"create_box", "name":"Fade zone", "position":[0,0,0], "half_extents":[2,2,2],
+            "rules":[{"event":"enter", "other_entity":entity.id().to_string(), "actions":[{
+                "action":"play_animation", "target":{"kind":"other"}, "clip":"target",
+                "fade_seconds":1.0, "looping":false
+            }]}]
+        }))
+        .unwrap();
+        crate::events::control::execute(&mut world, op.resolve_ids().unwrap()).unwrap();
+        katla_ecs::System::update(
+            &mut crate::systems::physics::RapierPhysicsSystem,
+            &mut world,
+            0.016,
+        );
+        assert!(
+            world
+                .get_component::<AnimationPlayer>(entity)
+                .unwrap()
+                .blending
+        );
+    } else {
+        control::execute(
+            &mut world,
+            AnimationOp::Play {
+                entity_id: entity.id(),
+                clip: "target".into(),
+                fade_seconds: 1.0,
+                looping: false,
+                speed: 1.0,
+            },
+        )
+        .unwrap();
+    }
 
     let label = CString::new("agent animation transition").unwrap();
     let engine = CString::new("Katla").unwrap();

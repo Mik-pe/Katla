@@ -887,3 +887,9 @@ These were observed while working on other tasks and noted here for future clean
   - [ ] Document resource creation methods — texture, buffer, pipeline creation methods
   - [ ] Document drawing methods — draw, dispatch, and pass-related methods
   - [ ] Document query/state methods — timestamp queries, readback, synchronization
+
+## Scene event authoring
+
+- [x] Add persistent agent-authored box enter/exit rules with visitor filters, once-only activation, named animation fades and Luau signals.
+- [ ] Add an editor panel for viewing and editing the same typed trigger rules and activation diagnostics.
+- [ ] Measure large trigger workloads before expanding predicates, stay events or sensor sweep detection.

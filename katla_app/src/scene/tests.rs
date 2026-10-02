@@ -13,7 +13,7 @@ fn test_scene_round_trip() {
     let scene = Scene::new("Test Scene");
     let loaded: Scene = round_trip(&scene);
     assert_eq!(loaded.name, "Test Scene");
-    assert_eq!(loaded.version, 1);
+    assert_eq!(loaded.version, SCENE_VERSION);
     assert!(loaded.entities.is_empty());
 }
 
@@ -51,6 +51,7 @@ fn test_scene_with_entities_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -87,6 +88,7 @@ fn test_scene_with_entities_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -163,6 +165,7 @@ fn test_all_entity_source_variants_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         };
@@ -205,6 +208,7 @@ fn test_point_light_descriptor_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     };
@@ -259,6 +263,7 @@ fn test_particle_emitter_descriptor_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     };
@@ -306,6 +311,7 @@ fn test_gltf_entity_with_animation_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     };
@@ -354,6 +360,7 @@ fn test_parent_child_relationships_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -384,6 +391,7 @@ fn test_parent_child_relationships_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -487,6 +495,7 @@ fn test_scene_serialized_output_is_human_readable() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -545,6 +554,7 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -586,6 +596,7 @@ fn test_full_default_scene_like_serialization() {
                 physics_material: None,
                 trigger_volume: None,
                 collision_filter: None,
+                trigger_rules: vec![],
                 rigid_body_properties: None,
                 reverb_zone: None,
             });
@@ -623,6 +634,7 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -660,6 +672,7 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -697,6 +710,7 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -743,6 +757,7 @@ fn test_full_default_scene_like_serialization() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -1370,6 +1385,7 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         },
@@ -1405,6 +1421,7 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         },
@@ -1439,6 +1456,7 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         },
@@ -1474,6 +1492,7 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         },
@@ -1510,6 +1529,7 @@ fn test_primitive_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         },
@@ -1592,6 +1612,7 @@ fn test_gltf_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     };
@@ -1649,6 +1670,7 @@ fn test_point_light_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     };
@@ -1716,6 +1738,7 @@ fn test_particle_emitter_round_trip() {
             physics_material: None,
             trigger_volume: None,
             collision_filter: None,
+            trigger_rules: vec![],
             rigid_body_properties: None,
             reverb_zone: None,
         };
@@ -1830,6 +1853,7 @@ fn test_animation_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     };
@@ -1866,6 +1890,7 @@ fn test_hierarchy_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -1896,6 +1921,7 @@ fn test_hierarchy_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -1924,6 +1950,7 @@ fn test_hierarchy_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -1965,6 +1992,7 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -1991,6 +2019,7 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2016,6 +2045,7 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2042,6 +2072,7 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2069,6 +2100,7 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2093,6 +2125,7 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2115,6 +2148,7 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2137,6 +2171,7 @@ fn test_entity_count_preservation() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2187,16 +2222,16 @@ fn test_version_field_present() {
     let ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
 
     assert!(
-        ron.contains("version: 1"),
-        "Serialized scene must contain 'version: 1'"
+        ron.contains(&format!("version: {SCENE_VERSION}")),
+        "Serialized scene must contain the current version"
     );
 
     // Test with entities too
     let scene = build_default_scene();
     let ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
     assert!(
-        ron.contains("version: 1"),
-        "Default scene must contain 'version: 1'"
+        ron.contains(&format!("version: {SCENE_VERSION}")),
+        "Default scene must contain the current version"
     );
 }
 
@@ -2204,12 +2239,12 @@ fn test_version_field_present() {
 fn test_empty_scene() {
     let scene = Scene::new("Empty");
     assert_eq!(scene.entities.len(), 0);
-    assert_eq!(scene.version, 1);
+    assert_eq!(scene.version, SCENE_VERSION);
     assert_eq!(scene.name, "Empty");
 
     let loaded: Scene = round_trip(&scene);
     assert_eq!(loaded.name, "Empty");
-    assert_eq!(loaded.version, 1);
+    assert_eq!(loaded.version, SCENE_VERSION);
     assert!(loaded.entities.is_empty());
     assert!(loaded.author.is_none());
     assert!(loaded.created_at.is_none());
@@ -2267,6 +2302,7 @@ fn test_velocity_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     };
@@ -2301,6 +2337,7 @@ fn test_velocity_round_trip() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     };
@@ -2421,6 +2458,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2457,6 +2495,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2492,6 +2531,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2528,6 +2568,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2565,6 +2606,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2614,6 +2656,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2660,6 +2703,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2697,6 +2741,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2727,6 +2772,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2757,6 +2803,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2785,6 +2832,7 @@ fn test_load_spawn_integration() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -2923,6 +2971,7 @@ fn test_transform_persistence() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -3297,6 +3346,7 @@ fn test_full_editor_workflow() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -3334,6 +3384,7 @@ fn test_full_editor_workflow() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });
@@ -3374,6 +3425,7 @@ fn test_full_editor_workflow() {
         physics_material: None,
         trigger_volume: None,
         collision_filter: None,
+        trigger_rules: vec![],
         rigid_body_properties: None,
         reverb_zone: None,
     });

@@ -51,7 +51,8 @@ pub struct PhysicsWorld {
     impulse_joints: ImpulseJointSet,
     multibody_joints: MultibodyJointSet,
     ccd_solver: CCDSolver,
-    collision_events: Vec<TriggerEvent>,
+    trigger_events: Vec<TriggerEvent>,
+    trigger_overlaps: std::collections::BTreeSet<(u64, u64)>,
 }
 
 impl PhysicsWorld {
@@ -83,19 +84,19 @@ impl PhysicsWorld {
             impulse_joints,
             multibody_joints,
             ccd_solver,
-            collision_events: Vec::new(),
+            trigger_events: Vec::new(),
+            trigger_overlaps: Default::default(),
         }
     }
 
     /// Step the physics simulation forward by the given delta time.
     pub fn step(&mut self, dt: f32) {
+        if !dt.is_finite() || dt <= 0.0 {
+            self.trigger_events.clear();
+            return;
+        }
         self.integration_parameters.dt = dt;
-        self.collision_events.clear();
-
-        let (collision_send, collision_recv) = std::sync::mpsc::channel();
-        let (force_send, _force_recv) = std::sync::mpsc::channel();
-        let event_handler =
-            rapier3d::pipeline::ChannelEventCollector::new(collision_send, force_send);
+        self.trigger_events.clear();
 
         self.pipeline.step(
             self.gravity,
@@ -109,45 +110,56 @@ impl PhysicsWorld {
             &mut self.multibody_joints,
             &mut self.ccd_solver,
             &(),
-            &event_handler,
+            &(),
         );
 
-        while let Ok(event) = collision_recv.try_recv() {
-            match event {
-                rapier3d::geometry::CollisionEvent::Started(h1, h2, _flags) => {
-                    let entity1 = self.collider_entity(h1);
-                    let entity2 = self.collider_entity(h2);
-                    if let (Some(e1), Some(e2)) = (entity1, entity2) {
-                        self.collision_events.push(TriggerEvent::Enter {
-                            trigger_entity: e1,
-                            other_entity: e2,
-                        });
-                    }
-                }
-                rapier3d::geometry::CollisionEvent::Stopped(h1, h2, _flags) => {
-                    let entity1 = self.collider_entity(h1);
-                    let entity2 = self.collider_entity(h2);
-                    if let (Some(e1), Some(e2)) = (entity1, entity2) {
-                        self.collision_events.push(TriggerEvent::Exit {
-                            trigger_entity: e1,
-                            other_entity: e2,
-                        });
-                    }
-                }
+        let mut overlaps = std::collections::BTreeSet::new();
+        for (h1, h2, intersecting) in self.narrow_phase.intersection_pairs() {
+            if !intersecting {
+                continue;
+            }
+            let (Some(c1), Some(c2)) = (self.colliders.get(h1), self.colliders.get(h2)) else {
+                continue;
+            };
+            let (e1, e2) = (c1.user_data as u64, c2.user_data as u64);
+            if c1.is_sensor() {
+                overlaps.insert((e1, e2));
+            }
+            if c2.is_sensor() {
+                overlaps.insert((e2, e1));
             }
         }
+        for &(trigger_entity, other_entity) in self.trigger_overlaps.difference(&overlaps) {
+            self.trigger_events.push(TriggerEvent::Exit {
+                trigger_entity,
+                other_entity,
+            });
+        }
+        for &(trigger_entity, other_entity) in overlaps.difference(&self.trigger_overlaps) {
+            self.trigger_events.push(TriggerEvent::Enter {
+                trigger_entity,
+                other_entity,
+            });
+        }
+        self.trigger_overlaps = overlaps;
+    }
+
+    /// Reset overlap transitions when beginning a new play session.
+    pub fn reset_trigger_overlaps(&mut self) {
+        self.trigger_overlaps.clear();
+        self.trigger_events.clear();
     }
 
     /// Read the entity ID stored as user data on a collider.
     pub fn collider_entity(&self, handle: ColliderHandle) -> Option<u64> {
         let collider = self.colliders.get(handle)?;
         let id = collider.user_data as u64;
-        if id != 0 { Some(id) } else { None }
+        Some(id)
     }
 
-    /// Drain collision events from the last step.
-    pub fn drain_collision_events(&mut self) -> Vec<TriggerEvent> {
-        std::mem::take(&mut self.collision_events)
+    /// Drain deterministic directed trigger transitions from the last step.
+    pub fn drain_trigger_events(&mut self) -> Vec<TriggerEvent> {
+        std::mem::take(&mut self.trigger_events)
     }
 
     /// Number of colliders currently in the simulation.
@@ -266,7 +278,7 @@ impl PhysicsWorld {
     /// is `RigidBodyHandle::invalid()` and the collider is standalone.
     ///
     /// If `is_sensor` is true, the collider is created as a sensor (no collision response,
-    /// reports overlap events via `drain_collision_events`).
+    /// reports overlap events via `drain_trigger_events`).
     pub fn create_body(
         &mut self,
         shape: &ColliderShape,
@@ -313,7 +325,7 @@ impl PhysicsWorld {
         if is_sensor {
             collider_builder = collider_builder
                 .sensor(true)
-                .active_events(rapier3d::pipeline::ActiveEvents::COLLISION_EVENTS);
+                .active_collision_types(ActiveCollisionTypes::all());
         }
 
         if let Some(filter) = collision_filter {
@@ -803,5 +815,102 @@ mod tests {
         let (body, _collider) = world.create_dynamic_body(&shape, None, &transform, 1);
         let rb = world.bodies.get(body).unwrap();
         assert!(!rb.is_ccd_enabled(), "CCD should be disabled by default");
+    }
+}
+
+#[cfg(test)]
+mod trigger_tests {
+    use super::*;
+    use crate::{BoxShape, SphereShape};
+
+    #[test]
+    fn test_trigger_orientation_persistence_and_removed_visitor_exit() {
+        for sensor_first in [false, true] {
+            let mut physics = PhysicsWorld::new();
+            let mut visitor = None;
+            for sensor in if sensor_first {
+                [true, false]
+            } else {
+                [false, true]
+            } {
+                let shape = if sensor {
+                    ColliderShape::Box(BoxShape::new(Vec3::new(2.0, 2.0, 2.0)))
+                } else {
+                    ColliderShape::Sphere(SphereShape::new(0.5))
+                };
+                let handles = physics.create_body_ex(
+                    &shape,
+                    None,
+                    &Transform::default(),
+                    if sensor {
+                        BodyType::Static
+                    } else {
+                        BodyType::Kinematic
+                    },
+                    None,
+                    if sensor { 0 } else { 7 },
+                    sensor,
+                    0.0,
+                    false,
+                    None,
+                );
+                if !sensor {
+                    visitor = Some(handles);
+                }
+            }
+            physics.step(1.0 / 60.0);
+            assert_eq!(
+                physics.drain_trigger_events(),
+                vec![TriggerEvent::Enter {
+                    trigger_entity: 0,
+                    other_entity: 7
+                }]
+            );
+            physics.step(1.0 / 60.0);
+            assert!(physics.drain_trigger_events().is_empty());
+            let (body, collider) = visitor.unwrap();
+            physics.remove_body(body, collider);
+            physics.step(1.0 / 60.0);
+            assert_eq!(
+                physics.drain_trigger_events(),
+                vec![TriggerEvent::Exit {
+                    trigger_entity: 0,
+                    other_entity: 7
+                }]
+            );
+        }
+    }
+
+    #[test]
+    fn test_two_static_sensors_emit_both_directions() {
+        let mut physics = PhysicsWorld::new();
+        for id in [8, 9] {
+            physics.create_body_ex(
+                &ColliderShape::Sphere(SphereShape::new(1.0)),
+                None,
+                &Transform::default(),
+                BodyType::Static,
+                None,
+                id,
+                true,
+                0.0,
+                false,
+                None,
+            );
+        }
+        physics.step(0.016);
+        assert_eq!(
+            physics.drain_trigger_events(),
+            vec![
+                TriggerEvent::Enter {
+                    trigger_entity: 8,
+                    other_entity: 9
+                },
+                TriggerEvent::Enter {
+                    trigger_entity: 9,
+                    other_entity: 8
+                },
+            ]
+        );
     }
 }

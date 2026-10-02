@@ -165,3 +165,11 @@ MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 cargo test -p katla_gfx --lib meta
 
 Compilation and portable tests establish the API contract; native output and
 lifetime assertions establish GPU acceptance on a capable device.
+
+## Trigger and script event checks
+
+The Linux and `macos-26` jobs run actual Rapier overlap/enter/exit regressions,
+agent rule validation and Luau callback command/lifetime/next-tick tests. Native
+application construction additionally verifies rule persistence and generational
+reference remapping; the Metal fixture follows the existing Metal 4 capability
+gate and API-validation environment. See [scene events](scene-events.md).

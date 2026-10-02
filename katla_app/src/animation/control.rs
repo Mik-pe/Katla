@@ -1,19 +1,19 @@
 //! Semantic playback commands shared by the editor agent and MCP bridge.
 
+#[cfg(any(test, feature = "mcp"))]
 use katla_agent::animation::AnimationOp;
 use katla_ecs::{EntityId, World};
+#[cfg(any(test, feature = "mcp"))]
 use serde_json::{Value, json};
 
 use super::{AnimatedModel, AnimationPlayer};
 
+#[cfg(any(test, feature = "mcp"))]
 pub(crate) fn execute(world: &mut World, op: AnimationOp) -> Result<Value, String> {
     let entity_id = match &op {
         AnimationOp::Inspect { entity_id } | AnimationOp::Play { entity_id, .. } => *entity_id,
     };
     let entity = EntityId::from_raw(entity_id);
-    let model = world
-        .get_component::<AnimatedModel>(entity)
-        .ok_or_else(|| format!("Entity {entity_id} has no animated model or is stale"))?;
     if let AnimationOp::Play {
         clip,
         fade_seconds,
@@ -22,66 +22,77 @@ pub(crate) fn execute(world: &mut World, op: AnimationOp) -> Result<Value, Strin
         ..
     } = op
     {
-        if !fade_seconds.is_finite() || fade_seconds < 0.0 {
-            return Err("fade_seconds must be finite and nonnegative".into());
-        }
-        if !speed.is_finite() || speed < 0.0 {
-            return Err(
-                "speed must be finite and nonnegative; reverse playback is unsupported".into(),
-            );
-        }
-        let duration = model
-            .animations
-            .get(&clip)
-            .ok_or_else(|| {
-                format!("Unknown clip '{clip}'; inspect this entity's animations first")
-            })?
-            .duration;
-        if !duration.is_finite() || duration < 0.0 {
-            return Err(format!("Clip '{clip}' has an invalid duration"));
-        }
-        if let Some(player) = world.get_component::<AnimationPlayer>(entity) {
-            if fade_seconds > 0.0 && player.blending {
-                return Err("A fade is already active; inspect progress and retry after completion, or use fade_seconds=0 for an immediate switch".into());
-            }
-            if fade_seconds > 0.0
-                && let Some(source) = &player.current_clip
-            {
-                let source_duration = model
-                    .animations
-                    .get(source)
-                    .ok_or_else(|| {
-                        format!(
-                            "Active clip '{source}' is missing; use fade_seconds=0 to replace it"
-                        )
-                    })?
-                    .duration;
-                if !source_duration.is_finite() || source_duration < 0.0 {
-                    return Err(format!("Active clip '{source}' has an invalid duration"));
-                }
-            }
-        }
-        if world.get_component::<AnimationPlayer>(entity).is_none() {
-            world.add_component(entity, AnimationPlayer::stopped());
-        }
-        let player = world
-            .get_component_mut::<AnimationPlayer>(entity)
-            .ok_or_else(|| "Animation player disappeared".to_string())?;
-        if fade_seconds == 0.0 || player.current_clip.is_none() {
-            player.set_clip(clip, duration);
-            player.loop_animation = looping;
-        } else {
-            player
-                .crossfade_to(clip, duration, fade_seconds)
-                .map_err(String::from)?;
-            player.target_loop_animation = looping;
-        }
-        player.speed = speed;
-        player.play();
+        play(world, entity, clip, fade_seconds, looping, speed)?;
     }
     inspect(world, entity)
 }
 
+/// Apply semantic playback without allocating an inspection response on the event path.
+pub(crate) fn play(
+    world: &mut World,
+    entity: EntityId,
+    clip: String,
+    fade_seconds: f32,
+    looping: bool,
+    speed: f32,
+) -> Result<(), String> {
+    let model = world
+        .get_component::<AnimatedModel>(entity)
+        .ok_or_else(|| format!("Entity {} has no animated model or is stale", entity.id()))?;
+    if !fade_seconds.is_finite() || fade_seconds < 0.0 {
+        return Err("fade_seconds must be finite and nonnegative".into());
+    }
+    if !speed.is_finite() || speed < 0.0 {
+        return Err("speed must be finite and nonnegative; reverse playback is unsupported".into());
+    }
+    let duration = model
+        .animations
+        .get(&clip)
+        .ok_or_else(|| format!("Unknown clip '{clip}'; inspect this entity's animations first"))?
+        .duration;
+    if !duration.is_finite() || duration < 0.0 {
+        return Err(format!("Clip '{clip}' has an invalid duration"));
+    }
+    if let Some(player) = world.get_component::<AnimationPlayer>(entity) {
+        if fade_seconds > 0.0 && player.blending {
+            return Err("A fade is already active; inspect progress and retry after completion, or use fade_seconds=0 for an immediate switch".into());
+        }
+        if fade_seconds > 0.0
+            && let Some(source) = &player.current_clip
+        {
+            let source_duration = model
+                .animations
+                .get(source)
+                .ok_or_else(|| {
+                    format!("Active clip '{source}' is missing; use fade_seconds=0 to replace it")
+                })?
+                .duration;
+            if !source_duration.is_finite() || source_duration < 0.0 {
+                return Err(format!("Active clip '{source}' has an invalid duration"));
+            }
+        }
+    }
+    if world.get_component::<AnimationPlayer>(entity).is_none() {
+        world.add_component(entity, AnimationPlayer::stopped());
+    }
+    let player = world
+        .get_component_mut::<AnimationPlayer>(entity)
+        .ok_or_else(|| "Animation player disappeared".to_string())?;
+    if fade_seconds == 0.0 || player.current_clip.is_none() {
+        player.set_clip(clip, duration);
+        player.loop_animation = looping;
+    } else {
+        player
+            .crossfade_to(clip, duration, fade_seconds)
+            .map_err(String::from)?;
+        player.target_loop_animation = looping;
+    }
+    player.speed = speed;
+    player.play();
+    Ok(())
+}
+
+#[cfg(any(test, feature = "mcp"))]
 fn inspect(world: &World, entity: EntityId) -> Result<Value, String> {
     let model = world
         .get_component::<AnimatedModel>(entity)

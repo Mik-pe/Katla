@@ -122,3 +122,9 @@ When creating native bodies, the app initializes their linear velocity from the
 RigidBody component. Scene serialization retains gravity scale, CCD and velocity
 while recreating native handles. See [component exports](../katla_physics/src/lib.rs)
 for current types.
+
+Trigger transitions are directed from the sensor to its visitor. PhysicsWorld
+compares active intersections per step, including deletion exits and both
+directions of sensor pairs. Sensors enable all body-type combinations. The app
+maintains overlap membership and executes [scene-owned rules](scene-events.md);
+physics contains no animation or script policy.
