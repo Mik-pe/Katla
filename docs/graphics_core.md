@@ -11,6 +11,9 @@ ordinary buffer, texture, mesh and material handles thereafter. Viewport layout
 belongs to the app; render targets use graph declarations or ordinary texture
 handles. Pipeline state uses `PipelineDescriptor` and `ImageFormat`, without
 separate viewport builders or feature-specific pipeline initialization enums.
+Failed initial material compilation publishes no material handle. Vulkan also
+releases unpublished pipeline variants and newly created descriptor layouts;
+Metal retains temporary pipeline objects locally until successful publication.
 Graphics passes carry `PassBindings`: reflected buffers, images, samplers and immutable inline
 bytes, plus explicit drawing phases. A phase selects mesh-layout pipelines,
 submitted objects, generated vertices or a declared indirect buffer. Pipeline

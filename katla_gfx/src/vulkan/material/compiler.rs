@@ -99,7 +99,10 @@ impl MaterialCompiler {
                 descriptor,
                 descriptor.color_format,
             );
-            self.compile_variant(registry, handle, &key)?;
+            if let Err(error) = self.compile_variant(registry, handle, &key) {
+                registry.remove_material(handle);
+                return Err(error);
+            }
         }
 
         Ok(handle)
@@ -111,6 +114,26 @@ impl MaterialCompiler {
     /// built for; the material's descriptor provides every other input.
     /// The compiled pipelines are cached on the material under the key.
     pub(crate) fn compile_variant(
+        &mut self,
+        registry: &mut crate::renderer::registry::AssetRegistry,
+        material_handle: crate::handle::MaterialHandle,
+        key: &crate::renderer::pipeline_variant::PipelineVariantKey,
+    ) -> Result<crate::renderer::registry::MaterialVariant, MaterialError> {
+        let previous_layouts = self.owned_descriptor_layouts.len();
+        let result = self.prepare_variant(registry, material_handle, key);
+        if result.is_err() {
+            for layout in self.owned_descriptor_layouts.drain(previous_layouts..) {
+                unsafe {
+                    self.context
+                        .device
+                        .destroy_descriptor_set_layout(layout, None);
+                }
+            }
+        }
+        result
+    }
+
+    fn prepare_variant(
         &mut self,
         registry: &mut crate::renderer::registry::AssetRegistry,
         material_handle: crate::handle::MaterialHandle,
@@ -173,20 +196,19 @@ impl MaterialCompiler {
                 key.depth_format(),
             )
             .map_err(|e| fail(e.to_string()))?;
-        let pipeline_handle = registry.register_pipeline(pipeline);
-
         // UI materials additionally compile an instanced pipeline using
         // vs_instanced/fs_instanced entry points with UnitQuadVertex format.
         let instanced_pipeline = if descriptor.is_ui_layout() {
             Some(
-                registry.register_pipeline(
-                    self.build_instanced_ui_pipeline(&shader_path, &layouts, key.color_format())
-                        .map_err(|e| fail(e.to_string()))?,
-                ),
+                self.build_instanced_ui_pipeline(&shader_path, &layouts, key.color_format())
+                    .map_err(|error| fail(error.to_string()))?,
             )
         } else {
             None
         };
+        let pipeline_handle = registry.register_pipeline(pipeline);
+        let instanced_pipeline =
+            instanced_pipeline.map(|pipeline| registry.register_pipeline(pipeline));
 
         let variant = crate::renderer::registry::MaterialVariant {
             pipeline: pipeline_handle,
@@ -194,6 +216,10 @@ impl MaterialCompiler {
         };
 
         if !registry.insert_material_variant(material_handle, key.clone(), variant) {
+            registry.remove_pipeline(pipeline_handle);
+            if let Some(handle) = instanced_pipeline {
+                registry.remove_pipeline(handle);
+            }
             return Err(fail("material handle not found".to_string()));
         }
 
@@ -575,5 +601,52 @@ fn stencil_op(operation: crate::renderer::pipeline_descriptor::StencilOperation)
         Invert => vk::StencilOp::INVERT,
         IncrementWrap => vk::StencilOp::INCREMENT_AND_WRAP,
         DecrementWrap => vk::StencilOp::DECREMENT_AND_WRAP,
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use crate::texture::ImageFormat;
+    use crate::{GpuRenderer, PipelineDescriptor, ValidationMode, VulkanRenderer};
+
+    #[test]
+    #[ignore = "requires a Vulkan device"]
+    fn test_failed_initial_and_instanced_material_compilation_releases_resources() {
+        let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+            .try_init();
+        let mut renderer = VulkanRenderer::init_headless(
+            8,
+            8,
+            ValidationMode::Enabled,
+            c"material-failure".into(),
+            c"Katla".into(),
+        )
+        .unwrap();
+        let materials = renderer.asset_registry.material_count();
+        let layouts = renderer.material_compiler.owned_descriptor_layouts.len();
+        let missing = PipelineDescriptor::pbr("/does-not-exist/material.wgsl")
+            .with_color_format(ImageFormat::R16G16B16A16Sfloat);
+        assert!(renderer.compile_material(&missing).is_err());
+        assert_eq!(renderer.asset_registry.material_count(), materials);
+        assert_eq!(
+            renderer.material_compiler.owned_descriptor_layouts.len(),
+            layouts
+        );
+
+        let path =
+            std::env::temp_dir().join(format!("katla-ui-failure-{}.wgsl", std::process::id()));
+        let source = include_str!("../../../../resources/shaders/ui/ui.wgsl")
+            .replace("fn vs_instanced(", "fn missing_instanced(");
+        std::fs::write(&path, source).unwrap();
+        let descriptor = PipelineDescriptor::ui(path.to_string_lossy().into_owned())
+            .with_color_format(ImageFormat::B8G8R8A8Srgb);
+        assert!(renderer.compile_material(&descriptor).is_err());
+        assert_eq!(renderer.asset_registry.material_count(), materials);
+        assert_eq!(
+            renderer.material_compiler.owned_descriptor_layouts.len(),
+            layouts
+        );
+        std::fs::remove_file(path).unwrap();
+        renderer.destroy();
     }
 }
