@@ -5,9 +5,7 @@ use katla_audio::{AudioBuffer, AudioEngine, SoundCue, VoiceHandle, VoiceState};
 use katla_ecs::World;
 use katla_math::Vec3;
 
-use crate::components::{
-    AudioEmitter, AudioListener, DistanceModel, ReverbZone, TransformComponent,
-};
+use crate::components::{AudioEmitter, AudioListener, DistanceModel, ReverbZone};
 
 /// Maximum occlusion factor (0.0 = not occluded, 1.0 = fully occluded).
 const MAX_OCCLUSION: f32 = 0.85;
@@ -80,10 +78,13 @@ impl AudioSystem {
         }
     }
 
-    fn find_listener(world: &World) -> (Vec3, Vec3, Vec3) {
+    fn find_listener(
+        world: &World,
+        poses: &HashMap<katla_ecs::EntityId, crate::components::WorldTransform>,
+    ) -> (Vec3, Vec3, Vec3) {
         let default = (Vec3::ZERO, -Vec3::Z_AXIS, Vec3::Y_AXIS);
         for (entity, _listener) in world.query_ref::<&AudioListener>() {
-            if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+            if let Some(transform) = poses.get(&entity) {
                 return (
                     transform.transform.position,
                     transform.transform.forward(),
@@ -104,7 +105,8 @@ impl AudioSystem {
 
         self.engine.poll_device_change();
 
-        let (listener_pos, listener_forward, listener_up) = Self::find_listener(world);
+        let poses = crate::systems::resolve_world_transforms(world);
+        let (listener_pos, listener_forward, listener_up) = Self::find_listener(world, &poses);
         let listener_vel = self
             .prev_listener_pos
             .map_or(Vec3::ZERO, |prev| (listener_pos - prev) / dt.max(0.001));
@@ -113,7 +115,7 @@ impl AudioSystem {
         self.prev_listener_up = Some(listener_up);
 
         // Update reverb zones — blend parameters from all zones containing the listener
-        self.update_reverb_zones(world, listener_pos);
+        self.update_reverb_zones(world, &poses, listener_pos);
 
         // Start new voices for emitters that aren't yet playing
         for (entity, emitter) in world.query::<&AudioEmitter>() {
@@ -158,7 +160,7 @@ impl AudioSystem {
             }
 
             if emitter.spatial {
-                if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+                if let Some(transform) = poses.get(&entity) {
                     let emitter_pos = transform.transform.position;
                     let (spatial_volume, pan) = compute_spatialization(
                         emitter_pos,
@@ -218,7 +220,12 @@ impl AudioSystem {
         }
     }
 
-    fn update_reverb_zones(&self, world: &World, listener_pos: Vec3) {
+    fn update_reverb_zones(
+        &self,
+        world: &World,
+        poses: &HashMap<katla_ecs::EntityId, crate::components::WorldTransform>,
+        listener_pos: Vec3,
+    ) {
         let mut total_decay = 0.0f32;
         let mut total_wet = 0.0f32;
         let mut total_dampening = 0.0f32;
@@ -227,7 +234,7 @@ impl AudioSystem {
         let lp = [listener_pos.x(), listener_pos.y(), listener_pos.z()];
 
         for (entity, zone) in world.query_ref::<&ReverbZone>() {
-            if let Some(transform) = world.get_component::<TransformComponent>(entity) {
+            if let Some(transform) = poses.get(&entity) {
                 let pos = [
                     transform.transform.position.x(),
                     transform.transform.position.y(),

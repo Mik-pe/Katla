@@ -1,5 +1,5 @@
 pub mod assets;
-mod capture;
+pub(crate) mod capture;
 pub mod component_registry;
 pub mod default_scene;
 pub mod descriptors;

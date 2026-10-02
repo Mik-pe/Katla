@@ -43,6 +43,7 @@ impl PendingMcpRequest {
 pub enum McpOpKind {
     SearchAssets(crate::tools::search::AssetSearch),
     Material(crate::material::MaterialOp),
+    Prefab(crate::prefab::PrefabOp),
     Animation(crate::animation::AnimationOp),
     Trigger(crate::events::TriggerOp),
     Editor(EditorViewOp),
@@ -82,6 +83,7 @@ pub enum EditorViewOp {
 pub enum McpOp {
     SearchAssets(crate::tools::search::AssetSearch),
     Material(crate::material::MaterialOp),
+    Prefab(crate::prefab::PrefabOp),
     Animation(crate::animation::AnimationOp),
     Trigger(crate::events::TriggerOp),
     Editor(EditorViewOp),
@@ -160,6 +162,7 @@ impl McpOp {
         match self {
             Self::SearchAssets(op) => McpOpKind::SearchAssets(op),
             Self::Material(op) => McpOpKind::Material(op),
+            Self::Prefab(op) => McpOpKind::Prefab(op),
             Self::Animation(op) => McpOpKind::Animation(op),
             Self::Trigger(op) => McpOpKind::Trigger(op),
             Self::Editor(op) => McpOpKind::Editor(op),
@@ -536,8 +539,22 @@ struct AnimationParams {
     op: crate::animation::AnimationOp,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct PrefabParams {
+    #[serde(flatten)]
+    op: crate::prefab::PrefabOp,
+}
+
 #[rmcp::tool_router]
 impl KatlaMcpServer {
+    #[rmcp::tool(
+        name = "prefab",
+        description = "Author .katmesh and .katprefab assets. describe returns JSON examples; validate/write checks complete recipes; instantiate appends a preview; capture saves a live subtree; remove deletes a preview. Read/edit named parts, then observe editor_view for the rendered result. IDs are decimal strings; paths are project-relative."
+    )]
+    async fn prefab(&self, Parameters(params): Parameters<PrefabParams>) -> Json<McpToolResult> {
+        self.forward_op(McpOp::Prefab(params.op)).await
+    }
+
     #[rmcp::tool(
         name = "search_assets",
         description = "Find project assets recursively by words in their paths and optional extensions. Example query chair, extensions [glb,gltf]. Returns sorted resource-relative paths ready for spawn_model, total and truncation. Empty query lists assets; never invent model filenames."

@@ -125,13 +125,9 @@ fn array(v: Vec3) -> [f32; 3] {
     [v.x(), v.y(), v.z()]
 }
 
-// Match the transform consumed by collect_draws_with_context exactly.
+// Include the complete prefab subtree, including roots without a drawable.
 fn object_bounds(app: &Application, id: EntityId) -> Option<AABB> {
-    let drawable = app.world.get_component::<DrawableComponent>(id)?;
-    let transform = app.world.get_component::<TransformComponent>(id)?;
-    drawable
-        .bounds
-        .map(|b| b.transform(&transform.transform.make_mat4()))
+    crate::systems::subtree_render_bounds(&app.world, id)
 }
 
 pub(super) fn snapshot(app: &Application, limit: usize) -> Value {
@@ -142,9 +138,10 @@ pub(super) fn snapshot(app: &Application, limit: usize) -> Value {
     let lookat = app.camera.get_lookat_mat(&app.world);
     let position = Vec3::new(lookat[3][0], lookat[3][1], lookat[3][2]);
     let direction = Vec3::new(-lookat[2][0], -lookat[2][1], -lookat[2][2]);
+    let poses = crate::systems::resolve_world_transforms(&app.world);
     let mut candidates = Vec::new();
     let mut missing_bounds = 0;
-    for (id, drawable, transform) in app
+    for (id, drawable, _local) in app
         .world
         .query_ref::<(&DrawableComponent, &TransformComponent)>()
     {
@@ -156,7 +153,7 @@ pub(super) fn snapshot(app: &Application, limit: usize) -> Value {
         }
         let Some(bounds) = drawable
             .bounds
-            .map(|b| b.transform(&transform.transform.make_mat4()))
+            .and_then(|b| poses.get(&id).map(|pose| b.transform(&pose.matrix)))
         else {
             missing_bounds += 1;
             continue;

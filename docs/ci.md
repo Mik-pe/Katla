@@ -188,3 +188,12 @@ counting as native acceptance.
 cargo test -p katla_app --lib --all-features --locked scene
 RUST_LOG=info cargo test -p katla_app --lib document_tests --all-features --locked -- --ignored --test-threads=1
 ```
+
+## Mesh and prefab authoring
+
+Linux runs portable mesh/prefab tests and `prefab::native_tests` serially with
+Khronos validation. The capability-gated `macos-26` document step runs the same
+native prefab fixture with Metal API validation. It covers GPU geometry sharing,
+AI authoring and atomic persistence, capture/reference remapping, failed staging
+rollback, resource retirement and scaled mesh collider reconstruction. See
+[the prefab contract](prefabs.md#verification) for commands and rendering evidence.

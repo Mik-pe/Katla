@@ -1,0 +1,21 @@
+#![enable(unwrap_newtypes)]
+#![enable(implicit_some)]
+#![enable(unwrap_variant_newtypes)]
+(
+    version: 1,
+    name: "Chair cushion",
+    parts: [
+        /*[0]*/ (
+            id: "cushion",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            geometry: (
+                kind: "cube",
+                size: (0.68, 0.08, 0.65),
+            ),
+        ),
+    ],
+)

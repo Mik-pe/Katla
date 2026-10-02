@@ -318,6 +318,8 @@ pub enum EditorAction {
     MaterialPreset(katla_agent::material::MaterialOp),
     /// Spawn a new model at the given position.
     SpawnModel(SpawnableModel, Vec3),
+    /// Instantiate a mesh asset or prefab at the scene origin.
+    InstantiatePrefab(std::path::PathBuf),
     /// Save to the current scene path, choosing one for an untitled scene.
     SaveScene,
     SaveSceneAs,

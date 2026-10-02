@@ -8,7 +8,7 @@ use katla_physics::{
 };
 use katla_script::{PendingPhysicsEvents, PhysicsCollisionEvent, PhysicsCollisionEventType};
 
-use crate::components::TransformComponent;
+use crate::components::{Parent, TransformComponent, WorldTransform};
 
 /// System that synchronizes ECS physics components with the Rapier simulation.
 ///
@@ -69,11 +69,10 @@ fn spawn_new_bodies(world: &mut World) {
         return;
     }
 
+    let poses = crate::systems::resolve_world_transforms(world);
     for (entity, shape, body_type) in to_spawn {
-        let transform = world
-            .get_component::<TransformComponent>(entity)
-            .map(|t| t.transform)
-            .unwrap_or_default();
+        let pose = poses.get(&entity).copied().unwrap_or_default();
+        let transform = pose.transform;
 
         let mat = world.get_component::<PhysicsMaterial>(entity).copied();
         let is_sensor = world.get_component::<TriggerVolume>(entity).is_some();
@@ -86,7 +85,7 @@ fn spawn_new_bodies(world: &mut World) {
         let linear_velocity = rb_ref.map(|rb| rb.linear_velocity).unwrap_or_default();
         let collision_filter = world.get_component::<CollisionFilter>(entity).copied();
 
-        let mesh_data = resolve_mesh_data(&shape, world);
+        let mesh_data = resolve_mesh_data(&shape, world, &pose);
 
         let (body_handle, collider_handle) = {
             let Some(physics) = world.get_resource_mut::<PhysicsWorld>() else {
@@ -119,7 +118,11 @@ fn spawn_new_bodies(world: &mut World) {
     }
 }
 
-fn resolve_mesh_data(shape: &ColliderShape, world: &World) -> Option<MeshColliderData> {
+fn resolve_mesh_data(
+    shape: &ColliderShape,
+    world: &World,
+    pose: &WorldTransform,
+) -> Option<MeshColliderData> {
     let handle = match shape {
         ColliderShape::Trimesh(h) | ColliderShape::ConvexHull(h) => *h,
         _ => return None,
@@ -128,7 +131,18 @@ fn resolve_mesh_data(shape: &ColliderShape, world: &World) -> Option<MeshCollide
     let cache = world.get_resource::<crate::geometry_cache::GeometryCache>()?;
     let data = cache.get(handle)?;
     Some(MeshColliderData {
-        positions: data.positions.clone(),
+        // Rapier consumes a rigid pose. Bake the remaining affine deformation
+        // into collider vertices, preserving scale, reflection and hierarchy shear.
+        positions: data
+            .positions
+            .iter()
+            .map(|p| {
+                let point = pose.matrix * katla_math::Vec4::new(p[0], p[1], p[2], 1.0);
+                let local = pose.transform.rotation.conjugate_unit()
+                    * (Vec3::new(point.x(), point.y(), point.z()) - pose.transform.position);
+                local.to_array()
+            })
+            .collect(),
         triangles: data.triangles.clone(),
     })
 }
@@ -241,26 +255,30 @@ fn cleanup_destroyed_joints(world: &mut World) {
 }
 
 fn sync_kinematic_transforms(world: &mut World) {
-    let kinematic_handles: Vec<_> = world
-        .query::<(&RigidBody, &TransformComponent)>()
-        .filter(|(_, rb, _)| rb.is_spawned() && rb.body_type == BodyType::Kinematic)
-        .filter_map(|(entity, rb, tc)| {
-            let handle = rb.body_handle?;
-            Some((entity, handle, tc.transform))
+    let poses = crate::systems::resolve_world_transforms(world);
+    let handles: Vec<_> = world
+        .query_ref::<&RigidBody>()
+        .filter(|(_, rb)| rb.is_spawned() && rb.body_type != BodyType::Dynamic)
+        .filter_map(|(entity, rb)| {
+            Some((
+                rb.body_type,
+                rb.body_handle,
+                rb.collider_handle,
+                poses.get(&entity)?.transform,
+            ))
         })
         .collect();
-
-    if kinematic_handles.is_empty() {
+    let Some(physics) = world.get_resource_mut::<PhysicsWorld>() else {
         return;
-    }
-
-    let physics = match world.get_resource_mut::<PhysicsWorld>() {
-        Some(p) => p,
-        None => return,
     };
-
-    for (_entity, handle, transform) in kinematic_handles {
-        physics.set_kinematic_position(handle, &transform);
+    for (kind, body, collider, transform) in handles {
+        if kind == BodyType::Static {
+            if let Some(collider) = collider {
+                physics.set_static_position(collider, &transform);
+            }
+        } else if let Some(body) = body {
+            physics.set_kinematic_position(body, &transform);
+        }
     }
 }
 
@@ -292,9 +310,54 @@ fn sync_transforms_back(world: &mut World) {
 
     let _ = physics;
 
+    let mut poses = crate::systems::resolve_world_transforms(world);
+    // A dynamic parent has already moved in Rapier. Use its new pose when
+    // converting a child's world result back to local space in this same step.
+    for (entity, new_transform, _) in &updates {
+        if let Some(pose) = poses.get_mut(entity) {
+            let old_rigid = katla_math::Transform::from_position_rotation_scale(
+                pose.transform.position,
+                pose.transform.rotation,
+                Vec3::new(1.0, 1.0, 1.0),
+            );
+            if let Some(inverse) = old_rigid.make_mat4().inverse() {
+                pose.matrix = new_transform.make_mat4() * inverse * pose.matrix;
+                pose.transform.position = new_transform.position;
+                pose.transform.rotation = new_transform.rotation;
+            }
+        }
+    }
+    let updated_poses = updates
+        .iter()
+        .filter_map(|(id, _, _)| poses.get(id).copied().map(|pose| (*id, pose)))
+        .collect();
+    let poses = crate::systems::resolve_with_world_poses(world, updated_poses);
     for (entity, new_transform, velocity) in updates {
+        let parent = world
+            .get_component::<Parent>(entity)
+            .and_then(|p| poses.get(&p.parent));
+        let local = if let Some(parent) = parent {
+            let Some(inverse) = parent.matrix.inverse() else {
+                log::warn!("Cannot synchronize physics below a singular parent transform");
+                continue;
+            };
+            let p = inverse
+                * katla_math::Vec4::new(
+                    new_transform.position.x(),
+                    new_transform.position.y(),
+                    new_transform.position.z(),
+                    1.0,
+                );
+            (
+                Vec3::new(p.x(), p.y(), p.z()),
+                parent.transform.rotation.conjugate_unit() * new_transform.rotation,
+            )
+        } else {
+            (new_transform.position, new_transform.rotation)
+        };
         if let Some(tc) = world.get_component_mut::<TransformComponent>(entity) {
-            tc.transform = new_transform;
+            tc.transform.position = local.0;
+            tc.transform.rotation = local.1;
         }
         if let Some(rb) = world.get_component_mut::<RigidBody>(entity) {
             rb.linear_velocity = velocity;
@@ -829,6 +892,179 @@ mod joint_owner_tests {
         assert_eq!(
             world.get_component::<Joint>(owner).unwrap().joint_handle,
             handle
+        );
+    }
+}
+
+#[cfg(test)]
+mod hierarchy_tests {
+    use super::*;
+    use katla_math::{Quat, Transform};
+
+    #[test]
+    fn test_dynamic_world_pose_returns_to_parent_local_without_losing_scale() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
+        let parent = world.spawn((TransformComponent::new(Transform {
+            position: Vec3::new(4.0, 3.0, 2.0),
+            rotation: Quat::from_axis_angle(Vec3::Y_AXIS, 0.6),
+            scale: Vec3::new(2.0, 3.0, 4.0),
+        }),));
+        let local = Transform::new_from_position(Vec3::new(1.0, 2.0, 3.0))
+            .with_scale(Vec3::new(0.7, 0.8, 0.9));
+        let child = world.spawn((
+            TransformComponent::new(local),
+            Parent { parent },
+            RigidBody::dynamic(),
+            ColliderShape::Sphere(katla_physics::SphereShape::new(0.5)),
+        ));
+        let before = crate::systems::resolve_world_transforms(&world)[&child];
+        RapierPhysicsSystem.update(&mut world, 1.0 / 60.0);
+        let handle = world
+            .get_component::<RigidBody>(child)
+            .unwrap()
+            .body_handle
+            .unwrap();
+        let physical = world
+            .get_resource::<PhysicsWorld>()
+            .unwrap()
+            .body_transform(handle)
+            .unwrap();
+        let after = crate::systems::resolve_world_transforms(&world)[&child];
+        assert!((after.transform.position - physical.position).length() < 1e-4);
+        assert!(physical.position.y() < before.transform.position.y());
+        assert_eq!(
+            world
+                .get_component::<TransformComponent>(child)
+                .unwrap()
+                .transform
+                .scale,
+            local.scale
+        );
+        RapierPhysicsSystem.update(&mut world, 1.0 / 60.0);
+        let physical = world
+            .get_resource::<PhysicsWorld>()
+            .unwrap()
+            .body_transform(handle)
+            .unwrap();
+        assert!(
+            (crate::systems::resolve_world_transforms(&world)[&child]
+                .transform
+                .position
+                - physical.position)
+                .length()
+                < 1e-4
+        );
+    }
+
+    #[test]
+    fn test_static_colliders_follow_moved_prefab_root() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        let parent = world.spawn((TransformComponent::from_position(Vec3::new(4.0, 0.0, 0.0)),));
+        let child = world.spawn((
+            TransformComponent::default(),
+            Parent { parent },
+            RigidBody::static_body(),
+            ColliderShape::Sphere(katla_physics::SphereShape::new(0.5)),
+        ));
+        RapierPhysicsSystem.update(&mut world, 1.0 / 60.0);
+        world
+            .get_resource_mut::<PhysicsWorld>()
+            .unwrap()
+            .step(1.0 / 60.0);
+        assert_eq!(
+            world
+                .get_resource::<PhysicsWorld>()
+                .unwrap()
+                .raycast(Vec3::new(4.0, 2.0, 0.0), -Vec3::Y_AXIS, 3.0)
+                .unwrap()
+                .entity,
+            Some(child.id())
+        );
+        world
+            .get_component_mut::<TransformComponent>(parent)
+            .unwrap()
+            .transform
+            .position = Vec3::new(8.0, 0.0, 0.0);
+        RapierPhysicsSystem.update(&mut world, 1.0 / 60.0);
+        world
+            .get_resource_mut::<PhysicsWorld>()
+            .unwrap()
+            .step(1.0 / 60.0);
+        assert!(
+            world
+                .get_resource::<PhysicsWorld>()
+                .unwrap()
+                .raycast(Vec3::new(4.0, 2.0, 0.0), -Vec3::Y_AXIS, 3.0)
+                .is_none()
+        );
+        assert_eq!(
+            world
+                .get_resource::<PhysicsWorld>()
+                .unwrap()
+                .raycast(Vec3::new(8.0, 2.0, 0.0), -Vec3::Y_AXIS, 3.0)
+                .unwrap()
+                .entity,
+            Some(child.id())
+        );
+    }
+}
+
+#[cfg(test)]
+mod dynamic_ancestor_tests {
+    use super::*;
+
+    #[test]
+    fn test_dynamic_ancestor_updates_through_nonphysical_intermediate_parent() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        world.insert_resource(PhysicsActive(true));
+        let root = world.spawn((
+            TransformComponent::from_position(Vec3::new(10.0, 2.0, 0.0)),
+            RigidBody::dynamic(),
+            ColliderShape::Sphere(katla_physics::SphereShape::new(0.2)),
+        ));
+        world
+            .get_component_mut::<RigidBody>(root)
+            .unwrap()
+            .linear_velocity = Vec3::X_AXIS;
+        let middle = world.spawn((
+            TransformComponent::from_position(Vec3::new(2.0, 0.0, 0.0)),
+            Parent { parent: root },
+        ));
+        let child = world.spawn((
+            TransformComponent::from_position(Vec3::new(2.0, 0.0, 0.0)),
+            Parent { parent: middle },
+            RigidBody::dynamic(),
+            ColliderShape::Sphere(katla_physics::SphereShape::new(0.2)),
+        ));
+        for _ in 0..3 {
+            RapierPhysicsSystem.update(&mut world, 1.0 / 60.0);
+            let body = world
+                .get_component::<RigidBody>(child)
+                .unwrap()
+                .body_handle
+                .unwrap();
+            let physics_pose = world
+                .get_resource::<PhysicsWorld>()
+                .unwrap()
+                .body_transform(body)
+                .unwrap();
+            let rendered = crate::systems::resolve_world_transforms(&world)[&child]
+                .transform
+                .position;
+            assert!((rendered - physics_pose.position).length() < 1e-4);
+        }
+        assert!(
+            world
+                .get_component::<TransformComponent>(child)
+                .unwrap()
+                .transform
+                .position
+                .x()
+                < 2.0
         );
     }
 }

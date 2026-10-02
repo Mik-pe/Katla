@@ -243,7 +243,6 @@ impl PhysicsWorld {
         let body_handle = self.bodies.insert(body);
 
         let collider = ColliderBuilder::new(rapier_shape)
-            .position(pose.into())
             .user_data(entity_id as u128)
             .build();
         let collider_handle =
@@ -311,9 +310,7 @@ impl PhysicsWorld {
         let pose = katla_to_rapier_pose(transform);
         let rapier_shape = collider_shape_to_rapier(shape, mesh_data);
 
-        let mut collider_builder = ColliderBuilder::new(rapier_shape)
-            .position(pose.into())
-            .user_data(entity_id as u128);
+        let mut collider_builder = ColliderBuilder::new(rapier_shape).user_data(entity_id as u128);
 
         if let Some(mat) = material {
             collider_builder = collider_builder
@@ -343,7 +340,7 @@ impl PhysicsWorld {
         };
 
         if rapier_body_type == RigidBodyType::Fixed {
-            let collider = collider_builder.build();
+            let collider = collider_builder.position(pose.into()).build();
             let collider_handle = self.colliders.insert(collider);
             return (RigidBodyHandle::invalid(), collider_handle);
         }
@@ -405,6 +402,13 @@ impl PhysicsWorld {
     pub fn set_kinematic_position(&mut self, body: RigidBodyHandle, transform: &Transform) {
         if let Some(b) = self.bodies.get_mut(body) {
             b.set_position(katla_to_rapier_pose(transform).into(), true);
+        }
+    }
+
+    /// Move a standalone static collider to its authored world pose.
+    pub fn set_static_position(&mut self, collider: ColliderHandle, transform: &Transform) {
+        if let Some(collider) = self.colliders.get_mut(collider) {
+            collider.set_position(katla_to_rapier_pose(transform).into());
         }
     }
 
@@ -707,6 +711,39 @@ mod tests {
         assert_eq!(world.bodies.len(), 1);
         assert_eq!(world.colliders.len(), 1);
         assert!(world.bodies.get(body).unwrap().is_dynamic());
+    }
+
+    #[test]
+    fn test_attached_collider_applies_world_pose_once() {
+        let shape = ColliderShape::Sphere(SphereShape::new(0.5));
+        let transform = Transform::new_from_position(Vec3::new(3.0, 4.0, 5.0));
+        let mut world = PhysicsWorld::new();
+        let (_, collider) = world.create_dynamic_body(&shape, None, &transform, 1);
+        world.step(1.0 / 60.0);
+        let hit = world
+            .raycast(Vec3::new(3.0, 7.0, 5.0), -Vec3::Y_AXIS, 4.0)
+            .unwrap();
+        assert_eq!(hit.entity, Some(1));
+        assert!(
+            world
+                .colliders
+                .get(collider)
+                .unwrap()
+                .position()
+                .translation
+                .x
+                < 3.01
+        );
+        for kind in [BodyType::Dynamic, BodyType::Kinematic, BodyType::Static] {
+            let mut world = PhysicsWorld::new();
+            world.create_body(&shape, None, &transform, kind, None, 2);
+            world.step(1.0 / 60.0);
+            let hit = world
+                .raycast(Vec3::new(3.0, 7.0, 5.0), -Vec3::Y_AXIS, 4.0)
+                .unwrap();
+            assert_eq!(hit.entity, Some(2));
+            assert!((hit.point.x() - 3.0).abs() < 1e-5);
+        }
     }
 
     #[test]

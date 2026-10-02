@@ -63,6 +63,11 @@ compilation, prepared variants and shader reload follow the
 [Metal pipeline contract](metal_pipeline_cache.md); encoding does not compile.
 Private Metal texture publication uses [staged uploads](metal_texture_uploads.md).
 
+Static `.katmesh` recipes compile named parts into shared geometry; `.katprefab`
+templates expand into editable scene subtrees with fresh entity references.
+Mesh compilation, caching, persistence and AI authoring remain app-owned. See
+[mesh and prefab contracts](prefabs.md).
+
 GLTF assets provide meshes, PBR materials, skins and animation clips. Background
 loading and material templates are application services.
 ResourceManager::discover() locates resources/; use its path helpers. Persistent
@@ -76,6 +81,8 @@ replacement; older documents migrate through isolated readers. See the
 Mat4 stores four Vec4 columns: m[col][row], with m[0] denoting column zero.
 This is the Vulkan/GLSL convention; do not transpose it for Metal. Transform
 stores position, rotation and scale and composes them through make_mat4().
+Application hierarchy resolution multiplies these matrices exactly; rendering
+and bounds retain shear instead of recomposing an approximate world TRS.
 Vec2/Vec3 are scalar; Vec4/Mat4/Quat use SSE on x86/x86_64. Hot operations are
 inline. Spawned colors are sRGB and convert to linear before rendering. The
 [type exports](../katla_math/src/lib.rs) define the current math inventory.

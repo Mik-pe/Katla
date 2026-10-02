@@ -9,6 +9,7 @@ pub mod animation;
 pub mod context;
 pub mod events;
 pub mod material;
+pub mod prefab;
 pub mod tools;
 
 #[cfg(feature = "llm-assistant")]

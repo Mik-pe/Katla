@@ -10,7 +10,7 @@ use log::{info, warn};
 use katla_ecs::{EntityId, World};
 use std::collections::HashMap;
 
-use crate::components::{ParticleEmitterComponent, WorldTransform};
+use crate::components::ParticleEmitterComponent;
 
 /// System that manages particle emitters in the ECS.
 ///
@@ -80,17 +80,18 @@ impl ParticleSystem {
         }
 
         // Collect world positions before mutable borrow
-        let world_positions: HashMap<EntityId, [f32; 3]> = world
-            .query::<&WorldTransform>()
-            .map(|(id, wt)| {
-                let p = wt.transform.position;
-                (id, [p.x(), p.y(), p.z()])
-            })
-            .collect();
+        let world_positions: HashMap<EntityId, [f32; 3]> =
+            crate::systems::resolve_world_transforms(world)
+                .into_iter()
+                .map(|(id, pose)| (id, pose.transform.position.to_array()))
+                .collect();
 
         // Query all particle emitter components
         for (entity_id, emitter) in world.query::<&mut ParticleEmitterComponent>() {
             if emitter.active {
+                if let Some(pos) = world_positions.get(&entity_id) {
+                    emitter.config.position = *pos;
+                }
                 // Initialize emitter if not already done
                 if emitter.emitter_handle.is_none() {
                     match particle_system.create_emitter(emitter.config) {

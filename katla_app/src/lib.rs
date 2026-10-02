@@ -37,3 +37,8 @@ pub use application::frame_graph_config::{
 pub use preferences::Preferences;
 pub use renderer_type::{FrameGraph, Renderer};
 pub use rendering::FrameContext;
+
+/// Editable static mesh assets.
+pub mod mesh_asset;
+/// Reusable scene subtrees and their authoring tools.
+pub mod prefab;

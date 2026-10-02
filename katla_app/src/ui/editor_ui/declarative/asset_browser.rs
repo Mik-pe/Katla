@@ -386,6 +386,9 @@ fn activate_asset(
                 state.navigate_to(&asset.path, thumbnail_texture_handles);
             }
         }
+        AssetType::Prefab => state
+            .pending_actions
+            .push(AssetAction::InstantiatePrefab(asset.path)),
         AssetType::Model => state
             .pending_actions
             .push(AssetAction::ModelPreviewRequested(asset.path)),
@@ -407,6 +410,9 @@ pub(crate) fn process_asset_actions(
 
     for action in state.take_actions() {
         match action {
+            AssetAction::InstantiatePrefab(path) => {
+                pending_actions.push(EditorAction::InstantiatePrefab(path))
+            }
             AssetAction::ModelPreviewRequested(_path) => {
                 log::debug!("Model preview requested but feature is disabled");
             }

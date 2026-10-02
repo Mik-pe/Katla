@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+pub(crate) mod asset_io;
 pub mod asset_watcher;
 pub mod background_loader;
 pub mod cache;

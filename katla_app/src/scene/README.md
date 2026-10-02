@@ -57,7 +57,7 @@ The editor camera and other hidden editor entities survive scene replacement.
 
 ## Resource roots
 
-Models, scripts and audio use the same explicit reference type:
+Models, mesh recipes, scripts and audio use the same explicit reference type:
 
 | RON reference | Resolution |
 | --- | --- |
@@ -71,7 +71,12 @@ origin. File loading captures absolute roots once, so subsequent resolution
 does not depend on the process working directory. `load_scene` loads an
 in-memory scene and supports `Resource` and `File` references.
 
+`MeshAsset(path: Resource("meshes/chair-frame.katmesh"))` reconstructs static
+recipe geometry. Prefab instances save as expanded scene subtrees with these mesh
+references. See [mesh/prefab authoring](../../../docs/prefabs.md).
+
 The loader checks each built-in referenced file before allocating replacements.
+Mesh recipes compile during preflight unless an identical recipe is already active.
 Model decoding and GPU preparation happen during staging and can still fail.
 Scripts retain the script engine's configured directory restrictions and are
 compiled when the script system starts them. Audio decoding occurs in the audio
@@ -100,7 +105,9 @@ Rigid bodies use one descriptor with `kind`, gravity, CCD and velocity. Mesh
 colliders use `Trimesh` or `ConvexHull` with no obsolete handle fields; the loader
 binds the reconstructed model mesh and its retained CPU geometry. Joint endpoints
 must have dynamic or kinematic bodies and colliders. Native physics handles are
-created by the physics system. Engine transform caches are recomputed by systems.
+created by the physics system. World poses resolve from current locals and Parent links. Rendering and bounds
+use exact matrix composition; physics consumes a rigid world pose and baked mesh
+deformation.
 
 Trigger visitor filters and explicit animation targets use persistent keys.
 Rule references resolve after all entities are staged, so forward references,

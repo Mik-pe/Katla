@@ -94,6 +94,24 @@ pub(super) fn spawn_entity(
         ))
     } else {
         match &desc.source {
+            EntitySource::MeshAsset { path } => {
+                let (mesh, bounds) = crate::mesh_asset::upload(app, &context.resolve(path)?)?;
+                let material = app.default_material();
+                let drawable = DrawableComponent::with_handles_and_color(
+                    mesh,
+                    material,
+                    color_from_desc(&desc.drawable).to_linear(),
+                )
+                .with_bounds(bounds);
+                app.gpu_resource_tracker
+                    .track_drawable(mesh, material, drawable.skeleton_handle);
+                app.world.spawn((
+                    TransformComponent::from_position(katla_math::Vec3::new(
+                        pos[0], pos[1], pos[2],
+                    )),
+                    drawable,
+                ))
+            }
             EntitySource::GltfModel { path } => app
                 .spawn_gltf_model(context.resolve(path)?, pos, None)
                 .map_err(|e| format!("{e}"))?,

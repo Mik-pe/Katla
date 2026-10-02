@@ -419,6 +419,7 @@ pub struct Application {
     pub(crate) gpu_resource_tracker: crate::gpu_resource_tracker::GpuResourceTracker,
     /// CPU-side geometry data cache keyed by MeshHandle for collider generation etc.
     pub(crate) geometry_cache: GeometryCache,
+    pub(crate) mesh_assets: crate::mesh_asset::MeshAssetCache,
     /// Reusable buffer for collecting point lights each frame. Cleared and refilled
     /// in collect_and_upload_lights to avoid per-frame Vec allocation.
     pub(crate) point_lights_buffer: Vec<katla_gfx::PointLightGPU>,

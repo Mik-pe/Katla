@@ -160,22 +160,6 @@ impl SceneManager {
         context: SceneAssetContext,
         path: Option<std::path::PathBuf>,
     ) -> Result<(), SceneError> {
-        scene.validate()?;
-        for entity in &scene.entities {
-            app.scene_components.validate(&entity.components)?;
-            for (field, asset) in entity_assets(entity) {
-                let file = context
-                    .resolve(asset)
-                    .map_err(|error| SceneError::entity(entity.id, field, error))?;
-                if !file.is_file() {
-                    return Err(SceneError::entity(
-                        entity.id,
-                        field,
-                        format!("Asset {} is not a file", file.display()),
-                    ));
-                }
-            }
-        }
         info!(
             "Loading scene '{}' (version {}) with {} entities",
             scene.name,
@@ -185,95 +169,8 @@ impl SceneManager {
         app.renderer.wait_for_device();
         let previous_entities: HashSet<_> = app.world.entity_ids().collect();
         let mut previous_tracker = app.gpu_resource_tracker.clone();
-        let staged = (|| {
-            let mut mapping = HashMap::new();
-            let mut entities = Vec::with_capacity(scene.entities.len());
-            for desc in &scene.entities {
-                let entity = spawn_entity(app, desc, &context)
-                    .map_err(|error| SceneError::entity(desc.id, "source", error))?;
-                mapping.insert(desc.id, entity);
-                entities.push(entity);
-            }
-            let references = SceneReadContext { entities: mapping };
-            for desc in &scene.entities {
-                let entity = references
-                    .entity(desc.id)
-                    .map_err(|error| SceneError::entity(desc.id, "id", error))?;
-                if !desc.trigger_rules.is_empty() {
-                    let rules = desc
-                        .trigger_rules
-                        .iter()
-                        .map(|rule| {
-                            rule.map_entities(|key| {
-                                references.entity(*key).map(|entity| entity.id())
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(|error| SceneError::entity(desc.id, "trigger_rules", error))?;
-                    let rules = crate::events::TriggerRules::new(rules)
-                        .map_err(|error| SceneError::entity(desc.id, "trigger_rules", error))?;
-                    app.world.add_component(entity, rules);
-                }
-                if let Some(parent) = desc.parent {
-                    let parent = references
-                        .entity(parent)
-                        .map_err(|error| SceneError::entity(desc.id, "parent", error))?;
-                    app.world
-                        .add_component(entity, crate::components::Parent::new(parent));
-                    if let Some(children) = app
-                        .world
-                        .get_component_mut::<crate::components::Children>(parent)
-                    {
-                        children.children.push(entity);
-                    } else {
-                        app.world
-                            .add_component(parent, crate::components::Children::new(vec![entity]));
-                    }
-                }
-                if let Some(joint) = &desc.joint {
-                    let a = references
-                        .entity(joint.a)
-                        .map_err(|error| SceneError::entity(desc.id, "joint.a", error))?;
-                    let b = references
-                        .entity(joint.b)
-                        .map_err(|error| SceneError::entity(desc.id, "joint.b", error))?;
-                    app.world.add_component(
-                        entity,
-                        katla_physics::Joint {
-                            joint_type: joint.kind,
-                            entity_a: a.id(),
-                            entity_b: b.id(),
-                            anchor_a: joint.anchor_a,
-                            anchor_b: joint.anchor_b,
-                            limits: joint
-                                .limits
-                                .map(|[min, max]| katla_physics::JointLimits { min, max }),
-                            joint_handle: None,
-                        },
-                    );
-                }
-            }
-            app.scene_components
-                .restore(&mut app.world, &scene, &references)?;
-            // Encoding can fail in game codecs. Prepare the baseline before retiring anything.
-            capture_entities(app, &entities, scene.clone(), &context)
-        })();
-        let baseline = match staged {
-            Ok(baseline) => baseline,
-            Err(error) => {
-                let prepared: Vec<_> = app
-                    .world
-                    .entity_ids()
-                    .filter(|id| !previous_entities.contains(id))
-                    .collect();
-                for id in prepared {
-                    app.world.destroy_entity(id);
-                }
-                let abandoned = app.gpu_resource_tracker.rollback_to(previous_tracker);
-                destroy_resources(app, abandoned);
-                return Err(error);
-            }
-        };
+        let prepared = stage_scene(app, &scene, &context)?;
+        let baseline = prepared.baseline;
         for id in previous_entities {
             if app
                 .world
@@ -308,7 +205,12 @@ impl SceneManager {
         app.scene_document.saved = baseline;
         app.scene_document.path = path;
         #[cfg(feature = "editor")]
-        app.editor.clear_entity_references();
+        {
+            app.editor.clear_entity_references();
+            for entity in prepared.entities {
+                crate::application::editor::record_entity_gpu_handles(app, entity);
+            }
+        }
         Ok(())
     }
 }
@@ -319,6 +221,7 @@ pub(crate) fn destroy_resources(
 ) {
     for handle in resources.meshes {
         app.geometry_cache.remove(handle);
+        app.mesh_assets.remove(handle);
         if let Some(cache) = app
             .world
             .get_resource_mut::<crate::geometry_cache::GeometryCache>()
@@ -361,9 +264,12 @@ pub(super) fn asset_context(
     })
 }
 
-fn entity_assets(entity: &EntityDescriptor) -> Vec<(&'static str, &AssetRef)> {
+pub(crate) fn entity_assets(entity: &EntityDescriptor) -> Vec<(&'static str, &AssetRef)> {
     let mut assets = Vec::new();
-    if let EntitySource::GltfModel { path } | EntitySource::StlModel { path } = &entity.source {
+    if let EntitySource::GltfModel { path }
+    | EntitySource::StlModel { path }
+    | EntitySource::MeshAsset { path } = &entity.source
+    {
         assets.push(("source.path", path));
     }
     if let Some(script) = &entity.script {
@@ -374,11 +280,14 @@ fn entity_assets(entity: &EntityDescriptor) -> Vec<(&'static str, &AssetRef)> {
     }
     assets
 }
-pub(super) fn entity_assets_mut(
+pub(crate) fn entity_assets_mut(
     entity: &mut EntityDescriptor,
 ) -> Vec<(&'static str, &mut AssetRef)> {
     let mut assets = Vec::new();
-    if let EntitySource::GltfModel { path } | EntitySource::StlModel { path } = &mut entity.source {
+    if let EntitySource::GltfModel { path }
+    | EntitySource::StlModel { path }
+    | EntitySource::MeshAsset { path } = &mut entity.source
+    {
         assets.push(("source.path", path));
     }
     if let Some(script) = &mut entity.script {
@@ -388,4 +297,152 @@ pub(super) fn entity_assets_mut(
         assets.push(("audio_emitter.path", &mut audio.path));
     }
     assets
+}
+
+/// A fully prepared subtree; caller decides whether to replace or append.
+pub(crate) struct PreparedScene {
+    pub(crate) entities: Vec<katla_ecs::EntityId>,
+    pub(crate) baseline: Scene,
+}
+
+pub(crate) fn preflight_scene(
+    app: &Application,
+    scene: &Scene,
+    context: &SceneAssetContext,
+) -> Result<(), SceneError> {
+    scene.validate()?;
+    let mut meshes = HashSet::new();
+    for entity in &scene.entities {
+        app.scene_components.validate(&entity.components)?;
+        for (field, asset) in entity_assets(entity) {
+            let file = context
+                .resolve(asset)
+                .map_err(|error| SceneError::entity(entity.id, field, error))?;
+            if !file.is_file() {
+                return Err(SceneError::entity(
+                    entity.id,
+                    field,
+                    format!("Asset {} is not a file", file.display()),
+                ));
+            }
+        }
+        if let EntitySource::MeshAsset { path } = &entity.source {
+            let file = context
+                .resolve(path)
+                .map_err(|error| SceneError::entity(entity.id, "source.path", error))?;
+            if meshes.insert(file.clone()) {
+                let asset = crate::mesh_asset::MeshAsset::load(&file)
+                    .map_err(|error| SceneError::entity(entity.id, "source.path", error))?;
+                let key = asset
+                    .geometry_key()
+                    .map_err(|error| SceneError::entity(entity.id, "source.path", error))?;
+                if !app.mesh_assets.contains(&key) {
+                    asset
+                        .compile()
+                        .map_err(|error| SceneError::entity(entity.id, "source.path", error))?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn stage_scene(
+    app: &mut Application,
+    scene: &Scene,
+    context: &SceneAssetContext,
+) -> Result<PreparedScene, SceneError> {
+    preflight_scene(app, scene, context)?;
+    app.renderer.wait_for_device();
+    let previous_entities: HashSet<_> = app.world.entity_ids().collect();
+    let previous_tracker = app.gpu_resource_tracker.clone();
+    let staged = (|| {
+        let mut mapping = HashMap::new();
+        let mut entities = Vec::with_capacity(scene.entities.len());
+        for desc in &scene.entities {
+            let entity = spawn_entity(app, desc, context)
+                .map_err(|error| SceneError::entity(desc.id, "source", error))?;
+            mapping.insert(desc.id, entity);
+            entities.push(entity);
+        }
+        let references = SceneReadContext { entities: mapping };
+        for desc in &scene.entities {
+            let entity = references
+                .entity(desc.id)
+                .map_err(|error| SceneError::entity(desc.id, "id", error))?;
+            if !desc.trigger_rules.is_empty() {
+                let rules = desc
+                    .trigger_rules
+                    .iter()
+                    .map(|rule| {
+                        rule.map_entities(|key| references.entity(*key).map(|entity| entity.id()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| SceneError::entity(desc.id, "trigger_rules", error))?;
+                let rules = crate::events::TriggerRules::new(rules)
+                    .map_err(|error| SceneError::entity(desc.id, "trigger_rules", error))?;
+                app.world.add_component(entity, rules);
+            }
+            if let Some(parent) = desc.parent {
+                let parent = references
+                    .entity(parent)
+                    .map_err(|error| SceneError::entity(desc.id, "parent", error))?;
+                app.world
+                    .add_component(entity, crate::components::Parent::new(parent));
+                if let Some(children) = app
+                    .world
+                    .get_component_mut::<crate::components::Children>(parent)
+                {
+                    children.children.push(entity);
+                } else {
+                    app.world
+                        .add_component(parent, crate::components::Children::new(vec![entity]));
+                }
+            }
+            if let Some(joint) = &desc.joint {
+                let a = references
+                    .entity(joint.a)
+                    .map_err(|error| SceneError::entity(desc.id, "joint.a", error))?;
+                let b = references
+                    .entity(joint.b)
+                    .map_err(|error| SceneError::entity(desc.id, "joint.b", error))?;
+                app.world.add_component(
+                    entity,
+                    katla_physics::Joint {
+                        joint_type: joint.kind,
+                        entity_a: a.id(),
+                        entity_b: b.id(),
+                        anchor_a: joint.anchor_a,
+                        anchor_b: joint.anchor_b,
+                        limits: joint
+                            .limits
+                            .map(|[min, max]| katla_physics::JointLimits { min, max }),
+                        joint_handle: None,
+                    },
+                );
+            }
+        }
+        app.scene_components
+            .restore(&mut app.world, scene, &references)?;
+        // Encoding can fail in game codecs. Prepare the baseline before retiring anything.
+        let baseline = capture_entities(app, &entities, scene.clone(), context)?;
+        Ok(PreparedScene { entities, baseline })
+    })();
+    let prepared = match staged {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            let prepared: Vec<_> = app
+                .world
+                .entity_ids()
+                .filter(|id| !previous_entities.contains(id))
+                .collect();
+            for id in prepared {
+                app.world.destroy_entity(id);
+            }
+            let abandoned = app.gpu_resource_tracker.rollback_to(previous_tracker);
+            destroy_resources(app, abandoned);
+            return Err(error);
+        }
+    };
+    Ok(prepared)
 }

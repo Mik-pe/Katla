@@ -10,6 +10,8 @@ use crate::ui::ColorScheme;
 pub enum AssetType {
     /// 3D model files (.glb, .gltf)
     Model,
+    /// Editable mesh recipes and reusable scene subtrees.
+    Prefab,
     /// Material definitions (.toml)
     Material,
     /// Shader source (.wgsl)
@@ -60,6 +62,8 @@ pub struct AssetEntry {
 pub enum AssetAction {
     /// Request model preview (double-click on model file)
     ModelPreviewRequested(PathBuf),
+    /// Instantiate a mesh recipe or prefab in the active scene.
+    InstantiatePrefab(PathBuf),
     /// Copy path to clipboard
     CopyPath(PathBuf),
     /// Show in Explorer/Finder
@@ -81,6 +85,7 @@ impl AssetType {
 
         match path.extension().and_then(|e| e.to_str()) {
             Some("glb") | Some("gltf") | Some("stl") => Self::Model,
+            Some("katmesh") | Some("katprefab") => Self::Prefab,
             Some("toml") => Self::Material,
             Some("wgsl") => Self::Shader,
             Some("luau") | Some("lua") => Self::Script,
@@ -96,7 +101,7 @@ impl AssetType {
         use katla_ui::ForkAwesome;
 
         match self {
-            Self::Model => ForkAwesome::CUBE,
+            Self::Model | Self::Prefab => ForkAwesome::CUBE,
             Self::Material => ForkAwesome::PAINT_BRUSH,
             Self::Shader => ForkAwesome::FILE_CODE,
             Self::Script => ForkAwesome::COG,
@@ -111,7 +116,7 @@ impl AssetType {
     /// Get icon color for this asset type.
     pub fn color(&self, theme: &ColorScheme) -> Color {
         match self {
-            Self::Model => theme.entity_mesh,
+            Self::Model | Self::Prefab => theme.entity_mesh,
             Self::Material => theme.text_accent,
             Self::Shader => theme.info,
             Self::Script => theme.success,

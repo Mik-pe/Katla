@@ -1,0 +1,264 @@
+#![enable(unwrap_newtypes)]
+#![enable(implicit_some)]
+#![enable(unwrap_variant_newtypes)]
+(
+    version: 3,
+    name: "Prefab workshop",
+    next_entity_id: 15,
+    entities: [
+        /*[0]*/ (
+            id: 1,
+            name: "Floor",
+            transform: (
+                position: (0.0, -0.01, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: Plane(
+                width: 12.0,
+                height: 12.0,
+            ),
+            drawable: (
+                color: (0.48, 0.52, 0.56, 1.0),
+                metallic: 0.0,
+                roughness: 0.85,
+                ao: 1.0,
+            ),
+        ),
+        /*[1]*/ (
+            id: 2,
+            name: "Chair 1",
+            transform: (
+                position: (-1.2, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: Empty,
+        ),
+        /*[2]*/ (
+            id: 3,
+            name: "Frame",
+            parent: 2,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: MeshAsset(
+                path: Resource("meshes/chair-frame.katmesh"),
+            ),
+            drawable: (
+                color: (0.55, 0.29, 0.12, 1.0),
+                metallic: 0.0,
+                roughness: 0.7,
+                ao: 1.0,
+            ),
+            rigid_body: (
+                kind: Static,
+                gravity_scale: 1.0,
+                ccd_enabled: false,
+                linear_velocity: (0.0, 0.0, 0.0),
+            ),
+            collider_shape: Trimesh,
+        ),
+        /*[3]*/ (
+            id: 4,
+            name: "Cushion",
+            parent: 2,
+            transform: (
+                position: (0.0, 0.54, 0.02),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: MeshAsset(
+                path: Resource("meshes/chair-cushion.katmesh"),
+            ),
+            drawable: (
+                color: (0.85, 0.18, 0.09, 1.0),
+                metallic: 0.0,
+                roughness: 0.9,
+                ao: 1.0,
+            ),
+        ),
+        /*[4]*/ (
+            id: 5,
+            name: "Chair 2",
+            transform: (
+                position: (1.2, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: Empty,
+        ),
+        /*[5]*/ (
+            id: 6,
+            name: "Frame",
+            parent: 5,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: MeshAsset(
+                path: Resource("meshes/chair-frame.katmesh"),
+            ),
+            drawable: (
+                color: (0.55, 0.29, 0.12, 1.0),
+                metallic: 0.0,
+                roughness: 0.7,
+                ao: 1.0,
+            ),
+            rigid_body: (
+                kind: Static,
+                gravity_scale: 1.0,
+                ccd_enabled: false,
+                linear_velocity: (0.0, 0.0, 0.0),
+            ),
+            collider_shape: Trimesh,
+        ),
+        /*[6]*/ (
+            id: 7,
+            name: "Cushion",
+            parent: 5,
+            transform: (
+                position: (0.0, 0.54, 0.02),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: MeshAsset(
+                path: Resource("meshes/chair-cushion.katmesh"),
+            ),
+            drawable: (
+                color: (0.08, 0.35, 0.65, 1.0),
+                metallic: 0.0,
+                roughness: 0.9,
+                ao: 1.0,
+            ),
+        ),
+        /*[7]*/ (
+            id: 8,
+            name: "Chair 3",
+            transform: (
+                position: (-1.2, 0.0, -2.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: Empty,
+        ),
+        /*[8]*/ (
+            id: 9,
+            name: "Frame",
+            parent: 8,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: MeshAsset(
+                path: Resource("meshes/chair-frame.katmesh"),
+            ),
+            drawable: (
+                color: (0.55, 0.29, 0.12, 1.0),
+                metallic: 0.0,
+                roughness: 0.7,
+                ao: 1.0,
+            ),
+            rigid_body: (
+                kind: Static,
+                gravity_scale: 1.0,
+                ccd_enabled: false,
+                linear_velocity: (0.0, 0.0, 0.0),
+            ),
+            collider_shape: Trimesh,
+        ),
+        /*[9]*/ (
+            id: 10,
+            name: "Cushion",
+            parent: 8,
+            transform: (
+                position: (0.0, 0.54, 0.02),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: MeshAsset(
+                path: Resource("meshes/chair-cushion.katmesh"),
+            ),
+            drawable: (
+                color: (0.18, 0.55, 0.22, 1.0),
+                metallic: 0.0,
+                roughness: 0.9,
+                ao: 1.0,
+            ),
+        ),
+        /*[10]*/ (
+            id: 11,
+            name: "Chair 4",
+            transform: (
+                position: (1.2, 0.0, -2.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: Empty,
+        ),
+        /*[11]*/ (
+            id: 12,
+            name: "Frame",
+            parent: 11,
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: MeshAsset(
+                path: Resource("meshes/chair-frame.katmesh"),
+            ),
+            drawable: (
+                color: (0.55, 0.29, 0.12, 1.0),
+                metallic: 0.0,
+                roughness: 0.7,
+                ao: 1.0,
+            ),
+            rigid_body: (
+                kind: Static,
+                gravity_scale: 1.0,
+                ccd_enabled: false,
+                linear_velocity: (0.0, 0.0, 0.0),
+            ),
+            collider_shape: Trimesh,
+        ),
+        /*[12]*/ (
+            id: 13,
+            name: "Cushion",
+            parent: 11,
+            transform: (
+                position: (0.0, 0.54, 0.02),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: MeshAsset(
+                path: Resource("meshes/chair-cushion.katmesh"),
+            ),
+            drawable: (
+                color: (0.75, 0.55, 0.08, 1.0),
+                metallic: 0.0,
+                roughness: 0.9,
+                ao: 1.0,
+            ),
+        ),
+        /*[13]*/ (
+            id: 14,
+            name: "Sun",
+            transform: (
+                position: (0.0, 0.0, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            source: Empty,
+            directional_light: (
+                direction: (-0.35, -1.0, -0.2),
+                color: (1.0, 0.98, 0.95),
+                intensity: 3.0,
+            ),
+        ),
+    ],
+)

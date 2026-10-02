@@ -92,16 +92,20 @@ impl Application {
     ) {
         use crate::components::{DrawableComponent, TransformComponent};
 
+        let poses = crate::systems::resolve_world_transforms(&self.world);
         let entity_count = self.world.entity_count();
         let mut drawable_count = 0;
         let mut culled_count = 0;
         #[cfg(feature = "editor")]
         self.editor.draw_entity_map_entries.clear();
 
-        for (_entity_id, drawable, transform) in self
+        for (_entity_id, drawable, _local) in self
             .world
             .query::<(&DrawableComponent, &TransformComponent)>()
         {
+            let Some(pose) = poses.get(&_entity_id) else {
+                continue;
+            };
             let mesh_handle = drawable.mesh_handle;
             if mesh_handle.is_none() {
                 continue;
@@ -113,7 +117,7 @@ impl Application {
             }
 
             if let Some(local_bounds) = drawable.bounds {
-                let world_mat = transform.transform.make_mat4();
+                let world_mat = pose.matrix;
                 let world_bounds = local_bounds.transform(&world_mat);
                 if !frustum.intersects_aabb(&world_bounds) {
                     culled_count += 1;
@@ -129,7 +133,7 @@ impl Application {
 
             let mut draw = frame
                 .draw(mesh_handle, material_handle)
-                .with_transform(transform.transform.make_mat4().to_array());
+                .with_transform(pose.matrix.to_array());
 
             // Skeleton for skinned meshes
             if drawable.skeleton_handle.is_some() {
@@ -512,11 +516,15 @@ impl Application {
         use crate::components::{PointLight, TransformComponent};
         use katla_gfx::PointLightGPU;
 
+        let poses = crate::systems::resolve_world_transforms(&self.world);
         self.point_lights_buffer.clear();
-        for (_entity, point_light, transform) in
+        for (entity, point_light, _local) in
             self.world.query::<(&PointLight, &TransformComponent)>()
         {
-            let pos = transform.transform.position;
+            let Some(pose) = poses.get(&entity) else {
+                continue;
+            };
+            let pos = pose.transform.position;
             self.point_lights_buffer.push(PointLightGPU {
                 position: [pos.x(), pos.y(), pos.z()],
                 range: point_light.range,
@@ -655,7 +663,7 @@ impl Application {
             return;
         };
 
-        let Some(transform) = self.world.get_component::<TransformComponent>(entity_id) else {
+        let Some(_local) = self.world.get_component::<TransformComponent>(entity_id) else {
             self.editor.gizmo_state.clear_entity();
             return;
         };
@@ -664,7 +672,11 @@ impl Application {
             return;
         }
 
-        let position = transform.transform.position;
+        let poses = crate::systems::resolve_world_transforms(&self.world);
+        let Some(pose) = poses.get(&entity_id) else {
+            return;
+        };
+        let position = pose.transform.position;
         self.editor.gizmo_state.set_entity(entity_id, position);
 
         // Get camera FOV and viewport height for screen-space scaling
@@ -1121,11 +1133,15 @@ impl Application {
         use crate::components::{PointLight, TransformComponent};
         use katla_gfx::PointLightGPU;
 
+        let poses = crate::systems::resolve_world_transforms(&self.world);
         self.point_lights_buffer.clear();
-        for (_entity, point_light, transform) in
+        for (entity, point_light, _local) in
             self.world.query::<(&PointLight, &TransformComponent)>()
         {
-            let pos = transform.transform.position;
+            let Some(pose) = poses.get(&entity) else {
+                continue;
+            };
+            let pos = pose.transform.position;
             self.point_lights_buffer.push(PointLightGPU {
                 position: [pos.x(), pos.y(), pos.z()],
                 range: point_light.range,

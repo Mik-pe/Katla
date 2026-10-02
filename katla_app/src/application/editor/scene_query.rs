@@ -1,8 +1,6 @@
 //! Application-aware queries for room context beyond the current frustum.
 use crate::application::Application;
-use crate::components::{
-    DrawableComponent, EditorHidden, NameComponent, Parent, TransformComponent,
-};
+use crate::components::{DrawableComponent, EditorHidden, NameComponent, Parent};
 use katla_ecs::scene_tool::SceneOp;
 use katla_math::Vec3;
 use serde_json::json;
@@ -37,6 +35,7 @@ pub(super) fn execute(app: &Application, op: &SceneOp) -> Option<String> {
     let origin = position.map(|p| Vec3::new(p[0], p[1], p[2]));
     let mut entities: Vec<_> = app.world.entity_ids().collect();
     entities.sort_by_key(|id| id.id());
+    let poses = crate::systems::resolve_world_transforms(&app.world);
     let mut rows = Vec::new();
     for id in entities {
         if app.world.get_component::<EditorHidden>(id).is_some()
@@ -53,12 +52,12 @@ pub(super) fn execute(app: &Application, op: &SceneOp) -> Option<String> {
         }) {
             continue;
         }
-        let transform = app.world.get_component::<TransformComponent>(id);
+        let transform = poses.get(&id);
         let bounds = transform.and_then(|t| {
             app.world
                 .get_component::<DrawableComponent>(id)
                 .and_then(|d| d.bounds)
-                .map(|b| b.transform(&t.transform.make_mat4()))
+                .map(|b| b.transform(&t.matrix))
         });
         if let (Some(origin), Some(radius)) = (origin, *radius) {
             let Some(transform) = transform else {

@@ -63,6 +63,10 @@ pub struct SceneComponentRegistry {
 }
 
 impl SceneComponentRegistry {
+    pub(crate) fn contains(&self, key: &str) -> bool {
+        self.entries.contains_key(key)
+    }
+
     /// Register a serializable component that has no live ECS or native handles.
     /// Components with entity references must use `register_codec` and scene keys.
     pub fn register<T>(&mut self, key: impl Into<String>, version: u32) -> Result<(), SceneError>

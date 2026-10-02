@@ -156,6 +156,15 @@ pub(super) fn execute_tool_call(
     app: &mut super::super::Application,
     tool_call: &ToolCall,
 ) -> String {
+    if tool_call.name == "prefab" {
+        return match serde_json::from_value(tool_call.arguments.clone())
+            .map_err(|error| error.to_string())
+            .and_then(|op| crate::prefab::control::execute(app, op))
+        {
+            Ok(result) => result.to_string(),
+            Err(error) => format!("Error: {error}"),
+        };
+    }
     if tool_call.name == "search_assets" {
         return match serde_json::from_value(tool_call.arguments.clone())
             .map_err(|e| e.to_string())

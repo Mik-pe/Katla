@@ -140,9 +140,8 @@ impl Application {
     /// Begin dragging a gizmo handle (axis or plane).
     pub(crate) fn begin_gizmo_drag(&mut self, handle: GizmoHandle, mouse_pos: Vec2) {
         if let Some(entity_id) = self.editor.gizmo_state.entity {
-            let entity_pos = self
-                .world
-                .get_component::<crate::components::TransformComponent>(entity_id)
+            let entity_pos = crate::systems::resolve_world_transforms(&self.world)
+                .get(&entity_id)
                 .map(|t| t.transform.position)
                 .unwrap_or(self.editor.gizmo_state.origin);
 
@@ -262,6 +261,12 @@ impl Application {
                 1.0 / (gs * 5.0)
             };
 
+            let poses = crate::systems::resolve_world_transforms(&self.world);
+            let parent_inverse = self
+                .world
+                .get_component::<crate::components::Parent>(entity_id)
+                .and_then(|p| poses.get(&p.parent))
+                .and_then(|p| p.matrix.inverse());
             {
                 if let Some(transform) = self
                     .world
@@ -286,12 +291,25 @@ impl Application {
                                     ),
                                 };
                                 if let Some(delta) = delta {
-                                    transform.transform.position = snap_translation(
+                                    let world_position = snap_translation(
                                         start_origin,
                                         delta,
                                         self.editor.editor_ui.editor_settings(),
                                     );
-                                    self.editor.gizmo_state.origin = transform.transform.position;
+                                    transform.transform.position =
+                                        if let Some(inverse) = parent_inverse {
+                                            let p = inverse
+                                                * katla_math::Vec4::new(
+                                                    world_position.x(),
+                                                    world_position.y(),
+                                                    world_position.z(),
+                                                    1.0,
+                                                );
+                                            katla_math::Vec3::new(p.x(), p.y(), p.z())
+                                        } else {
+                                            world_position
+                                        };
+                                    self.editor.gizmo_state.origin = world_position;
                                 }
                             }
                         }

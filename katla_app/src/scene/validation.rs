@@ -261,7 +261,7 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
                 *segments >= 3,
                 "spheres need at least 3 segments",
             );
-            f.require("source.rings", *rings >= 2, "spheres need at least 2 rings");
+            f.require("source.rings", *rings >= 3, "spheres need at least 3 rings");
             f.require(
                 "source",
                 (*segments as u64 + 1).saturating_mul(*rings as u64 + 1) <= MAX_GEOMETRY_POINTS,
@@ -277,7 +277,7 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
             f.positive("source.height", *height);
             f.require(
                 "source.segments",
-                *segments >= 3 && *segments as u64 * 4 <= MAX_GEOMETRY_POINTS,
+                *segments >= 3 && *segments as u64 * 4 + 6 <= MAX_GEOMETRY_POINTS,
                 "cylinder segments must fit the vertex budget and be at least 3",
             );
         }
@@ -301,9 +301,9 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
                 "mesh exceeds the one million vertex budget",
             );
         }
-        EntitySource::GltfModel { path } | EntitySource::StlModel { path } => {
-            f.asset("source.path", path)
-        }
+        EntitySource::GltfModel { path }
+        | EntitySource::StlModel { path }
+        | EntitySource::MeshAsset { path } => f.asset("source.path", path),
     }
     if let Some(d) = &entity.drawable {
         f.require(
@@ -311,7 +311,9 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
             entity.source.is_mesh_primitive()
                 || matches!(
                     entity.source,
-                    EntitySource::GltfModel { .. } | EntitySource::StlModel { .. }
+                    EntitySource::GltfModel { .. }
+                        | EntitySource::StlModel { .. }
+                        | EntitySource::MeshAsset { .. }
                 ),
             "drawable parameters require a reproducible mesh source",
         );
@@ -419,7 +421,9 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
                 "collider_shape",
                 matches!(
                     entity.source,
-                    EntitySource::GltfModel { .. } | EntitySource::StlModel { .. }
+                    EntitySource::GltfModel { .. }
+                        | EntitySource::StlModel { .. }
+                        | EntitySource::MeshAsset { .. }
                 ),
                 "mesh colliders require a model with retained CPU geometry",
             ),

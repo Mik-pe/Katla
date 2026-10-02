@@ -331,7 +331,6 @@ fn test_transform_update_on_second_run() {
 }
 
 #[test]
-#[ignore = "Cycle detection needs further work - this is an edge case"]
 fn test_cycle_detection_does_not_panic() {
     let mut world = World::new();
     let mut system = TransformHierarchySystem::default();
@@ -528,4 +527,60 @@ fn test_static_optimization_configuration() {
     let opt = optimization.unwrap();
     assert_eq!(opt.total_count, 10);
     assert_eq!(opt.moving_count, 0); // No dirty flags on first frame (after init)
+}
+
+#[test]
+fn test_new_entities_reparenting_and_unmarked_edits_refresh_exact_world_matrix() {
+    let mut world = World::new();
+    let mut system = TransformHierarchySystem::default();
+    let root = world.create_entity();
+    let transform = Transform {
+        position: Vec3::new(10.0, 1.0, 2.0),
+        scale: Vec3::new(2.0, 3.0, 4.0),
+        rotation: Quat::from_axis_angle(Vec3::Y_AXIS, 0.7),
+    };
+    world.add_component(root, TransformComponent::new(transform));
+    system.update(&mut world, 0.0);
+    let child = world.create_entity();
+    let local = Transform::new_from_rotation(Quat::from_axis_angle(Vec3::Z_AXIS, 0.4))
+        .with_position(Vec3::new(1.0, 2.0, 3.0));
+    world.add_component(child, TransformComponent::new(local));
+    world.add_component(child, Parent { parent: root });
+    system.update(&mut world, 0.0);
+    assert_eq!(
+        world.get_component::<WorldTransform>(child).unwrap().matrix,
+        transform.make_mat4() * local.make_mat4()
+    );
+    world
+        .get_component_mut::<TransformComponent>(root)
+        .unwrap()
+        .transform
+        .position = Vec3::ZERO;
+    system.update(&mut world, 0.0);
+    assert_eq!(
+        world.get_component::<WorldTransform>(child).unwrap().matrix,
+        transform.with_position(Vec3::ZERO).make_mat4() * local.make_mat4()
+    );
+    world.remove_component::<Parent>(child);
+    system.update(&mut world, 0.0);
+    assert_eq!(
+        world.get_component::<WorldTransform>(child).unwrap().matrix,
+        local.make_mat4()
+    );
+}
+
+#[test]
+fn test_deep_world_resolution_is_iterative_and_fresh() {
+    let mut world = World::new();
+    let mut parent = None;
+    for _ in 0..10_000 {
+        let child = world.create_entity();
+        world.add_component(child, TransformComponent::from_position(Vec3::X_AXIS));
+        if let Some(parent) = parent {
+            world.add_component(child, Parent { parent });
+        }
+        parent = Some(child);
+    }
+    let poses = crate::systems::resolve_world_transforms(&world);
+    assert_eq!(poses[&parent.unwrap()].transform.position.x(), 10_000.0);
 }

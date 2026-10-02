@@ -251,6 +251,7 @@ pub(crate) struct GpuCleanupData {
     pub(crate) mesh_handle: katla_gfx::MeshHandle,
     pub(crate) material_handle: katla_gfx::MaterialHandle,
     pub(crate) skeleton_handle: katla_gfx::SkeletonHandle,
+    pub(crate) textures: Vec<katla_gfx::TextureHandle>,
 }
 
 /// Command that reverses a spawn by destroying the entity.
@@ -913,6 +914,16 @@ pub fn process_editor_actions(app: &mut Application) {
     // Process editor actions
     for action in editor_actions {
         match action {
+            EditorAction::InstantiatePrefab(path) => {
+                match crate::prefab::instantiate_asset(
+                    app,
+                    &path,
+                    crate::scene::TransformDescriptor::default_transform(),
+                ) {
+                    Ok(instance) => app.editor.editor_ui.selected_entity = Some(instance.root),
+                    Err(error) => app.show_scene_error(error),
+                }
+            }
             EditorAction::SpawnModel(model_type, position) => {
                 use crate::ui::SpawnableModel;
 
@@ -1803,6 +1814,11 @@ pub fn record_entity_gpu_handles(app: &mut Application, entity: EntityId) {
                 mesh_handle: drawable.mesh_handle,
                 material_handle: drawable.material_handle,
                 skeleton_handle: drawable.skeleton_handle,
+                textures: app
+                    .world
+                    .get_component::<crate::application::spawning::ModelTextures>(entity)
+                    .map(|textures| textures.handles.clone())
+                    .unwrap_or_default(),
             },
         );
     }
@@ -1824,20 +1840,17 @@ pub fn process_gpu_cleanup_for_destroyed_entities(app: &mut Application) {
 
     for entity in destroyed_entities {
         if let Some(cleanup) = app.editor.entity_gpu_handles.remove(&entity) {
-            let to_destroy = app.gpu_resource_tracker.release_drawable(
+            let mut to_destroy = app.gpu_resource_tracker.release_drawable(
                 cleanup.mesh_handle,
                 cleanup.material_handle,
                 cleanup.skeleton_handle,
             );
-            for handle in &to_destroy.meshes {
-                app.renderer.destroy_mesh(*handle);
+            for texture in cleanup.textures {
+                if app.gpu_resource_tracker.release_texture(texture) {
+                    to_destroy.textures.push(texture);
+                }
             }
-            for handle in &to_destroy.materials {
-                app.renderer.destroy_material(*handle);
-            }
-            for handle in &to_destroy.skeletons {
-                app.renderer.destroy_skeleton(*handle);
-            }
+            crate::scene::serialization::destroy_resources(app, to_destroy);
         }
     }
 }

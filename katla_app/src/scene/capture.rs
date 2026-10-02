@@ -28,7 +28,15 @@ pub(super) fn capture_scene(app: &mut Application) -> Result<Scene, SceneError> 
                 .is_none()
         })
         .collect();
-    for entity in &entities {
+    capture_selection(app, &entities, None)
+}
+
+pub(crate) fn capture_selection(
+    app: &mut Application,
+    entities: &[katla_ecs::EntityId],
+    root: Option<katla_ecs::EntityId>,
+) -> Result<Scene, SceneError> {
+    for entity in entities {
         if app
             .world
             .get_component::<TransformComponent>(*entity)
@@ -41,7 +49,7 @@ pub(super) fn capture_scene(app: &mut Application) -> Result<Scene, SceneError> 
     }
     let mut used = HashSet::new();
     let mut next = app.scene_document.next_entity_id;
-    for id in &entities {
+    for id in entities {
         if let Some(identity) = app.world.get_component::<SceneIdentity>(*id) {
             if identity.id.0 == 0 || !used.insert(identity.id) {
                 return Err(SceneError::entity(
@@ -55,7 +63,7 @@ pub(super) fn capture_scene(app: &mut Application) -> Result<Scene, SceneError> 
             })?);
         }
     }
-    for id in &entities {
+    for id in entities {
         if app.world.get_component::<SceneIdentity>(*id).is_none() {
             let key = SceneEntityId(next);
             next = next
@@ -73,14 +81,24 @@ pub(super) fn capture_scene(app: &mut Application) -> Result<Scene, SceneError> 
     let mut scene = app.scene_document.saved.clone();
     scene.version = SCENE_VERSION;
     scene.next_entity_id = next;
-    capture_entities(app, &entities, scene, &context)
+    capture_entities_scoped(app, entities, scene, &context, root)
 }
 
 pub(super) fn capture_entities(
     app: &Application,
     entities: &[katla_ecs::EntityId],
+    scene: Scene,
+    assets: &SceneAssetContext,
+) -> Result<Scene, SceneError> {
+    capture_entities_scoped(app, entities, scene, assets, None)
+}
+
+fn capture_entities_scoped(
+    app: &Application,
+    entities: &[katla_ecs::EntityId],
     mut scene: Scene,
     assets: &SceneAssetContext,
+    root: Option<katla_ecs::EntityId>,
 ) -> Result<Scene, SceneError> {
     let mut mapping = HashMap::new();
     for entity in entities {
@@ -110,14 +128,16 @@ pub(super) fn capture_entities(
         desc.name = world
             .get_component::<NameComponent>(*entity)
             .map(|value| value.name.clone());
-        desc.parent = world
-            .get_component::<crate::components::Parent>(*entity)
-            .map(|parent| {
-                references
-                    .id(parent.parent)
-                    .map_err(|error| SceneError::entity(id, "parent", error))
-            })
-            .transpose()?;
+        if Some(*entity) != root {
+            desc.parent = world
+                .get_component::<crate::components::Parent>(*entity)
+                .map(|parent| {
+                    references
+                        .id(parent.parent)
+                        .map_err(|error| SceneError::entity(id, "parent", error))
+                })
+                .transpose()?;
+        }
         let transform = world
             .get_component::<TransformComponent>(*entity)
             .ok_or_else(|| SceneError::entity(id, "transform", "transform missing"))?;

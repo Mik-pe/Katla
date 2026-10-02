@@ -1,0 +1,81 @@
+#![enable(unwrap_newtypes)]
+#![enable(implicit_some)]
+#![enable(unwrap_variant_newtypes)]
+(
+    version: 1,
+    name: "Chair frame",
+    parts: [
+        /*[0]*/ (
+            id: "seat",
+            transform: (
+                position: (0.0, 0.45, 0.0),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            geometry: (
+                kind: "cube",
+                size: (0.8, 0.1, 0.8),
+            ),
+        ),
+        /*[1]*/ (
+            id: "back",
+            transform: (
+                position: (0.0, 0.9, -0.35),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            geometry: (
+                kind: "cube",
+                size: (0.8, 0.9, 0.1),
+            ),
+        ),
+        /*[2]*/ (
+            id: "front_left",
+            transform: (
+                position: (-0.32, 0.225, 0.32),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            geometry: (
+                kind: "cube",
+                size: (0.08, 0.45, 0.08),
+            ),
+        ),
+        /*[3]*/ (
+            id: "front_right",
+            transform: (
+                position: (0.32, 0.225, 0.32),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            geometry: (
+                kind: "cube",
+                size: (0.08, 0.45, 0.08),
+            ),
+        ),
+        /*[4]*/ (
+            id: "back_left",
+            transform: (
+                position: (-0.32, 0.225, -0.32),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            geometry: (
+                kind: "cube",
+                size: (0.08, 0.45, 0.08),
+            ),
+        ),
+        /*[5]*/ (
+            id: "back_right",
+            transform: (
+                position: (0.32, 0.225, -0.32),
+                rotation: (0.0, 0.0, 0.0, 1.0),
+                scale: (1.0, 1.0, 1.0),
+            ),
+            geometry: (
+                kind: "cube",
+                size: (0.08, 0.45, 0.08),
+            ),
+        ),
+    ],
+)

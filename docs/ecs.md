@@ -160,3 +160,17 @@ it with `with_typed_system` or `register_typed_system`. Use `System` only for
 full-World operations and register with `with_exclusive_system` or
 `register_exclusive_system`. The old builder registration and manual static/dynamic
 access declarations have been removed. Both runtime loops use the same scheduler.
+
+## Application transform hierarchy
+
+`TransformComponent` stores parent-local TRS; `Parent` is the authoritative link.
+The app's iterative `resolve_world_transforms` resolves current locals in O(N),
+without recursion or dependence on cached component update order. It preserves
+exact composed matrices including shear. `TransformHierarchySystem` publishes
+those matrices and accumulated rotation/scale as `WorldTransform`; direct local
+edits, new entities and reparenting refresh even without dirty markers. Invalid
+runtime cycles terminate with warnings and local poses; scene validation rejects
+them before loading. Rendering, bounds, lights, audio, particles and physics use
+the same resolver, including newly instantiated prefabs before the next ECS tick.
+`TransformOptimization` avoids rewriting unchanged cached poses; it does not make
+hierarchy traversal O(D). Incremental topology and dirty-root work remain in TODO.

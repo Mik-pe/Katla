@@ -21,6 +21,10 @@ impl GeometryCache {
         self.entries.insert(handle, Arc::new(data));
     }
 
+    pub(crate) fn insert_shared(&mut self, handle: MeshHandle, data: Arc<MeshGeometryData>) {
+        self.entries.insert(handle, data);
+    }
+
     /// Remove CPU geometry when its GPU mesh is retired.
     pub fn remove(&mut self, handle: MeshHandle) {
         self.entries.remove(&handle);

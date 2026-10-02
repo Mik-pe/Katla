@@ -1,5 +1,5 @@
 use katla_ecs::Component;
-use katla_math::{Transform, Vec3};
+use katla_math::{Mat4, Transform, Vec3};
 
 /// Local-space transform relative to parent
 #[derive(Component, Default)]
@@ -20,18 +20,30 @@ impl TransformComponent {
 }
 
 /// World-space transform (computed by TransformHierarchySystem)
-#[derive(Component, Default)]
+#[derive(Component, Clone, Copy)]
 pub struct WorldTransform {
+    /// World position, accumulated rotation and scale. Shear is stored in `matrix`.
     pub transform: Transform,
+    /// Exact parent-to-child matrix composition, including nonuniform scale and shear.
+    pub matrix: Mat4,
 }
 
 impl WorldTransform {
     pub fn new(transform: Transform) -> Self {
-        WorldTransform { transform }
+        WorldTransform {
+            matrix: transform.make_mat4(),
+            transform,
+        }
     }
 }
 
-/// Dirty flag for transform hierarchy optimization.
+impl Default for WorldTransform {
+    fn default() -> Self {
+        Self::new(Transform::default())
+    }
+}
+
+/// Dirty flag requesting a world-transform refresh.
 ///
 /// When present on an entity, indicates that this entity's local transform
 /// changed and the hierarchy needs to be re-propagated.

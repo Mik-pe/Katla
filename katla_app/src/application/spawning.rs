@@ -1,3 +1,9 @@
+#[derive(katla_ecs::Component)]
+pub(crate) struct ModelTextures {
+    #[inspect(skip)]
+    pub(crate) handles: Vec<katla_gfx::TextureHandle>,
+}
+
 use katla_gfx::GpuRenderer;
 use katla_gfx::primitives;
 use log::{debug, info};
@@ -481,6 +487,12 @@ impl super::Application {
             DrawableComponent::with_handles(mesh_handle, material_handle),
         ));
 
+        self.world.add_component(
+            entity,
+            ModelTextures {
+                handles: texture_upload.handles.clone(),
+            },
+        );
         self.world.add_component(
             entity,
             EntitySource::GltfModel {

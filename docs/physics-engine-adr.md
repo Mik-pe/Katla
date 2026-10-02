@@ -114,7 +114,13 @@ Use **Rapier3D** as the primary physics backend.
 
 PhysicsWorld owns Rapier state; game code uses the ECS-facing wrapper.
 RigidBody and ColliderShape represent Sphere, Box, Capsule, Trimesh, ConvexHull
-and Heightfield shapes in local space. The app synchronizes world transforms.
+and Heightfield shapes in local space. The app resolves parent hierarchies before creating or synchronizing world poses.
+Static and kinematic colliders follow root translation/rotation. Dynamic results
+convert to parent-local position/rotation while preserving authored local scale.
+Mesh collider vertices bake the full affine world deformation relative to the
+rigid body pose, including nonuniform scale and shear. This deformation is fixed
+at body creation; scale edits require body recreation. Primitive collider sizes
+remain explicitly authored. See [prefabs](prefabs.md).
 PhysicsActive gates simulation and defaults false outside play mode.
 CollisionFilter uses reciprocal layer/mask bitfields. Mesh colliders refer to
 MeshHandle; the app supplies MeshColliderData before constructing colliders.

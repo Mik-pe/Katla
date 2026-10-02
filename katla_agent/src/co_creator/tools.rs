@@ -6,6 +6,11 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
 
     vec![
         ToolDefinition {
+            name: "prefab".into(),
+            description: "Create reusable meshes and prefabs. Start with describe for JSON examples and geometry kinds, then validate/write assets, instantiate a preview and inspect it with editor_view. Read/edit named parts to iterate; capture exports an edited subtree; remove deletes a preview subtree. Paths are project-relative .katmesh/.katprefab. root_entity is a full decimal entity ID string. One mesh is baked to one material draw and shared across identical instances.".into(),
+            parameters: crate::prefab::PrefabOp::tool_schema(),
+        },
+        ToolDefinition {
             name: "material".into(),
             description: "Discover presets, inspect a mesh material, or patch base_color (sRGB RGBA), metallic, roughness and ao in 0..1 on entity_ids as one undoable batch. Preset defaults can be overridden. Textures are preserved. IDs are decimal strings.".into(),
             parameters: json!({"type":"object","properties":{

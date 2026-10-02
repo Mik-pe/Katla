@@ -41,6 +41,10 @@ pub enum EntitySource {
     StlModel {
         path: AssetRef,
     },
+    /// A reusable, validated static mesh recipe.
+    MeshAsset {
+        path: AssetRef,
+    },
     ParticleEmitter,
     Light,
     /// Sensor volume without a drawable or GPU allocation.
@@ -75,7 +79,7 @@ impl EntitySource {
                 .and_then(|s| s.to_str())
                 .unwrap_or("Model")
                 .to_string(),
-            Self::StlModel { path } => path
+            Self::MeshAsset { path } | Self::StlModel { path } => path
                 .path()
                 .file_stem()
                 .and_then(|s| s.to_str())

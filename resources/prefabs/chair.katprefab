@@ -1,0 +1,69 @@
+#![enable(unwrap_newtypes)]
+#![enable(implicit_some)]
+#![enable(unwrap_variant_newtypes)]
+(
+    version: 1,
+    root: 1,
+    scene: (
+        version: 3,
+        name: "Chair",
+        next_entity_id: 4,
+        entities: [
+            /*[0]*/ (
+                id: 1,
+                name: "Chair",
+                transform: (
+                    position: (0.0, 0.0, 0.0),
+                    rotation: (0.0, 0.0, 0.0, 1.0),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                source: Empty,
+            ),
+            /*[1]*/ (
+                id: 2,
+                name: "Frame",
+                parent: 1,
+                transform: (
+                    position: (0.0, 0.0, 0.0),
+                    rotation: (0.0, 0.0, 0.0, 1.0),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                source: MeshAsset(
+                    path: Resource("meshes/chair-frame.katmesh"),
+                ),
+                drawable: (
+                    color: (0.55, 0.29, 0.12, 1.0),
+                    metallic: 0.0,
+                    roughness: 0.7,
+                    ao: 1.0,
+                ),
+                rigid_body: (
+                    kind: Static,
+                    gravity_scale: 1.0,
+                    ccd_enabled: false,
+                    linear_velocity: (0.0, 0.0, 0.0),
+                ),
+                collider_shape: Trimesh,
+            ),
+            /*[2]*/ (
+                id: 3,
+                name: "Cushion",
+                parent: 1,
+                transform: (
+                    position: (0.0, 0.54, 0.02),
+                    rotation: (0.0, 0.0, 0.0, 1.0),
+                    scale: (1.0, 1.0, 1.0),
+                ),
+                source: MeshAsset(
+                    path: Resource("meshes/chair-cushion.katmesh"),
+                ),
+                drawable: (
+                    color: (0.85, 0.18, 0.09, 1.0),
+                    metallic: 0.0,
+                    roughness: 0.9,
+                    ao: 1.0,
+                ),
+            ),
+        ],
+    ),
+)

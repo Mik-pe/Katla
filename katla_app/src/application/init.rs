@@ -151,44 +151,18 @@ impl Application {
         info!("Billboard GPU resources initialized");
     }
 
+    #[cfg(feature = "editor")]
     pub(crate) fn focus_camera_on_entity(&mut self, entity_id: katla_ecs::EntityId) {
-        use crate::components::{Children, OrbitCameraControllerComponent, WorldTransform};
-
-        // Collect world positions of the entity and all its children
-        let mut positions = Vec::new();
-        let mut queue = vec![entity_id];
-        let mut visited = std::collections::HashSet::new();
-        visited.insert(entity_id);
-
-        while let Some(eid) = queue.pop() {
-            if let Some(wt) = self.world.get_component::<WorldTransform>(eid) {
-                positions.push(wt.transform.position);
-            }
-            if let Some(children) = self.world.get_component::<Children>(eid) {
-                for &child in &children.children {
-                    if visited.insert(child) {
-                        queue.push(child);
-                    }
-                }
-            }
-        }
-
-        if positions.is_empty() {
-            return;
-        }
-
-        // Compute bounding sphere center
-        let center = positions
-            .iter()
-            .fold(katla_math::Vec3::new(0.0, 0.0, 0.0), |acc, p| acc + *p)
-            / positions.len() as f32;
-
-        // Compute radius as the max distance from center
-        let radius = positions
-            .iter()
-            .map(|p| (*p - center).length())
-            .fold(0.0_f32, f32::max)
-            .max(0.5);
+        use crate::components::OrbitCameraControllerComponent;
+        let poses = crate::systems::resolve_world_transforms(&self.world);
+        let (center, radius) =
+            if let Some(bounds) = crate::systems::subtree_render_bounds(&self.world, entity_id) {
+                (bounds.center, bounds.extent.length().max(0.5))
+            } else if let Some(pose) = poses.get(&entity_id) {
+                (pose.transform.position, 0.5)
+            } else {
+                return;
+            };
 
         // Distance to fit the object so it covers ~50% of the smaller viewport dimension.
         let camera_entity = self.camera.entity;
