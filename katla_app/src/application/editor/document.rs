@@ -13,11 +13,14 @@ pub(crate) enum DocumentAction {
 }
 
 impl Application {
-    pub(crate) fn has_unsaved_scene(&self) -> bool {
+    pub(crate) fn has_unsaved_scene(&mut self) -> bool {
         let scene = if let Some(snapshot) = &self.scene_snapshot {
             snapshot.scene()
         } else {
-            SceneManager::save_scene(self)
+            match SceneManager::save_scene(self) {
+                Ok(scene) => scene,
+                Err(_) => return true,
+            }
         };
         self.scene_document.has_changes(scene)
     }
@@ -49,8 +52,8 @@ impl Application {
         }
     }
 
-    pub(crate) fn show_scene_error(&mut self, message: impl Into<String>) {
-        let message = message.into();
+    pub(crate) fn show_scene_error(&mut self, message: impl std::fmt::Display) {
+        let message = message.to_string();
         log::error!("{message}");
         self.editor.editor_ui.scene_dialog = Some(SceneDialog::Error(message));
     }

@@ -37,6 +37,9 @@ pub fn build_default_scene() -> Scene {
 
     // Ground plane
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("Ground".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -62,7 +65,7 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
-        rigid_body: Some(RigidBodyDescriptor::Static),
+        rigid_body: Some(RigidBodyDescriptor::new(katla_physics::BodyType::Static)),
         collider_shape: Some(ColliderShapeDescriptor::Box([10.0, 0.05, 10.0])),
         physics_material: Some(PhysicsMaterialDescriptor {
             friction: 0.7,
@@ -72,7 +75,6 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -88,6 +90,9 @@ pub fn build_default_scene() -> Scene {
             // Top two rows of the grid fall and stack on the ground.
             let is_dynamic = y >= grid_size - 2;
             scene.entities.push(EntityDescriptor {
+                id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+                joint: None,
+                components: Default::default(),
                 name: Some(format!("Sphere_{}_{}", x, y)),
                 parent: None,
                 transform: TransformDescriptor {
@@ -118,7 +123,8 @@ pub fn build_default_scene() -> Scene {
                 perspective: None,
                 directional_light: None,
                 audio_emitter: None,
-                rigid_body: is_dynamic.then_some(RigidBodyDescriptor::Dynamic),
+                rigid_body: is_dynamic
+                    .then_some(RigidBodyDescriptor::new(katla_physics::BodyType::Dynamic)),
                 collider_shape: is_dynamic.then_some(ColliderShapeDescriptor::Sphere(0.4)),
                 physics_material: is_dynamic.then_some(PhysicsMaterialDescriptor {
                     friction: 0.5,
@@ -128,7 +134,6 @@ pub fn build_default_scene() -> Scene {
                 trigger_volume: None,
                 collision_filter: None,
                 trigger_rules: vec![],
-                rigid_body_properties: None,
                 reverb_zone: None,
             });
         }
@@ -136,6 +141,9 @@ pub fn build_default_scene() -> Scene {
 
     // Center cube
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("CenterCube".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -160,7 +168,7 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
-        rigid_body: Some(RigidBodyDescriptor::Dynamic),
+        rigid_body: Some(RigidBodyDescriptor::new(katla_physics::BodyType::Dynamic)),
         collider_shape: Some(ColliderShapeDescriptor::Box([0.5, 0.5, 0.5])),
         physics_material: Some(PhysicsMaterialDescriptor {
             friction: 0.6,
@@ -170,12 +178,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Cyan sphere
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("CyanSphere".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -202,7 +212,7 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
-        rigid_body: Some(RigidBodyDescriptor::Dynamic),
+        rigid_body: Some(RigidBodyDescriptor::new(katla_physics::BodyType::Dynamic)),
         collider_shape: Some(ColliderShapeDescriptor::Sphere(0.7)),
         physics_material: Some(PhysicsMaterialDescriptor {
             friction: 0.4,
@@ -212,12 +222,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Magenta cylinder
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("MagentaCylinder".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -244,7 +256,7 @@ pub fn build_default_scene() -> Scene {
         perspective: None,
         directional_light: None,
         audio_emitter: None,
-        rigid_body: Some(RigidBodyDescriptor::Dynamic),
+        rigid_body: Some(RigidBodyDescriptor::new(katla_physics::BodyType::Dynamic)),
         collider_shape: Some(ColliderShapeDescriptor::Capsule {
             half_height: 0.375,
             radius: 0.5,
@@ -257,12 +269,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Lime torus
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("LimeTorus".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -296,12 +310,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Backdrop plane
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("Backdrop".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -333,12 +349,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Fox with animation
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("Fox".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -347,7 +365,7 @@ pub fn build_default_scene() -> Scene {
             scale: [0.01, 0.01, 0.01],
         },
         source: EntitySource::GltfModel {
-            path: "resources/models/Fox.glb".to_string(),
+            path: super::AssetRef::Resource("models/Fox.glb".into()),
         },
         drawable: None,
         point_light: None,
@@ -383,12 +401,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // DamagedHelmet
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("DamagedHelmet".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -397,7 +417,7 @@ pub fn build_default_scene() -> Scene {
             scale: [1.0, 1.0, 1.0],
         },
         source: EntitySource::GltfModel {
-            path: "resources/models/DamagedHelmet.glb".to_string(),
+            path: super::AssetRef::Resource("models/DamagedHelmet.glb".into()),
         },
         drawable: None,
         point_light: None,
@@ -414,12 +434,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Fire particle emitter
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("FireEmitter".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -431,7 +453,6 @@ pub fn build_default_scene() -> Scene {
         drawable: None,
         point_light: None,
         particle_emitter: Some(ParticleEmitterDescriptor {
-            position: [-3.0, 1.0, -3.0],
             emit_rate: 400.0,
             base_lifetime: 2.5,
             lifetime_variation: 0.3,
@@ -448,6 +469,7 @@ pub fn build_default_scene() -> Scene {
             shape: EmitterShape::Point,
             shape_params: [0.0; 4],
             active: true,
+            ..Default::default()
         }),
         animation: None,
         velocity: None,
@@ -461,12 +483,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Ethereal particle emitter
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("EtherealEmitter".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -478,7 +502,6 @@ pub fn build_default_scene() -> Scene {
         drawable: None,
         point_light: None,
         particle_emitter: Some(ParticleEmitterDescriptor {
-            position: [3.0, 0.5, 0.0],
             emit_rate: 200.0,
             base_lifetime: 4.0,
             lifetime_variation: 0.5,
@@ -495,6 +518,7 @@ pub fn build_default_scene() -> Scene {
             shape: EmitterShape::Circle,
             shape_params: [2.0, 0.0, 0.0, 0.0],
             active: true,
+            ..Default::default()
         }),
         animation: None,
         velocity: None,
@@ -508,12 +532,14 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Sparkle particle emitter
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+        joint: None,
+        components: Default::default(),
         name: Some("SparkleEmitter".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -525,7 +551,6 @@ pub fn build_default_scene() -> Scene {
         drawable: None,
         point_light: None,
         particle_emitter: Some(ParticleEmitterDescriptor {
-            position: [0.0, 3.0, 0.0],
             emit_rate: 250.0,
             base_lifetime: 3.0,
             lifetime_variation: 1.0,
@@ -542,6 +567,7 @@ pub fn build_default_scene() -> Scene {
             shape: EmitterShape::Point,
             shape_params: [0.0; 4],
             active: true,
+            ..Default::default()
         }),
         animation: None,
         velocity: None,
@@ -555,7 +581,6 @@ pub fn build_default_scene() -> Scene {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -582,6 +607,9 @@ pub fn build_default_scene() -> Scene {
 
     for (name, pos, color, intensity, range) in lights {
         scene.entities.push(EntityDescriptor {
+            id: super::SceneEntityId(scene.entities.len() as u64 + 1),
+            joint: None,
+            components: Default::default(),
             name: Some(name.to_string()),
             parent: None,
             transform: TransformDescriptor {
@@ -590,12 +618,7 @@ pub fn build_default_scene() -> Scene {
                 scale: [1.0, 1.0, 1.0],
             },
             source: EntitySource::Light,
-            drawable: Some(DrawableDescriptor {
-                color: Some([color[0], color[1], color[2], 1.0]),
-                metallic: 0.0,
-                roughness: 1.0,
-                ao: 1.0,
-            }),
+            drawable: None,
             point_light: Some(PointLightDescriptor {
                 color,
                 intensity,
@@ -614,10 +637,10 @@ pub fn build_default_scene() -> Scene {
             trigger_volume: None,
             collision_filter: None,
             trigger_rules: vec![],
-            rigid_body_properties: None,
             reverb_zone: None,
         });
     }
 
+    scene.next_entity_id = scene.entities.len() as u64 + 1;
     scene
 }

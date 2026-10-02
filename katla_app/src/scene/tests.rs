@@ -21,6 +21,9 @@ fn test_scene_round_trip() {
 fn test_scene_with_entities_round_trip() {
     let mut scene = Scene::new("Multi Entity Scene");
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(52),
+        joint: None,
+        components: Default::default(),
         name: Some("Ground".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -52,10 +55,12 @@ fn test_scene_with_entities_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(51),
+        joint: None,
+        components: Default::default(),
         name: Some("Player".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -89,7 +94,6 @@ fn test_scene_with_entities_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -135,7 +139,7 @@ fn test_all_entity_source_variants_round_trip() {
             tube_segments: 16,
         },
         EntitySource::GltfModel {
-            path: "models/test.glb".to_string(),
+            path: super::AssetRef::Scene("models/test.glb".into()),
         },
         EntitySource::ParticleEmitter,
         EntitySource::Light,
@@ -143,6 +147,9 @@ fn test_all_entity_source_variants_round_trip() {
 
     for source in sources {
         let desc = EntityDescriptor {
+            id: super::SceneEntityId(50),
+            joint: None,
+            components: Default::default(),
             name: None,
             parent: None,
             transform: TransformDescriptor {
@@ -166,7 +173,6 @@ fn test_all_entity_source_variants_round_trip() {
             trigger_volume: None,
             collision_filter: None,
             trigger_rules: vec![],
-            rigid_body_properties: None,
             reverb_zone: None,
         };
         let loaded: EntityDescriptor = round_trip(&desc);
@@ -177,6 +183,9 @@ fn test_all_entity_source_variants_round_trip() {
 #[test]
 fn test_point_light_descriptor_round_trip() {
     let desc = EntityDescriptor {
+        id: super::SceneEntityId(49),
+        joint: None,
+        components: Default::default(),
         name: Some("Torch".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -209,7 +218,6 @@ fn test_point_light_descriptor_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     };
 
@@ -223,6 +231,9 @@ fn test_point_light_descriptor_round_trip() {
 #[test]
 fn test_particle_emitter_descriptor_round_trip() {
     let desc = EntityDescriptor {
+        id: super::SceneEntityId(48),
+        joint: None,
+        components: Default::default(),
         name: Some("Fire".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -234,7 +245,6 @@ fn test_particle_emitter_descriptor_round_trip() {
         drawable: None,
         point_light: None,
         particle_emitter: Some(ParticleEmitterDescriptor {
-            position: [-3.0, 1.0, -3.0],
             emit_rate: 400.0,
             base_lifetime: 2.5,
             lifetime_variation: 0.3,
@@ -251,6 +261,7 @@ fn test_particle_emitter_descriptor_round_trip() {
             shape: katla_gfx::particles::EmitterShape::Point,
             shape_params: [0.0; 4],
             active: true,
+            ..Default::default()
         }),
         animation: None,
         velocity: None,
@@ -264,7 +275,6 @@ fn test_particle_emitter_descriptor_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     };
 
@@ -280,6 +290,9 @@ fn test_particle_emitter_descriptor_round_trip() {
 #[test]
 fn test_gltf_entity_with_animation_round_trip() {
     let desc = EntityDescriptor {
+        id: super::SceneEntityId(47),
+        joint: None,
+        components: Default::default(),
         name: Some("Fox".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -288,7 +301,7 @@ fn test_gltf_entity_with_animation_round_trip() {
             scale: [0.01, 0.01, 0.01],
         },
         source: EntitySource::GltfModel {
-            path: "resources/models/Fox.glb".to_string(),
+            path: super::AssetRef::Resource("models/Fox.glb".into()),
         },
         drawable: None,
         point_light: None,
@@ -312,7 +325,6 @@ fn test_gltf_entity_with_animation_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     };
 
@@ -321,7 +333,7 @@ fn test_gltf_entity_with_animation_round_trip() {
     assert_eq!(
         loaded.source,
         EntitySource::GltfModel {
-            path: "resources/models/Fox.glb".to_string(),
+            path: super::AssetRef::Resource("models/Fox.glb".into()),
         }
     );
     let anim = loaded.animation.unwrap();
@@ -336,6 +348,9 @@ fn test_gltf_entity_with_animation_round_trip() {
 fn test_parent_child_relationships_round_trip() {
     let mut scene = Scene::new("Hierarchy Test");
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(46),
+        joint: None,
+        components: Default::default(),
         name: Some("Parent".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -361,12 +376,14 @@ fn test_parent_child_relationships_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(45),
+        joint: None,
+        components: Default::default(),
         name: Some("Child".to_string()),
-        parent: Some("Parent".to_string()),
+        parent: Some(super::SceneEntityId(46)),
         transform: TransformDescriptor {
             position: [2.0, 0.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
@@ -392,36 +409,23 @@ fn test_parent_child_relationships_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     let loaded: Scene = round_trip(&scene);
     assert_eq!(loaded.entities.len(), 2);
     assert!(loaded.entities[0].parent.is_none());
-    assert_eq!(loaded.entities[1].parent, Some("Parent".to_string()));
+    assert_eq!(loaded.entities[1].parent, Some(super::SceneEntityId(46)));
     assert_eq!(loaded.entities[1].transform.scale, [0.5, 0.5, 0.5]);
 }
 
 #[test]
-fn test_forward_compatibility_unknown_struct_fields() {
-    // RON v0.8 requires all fields to be known in struct format.
-    // Forward compatibility for unknown fields is handled by the version field
-    // at the Scene level -- a loader can check the version and decide whether
-    // to attempt loading, or skip fields it doesn't understand via a custom
-    // deserializer in the future.
-    //
-    // For now, verify that the version field enables graceful handling:
-    let ron_version_2 = r#"Scene(
-    version: 2,
-    name: "Future Scene",
-    entities: [],
-)"#;
-
-    let loaded: Scene = ron::from_str(ron_version_2).unwrap();
-    assert_eq!(loaded.name, "Future Scene");
-    assert_eq!(loaded.version, 2);
-    assert!(loaded.entities.is_empty());
+fn test_future_version_rejected_before_unknown_entity_variants() {
+    let text = r#"(version: 999, name: "Future", entities: [(source: FutureGeometry)])"#;
+    assert!(matches!(
+        SceneManager::parse(text),
+        Err(SceneError::UnsupportedVersion { found: 999, .. })
+    ));
 }
 
 #[test]
@@ -457,8 +461,8 @@ fn test_scene_version_defaults() {
     entities: [],
 )"#;
 
-    let loaded: Scene = ron::from_str(ron_no_version).unwrap();
-    assert_eq!(loaded.version, 0, "Missing version should default to 0");
+    let loaded = SceneManager::parse(ron_no_version).unwrap();
+    assert_eq!(loaded.version, SCENE_VERSION);
     assert_eq!(loaded.name, "Old Scene");
 }
 
@@ -466,6 +470,9 @@ fn test_scene_version_defaults() {
 fn test_scene_serialized_output_is_human_readable() {
     let mut scene = Scene::new("Readability Test");
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(44),
+        joint: None,
+        components: Default::default(),
         name: Some("Cube".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -496,7 +503,6 @@ fn test_scene_serialized_output_is_human_readable() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -517,13 +523,16 @@ fn test_scene_serialized_output_is_human_readable() {
 #[test]
 fn test_full_default_scene_like_serialization() {
     let mut scene = Scene::new("Default Scene");
-    scene.version = 1;
+    scene.version = SCENE_VERSION;
 
     // Ground (1) + PBR spheres (9) + Cube (1) + Fox (1) + Light (1) + Particle (1) = 14
     let entity_count = 14;
 
     // Ground plane
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(43),
+        joint: None,
+        components: Default::default(),
         name: Some("Ground".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -555,7 +564,6 @@ fn test_full_default_scene_like_serialization() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -565,6 +573,9 @@ fn test_full_default_scene_like_serialization() {
             let metallic = i as f32 / 2.0;
             let roughness = j as f32 / 2.0;
             scene.entities.push(EntityDescriptor {
+                id: super::SceneEntityId(42),
+                joint: None,
+                components: Default::default(),
                 name: Some(format!("Sphere_{}_{}", i, j)),
                 parent: None,
                 transform: TransformDescriptor {
@@ -597,7 +608,6 @@ fn test_full_default_scene_like_serialization() {
                 trigger_volume: None,
                 collision_filter: None,
                 trigger_rules: vec![],
-                rigid_body_properties: None,
                 reverb_zone: None,
             });
         }
@@ -605,6 +615,9 @@ fn test_full_default_scene_like_serialization() {
 
     // Cube
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(41),
+        joint: None,
+        components: Default::default(),
         name: Some("CenterCube".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -635,12 +648,14 @@ fn test_full_default_scene_like_serialization() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Fox with animation
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(40),
+        joint: None,
+        components: Default::default(),
         name: Some("Fox".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -649,7 +664,7 @@ fn test_full_default_scene_like_serialization() {
             scale: [0.01, 0.01, 0.01],
         },
         source: EntitySource::GltfModel {
-            path: "resources/models/Fox.glb".to_string(),
+            path: super::AssetRef::Resource("models/Fox.glb".into()),
         },
         drawable: None,
         point_light: None,
@@ -673,12 +688,14 @@ fn test_full_default_scene_like_serialization() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Point light
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(39),
+        joint: None,
+        components: Default::default(),
         name: Some("WarmLight".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -711,12 +728,14 @@ fn test_full_default_scene_like_serialization() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Particle emitter
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(38),
+        joint: None,
+        components: Default::default(),
         name: Some("FireEmitter".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -728,7 +747,6 @@ fn test_full_default_scene_like_serialization() {
         drawable: None,
         point_light: None,
         particle_emitter: Some(ParticleEmitterDescriptor {
-            position: [-3.0, 1.0, -3.0],
             emit_rate: 400.0,
             base_lifetime: 2.5,
             lifetime_variation: 0.3,
@@ -745,6 +763,7 @@ fn test_full_default_scene_like_serialization() {
             shape: katla_gfx::particles::EmitterShape::Point,
             shape_params: [0.0; 4],
             active: true,
+            ..Default::default()
         }),
         animation: None,
         velocity: None,
@@ -758,7 +777,6 @@ fn test_full_default_scene_like_serialization() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -766,7 +784,7 @@ fn test_full_default_scene_like_serialization() {
 
     let loaded: Scene = round_trip(&scene);
     assert_eq!(loaded.entities.len(), entity_count);
-    assert_eq!(loaded.version, 1);
+    assert_eq!(loaded.version, SCENE_VERSION);
 
     // Verify Fox animation survived
     let fox = loaded
@@ -988,6 +1006,16 @@ fn test_regenerate_default_scene() {
         std::fs::create_dir_all(parent).unwrap();
     }
     std::fs::write(&disk_path, &canonical_ron).unwrap();
+
+    let playground = SceneManager::parse(include_str!("fixtures/v1.katla")).unwrap();
+    let path = disk_path.with_file_name("playground.katla");
+    std::fs::write(path, SceneManager::to_ron(&playground).unwrap()).unwrap();
+
+    for name in ["shared-room.katla", "teen-room-blockout.katla"] {
+        let path = disk_path.with_file_name(name);
+        let scene = SceneManager::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        std::fs::write(path, SceneManager::to_ron(&scene).unwrap()).unwrap();
+    }
 
     println!(
         "Regenerated default scene at {:?} ({} entities, {} bytes)",
@@ -1356,6 +1384,9 @@ fn test_resource_counts_create_destroy_sequence() {
 fn test_primitive_round_trip() {
     let primitives = vec![
         EntityDescriptor {
+            id: super::SceneEntityId(37),
+            joint: None,
+            components: Default::default(),
             name: Some("MyCube".to_string()),
             parent: None,
             transform: TransformDescriptor {
@@ -1386,10 +1417,12 @@ fn test_primitive_round_trip() {
             trigger_volume: None,
             collision_filter: None,
             trigger_rules: vec![],
-            rigid_body_properties: None,
             reverb_zone: None,
         },
         EntityDescriptor {
+            id: super::SceneEntityId(36),
+            joint: None,
+            components: Default::default(),
             name: Some("MySphere".to_string()),
             parent: None,
             transform: TransformDescriptor {
@@ -1422,10 +1455,12 @@ fn test_primitive_round_trip() {
             trigger_volume: None,
             collision_filter: None,
             trigger_rules: vec![],
-            rigid_body_properties: None,
             reverb_zone: None,
         },
         EntityDescriptor {
+            id: super::SceneEntityId(35),
+            joint: None,
+            components: Default::default(),
             name: Some("MyPlane".to_string()),
             parent: None,
             transform: TransformDescriptor {
@@ -1457,10 +1492,12 @@ fn test_primitive_round_trip() {
             trigger_volume: None,
             collision_filter: None,
             trigger_rules: vec![],
-            rigid_body_properties: None,
             reverb_zone: None,
         },
         EntityDescriptor {
+            id: super::SceneEntityId(34),
+            joint: None,
+            components: Default::default(),
             name: Some("MyCylinder".to_string()),
             parent: None,
             transform: TransformDescriptor {
@@ -1493,10 +1530,12 @@ fn test_primitive_round_trip() {
             trigger_volume: None,
             collision_filter: None,
             trigger_rules: vec![],
-            rigid_body_properties: None,
             reverb_zone: None,
         },
         EntityDescriptor {
+            id: super::SceneEntityId(33),
+            joint: None,
+            components: Default::default(),
             name: Some("MyTorus".to_string()),
             parent: None,
             transform: TransformDescriptor {
@@ -1530,7 +1569,6 @@ fn test_primitive_round_trip() {
             trigger_volume: None,
             collision_filter: None,
             trigger_rules: vec![],
-            rigid_body_properties: None,
             reverb_zone: None,
         },
     ];
@@ -1569,6 +1607,9 @@ fn test_primitive_round_trip() {
 #[test]
 fn test_gltf_round_trip() {
     let desc = EntityDescriptor {
+        id: super::SceneEntityId(32),
+        joint: None,
+        components: Default::default(),
         name: Some("Fox".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -1577,7 +1618,7 @@ fn test_gltf_round_trip() {
             scale: [0.01, 0.01, 0.01],
         },
         source: EntitySource::GltfModel {
-            path: "resources/models/Fox.glb".to_string(),
+            path: super::AssetRef::Resource("models/Fox.glb".into()),
         },
         drawable: None,
         point_light: None,
@@ -1613,7 +1654,6 @@ fn test_gltf_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     };
 
@@ -1622,7 +1662,7 @@ fn test_gltf_round_trip() {
     assert_eq!(
         loaded.source,
         EntitySource::GltfModel {
-            path: "resources/models/Fox.glb".to_string(),
+            path: super::AssetRef::Resource("models/Fox.glb".into()),
         }
     );
     let anim = loaded.animation.as_ref().unwrap();
@@ -1639,6 +1679,9 @@ fn test_gltf_round_trip() {
 #[test]
 fn test_point_light_round_trip() {
     let desc = EntityDescriptor {
+        id: super::SceneEntityId(31),
+        joint: None,
+        components: Default::default(),
         name: Some("Torch".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -1671,7 +1714,6 @@ fn test_point_light_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     };
 
@@ -1694,6 +1736,9 @@ fn test_particle_emitter_round_trip() {
 
     for (idx, shape) in shapes.into_iter().enumerate() {
         let desc = EntityDescriptor {
+            id: super::SceneEntityId(30),
+            joint: None,
+            components: Default::default(),
             name: Some(format!("Emitter{}", idx)),
             parent: None,
             transform: TransformDescriptor {
@@ -1705,7 +1750,6 @@ fn test_particle_emitter_round_trip() {
             drawable: None,
             point_light: None,
             particle_emitter: Some(ParticleEmitterDescriptor {
-                position: [1.0, 2.0, 3.0],
                 emit_rate: 350.0,
                 base_lifetime: 3.0,
                 lifetime_variation: 0.5,
@@ -1726,6 +1770,7 @@ fn test_particle_emitter_round_trip() {
                     [3.0, 0.0, 0.0, 0.0]
                 },
                 active: idx == 0,
+                ..Default::default()
             }),
             animation: None,
             velocity: None,
@@ -1739,7 +1784,6 @@ fn test_particle_emitter_round_trip() {
             trigger_volume: None,
             collision_filter: None,
             trigger_rules: vec![],
-            rigid_body_properties: None,
             reverb_zone: None,
         };
 
@@ -1829,6 +1873,9 @@ fn test_animation_round_trip() {
 
     // Also test via EntityDescriptor round-trip
     let desc = EntityDescriptor {
+        id: super::SceneEntityId(29),
+        joint: None,
+        components: Default::default(),
         name: Some("AnimatedModel".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -1837,7 +1884,7 @@ fn test_animation_round_trip() {
             scale: [1.0, 1.0, 1.0],
         },
         source: EntitySource::GltfModel {
-            path: "test.glb".to_string(),
+            path: super::AssetRef::Scene("test.glb".into()),
         },
         drawable: None,
         point_light: None,
@@ -1854,7 +1901,6 @@ fn test_animation_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     };
     let loaded_desc: EntityDescriptor = round_trip(&desc);
@@ -1866,6 +1912,9 @@ fn test_animation_round_trip() {
 fn test_hierarchy_preservation() {
     let mut scene = Scene::new("Hierarchy Test");
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(28),
+        joint: None,
+        components: Default::default(),
         name: Some("Root".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -1891,12 +1940,14 @@ fn test_hierarchy_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(27),
+        joint: None,
+        components: Default::default(),
         name: Some("ChildA".to_string()),
-        parent: Some("Root".to_string()),
+        parent: Some(super::SceneEntityId(28)),
         transform: TransformDescriptor {
             position: [2.0, 0.0, 0.0],
             rotation: [0.0, 0.707, 0.0, 0.707],
@@ -1922,12 +1973,14 @@ fn test_hierarchy_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(26),
+        joint: None,
+        components: Default::default(),
         name: Some("Grandchild".to_string()),
-        parent: Some("ChildA".to_string()),
+        parent: Some(super::SceneEntityId(27)),
         transform: TransformDescriptor {
             position: [1.0, 1.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
@@ -1951,15 +2004,14 @@ fn test_hierarchy_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     let loaded: Scene = round_trip(&scene);
     assert_eq!(loaded.entities.len(), 3);
     assert!(loaded.entities[0].parent.is_none());
-    assert_eq!(loaded.entities[1].parent, Some("Root".to_string()));
-    assert_eq!(loaded.entities[2].parent, Some("ChildA".to_string()));
+    assert_eq!(loaded.entities[1].parent, Some(super::SceneEntityId(28)));
+    assert_eq!(loaded.entities[2].parent, Some(super::SceneEntityId(27)));
     assert_eq!(loaded.entities[0].transform.scale, [2.0, 2.0, 2.0]);
     assert_eq!(loaded.entities[1].transform.scale, [0.5, 0.5, 0.5]);
     assert_eq!(loaded.entities[2].transform.scale, [0.25, 0.25, 0.25]);
@@ -1972,6 +2024,9 @@ fn test_entity_count_preservation() {
 
     // One of each EntitySource variant: 8 total
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(25),
+        joint: None,
+        components: Default::default(),
         name: Some("Cube1".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
@@ -1993,10 +2048,12 @@ fn test_entity_count_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(24),
+        joint: None,
+        components: Default::default(),
         name: Some("Sphere1".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
@@ -2020,10 +2077,12 @@ fn test_entity_count_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(23),
+        joint: None,
+        components: Default::default(),
         name: Some("Plane1".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
@@ -2046,10 +2105,12 @@ fn test_entity_count_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(22),
+        joint: None,
+        components: Default::default(),
         name: Some("Cylinder1".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
@@ -2073,10 +2134,12 @@ fn test_entity_count_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(21),
+        joint: None,
+        components: Default::default(),
         name: Some("Torus1".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
@@ -2101,15 +2164,17 @@ fn test_entity_count_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(20),
+        joint: None,
+        components: Default::default(),
         name: Some("Model1".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
         source: EntitySource::GltfModel {
-            path: "test.glb".to_string(),
+            path: super::AssetRef::Scene("test.glb".into()),
         },
         drawable: None,
         point_light: None,
@@ -2126,10 +2191,12 @@ fn test_entity_count_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(19),
+        joint: None,
+        components: Default::default(),
         name: Some("Emitter1".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
@@ -2149,10 +2216,12 @@ fn test_entity_count_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(18),
+        joint: None,
+        components: Default::default(),
         name: Some("Light1".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
@@ -2172,7 +2241,6 @@ fn test_entity_count_preservation() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -2186,34 +2254,18 @@ fn test_entity_count_preservation() {
 }
 
 #[test]
-fn test_unknown_fields_ignored() {
-    // Forward compatibility: a scene with unknown fields at the top level
-    // should deserialize successfully. RON ignores unknown fields by default.
-    let ron_with_unknown = r#"(
-    version: 1,
-    name: "Forward Compat Test",
-    future_field: "this is ignored",
-    entities: [],
-)"#;
-
-    let loaded: Scene = ron::from_str(ron_with_unknown).unwrap();
-    assert_eq!(loaded.name, "Forward Compat Test");
-    assert_eq!(loaded.version, 1);
-    assert!(loaded.entities.is_empty());
-
-    // Entity-level unknown fields: RON with unknown fields on EntityDescriptor
-    // RON v0.8+ does not allow unknown struct fields by default,
-    // but the version field at the Scene level provides a migration path.
-    // Verify that the scene-level version field works correctly for this purpose.
-    let ron_version_mismatch = r#"(
-    version: 2,
-    name: "Version 2 Scene",
-    entities: [],
-)"#;
-
-    let loaded: Scene = ron::from_str(ron_version_mismatch).unwrap();
-    assert_eq!(loaded.version, 2);
-    assert_eq!(loaded.name, "Version 2 Scene");
+fn test_unknown_builtin_fields_are_rejected() {
+    let text = r#"(version: 3, name: "Strict", next_entity_id: 1, entities: [], future_field: 7)"#;
+    assert!(matches!(
+        SceneManager::parse(text),
+        Err(SceneError::Parse(_))
+    ));
+    let text =
+        r#"(version: 3, name: "Strict", next_entity_id: 2, entities: [(id: 1, point_ligth: ())])"#;
+    assert!(matches!(
+        SceneManager::parse(text),
+        Err(SceneError::Parse(_))
+    ));
 }
 
 #[test]
@@ -2222,16 +2274,16 @@ fn test_version_field_present() {
     let ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
 
     assert!(
-        ron.contains(&format!("version: {SCENE_VERSION}")),
-        "Serialized scene must contain the current version"
+        ron.contains("version: 3"),
+        "Serialized scene must contain 'version: 3'"
     );
 
     // Test with entities too
     let scene = build_default_scene();
     let ron = to_string_pretty(&scene, ron_pretty_config()).unwrap();
     assert!(
-        ron.contains(&format!("version: {SCENE_VERSION}")),
-        "Default scene must contain the current version"
+        ron.contains("version: 3"),
+        "Default scene must contain 'version: 3'"
     );
 }
 
@@ -2253,7 +2305,7 @@ fn test_empty_scene() {
 
     // Also test deserializing empty scene from RON
     let ron_empty = r#"(
-    version: 1,
+    version: 3,
     name: "Empty From RON",
     author: None,
     created_at: None,
@@ -2261,15 +2313,19 @@ fn test_empty_scene() {
     engine_version: None,
     entities: [],
 )"#;
-    let loaded: Scene = ron::from_str(ron_empty).unwrap();
+    let loaded =
+        SceneManager::parse(ron_empty.replace("version: 3", "version: 1").as_str()).unwrap();
     assert_eq!(loaded.name, "Empty From RON");
-    assert_eq!(loaded.version, 1);
+    assert_eq!(loaded.version, SCENE_VERSION);
     assert!(loaded.entities.is_empty());
 }
 
 #[test]
 fn test_velocity_round_trip() {
     let desc = EntityDescriptor {
+        id: super::SceneEntityId(17),
+        joint: None,
+        components: Default::default(),
         name: Some("MovingObject".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2303,7 +2359,6 @@ fn test_velocity_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     };
 
@@ -2314,6 +2369,9 @@ fn test_velocity_round_trip() {
 
     // Test with zero velocity
     let desc_zero = EntityDescriptor {
+        id: super::SceneEntityId(16),
+        joint: None,
+        components: Default::default(),
         name: Some("StaticObject".to_string()),
         parent: None,
         transform: TransformDescriptor::default_transform(),
@@ -2338,7 +2396,6 @@ fn test_velocity_round_trip() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     };
     let loaded_zero: EntityDescriptor = round_trip(&desc_zero);
@@ -2374,7 +2431,7 @@ fn test_default_scene_round_trip() {
 #[test]
 fn test_metadata_preservation() {
     let mut scene = Scene::new("Metadata Test");
-    scene.version = 1;
+    scene.version = SCENE_VERSION;
     scene.author = Some("TestAuthor".to_string());
     scene.created_at = Some("1000000000".to_string());
     scene.modified_at = Some("2000000000".to_string());
@@ -2382,7 +2439,7 @@ fn test_metadata_preservation() {
 
     let loaded: Scene = round_trip(&scene);
     assert_eq!(loaded.name, "Metadata Test");
-    assert_eq!(loaded.version, 1);
+    assert_eq!(loaded.version, SCENE_VERSION);
     assert_eq!(loaded.author, Some("TestAuthor".to_string()));
     assert_eq!(loaded.created_at, Some("1000000000".to_string()));
     assert_eq!(loaded.modified_at, Some("2000000000".to_string()));
@@ -2402,8 +2459,8 @@ fn test_metadata_preservation() {
     name: "Version Default Test",
     entities: [],
 )"#;
-    let loaded_default: Scene = ron::from_str(ron_no_version).unwrap();
-    assert_eq!(loaded_default.version, 0);
+    let loaded_default = SceneManager::parse(ron_no_version).unwrap();
+    assert_eq!(loaded_default.version, SCENE_VERSION);
     assert_eq!(loaded_default.name, "Version Default Test");
 }
 
@@ -2426,6 +2483,9 @@ fn test_load_spawn_integration() {
     // All entity types: Cube, Sphere, Plane, Cylinder, Torus, GltfModel,
     // ParticleEmitter, Light
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(15),
+        joint: None,
+        components: Default::default(),
         name: Some("Cube1".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2459,11 +2519,13 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(14),
+        joint: None,
+        components: Default::default(),
         name: Some("Sphere1".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2496,11 +2558,13 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(13),
+        joint: None,
+        components: Default::default(),
         name: Some("Plane1".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2532,11 +2596,13 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(12),
+        joint: None,
+        components: Default::default(),
         name: Some("Cylinder1".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2569,11 +2635,13 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(11),
+        joint: None,
+        components: Default::default(),
         name: Some("Torus1".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2607,12 +2675,14 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // GLTF model with animation (VAL-CROSS-005: animated model state round-trip)
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(10),
+        joint: None,
+        components: Default::default(),
         name: Some("AnimatedFox".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2621,7 +2691,7 @@ fn test_load_spawn_integration() {
             scale: [0.01, 0.01, 0.01],
         },
         source: EntitySource::GltfModel {
-            path: "resources/models/Fox.glb".to_string(),
+            path: super::AssetRef::Resource("models/Fox.glb".into()),
         },
         drawable: None,
         point_light: None,
@@ -2657,12 +2727,14 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Particle emitter
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(9),
+        joint: None,
+        components: Default::default(),
         name: Some("FireEmitter".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2674,7 +2746,6 @@ fn test_load_spawn_integration() {
         drawable: None,
         point_light: None,
         particle_emitter: Some(ParticleEmitterDescriptor {
-            position: [-3.0, 1.0, -3.0],
             emit_rate: 400.0,
             base_lifetime: 2.5,
             lifetime_variation: 0.3,
@@ -2691,6 +2762,7 @@ fn test_load_spawn_integration() {
             shape: katla_gfx::particles::EmitterShape::Point,
             shape_params: [0.0; 4],
             active: true,
+            ..Default::default()
         }),
         animation: None,
         velocity: None,
@@ -2704,12 +2776,14 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Point light
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(8),
+        joint: None,
+        components: Default::default(),
         name: Some("WarmLight".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2742,12 +2816,14 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Parent-child hierarchy (VAL-CROSS-006)
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(7),
+        joint: None,
+        components: Default::default(),
         name: Some("ParentEntity".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2773,12 +2849,14 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(6),
+        joint: None,
+        components: Default::default(),
         name: Some("ChildA".to_string()),
-        parent: Some("ParentEntity".to_string()),
+        parent: Some(super::SceneEntityId(7)),
         transform: TransformDescriptor {
             position: [2.0, 0.0, 0.0],
             rotation: [0.0, 0.707, 0.0, 0.707],
@@ -2804,12 +2882,14 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(5),
+        joint: None,
+        components: Default::default(),
         name: Some("Grandchild".to_string()),
-        parent: Some("ChildA".to_string()),
+        parent: Some(super::SceneEntityId(6)),
         transform: TransformDescriptor {
             position: [1.0, 1.0, 0.0],
             rotation: [0.0, 0.0, 0.0, 1.0],
@@ -2833,7 +2913,6 @@ fn test_load_spawn_integration() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -2902,8 +2981,8 @@ fn test_load_spawn_integration() {
         .find(|e| e.name == Some("Grandchild".to_string()))
         .expect("Grandchild must exist");
     assert!(parent.parent.is_none());
-    assert_eq!(child_a.parent, Some("ParentEntity".to_string()));
-    assert_eq!(grandchild.parent, Some("ChildA".to_string()));
+    assert_eq!(child_a.parent, Some(super::SceneEntityId(7)));
+    assert_eq!(grandchild.parent, Some(super::SceneEntityId(6)));
     assert_eq!(parent.transform.scale, [2.0, 2.0, 2.0]);
     assert_eq!(child_a.transform.scale, [0.5, 0.5, 0.5]);
     assert_eq!(grandchild.transform.scale, [0.25, 0.25, 0.25]);
@@ -2942,6 +3021,9 @@ fn test_transform_persistence() {
     let original_scale = [2.0, 0.5, 3.0];
 
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(4),
+        joint: None,
+        components: Default::default(),
         name: Some("MovingCube".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -2972,7 +3054,6 @@ fn test_transform_persistence() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -3317,6 +3398,9 @@ fn test_full_editor_workflow() {
 
     // Add a cube entity
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(3),
+        joint: None,
+        components: Default::default(),
         name: Some("TestCube".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -3347,12 +3431,14 @@ fn test_full_editor_workflow() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Add a light entity
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(2),
+        joint: None,
+        components: Default::default(),
         name: Some("TestLight".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -3385,12 +3471,14 @@ fn test_full_editor_workflow() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
     // Add a sphere with velocity
     scene.entities.push(EntityDescriptor {
+        id: super::SceneEntityId(1),
+        joint: None,
+        components: Default::default(),
         name: Some("MovingSphere".to_string()),
         parent: None,
         transform: TransformDescriptor {
@@ -3426,7 +3514,6 @@ fn test_full_editor_workflow() {
         trigger_volume: None,
         collision_filter: None,
         trigger_rules: vec![],
-        rigid_body_properties: None,
         reverb_zone: None,
     });
 
@@ -3592,11 +3679,11 @@ fn test_full_editor_workflow() {
 #[test]
 fn test_invalid_hierarchy_is_rejected_before_scene_preparation() {
     let mut scene = build_default_scene();
-    scene.entities[0].parent = Some("missing parent".into());
-    assert!(super::serialization::validate_hierarchy(&scene).is_err());
-    scene.entities[0].parent = scene.entities[1].name.clone();
-    scene.entities[1].parent = scene.entities[0].name.clone();
-    assert!(super::serialization::validate_hierarchy(&scene).is_err());
+    scene.entities[0].parent = Some(super::SceneEntityId(u64::MAX));
+    assert!(scene.validate().is_err());
+    scene.entities[0].parent = Some(scene.entities[1].id);
+    scene.entities[1].parent = Some(scene.entities[0].id);
+    assert!(scene.validate().is_err());
     scene.entities[1].parent = None;
-    assert!(super::serialization::validate_hierarchy(&scene).is_ok());
+    scene.validate().unwrap();
 }

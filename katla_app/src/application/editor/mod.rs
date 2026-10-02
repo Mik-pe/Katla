@@ -1123,7 +1123,13 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::PlayStart => {
                 if app.play_mode == super::game_state::PlayMode::Editing {
-                    app.scene_snapshot = Some(super::game_state::SceneSnapshot::capture(app));
+                    match super::game_state::SceneSnapshot::capture(app) {
+                        Ok(snapshot) => app.scene_snapshot = Some(snapshot),
+                        Err(error) => {
+                            app.show_scene_error(error);
+                            continue;
+                        }
+                    }
                     app.play_mode = super::game_state::PlayMode::Playing;
                     if let Some(active) =
                         app.world.get_resource_mut::<katla_script::ScriptsActive>()

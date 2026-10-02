@@ -1,9 +1,12 @@
 //! Scene identity and the last successfully saved editor state.
 
-use super::Scene;
+use super::{Scene, SceneAssetContext};
 use std::path::PathBuf;
 
+#[derive(Clone)]
 pub(crate) struct SceneDocument {
+    pub(crate) assets: Option<SceneAssetContext>,
+    pub(crate) next_entity_id: u64,
     pub(crate) path: Option<PathBuf>,
     pub(crate) saved: Scene,
 }
@@ -11,6 +14,8 @@ pub(crate) struct SceneDocument {
 impl Default for SceneDocument {
     fn default() -> Self {
         Self {
+            assets: None,
+            next_entity_id: 1,
             path: None,
             saved: Scene::new("Untitled"),
         }
@@ -54,6 +59,8 @@ mod tests {
             .position(|entity| entity.animation.is_some())
             .unwrap();
         let document = SceneDocument {
+            assets: None,
+            next_entity_id: 1,
             path: None,
             saved: scene.clone(),
         };

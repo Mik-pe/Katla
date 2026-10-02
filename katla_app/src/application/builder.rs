@@ -70,6 +70,7 @@ pub struct ApplicationBuilder {
     check_black_frames: bool,
     world: World,
     scene_path: Option<String>,
+    scene_components: crate::scene::SceneComponentRegistry,
     dump_layout_path: Option<super::DumpLayoutTarget>,
     dump_render_graph: Option<super::DumpLayoutTarget>,
     headless: bool,
@@ -85,6 +86,15 @@ pub struct ApplicationBuilder {
 impl ApplicationBuilder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Install game component codecs before startup scene loading.
+    pub fn with_scene_components(
+        mut self,
+        components: crate::scene::SceneComponentRegistry,
+    ) -> Self {
+        self.scene_components = components;
+        self
     }
 
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
@@ -610,6 +620,7 @@ impl ApplicationBuilder {
             play_mode: super::game_state::PlayMode::Editing,
             #[cfg(feature = "editor")]
             scene_snapshot: None,
+            scene_components: self.scene_components,
             scene_document: crate::scene::document::SceneDocument::default(),
             #[cfg(feature = "editor")]
             asset_watcher: None,
@@ -897,6 +908,7 @@ impl ApplicationBuilder {
             play_mode: super::game_state::PlayMode::Editing,
             #[cfg(feature = "editor")]
             scene_snapshot: None,
+            scene_components: self.scene_components,
             scene_document: crate::scene::document::SceneDocument::default(),
             #[cfg(feature = "editor")]
             asset_watcher: Self::create_asset_watcher(),

@@ -66,8 +66,10 @@ Private Metal texture publication uses [staged uploads](metal_texture_uploads.md
 GLTF assets provide meshes, PBR materials, skins and animation clips. Background
 loading and material templates are application services.
 ResourceManager::discover() locates resources/; use its path helpers. Persistent
-scene format and serialization are described in the
-[scene reference](../katla_app/src/scene/README.md).
+scene format v3 uses stable document-local entity keys, explicit resource roots
+and versioned game component codecs. Parsing and validation precede staged scene
+replacement; older documents migrate through isolated readers. See the
+[scene reference](../katla_app/src/scene/README.md) for schemas and lifecycle rules.
 
 ## Math and color
 

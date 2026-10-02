@@ -134,18 +134,21 @@ world proxy is a snapshot; use the current callback argument for mutations.
 
 ## Persistence and validation
 
-Scene version 2 introduces the sensor-only `Trigger` source. Version 1 entities
-migrate unchanged; absent `trigger_rules` default empty. Live rule references use
-complete generational IDs. Saving maps them to the serializer's unique scene
-names, and loading resolves names after every entity has spawned. Forward
-references and renamed entities survive a save/reload. Runtime overlaps, consumed
-once rules and diagnostics reset rather than entering the scene file.
+Scene version 3 uses stable document-local keys for visitor filters and explicit
+animation targets. Saving maps complete live generational IDs to those keys;
+loading resolves keys after every entity has spawned. Names may be duplicated,
+changed or absent without redirecting a rule. Runtime overlaps, consumed once
+rules and diagnostics reset rather than entering the scene file.
 
-Loading validates rule sizes, action parameters, dependencies and unambiguous
-references before preparing the new scene. A stale or non-serializable target
-gets a missing-reference marker in snapshots; file saving rejects it before
-replacing the saved file. It cannot silently bind to a replacement entity.
-Names in manually authored files must identify exactly one entity.
+Version 2 introduced the sensor-only `Trigger` source and name-based references.
+The legacy reader migrates v0/v1/v2 into the current schema; a missing or ambiguous
+legacy target rejects migration. Absent `trigger_rules` default empty.
+
+Loading validates rule sizes, action parameters, component dependencies and all
+references before preparing the new scene. A stale or non-serializable live target
+rejects capture, Play snapshots and file saving before replacing the saved file.
+It cannot silently bind to a replacement entity. See the
+[scene format contract](../katla_app/src/scene/README.md).
 
 ## Validation and remaining scope
 

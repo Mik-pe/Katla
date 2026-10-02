@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 
-use super::entity_source::EntitySource;
+use super::{AssetRef, SceneEntityId, entity_source::EntitySource};
+use std::collections::BTreeMap;
 
 /// Transform data for serialization (plain arrays, no SIMD types).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct TransformDescriptor {
     pub position: [f32; 3],
     pub rotation: [f32; 4],
@@ -22,7 +24,9 @@ impl TransformDescriptor {
 
 /// Drawable material properties (color + PBR params, no GPU handles).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DrawableDescriptor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[f32; 4]>,
     pub metallic: f32,
     pub roughness: f32,
@@ -31,6 +35,7 @@ pub struct DrawableDescriptor {
 
 /// Point light data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PointLightDescriptor {
     pub color: [f32; 3],
     pub intensity: f32,
@@ -39,8 +44,8 @@ pub struct PointLightDescriptor {
 
 /// Particle emitter data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct ParticleEmitterDescriptor {
-    pub position: [f32; 3],
     pub emit_rate: f32,
     pub base_lifetime: f32,
     pub lifetime_variation: f32,
@@ -57,11 +62,21 @@ pub struct ParticleEmitterDescriptor {
     pub shape: katla_gfx::particles::EmitterShape,
     pub shape_params: [f32; 4],
     pub active: bool,
+    pub color_end: [f32; 4],
+    pub scale_end: f32,
+    #[serde(default)]
+    pub kill_on_destroy: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timed_emission: Option<f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub burst_queue: Vec<u32>,
 }
 
 /// Animation state for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AnimationDescriptor {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_clip: Option<String>,
     pub playing: bool,
     pub loop_animation: bool,
@@ -71,7 +86,7 @@ pub struct AnimationDescriptor {
     pub duration: f32,
     #[serde(default)]
     pub blending: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_clip: Option<String>,
     #[serde(default)]
     pub blend_weight: f32,
@@ -177,6 +192,7 @@ impl Default for AnimationDescriptor {
 
 /// Velocity data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VelocityDescriptor {
     pub velocity: [f32; 3],
     pub acceleration: [f32; 3],
@@ -184,7 +200,9 @@ pub struct VelocityDescriptor {
 
 /// Perspective camera data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PerspectiveDescriptor {
+    /// Vertical field of view in degrees, matching PerspectiveComponent.
     pub fov: f32,
     pub near: f32,
     pub aspect_ratio: f32,
@@ -192,6 +210,7 @@ pub struct PerspectiveDescriptor {
 
 /// Directional light data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DirectionalLightDescriptor {
     pub direction: [f32; 3],
     pub color: [f32; 3],
@@ -200,14 +219,16 @@ pub struct DirectionalLightDescriptor {
 
 /// Script attachment data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScriptDescriptor {
-    pub script_path: String,
+    pub path: AssetRef,
 }
 
 /// Audio emitter data for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AudioEmitterDescriptor {
-    pub source_path: String,
+    pub path: AssetRef,
     #[serde(default = "default_volume")]
     pub volume: f32,
     #[serde(default)]
@@ -246,20 +267,54 @@ fn default_rolloff() -> f32 {
     1.0
 }
 
-/// Rigid body type for serialization.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RigidBodyDescriptor {
-    Static,
-    Dynamic,
-    Kinematic,
+/// Authored physics settings; native Rapier handles are recreated on load.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RigidBodyDescriptor {
+    pub kind: katla_physics::BodyType,
+    #[serde(default = "default_one")]
+    pub gravity_scale: f32,
+    #[serde(default)]
+    pub ccd_enabled: bool,
+    #[serde(default)]
+    pub linear_velocity: [f32; 3],
 }
 
-/// Rigid body settings and velocity, without native physics handles.
+fn default_one() -> f32 {
+    1.0
+}
+
+impl RigidBodyDescriptor {
+    /// Construct body settings without a live physics handle.
+    pub fn new(kind: katla_physics::BodyType) -> Self {
+        Self {
+            kind,
+            gravity_scale: 1.0,
+            ccd_enabled: false,
+            linear_velocity: [0.0; 3],
+        }
+    }
+}
+
+/// Joint endpoints use persistent scene keys rather than native entity handles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RigidBodyPropertiesDescriptor {
-    pub gravity_scale: f32,
-    pub ccd_enabled: bool,
-    pub linear_velocity: [f32; 3],
+#[serde(deny_unknown_fields)]
+pub struct JointDescriptor {
+    pub kind: katla_physics::JointType,
+    pub a: SceneEntityId,
+    pub b: SceneEntityId,
+    pub anchor_a: [f32; 3],
+    pub anchor_b: [f32; 3],
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<[f32; 2]>,
+}
+
+/// Versioned application component payload, retained even without its plugin.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CustomComponentDescriptor {
+    pub version: u32,
+    pub data: String,
 }
 
 /// Collider shape data for serialization.
@@ -271,14 +326,8 @@ pub enum ColliderShapeDescriptor {
         half_height: f32,
         radius: f32,
     },
-    Trimesh {
-        mesh_handle_index: u32,
-        mesh_handle_generation: u32,
-    },
-    ConvexHull {
-        mesh_handle_index: u32,
-        mesh_handle_generation: u32,
-    },
+    Trimesh,
+    ConvexHull,
     Heightfield {
         rows: u32,
         cols: u32,
@@ -288,6 +337,7 @@ pub enum ColliderShapeDescriptor {
 
 /// Physics material properties for serialization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PhysicsMaterialDescriptor {
     pub friction: f32,
     pub restitution: f32,
@@ -307,66 +357,79 @@ pub struct CollisionFilterDescriptor {
 
 /// Descriptor for a single entity in a scene file.
 ///
-/// Uses `#[serde(deny_unknown_fields)] = false` (the default) so that
-/// scene files from newer engine versions with additional fields can be
-/// loaded by older versions without error. Unknown fields are silently ignored.
+/// Built-in fields are strict. Application data lives in versioned `components`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EntityDescriptor {
+    pub id: SceneEntityId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    pub parent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SceneEntityId>,
+    #[serde(default = "TransformDescriptor::default_transform")]
     pub transform: TransformDescriptor,
+    #[serde(default)]
     pub source: EntitySource,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drawable: Option<DrawableDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub point_light: Option<PointLightDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub particle_emitter: Option<ParticleEmitterDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub animation: Option<AnimationDescriptor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub velocity: Option<VelocityDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script: Option<ScriptDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub perspective: Option<PerspectiveDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub directional_light: Option<DirectionalLightDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio_emitter: Option<AudioEmitterDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rigid_body: Option<RigidBodyDescriptor>,
-    #[serde(default)]
-    pub rigid_body_properties: Option<RigidBodyPropertiesDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reverb_zone: Option<crate::components::ReverbZone>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collider_shape: Option<ColliderShapeDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub physics_material: Option<PhysicsMaterialDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger_volume: Option<TriggerVolumeDescriptor>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub collision_filter: Option<CollisionFilterDescriptor>,
-    /// Names are resolved to generational IDs after all scene entities are spawned.
+    /// Stable document keys resolved after all scene entities are staged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub trigger_rules: Vec<katla_agent::events::TriggerRule<String>>,
+    pub trigger_rules: Vec<katla_agent::events::TriggerRule<SceneEntityId>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub joint: Option<JointDescriptor>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub components: BTreeMap<String, CustomComponentDescriptor>,
 }
 
 /// Top-level scene file structure.
 ///
-/// Unknown top-level keys in the RON file are silently ignored (RON default),
-/// providing forward compatibility when the engine adds new scene-level metadata.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Header versions are checked before parsing the strict versioned schema.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Scene {
     /// Scene format version. Enables migration when the format changes.
     /// The loader uses this to apply any necessary transformations.
     #[serde(default)]
     pub version: u32,
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub author: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified_at: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_version: Option<String>,
+    /// Never reuse a key after an entity has been removed.
+    pub next_entity_id: u64,
     pub entities: Vec<EntityDescriptor>,
 }
 
@@ -380,7 +443,113 @@ impl Scene {
             created_at: None,
             modified_at: None,
             engine_version: None,
+            next_entity_id: 1,
             entities: Vec::new(),
         }
+    }
+}
+
+impl EntityDescriptor {
+    /// Construct a transform-only entity or a mesh/source instance with no components.
+    pub fn new(id: SceneEntityId, source: EntitySource) -> Self {
+        Self {
+            id,
+            name: None,
+            parent: None,
+            transform: TransformDescriptor::default_transform(),
+            source,
+            drawable: None,
+            point_light: None,
+            particle_emitter: None,
+            animation: None,
+            velocity: None,
+            script: None,
+            perspective: None,
+            directional_light: None,
+            audio_emitter: None,
+            rigid_body: None,
+            reverb_zone: None,
+            collider_shape: None,
+            physics_material: None,
+            trigger_volume: None,
+            collision_filter: None,
+            trigger_rules: vec![],
+            joint: None,
+            components: BTreeMap::new(),
+        }
+    }
+}
+
+impl ParticleEmitterDescriptor {
+    pub(crate) fn from_component(emitter: &crate::components::ParticleEmitterComponent) -> Self {
+        let config = emitter.config;
+        Self {
+            emit_rate: config.emit_rate,
+            base_lifetime: config.base_lifetime,
+            lifetime_variation: config.lifetime_variation,
+            velocity_direction: config.velocity_direction,
+            velocity_magnitude: config.velocity_magnitude,
+            velocity_cone_angle: config.velocity_cone_angle,
+            base_scale: config.base_scale,
+            scale_variation: config.scale_variation,
+            color: config.color,
+            color_variation: config.color_variation,
+            color_end: config.color_end.0,
+            scale_end: config.scale_end,
+            gravity: config.gravity,
+            turbulence_strength: config.turbulence_strength,
+            turbulence_frequency: config.turbulence_frequency,
+            shape: config.shape,
+            shape_params: config.shape_params,
+            active: emitter.active,
+            kill_on_destroy: emitter.kill_on_destroy,
+            timed_emission: emitter.timed_emission,
+            burst_queue: emitter.burst_queue.clone(),
+        }
+    }
+
+    pub(crate) fn to_component(
+        &self,
+        position: [f32; 3],
+    ) -> crate::components::ParticleEmitterComponent {
+        let config = katla_gfx::particles::EmitterConfig {
+            position,
+            emit_rate: self.emit_rate,
+            base_lifetime: self.base_lifetime,
+            lifetime_variation: self.lifetime_variation,
+            velocity_direction: self.velocity_direction,
+            velocity_magnitude: self.velocity_magnitude,
+            velocity_cone_angle: self.velocity_cone_angle,
+            base_scale: self.base_scale,
+            scale_variation: self.scale_variation,
+            color: self.color,
+            color_variation: self.color_variation,
+            color_end: katla_gfx::particles::Align16Vec4(self.color_end),
+            scale_end: self.scale_end,
+            gravity: self.gravity,
+            turbulence_strength: self.turbulence_strength,
+            turbulence_frequency: self.turbulence_frequency,
+            shape: self.shape,
+            shape_params: self.shape_params,
+            ..Default::default()
+        };
+        let mut emitter = crate::components::ParticleEmitterComponent::with_config(config);
+        emitter.active = self.active;
+        emitter.kill_on_destroy = self.kill_on_destroy;
+        emitter.timed_emission = self.timed_emission;
+        emitter.burst_queue = self.burst_queue.clone();
+        emitter
+    }
+}
+
+impl Default for ParticleEmitterDescriptor {
+    fn default() -> Self {
+        Self::from_component(&crate::components::ParticleEmitterComponent::default())
+    }
+}
+
+impl Default for TransformDescriptor {
+    fn default() -> Self {
+        Self::default_transform()
     }
 }

@@ -303,35 +303,48 @@ fn test_invalid_authoring_does_not_spawn_or_replace() {
 }
 
 #[test]
-fn test_scene_rejects_missing_ambiguous_and_invalid_trigger_rules() {
-    use crate::scene::serialization::validate_trigger_rules;
-    use crate::scene::{TriggerVolumeDescriptor, build_default_scene};
+fn test_scene_trigger_keys_survive_duplicate_names_and_reject_invalid_rules() {
+    use crate::scene::{SceneEntityId, SceneManager, TriggerVolumeDescriptor, build_default_scene};
     let mut scene = build_default_scene();
-    let target_name = scene.entities[1].name.clone().unwrap();
+    let target = scene.entities[1].id;
     let trigger = &mut scene.entities[0];
     trigger.trigger_volume = Some(TriggerVolumeDescriptor);
-    trigger.rigid_body = Some(crate::scene::RigidBodyDescriptor::Kinematic);
+    trigger.rigid_body = Some(crate::scene::RigidBodyDescriptor::new(
+        katla_physics::BodyType::Kinematic,
+    ));
     trigger.collider_shape = Some(crate::scene::ColliderShapeDescriptor::Sphere(1.0));
     trigger.trigger_rules = vec![TriggerRule {
         event: TriggerPhase::Enter,
-        other_entity: Some(target_name.clone()),
+        other_entity: Some(target),
         once: false,
         actions: vec![EventAction::Emit {
             name: "signal".into(),
         }],
     }];
-    assert!(validate_trigger_rules(&scene).is_ok());
-    let ron = ron::to_string(&scene).unwrap();
-    let loaded: crate::scene::Scene = ron::from_str(&ron).unwrap();
+    scene.validate().unwrap();
+    let loaded = SceneManager::parse(&SceneManager::to_ron(&scene).unwrap()).unwrap();
     assert_eq!(
         loaded.entities[0].trigger_rules,
         scene.entities[0].trigger_rules
     );
-    scene.entities[0].trigger_rules[0].other_entity = Some("missing".into());
-    assert!(validate_trigger_rules(&scene).is_err());
-    scene.entities[0].trigger_rules[0].other_entity = Some(target_name.clone());
-    scene.entities[2].name = Some(target_name);
-    assert!(validate_trigger_rules(&scene).is_err());
+    scene.entities[0].trigger_rules[0].other_entity = Some(SceneEntityId(u64::MAX));
+    assert!(scene.validate().is_err());
+    scene.entities[0].trigger_rules[0].other_entity = Some(target);
+    scene.entities[2].name = scene.entities[1].name.clone();
+    scene.validate().unwrap();
+    scene.entities[0].trigger_rules[0].actions.clear();
+    assert!(scene.validate().is_err());
+    scene.entities[0].trigger_rules.clear();
+    scene.entities[0].trigger_rules = vec![TriggerRule {
+        event: TriggerPhase::Enter,
+        other_entity: None,
+        once: false,
+        actions: vec![EventAction::Emit {
+            name: "signal".into(),
+        }],
+    }];
+    scene.entities[0].trigger_volume = None;
+    assert!(scene.validate().is_err());
 }
 
 #[test]
@@ -342,6 +355,7 @@ fn test_native_scene_trigger_reference_roundtrip() {
     use crate::scene::{EntitySource, SceneManager};
     use crate::{ApplicationFrameGraph, empty_frame_graph};
     let mut app = ApplicationBuilder::new()
+        .validation_layer(true)
         .with_frame_graph(|renderer, _| Ok(ApplicationFrameGraph::new(empty_frame_graph(renderer))))
         .build_headless(1, String::new())
         .unwrap();
@@ -355,20 +369,42 @@ fn test_native_scene_trigger_reference_roundtrip() {
         "rules":[{"event":"enter","other_entity":visitor.id().to_string(),"once":true,"actions":[{"action":"emit","name":"hello"}]}]})).unwrap();
     let result = control::execute(&mut app.world, op.resolve_ids().unwrap()).unwrap();
     let trigger = EntityId::from_raw(result["entity_id"].as_str().unwrap().parse().unwrap());
-    app.world
+    let rules = app
+        .world
         .get_component_mut::<TriggerRules>(trigger)
-        .unwrap()
-        .fired
-        .push(0);
-    let scene = SceneManager::save_scene(&app);
+        .unwrap();
+    rules.rules.push(TriggerRule {
+        event: TriggerPhase::Exit,
+        other_entity: None,
+        once: false,
+        actions: vec![EventAction::PlayAnimation {
+            target: EventTarget::Entity {
+                entity: visitor.id(),
+            },
+            clip: "Run".into(),
+            fade_seconds: 0.25,
+            looping: true,
+            speed: 1.0,
+        }],
+    });
+    rules.fired.push(0);
+    let scene = SceneManager::save_scene(&mut app).unwrap();
     let descriptor = scene
         .entities
         .iter()
         .find(|entity| entity.name.as_deref() == Some("Box"))
         .unwrap();
-    assert_eq!(
-        descriptor.trigger_rules[0].other_entity.as_deref(),
-        Some("Visitor")
+    let visitor_key = scene
+        .entities
+        .iter()
+        .find(|entity| entity.name.as_deref() == Some("Visitor"))
+        .unwrap()
+        .id;
+    assert_eq!(descriptor.trigger_rules[0].other_entity, Some(visitor_key));
+    assert!(
+        matches!(&descriptor.trigger_rules[1].actions[0], EventAction::PlayAnimation {
+        target: EventTarget::Entity { entity }, ..
+    } if *entity == visitor_key)
     );
     let mut invalid = scene.clone();
     invalid
@@ -377,16 +413,23 @@ fn test_native_scene_trigger_reference_roundtrip() {
         .find(|entity| entity.name.as_deref() == Some("Box"))
         .unwrap()
         .trigger_rules[0]
-        .other_entity = Some("Missing visitor".into());
+        .other_entity = Some(crate::scene::SceneEntityId(u64::MAX));
     let count = app.world.entity_count();
     assert!(SceneManager::load_scene(&mut app, invalid).is_err());
     assert_eq!(app.world.entity_count(), count);
     assert!(app.world.get_component::<TriggerRules>(trigger).is_some());
-    SceneManager::load_scene(&mut app, scene).unwrap();
+    let mut renamed = scene;
+    renamed
+        .entities
+        .iter_mut()
+        .find(|entity| entity.id == visitor_key)
+        .unwrap()
+        .name = Some("Renamed visitor".into());
+    SceneManager::load_scene(&mut app, renamed).unwrap();
     let visitor_after = app
         .world
         .query_ref::<&NameComponent>()
-        .find(|(_, name)| name.name == "Visitor")
+        .find(|(_, name)| name.name == "Renamed visitor")
         .unwrap()
         .0;
     let trigger_after = app
@@ -402,6 +445,11 @@ fn test_native_scene_trigger_reference_roundtrip() {
         .get_component::<TriggerRules>(trigger_after)
         .unwrap();
     assert_eq!(rules.rules[0].other_entity, Some(visitor_after.id()));
+    assert!(
+        matches!(&rules.rules[1].actions[0], EventAction::PlayAnimation {
+        target: EventTarget::Entity { entity }, ..
+    } if *entity == visitor_after.id())
+    );
     assert!(rules.fired.is_empty());
     app.world
         .add_component(visitor_after, ColliderShape::Sphere(SphereShape::new(0.5)));
@@ -415,8 +463,7 @@ fn test_native_scene_trigger_reference_roundtrip() {
     );
     // Saving cannot silently redirect a destroyed ID to an unrelated replacement.
     app.world.destroy_entity(visitor_after);
-    let orphaned = SceneManager::save_scene(&app);
-    assert!(crate::scene::serialization::validate_trigger_rules(&orphaned).is_err());
+    assert!(SceneManager::save_scene(&mut app).is_err());
     let path =
         std::env::temp_dir().join(format!("katla-stale-trigger-{}.katla", std::process::id()));
     std::fs::write(&path, "existing file").unwrap();

@@ -74,6 +74,7 @@ impl AudioEmitter {
 /// into the global zone reverb bus. Multiple overlapping zones have their parameters
 /// averaged.
 #[derive(Component, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReverbZone {
     /// Reverb feedback/decay (0.0-0.99). Higher = longer tail.
     pub decay: f32,

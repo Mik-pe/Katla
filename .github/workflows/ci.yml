@@ -86,6 +86,16 @@ jobs:
           CARGO_PROFILE_TEST_DEBUG: "0"
           CARGO_INCREMENTAL: "0"
 
+      - name: Verify scene format and document lifecycle on Vulkan
+        run: |
+          cargo test -p katla_app --lib --all-features --locked scene
+          cargo test -p katla_app --lib document_tests --all-features --locked -- --ignored --test-threads=1
+        env:
+          CARGO_PROFILE_DEV_DEBUG: "0"
+          CARGO_PROFILE_TEST_DEBUG: "0"
+          CARGO_INCREMENTAL: "0"
+          RUST_LOG: "info"
+
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --all-targets --locked --quiet -- -D warnings
 
@@ -174,6 +184,14 @@ jobs:
         env:
           MTL_DEBUG_LAYER: "1"
           METAL_DEVICE_WRAPPER_TYPE: "1"
+
+      - name: Verify scene document lifecycle on native Metal
+        if: steps.metal4.outputs.supported == 'true'
+        run: cargo test -p katla_app --lib document_tests --all-features --locked -- --ignored --test-threads=1
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
+          RUST_LOG: "info"
 
       - name: Verify Metal 4 capability rejection precedes native creation
         run: cargo test -p katla_gfx --lib --locked --quiet metal::context::tests::test_metal_context_capability_precedes_native_creation -- --exact

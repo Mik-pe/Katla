@@ -12,7 +12,7 @@ pub enum TriggerPhase {
     Exit,
 }
 
-/// An action's recipient. Scene files use names; live rules use generational IDs.
+/// An action's recipient. Scene files use document keys; live rules use generational IDs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -56,7 +56,7 @@ pub struct TriggerRule<T = u64> {
 }
 
 impl<T> TriggerRule<T> {
-    /// Resolve persistent names to live IDs, or map live IDs back to scene names.
+    /// Map entity references between document keys, transport values and live IDs.
     pub fn map_entities<U, E>(
         &self,
         mut resolve: impl FnMut(&T) -> Result<U, E>,

@@ -63,6 +63,13 @@ impl GpuResourceTracker {
         }
     }
 
+    /// Track a skeleton added to an already tracked drawable.
+    pub(crate) fn track_skeleton(&mut self, skeleton: SkeletonHandle) {
+        if !skeleton.is_none() {
+            *self.skeleton_refs.entry(skeleton).or_insert(0) += 1;
+        }
+    }
+
     /// Track a texture handle (increment ref count).
     pub fn track_texture(&mut self, texture: TextureHandle) {
         if !texture.is_none() {

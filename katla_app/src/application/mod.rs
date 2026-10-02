@@ -390,6 +390,8 @@ pub struct Application {
     pub(crate) default_material_handle: katla_gfx::MaterialHandle,
     /// Whether the application should exit (set by editor actions, checked in window_event)
     pub(crate) quit_requested: bool,
+    /// Versioned serializers for application-owned scene components.
+    pub scene_components: crate::scene::SceneComponentRegistry,
     pub(crate) scene_document: crate::scene::document::SceneDocument,
     /// Flag to prevent double cleanup
     cleaned_up: bool,

@@ -173,3 +173,18 @@ agent rule validation and Luau callback command/lifetime/next-tick tests. Native
 application construction additionally verifies rule persistence and generational
 reference remapping; the Metal fixture follows the existing Metal 4 capability
 gate and API-validation environment. See [scene events](scene-events.md).
+
+## Scene format and document lifecycle
+
+Linux runs the portable scene format tests and native document regressions with
+Khronos validation. Native tests cover staged load failures, resource cleanup,
+stable keys, custom component codecs, particle and joint restoration, Save As
+asset origins and Play/Stop snapshots. The `macos-26` job runs the shared native
+document suite when the existing Metal 4 capability gate passes, with API
+validation enabled. Unsupported Metal hardware remains blocked rather than
+counting as native acceptance.
+
+```bash
+cargo test -p katla_app --lib --all-features --locked scene
+RUST_LOG=info cargo test -p katla_app --lib document_tests --all-features --locked -- --ignored --test-threads=1
+```

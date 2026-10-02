@@ -148,32 +148,29 @@ fn spawn_new_joints(world: &mut World) {
         return;
     }
 
-    for (_entity, joint) in to_spawn {
-        let body_a = find_rigid_body_handle(world, joint.entity_a);
-        let body_b = find_rigid_body_handle(world, joint.entity_b);
-
-        if let (Some(ha), Some(hb)) = (body_a, body_b) {
-            let joint_handle = {
-                let Some(physics) = world.get_resource_mut::<PhysicsWorld>() else {
-                    continue;
-                };
-                physics.create_joint(&joint, ha, hb).ok()
-            };
-
-            // Find the Joint component for entity_b (joints are typically owned by entity_b)
-            let target_entity = EntityId::from_raw(joint.entity_b);
-            if let Some(j) = world.get_component_mut::<Joint>(target_entity) {
-                j.joint_handle = joint_handle;
+    let bodies: std::collections::HashMap<_, _> = world
+        .query_ref::<&RigidBody>()
+        .filter_map(|(entity, body)| body.body_handle.map(|handle| (entity.id(), handle)))
+        .collect();
+    for (entity, joint) in to_spawn {
+        let (Some(&body_a), Some(&body_b)) =
+            (bodies.get(&joint.entity_a), bodies.get(&joint.entity_b))
+        else {
+            continue;
+        };
+        let result = match world.get_resource_mut::<PhysicsWorld>() {
+            Some(physics) => physics.create_joint(&joint, body_a, body_b),
+            None => continue,
+        };
+        match result {
+            Ok(handle) => {
+                if let Some(component) = world.get_component_mut::<Joint>(entity) {
+                    component.joint_handle = Some(handle);
+                }
             }
+            Err(error) => log::warn!("Cannot create joint owned by entity {entity}: {error}"),
         }
     }
-}
-
-fn find_rigid_body_handle(world: &World, entity_id: u64) -> Option<katla_physics::RigidBodyHandle> {
-    let entity = EntityId::from_raw(entity_id);
-    world
-        .get_component::<RigidBody>(entity)
-        .and_then(|rb| rb.body_handle)
 }
 
 fn step_simulation(world: &mut World, delta_time: f32) {
@@ -799,6 +796,39 @@ mod tests {
         assert!(
             !joint.is_spawned(),
             "Joint should be cleaned up when referenced entity is destroyed"
+        );
+    }
+}
+
+#[cfg(test)]
+mod joint_owner_tests {
+    use super::*;
+
+    #[test]
+    fn test_joint_owned_by_separate_entity_is_spawned_once() {
+        let mut world = World::new();
+        world.insert_resource(PhysicsWorld::new());
+        let a = world.spawn((
+            TransformComponent::default(),
+            ColliderShape::Sphere(katla_physics::SphereShape::new(0.5)),
+            RigidBody::dynamic(),
+        ));
+        let b = world.spawn((
+            TransformComponent::default(),
+            ColliderShape::Sphere(katla_physics::SphereShape::new(0.5)),
+            RigidBody::dynamic(),
+        ));
+        let owner = world.spawn((Joint::fixed(a.id(), b.id(), [0.0; 3], [0.0; 3]),));
+        let mut system = RapierPhysicsSystem;
+        system.update(&mut world, 1.0 / 60.0);
+        let handle = world.get_component::<Joint>(owner).unwrap().joint_handle;
+        assert!(handle.is_some());
+        assert!(world.get_component::<Joint>(a).is_none());
+        assert!(world.get_component::<Joint>(b).is_none());
+        system.update(&mut world, 1.0 / 60.0);
+        assert_eq!(
+            world.get_component::<Joint>(owner).unwrap().joint_handle,
+            handle
         );
     }
 }

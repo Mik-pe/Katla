@@ -120,7 +120,11 @@ CollisionFilter uses reciprocal layer/mask bitfields. Mesh colliders refer to
 MeshHandle; the app supplies MeshColliderData before constructing colliders.
 When creating native bodies, the app initializes their linear velocity from the
 RigidBody component. Scene serialization retains gravity scale, CCD and velocity
-while recreating native handles. See [component exports](../katla_physics/src/lib.rs)
+while recreating native handles. Scene v3 joints use persistent document keys;
+loading resolves them to newly allocated entities after all endpoints exist. The
+physics system stores the created joint handle on the entity that owns the joint
+component, which may be separate from both endpoints. Mesh
+colliders bind reconstructed model geometry rather than serialized GPU handles. See [component exports](../katla_physics/src/lib.rs)
 for current types.
 
 Trigger transitions are directed from the sensor to its visitor. PhysicsWorld

@@ -354,9 +354,9 @@ impl super::Application {
         use katla_math::Vec3;
 
         // 1. Load model from cache
-        let path_buf = path.as_ref().to_path_buf();
+        let path_buf = std::fs::canonicalize(path.as_ref())?;
         let path_display = path.as_ref().to_string_lossy().to_string();
-        let model = self.gltf_cache.read(path_buf)?;
+        let model = self.gltf_cache.read(path_buf.clone())?;
 
         // 2. Convert indices to u32 (generate sequential indices for non-indexed geometry)
         let vertex_count = if model.has_skinning {
@@ -445,12 +445,22 @@ impl super::Application {
             katla_gfx::PipelineDescriptor::pbr(shader_str.into_owned())
         }
         .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat);
-        let material_handle = self.renderer.compile_material(&descriptor).map_err(|e| {
-            AppError::ShaderCompileFailed {
-                path: path_display.clone(),
-                reason: format!("{e}"),
+        let material_handle = match self.renderer.compile_material(&descriptor) {
+            Ok(material) => material,
+            Err(error) => {
+                crate::scene::serialization::destroy_resources(
+                    self,
+                    crate::gpu_resource_tracker::GpuResourcesToDestroy {
+                        meshes: vec![mesh_handle],
+                        ..Default::default()
+                    },
+                );
+                return Err(AppError::ShaderCompileFailed {
+                    path: path_display.clone(),
+                    reason: error.to_string(),
+                });
             }
-        })?;
+        };
 
         // 5. Upload textures and set texture indices
         let texture_upload = self.upload_gltf_textures(&model);
@@ -474,7 +484,7 @@ impl super::Application {
         self.world.add_component(
             entity,
             EntitySource::GltfModel {
-                path: path.as_ref().to_string_lossy().to_string(),
+                path: crate::scene::AssetRef::File(path_buf),
             },
         );
         self.world.add_component(
@@ -500,6 +510,12 @@ impl super::Application {
             }
         }
 
+        self.gpu_resource_tracker.track_drawable(
+            mesh_handle,
+            material_handle,
+            katla_gfx::SkeletonHandle::NONE,
+        );
+
         // 7. If skinned, set up animation
         if model.has_skinning {
             // Get joint count from skin
@@ -512,12 +528,28 @@ impl super::Application {
 
             if joint_count > 0 {
                 // Create GPU skeleton
-                let skeleton_handle = self.renderer.create_skeleton(joint_count).map_err(|e| {
-                    AppError::SkeletonCreateFailed {
-                        path: path_display.clone(),
-                        reason: format!("{e}"),
+                let skeleton_handle = match self.renderer.create_skeleton(joint_count) {
+                    Ok(handle) => handle,
+                    Err(error) => {
+                        self.world.destroy_entity(entity);
+                        let mut resources = self.gpu_resource_tracker.release_drawable(
+                            mesh_handle,
+                            material_handle,
+                            katla_gfx::SkeletonHandle::NONE,
+                        );
+                        for handle in texture_upload.handles {
+                            if self.gpu_resource_tracker.release_texture(handle) {
+                                resources.textures.push(handle);
+                            }
+                        }
+                        crate::scene::serialization::destroy_resources(self, resources);
+                        return Err(AppError::SkeletonCreateFailed {
+                            path: path_display.clone(),
+                            reason: error.to_string(),
+                        });
                     }
-                })?;
+                };
+                self.gpu_resource_tracker.track_skeleton(skeleton_handle);
 
                 // Add skeleton handle to drawable
                 if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
@@ -542,15 +574,6 @@ impl super::Application {
             info!("Spawned static model '{}'", path.as_ref().display());
         }
 
-        // Track drawable GPU resources for cleanup on entity destruction
-        if let Some(drawable) = self.world.get_component::<DrawableComponent>(entity) {
-            self.gpu_resource_tracker.track_drawable(
-                drawable.mesh_handle,
-                drawable.material_handle,
-                drawable.skeleton_handle,
-            );
-        }
-
         Ok(entity)
     }
 
@@ -566,6 +589,7 @@ impl super::Application {
         use crate::components::{DrawableComponent, TransformComponent};
         use katla_math::{AABB, Vec3};
 
+        let source_path = std::fs::canonicalize(path.as_ref())?;
         let (mesh_handle, bounds) = self.load_stl_mesh(path.as_ref())?;
 
         let material_handle = self.default_material();
@@ -583,7 +607,7 @@ impl super::Application {
         self.world.add_component(
             entity,
             EntitySource::StlModel {
-                path: path.as_ref().to_string_lossy().to_string(),
+                path: crate::scene::AssetRef::File(source_path),
             },
         );
         self.world.add_component(

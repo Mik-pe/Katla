@@ -67,7 +67,7 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ### Phase 6: Physics component scene serialization
 
-- [x] **Add `RigidBodyDescriptor`** — enum with Static, Dynamic, Kinematic variants; added to EntityDescriptor
+- [x] **Add `RigidBodyDescriptor`** — Scene v3 unifies body kind, gravity, CCD and velocity in one descriptor without native handles
 - [x] **Add `ColliderShapeDescriptor`** — enum with Sphere(radius), Box(half_extents), Capsule { half_height, radius } variants; added to EntityDescriptor
 - [x] **Add `PhysicsMaterialDescriptor`** — struct with friction, restitution, density fields; added to EntityDescriptor
 - [x] **Add `TriggerVolumeDescriptor` and `CollisionFilterDescriptor`** — trigger volume as unit struct; collision filter with layers/mask; added both to EntityDescriptor
@@ -194,7 +194,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] **Explore asset bundle format and tooling** — Research virtual filesystem patterns (header + compressed entries, random access), evaluate existing Rust VFS crates, design packer tool and runtime reader. Produce concrete implementation TODO items covering bundle format, packer, reader, and release integration.
 
 #### Serialization improvements
-- [ ] **Explore component serialization registry design** — Research type-erased serialization patterns (type ID to serialize/deserialize closures), evaluate RON vs bincode tradeoffs, design the generic scene serializer/deserializer architecture. Produce concrete implementation TODO items.
+- [x] **Add app-owned scene component codecs** — Scene v3 registers versioned RON DTO encoders/decoders, remaps entity references and retains unknown payloads. See the scene format reference.
 
 #### Editor integration
 - [ ] Add native file dialogs — integrate `rfd` for Open Scene, Save Scene As, Import Asset dialogs
@@ -239,10 +239,10 @@ Individual tasks should be small enough to complete in a single focused session.
 ### Document and interaction follow-ups
 
 - [ ] **Replace path entry with a browsable file picker** — Add directory navigation, scene filtering and a remembered folder while retaining overwrite and unsaved-change guards.
-- [ ] **Preserve custom component and joint state** — Extend scene descriptors or design a component serialization registry so Play/Stop restores application-defined components and joints as well as built-in editor components.
+- [x] **Preserve registered custom component and joint state** — Scene v3 snapshots registered game codecs and joints using persistent scene keys. Native tests verify new runtime references and actual restored component values.
 - [ ] **Persist the complete dock tree** — Retain panel tabs, split ratios and moved panels across launches; current GUI storage retains panel sizes only.
 - [ ] **Complete undo coverage for component properties** — Give every inspector edit and component add/remove a reversible command; existing undo history does not cover every property.
-- [ ] **Make partial model uploads transactional** — Release mesh/material/texture allocations when shader or skeleton creation fails before drawable tracking is installed.
+- [x] **Release partial model uploads on failure** — Shader failure retires the mesh and CPU geometry; skeleton failure releases the prepared drawable and textures. Vulkan regressions verify native resource counts after shader failure.
 
 ### Panels and tooling
 
