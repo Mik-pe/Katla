@@ -271,6 +271,19 @@ impl<'a> Frame<'a, VulkanRenderer> {
                         })
                     })
             })
+            .or_else(|| {
+                pass.depth_target.and_then(|id| {
+                    self.graph
+                        .transient_texture_by_id(id, self.current_frame())
+                        .map(|texture| texture.extent)
+                        .or_else(|| {
+                            self.imported_texture(id).map(|texture| ash::vk::Extent2D {
+                                width: texture.width,
+                                height: texture.height,
+                            })
+                        })
+                })
+            })
             .unwrap_or(self.renderer.frame_context.extent)
     }
 

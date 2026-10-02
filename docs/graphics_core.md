@@ -71,6 +71,11 @@ pending picking tickets and their source-frame entity maps. Viewport sizing
 belongs to the application. HDR, depth, object-ID, shadow and viewport images
 belong to the graph.
 
+Scene model pipelines use `R16G16B16A16Sfloat`, matching the graph's HDR target.
+Shadow shaders and app packets bind skeletal joints in group 2 and cascade data
+in group 3. Sky and postprocessing draws generate vertices from vertex index
+and declare an empty vertex layout.
+
 Built-ins install normal WGSL compute descriptors and direct or indirect
 dispatches. The graph contains no named built-in buffer roles or hidden workload
 dispatch policy. Backend constructors do not install these services.
@@ -143,7 +148,11 @@ successfully accepted submission, so rejection leaves an unsubmitted fence
 reusable without allocating a replacement. Windowed aborts and rejected
 submissions retain the acquired surface image and its semaphore until a
 successful submission consumes them. Scene attachment extents remain
-independent of output extents. Core object storage begins at byte zero; Vulkan
+independent of output extents. Depth-only passes derive render area, viewport
+and scissor from their explicit depth target. Vulkan retains the combined
+depth/stencil attachment view and owns a separate depth-only view for sampled
+bindless descriptors, including replacement after resize. Core object storage
+begins at byte zero; Vulkan
 timestamp profiling is unsupported. Native Metal profiling follows its
 [frame-slot contract](metal4_frame_slots.md).
 

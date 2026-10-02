@@ -205,3 +205,77 @@ fn test_headless_rejects_empty_extent() {
         assert!(result.is_err());
     }
 }
+
+#[test]
+#[ignore = "requires a Vulkan device"]
+fn test_headless_depth_target_uses_its_extent_and_sampled_depth_aspect() {
+    use katla_gfx::render_graph::{
+        GraphResourceDesc, GraphResourceType, PassBuilder, PassType, SimplePass,
+    };
+    use katla_gfx::{AttachmentOps, ClearValue};
+    let mut renderer = VulkanRenderer::init_headless(
+        64,
+        48,
+        ValidationMode::Enabled,
+        CString::new("Independent depth target").unwrap(),
+        CString::new("Katla").unwrap(),
+    )
+    .unwrap();
+    assert!(renderer.context().validation_active());
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let captured = errors.clone();
+    renderer
+        .context()
+        .set_validation_callback(move |message, level| {
+            if level == katla_gfx::ValidationLevel::Error {
+                captured.lock().unwrap().push(message.to_owned());
+            }
+        });
+    let ops = AttachmentOps::clear(ClearValue::DepthStencil {
+        depth: 0.0,
+        stencil: 0,
+    });
+    let mut graph = FrameGraphBuilder::new()
+        .create_resource(GraphResourceDesc {
+            name: "depth".into(),
+            resource_type: GraphResourceType::DepthAttachment {
+                clear_value: 0.0,
+                sampled: true,
+            },
+            format: ImageFormat::D32SfloatS8Uint,
+            width: 32,
+            height: 24,
+            tracks_swapchain_size: true,
+        })
+        .add_pass(
+            SimplePass::new("depth_clear", PassType::Graphics)
+                .depth_ops(ops, ops)
+                .depth_target("depth"),
+        )
+        .export_resource("depth")
+        .build::<VulkanRenderer>()
+        .unwrap();
+    graph.initialize_transient_textures(&renderer).unwrap();
+    graph
+        .register_transient_texture_bindless(&mut renderer, "depth")
+        .unwrap();
+    for _ in 0..3 {
+        let token = acquire_frame_token(&mut renderer);
+        renderer.render(&token, &mut graph, |_| {}).unwrap();
+        renderer.present(token).unwrap();
+    }
+    renderer.wait_for_device();
+    graph
+        .recreate_transient_textures(&mut renderer, 24, 16)
+        .unwrap();
+    let token = acquire_frame_token(&mut renderer);
+    renderer.render(&token, &mut graph, |_| {}).unwrap();
+    renderer.present(token).unwrap();
+    renderer.wait_for_device();
+    assert!(
+        errors.lock().unwrap().is_empty(),
+        "{:?}",
+        errors.lock().unwrap()
+    );
+    graph.cleanup();
+}

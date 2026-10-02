@@ -200,6 +200,7 @@ impl TransientTexture {
                 context,
                 image,
                 image_view,
+                sampled_view: RefCell::new(None),
                 allocation,
                 slot_memory: RefCell::new(None),
             }),
@@ -238,6 +239,39 @@ impl TransientTexture {
         self.layouts.borrow_mut().set(range, layout);
     }
 
+    /// Use only the depth aspect when sampling a combined depth/stencil image.
+    pub(crate) fn sampled_image_view(&self) -> Result<vk::ImageView, super::RenderGraphError> {
+        if !matches!(
+            self.format,
+            vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT
+        ) {
+            return Ok(self.image_view.vk());
+        }
+        if let Some(view) = *self.owner.sampled_view.borrow() {
+            return Ok(view);
+        }
+        let info = vk::ImageViewCreateInfo::default()
+            .image(self.image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(self.format)
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::DEPTH,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1,
+            });
+        let view = unsafe { self.owner.context.device.create_image_view(&info, None) }.map_err(
+            |error| {
+                super::RenderGraphError::BackendError(format!(
+                    "Cannot create sampled depth view: {error}"
+                ))
+            },
+        )?;
+        *self.owner.sampled_view.borrow_mut() = Some(view);
+        Ok(view)
+    }
+
     /// Get the raw Vulkan image view handle.
     pub fn image_view_vk(&self) -> vk::ImageView {
         self.image_view.vk()
@@ -248,6 +282,7 @@ struct TransientTextureOwner {
     context: Rc<VulkanContext>,
     image: vk::Image,
     image_view: VkImageView,
+    sampled_view: RefCell<Option<vk::ImageView>>,
     allocation: Option<Allocation>,
     slot_memory: RefCell<Option<Rc<VkSlotMemory>>>,
 }
@@ -255,6 +290,9 @@ struct TransientTextureOwner {
 impl Drop for TransientTextureOwner {
     fn drop(&mut self) {
         unsafe {
+            if let Some(view) = self.sampled_view.get_mut().take() {
+                self.context.device.destroy_image_view(view, None);
+            }
             self.context
                 .device
                 .destroy_image_view(self.image_view.vk(), None);

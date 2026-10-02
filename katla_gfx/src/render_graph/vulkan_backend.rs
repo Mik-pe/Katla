@@ -188,7 +188,7 @@ impl RenderGraphBackend for VulkanRenderer {
         &mut self,
         texture: &Self::TransientTexture,
     ) -> Result<u32, RenderGraphError> {
-        self.register_bindless_texture(texture.image_view.vk())
+        self.register_bindless_texture(texture.sampled_image_view()?)
             .map_err(|e| RenderGraphError::BackendError(e.to_string()))
     }
 
@@ -197,7 +197,7 @@ impl RenderGraphBackend for VulkanRenderer {
         slot: u32,
         texture: &Self::TransientTexture,
     ) -> Result<(), RenderGraphError> {
-        self.update_bindless_texture(slot, texture.image_view.vk())
+        self.update_bindless_texture(slot, texture.sampled_image_view()?)
             .map_err(|e| RenderGraphError::BackendError(e.to_string()))
     }
 

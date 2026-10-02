@@ -13,10 +13,10 @@ struct ShadowParams {
 @group(0) @binding(1)
 var<storage, read> objects: array<ObjectUniforms>;
 
-@group(2) @binding(0)
+@group(3) @binding(0)
 var<storage, read> shadow_cascades: array<ShadowCascadeData, 4>;
 
-@group(2) @binding(1)
+@group(3) @binding(1)
 var<storage, read> shadow_params: ShadowParams;
 
 struct VertexInput {

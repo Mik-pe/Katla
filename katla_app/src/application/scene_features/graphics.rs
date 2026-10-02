@@ -346,7 +346,7 @@ impl SceneGraphics {
         if let Some(pass) = ids.shadow {
             let mut packet = PassBindings::default();
             packet.constants.push(constant(
-                2,
+                3,
                 0,
                 ShaderStages::VERTEX,
                 bytemuck::bytes_of(&render_cascades),
@@ -362,7 +362,7 @@ impl SceneGraphics {
                 packet.phases.push(PassDrawPhase {
                     pipelines: self.shadow.clone(),
                     constants: vec![constant(
-                        2,
+                        3,
                         1,
                         ShaderStages::VERTEX,
                         bytemuck::cast_slice(&params),
@@ -582,7 +582,7 @@ fn set_fullscreen(
             )],
             phases: vec![PassDrawPhase {
                 pipelines: vec![PassPipeline {
-                    vertex_layout: VertexLayout::position(),
+                    vertex_layout: VertexLayout::empty(),
                     material,
                 }],
                 constants: Vec::new(),
@@ -606,6 +606,7 @@ fn compile_fullscreen(
 ) -> AppResult<MaterialHandle> {
     Ok(renderer.compile_material(
         &PipelineDescriptor::simple(resources.shader_path(shader).to_string_lossy().into_owned())
+            .with_vertex_layout(VertexLayout::empty())
             .with_depth(DepthState::disabled())
             .with_depth_format(None)
             .with_cull(CullMode::None)

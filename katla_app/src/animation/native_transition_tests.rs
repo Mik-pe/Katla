@@ -218,7 +218,7 @@ fn test_native_agent_fade_reaches_target_after_source_completion() {
         renderer.present(frame).unwrap();
         renderer.wait_for_device();
         let bytes = renderer
-            .read_buffer_completed(handles[offset + 3], BufferByteRange::WHOLE)
+            .read_buffer_completed(handles[offset + 3], BufferByteRange::new(0, 64))
             .unwrap()
             .unwrap();
         let matrix: Vec<_> = bytes

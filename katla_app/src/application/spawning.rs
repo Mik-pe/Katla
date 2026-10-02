@@ -443,7 +443,8 @@ impl super::Application {
             katla_gfx::PipelineDescriptor::skinned(shader_str.into_owned())
         } else {
             katla_gfx::PipelineDescriptor::pbr(shader_str.into_owned())
-        };
+        }
+        .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat);
         let material_handle = self.renderer.compile_material(&descriptor).map_err(|e| {
             AppError::ShaderCompileFailed {
                 path: path_display.clone(),
