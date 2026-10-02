@@ -1,4 +1,6 @@
-use super::CommandBuffer;
+use std::rc::Rc;
+
+use super::{CommandBuffer, context::native_lifetime::NativeDevice};
 use crate::RendererError;
 
 use ash::{Device, vk};
@@ -8,6 +10,7 @@ type SemaphoreInfos = SmallVec<[vk::SemaphoreSubmitInfo<'static>; 2]>;
 
 pub struct Queue {
     device: Device,
+    _native_device: Rc<NativeDevice>,
     queue: vk::Queue,
     #[cfg(test)]
     submission_failure: std::cell::Cell<Option<vk::Result>>,
@@ -36,10 +39,16 @@ fn semaphore_signals(signals: &[vk::Semaphore]) -> SemaphoreInfos {
 }
 
 impl Queue {
-    pub fn new(device: Device, queue_family_index: u32, queue_index: u32) -> Self {
+    pub(crate) fn new(
+        native_device: Rc<NativeDevice>,
+        queue_family_index: u32,
+        queue_index: u32,
+    ) -> Self {
+        let device = native_device.device.clone();
         let queue = unsafe { device.get_device_queue(queue_family_index, queue_index) };
         Self {
             device,
+            _native_device: native_device,
             queue,
             #[cfg(test)]
             submission_failure: std::cell::Cell::new(None),
@@ -59,13 +68,21 @@ impl Queue {
 
     /// Submit through synchronization2. Each binary wait carries its execution
     /// stage; binary signals cover all commands in the submission.
-    pub fn submit(
+    pub(crate) fn submit(
         &self,
         command_buffers: &[&CommandBuffer],
         waits: &[(vk::Semaphore, vk::PipelineStageFlags2)],
         signals: &[vk::Semaphore],
         fence: vk::Fence,
     ) -> Result<(), RendererError> {
+        if command_buffers
+            .iter()
+            .any(|command| !command.belongs_to(&self._native_device))
+        {
+            return Err(RendererError::InvalidOperation(
+                "Command buffer belongs to another Vulkan device".into(),
+            ));
+        }
         let commands: SmallVec<[vk::CommandBufferSubmitInfo<'static>; 4]> = command_buffers
             .iter()
             .map(|command| {

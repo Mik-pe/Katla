@@ -175,7 +175,6 @@ staging allocations. Submitted one-time command buffers and optional staging
 allocations remain owned until fence completion or an idle device drain, even
 if a CPU wait fails.
 
-
 Vulkan resets a retired slot's command buffer before releasing its descriptor
 and inline-data storage. This also discards partial recording and dynamic
 rendering state from a rejected frame. Graphics render areas and color pipeline
@@ -188,3 +187,28 @@ backends; duplicate explicit slots remain invalid. Skinned Vulkan draws resolve
 the shader's skeleton storage slot at group 2 or 3. Sampled depth/stencil
 transients retain a separate depth-only view, shared across texture clones;
 the combined attachment view is never installed in sampled descriptors.
+
+Native Vulkan command buffers own their allocations and release them once on
+drop. The allocation retains its command pool, which retains its device,
+instance and loader. Frame slots share an allocation through explicit Rc owners;
+command-buffer wrappers themselves cannot be cloned. A retained unsubmitted
+buffer may outlive its context without invalidating those native parents.
+Queued work retains its owners until completion, and foreign-device commands
+are rejected before recording completion or queue submission.
+
+Frame command buffers are allocated in one batch for the in-flight slot count,
+independent of the number of swapchain images. Allocation failures propagate as
+typed errors. Windowed resize reuses the completed frame allocations; headless
+replacement and teardown drop their old owners. There is no manual pool-return
+API or unused transfer command pool. Device alignment limits are cached at
+initialization rather than queried for each graphics binding.
+
+Instance ownership also covers the presentation surface, validation messenger
+and callback storage. Startup failures release initialized parents, and the
+callback pointer borrows retained storage instead of leaking a raw Arc owner.
+The messenger is destroyed before its storage and instance are released.
+
+Output creation allocates command buffers before native targets. Image-view
+failures release completed views and allocations; swapchains retain their
+native device and destroy themselves on rollback. Dropping a frame context
+waits for device retirement before releasing its commands and targets.

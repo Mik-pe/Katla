@@ -122,7 +122,7 @@ pub(super) fn create_debug_messenger(
     debug_utils_loader: &DebugInstance,
     with_validation_layers: bool,
     user_data: *mut std::ffi::c_void,
-) -> Option<vk::DebugUtilsMessengerEXT> {
+) -> Result<Option<vk::DebugUtilsMessengerEXT>, crate::RendererError> {
     if with_validation_layers {
         let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
             .message_severity(
@@ -137,11 +137,16 @@ pub(super) fn create_debug_messenger(
             .pfn_user_callback(Some(debug_callback))
             .user_data(user_data);
 
-        Some(
-            unsafe { debug_utils_loader.create_debug_utils_messenger(&create_info, None) }.unwrap(),
-        )
+        unsafe { debug_utils_loader.create_debug_utils_messenger(&create_info, None) }
+            .map(Some)
+            .map_err(|error| {
+                crate::RendererError::VulkanError(
+                    "Failed to create validation messenger".into(),
+                    error,
+                )
+            })
     } else {
-        None
+        Ok(None)
     }
 }
 
@@ -215,7 +220,7 @@ pub(super) fn check_validation_support(entry: &Entry) -> bool {
 impl super::VulkanContext {
     /// Whether native validation layers and their debug messenger are active.
     pub fn validation_active(&self) -> bool {
-        self.debug_callback.is_some()
+        self.native_instance.debug_callback.get().is_some()
     }
 
     /// Set a callback for validation messages.

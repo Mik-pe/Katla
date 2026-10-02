@@ -1,51 +1,42 @@
+use std::rc::Rc;
+
 use ash::{Device, vk};
 
 use super::{CommandPool, vertex_attr_set::VertexAttributeSet, vertex_attribute::AttributeType};
 use crate::error::RendererError;
 use crate::sync::{DependencyInfo, Rect2D, VkViewport};
 
-#[derive(Clone)]
 pub struct CommandBuffer {
     device: Device,
-    command_pool: vk::CommandPool,
+    pool: Rc<super::commandpool::CommandPoolOwner>,
     command_buffer: vk::CommandBuffer,
 }
 
 impl CommandBuffer {
-    pub fn new(device: &Device, command_pool: &CommandPool) -> Self {
-        let create_info = vk::CommandBufferAllocateInfo::default()
-            .level(vk::CommandBufferLevel::PRIMARY)
-            .command_pool(command_pool.vk_command_pool())
-            .command_buffer_count(1);
-        let command_buffer: vk::CommandBuffer = unsafe {
-            device
-                .allocate_command_buffers(&create_info)
-                .expect("Failed to allocate Vulkan command buffer - check device memory")
-        }[0];
+    pub(crate) fn new(pool: &CommandPool) -> Result<Self, RendererError> {
+        pool.create_command_buffers(1)?.pop().ok_or_else(|| {
+            RendererError::InvalidOperation("Command allocation returned no buffer".into())
+        })
+    }
 
+    pub(crate) fn from_raw(
+        pool: Rc<super::commandpool::CommandPoolOwner>,
+        command_buffer: vk::CommandBuffer,
+    ) -> Self {
+        #[cfg(test)]
+        pool.live_buffers.set(pool.live_buffers.get() + 1);
         Self {
-            device: device.clone(),
-            command_pool: command_pool.vk_command_pool(),
+            device: pool.native.device.clone(),
+            pool,
             command_buffer,
         }
     }
 
-    pub(crate) fn new_secondary(device: &Device, command_pool: &CommandPool) -> Self {
-        let create_info = vk::CommandBufferAllocateInfo::default()
-            .level(vk::CommandBufferLevel::SECONDARY)
-            .command_pool(command_pool.vk_command_pool())
-            .command_buffer_count(1);
-        let command_buffer: vk::CommandBuffer = unsafe {
-            device
-                .allocate_command_buffers(&create_info)
-                .expect("Failed to allocate secondary Vulkan command buffer")
-        }[0];
-
-        Self {
-            device: device.clone(),
-            command_pool: command_pool.vk_command_pool(),
-            command_buffer,
-        }
+    pub(crate) fn belongs_to(
+        &self,
+        native: &Rc<super::context::native_lifetime::NativeDevice>,
+    ) -> bool {
+        Rc::ptr_eq(&self.pool.native, native)
     }
 
     /// Get the raw Vulkan command buffer handle.
@@ -80,40 +71,6 @@ impl CommandBuffer {
                 .end_command_buffer(self.command_buffer)
                 .map_err(|e| RendererError::VulkanError("Failed to end command buffer".into(), e))
         }
-    }
-
-    pub fn end_command(&self) -> Result<(), RendererError> {
-        unsafe {
-            self.device
-                .end_command_buffer(self.command_buffer)
-                .map_err(|e| RendererError::VulkanError("Failed to end command buffer".into(), e))
-        }
-    }
-
-    pub fn begin_secondary(
-        &self,
-        inheritance_info: vk::CommandBufferInheritanceInfo,
-    ) -> Result<(), RendererError> {
-        let begin_info = vk::CommandBufferBeginInfo::default()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
-            .inheritance_info(&inheritance_info);
-        unsafe {
-            self.device
-                .begin_command_buffer(self.command_buffer, &begin_info)
-                .map_err(|e| {
-                    RendererError::VulkanError("Failed to begin secondary command buffer".into(), e)
-                })
-        }
-    }
-
-    pub fn execute_commands(&self, secondary: &[&CommandBuffer]) -> Result<(), RendererError> {
-        let buffers: Vec<vk::CommandBuffer> =
-            secondary.iter().map(|cb| cb.command_buffer).collect();
-        unsafe {
-            self.device
-                .cmd_execute_commands(self.command_buffer, &buffers);
-        }
-        Ok(())
     }
 
     // ========================================================================
@@ -225,13 +182,6 @@ impl CommandBuffer {
         unsafe {
             self.device
                 .cmd_set_scissor(self.command_buffer, 0, &vk_scissors);
-        }
-    }
-
-    pub fn return_to_pool(&self) {
-        unsafe {
-            self.device
-                .free_command_buffers(self.command_pool, &[self.command_buffer]);
         }
     }
 
@@ -623,5 +573,16 @@ impl CommandBuffer {
             new_layout,
             subresource_range,
         );
+    }
+}
+
+impl Drop for CommandBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            self.device
+                .free_command_buffers(self.pool.pool, &[self.command_buffer])
+        };
+        #[cfg(test)]
+        self.pool.live_buffers.set(self.pool.live_buffers.get() - 1);
     }
 }

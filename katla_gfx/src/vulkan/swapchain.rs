@@ -19,10 +19,12 @@ pub struct Swapchain {
     pub swapchain: vk::SwapchainKHR,
     pub format: vk::SurfaceFormatKHR,
     extent: vk::Extent2D,
+    _native_device: Rc<super::context::native_lifetime::NativeDevice>,
 }
 
 impl Swapchain {
-    pub fn create_swapchain(
+    pub(crate) fn create_swapchain(
+        native_device: Rc<super::context::native_lifetime::NativeDevice>,
         swapchain_loader: Rc<SwapchainDevice>,
         surface_loader: &Surface,
         physical_device: PhysicalDevice,
@@ -77,6 +79,7 @@ impl Swapchain {
             swapchain,
             format,
             extent,
+            _native_device: native_device,
         })
     }
 
@@ -89,12 +92,14 @@ impl Swapchain {
     pub fn get_extent(&self) -> vk::Extent2D {
         self.extent
     }
+}
 
-    pub fn destroy(&mut self) {
+impl Drop for Swapchain {
+    fn drop(&mut self) {
         unsafe {
             self.swapchain_loader
-                .destroy_swapchain(self.swapchain, None);
-        }
+                .destroy_swapchain(self.swapchain, None)
+        };
     }
 }
 

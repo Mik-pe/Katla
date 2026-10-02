@@ -35,7 +35,7 @@ pub(crate) struct VulkanTextureReadback {
     size: Size2D,
     source: VulkanTextureExport,
     buffer: VulkanGraphBuffer,
-    command: CommandBuffer,
+    _command: CommandBuffer,
     fence: vk::Fence,
     context: Rc<crate::vulkan::context::VulkanContext>,
 }
@@ -47,7 +47,6 @@ impl Drop for VulkanTextureReadback {
                 .context
                 .device
                 .wait_for_fences(&[self.fence], true, u64::MAX);
-            self.command.return_to_pool();
             self.context.device.destroy_fence(self.fence, None);
         }
     }
@@ -215,11 +214,8 @@ impl VulkanRenderer {
         let buffer =
             <Self as crate::render_graph::RenderGraphBackend>::create_transient_buffer(self, desc)
                 .map_err(RendererError::RenderGraphError)?;
-        let command = CommandBuffer::new(&self.context.device, &self.context.gfx_cmdpool);
-        if let Err(error) = command.begin_single_time_command() {
-            command.return_to_pool();
-            return Err(error);
-        }
+        let command = CommandBuffer::new(&self.context.gfx_cmdpool)?;
+        command.begin_single_time_command()?;
         crate::barrier::ImageBarrier::transition(
             &command.vk_command_buffer(),
             &self.context.device,
@@ -276,24 +272,19 @@ impl VulkanRenderer {
             vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
             export.layout,
         );
-        if let Err(error) = command.end_single_time_command() {
-            command.return_to_pool();
-            return Err(error);
-        }
+        command.end_single_time_command()?;
         let fence = unsafe {
             self.context
                 .device
                 .create_fence(&vk::FenceCreateInfo::default(), None)
         }
         .map_err(|error| {
-            command.return_to_pool();
             RendererError::VulkanError("Readback fence allocation failed".into(), error)
         })?;
         if let Err(error) = self.context.gfx_queue.submit(&[&command], &[], &[], fence) {
             unsafe {
                 self.context.device.destroy_fence(fence, None);
             }
-            command.return_to_pool();
             return Err(error);
         }
         let ticket = TextureReadbackTicket {
@@ -307,7 +298,7 @@ impl VulkanRenderer {
                 size: region.size,
                 source: export,
                 buffer,
-                command,
+                _command: command,
                 fence,
                 context: self.context.clone(),
             },

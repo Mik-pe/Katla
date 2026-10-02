@@ -1,5 +1,6 @@
 mod device;
 mod memory;
+pub(crate) mod native_lifetime;
 mod physical_device;
 mod queue_family;
 mod samplers;
@@ -8,7 +9,6 @@ mod validation;
 
 use ash::{
     Device, Entry, Instance,
-    ext::debug_utils::Instance as DebugInstance,
     khr::{
         push_descriptor::Device as PushDescriptorDevice, surface::Instance as SurfaceInstance,
         swapchain::Device as SwapchainDevice,
@@ -21,7 +21,7 @@ use gpu_allocator::{
 };
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{
-    ffi::{CString, c_void},
+    ffi::CString,
     rc::Rc,
     sync::{Arc, Mutex},
 };
@@ -88,7 +88,7 @@ pub(super) struct QueueFamilyIndices {
 /// [`VulkanRenderer::texture_manager()`]: crate::renderer::VulkanRenderer::texture_manager
 /// [`TextureManager::create()`]: crate::texture::TextureManager::create
 pub struct VulkanContext {
-    pub(super) _entry: Entry,
+    native_instance: Rc<native_lifetime::NativeInstance>,
     pub instance: Instance,
     pub device: Device,
     pub surface_loader: Option<SurfaceInstance>,
@@ -96,14 +96,10 @@ pub struct VulkanContext {
     pub push_descriptor_loader: PushDescriptorDevice,
     pub physical_device: vk::PhysicalDevice,
     pub allocator: memory::GpuAllocator,
-    surface: std::cell::Cell<Option<vk::SurfaceKHR>>,
     pub graphics_queue: vk::Queue,
     pub gfx_queue: super::Queue,
-    pub gfx_cmdpool: super::CommandPool,
-    pub transfer_command_pool: vk::CommandPool,
+    pub(crate) gfx_cmdpool: super::CommandPool,
     pub transfer_queue: vk::Queue,
-    pub(super) debug_utils_loader: DebugInstance,
-    pub(super) debug_callback: Option<vk::DebugUtilsMessengerEXT>,
     pub(crate) validation_callback: Arc<Mutex<validation::ValidationCallbackStorage>>,
     pub(super) gpu_assisted_validation: bool,
     /// Whether VK_KHR_push_descriptor is enabled for per-draw texture binding in UI.
@@ -112,6 +108,7 @@ pub struct VulkanContext {
     pub push_descriptor_khr: Option<ash::khr::push_descriptor::Device>,
     /// Cached non-coherent atom size for aligned memory flushes.
     pub non_coherent_atom_size: vk::DeviceSize,
+    pub(crate) limits: vk::PhysicalDeviceLimits,
     /// Submitted one-time commands and optional staging allocations retained
     /// until a fence proves completion.
     pub(crate) pending_submissions: std::cell::RefCell<Vec<PendingSubmission>>,
@@ -138,7 +135,7 @@ pub struct VulkanFrameCtx {
     pub(crate) pending_output_contents: std::cell::Cell<Option<(usize, bool)>>,
     pub(crate) pending_transient_layouts:
         std::cell::RefCell<crate::render_graph::ImageLayoutJournal>,
-    pub command_buffers: Vec<super::CommandBuffer>,
+    pub command_buffers: Vec<Rc<super::CommandBuffer>>,
 }
 
 impl VulkanContext {
@@ -158,7 +155,7 @@ impl VulkanContext {
         Some((
             self.swapchain_loader.as_ref()?,
             self.surface_loader.as_ref()?,
-            self.surface.get()?,
+            self.native_instance.surface.get()?,
         ))
     }
 
@@ -168,11 +165,8 @@ impl VulkanContext {
     pub fn begin_single_time_commands(
         &self,
     ) -> Result<super::CommandBuffer, crate::error::RendererError> {
-        let command_buffer = super::CommandBuffer::new(&self.device, &self.gfx_cmdpool);
-        if let Err(error) = command_buffer.begin_single_time_command() {
-            command_buffer.return_to_pool();
-            return Err(error);
-        }
+        let command_buffer = super::CommandBuffer::new(&self.gfx_cmdpool)?;
+        command_buffer.begin_single_time_command()?;
         Ok(command_buffer)
     }
 
@@ -180,25 +174,20 @@ impl VulkanContext {
         &self,
         command_buffer: super::CommandBuffer,
     ) -> Result<(), crate::error::RendererError> {
-        if let Err(error) = command_buffer.end_single_time_command() {
-            command_buffer.return_to_pool();
-            return Err(error);
+        if !command_buffer.belongs_to(&self.gfx_cmdpool.owner.native) {
+            return Err(RendererError::InvalidOperation(
+                "Command buffer belongs to another Vulkan device".into(),
+            ));
         }
-        let fence = match unsafe {
+        command_buffer.end_single_time_command()?;
+        let fence = unsafe {
             self.device
                 .create_fence(&vk::FenceCreateInfo::default(), None)
-        } {
-            Ok(fence) => fence,
-            Err(error) => {
-                command_buffer.return_to_pool();
-                return Err(RendererError::VulkanError(
-                    "Failed to create submission fence".into(),
-                    error,
-                ));
-            }
-        };
+        }
+        .map_err(|error| {
+            RendererError::VulkanError("Failed to create submission fence".into(), error)
+        })?;
         if let Err(error) = self.gfx_queue.submit(&[&command_buffer], &[], &[], fence) {
-            command_buffer.return_to_pool();
             unsafe {
                 self.device.destroy_fence(fence, None);
             }
@@ -206,7 +195,6 @@ impl VulkanContext {
         }
         match unsafe { self.device.wait_for_fences(&[fence], true, u64::MAX) } {
             Ok(()) => {
-                command_buffer.return_to_pool();
                 unsafe {
                     self.device.destroy_fence(fence, None);
                 }
@@ -239,18 +227,12 @@ impl VulkanContext {
             Some(display),
             &entry,
         )?;
-        let debug_utils_loader = DebugInstance::new(&entry, &instance);
-
-        // Create validation callback storage
-        let validation_callback =
-            Arc::new(Mutex::new(validation::ValidationCallbackStorage::new()));
-        let user_data = Arc::into_raw(validation_callback.clone()) as *mut c_void;
-
-        let debug_callback = validation::create_debug_messenger(
-            &debug_utils_loader,
+        let native_instance = native_lifetime::NativeInstance::new(
+            entry.clone(),
+            instance.clone(),
             validation_layers_active,
-            user_data,
-        );
+        )?;
+        let validation_callback = native_instance.validation_callback.clone();
         let surface_loader = SurfaceInstance::new(&entry, &instance);
         let display_handle = display.display_handle().map_err(|e| {
             RendererError::InitializationFailed(format!("Failed to get display handle: {:?}", e))
@@ -271,6 +253,7 @@ impl VulkanContext {
             RendererError::InitializationFailed(format!("Failed to create surface: {:?}", e))
         })?;
 
+        native_instance.surface.set(Some(surface));
         let physical_device = unsafe {
             physical_device::pick_physical_device(&instance, Some((&surface_loader, surface)))
         }?;
@@ -305,27 +288,18 @@ impl VulkanContext {
         };
 
         let device = device::create_device(&instance, physical_device, &queue_create_infos, true)?;
+        let native_device =
+            native_lifetime::NativeDevice::new(device.clone(), native_instance.clone());
 
         let swapchain_loader = Rc::new(SwapchainDevice::new(&instance, &device));
         let push_descriptor_loader = PushDescriptorDevice::new(&instance, &device);
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
-        let gfx_queue = super::Queue::new(device.clone(), graphics_queue_idx, 0);
-        let gfx_cmdpool = super::CommandPool::new(device.clone(), graphics_queue_idx);
+        let gfx_queue = super::Queue::new(native_device.clone(), graphics_queue_idx, 0);
+        let gfx_cmdpool = super::CommandPool::new(native_device.clone(), graphics_queue_idx)?;
 
         let transfer_queue = unsafe { device.get_device_queue(transfer_queue_idx, 0) };
-        let create_info = vk::CommandPoolCreateInfo::default()
-            .queue_family_index(transfer_queue_idx)
-            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let transfer_command_pool = unsafe { device.create_command_pool(&create_info, None) }
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to create transfer command pool: {:?}",
-                    e
-                ))
-            })?;
-
         let mut debug_settings = AllocatorDebugSettings::default();
         debug_settings.log_leaks_on_shutdown = true;
         let allocator_create_info = AllocatorCreateDesc {
@@ -348,7 +322,7 @@ impl VulkanContext {
         let non_coherent_atom_size = device_properties.limits.non_coherent_atom_size;
 
         Ok(Self {
-            _entry: entry,
+            native_instance,
             instance,
             device,
             surface_loader: Some(surface_loader),
@@ -356,19 +330,16 @@ impl VulkanContext {
             push_descriptor_loader,
             physical_device,
             allocator,
-            surface: std::cell::Cell::new(Some(surface)),
             graphics_queue,
             gfx_queue,
             gfx_cmdpool,
-            transfer_command_pool,
             transfer_queue,
-            debug_utils_loader,
-            debug_callback,
             validation_callback,
             gpu_assisted_validation: validation_layers_active && validation_mode.is_gpu_assisted(),
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
+            limits: device_properties.limits,
             pending_submissions: std::cell::RefCell::new(Vec::new()),
             graph_buffer_history: Default::default(),
         })
@@ -417,18 +388,12 @@ impl VulkanContext {
         })?;
         let (instance, validation_layers_active) =
             Self::create_instance(validation_mode, &app_name, &engine_name, None, &entry)?;
-        let debug_utils_loader = DebugInstance::new(&entry, &instance);
-
-        // Create validation callback storage
-        let validation_callback =
-            Arc::new(Mutex::new(validation::ValidationCallbackStorage::new()));
-        let user_data = Arc::into_raw(validation_callback.clone()) as *mut c_void;
-
-        let debug_callback = validation::create_debug_messenger(
-            &debug_utils_loader,
+        let native_instance = native_lifetime::NativeInstance::new(
+            entry.clone(),
+            instance.clone(),
             validation_layers_active,
-            user_data,
-        );
+        )?;
+        let validation_callback = native_instance.validation_callback.clone();
 
         // Pick physical device (no swapchain requirement)
         let physical_device = unsafe { physical_device::pick_physical_device(&instance, None) }?;
@@ -461,26 +426,17 @@ impl VulkanContext {
 
         // Create device WITHOUT swapchain extension
         let device = device::create_device(&instance, physical_device, &queue_create_infos, false)?;
+        let native_device =
+            native_lifetime::NativeDevice::new(device.clone(), native_instance.clone());
 
         let graphics_queue = unsafe { device.get_device_queue(graphics_queue_idx, 0) };
 
         let push_descriptor_loader = PushDescriptorDevice::new(&instance, &device);
 
-        let gfx_queue = super::Queue::new(device.clone(), graphics_queue_idx, 0);
-        let gfx_cmdpool = super::CommandPool::new(device.clone(), graphics_queue_idx);
+        let gfx_queue = super::Queue::new(native_device.clone(), graphics_queue_idx, 0);
+        let gfx_cmdpool = super::CommandPool::new(native_device.clone(), graphics_queue_idx)?;
 
         let transfer_queue = unsafe { device.get_device_queue(transfer_queue_idx, 0) };
-        let create_info = vk::CommandPoolCreateInfo::default()
-            .queue_family_index(transfer_queue_idx)
-            .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER);
-        let transfer_command_pool = unsafe { device.create_command_pool(&create_info, None) }
-            .map_err(|e| {
-                RendererError::InitializationFailed(format!(
-                    "Failed to create transfer command pool: {:?}",
-                    e
-                ))
-            })?;
-
         let mut debug_settings = AllocatorDebugSettings::default();
         debug_settings.log_leaks_on_shutdown = true;
         let allocator_create_info = AllocatorCreateDesc {
@@ -503,7 +459,7 @@ impl VulkanContext {
         let non_coherent_atom_size = device_properties.limits.non_coherent_atom_size;
 
         Ok(Self {
-            _entry: entry,
+            native_instance,
             instance,
             device,
             surface_loader: None,
@@ -511,19 +467,16 @@ impl VulkanContext {
             push_descriptor_loader,
             physical_device,
             allocator,
-            surface: std::cell::Cell::new(None),
             graphics_queue,
             gfx_queue,
             gfx_cmdpool,
-            transfer_command_pool,
             transfer_queue,
-            debug_utils_loader,
-            debug_callback,
             validation_callback,
             gpu_assisted_validation: validation_layers_active && validation_mode.is_gpu_assisted(),
             push_descriptor_enabled: true,
             push_descriptor_khr,
             non_coherent_atom_size,
+            limits: device_properties.limits,
             pending_submissions: std::cell::RefCell::new(Vec::new()),
             graph_buffer_history: Default::default(),
         })
@@ -573,7 +526,7 @@ impl VulkanContext {
     }
 
     fn release_submission(&self, entry: PendingSubmission) {
-        entry.command_buffer.return_to_pool();
+        drop(entry.command_buffer);
         unsafe {
             self.device.destroy_fence(entry.fence, None);
         }
@@ -593,13 +546,7 @@ impl VulkanContext {
 
     /// Release presentation resources while the native window and display still exist.
     pub(crate) fn destroy_surface(&self) {
-        if let Some(surface) = self.surface.take()
-            && let Some(loader) = &self.surface_loader
-        {
-            unsafe {
-                loader.destroy_surface(surface, None);
-            }
-        }
+        self.native_instance.destroy_surface();
     }
 }
 
@@ -609,20 +556,9 @@ impl Drop for VulkanContext {
             let _ = self.device.device_wait_idle();
             self.drain_all_submissions();
 
-            self.device
-                .destroy_command_pool(self.transfer_command_pool, None);
-            self.gfx_cmdpool.destroy();
             self.allocator.destroy();
-            self.device.destroy_device(None);
 
             self.destroy_surface();
-
-            if let Some(messenger) = self.debug_callback {
-                self.debug_utils_loader
-                    .destroy_debug_utils_messenger(messenger, None);
-            }
-
-            self.instance.destroy_instance(None);
         }
     }
 }

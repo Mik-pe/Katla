@@ -194,21 +194,9 @@ impl VulkanRenderer {
             .last_presented_image_index
             .unwrap_or(frame.slot() as u32);
         let frame_idx = self.current_frame();
-        let cmd = self.frame_context.command_buffers[frame_idx].vk_command_buffer();
-
-        let begin_info = vk::CommandBufferBeginInfo::default()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-        unsafe {
-            self.context
-                .device
-                .begin_command_buffer(cmd, &begin_info)
-                .map_err(|e| {
-                    let error =
-                        RendererError::VulkanError("Failed to begin command buffer".into(), e);
-                    self.frame_poisoned = Some(format!("{error:?}"));
-                    error
-                })?;
-        }
+        self.frame_context.command_buffers[frame_idx]
+            .begin_single_time_command()
+            .inspect_err(|error| self.frame_poisoned = Some(format!("{error:?}")))?;
 
         frame_graph.set_backbuffer_final_state(if headless {
             crate::render_graph::ResourceState::TransferSrc
@@ -222,13 +210,9 @@ impl VulkanRenderer {
             return Err(error);
         }
 
-        unsafe {
-            self.context.device.end_command_buffer(cmd).map_err(|e| {
-                let error = RendererError::VulkanError("Failed to end command buffer".into(), e);
-                self.frame_poisoned = Some(format!("{error:?}"));
-                error
-            })?;
-        }
+        self.frame_context.command_buffers[frame_idx]
+            .end_single_time_command()
+            .inspect_err(|error| self.frame_poisoned = Some(format!("{error:?}")))?;
 
         self.prepare_texture_exports(frame_graph, image_index as usize);
         self.frame_rendered = true;

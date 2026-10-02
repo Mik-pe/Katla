@@ -45,7 +45,7 @@ impl VulkanFrameCtx {
         image: vk::Image,
         format: vk::Format,
         aspect_mask: vk::ImageAspectFlags,
-    ) -> vk::ImageView {
+    ) -> Result<vk::ImageView, RendererError> {
         let subresource_range = vk::ImageSubresourceRange::default()
             .aspect_mask(aspect_mask)
             .base_mip_level(0)
@@ -63,14 +63,42 @@ impl VulkanFrameCtx {
                 a: vk::ComponentSwizzle::IDENTITY,
             })
             .subresource_range(subresource_range);
-        unsafe { device.create_image_view(&create_info, None) }
-            .expect("Failed to create swapchain image view")
+        unsafe { device.create_image_view(&create_info, None) }.map_err(|error| {
+            RendererError::VulkanError("Failed to create image view".into(), error)
+        })
+    }
+
+    fn create_output_views(
+        device: &Device,
+        images: &[vk::Image],
+        format: vk::Format,
+    ) -> Result<Vec<VkImageView>, RendererError> {
+        let mut views: Vec<VkImageView> = Vec::with_capacity(images.len());
+        for &image in images {
+            match Self::create_image_view(device, image, format, vk::ImageAspectFlags::COLOR) {
+                Ok(view) => views.push(VkImageView::new(view)),
+                Err(error) => {
+                    for view in views {
+                        unsafe { device.destroy_image_view(view.vk(), None) };
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        Ok(views)
     }
 
     pub fn init(
         context: &Rc<VulkanContext>,
         extent: vk::Extent2D,
     ) -> Result<Self, crate::error::RendererError> {
+        let command_buffers = context
+            .gfx_cmdpool
+            .create_command_buffers(crate::renderer::FRAMES_IN_FLIGHT as u32)?
+            .into_iter()
+            .map(Rc::new)
+            .collect();
+
         let (swapchain_loader, surface_loader, surface) =
             context.window_resources().ok_or_else(|| {
                 crate::error::RendererError::InitializationFailed(
@@ -80,6 +108,7 @@ impl VulkanFrameCtx {
             })?;
 
         let swapchain = super::super::Swapchain::create_swapchain(
+            context.gfx_cmdpool.owner.native.clone(),
             swapchain_loader.clone(),
             surface_loader,
             context.physical_device,
@@ -90,25 +119,12 @@ impl VulkanFrameCtx {
 
         let swapchain_images = swapchain.get_swapchain_images()?;
 
-        let swapchain_image_views: Vec<VkImageView> = swapchain_images
-            .iter()
-            .map(|swapchain_image| {
-                VkImageView::new(Self::create_image_view(
-                    &context.device,
-                    *swapchain_image,
-                    swapchain.format.format,
-                    vk::ImageAspectFlags::COLOR,
-                ))
-            })
-            .collect();
+        let swapchain_image_views =
+            Self::create_output_views(&context.device, &swapchain_images, swapchain.format.format)?;
         let swapchain_images_wrapped: Vec<VkImage> = swapchain_images
             .iter()
             .map(|img| VkImage::new(*img))
             .collect();
-
-        let command_buffers = context
-            .gfx_cmdpool
-            .create_command_buffers(swapchain_image_views.len() as _);
 
         Ok(Self {
             context: context.clone(),
@@ -133,10 +149,17 @@ impl VulkanFrameCtx {
         context: &Rc<VulkanContext>,
         extent: vk::Extent2D,
     ) -> Result<Self, crate::error::RendererError> {
+        let command_buffers = context
+            .gfx_cmdpool
+            .create_command_buffers(crate::renderer::FRAMES_IN_FLIGHT as u32)?
+            .into_iter()
+            .map(Rc::new)
+            .collect();
+
         let mut images = Vec::new();
         let mut views = Vec::new();
         let mut targets = Vec::new();
-        for _ in 0..2 {
+        for _ in 0..crate::renderer::FRAMES_IN_FLIGHT {
             let info = vk::ImageCreateInfo::default()
                 .image_type(vk::ImageType::TYPE_2D)
                 .format(vk::Format::B8G8R8A8_SRGB)
@@ -155,12 +178,18 @@ impl VulkanFrameCtx {
                         | vk::ImageUsageFlags::TRANSFER_DST,
                 );
             let (image, allocation) = context.create_image(info, MemoryLocation::GpuOnly)?;
-            let view = VkImageView::new(Self::create_image_view(
+            let view = match Self::create_image_view(
                 &context.device,
                 image,
                 vk::Format::B8G8R8A8_SRGB,
                 vk::ImageAspectFlags::COLOR,
-            ));
+            ) {
+                Ok(view) => VkImageView::new(view),
+                Err(error) => {
+                    context.free_image(VkImage::new(image), allocation);
+                    return Err(error);
+                }
+            };
             views.push(view);
             images.push(VkImage::new(image));
             targets.push(RenderTexture {
@@ -186,7 +215,7 @@ impl VulkanFrameCtx {
             swapchain_images: images,
             swapchain_image_views: views,
             offscreen_targets: targets,
-            command_buffers: context.gfx_cmdpool.create_command_buffers(2),
+            command_buffers,
         })
     }
 
@@ -203,9 +232,6 @@ impl VulkanFrameCtx {
             let replacement = Self::init_headless(&self.context, extent)?;
             self.pending_transient_layouts.borrow_mut().rollback();
             self.destroy();
-            for command in self.command_buffers.drain(..) {
-                command.return_to_pool();
-            }
             *self = replacement;
             return Ok(());
         }
@@ -218,6 +244,7 @@ impl VulkanFrameCtx {
             })?;
 
         let swapchain = super::super::Swapchain::create_swapchain(
+            self.context.gfx_cmdpool.owner.native.clone(),
             swapchain_loader.clone(),
             surface_loader,
             self.context.physical_device,
@@ -225,9 +252,14 @@ impl VulkanFrameCtx {
             self.swapchain.as_ref().map(|s| s.swapchain),
             extent,
         )?;
-        self.destroy();
-        self.extent = swapchain.get_extent();
         let swapchain_images = swapchain.get_swapchain_images()?;
+        let views = Self::create_output_views(
+            &self.context.device,
+            &swapchain_images,
+            swapchain.format.format,
+        )?;
+        self.destroy_targets();
+        self.extent = swapchain.get_extent();
 
         self.swapchain_images = swapchain_images
             .iter()
@@ -243,33 +275,43 @@ impl VulkanFrameCtx {
         self.pending_output_contents.set(None);
         self.pending_transient_layouts.borrow_mut().rollback();
 
-        self.swapchain_image_views = swapchain_images
-            .iter()
-            .map(|swapchain_image| {
-                VkImageView::new(Self::create_image_view(
-                    &self.context.device,
-                    *swapchain_image,
-                    swapchain.format.format,
-                    vk::ImageAspectFlags::COLOR,
-                ))
-            })
-            .collect();
+        self.swapchain_image_views = views;
         self.swapchain = Some(swapchain);
         Ok(())
     }
 
     pub fn destroy(&mut self) {
+        self.command_buffers.clear();
+        self.destroy_targets();
+    }
+
+    fn destroy_targets(&mut self) {
         unsafe {
-            if let Some(mut swapchain) = self.swapchain.take() {
+            if let Some(swapchain) = self.swapchain.take() {
                 for image_view in &self.swapchain_image_views {
                     self.context
                         .device
                         .destroy_image_view(image_view.vk(), None);
                 }
-                swapchain.destroy();
+                drop(swapchain);
             }
             self.offscreen_targets.clear();
             self.swapchain_image_views.clear();
         }
+    }
+}
+
+impl Drop for VulkanFrameCtx {
+    fn drop(&mut self) {
+        if self.command_buffers.is_empty()
+            && self.swapchain.is_none()
+            && self.offscreen_targets.is_empty()
+        {
+            return;
+        }
+        unsafe {
+            let _ = self.context.device.device_wait_idle();
+        }
+        self.destroy();
     }
 }

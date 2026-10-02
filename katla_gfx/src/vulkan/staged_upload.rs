@@ -300,13 +300,7 @@ impl StagedUploadBatch {
             }
             Ok(fence)
         })();
-        let fence = match result {
-            Ok(fence) => fence,
-            Err(error) => {
-                cmd.return_to_pool();
-                return Err(error);
-            }
-        };
+        let fence = result?;
         Ok((fence, cmd))
     }
 }

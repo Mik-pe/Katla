@@ -263,7 +263,8 @@ impl Texture {
                 image_object,
                 vk_format,
                 vk::ImageAspectFlags::COLOR,
-            );
+            )
+            .expect("Failed to create texture image view");
             let image_sampler = Self::create_texture_sampler(&context);
 
             let channels = match format {
@@ -508,7 +509,8 @@ impl Texture {
                 new_image,
                 vk_format,
                 vk::ImageAspectFlags::COLOR,
-            );
+            )
+            .expect("Failed to create texture image view");
 
             // Clean up old resources
             self.context

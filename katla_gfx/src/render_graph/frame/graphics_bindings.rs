@@ -260,13 +260,7 @@ impl Frame<'_, VulkanRenderer> {
                     self.renderer
                         .pending_graph_buffers
                         .insert(info.buffer.as_raw());
-                    let limits = unsafe {
-                        self.renderer
-                            .context
-                            .instance
-                            .get_physical_device_properties(self.renderer.context.physical_device)
-                    }
-                    .limits;
+                    let limits = self.renderer.context.limits;
                     let alignment = if usage == crate::render_graph::BufferUsage::Uniform {
                         limits.min_uniform_buffer_offset_alignment
                     } else {

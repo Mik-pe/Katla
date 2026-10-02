@@ -19,7 +19,7 @@ pub(crate) mod vertexbuffer;
 
 // Re-export commonly used types from submodules for internal crate access
 pub(crate) use commandbuffer::CommandBuffer;
-pub use commandpool::CommandPool;
+pub(crate) use commandpool::CommandPool;
 // Internal pipeline state types - not exposed publicly
 // Re-export Katla-native types from pipeline module for internal use
 pub use queue::Queue;
