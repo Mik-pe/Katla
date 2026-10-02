@@ -102,11 +102,24 @@ pub(crate) fn process_input(
             }
         });
 
-        if let Some((value_id, range_start, range_end, _is_labeled)) = active_info {
+        if let Some((value_id, range_start, range_end, is_labeled)) = active_info {
             if input.mouse_down[mouse_button::LEFT] {
                 if let Some(bounds) = bounds_map.get(&active_id) {
-                    let t =
-                        ((input.mouse_pos.x() - bounds.min.x()) / bounds.width()).clamp(0.0, 1.0);
+                    let track = if is_labeled {
+                        tree.get(active_id)
+                            .and_then(|node| {
+                                node.widget
+                                    .as_any()
+                                    .downcast_ref::<super::widgets::labeled_slider::LabeledSlider>()
+                            })
+                            .map(|slider| slider.track_bounds(*bounds))
+                            .unwrap_or(*bounds)
+                    } else {
+                        *bounds
+                    };
+                    let t = ((input.mouse_pos.x() - track.min.x())
+                        / track.width().max(f32::EPSILON))
+                    .clamp(0.0, 1.0);
                     let new_val = range_start + t * (range_end - range_start);
                     tree.state_arena_mut().set(value_id, new_val);
                     result.input_consumed = true;
@@ -679,6 +692,51 @@ mod tests {
             !result.input_consumed,
             "Bubble to root with no parent should not consume"
         );
+    }
+
+    #[test]
+    fn test_labeled_slider_click_and_drag_follow_visible_track() {
+        use super::super::constructors;
+        use super::super::widget::WidgetBox;
+        use super::super::widgets::labeled_slider::LabeledSlider;
+
+        let mut tree = ViewTree::new();
+        let value_id = tree
+            .state_arena_mut()
+            .get_or_create(ViewId::default(), 0.0f32);
+        let slider = constructors::labeled_slider("Roughness", value_id, 0.0..=1.0)
+            .label_width(76.0)
+            .show_value(true)
+            .precision(2);
+        tree.set_root(slider.boxed());
+        let root = tree.root().unwrap();
+        let bounds = Rect2D::new(Vec2::new(100.0, 0.0), Vec2::new(300.0, 24.0));
+        let track = tree
+            .get(root)
+            .unwrap()
+            .widget
+            .as_any()
+            .downcast_ref::<LabeledSlider>()
+            .unwrap()
+            .track_bounds(bounds);
+        let bounds_map = HashMap::from([(root, bounds)]);
+        let mut callbacks = CallbackTable::new();
+        let mut input = UiInputState::new();
+        input.mouse_pos = track.center();
+        input.set_mouse_button(mouse_button::LEFT, true);
+        process_input(&mut tree, &input, &mut callbacks, &bounds_map);
+        assert!((tree.state_arena().get::<f32>(value_id).unwrap() - 0.5).abs() < 0.001);
+
+        // A held pointer must retain its value when it leaves the row vertically.
+        input.mouse_pos = Vec2::new(track.center().x(), 50.0);
+        process_input(&mut tree, &input, &mut callbacks, &bounds_map);
+        assert!((tree.state_arena().get::<f32>(value_id).unwrap() - 0.5).abs() < 0.001);
+        input.mouse_pos = Vec2::new(track.max.x(), 50.0);
+        process_input(&mut tree, &input, &mut callbacks, &bounds_map);
+        assert_eq!(tree.state_arena().get::<f32>(value_id), Some(1.0));
+        input.mouse_pos = Vec2::new(track.min.x(), 50.0);
+        process_input(&mut tree, &input, &mut callbacks, &bounds_map);
+        assert_eq!(tree.state_arena().get::<f32>(value_id), Some(0.0));
     }
 
     #[test]

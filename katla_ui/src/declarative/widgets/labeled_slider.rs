@@ -78,8 +78,9 @@ impl Widget for LabeledSlider {
             return InputResult::Ignore;
         }
 
-        let track_x = bounds.min.x() + self.label_width;
-        let track_width = bounds.max.x() - track_x;
+        let track = self.track_bounds(bounds);
+        let track_x = track.min.x();
+        let track_width = track.width();
         let t = if track_width > 0.0 {
             ((ctx.mouse_pos.x() - track_x) / track_width).clamp(0.0, 1.0)
         } else {
@@ -121,18 +122,9 @@ impl Widget for LabeledSlider {
             font_size,
         );
 
-        let track_x = bounds.min.x() + self.label_width;
-
-        let value_text_width = if self.show_value {
-            let value_text = display_value(self, value);
-            let size = ctx.measure_text(&value_text, font_size);
-            size.x() + 8.0
-        } else {
-            0.0
-        };
-
-        let track_end = bounds.max.x() - value_text_width;
-        let track_width = (track_end - track_x).max(0.0);
+        let track = self.track_bounds(bounds);
+        let track_x = track.min.x();
+        let track_width = track.width();
         let track_height = ctx.style().slider_track_height;
         let track_center_y = bounds.center().y();
         let track_bounds = Rect2D::from_center_size(
@@ -206,6 +198,26 @@ impl Widget for LabeledSlider {
     }
 }
 impl LabeledSlider {
+    /// The horizontal value track, shared by drawing, clicks and dragging.
+    pub fn track_bounds(&self, bounds: Rect2D) -> Rect2D {
+        let value_width = if self.show_value {
+            let max_chars = [*self.range.start(), *self.range.end()]
+                .map(|value| display_value(self, value).chars().count())
+                .into_iter()
+                .max()
+                .unwrap_or_default();
+            max_chars as f32 * crate::style::FontSize::Medium.to_pixels() * 0.6 + 8.0
+        } else {
+            0.0
+        };
+        let start = (bounds.min.x() + self.label_width).min(bounds.max.x());
+        let end = (bounds.max.x() - value_width).max(start);
+        Rect2D::new(
+            Vec2::new(start, bounds.min.y()),
+            Vec2::new(end, bounds.max.y()),
+        )
+    }
+
     pub fn show_value(mut self, show: bool) -> Self {
         self.show_value = show;
         self

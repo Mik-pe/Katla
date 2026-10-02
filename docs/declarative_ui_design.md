@@ -9,6 +9,11 @@ Taffy performs Flexbox layout before drawing. DrawList combines 56-byte
 instanced quads with vertices/commands for complex geometry. TextureId is opaque;
 the app maps it to GPU handles. Clipping belongs to each draw command.
 
+Labeled sliders share one track rectangle for drawing, initial clicks and held
+drags, including when the pointer leaves the row. Label and numeric value space
+do not change the value range; the numeric column reserves space for the range
+endpoints so the track does not move as the value changes.
+
 Editor dock panels build in stable order because root BuildContext state hooks
 are positional. EditorOverlayView mounts only each DockTree leaf's active tab.
 Building inactive tabs retains state slots; leaving them unmounted prevents stale
