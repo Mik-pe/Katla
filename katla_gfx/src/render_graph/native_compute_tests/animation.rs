@@ -184,8 +184,6 @@ fn animation_output(
     sample_times: [f32; 3],
     expected: impl Fn(f32) -> [f32; 16],
 ) {
-    let mut renderer = renderer();
-    let errors = capture_validation_errors(&renderer);
     let channels = [AnimChannelInfo {
         target_joint: 0,
         path_type: case.path_type,
@@ -211,10 +209,57 @@ fn animation_output(
         rest_scale: [1.0; 3],
         _pad3: 0,
     }];
+    animation_rig_output(
+        AnimationRig {
+            clips: &clips,
+            channels: &channels,
+            times: case.times,
+            values: case.values,
+            joints: &joints,
+        },
+        sample_times,
+        |time| SkeletonAnimParams {
+            clip_index: 0,
+            target_clip_index: 0,
+            current_time: time,
+            target_time: 0.0,
+            blend_weight: 0.0,
+            joint_offset: 0,
+            joint_count: 1,
+            flags: 1,
+        },
+        |time| expected(time).to_vec(),
+    );
+}
+
+struct AnimationRig<'a> {
+    clips: &'a [AnimClipHeader],
+    channels: &'a [AnimChannelInfo],
+    times: &'a [f32],
+    values: &'a [f32],
+    joints: &'a [JointInfo],
+}
+
+fn animation_rig_output(
+    rig: AnimationRig<'_>,
+    sample_times: [f32; 3],
+    params_at: impl Fn(f32) -> SkeletonAnimParams,
+    expected: impl Fn(f32) -> Vec<f32>,
+) {
+    let AnimationRig {
+        clips,
+        channels,
+        times,
+        values,
+        joints,
+    } = rig;
+    let mut renderer = renderer();
+    let errors = capture_validation_errors(&renderer);
+    let output_size = (joints.len() * 64) as u64;
     let mut graph = readback_graph();
     let storage = BufferUsages::STORAGE | BufferUsages::TRANSFER_SOURCE;
     let params_desc = BufferDesc::new(32, storage, BufferMemoryPolicy::CpuVisible);
-    let output_desc = BufferDesc::new(64, storage, BufferMemoryPolicy::DeviceLocal);
+    let output_desc = BufferDesc::new(output_size, storage, BufferMemoryPolicy::DeviceLocal);
     let params = (0..FRAME_SLOTS)
         .map(|_| renderer.create_buffer(params_desc).unwrap())
         .collect::<Vec<_>>();
@@ -234,11 +279,11 @@ fn animation_output(
         .import_buffer("animation output", output[0], output_desc)
         .unwrap();
     let static_data: [&[u8]; 5] = [
-        bytemuck::cast_slice(&clips),
-        bytemuck::cast_slice(&channels),
-        bytemuck::cast_slice(case.times),
-        bytemuck::cast_slice(case.values),
-        bytemuck::cast_slice(&joints),
+        bytemuck::cast_slice(clips),
+        bytemuck::cast_slice(channels),
+        bytemuck::cast_slice(times),
+        bytemuck::cast_slice(values),
+        bytemuck::cast_slice(joints),
     ];
     let mut ids = vec![params_id];
     for (index, data) in static_data.into_iter().enumerate() {
@@ -264,7 +309,7 @@ fn animation_output(
             .map(|(binding, &id)| (0, binding as u32, id))
             .collect::<Vec<_>>(),
     );
-    prepare_copies(&mut renderer, &mut graph, &[(output_id, 0, 64)]);
+    prepare_copies(&mut renderer, &mut graph, &[(output_id, 0, output_size)]);
     for time in sample_times.into_iter().take(FRAME_SLOTS) {
         let frame = acquire(&mut renderer);
         let slot = frame.slot();
@@ -280,16 +325,7 @@ fn animation_output(
                 &frame,
                 params[slot],
                 0,
-                bytemuck::bytes_of(&SkeletonAnimParams {
-                    clip_index: 0,
-                    target_clip_index: 0,
-                    current_time: time,
-                    target_time: 0.0,
-                    blend_weight: 0.0,
-                    joint_offset: 0,
-                    joint_count: 1,
-                    flags: 1,
-                }),
+                bytemuck::bytes_of(&params_at(time)),
             )
             .unwrap();
         renderer.render(&frame, &mut graph, |_| {}).unwrap();
@@ -299,7 +335,7 @@ fn animation_output(
     }
     for (slot, time) in sample_times.into_iter().take(FRAME_SLOTS).enumerate() {
         let bytes = read_completed(&mut renderer, &graph, slot);
-        let matrix: Vec<_> = bytes[..64]
+        let matrix: Vec<_> = bytes[..output_size as usize]
             .as_chunks::<4>()
             .0
             .iter()
@@ -316,5 +352,144 @@ fn animation_output(
         errors.lock().unwrap().is_empty(),
         "{:?}",
         errors.lock().unwrap()
+    );
+}
+
+fn rest_joint(parent_index: u32, rest_translation: [f32; 3]) -> JointInfo {
+    JointInfo {
+        inverse_bind_matrix: IDENTITY,
+        parent_index,
+        _pad: [0; 3],
+        rest_translation,
+        _pad2: 0,
+        rest_rotation: [0.0, 0.0, 0.0, 1.0],
+        rest_scale: [1.0; 3],
+        _pad3: 0,
+    }
+}
+
+fn blend_params(source_weight: f32, joint_count: u32) -> SkeletonAnimParams {
+    SkeletonAnimParams {
+        clip_index: 0,
+        target_clip_index: 1,
+        current_time: 0.0,
+        target_time: 0.0,
+        blend_weight: source_weight,
+        joint_offset: 0,
+        joint_count,
+        flags: 5,
+    }
+}
+
+fn blend_clips() -> [AnimClipHeader; 2] {
+    [
+        AnimClipHeader {
+            duration: 1.0,
+            channel_offset: 0,
+            channel_count: 1,
+            _pad: 0,
+        },
+        AnimClipHeader {
+            duration: 1.0,
+            channel_offset: 1,
+            channel_count: 1,
+            _pad: 0,
+        },
+    ]
+}
+
+fn blend_channels(path_type: u32, stride: u32) -> [AnimChannelInfo; 2] {
+    [0, stride].map(|value_offset| AnimChannelInfo {
+        target_joint: 0,
+        path_type,
+        time_offset: 0,
+        value_offset,
+        keyframe_count: 1,
+        interpolation: 0,
+        _pad: [0; 2],
+    })
+}
+
+#[test]
+fn test_native_graph_animation_crossfade_preserves_source_and_target_endpoints() {
+    animation_rig_output(
+        AnimationRig {
+            clips: &blend_clips(),
+            channels: &blend_channels(0, 3),
+            times: &[0.0],
+            values: &[2.0, 4.0, 6.0, 12.0, 14.0, 16.0],
+            joints: &[rest_joint(u32::MAX, [0.0; 3])],
+        },
+        [1.0, 0.5, 0.0],
+        |weight| blend_params(weight, 1),
+        |weight| {
+            translation([
+                12.0 - 10.0 * weight,
+                14.0 - 10.0 * weight,
+                16.0 - 10.0 * weight,
+            ])
+            .to_vec()
+        },
+    );
+}
+
+#[test]
+fn test_native_graph_animation_crossfade_preserves_child_bone_length() {
+    animation_rig_output(
+        AnimationRig {
+            clips: &blend_clips(),
+            channels: &blend_channels(1, 4),
+            times: &[0.0],
+            values: &[
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                std::f32::consts::FRAC_1_SQRT_2,
+                std::f32::consts::FRAC_1_SQRT_2,
+            ],
+            joints: &[
+                rest_joint(u32::MAX, [0.0; 3]),
+                rest_joint(0, [2.0, 0.0, 0.0]),
+            ],
+        },
+        [1.0, 0.5, 0.0],
+        |weight| blend_params(weight, 2),
+        |weight| {
+            let (sin, cos) = ((1.0 - weight) * std::f32::consts::FRAC_PI_2).sin_cos();
+            let mut root = IDENTITY;
+            root[0] = cos;
+            root[1] = sin;
+            root[4] = -sin;
+            root[5] = cos;
+            let mut child = root;
+            child[12] = 2.0 * cos;
+            child[13] = 2.0 * sin;
+            [root, child].concat()
+        },
+    );
+}
+
+#[test]
+fn test_native_graph_animation_crossfade_preserves_signed_and_zero_scale() {
+    animation_rig_output(
+        AnimationRig {
+            clips: &blend_clips(),
+            channels: &blend_channels(2, 3),
+            times: &[0.0],
+            values: &[-1.0, 0.0, 2.0, -3.0, 0.0, 4.0],
+            joints: &[rest_joint(u32::MAX, [0.0; 3])],
+        },
+        [1.0, 0.5, 0.0],
+        |weight| blend_params(weight, 1),
+        |weight| {
+            let mut matrix = IDENTITY;
+            matrix[0] = -3.0 + 2.0 * weight;
+            matrix[5] = 0.0;
+            matrix[10] = 4.0 - 2.0 * weight;
+            matrix.to_vec()
+        },
     );
 }

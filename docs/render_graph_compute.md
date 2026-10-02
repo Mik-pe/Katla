@@ -81,11 +81,26 @@ interval; it does not wrap time a second time or subtract an epsilon from the
 last sample. STEP includes the final keyframe, and single-keyframe channels stay
 constant.
 
-CPU imports and GPU sampling share glTF's CUBICSPLINE layout:
+CPU and GPU sampling share glTF's CUBICSPLINE layout:
 `[in-tangent, value, out-tangent]` for each keyframe. Hermite tangents scale by the
 interval duration, and cubic quaternion samples normalize after interpolation.
+Crossfade blends sampled local translation/scale with linear interpolation and
+local rotation with slerp before composing the joint hierarchy. The player weight
+is the source fraction: 1 selects the source, 0 selects the target. Signed and
+zero scales remain valid; world matrices are never decomposed for blending.
+This follows the local-pose pipeline used by
+[ozz-animation](https://guillaumeblanc.github.io/ozz-animation/documentation/animation_runtime/).
+
 The native animation fixtures validate translation, rotation, scale, endpoint
-clamping and single-keyframe channels across queued frame slots:
+clamping, constant single-keyframe channels, crossfade endpoints, child bone
+length and signed/zero scales across queued frame slots. Single-keyframe
+CUBICSPLINE is accepted defensively by the runtime; the
+[glTF specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#appendix-c-animation-sampler-interpolation-modes)
+requires at least two cubic keyframes. CPU regressions verify the same channel
+clamping, cubic triplet values and quaternion normalization. Cached CPU samplers
+reuse their resolved interval instead of repeating a binary search.
+
+Run native sampling validation with:
 
 ```sh
 MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \

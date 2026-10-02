@@ -279,199 +279,68 @@ fn evaluate_channel_quat(channel: AnimChannelInfo, time: f32) -> vec4f {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Evaluate clip: write world transforms into world_matrices
-// ---------------------------------------------------------------------------
+struct JointPose {
+    translation: vec3f,
+    rotation: vec4f,
+    scale: vec3f,
+}
 
-fn evaluate_clip(
-    clip_idx: u32,
-    time: f32,
-    joint_offset: u32,
-    joint_count: u32,
-) {
+fn evaluate_joint(clip_idx: u32, time: f32, joint_offset: u32, joint_index: u32) -> JointPose {
     let clip = clip_headers[clip_idx];
     let eval_time = clamp(time, 0.0, max(clip.duration, 0.0));
+    let joint = joints[joint_offset + joint_index];
+    var pose = JointPose(joint.rest_translation, joint.rest_rotation, joint.rest_scale);
 
-    for (var j = 0u; j < joint_count; j = j + 1u) {
-        var trans = joints[joint_offset + j].rest_translation;
-        var rot = joints[joint_offset + j].rest_rotation;
-        var sc = joints[joint_offset + j].rest_scale;
-
-        for (var c = 0u; c < clip.channel_count; c = c + 1u) {
-            let channel = channel_infos[clip.channel_offset + c];
-
-            if (channel.target_joint != j) {
-                continue;
-            }
-
-            if (channel.path_type == PATH_TRANSLATION) {
-                trans = evaluate_channel_vec3(channel, eval_time);
-            }
-            if (channel.path_type == PATH_ROTATION) {
-                rot = evaluate_channel_quat(channel, eval_time);
-            }
-            if (channel.path_type == PATH_SCALE) {
-                sc = evaluate_channel_vec3(channel, eval_time);
-            }
+    for (var c = 0u; c < clip.channel_count; c = c + 1u) {
+        let channel = channel_infos[clip.channel_offset + c];
+        if (channel.target_joint != joint_index) {
+            continue;
         }
-
-        let local_mat = mat4_from_trs(trans, rot, sc);
-
-        let parent_idx = joints[joint_offset + j].parent_index;
-
-        var world_mat = local_mat;
-        if (parent_idx != NO_PARENT && parent_idx < j) {
-            world_mat = world_matrices[joint_offset + parent_idx] * local_mat;
+        if (channel.path_type == PATH_TRANSLATION) {
+            pose.translation = evaluate_channel_vec3(channel, eval_time);
         }
-
-        world_matrices[joint_offset + j] = world_mat;
+        if (channel.path_type == PATH_ROTATION) {
+            pose.rotation = evaluate_channel_quat(channel, eval_time);
+        }
+        if (channel.path_type == PATH_SCALE) {
+            pose.scale = evaluate_channel_vec3(channel, eval_time);
+        }
     }
+    return pose;
 }
-
-// ---------------------------------------------------------------------------
-// Apply inverse bind matrices and write to output
-// ---------------------------------------------------------------------------
-
-fn apply_ibm_and_output(joint_offset: u32, joint_count: u32) {
-    for (var j = 0u; j < joint_count; j = j + 1u) {
-        let ibm = joints[joint_offset + j].inverse_bind_matrix;
-        output_matrices[joint_offset + j] = world_matrices[joint_offset + j] * ibm;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Blend two sets of world matrices via TRS decomposition + slerp
-// ---------------------------------------------------------------------------
-
-fn mat3_to_quat(m00: f32, m01: f32, m02: f32,
-                 m10: f32, m11: f32, m12: f32,
-                 m20: f32, m21: f32, m22: f32) -> vec4f {
-    let trace = m00 + m11 + m22;
-
-    if (trace > 0.0) {
-        let s = 0.5 / sqrt(trace + 1.0);
-        return quat_normalize(vec4f(
-            (m12 - m21) * s,
-            (m20 - m02) * s,
-            (m01 - m10) * s,
-            0.25 / s,
-        ));
-    } else if ((m00 > m11) && (m00 > m22)) {
-        let s = 2.0 * sqrt(1.0 + m00 - m11 - m22);
-        return quat_normalize(vec4f(
-            0.25 * s,
-            (m01 + m10) / s,
-            (m02 + m20) / s,
-            (m12 - m21) / s,
-        ));
-    } else if (m11 > m22) {
-        let s = 2.0 * sqrt(1.0 + m11 - m00 - m22);
-        return quat_normalize(vec4f(
-            (m10 + m01) / s,
-            0.25 * s,
-            (m21 + m12) / s,
-            (m20 - m02) / s,
-        ));
-    } else {
-        let s = 2.0 * sqrt(1.0 + m22 - m00 - m11);
-        return quat_normalize(vec4f(
-            (m20 + m02) / s,
-            (m21 + m12) / s,
-            0.25 * s,
-            (m01 - m10) / s,
-        ));
-    }
-}
-
-fn blend_world_matrices(
-    joint_offset: u32,
-    joint_count: u32,
-    blend_weight: f32,
-) {
-    let w = blend_weight;
-
-    for (var j = 0u; j < joint_count; j = j + 1u) {
-        let mat_a = world_matrices[joint_offset + j];
-        let mat_b = output_matrices[joint_offset + j];
-
-        // Decompose A: translation from column 3, scale from column lengths
-        let trans_a = vec3f(mat_a[3][0], mat_a[3][1], mat_a[3][2]);
-        let sx_a = length(vec3f(mat_a[0][0], mat_a[0][1], mat_a[0][2]));
-        let sy_a = length(vec3f(mat_a[1][0], mat_a[1][1], mat_a[1][2]));
-        let sz_a = length(vec3f(mat_a[2][0], mat_a[2][1], mat_a[2][2]));
-
-        // Decompose B
-        let trans_b = vec3f(mat_b[3][0], mat_b[3][1], mat_b[3][2]);
-        let sx_b = length(vec3f(mat_b[0][0], mat_b[0][1], mat_b[0][2]));
-        let sy_b = length(vec3f(mat_b[1][0], mat_b[1][1], mat_b[1][2]));
-        let sz_b = length(vec3f(mat_b[2][0], mat_b[2][1], mat_b[2][2]));
-
-        // Blend translation and scale via lerp
-        let blended_trans = lerp_vec3(trans_a, trans_b, w);
-        let blended_scale = lerp_vec3(vec3f(sx_a, sy_a, sz_a), vec3f(sx_b, sy_b, sz_b), w);
-
-        // Normalize the 3x3 to extract rotation, then convert to quaternion
-        let rot_a = mat3_to_quat(
-            mat_a[0][0] / sx_a, mat_a[0][1] / sx_a, mat_a[0][2] / sx_a,
-            mat_a[1][0] / sy_a, mat_a[1][1] / sy_a, mat_a[1][2] / sy_a,
-            mat_a[2][0] / sz_a, mat_a[2][1] / sz_a, mat_a[2][2] / sz_a,
-        );
-        let rot_b = mat3_to_quat(
-            mat_b[0][0] / sx_b, mat_b[0][1] / sx_b, mat_b[0][2] / sx_b,
-            mat_b[1][0] / sy_b, mat_b[1][1] / sy_b, mat_b[1][2] / sy_b,
-            mat_b[2][0] / sz_b, mat_b[2][1] / sz_b, mat_b[2][2] / sz_b,
-        );
-
-        let blended_rot = slerp(rot_a, rot_b, w);
-
-        world_matrices[joint_offset + j] = mat4_from_trs(blended_trans, blended_rot, blended_scale);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Main compute entry point
-// ---------------------------------------------------------------------------
 
 @compute @workgroup_size(64)
 fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let gid = global_id.x;
-
     if (gid >= arrayLength(&params)) {
         return;
     }
-
     let skeleton = params[gid];
-
-    // When not playing, still evaluate at the current time to freeze at the last pose
-    // rather than snapping to identity.
-
+    let do_blend = (skeleton.flags & FLAG_BLENDING) != 0u;
     if (skeleton.clip_index >= arrayLength(&clip_headers)) {
+        return;
+    }
+    if (do_blend && skeleton.target_clip_index >= arrayLength(&clip_headers)) {
         return;
     }
 
     let joint_offset = skeleton.joint_offset;
-    let joint_count = skeleton.joint_count;
-    let do_blend = (skeleton.flags & FLAG_BLENDING) != 0u;
-
-    if (!do_blend) {
-        evaluate_clip(skeleton.clip_index, skeleton.current_time, joint_offset, joint_count);
-        apply_ibm_and_output(joint_offset, joint_count);
-    } else {
-        if (skeleton.target_clip_index >= arrayLength(&clip_headers)) {
-            return;
+    let toward_target = 1.0 - clamp(skeleton.blend_weight, 0.0, 1.0);
+    for (var j = 0u; j < skeleton.joint_count; j = j + 1u) {
+        var pose = evaluate_joint(skeleton.clip_index, skeleton.current_time, joint_offset, j);
+        if (do_blend) {
+            let target_pose = evaluate_joint(skeleton.target_clip_index, skeleton.target_time, joint_offset, j);
+            pose.translation = lerp_vec3(pose.translation, target_pose.translation, toward_target);
+            pose.rotation = slerp(pose.rotation, target_pose.rotation, toward_target);
+            pose.scale = lerp_vec3(pose.scale, target_pose.scale, toward_target);
         }
-
-        evaluate_clip(skeleton.clip_index, skeleton.current_time, joint_offset, joint_count);
-
-        for (var j = 0u; j < joint_count; j = j + 1u) {
-            output_matrices[joint_offset + j] = world_matrices[joint_offset + j];
+        let joint = joints[joint_offset + j];
+        let local_mat = mat4_from_trs(pose.translation, pose.rotation, pose.scale);
+        var world_mat = local_mat;
+        if (joint.parent_index != NO_PARENT && joint.parent_index < j) {
+            world_mat = world_matrices[joint_offset + joint.parent_index] * local_mat;
         }
-
-        evaluate_clip(skeleton.target_clip_index, skeleton.target_time, joint_offset, joint_count);
-
-        // CPU blend_weight goes 1.0 → 0.0 over the blend duration (1.0 = full source clip).
-        // Invert so the shader weight represents "fraction toward target clip".
-        blend_world_matrices(joint_offset, joint_count, 1.0 - skeleton.blend_weight);
-        apply_ibm_and_output(joint_offset, joint_count);
+        world_matrices[joint_offset + j] = world_mat;
+        output_matrices[joint_offset + j] = world_mat * joint.inverse_bind_matrix;
     }
 }
