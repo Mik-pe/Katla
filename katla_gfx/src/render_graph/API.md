@@ -88,7 +88,11 @@ stay reserved, so retiring an import never shifts another resource's ID.
 A compute dispatch names a `ComputePipelineDesc` containing the exact WGSL source and
 entry point. Reflection supplies its binding interface. `ComputeDispatch` provides
 `pipeline: ComputePipelineDesc`, complete bindings and explicit direct workgroups or an indirect command range.
-There are no built-in buffer roles, named compute kernels or implicit frame-workload
+Update workgroups and inline compute bytes through authored command packets.
+Frame callbacks submit graphics lists to graphics passes and one composed UI
+list to a UI pass. Wrong input kinds are rejected before native encoding.
+Callbacks do not override dispatches or push untyped uniform bytes. There are
+no built-in buffer roles, named compute kernels or implicit frame-workload
 parameters. Zero direct dimensions express an empty workload. Copy/fill commands use
 typed transfer accesses; indirect dispatch/draw commands use typed indirect reads.
 
@@ -100,7 +104,9 @@ finite coordinates and positive extents. Stable object-storage indices survive
 layout-selected material overrides.
 
 `PassDesc::with_bindings` and `set_pass_bindings(PassId, packet)` preserve the explicit
-access contract. Bindings must fit the declared byte/subresource ranges and include
+access contract. Replacement packets validate before mutation and reuse the
+compiled execution plan. A rejected replacement leaves the previous packet and plan intact.
+Bindings must fit the declared byte/subresource ranges and include
 every selected shader stage. Native preflight also checks reflected slot types,
 stages and minimum spans. Constants identify their reflected group/binding/stages;
 no hidden tonemap, overlay, light or shadow write mutates object storage.

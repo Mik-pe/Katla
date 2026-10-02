@@ -5,6 +5,7 @@ mod draw_calls;
 mod graphics_bindings;
 mod graphics_pass;
 mod native_capture;
+mod submissions;
 mod ui_rendering;
 
 use std::collections::HashMap;
@@ -48,10 +49,6 @@ pub(crate) struct PassExecutionData {
     pub(crate) draw_lists: Vec<Rc<DrawList>>,
 
     pub(crate) ui_draw_lists: Vec<UIDrawList>,
-
-    pub(crate) dispatch: Option<(u32, u32, u32)>,
-
-    pub(crate) uniform_data: Vec<u8>,
 }
 
 impl PassExecutionData {
@@ -101,7 +98,7 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
         if let Some(pass) = self.invalid_pass {
             return Err(RenderGraphError::PassNotFound(format!("{pass:?}")));
         }
-        for &pass_index in self.pending.keys() {
+        for (&pass_index, data) in &self.pending {
             let pass = self
                 .graph
                 .pass(pass_index)
@@ -109,6 +106,11 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
             if !self.graph.is_pass_index_live(pass_index) {
                 return Err(RenderGraphError::SubmissionToCulledPass(pass.name.clone()));
             }
+            data.validate(
+                &pass.name,
+                pass.pass_type,
+                pass.kind.unwrap_or(super::PassKind::Geometry),
+            )?;
         }
         Ok(())
     }
@@ -148,6 +150,7 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     /// submitting the same list to several passes shares one reference-counted
     /// copy instead of deep-cloning per submission. Callers keep building and
     /// uploading through `DrawList`/`execute_draw_calls` unchanged.
+    /// Handles and input kinds are validated before native execution.
     pub fn submit(&mut self, pass_id: PassId, draw_list: Rc<DrawList>) -> &mut Self {
         let Some(index) = self.submission_position(pass_id) else {
             return self;
@@ -174,7 +177,7 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
         self
     }
 
-    /// Submit a UI draw list to a pass.
+    /// Submit one composed UI draw list to a UI pass.
     pub fn submit_ui(&mut self, pass_id: PassId, ui_draw_list: &UIDrawList) -> &mut Self {
         let Some(index) = self.submission_position(pass_id) else {
             return self;
@@ -195,30 +198,6 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
             self.pending[&index].ui_draw_lists.len()
         );
 
-        self
-    }
-
-    /// Dispatch compute workgroups for a pass.
-    pub fn dispatch(&mut self, pass_id: PassId, x: u32, y: u32, z: u32) -> &mut Self {
-        let Some(index) = self.submission_position(pass_id) else {
-            return self;
-        };
-
-        self.pending.entry(index).or_default().dispatch = Some((x, y, z));
-        self
-    }
-
-    /// Push uniform data for a pass.
-    pub fn push_uniform(&mut self, pass_id: PassId, data: &[u8]) -> &mut Self {
-        let Some(index) = self.submission_position(pass_id) else {
-            return self;
-        };
-
-        self.pending
-            .entry(index)
-            .or_default()
-            .uniform_data
-            .extend_from_slice(data);
         self
     }
 }
@@ -569,7 +548,7 @@ impl<'a> Frame<'a, VulkanRenderer> {
                     self.execute_graphics_pass(&cmd, pass, data)?;
                 }
                 super::pass::PassType::Compute | super::pass::PassType::Transfer => {
-                    self.execute_compute_commands(&cmd, pass, data.dispatch)?;
+                    self.execute_compute_commands(&cmd, pass)?;
                 }
             }
 

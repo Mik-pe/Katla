@@ -48,20 +48,6 @@ fn command_barrier(
 }
 
 impl Frame<'_, VulkanRenderer> {
-    fn graph_dispatch_groups(
-        &self,
-        dispatch: &ComputeDispatch,
-        submitted: Option<(u32, u32, u32)>,
-    ) -> [u32; 3] {
-        if let Some((x, y, z)) = submitted {
-            return [x, y, z];
-        }
-        match dispatch.size {
-            ComputeDispatchSize::Direct(groups) => groups,
-            ComputeDispatchSize::Indirect { .. } => [1, 1, 1],
-        }
-    }
-
     fn bind_graph_kernel(
         &mut self,
         dispatch: &ComputeDispatch,
@@ -226,7 +212,6 @@ impl Frame<'_, VulkanRenderer> {
         &mut self,
         cmd: &CommandBuffer,
         pass: &PassDesc,
-        submitted: Option<(u32, u32, u32)>,
     ) -> Result<(), RenderGraphError> {
         let slot = self.current_frame();
         let command_buffer = cmd.vk_command_buffer();
@@ -250,7 +235,10 @@ impl Frame<'_, VulkanRenderer> {
             }
             match command {
                 ComputeCommand::Dispatch(dispatch) => {
-                    let groups = self.graph_dispatch_groups(dispatch, submitted);
+                    let groups = match dispatch.size {
+                        ComputeDispatchSize::Direct(groups) => groups,
+                        ComputeDispatchSize::Indirect { .. } => [1, 1, 1],
+                    };
                     if groups.contains(&0) {
                         continue;
                     }

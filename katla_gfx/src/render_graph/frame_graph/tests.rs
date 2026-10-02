@@ -1867,3 +1867,6 @@ fn test_saved_handle_submits_to_the_original_pass_after_multiple_insertions() {
     assert_eq!(frame.pending.len(), 1);
     assert!(frame.pending.contains_key(&3));
 }
+
+#[path = "tests/submissions.rs"]
+mod submissions;

@@ -109,8 +109,15 @@ was committed: applications advance their associated CPU state before inspecting
 its surface result. That result distinguishes successful presentation, required
 surface recreation and a fatal error after submission.
 
-Per-pass packets own inline bytes. Native encoders retain resolved resources,
-pipeline variants, descriptor tables and residency until the exact submission
+Per-pass packets own inline bytes. Replacing graphics inputs validates the
+existing access contract before mutation and retains the compiled graph plan.
+Invalid replacements preserve the previous packet. Compute dispatch dimensions
+and constants belong to authored commands, with no callback override or unused
+uniform-byte channel. Frame inputs validate against the pass type: compute and
+transfer passes reject draw lists, and UI passes receive one composed UI list.
+The same validation runs before native encoding on both backends. Native
+encoders retain resolved resources, pipeline variants, descriptor tables and
+residency until the exact submission
 retires. Rebinding a graph resource for a later frame does not rewrite an
 earlier frame's descriptors.
 

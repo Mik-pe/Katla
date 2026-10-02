@@ -59,16 +59,8 @@ fn validate_frame_submissions(
         )));
     }
     for record in plan.passes() {
-        if record.kind == PassKind::Ui
-            && pending
-                .get(&record.pass_index)
-                .is_some_and(|data| data.ui_draw_lists.len() > 1)
-        {
-            return Err(RendererError::InvalidOperation(format!(
-                "Metal UI pass '{}' received {} UI draw lists; submit one composed list per PassId",
-                record.name,
-                pending[&record.pass_index].ui_draw_lists.len()
-            )));
+        if let Some(data) = pending.get(&record.pass_index) {
+            data.validate(&record.name, record.pass_type, record.kind)?;
         }
     }
     Ok(())

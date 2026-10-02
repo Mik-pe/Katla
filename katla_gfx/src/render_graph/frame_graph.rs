@@ -884,3 +884,6 @@ impl<B: RenderGraphBackend> Default for FrameGraph<B> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod packet_tests;

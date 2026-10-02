@@ -259,7 +259,10 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         Ok(())
     }
 
-    /// Supply graphics inputs while preserving the pass's declared resource contract.
+    /// Replace graphics inputs after validating the declared resource contract.
+    ///
+    /// Valid packets reuse the compiled plan. Failure preserves the previous
+    /// packet and does not invalidate compilation.
     pub fn set_pass_bindings(
         &mut self,
         pass_id: PassId,
@@ -269,9 +272,8 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             .pass_position(pass_id)
             .ok_or_else(|| RenderGraphError::PassNotFound(format!("{pass_id:?}")))?;
         let pass = &mut self.passes[index];
+        crate::render_graph::pass_bindings::validate(pass, &bindings)?;
         pass.bindings = bindings;
-        self.compiled = false;
-        self.execution_plan = None;
         Ok(())
     }
 
@@ -360,7 +362,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
 
     pub(super) fn validate_pass_bindings(&self) -> Result<(), RenderGraphError> {
         for pass in &self.passes {
-            crate::render_graph::pass_bindings::validate(pass)?;
+            crate::render_graph::pass_bindings::validate(pass, &pass.bindings)?;
         }
         Ok(())
     }

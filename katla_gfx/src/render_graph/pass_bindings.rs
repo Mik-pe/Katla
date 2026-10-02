@@ -3,7 +3,10 @@
 use super::{BufferUsage, GraphValidationError, RenderGraphError, ResourceAccessStage};
 use std::collections::BTreeSet;
 
-pub(crate) fn validate(pass: &super::PassDesc) -> Result<(), RenderGraphError> {
+pub(crate) fn validate(
+    pass: &super::PassDesc,
+    bindings: &crate::renderer::frame_bindings::PassBindings,
+) -> Result<(), RenderGraphError> {
     use super::ResourceAccessUsage;
     use crate::backend::command::ShaderStages;
     let stage_matches = |stage, stages: ShaderStages| match stage {
@@ -19,7 +22,7 @@ pub(crate) fn validate(pass: &super::PassDesc) -> Result<(), RenderGraphError> {
             reason,
         };
         let mut slots = BTreeSet::new();
-        for binding in &pass.bindings.buffers {
+        for binding in &bindings.buffers {
             if binding.stages.is_empty() || binding.range.is_empty() {
                 return Err(
                     invalid("Buffer binding has no shader stages or byte range".into()).into(),
@@ -61,7 +64,7 @@ pub(crate) fn validate(pass: &super::PassDesc) -> Result<(), RenderGraphError> {
                 }
             }
         }
-        for binding in &pass.bindings.images {
+        for binding in &bindings.images {
             if binding.stages.is_empty() || binding.range.is_empty() {
                 return Err(invalid(
                     "Image binding has no shader stages or subresource range".into(),
@@ -105,7 +108,7 @@ pub(crate) fn validate(pass: &super::PassDesc) -> Result<(), RenderGraphError> {
                 }
             }
         }
-        for phase in &pass.bindings.phases {
+        for phase in &bindings.phases {
             if let Some(viewport) = phase.viewport
                 && (!viewport
                     .min
@@ -184,21 +187,21 @@ mod tests {
     #[test]
     fn test_graph_binding_rejects_missing_access_and_larger_byte_range() {
         let mut pass = bound_buffer();
-        validate(&pass).unwrap();
+        validate(&pass, &pass.bindings).unwrap();
         pass.bindings.buffers[0].range.size = 36;
-        assert!(validate(&pass).is_err());
+        assert!(validate(&pass, &pass.bindings).is_err());
         pass.bindings.buffers[0].range.size = 32;
         pass.set_buffer_accesses(Vec::new());
-        assert!(validate(&pass).is_err());
+        assert!(validate(&pass, &pass.bindings).is_err());
     }
 
     #[test]
     fn test_graph_binding_requires_every_selected_shader_stage() {
         let mut pass = bound_buffer();
         pass.bindings.buffers[0].stages = ShaderStages::VERTEX_FRAGMENT;
-        assert!(validate(&pass).is_err());
+        assert!(validate(&pass, &pass.bindings).is_err());
         pass.buffer_accesses[0].stage = ResourceAccessStage::AllGraphics;
-        validate(&pass).unwrap();
+        validate(&pass, &pass.bindings).unwrap();
     }
 
     #[test]
@@ -222,12 +225,12 @@ mod tests {
                 }],
                 ..Default::default()
             });
-        validate(&pass).unwrap();
+        validate(&pass, &pass.bindings).unwrap();
         pass.bindings.images[0].range.base_mip_level = 0;
-        assert!(validate(&pass).is_err());
+        assert!(validate(&pass, &pass.bindings).is_err());
         pass.bindings.images[0].range = range;
         pass.image_accesses[0].usage = ResourceAccessUsage::Storage;
-        assert!(validate(&pass).is_err());
+        assert!(validate(&pass, &pass.bindings).is_err());
     }
 
     #[test]
@@ -252,9 +255,9 @@ mod tests {
                 }],
                 ..Default::default()
             });
-        validate(&pass).unwrap();
+        validate(&pass, &pass.bindings).unwrap();
         pass.buffer_accesses[0].range.size = 12;
-        assert!(validate(&pass).is_err());
+        assert!(validate(&pass, &pass.bindings).is_err());
     }
     #[test]
     fn test_graph_draw_phase_rejects_nonfinite_and_empty_viewports() {
@@ -273,14 +276,14 @@ mod tests {
                 ..Default::default()
             },
         );
-        validate(&pass).unwrap();
+        validate(&pass, &pass.bindings).unwrap();
         for viewport in [
             crate::Rect::new([0.0, 0.0], [0.0, 64.0]),
             crate::Rect::new([f32::NAN, 0.0], [64.0, 64.0]),
             crate::Rect::new([0.0, 0.0], [f32::INFINITY, 64.0]),
         ] {
             pass.bindings.phases[0] = phase(viewport);
-            assert!(validate(&pass).is_err());
+            assert!(validate(&pass, &pass.bindings).is_err());
         }
     }
 }

@@ -63,11 +63,20 @@ fn test_representative_frame_compiles_and_renders_portably() {
     let mut renderer = VulkanRenderer::init_headless(
         WIDTH,
         HEIGHT,
-        ValidationMode::Disabled,
+        ValidationMode::Enabled,
         CString::new("Backend-neutral API test").unwrap(),
         CString::new("Katla").unwrap(),
     )
     .unwrap();
+    let errors = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = errors.clone();
+    renderer
+        .context()
+        .set_validation_callback(move |message, level| {
+            if level == katla_gfx::ValidationLevel::Error {
+                captured.lock().unwrap().push(message.to_owned());
+            }
+        });
     let shader = ShaderFile::new();
     let descriptor = PipelineDescriptor::simple(shader.0.to_string_lossy())
         .with_vertex_layout(VertexLayout::empty())
@@ -86,79 +95,85 @@ fn test_representative_frame_compiles_and_renders_portably() {
         .export_resource("backbuffer")
         .build::<VulkanRenderer>()
         .unwrap();
-    let color = [1.0f32, 0.0, 0.0, 1.0];
     let pass = graph.pass_id("custom_triangle").unwrap();
-    graph
-        .set_pass_bindings(
-            pass,
-            PassBindings {
-                constants: vec![ConstantBinding {
-                    group: 0,
-                    binding: 0,
-                    stages: ShaderStages::FRAGMENT,
-                    bytes: color.into_iter().flat_map(f32::to_ne_bytes).collect(),
+    for (color, expected) in [
+        ([1.0f32, 0.0, 0.0, 1.0], [0, 0, 255, 255]),
+        ([0.0, 1.0, 0.0, 1.0], [0, 255, 0, 255]),
+        ([0.0, 0.0, 1.0, 1.0], [255, 0, 0, 255]),
+        ([1.0, 1.0, 1.0, 1.0], [255, 255, 255, 255]),
+    ] {
+        let packet = PassBindings {
+            constants: vec![ConstantBinding {
+                group: 0,
+                binding: 0,
+                stages: ShaderStages::FRAGMENT,
+                bytes: color.into_iter().flat_map(f32::to_ne_bytes).collect(),
+            }],
+            phases: vec![PassDrawPhase {
+                pipelines: vec![PassPipeline {
+                    vertex_layout: VertexLayout::empty(),
+                    material,
                 }],
-                phases: vec![PassDrawPhase {
-                    pipelines: vec![PassPipeline {
-                        vertex_layout: VertexLayout::empty(),
-                        material,
-                    }],
-                    constants: vec![],
-                    draw: PassDraw::Vertices {
-                        count: 3,
-                        instances: 1,
-                    },
-                    viewport: None,
-                }],
-                ..PassBindings::default()
-            },
-        )
-        .unwrap();
-    let frame = acquire(&mut renderer);
-    renderer.render(&frame, &mut graph, |_| {}).unwrap();
-    assert_eq!(
-        renderer
-            .present(frame)
+                constants: vec![],
+                draw: PassDraw::Vertices {
+                    count: 3,
+                    instances: 1,
+                },
+                viewport: None,
+            }],
+            ..PassBindings::default()
+        };
+        graph.set_pass_bindings(pass, packet.clone()).unwrap();
+        let mut invalid = packet;
+        invalid.phases[0].viewport = Some(katla_gfx::Rect::new([0.0, 0.0], [0.0, HEIGHT as f32]));
+        assert!(graph.set_pass_bindings(pass, invalid).is_err());
+        let frame = acquire(&mut renderer);
+        renderer.render(&frame, &mut graph, |_| {}).unwrap();
+        assert_eq!(
+            renderer
+                .present(frame)
+                .unwrap()
+                .surface
+                .expect("surface presentation"),
+            katla_gfx::SurfaceStatus::Presented
+        );
+
+        let resource = graph.resource_id("backbuffer").unwrap();
+        let source = renderer
+            .graph_texture_source(resource)
+            .expect("committed graph export");
+        let ticket = renderer
+            .queue_texture_readback(
+                source,
+                TextureReadbackRegion {
+                    origin: [0, 0],
+                    size: Size2D::new(WIDTH, HEIGHT),
+                    mip_level: 0,
+                    array_layer: 0,
+                },
+            )
+            .unwrap();
+        renderer.wait_for_device();
+        let result = renderer
+            .poll_texture_readback(ticket)
             .unwrap()
-            .surface
-            .expect("surface presentation"),
-        katla_gfx::SurfaceStatus::Presented
-    );
-
-    let resource = graph.resource_id("backbuffer").unwrap();
-    let source = renderer
-        .graph_texture_source(resource)
-        .expect("committed graph export");
-    let ticket = renderer
-        .queue_texture_readback(
-            source,
-            TextureReadbackRegion {
-                origin: [0, 0],
-                size: Size2D::new(WIDTH, HEIGHT),
-                mip_level: 0,
-                array_layer: 0,
-            },
-        )
-        .unwrap();
-    renderer.wait_for_device();
-    let result = renderer
-        .poll_texture_readback(ticket)
-        .unwrap()
-        .expect("readback completes");
-    assert_eq!(result.format, ImageFormat::B8G8R8A8Srgb);
-    assert_eq!(result.size, Size2D::new(WIDTH, HEIGHT));
-    assert_eq!(result.bytes.len(), (WIDTH * HEIGHT * 4) as usize);
-    assert!(
-        result
-            .bytes
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .all(|pixel| *pixel == [0, 0, 255, 255])
-    );
-
+            .expect("readback completes");
+        assert_eq!(result.format, ImageFormat::B8G8R8A8Srgb);
+        assert_eq!(result.size, Size2D::new(WIDTH, HEIGHT));
+        assert_eq!(result.bytes.len(), (WIDTH * HEIGHT * 4) as usize);
+        assert!(
+            result
+                .bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .all(|pixel| *pixel == expected)
+        );
+    }
     graph.cleanup();
     renderer.destroy();
+    let errors = errors.lock().unwrap();
+    assert!(errors.is_empty(), "{errors:?}");
 }
 
 #[test]
