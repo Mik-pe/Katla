@@ -4,7 +4,7 @@
 //! (`vertex_type: &str`, `"pbr"` / `"ui"` / `"skinned"` / ...). A
 //! [`PipelineDescriptor`] carries everything needed to compile a pipeline on
 //! any backend: shader identity and entry points, the canonical vertex
-//! layout (the same [`VertexLayout`](crate::vertex::VertexLayout) model used
+//! layout (the same [`VertexLayout`] model used
 //! by mesh creation), portable render state, specialization constants, and
 //! explicit attachment and raster state.
 //!
@@ -204,7 +204,7 @@ impl std::hash::Hash for SpecializationValue {
 /// [`PipelineDescriptor::billboard`], [`PipelineDescriptor::simple`],
 /// [`PipelineDescriptor::compute`]) and tweak
 /// with the `with_*` modifiers. Call [`PipelineDescriptor::validate`] before
-/// handing it to [`GpuRenderer::compile_material`](crate::renderer::GpuRenderer::compile_material).
+/// handing it to [`GpuRenderer::compile_material`](crate::GpuRenderer::compile_material).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PipelineDescriptor {
     /// Shader source path (WGSL), e.g. `"shaders/pbr.wgsl"`.

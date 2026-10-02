@@ -8,18 +8,9 @@
 //! - More flexible uniform buffer access
 //! - Enables pointer-based shader algorithms
 //!
-//! # Usage
-//! ```ignore
-//! // This example requires internal access to DeviceAddressBuffer
-//! // Use the high-level API instead
-//! ).expect("Failed to create BDA buffer");
-//!
-//! // Get the device address to pass to shaders via push constants
-//! let address = buffer.device_address();
-//!
-//! // Map and write data
-//! buffer.write(&[1.0f32, 2.0, 3.0, 4.0]);
-//! ```
+//! The portable buffer API is [`crate::GpuRenderer::create_buffer`]. Native
+//! device addresses are an internal Vulkan implementation detail; graph passes
+//! bind ordinary buffer handles and declare their accessed ranges.
 
 use ash::vk;
 use gpu_allocator::MemoryLocation;

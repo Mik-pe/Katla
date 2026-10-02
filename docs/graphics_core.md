@@ -7,8 +7,11 @@ fonts, viewport selection, lights, shadows, particle simulation, picking policy,
 outlines or postprocessing.
 
 `AnyRenderer` selects the implementation at construction. Application code uses
-ordinary buffer, texture, mesh and material handles thereafter. Graphics passes
-carry `PassBindings`: reflected buffers, images, samplers and immutable inline
+ordinary buffer, texture, mesh and material handles thereafter. Viewport layout
+belongs to the app; render targets use graph declarations or ordinary texture
+handles. Pipeline state uses `PipelineDescriptor` and `ImageFormat`, without
+separate viewport builders or feature-specific pipeline initialization enums.
+Graphics passes carry `PassBindings`: reflected buffers, images, samplers and immutable inline
 bytes, plus explicit drawing phases. A phase selects mesh-layout pipelines,
 submitted objects, generated vertices or a declared indirect buffer. Pipeline
 descriptors specify depth, stencil, blending, color writes and depth bias.

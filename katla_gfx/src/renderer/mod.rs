@@ -15,7 +15,6 @@ pub mod frame_bindings;
 pub mod gpu_renderer;
 pub mod graphics_interface;
 pub mod pipeline_descriptor;
-pub mod pipeline_kind;
 pub mod pipeline_variant;
 pub mod retirement;
 pub mod texture_readback;
@@ -976,27 +975,9 @@ impl VulkanRenderer {
     // Render Graph System
     // ========================================================================
 
-    /// Create a frame graph builder for configuring a render pipeline.
+    /// Return the current swapchain frame index.
     ///
-    /// Frame graphs are built once at startup and executed every frame.
-    /// They define the structure of your rendering pipeline (passes,
-    /// resources, dependencies) and handle automatic barrier generation.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let frame_graph = renderer.create_frame_graph()
-    ///     .add_pass(GeometryPass::new("geometry")
-    ///         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-    ///         .write_depth("depth", ImageFormat::D32Sfloat))
-    ///     .add_pass(FullscreenPass::new("tonemap")
-    ///         .read("color")
-    ///         .write_backbuffer())
-    ///     .build()?;
-    /// ```
-    ///
-    /// Returns the frame index from swap_data, which is the authoritative source.
-    /// This ensures consistency across all frame-indexed resource access.
+    /// For mutable frame resources, use the acquired [`FrameToken`]'s slot.
     pub fn current_frame(&self) -> usize {
         self.swap_data.current_frame()
     }

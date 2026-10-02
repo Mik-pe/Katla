@@ -150,7 +150,7 @@ impl TextureManager {
     /// Get an Rc reference to the Texture for a handle.
     ///
     /// This returns a clone of the Rc, allowing the caller to keep the texture alive.
-    /// Use this for legacy code that needs Rc<Texture>.
+    /// The cloned `Rc<Texture>` retains the native texture while an operation uses it.
     pub fn get_texture_rc(&self, handle: TextureHandle) -> Option<Rc<Texture>> {
         self.textures.get(handle).cloned()
     }
@@ -254,8 +254,8 @@ impl TextureManager {
     /// The data size must match the current texture dimensions.
     /// Uses a staging buffer for GPU upload.
     ///
-    /// Fails with [`RendererError::StaleHandle`] for dead handles and
-    /// [`RendererError::UploadFailed`] for size mismatches — never reports
+    /// Fails with [`crate::RendererError::StaleHandle`] for dead handles and
+    /// [`crate::RendererError::UploadFailed`] for size mismatches — never reports
     /// success without uploading.
     pub fn update_data(
         &self,

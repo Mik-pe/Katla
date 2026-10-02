@@ -45,7 +45,7 @@ impl PipelineVariantKey {
     ///
     /// A concrete `requested_color` wins over the descriptor's declaration;
     /// `Auto` falls back to the descriptor's declared format, and to
-    /// [`FALLBACK_COLOR_FORMAT`] when both are `Auto`. Without a color attachment,
+    /// [`ImageFormat::B8G8R8A8Srgb`] when both are `Auto`. Without a color attachment,
     /// every color format resolves to the same canonical value.
     /// The depth/stencil format comes directly from the descriptor so both backends build
     /// the variant for the declared attachments.

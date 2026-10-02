@@ -50,9 +50,9 @@ pub(super) struct QueueFamilyIndices {
 /// | Operation | High-level API |
 /// |-----------|---------------|
 /// | Create mesh | [`VulkanRenderer::create_mesh()`] |
-/// | Register material | [`VulkanRenderer::register_material()`] |
-/// | Load texture | [`TextureManager::create()`] via [`VulkanRenderer::texture_manager()`] |
-/// | Render target | [`VulkanRenderer::create_viewport()`] |
+/// | Compile material | [`crate::GpuRenderer::compile_material`] |
+/// | Create texture | [`crate::GpuRenderer::create_texture`] |
+/// | Render target | [`crate::FrameGraphBuilder`] |
 ///
 /// # Escape hatch use cases
 ///
@@ -69,7 +69,7 @@ pub(super) struct QueueFamilyIndices {
 /// use std::rc::Rc;
 ///
 /// // Normal usage: access context through renderer
-/// # let renderer: VulkanRenderer = unsafe { std::mem::zeroed() };
+/// # fn inspect_limits(renderer: &VulkanRenderer) {
 /// let context: &Rc<VulkanContext> = renderer.context();
 ///
 /// // Escape hatch: query device limits for advanced features
@@ -79,13 +79,12 @@ pub(super) struct QueueFamilyIndices {
 ///         .limits
 /// };
 /// let max_texture_size = limits.max_image_dimension2_d;
+/// # }
 /// ```
 ///
 /// [`VulkanRenderer`]: crate::renderer::VulkanRenderer
 /// [`VulkanRenderer::create_mesh()`]: crate::renderer::VulkanRenderer::create_mesh
-/// [`VulkanRenderer::register_material()`]: crate::renderer::VulkanRenderer::register_material
 /// [`VulkanRenderer::texture_manager()`]: crate::renderer::VulkanRenderer::texture_manager
-/// [`VulkanRenderer::create_viewport()`]: crate::renderer::VulkanRenderer::create_viewport
 /// [`TextureManager::create()`]: crate::texture::TextureManager::create
 pub struct VulkanContext {
     pub(super) _entry: Entry,

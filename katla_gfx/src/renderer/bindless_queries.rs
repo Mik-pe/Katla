@@ -33,7 +33,7 @@ impl VulkanRenderer {
 
     /// Resolve a draw's emission texture handle to its binding-table slot.
     ///
-    /// This is the only place a [`DrawCall`](crate::renderer::DrawCall)
+    /// This is the only place a [`DrawCall`]
     /// emission handle becomes a shader-visible number. `NONE` and stale
     /// handles resolve to 0 — the shaders' no-emission sentinel — so a dead
     /// handle can never sample whatever texture now occupies a recycled

@@ -681,7 +681,7 @@ pub struct VertexUIInstance {
 
 /// Unit quad vertex for instanced UI rendering.
 ///
-/// 4 vertices at corners of a [0,1]×[0,1] quad. The instanced vertex
+/// 4 vertices at corners of a `[0,1]×[0,1]` quad. The instanced vertex
 /// shader scales and positions this quad using per-instance data.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]

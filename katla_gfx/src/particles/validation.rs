@@ -153,7 +153,7 @@ pub fn validate_emitter_config(config: &EmitterConfig) -> Result<(), ValidationE
 /// * `emitters` - Slice of emitter configurations to validate
 ///
 /// # Returns
-/// Vec<String> of all validation errors found (empty if all valid)
+/// `Vec<String>` of all validation errors found (empty if all valid)
 ///
 /// # Use Case
 /// Useful for validating all emitters in the system at once.

@@ -30,7 +30,7 @@
 //! // Vulkan backend
 //! let renderer = AnyRenderer::new_vulkan(
 //!     &display, &window, Size2D::new(1280, 720),
-//!     ValidationMode::Full,
+//!     ValidationMode::Enabled,
 //!     CString::new("My App").unwrap(),
 //!     CString::new("Katla Engine").unwrap(),
 //! )?;
@@ -38,7 +38,7 @@
 //! // Metal backend (macOS only)
 //! let renderer = AnyRenderer::new_metal(
 //!     &display, &window,
-//!     ValidationMode::Full,
+//!     ValidationMode::Enabled,
 //!     CString::new("My App").unwrap(),
 //!     CString::new("Katla Engine").unwrap(),
 //! )?;
@@ -61,17 +61,16 @@
 //!
 //! See [`render_graph::API`](render_graph/API.html) for frame graph usage guide.
 //!
-//! ```ignore
-//! let graph = renderer.create_frame_graph()
-//!     .add_pass(GeometryPass::new("geometry")
-//!         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
-//!         .write_depth("depth", ImageFormat::D32Sfloat))
-//!     .build()?;
+//! Build passes with [`FrameGraphBuilder`] and supply their ordinary resource
+//! bindings before encoding. Acquire a [`FrameToken`] through
+//! [`GpuRenderer::acquire_frame`], pass it to `render`, and consume it through
+//! [`GpuRenderer::present`] or [`GpuRenderer::abort`]. Write mutable frame data
+//! only into the acquired slot's buffers.
 //!
-//! renderer.render(&mut graph, |frame| {
-//!     frame.submit(geometry_pass_id, std::rc::Rc::new(draw_list));
-//! })?;
-//! ```
+//! The executable `tests/backend_neutral_api.rs` example creates a custom
+//! shader material, supplies inline bindings, executes the graph and verifies
+//! exported pixels through core readback. Scene and editor services belong to
+//! `katla_app`; constructing a renderer does not initialize them.
 //!
 //! # Bindless Texture System
 //!
@@ -106,10 +105,6 @@
 //! let (occupied, available, total) = renderer.get_bindless_stats();
 //! println!("Bindless slots: {}/{} used", occupied, total);
 //!
-//! // Get the font atlas bindless slot
-//! if let Some(slot) = renderer.get_font_atlas_bindless_slot() {
-//!     println!("Font atlas is at slot {}", slot);
-//! }
 //! ```
 //!
 //! ## Advanced: Direct Bindless Access
@@ -142,7 +137,7 @@
 //! - [`FrameGraphBuilder`] - Builder for creating frame graphs
 //! - [`GeometryPass`] - 3D geometry rendering
 //! - [`FullscreenPass`] - Post-processing effects
-//! - [`UIPass`] - 2D UI rendering
+//! - [`render_graph::UIPass`] - 2D UI rendering
 //! - [`ShadowPass`] - Shadow map generation
 //!
 //! # Documentation Guides
@@ -222,10 +217,6 @@ pub use shadow::cascade::CascadeParams;
 
 // Internal modules (implementation details)
 pub(crate) mod barrier;
-pub(crate) mod viewport;
-
-// Re-export viewport types (backend-agnostic)
-pub use viewport::{DepthFormat, OutputMode, Viewport, ViewportBuilder, ViewportHandle};
 
 // Explicit Vulkan-native escape hatch for validation examples and tools.
 //
@@ -323,7 +314,6 @@ pub use renderer::frame_bindings::{
 pub use renderer::frame_scope::{FrameAcquisition, FrameToken, PresentOutcome, SurfaceStatus};
 pub use renderer::gpu_renderer::GpuRenderer;
 pub use renderer::pipeline_descriptor::{BlendMode, DepthState, PipelineDescriptor};
-pub use renderer::pipeline_kind::PipelineKind;
 pub use renderer::pipeline_variant::PipelineVariantKey;
 pub use renderer::texture_readback::{
     GraphTextureSource, TextureReadbackData, TextureReadbackRegion, TextureReadbackTicket,
@@ -370,7 +360,7 @@ pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
 /// - [`GpuRenderer::create_mesh()`] for mesh creation
 /// - [`GpuRenderer::compile_material()`] for material compilation
 /// - [`GpuRenderer::create_texture()`] for texture operations
-/// - [`GpuRenderer::create_viewport()`] for render targets
+/// - [`FrameGraphBuilder`] for graph-owned render targets
 ///
 /// These work identically on both Vulkan and Metal backends.
 ///
