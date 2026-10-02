@@ -39,7 +39,7 @@ impl EditorPanel {
             EditorPanel::Viewport => "Viewport",
             EditorPanel::Inspector => "Inspector",
             EditorPanel::AssetBrowser => "Asset Browser",
-            EditorPanel::CoCreator => "AI Co-Creator",
+            EditorPanel::CoCreator => "Scene assistant",
             EditorPanel::Preferences => "Preferences",
             EditorPanel::ParticleInspector => "Particle Inspector",
             EditorPanel::Console => "Console",
@@ -368,20 +368,11 @@ pub enum EditorAction {
     },
     /// AI Co-Creator request from the chat panel.
     CoCreatorRequest(String),
-    /// Set the LLM provider kind ("disabled", "open_ai", "open_ai_compatible").
-    SetLlmProvider(String),
-    /// Set the LLM API key.
-    SetLlmApiKey(String),
-    /// Set the LLM base URL (for OpenAI-compatible endpoints).
-    SetLlmBaseUrl(String),
-    /// Set the LLM model identifier.
-    SetLlmModel(String),
-    /// Set the LLM max response tokens.
-    SetLlmMaxTokens(u32),
-    /// Set the LLM sampling temperature.
-    SetLlmTemperature(f32),
-    /// Save the LLM configuration to disk.
-    SaveLlmConfig,
+    /// Attach the scene question field to an existing external conversation.
+    ConnectExternalChat {
+        socket: String,
+        thread_id: String,
+    },
     /// Undo the last editor operation.
     Undo,
     /// Redo the last undone editor operation.
@@ -521,7 +512,7 @@ pub enum PreferencesTab {
     Appearance,
     Viewport,
     Audio,
-    Ai,
+    Connection,
 }
 
 pub use crate::preferences::EditorSettings;
@@ -542,13 +533,6 @@ pub enum PreferencesAction {
     SetSfxVolume(f32),
     SetMusicVolume(f32),
     SetAmbientVolume(f32),
-    SetLlmProvider(String),
-    SetLlmApiKey(String),
-    SetLlmBaseUrl(String),
-    SetLlmModel(String),
-    SetLlmMaxTokens(u32),
-    SetLlmTemperature(f32),
-    SaveLlmConfig,
 }
 
 /// O(D) visibility check using a pre-built parent map.

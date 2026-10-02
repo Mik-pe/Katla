@@ -38,7 +38,7 @@ impl Widget for Button {
     }
 
     fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
-        let text_size = measure(&self.label, None);
+        let text_size = measure(&self.label, None, None);
         let h_padding = 16.0;
         Style {
             size: Size {

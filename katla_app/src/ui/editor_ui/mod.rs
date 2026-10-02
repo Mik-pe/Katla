@@ -37,7 +37,7 @@ use crate::{
 };
 
 use asset_browser::AssetBrowserState;
-use co_creator::CoCreatorState;
+pub(crate) use co_creator::CoCreatorState;
 
 pub use asset_browser::ThumbnailState;
 pub use types::*;
@@ -52,7 +52,6 @@ pub struct EditorRenderParams<'a> {
     pub frame_time_ms: f32,
     pub loader: &'a mut BackgroundLoader,
     pub thumbnail_texture_handles: &'a std::collections::HashMap<std::path::PathBuf, TextureHandle>,
-    pub llm_config: &'a katla_agent::LlmConfig,
     pub undo_count: usize,
     pub redo_count: usize,
     pub agent_undo_count: usize,
@@ -466,31 +465,6 @@ impl EditorUI {
             }
             PreferencesAction::SetGridSize(value) => {
                 self.editor_settings.grid_size = value;
-            }
-            PreferencesAction::SetLlmProvider(value) => {
-                self.pending_actions
-                    .push(EditorAction::SetLlmProvider(value));
-            }
-            PreferencesAction::SetLlmApiKey(value) => {
-                self.pending_actions.push(EditorAction::SetLlmApiKey(value));
-            }
-            PreferencesAction::SetLlmBaseUrl(value) => {
-                self.pending_actions
-                    .push(EditorAction::SetLlmBaseUrl(value));
-            }
-            PreferencesAction::SetLlmModel(value) => {
-                self.pending_actions.push(EditorAction::SetLlmModel(value));
-            }
-            PreferencesAction::SetLlmMaxTokens(value) => {
-                self.pending_actions
-                    .push(EditorAction::SetLlmMaxTokens(value));
-            }
-            PreferencesAction::SetLlmTemperature(value) => {
-                self.pending_actions
-                    .push(EditorAction::SetLlmTemperature(value));
-            }
-            PreferencesAction::SaveLlmConfig => {
-                self.pending_actions.push(EditorAction::SaveLlmConfig);
             }
         }
     }

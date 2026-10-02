@@ -2092,6 +2092,7 @@ mod tests {
             content: "hello".into(),
             color: None,
             font_size: None,
+            wrap_width: None,
         };
         assert_eq!(a.diff_against(&text), DiffAction::Replace);
     }

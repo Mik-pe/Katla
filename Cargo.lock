@@ -2309,6 +2309,7 @@ dependencies = [
  "approx",
  "arboard",
  "ash",
+ "base64 0.22.1",
  "bytemuck",
  "byteorder",
  "clap",

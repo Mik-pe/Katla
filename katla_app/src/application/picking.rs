@@ -78,7 +78,7 @@ impl Application {
 }
 
 #[cfg(feature = "editor")]
-fn pick_pixel(
+pub(crate) fn pick_pixel(
     relative: [f32; 2],
     viewport_size: [f32; 2],
     extent: katla_gfx::Size2D,

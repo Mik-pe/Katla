@@ -469,7 +469,7 @@ mod tests {
             let alpha = coverage_to_alpha(coverage);
 
             assert!(
-                alpha >= 0.0 && alpha <= 1.0,
+                (0.0..=1.0).contains(&alpha),
                 "Coverage {} should produce alpha in [0, 1], got {}",
                 coverage,
                 alpha
@@ -671,13 +671,6 @@ mod tests {
             );
         }
 
-        for i in 0..char_advances.len() {
-            assert_eq!(
-                char_advances[i], char_advances[i],
-                "Advance width should be consistent"
-            );
-        }
-
         let pos3 = 100.5;
         let (_floor3, _bin3) = SubpixelBin::new(pos3);
 
@@ -709,21 +702,12 @@ mod tests {
 
         let white_pixel_uv_max_x = 2.0 / atlas_width as f32;
         let white_pixel_uv_max_y = 2.0 / atlas_height as f32;
-
         assert!(
-            0.0 >= 0.0 && 0.0 <= 1.0,
-            "UV min X should be normalized to [0,1]"
-        );
-        assert!(
-            0.0 >= 0.0 && 0.0 <= 1.0,
-            "UV min Y should be normalized to [0,1]"
-        );
-        assert!(
-            white_pixel_uv_max_x >= 0.0 && white_pixel_uv_max_x <= 1.0,
+            (0.0..=1.0).contains(&white_pixel_uv_max_x),
             "UV max X should be normalized to [0,1]"
         );
         assert!(
-            white_pixel_uv_max_y >= 0.0 && white_pixel_uv_max_y <= 1.0,
+            (0.0..=1.0).contains(&white_pixel_uv_max_y),
             "UV max Y should be normalized to [0,1]"
         );
 
@@ -745,9 +729,6 @@ mod tests {
 
         let uv_max_x = 2.0 / atlas_width as f32;
         let uv_max_y = 2.0 / atlas_height as f32;
-
-        assert!(0.0 >= 0.0, "UV min X must be >= 0.0");
-        assert!(0.0 >= 0.0, "UV min Y must be >= 0.0");
         assert!(uv_max_x <= 1.0, "UV max X must be <= 1.0");
         assert!(uv_max_y <= 1.0, "UV max Y must be <= 1.0");
 
@@ -784,7 +765,7 @@ mod tests {
         let padding = 1;
 
         let atlas_x = 4 + padding;
-        let atlas_y = 0 + padding;
+        let atlas_y = padding;
 
         let atlas_width = 256.0;
         let atlas_height = 256.0;
@@ -794,10 +775,10 @@ mod tests {
         let uv_max_x = (atlas_x + glyph_width) as f32 / atlas_width;
         let uv_max_y = (atlas_y + glyph_height) as f32 / atlas_height;
 
-        assert!(uv_min_x >= 0.0 && uv_min_x <= 1.0);
-        assert!(uv_min_y >= 0.0 && uv_min_y <= 1.0);
-        assert!(uv_max_x >= 0.0 && uv_max_x <= 1.0);
-        assert!(uv_max_y >= 0.0 && uv_max_y <= 1.0);
+        assert!((0.0..=1.0).contains(&uv_min_x));
+        assert!((0.0..=1.0).contains(&uv_min_y));
+        assert!((0.0..=1.0).contains(&uv_max_x));
+        assert!((0.0..=1.0).contains(&uv_max_y));
 
         let uv_width = uv_max_x - uv_min_x;
         let uv_height = uv_max_y - uv_min_y;
@@ -824,11 +805,8 @@ mod tests {
 
             let uv_max_x = 2.0 / width as f32;
             let uv_max_y = 2.0 / height as f32;
-
-            assert!(0.0 >= 0.0 && 0.0 <= 1.0);
-            assert!(0.0 >= 0.0 && 0.0 <= 1.0);
-            assert!(uv_max_x >= 0.0 && uv_max_x <= 1.0);
-            assert!(uv_max_y >= 0.0 && uv_max_y <= 1.0);
+            assert!((0.0..=1.0).contains(&uv_max_x));
+            assert!((0.0..=1.0).contains(&uv_max_y));
 
             let expected_uv_x = 2.0 / width as f32;
             let expected_uv_y = 2.0 / height as f32;
@@ -1057,11 +1035,6 @@ mod tests {
                 let alpha = sys.atlas_data[y * sys.atlas_width as usize + x];
                 if alpha > 0 {
                     has_nonzero = true;
-                    assert!(
-                        alpha <= 255,
-                        "Alpha value {} should be <= 255 (R8 range)",
-                        alpha
-                    );
                 }
             }
         }
@@ -1529,7 +1502,7 @@ mod tests {
         let shaped = shaped.unwrap();
         let runs: Vec<_> = shaped.buffer.layout_runs().collect();
 
-        assert!(runs.len() >= 1, "CJK text should be laid out");
+        assert!(!runs.is_empty(), "CJK text should be laid out");
 
         for run in &runs {
             for glyph in run.glyphs.iter() {
@@ -1708,11 +1681,6 @@ mod tests {
                 cached.uv_rect.max.x() > cached.uv_rect.min.x(),
                 "Cached glyph should have valid UV rect"
             );
-        }
-
-        let atlas_data = sys.atlas_data();
-        for &byte in atlas_data {
-            assert!(byte <= 255, "Atlas should store single-byte alpha values");
         }
     }
 
@@ -2002,8 +1970,6 @@ mod tests {
     /// Verifies the measure_text signature accepts (text: &str, size: f32) and returns Vec2.
     #[test]
     fn test_measure_text_api_compatibility() {
-        use katla_math::Vec2;
-
         let ctx = crate::context::UiContext::new();
 
         // The API signature: measure_text(&self, text: &str, size: f32) -> Vec2

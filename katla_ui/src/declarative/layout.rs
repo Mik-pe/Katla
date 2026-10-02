@@ -9,8 +9,7 @@ use super::descriptor::{Alignment, FlexProps, Padding};
 use super::state::ViewId;
 use super::tree::ViewTree;
 
-/// Function signature for measuring text dimensions during layout.
-pub type MeasureFn<'a> = &'a dyn Fn(&str, Option<FontSize>) -> Vec2;
+use super::widget::MeasureFn;
 
 pub struct TaffyNodeMap {
     taffy: TaffyTree,
@@ -355,7 +354,11 @@ pub fn apply_flex_props(style: &mut Style, props: &FlexProps) {
     style.aspect_ratio = props.aspect_ratio;
 }
 
-pub fn measure_text_descriptor(content: &str, font_size: Option<FontSize>) -> Vec2 {
+pub fn measure_text_descriptor(
+    content: &str,
+    font_size: Option<FontSize>,
+    _max_width: Option<f32>,
+) -> Vec2 {
     let size = font_size.unwrap_or(FontSize::Medium);
     let height = size.to_pixels();
     let char_width = height * 0.6;
@@ -444,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_measure_text() {
-        let size = measure_text_descriptor("Hello", None);
+        let size = measure_text_descriptor("Hello", None, None);
         assert!(size.x() > 0.0);
         assert!(size.y() > 0.0);
     }

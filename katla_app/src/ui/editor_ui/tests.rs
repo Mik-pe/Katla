@@ -32,7 +32,6 @@ fn preferences_env(
         editor_settings: editor_settings.clone(),
         theme: theme.clone(),
         theme_key: "rcp".to_string(),
-        llm_config: katla_agent::LlmConfig::default(),
     });
 }
 

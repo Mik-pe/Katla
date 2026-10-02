@@ -537,8 +537,7 @@ mod tests {
     use super::*;
 
     fn make_leaf(tabs: Vec<u32>) -> DockNode<u32> {
-        let active = if tabs.is_empty() { 0 } else { 0 };
-        DockNode::Leaf { tabs, active }
+        DockNode::Leaf { tabs, active: 0 }
     }
 
     fn make_split(
@@ -1131,7 +1130,7 @@ mod tests {
             tree.get(&path(&[1, 1])),
             Some(DockNode::Leaf { .. })
         ));
-        assert!(matches!(tree.get(&path(&[2])), None));
+        assert!(tree.get(&path(&[2])).is_none());
     }
 
     #[test]
@@ -1255,22 +1254,18 @@ mod tests {
 
         // Verify it's a valid tree — no splits with Empty children
         fn assert_no_empty_splits(node: &DockNode<u32>) {
-            match node {
-                DockNode::Split { children, .. } => {
-                    // Neither child should be Empty or empty Leaf
-                    for child in children {
-                        match &**child {
-                            DockNode::Empty => {
-                                panic!("collapsed tree should not have Empty children in splits")
-                            }
-                            DockNode::Leaf { tabs, .. } if tabs.is_empty() => {
-                                panic!("collapsed tree should not have empty Leaf children")
-                            }
-                            _ => assert_no_empty_splits(child),
+            if let DockNode::Split { children, .. } = node {
+                for child in children {
+                    match &**child {
+                        DockNode::Empty => {
+                            panic!("collapsed tree should not have Empty children in splits")
                         }
+                        DockNode::Leaf { tabs, .. } if tabs.is_empty() => {
+                            panic!("collapsed tree should not have empty Leaf children")
+                        }
+                        _ => assert_no_empty_splits(child),
                     }
                 }
-                _ => {}
             }
         }
         assert_no_empty_splits(tree.root());

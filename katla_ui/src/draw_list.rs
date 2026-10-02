@@ -1219,8 +1219,8 @@ mod tests {
         );
         list.finalize();
 
-        assert!(list.instances().len() > 0);
-        assert!(list.vertices().len() > 0);
+        assert!(!list.instances().is_empty());
+        assert!(!list.vertices().is_empty());
     }
 
     #[test]

@@ -35,7 +35,7 @@
 
 pub mod clips;
 pub mod components;
-#[cfg(any(test, feature = "mcp", feature = "llm"))]
+#[cfg(any(test, feature = "mcp"))]
 pub(crate) mod control;
 pub mod gltf_loader;
 pub(crate) mod gpu_clip_loader;

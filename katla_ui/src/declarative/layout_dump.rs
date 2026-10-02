@@ -607,6 +607,7 @@ mod tests {
             content: "Hello".into(),
             color: None,
             font_size: None,
+            wrap_width: None,
         };
         let info = identify_widget(&widget);
         assert_eq!(info.type_name, "Text");

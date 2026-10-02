@@ -4,6 +4,7 @@ pub mod openai;
 pub use mock::{MockProvider, MockStreamProvider};
 pub use openai::OpenAiProvider;
 
+use crate::{MessageRole, ToolCall};
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -19,22 +20,6 @@ pub struct ChatMessage {
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum MessageRole {
-    System,
-    User,
-    Assistant,
-    Tool,
-}
-
-/// A tool call from the LLM.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub arguments: Value,
 }
 
 /// Definition of a tool the LLM can call.

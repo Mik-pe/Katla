@@ -64,6 +64,8 @@ impl Application {
             #[cfg(feature = "editor")]
             if self.frame_graph_runtime.uses_katla_scene() {
                 self.capture_picking_entities();
+                #[cfg(feature = "mcp")]
+                super::editor::mcp::capture_requested_view(self);
             }
         }) {
             Ok(SurfaceStatus::Presented) => {}
@@ -256,7 +258,6 @@ impl Application {
             if new_size == self.panel_rt_size {
                 return;
             }
-            self.panel_rt_size = new_size;
             log::debug!(
                 "Recreating panel-sized render targets at {}x{} (panel {}x{} @ {}x)",
                 w,
@@ -273,6 +274,7 @@ impl Application {
                     .recreate_transient_textures(&mut self.renderer, w, h)
             {
                 self.update_recreated_transient_bindings(&textures);
+                self.panel_rt_size = new_size;
             }
         }
     }
@@ -551,6 +553,7 @@ impl Application {
             extent.height,
         ) {
             self.update_recreated_transient_bindings(&recreated_textures);
+            self.panel_rt_size = katla_gfx::Size2D::new(0, 0);
         }
 
         let aspect = extent.width as f32 / extent.height as f32;
@@ -919,6 +922,7 @@ impl Application {
                         phys.height,
                     ) {
                         self.update_recreated_transient_bindings(&textures);
+                        self.panel_rt_size = katla_gfx::Size2D::new(0, 0);
                     }
                 }
             }
@@ -928,6 +932,8 @@ impl Application {
             self.render_graph_only(ui_draw_list, delta_time, frame_count);
             return;
         }
+
+        self.recreate_panel_rt_resources();
 
         let (viewport_width, viewport_height) = self.viewport_size();
         let viewport_aspect = if viewport_height > 0 {

@@ -41,6 +41,7 @@ pub fn text(content: impl Into<String>) -> widgets::text::Text {
         content: content.into(),
         color: None,
         font_size: None,
+        wrap_width: None,
     }
 }
 

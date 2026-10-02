@@ -609,6 +609,7 @@ fn register_physics_material(registry: &mut ComponentRegistry) {
 pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     let mut registry = ComponentRegistry::new();
     register_name_component(&mut registry);
+    super::transform_registry::register(&mut registry);
     register_point_light(&mut registry);
     register_perspective_component(&mut registry);
     register_directional_light(&mut registry);
@@ -621,6 +622,13 @@ pub(crate) fn build_editor_component_registry() -> ComponentRegistry {
     register_collision_filter(&mut registry);
     register_rigid_body(&mut registry);
     register_physics_material(&mut registry);
+    registry
+}
+
+pub(super) fn build_spawn_component_registry() -> ComponentRegistry {
+    let mut registry = ComponentRegistry::new();
+    register_name_component(&mut registry);
+    super::transform_registry::register(&mut registry);
     registry
 }
 
@@ -643,7 +651,7 @@ mod tests {
     #[test]
     fn test_registry_excludes_complex_types() {
         let registry = build_editor_component_registry();
-        assert!(!registry.is_registered("TransformComponent"));
+        assert!(registry.is_registered("TransformComponent"));
         assert!(!registry.is_registered("DrawableComponent"));
     }
 

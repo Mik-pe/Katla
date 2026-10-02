@@ -3,9 +3,9 @@ use std::boxed::Box;
 use katla_ui::FontSize;
 use katla_ui::ForkAwesome;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, empty, grid, hstack, icon,
-    labeled_slider, modal, scroll, selectable, separator_horizontal, text, textfield, theme_swatch,
-    toggle, vstack,
+    Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, empty, grid,
+    hstack, icon, labeled_slider, modal, scroll, selectable, separator_horizontal, text, textfield,
+    theme_swatch, toggle, vstack,
 };
 
 use crate::Preferences;
@@ -53,7 +53,6 @@ pub(crate) struct PreferencesDrawCtx {
     pub editor_settings: EditorSettings,
     pub theme: ColorScheme,
     pub theme_key: String,
-    pub llm_config: katla_agent::LlmConfig,
 }
 
 #[derive(Clone, Debug)]
@@ -100,15 +99,6 @@ impl Build for PreferencesView {
             draw_ctx.preferences.audio.ambient_volume,
             PreferencesAction::SetAmbientVolume,
         );
-        let api_key_id: StateId = ctx.state(draw_ctx.llm_config.api_key.clone());
-        let model_id: StateId = ctx.state(draw_ctx.llm_config.model.clone());
-        let base_url_id: StateId =
-            ctx.state(draw_ctx.llm_config.base_url.clone().unwrap_or_default());
-        let temperature_id = sync_slider(
-            ctx,
-            draw_ctx.llm_config.temperature,
-            PreferencesAction::SetLlmTemperature,
-        );
         sync_toggle(ctx, draw_ctx.preferences.show_grid, |_| {
             PreferencesAction::ToggleGrid
         });
@@ -120,6 +110,9 @@ impl Build for PreferencesView {
             draw_ctx.editor_settings.snap_to_grid,
             PreferencesAction::SetSnapToGrid,
         );
+
+        let socket_id = ctx.state(draw_ctx.preferences.external_chat.socket.clone());
+        let thread_id = ctx.state(draw_ctx.preferences.external_chat.thread_id.clone());
 
         // ── Open-state reconciliation ──
         // env drives open; Escape/outside-click flip the state during input
@@ -135,21 +128,6 @@ impl Build for PreferencesView {
             return empty().boxed();
         }
 
-        // Text fields emit save-worthy changes after the early return so a
-        // closed panel never emits (their states above are still reserved).
-        sync_text(ctx, api_key_id, &draw_ctx.llm_config.api_key, |value| {
-            PreferencesAction::SetLlmApiKey(value)
-        });
-        sync_text(ctx, model_id, &draw_ctx.llm_config.model, |value| {
-            PreferencesAction::SetLlmModel(value)
-        });
-        if draw_ctx.llm_config.provider == katla_agent::config::LlmProviderKind::OpenAiCompatible {
-            let expected = draw_ctx.llm_config.base_url.clone().unwrap_or_default();
-            sync_text(ctx, base_url_id, &expected, |value| {
-                PreferencesAction::SetLlmBaseUrl(value)
-            });
-        }
-
         let content_scroll_id: StateId = ctx.state(0.0f32);
 
         let category = category_from_index(ctx, draw_ctx.category);
@@ -159,14 +137,7 @@ impl Build for PreferencesView {
             PreferencesTab::Audio => {
                 build_audio(ctx, &draw_ctx, master_id, sfx_id, music_id, ambient_id)
             }
-            PreferencesTab::Ai => build_ai(
-                ctx,
-                &draw_ctx,
-                api_key_id,
-                model_id,
-                base_url_id,
-                temperature_id,
-            ),
+            PreferencesTab::Connection => build_connection(ctx, &draw_ctx, socket_id, thread_id),
         };
 
         let sidebar = build_sidebar(ctx, &draw_ctx.theme, category);
@@ -201,7 +172,7 @@ fn category_from_index(_ctx: &mut BuildContext, index: usize) -> PreferencesTab 
         0 => PreferencesTab::Appearance,
         1 => PreferencesTab::Viewport,
         2 => PreferencesTab::Audio,
-        _ => PreferencesTab::Ai,
+        _ => PreferencesTab::Connection,
     }
 }
 
@@ -231,18 +202,6 @@ where
         ctx.emit(action(current));
     }
     id
-}
-
-/// Sync a text state against the configured value and emit `action` on change.
-fn sync_text<F>(ctx: &mut BuildContext, id: StateId, expected: &str, action: F)
-where
-    F: Fn(String) -> PreferencesAction,
-{
-    let current: String = ctx.get_state(id).unwrap_or_default();
-    if current != expected {
-        ctx.emit(action(current));
-        ctx.emit(PreferencesAction::SaveLlmConfig);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -355,7 +314,7 @@ fn build_sidebar(
             "Viewport",
         ),
         (PreferencesTab::Audio, ForkAwesome::VOLUME_UP, "Audio"),
-        (PreferencesTab::Ai, ForkAwesome::MAGIC, "AI"),
+        (PreferencesTab::Connection, ForkAwesome::MAGIC, "Connection"),
     ];
 
     let mut rows: Vec<Box<dyn Widget>> = Vec::new();
@@ -365,7 +324,7 @@ fn build_sidebar(
             PreferencesTab::Appearance => 0,
             PreferencesTab::Viewport => 1,
             PreferencesTab::Audio => 2,
-            PreferencesTab::Ai => 3,
+            PreferencesTab::Connection => 3,
         };
         let row = hstack([
             icon(glyph)
@@ -605,170 +564,24 @@ fn build_audio(
     vstack(children).spacing(12.0).boxed()
 }
 
-// ---------------------------------------------------------------------------
-// AI
-// ---------------------------------------------------------------------------
-
-fn build_ai(
+fn build_connection(
     ctx: &mut BuildContext,
     draw_ctx: &PreferencesDrawCtx,
-    api_key_id: StateId,
-    model_id: StateId,
-    base_url_id: StateId,
-    temperature_id: StateId,
+    socket_id: StateId,
+    thread_id: StateId,
 ) -> Box<dyn Widget> {
-    use katla_agent::config::LlmProviderKind;
-
-    let theme = &draw_ctx.theme;
-    let llm_config = &draw_ctx.llm_config;
-    let mut children: Vec<Box<dyn Widget>> = Vec::new();
-
-    children.push(section_title("Provider", theme));
-
-    let providers: [&str; 3] = ["Disabled", "OpenAI", "OpenAI Compatible"];
-    let kinds: [LlmProviderKind; 3] = [
-        LlmProviderKind::Disabled,
-        LlmProviderKind::OpenAi,
-        LlmProviderKind::OpenAiCompatible,
-    ];
-    let provider_buttons: Vec<Box<dyn Widget>> = providers
-        .iter()
-        .zip(kinds)
-        .map(|(label, kind)| {
-            let is_selected = llm_config.provider == kind;
-            selectable(
-                text(*label)
-                    .color(if is_selected {
-                        theme.text_primary
-                    } else {
-                        theme.text_secondary
-                    })
-                    .font_size(FontSize::Small)
-                    .boxed(),
-            )
-            .selected(is_selected)
-            .on_click(ctx.on_click(move |actions| {
-                let key = match kind {
-                    LlmProviderKind::Disabled => "disabled",
-                    LlmProviderKind::OpenAi => "open_ai",
-                    LlmProviderKind::OpenAiCompatible => "open_ai_compatible",
-                };
-                actions.emit(PreferencesAction::SetLlmProvider(key.to_string()));
-                actions.emit(PreferencesAction::SaveLlmConfig);
-            }))
-            .boxed()
-        })
-        .collect();
-    children.push(hstack(provider_buttons).spacing(4.0).boxed());
-
-    if llm_config.provider == LlmProviderKind::Disabled {
-        children.push(
-            text("Configure an LLM provider to enable AI-powered scene building.")
-                .color(theme.text_muted)
-                .font_size(FontSize::Small)
-                .boxed(),
-        );
-        return vstack(children).spacing(12.0).boxed();
-    }
-
-    children.push(
-        text(format!(
-            "Configured — {} ({})",
-            match llm_config.provider {
-                LlmProviderKind::OpenAi => "OpenAI",
-                LlmProviderKind::OpenAiCompatible => "OpenAI Compatible",
-                LlmProviderKind::Disabled => "Disabled",
-            },
-            llm_config.model
-        ))
-        .color(theme.success)
-        .font_size(FontSize::Small)
-        .boxed(),
-    );
-
-    children.push(section_divider(theme));
-
-    children.push(section_title("Credentials", theme));
-    children.push(setting_row(
-        "API key",
-        theme,
-        textfield("Enter API key...", api_key_id)
-            .flex_grow(1.0)
-            .boxed(),
-    ));
-
-    children.push(section_divider(theme));
-
-    children.push(section_title("Model", theme));
-    children.push(setting_row(
-        "Model",
-        theme,
-        textfield("gpt-4o", model_id).flex_grow(1.0).boxed(),
-    ));
-
-    if llm_config.provider == LlmProviderKind::OpenAiCompatible {
-        children.push(setting_row(
-            "Base URL",
-            theme,
-            textfield("http://localhost:11434/v1", base_url_id)
-                .flex_grow(1.0)
-                .boxed(),
-        ));
-    }
-
-    children.push(setting_row(
-        "Temperature",
-        theme,
-        labeled_slider("", temperature_id, 0.0..=2.0)
-            .show_value(true)
-            .precision(2)
-            .boxed(),
-    ));
-
-    children.push(setting_row(
-        "Max tokens",
-        theme,
-        segmented_u32(
-            ctx,
-            theme,
-            &[1024, 2048, 4096, 8192],
-            llm_config.max_tokens,
-            PreferencesAction::SetLlmMaxTokens,
-        ),
-    ));
-
-    vstack(children).spacing(12.0).boxed()
-}
-
-/// Segmented row over integer options (max tokens).
-fn segmented_u32(
-    ctx: &mut BuildContext,
-    theme: &ColorScheme,
-    options: &[u32],
-    current: u32,
-    on_select: fn(u32) -> PreferencesAction,
-) -> Box<dyn Widget> {
-    let buttons: Vec<Box<dyn Widget>> = options
-        .iter()
-        .map(|&value| {
-            let is_selected = current == value;
-            selectable(
-                text(format!("{}", value))
-                    .color(if is_selected {
-                        theme.text_primary
-                    } else {
-                        theme.text_secondary
-                    })
-                    .font_size(FontSize::Small)
-                    .boxed(),
-            )
-            .selected(is_selected)
-            .on_click(ctx.on_click(move |actions| {
-                actions.emit(on_select(value));
-                actions.emit(PreferencesAction::SaveLlmConfig);
-            }))
-            .boxed()
-        })
-        .collect();
-    hstack(buttons).spacing(4.0).boxed()
+    let socket = ctx.get_state::<String>(socket_id).unwrap_or_default();
+    let thread = ctx.get_state::<String>(thread_id).unwrap_or_default();
+    vstack([
+        section_title("Scene assistant connection", &draw_ctx.theme),
+        text("Attach to an existing Codex conversation. Your questions include the current view.").wrap(350.0).color(draw_ctx.theme.text_muted).font_size(FontSize::Small).boxed(),
+        text("Private host socket").font_size(FontSize::Small).boxed(),
+        textfield("/absolute/path/to/control.sock", socket_id).boxed(),
+        text("Conversation ID").font_size(FontSize::Small).boxed(),
+        textfield("Existing conversation ID", thread_id).boxed(),
+        button("Save and connect").on_click(ctx.on_click(move |actions| {
+            actions.emit(super::co_creator::CoCreatorConnectAction {socket: socket.clone(), thread_id: thread.clone()});
+        })).boxed(),
+        text("The host must expose a private control socket. Sign-in, models and approvals are handled in Codex.").wrap(350.0).color(draw_ctx.theme.text_muted).font_size(FontSize::Small).boxed(),
+    ]).spacing(8.0).align(Alignment::Leading).boxed()
 }

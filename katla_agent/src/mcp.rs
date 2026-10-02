@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use katla_ecs::scene_tool::{ResourceOp, SceneOp};
 
+#[derive(Clone)]
 pub struct KatlaMcpServer {
     request_tx: mpsc::Sender<PendingMcpRequest>,
 }
@@ -19,23 +20,71 @@ pub struct PendingMcpRequest {
     pub response_tx: tokio::sync::oneshot::Sender<McpResponse>,
 }
 
+/// Receiver for a committed editor capture, shared by tool and scene-question paths.
+pub type McpResponseReceiver = tokio::sync::oneshot::Receiver<McpResponse>;
+/// Nonblocking capture receive errors.
+pub type McpTryRecvError = tokio::sync::oneshot::error::TryRecvError;
+
+impl PendingMcpRequest {
+    /// Request the next committed view without changing camera or selection.
+    pub fn observe() -> (Self, McpResponseReceiver) {
+        let (response_tx, receiver) = tokio::sync::oneshot::channel();
+        (
+            Self {
+                op: McpOp::Editor(EditorViewOp::Observe { limit: None }),
+                response_tx,
+            },
+            receiver,
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum McpOpKind {
     Animation(crate::animation::AnimationOp),
+    Editor(EditorViewOp),
     Scene(SceneOp),
     Resource(ResourceOp),
     LoadScene { path: String },
     SaveScene { path: Option<String> },
 }
 
+/// Operations on the editor view; these never modify a game camera or save a scene.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum EditorViewOp {
+    /// Observe the next committed frame, including its image and geometric candidates.
+    Observe {
+        #[serde(default)]
+        limit: Option<usize>,
+    },
+    /// Move once to a world-space pose. Manual navigation resumes immediately.
+    SetCamera {
+        position: [f32; 3],
+        target: [f32; 3],
+    },
+    /// Change only the editor selection. Null clears it.
+    Select { entity_id: Option<String> },
+    /// Fit the render bounds of an object in the editor view.
+    Focus {
+        entity_id: String,
+        #[serde(default)]
+        select: bool,
+    },
+    /// Undo the last agent scene operation using the editor's existing agent history.
+    Undo,
+}
+
 #[derive(Debug, Clone)]
 pub enum McpOp {
     Animation(crate::animation::AnimationOp),
+    Editor(EditorViewOp),
     SpawnEntity {
         position: [f32; 3],
         rotation: [f32; 3],
         scale: [f32; 3],
         name: Option<String>,
+        shape: Option<String>,
     },
     DestroyEntity {
         entity_id: u64,
@@ -47,7 +96,7 @@ pub enum McpOp {
         value: serde_json::Value,
     },
     QueryEntities {
-        component_filter: String,
+        component_filter: Option<String>,
         name_filter: Option<String>,
         position: Option<[f32; 3]>,
         radius: Option<f32>,
@@ -104,17 +153,19 @@ impl McpOp {
     pub fn into_op(self) -> McpOpKind {
         match self {
             Self::Animation(op) => McpOpKind::Animation(op),
+            Self::Editor(op) => McpOpKind::Editor(op),
             Self::SpawnEntity {
                 position,
                 rotation,
                 scale,
                 name,
+                shape,
             } => McpOpKind::Scene(SceneOp::SpawnEntity {
                 position,
                 rotation,
                 scale,
                 name,
-                primitive: None,
+                primitive: shape,
             }),
             Self::DestroyEntity { entity_id } => McpOpKind::Scene(SceneOp::DestroyEntity {
                 entity: katla_ecs::EntityId::from_raw(entity_id),
@@ -137,7 +188,7 @@ impl McpOp {
                 radius,
                 limit,
             } => McpOpKind::Scene(SceneOp::QueryEntities {
-                component_filter: Some(component_filter),
+                component_filter,
                 name_filter,
                 position,
                 radius,
@@ -267,19 +318,75 @@ pub fn start_mcp_server_thread(
             }
         };
         rt.block_on(async {
-            let transport = (tokio::io::stdin(), tokio::io::stdout());
-            let result = tokio::select! {
-                result = rmcp::serve_server(server, transport) => result,
-                _ = shutdown_rx.changed() => {
-                    log::info!("MCP server shutting down");
+            #[cfg(unix)]
+            if let Some(path) = std::env::var_os("KATLA_MCP_SOCKET") {
+                use std::os::unix::fs::PermissionsExt;
+                let listener = match tokio::net::UnixListener::bind(&path) {
+                    Ok(listener) => listener,
+                    Err(e) => { log::error!("MCP socket bind failed: {e}"); return; }
+                };
+                if let Err(e) = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)) {
+                    log::error!("MCP socket permissions failed: {e}");
+                    let _ = std::fs::remove_file(&path);
                     return;
                 }
-            };
-            if let Err(e) = result {
-                log::error!("MCP server error: {}", e);
+                log::info!("MCP editor socket ready: {}", std::path::Path::new(&path).display());
+                loop {
+                    tokio::select! {
+                        connection = listener.accept() => {
+                            match connection {
+                                Ok((stream, _)) => {
+                                    let handler = server.clone();
+                                    let mut shutdown = shutdown_rx.clone();
+                                    tokio::spawn(async move {
+                                        let (read, write) = stream.into_split();
+                                        tokio::select! {
+                                            _ = async {
+                                                match rmcp::serve_server(handler, (read, write)).await {
+                                                    Ok(service) => { let _ = service.waiting().await; }
+                                                    Err(e) => log::warn!("MCP connection failed: {e}"),
+                                                }
+                                            } => {},
+                                            _ = shutdown.changed() => {},
+                                        }
+                                    });
+                                }
+                                Err(e) => log::warn!("MCP accept failed: {e}"),
+                            }
+                        }
+                        _ = shutdown_rx.changed() => break,
+                    }
+                }
+                drop(listener);
+                let _ = std::fs::remove_file(&path);
+                return;
+            }
+            tokio::select! {
+                _ = async {
+                    match rmcp::serve_server(server, (tokio::io::stdin(), tokio::io::stdout())).await {
+                        Ok(service) => { let _ = service.waiting().await; }
+                        Err(e) => log::error!("MCP server error: {e}"),
+                    }
+                } => {},
+                _ = shutdown_rx.changed() => {},
             }
         });
     });
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(try_from = "String")]
+#[schemars(with = "String")]
+struct EntityReference(u64);
+
+impl TryFrom<String> for EntityReference {
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value
+            .parse::<u64>()
+            .map(Self)
+            .map_err(|_| "Expected a decimal generational entity_id string".into())
+    }
 }
 
 #[derive(Deserialize, JsonSchema, Default)]
@@ -291,16 +398,18 @@ struct SpawnEntityParams {
     scale: Option<[f32; 3]>,
     #[serde(default)]
     name: Option<String>,
+    #[serde(default)]
+    shape: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
 struct DestroyEntityParams {
-    entity_id: u64,
+    entity_id: EntityReference,
 }
 
 #[derive(Deserialize, JsonSchema)]
 struct SetFieldParams {
-    entity_id: u64,
+    entity_id: EntityReference,
     component: String,
     field: String,
     value: serde_json::Value,
@@ -308,7 +417,8 @@ struct SetFieldParams {
 
 #[derive(Deserialize, JsonSchema)]
 struct QueryEntitiesParams {
-    component_filter: String,
+    #[serde(default)]
+    component_filter: Option<String>,
     #[serde(default)]
     name_filter: Option<String>,
     #[serde(default)]
@@ -321,28 +431,28 @@ struct QueryEntitiesParams {
 
 #[derive(Deserialize, JsonSchema)]
 struct DuplicateEntityParams {
-    entity_id: u64,
+    entity_id: EntityReference,
     #[serde(default)]
     position_offset: Option<[f32; 3]>,
 }
 
-#[derive(Deserialize, JsonSchema, Default)]
+#[derive(Deserialize, JsonSchema)]
 struct AddComponentParams {
-    entity_id: u64,
+    entity_id: EntityReference,
     component: String,
 }
 
 #[derive(Deserialize, JsonSchema)]
 struct GetComponentAttributesParams {
-    entity_id: u64,
+    entity_id: EntityReference,
     component: String,
 }
 
-#[derive(Deserialize, JsonSchema, Default)]
+#[derive(Deserialize, JsonSchema)]
 struct SetParentParams {
-    entity_id: u64,
+    entity_id: EntityReference,
     #[serde(default)]
-    parent_id: Option<u64>,
+    parent_id: Option<EntityReference>,
 }
 
 #[derive(Deserialize, JsonSchema, Default)]
@@ -393,6 +503,18 @@ struct SaveSceneParams {
     path: Option<String>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+struct EditorViewParams {
+    #[serde(flatten)]
+    op: EditorViewOp,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct AnimationParams {
+    #[serde(flatten)]
+    op: crate::animation::AnimationOp,
+}
+
 #[rmcp::tool_router]
 impl KatlaMcpServer {
     #[rmcp::tool(
@@ -401,9 +523,34 @@ impl KatlaMcpServer {
     )]
     async fn animation(
         &self,
-        Parameters(op): Parameters<crate::animation::AnimationOp>,
+        Parameters(params): Parameters<AnimationParams>,
     ) -> Json<McpToolResult> {
-        self.forward_op(McpOp::Animation(op)).await
+        self.forward_op(McpOp::Animation(params.op)).await
+    }
+
+    #[rmcp::tool(
+        name = "editor_view",
+        description = "Read the shared editor viewport or move/focus/select once, then read back a fresh committed frame. Returns PNG plus camera, optional selection, projected frustum candidates, and GPU-picked center/pointer. Frustum intersection is NOT occlusion visibility or room membership. Do not edit ambiguous candidates without clarification. entity_id is the stable generational string from context; stale IDs fail. Camera movement is ephemeral; manual input takes over immediately."
+    )]
+    async fn editor_view(
+        &self,
+        Parameters(params): Parameters<EditorViewParams>,
+    ) -> rmcp::model::CallToolResult {
+        let result = self.forward_op(McpOp::Editor(params.op)).await.0;
+        if !result.success {
+            return rmcp::model::CallToolResult::error(vec![rmcp::model::ContentBlock::text(
+                result.message,
+            )]);
+        }
+        let mut data = result.data.unwrap_or_default();
+        let png = data
+            .as_object_mut()
+            .and_then(|map| map.remove("image_png_base64"));
+        let mut content = vec![rmcp::model::ContentBlock::text(data.to_string())];
+        if let Some(serde_json::Value::String(png)) = png {
+            content.push(rmcp::model::ContentBlock::image(png, "image/png"));
+        }
+        rmcp::model::CallToolResult::success(content)
     }
 
     #[rmcp::tool(
@@ -419,6 +566,7 @@ impl KatlaMcpServer {
             rotation: params.rotation.unwrap_or([0.0, 0.0, 0.0]),
             scale: params.scale.unwrap_or([1.0, 1.0, 1.0]),
             name: params.name,
+            shape: params.shape,
         };
         self.forward_op(op).await
     }
@@ -432,7 +580,7 @@ impl KatlaMcpServer {
         Parameters(params): Parameters<DestroyEntityParams>,
     ) -> Json<McpToolResult> {
         let op = McpOp::DestroyEntity {
-            entity_id: params.entity_id,
+            entity_id: params.entity_id.0,
         };
         self.forward_op(op).await
     }
@@ -446,7 +594,7 @@ impl KatlaMcpServer {
         Parameters(params): Parameters<SetFieldParams>,
     ) -> Json<McpToolResult> {
         let op = McpOp::SetField {
-            entity_id: params.entity_id,
+            entity_id: params.entity_id.0,
             component: params.component,
             field: params.field,
             value: params.value,
@@ -489,7 +637,7 @@ impl KatlaMcpServer {
         Parameters(params): Parameters<DuplicateEntityParams>,
     ) -> Json<McpToolResult> {
         let op = McpOp::DuplicateEntity {
-            entity_id: params.entity_id,
+            entity_id: params.entity_id.0,
             position_offset: params.position_offset,
         };
         self.forward_op(op).await
@@ -512,7 +660,7 @@ impl KatlaMcpServer {
         Parameters(params): Parameters<AddComponentParams>,
     ) -> Json<McpToolResult> {
         let op = McpOp::AddComponent {
-            entity_id: params.entity_id,
+            entity_id: params.entity_id.0,
             component: params.component,
         };
         self.forward_op(op).await
@@ -527,7 +675,7 @@ impl KatlaMcpServer {
         Parameters(params): Parameters<GetComponentAttributesParams>,
     ) -> Json<McpToolResult> {
         let op = McpOp::GetComponentAttributes {
-            entity_id: params.entity_id,
+            entity_id: params.entity_id.0,
             component: params.component,
         };
         self.forward_op(op).await
@@ -542,8 +690,8 @@ impl KatlaMcpServer {
         Parameters(params): Parameters<SetParentParams>,
     ) -> Json<McpToolResult> {
         let op = McpOp::SetParent {
-            entity_id: params.entity_id,
-            parent_id: params.parent_id,
+            entity_id: params.entity_id.0,
+            parent_id: params.parent_id.map(|id| id.0),
         };
         self.forward_op(op).await
     }
@@ -661,8 +809,8 @@ impl KatlaMcpServer {
                 data: None,
             });
         }
-        match rx.await {
-            Ok(response) => match response.result {
+        match tokio::time::timeout(std::time::Duration::from_secs(15), rx).await {
+            Ok(Ok(response)) => match response.result {
                 Ok(value) => Json(McpToolResult {
                     success: true,
                     message: "ok".to_string(),
@@ -674,7 +822,7 @@ impl KatlaMcpServer {
                     data: None,
                 }),
             },
-            Err(_) => Json(McpToolResult {
+            Ok(Err(_)) | Err(_) => Json(McpToolResult {
                 success: false,
                 message: "Engine did not respond".to_string(),
                 data: None,
@@ -686,7 +834,11 @@ impl KatlaMcpServer {
 #[rmcp::tool_handler]
 impl ServerHandler for KatlaMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::default()
+        let mut info = ServerInfo::default();
+        info.capabilities = rmcp::model::ServerCapabilities::builder()
+            .enable_tools()
+            .build();
+        info
             .with_instructions("Katla 3D engine scene tools. Use these tools to spawn, modify, query, and destroy entities in the live scene.")
             .with_server_info(Implementation::new("katla-mcp", "0.1.0"))
     }
@@ -702,12 +854,14 @@ mod animation_tests {
         tokio::runtime::Runtime::new().unwrap().block_on(async {
             let (server, bridge, _shutdown) = McpBridge::new();
             use std::future::Future;
-            let mut call = Box::pin(server.animation(Parameters(AnimationOp::Play {
-                entity_id: 42,
-                clip: "Run".into(),
-                fade_seconds: 0.25,
-                looping: true,
-                speed: 1.0,
+            let mut call = Box::pin(server.animation(Parameters(AnimationParams {
+                op: AnimationOp::Play {
+                    entity_id: 42,
+                    clip: "Run".into(),
+                    fade_seconds: 0.25,
+                    looping: true,
+                    speed: 1.0,
+                },
             })));
             std::future::poll_fn(|cx| {
                 assert!(call.as_mut().poll(cx).is_pending());
@@ -739,5 +893,42 @@ mod animation_tests {
                 0.5
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_editor_view_tool_has_object_input_schema() {
+        let tools = KatlaMcpServer::tool_router().list_all();
+        for name in ["editor_view", "animation"] {
+            let tool = tools.iter().find(|t| t.name == name).unwrap();
+            assert_eq!(
+                tool.input_schema.get("type"),
+                Some(&serde_json::json!("object"))
+            );
+        }
+        let animation: AnimationParams = serde_json::from_value(serde_json::json!({
+            "action": "play", "entity_id": 42, "clip": "Run"
+        }))
+        .unwrap();
+        assert!(matches!(
+            animation.op,
+            crate::animation::AnimationOp::Play {
+                entity_id: 42,
+                fade_seconds: 0.25,
+                looping: true,
+                speed: 1.0,
+                ..
+            }
+        ));
+        let params: EditorViewParams =
+            serde_json::from_value(serde_json::json!({"action":"select","entity_id":null}))
+                .unwrap();
+        assert!(matches!(
+            params.op,
+            EditorViewOp::Select { entity_id: None }
+        ));
     }
 }

@@ -5,22 +5,15 @@ pub use prompt::build_system_prompt;
 
 use std::collections::HashMap;
 
-use crate::llm::{ChatMessage, FinishReason, MessageRole, ToolCall};
+use crate::llm::{ChatMessage, FinishReason};
 use crate::runtime::PendingStreamRequest;
+use crate::{MessageRole, ToolCall};
 
 #[cfg(feature = "llm-assistant")]
 mod tools;
 
 #[cfg(feature = "llm-assistant")]
 pub use tools::build_tool_definitions;
-#[cfg(feature = "llm-assistant")]
-pub use tools::{
-    AddComponentArgs, CreateResourceArgs, DestroyEntityArgs, DuplicateEntityArgs,
-    GenerateResourceArgs, GetComponentAttributesArgs, GetSceneHierarchyArgs,
-    ListAvailableComponentsArgs, ListResourcesArgs, LoadSceneArgs, QueryEntitiesArgs,
-    ReadResourceArgs, SaveSceneArgs, SetFieldArgs, SetParentArgs, SpawnEntityArgs, SpawnModelArgs,
-    WriteResourceArgs,
-};
 
 /// Accumulates fragments of a single tool call across streaming chunks.
 #[derive(Debug, Clone, Default)]

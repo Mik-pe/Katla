@@ -4,7 +4,13 @@ pub mod agent;
 pub mod component_registry;
 pub(crate) mod document;
 #[cfg(feature = "mcp")]
+pub(crate) mod external_chat;
+#[cfg(feature = "mcp")]
 pub(crate) mod mcp;
+mod scene_query;
+mod transform_registry;
+#[cfg(feature = "mcp")]
+mod viewport;
 
 use std::collections::{HashMap, HashSet};
 
@@ -397,7 +403,6 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
                     frame_time_ms: dt * 1000.0,
                     loader: &mut app.editor.background_loader,
                     thumbnail_texture_handles: &app.editor.thumbnail_texture_handles,
-                    llm_config: &app.editor.llm_config,
                     undo_count: app.editor.undo_stack.len(),
                     redo_count: app.editor.redo_stack.len(),
                     agent_undo_count: app.editor.agent_undo_stack.len(),
@@ -1091,37 +1096,30 @@ pub fn process_editor_actions(app: &mut Application) {
                 }
             }
             EditorAction::CoCreatorRequest(text) => {
-                agent::process_co_creator_request(app, &text);
-            }
-            EditorAction::SetLlmProvider(key) => {
-                use katla_agent::config::LlmProviderKind;
-                app.editor.llm_config.provider = match key.as_str() {
-                    "open_ai" => LlmProviderKind::OpenAi,
-                    "open_ai_compatible" => LlmProviderKind::OpenAiCompatible,
-                    _ => LlmProviderKind::Disabled,
-                };
-            }
-            EditorAction::SetLlmApiKey(key) => {
-                app.editor.llm_config.api_key = key;
-            }
-            EditorAction::SetLlmBaseUrl(url) => {
-                app.editor.llm_config.base_url = if url.is_empty() { None } else { Some(url) };
-            }
-            EditorAction::SetLlmModel(model) => {
-                app.editor.llm_config.model = model;
-            }
-            EditorAction::SetLlmMaxTokens(tokens) => {
-                app.editor.llm_config.max_tokens = tokens;
-            }
-            EditorAction::SetLlmTemperature(temp) => {
-                app.editor.llm_config.temperature = temp.clamp(0.0, 2.0);
-            }
-            EditorAction::SaveLlmConfig => {
-                if let Err(e) = app.editor.llm_config.save() {
-                    log::error!("Failed to save LLM config: {}", e);
-                } else {
-                    info!("LLM configuration saved");
+                #[cfg(feature = "mcp")]
+                external_chat::submit(app, text);
+                #[cfg(not(feature = "mcp"))]
+                {
+                    let _ = text;
+                    app.editor.editor_ui.co_creator.add_system_message(
+                        "Build Katla with MCP support to connect an external conversation.",
+                    );
                 }
+            }
+            EditorAction::ConnectExternalChat { socket, thread_id } => {
+                app.preferences.external_chat = crate::preferences::ExternalChatPreferences {
+                    socket: socket.clone(),
+                    thread_id: thread_id.clone(),
+                };
+                if let Err(error) = app.preferences.save() {
+                    log::warn!("Cannot save external chat connection: {error}");
+                }
+                #[cfg(feature = "mcp")]
+                external_chat::connect(app, socket, thread_id);
+                #[cfg(not(feature = "mcp"))]
+                app.editor.editor_ui.co_creator.add_system_message(
+                    "Build Katla with MCP support to connect an external conversation.",
+                );
             }
             EditorAction::PlayStart => {
                 if app.play_mode == super::game_state::PlayMode::Editing {
@@ -1265,17 +1263,11 @@ pub fn process_editor_actions(app: &mut Application) {
         }
     }
 
-    // Poll for pending LLM stream chunks each frame
-    agent::poll_llm_stream(app);
-
     // Poll for MCP server requests
     #[cfg(feature = "mcp")]
     {
-        let protected = mcp::ProtectedEntities {
-            camera_entity: app.camera.entity,
-            gizmo_entity: app.editor.gizmo_state.entity,
-        };
-        mcp::poll(app, &protected);
+        mcp::poll(app);
+        external_chat::poll(app);
     }
 
     // Update OS cursor based on UI request

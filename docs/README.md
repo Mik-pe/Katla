@@ -16,6 +16,7 @@ engineering work belongs in [TODO](../TODO.md).
 | Graph dependencies or allocation | [Synchronization](render_graph_synchronization.md) | [Compute](render_graph_compute.md), [transient storage](transient_storage.md) |
 | Native/compiled trace mismatch | [Capture and comparison](render_graph_capture.md) | [Vulkan/Metal mapping](vulkan_to_metal_mapping.md) |
 | Editor UI behavior | [Declarative UI](declarative_ui_design.md) | [Visual design and inspiration](editor_ui_design.md) |
+| External agent sharing the editor viewport | [Shared editor view over MCP](shared-editor-view.md) | [Graphics ownership](graphics_core.md) |
 | Scripts | [Luau runtime contracts](katla_script_architecture.md#runtime-contracts) | [ECS ownership](ecs.md) |
 | Physics | [Rapier decision and runtime contract](physics-engine-adr.md) | [Character controller design](character-controller-design.md) |
 | Build, CI or native acceptance | [CI policy and commands](ci.md) | [Cross-backend contracts](contract-suite.md), [Metal evidence/provenance](metal4_validation.md) |

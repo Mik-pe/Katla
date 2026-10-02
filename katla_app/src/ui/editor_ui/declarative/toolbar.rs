@@ -188,7 +188,7 @@ fn build_view_menu(
         menu_entry("Particle Inspector").on_click(ctx.on_click(|actions| {
             actions.emit(ToolbarAction::OpenParticleInspector);
         })),
-        menu_entry("AI Co-Creator").on_click(ctx.on_click(|actions| {
+        menu_entry("Scene assistant").on_click(ctx.on_click(|actions| {
             actions.emit(ToolbarAction::OpenCoCreator);
         })),
     ]

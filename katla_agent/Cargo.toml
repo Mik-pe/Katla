@@ -17,7 +17,7 @@ log = { workspace = true }
 
 # Optional LLM dependencies
 async-openai = { version = "0.27", optional = true }
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "io-util"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "io-util", "net"], optional = true }
 dirs = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 futures = { version = "0.3", optional = true }

@@ -14,6 +14,8 @@ pub mod renderer;
 #[cfg(feature = "editor")]
 pub use crate::rendering::ParticleStats;
 #[cfg(feature = "editor")]
+pub(crate) use editor_ui::CoCreatorState;
+#[cfg(feature = "editor")]
 pub use editor_ui::{
     AudioEmitterInfo, AudioSourceInfo, ColliderShapeInfo, ColliderShapeType, DirectionalLightInfo,
     EditorAction, EditorRenderParams, EditorUI, EntityInfo, FocusedPanel, InspectorEditState,

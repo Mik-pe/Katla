@@ -13,7 +13,7 @@ use super::diff::DiffAction;
 use super::state::{StateArena, ViewId};
 
 /// Function signature for measuring text dimensions during layout.
-pub type MeasureFn<'a> = &'a dyn Fn(&str, Option<FontSize>) -> Vec2;
+pub type MeasureFn<'a> = &'a dyn Fn(&str, Option<FontSize>, Option<f32>) -> Vec2;
 
 /// Extracted children from a container widget.
 ///
@@ -588,6 +588,7 @@ mod tests {
             content: "Hello".into(),
             color: None,
             font_size: None,
+            wrap_width: None,
         });
         assert!(
             w.as_any().downcast_ref::<Text>().is_some(),
@@ -651,6 +652,7 @@ mod tests {
             content: "inner".into(),
             color: None,
             font_size: None,
+            wrap_width: None,
         });
         // Box<dyn Widget> delegates as_any to inner
         assert!(
@@ -666,6 +668,7 @@ mod tests {
             content: "Hello".into(),
             color: None,
             font_size: None,
+            wrap_width: None,
         });
         {
             let text_ref = w.as_any_mut().downcast_mut::<Text>().unwrap();

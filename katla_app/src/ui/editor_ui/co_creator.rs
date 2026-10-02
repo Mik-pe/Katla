@@ -1,6 +1,5 @@
 use katla_agent::MessageRole;
 use katla_math::Color;
-use katla_ui::ScrollAreaState;
 use katla_ui::declarative::DraggablePanelState;
 
 use super::ColorScheme;
@@ -18,15 +17,20 @@ pub struct CoCreatorState {
     pub panel: DraggablePanelState,
     /// Current text in the input field.
     pub input_text: String,
+    pub(crate) input_epoch: u64,
+    pub(crate) host_name: Option<String>,
+    /// Private socket of the existing conversation owner.
+    pub host_socket: String,
+    /// Existing conversation chosen explicitly by the user.
+    pub host_thread: String,
     /// Chat message history for display.
     pub messages: Vec<DisplayMessage>,
+    #[cfg(any(feature = "mcp", test))]
+    last_host_item: Option<(String, String)>,
     /// Whether we're waiting for an agent response.
     pub processing: bool,
     /// Status message shown when idle.
     pub status_message: String,
-    /// Scroll state for the message area.
-    #[expect(dead_code)]
-    pub scroll_state: ScrollAreaState,
 }
 
 impl CoCreatorState {
@@ -34,10 +38,15 @@ impl CoCreatorState {
         Self {
             panel: DraggablePanelState::default(),
             input_text: String::new(),
+            input_epoch: 0,
+            host_name: None,
+            host_socket: String::new(),
+            host_thread: String::new(),
             messages: Vec::new(),
+            #[cfg(any(feature = "mcp", test))]
+            last_host_item: None,
             processing: false,
-            status_message: "Type a request below.".to_string(),
-            scroll_state: ScrollAreaState::default(),
+            status_message: "Connect a conversation in Connection settings.".to_string(),
         }
     }
 
@@ -59,16 +68,8 @@ impl CoCreatorState {
             text: text.to_string(),
         });
         self.input_text.clear();
+        self.input_epoch = self.input_epoch.wrapping_add(1);
         self.processing = true;
-    }
-
-    /// Add an assistant response.
-    pub fn add_assistant_message(&mut self, text: &str) {
-        self.messages.push(DisplayMessage {
-            role: MessageRole::Assistant,
-            text: text.to_string(),
-        });
-        self.processing = false;
     }
 
     /// Add a system message (errors, status).
@@ -80,20 +81,22 @@ impl CoCreatorState {
         self.processing = false;
     }
 
-    /// Append a streaming text delta to the last assistant message.
-    pub fn append_streaming_text(&mut self, delta: &str) {
-        if self.processing
+    /// Mirror one host message without combining separate turns or message items.
+    #[cfg(any(feature = "mcp", test))]
+    pub(crate) fn append_host_text(&mut self, turn_id: &str, item_id: &str, delta: &str) {
+        let key = (turn_id.to_owned(), item_id.to_owned());
+        if self.last_host_item.as_ref() == Some(&key)
             && let Some(last) = self.messages.last_mut()
             && last.role == MessageRole::Assistant
         {
             last.text.push_str(delta);
-            return;
+        } else {
+            self.messages.push(DisplayMessage {
+                role: MessageRole::Assistant,
+                text: delta.into(),
+            });
+            self.last_host_item = Some(key);
         }
-        self.messages.push(DisplayMessage {
-            role: MessageRole::Assistant,
-            text: delta.to_string(),
-        });
-        self.processing = true;
     }
 
     /// Finalize the streaming response.
@@ -143,15 +146,6 @@ impl CoCreatorStyle {
     }
 }
 
-/// Whether the co-creator panel submitted a message this frame.
-#[expect(dead_code)]
-pub struct CoCreatorResponse {
-    pub _submitted: bool,
-    pub submitted_text: Option<String>,
-    /// True if the user clicked the undo button this frame.
-    pub undo_clicked: bool,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,7 +157,10 @@ mod tests {
         assert!(state.input_text.is_empty());
         assert!(state.messages.is_empty());
         assert!(!state.processing);
-        assert_eq!(state.status_message, "Type a request below.");
+        assert_eq!(
+            state.status_message,
+            "Connect a conversation in Connection settings."
+        );
     }
 
     #[test]
@@ -176,18 +173,6 @@ mod tests {
         assert_eq!(state.messages[0].text, "spawn a cube");
         assert!(state.input_text.is_empty());
         assert!(state.processing);
-    }
-
-    #[test]
-    fn test_add_assistant_message() {
-        let mut state = CoCreatorState::new();
-        state.processing = true;
-        state.add_assistant_message("Done! Spawned a cube at origin.");
-
-        assert_eq!(state.messages.len(), 1);
-        assert_eq!(state.messages[0].role, MessageRole::Assistant);
-        assert_eq!(state.messages[0].text, "Done! Spawned a cube at origin.");
-        assert!(!state.processing);
     }
 
     #[test]
@@ -210,6 +195,22 @@ mod tests {
 
         state.submit_message("   ");
         assert!(state.messages.is_empty());
+        assert!(!state.processing);
+    }
+
+    #[test]
+    fn test_host_messages_remain_separate_across_turns_and_items() {
+        let mut state = CoCreatorState::new();
+        state.append_host_text("t1", "a", "Hello");
+        state.append_host_text("t1", "a", " world");
+        state.append_host_text("t1", "b", "Second item");
+        state.append_host_text("t2", "a", "Next turn");
+        assert_eq!(state.messages.len(), 3);
+        assert_eq!(state.messages[0].text, "Hello world");
+        assert_eq!(state.messages[1].text, "Second item");
+        assert_eq!(state.messages[2].text, "Next turn");
+        state.processing = true;
+        state.finalize_streaming();
         assert!(!state.processing);
     }
 

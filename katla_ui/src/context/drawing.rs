@@ -141,6 +141,18 @@ impl UiContext {
     ///
     /// `position` is the TOP-LEFT of the text bounding box.
     pub(crate) fn draw_text(&mut self, text: &str, position: Vec2, color: Color, size: f32) {
+        self.draw_text_with_width(text, position, color, size, None);
+    }
+
+    /// Draw through the same shaping pipeline with an optional logical wrap width.
+    pub(crate) fn draw_text_with_width(
+        &mut self,
+        text: &str,
+        position: Vec2,
+        color: Color,
+        size: f32,
+        max_width: Option<f32>,
+    ) {
         if text.is_empty() {
             return;
         }
@@ -159,7 +171,7 @@ impl UiContext {
         {
             let mut fonts = self.fonts.borrow_mut();
 
-            let shaped = fonts.shape_text(self.current_font, text, size, scale, None);
+            let shaped = fonts.shape_text(self.current_font, text, size, scale, max_width);
 
             match shaped {
                 Some(shaped) => {

@@ -76,6 +76,7 @@ impl super::FontSystem {
         text: &str,
         size: f32,
         scale_factor: f32,
+        max_width: Option<f32>,
     ) -> Vec2 {
         if text.is_empty() {
             // shape_text builds every buffer with Metrics(size, size * 1.2),
@@ -84,7 +85,7 @@ impl super::FontSystem {
             return Vec2::new(0.0, size * 1.2);
         }
 
-        let shaped = self.shape_text(font_id, text, size, scale_factor, None);
+        let shaped = self.shape_text(font_id, text, size, scale_factor, max_width);
         match shaped {
             Some(s) => {
                 let (w, h) = s.dimensions();

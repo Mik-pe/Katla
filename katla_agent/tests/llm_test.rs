@@ -1,8 +1,9 @@
 #![cfg(feature = "llm-assistant")]
 
+use katla_agent::{MessageRole, ToolCall};
+
 use katla_agent::llm::{
-    ChatMessage, ChatResponse, FinishReason, LlmError, LlmProvider, MessageRole, MockProvider,
-    ToolCall, ToolDefinition,
+    ChatMessage, ChatResponse, FinishReason, LlmError, LlmProvider, MockProvider, ToolDefinition,
 };
 
 #[test]

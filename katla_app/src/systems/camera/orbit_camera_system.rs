@@ -35,6 +35,11 @@ impl TypedSystem for OrbitCameraSystem {
         let delta = input.mouse_delta;
 
         for (_entity, (orbit, transform)) in cameras.iter_mut() {
+            if ((should_orbit || should_pan) && (delta.0 != 0.0 || delta.1 != 0.0)) || scroll != 0.0
+            {
+                orbit.focus = None;
+            }
+
             // Update focus animation
             if let Some(focus) = &mut orbit.focus {
                 focus.elapsed += delta_time;
@@ -118,8 +123,7 @@ mod tests {
         };
         let entity = world.spawn((orbit, TransformComponent::default()));
         let mut input = InputState::default();
-        input.set_action_state(Action::LookEnable, true);
-        input.mouse_delta = (100.0, 50.0);
+        input.set_action_state(Action::LookEnable, false);
         world.insert_resource(input);
         world.register_typed_system(OrbitCameraSystem, SystemExecutionOrder::NORMAL);
         world.update_parallel(0.5);
@@ -157,5 +161,37 @@ mod tests {
                 .position,
             Vec3::new(2.0, 0.0, 4.0)
         );
+    }
+    #[test]
+    fn test_manual_navigation_cancels_focus_immediately() {
+        let mut world = World::new();
+        let mut orbit = OrbitCameraControllerComponent::default();
+        orbit.focus = Some(FocusTarget {
+            target: Vec3::new(20.0, 0.0, 0.0),
+            distance: 4.0,
+            duration: 1.0,
+            elapsed: 0.0,
+            start_target: orbit.target,
+            start_distance: orbit.distance,
+            start_yaw: orbit.yaw,
+            start_pitch: orbit.pitch,
+            target_yaw: 0.0,
+            target_pitch: 0.0,
+        });
+        let target = orbit.target;
+        let yaw = orbit.yaw;
+        let entity = world.spawn((orbit, TransformComponent::default()));
+        let mut input = InputState::default();
+        input.set_action_state(Action::LookEnable, true);
+        input.mouse_delta = (20.0, 0.0);
+        world.insert_resource(input);
+        world.register_typed_system(OrbitCameraSystem, SystemExecutionOrder::NORMAL);
+        world.update_parallel(0.1);
+        let orbit = world
+            .get_component::<OrbitCameraControllerComponent>(entity)
+            .unwrap();
+        assert!(orbit.focus.is_none());
+        assert_eq!(orbit.target, target);
+        assert!(orbit.yaw < yaw);
     }
 }

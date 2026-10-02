@@ -1,0 +1,21 @@
+{
+  "description": "Teen bedroom blockout using unit cubes; no furniture models are claimed.",
+  "camera": {"position": [0, 2.1, 2.3], "target": [0, 1.0, -2.4]},
+  "placements": [
+    {"name": "Blockout - sängram", "position": [-3.0, 0.18, 0.0], "scale": [1.35, 0.36, 2.3], "shape": "cube"},
+    {"name": "Blockout - madrass", "position": [-3.0, 0.45, 0.0], "scale": [1.25, 0.18, 2.15], "shape": "cube"},
+    {"name": "Blockout - kudde", "position": [-3.0, 0.59, -0.75], "scale": [0.8, 0.1, 0.42], "shape": "cube"},
+    {"name": "Blockout - sänggavel", "position": [-3.0, 0.62, -1.18], "scale": [1.35, 1.24, 0.1], "shape": "cube"},
+    {"name": "Blockout - nattduksbord", "position": [-1.95, 0.3, -0.75], "scale": [0.5, 0.6, 0.5], "shape": "cube"},
+    {"name": "Blockout - skrivbordsskiva", "position": [3.1, 0.79, -3.0], "scale": [0.8, 0.12, 1.7], "shape": "cube"},
+    {"name": "Blockout - skrivbordsben bak", "position": [3.1, 0.37, -3.65], "scale": [0.65, 0.74, 0.1], "shape": "cube"},
+    {"name": "Blockout - skrivbordsben fram", "position": [3.1, 0.37, -2.35], "scale": [0.65, 0.74, 0.1], "shape": "cube"},
+    {"name": "Blockout - bildskärm", "position": [3.32, 1.08, -3.0], "scale": [0.1, 0.42, 0.68], "shape": "cube"},
+    {"name": "Blockout - skrivbordsstol sits", "position": [2.12, 0.48, -3.0], "scale": [0.52, 0.12, 0.56], "shape": "cube"},
+    {"name": "Blockout - skrivbordsstol fot", "position": [2.12, 0.21, -3.0], "scale": [0.3, 0.42, 0.3], "shape": "cube"},
+    {"name": "Blockout - skrivbordsstol rygg", "position": [1.86, 0.77, -3.0], "scale": [0.1, 0.5, 0.56], "shape": "cube"},
+    {"name": "Blockout - garderob", "position": [3.12, 1.0, 0.0], "scale": [1.2, 2.0, 1.0], "shape": "cube"},
+    {"name": "Blockout - bokhylla", "position": [-1.75, 0.8, 2.55], "scale": [1.2, 1.6, 0.45], "shape": "cube"},
+    {"name": "Blockout - matta", "position": [0, 0.025, -1.15], "scale": [2.2, 0.05, 2.5], "shape": "cube"}
+  ]
+}

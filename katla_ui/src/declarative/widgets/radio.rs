@@ -34,7 +34,7 @@ impl Widget for RadioButton {
     }
 
     fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
-        let text_size = measure(&self.label, None);
+        let text_size = measure(&self.label, None, None);
         Style {
             size: Size {
                 width: Dimension::Length(text_size.x() + 28.0),

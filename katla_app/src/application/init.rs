@@ -124,8 +124,6 @@ impl Application {
             }
         };
 
-        self.gpu_resource_tracker.set_protected_material(material);
-
         let mut icon_textures = std::collections::HashMap::new();
         for icon in [BillboardIcon::Lightbulb, BillboardIcon::Fire] {
             let rasterized = crate::rendering::rasterize_billboard_icon(icon, 64);

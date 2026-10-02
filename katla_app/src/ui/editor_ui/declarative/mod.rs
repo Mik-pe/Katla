@@ -18,7 +18,8 @@ pub(super) use asset_browser::{
     process_declarative_actions,
 };
 pub(super) use co_creator::{
-    CoCreatorDrawCtx, CoCreatorPanelSync, CoCreatorSubmitAction, CoCreatorUndoAction,
+    CoCreatorConnectAction, CoCreatorConnectionSettingsAction, CoCreatorDrawCtx,
+    CoCreatorPanelSync, CoCreatorSubmitAction, CoCreatorUndoAction,
 };
 pub(super) use console::{ConsoleAction, ConsoleDrawCtx, ConsoleState};
 pub(super) use editor_root::EditorOverlayView;

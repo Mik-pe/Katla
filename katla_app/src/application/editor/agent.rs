@@ -1,170 +1,7 @@
-use std::sync::Arc;
-
-use katla_agent::serialize_scene_context;
-use katla_agent::{LocalAction, OpenAiProvider, StreamEvent, ToolCall};
+use katla_agent::ToolCall;
 use katla_ecs::EntityId;
-use katla_ecs::scene_tool::{ComponentRegistry, ResourceOp, SceneOp, SceneToolExecutor};
+use katla_ecs::scene_tool::{ResourceOp, SceneOp, SceneToolExecutor};
 use katla_gfx::primitives;
-use katla_math::Vec3;
-use log::warn;
-
-pub(crate) fn get_scene_context_json(
-    world: &mut katla_ecs::World,
-    registry: &ComponentRegistry,
-    selected_entity: Option<EntityId>,
-) -> String {
-    let ctx = serialize_scene_context(world, registry, selected_entity);
-    serde_json::to_string_pretty(&ctx).unwrap_or_default()
-}
-
-/// Process a co-creator chat request from the user.
-///
-/// If the LLM is configured and enabled, delegates to the CoCreatorAgent
-/// for streaming. Falls back to local pattern matching when disabled.
-pub(crate) fn process_co_creator_request(app: &mut super::super::Application, text: &str) {
-    if app.editor.llm_config.is_enabled() {
-        submit_llm_stream_request(app, text);
-    } else {
-        process_local_request(app, text);
-    }
-}
-
-/// Submit a user message to the LLM via the CoCreatorAgent for streaming.
-fn submit_llm_stream_request(app: &mut super::super::Application, text: &str) {
-    let Some(ref bridge) = app.editor.async_bridge else {
-        app.editor
-            .editor_ui
-            .co_creator
-            .add_system_message("LLM runtime is not available.");
-        return;
-    };
-
-    let scene_context_json = get_scene_context_json(
-        &mut app.world,
-        &app.editor.component_registry,
-        app.editor.editor_ui.selected_entity,
-    );
-
-    match OpenAiProvider::from_config(&app.editor.llm_config) {
-        Ok(provider) => {
-            app.editor.co_creator_agent.submit_request(
-                bridge,
-                Arc::new(provider),
-                &scene_context_json,
-                text,
-            );
-        }
-        Err(e) => {
-            warn!("Failed to create LLM provider: {}", e);
-            app.editor
-                .editor_ui
-                .co_creator
-                .add_system_message(&format!("LLM configuration error: {}", e));
-        }
-    }
-}
-
-/// Poll for streaming LLM chunks from the CoCreatorAgent. Called each frame.
-pub(crate) fn poll_llm_stream(app: &mut super::super::Application) {
-    if !app.editor.co_creator_agent.is_streaming() {
-        return;
-    }
-
-    let events = app.editor.co_creator_agent.poll_stream();
-    for event in events {
-        match event {
-            StreamEvent::TextDelta(delta) => {
-                app.editor
-                    .editor_ui
-                    .co_creator
-                    .append_streaming_text(&delta);
-            }
-            StreamEvent::Truncated => {
-                app.editor
-                    .editor_ui
-                    .co_creator
-                    .add_system_message("Response was truncated due to token limit.");
-            }
-            StreamEvent::ToolCall(tool_calls) => {
-                let mut summaries = Vec::new();
-                for tc in &tool_calls {
-                    summaries.push(format_tool_call_summary(tc));
-                }
-                app.editor
-                    .editor_ui
-                    .co_creator
-                    .add_system_message(&format!("Calling: {}", summaries.join(", ")));
-            }
-            StreamEvent::Error(msg) => {
-                app.editor
-                    .editor_ui
-                    .co_creator
-                    .add_system_message(&format!("LLM error: {}", msg));
-            }
-        }
-    }
-
-    // If streaming just finished, finalize and handle tool calls
-    if !app.editor.co_creator_agent.is_streaming() {
-        let full_text = app
-            .editor
-            .editor_ui
-            .co_creator
-            .messages
-            .last()
-            .map(|m| m.text.clone())
-            .unwrap_or_default();
-        app.editor.co_creator_agent.finalize_response(&full_text);
-        app.editor.editor_ui.co_creator.finalize_streaming();
-
-        // Execute pending tool calls and continue the conversation
-        if app.editor.co_creator_agent.has_pending_tool_calls() {
-            execute_and_continue_tool_calls(app);
-        }
-    }
-}
-
-/// Execute pending tool calls and submit results back to the LLM.
-fn execute_and_continue_tool_calls(app: &mut super::super::Application) {
-    let tool_calls = app.editor.co_creator_agent.take_pending_tool_calls();
-
-    for tc in &tool_calls {
-        let result = execute_tool_call(app, tc);
-        let display = format_tool_call_result(tc, &result);
-        app.editor.editor_ui.co_creator.add_system_message(&display);
-        app.editor
-            .co_creator_agent
-            .add_tool_result(tc.id.clone(), result);
-    }
-
-    submit_continuation(app);
-}
-
-/// Submit a continuation request to the LLM after tool results.
-fn submit_continuation(app: &mut super::super::Application) {
-    let Some(ref bridge) = app.editor.async_bridge else {
-        return;
-    };
-
-    let scene_context_json = get_scene_context_json(
-        &mut app.world,
-        &app.editor.component_registry,
-        app.editor.editor_ui.selected_entity,
-    );
-
-    match OpenAiProvider::from_config(&app.editor.llm_config) {
-        Ok(provider) => {
-            app.editor.co_creator_agent.submit_continuation(
-                bridge,
-                Arc::new(provider),
-                &scene_context_json,
-            );
-        }
-        Err(e) => {
-            warn!("Failed to create LLM provider for continuation: {}", e);
-        }
-    }
-}
 
 fn build_hierarchy_json(app: &super::super::Application) -> serde_json::Value {
     use crate::components::{Children, NameComponent, Parent};
@@ -219,7 +56,7 @@ fn build_hierarchy_json(app: &super::super::Application) -> serde_json::Value {
             .unwrap_or_default();
 
         serde_json::json!({
-            "id": entity.to_string(),
+            "id": entity.id().to_string(),
             "name": name,
             "depth": depth,
             "children": children,
@@ -315,7 +152,10 @@ const RESOURCE_TOOL_NAMES: &[&str] = &[
 ];
 
 /// Execute a single tool call against the ECS world.
-fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
+pub(super) fn execute_tool_call(
+    app: &mut super::super::Application,
+    tool_call: &ToolCall,
+) -> String {
     if tool_call.name == "animation" {
         return match serde_json::from_value(tool_call.arguments.clone())
             .map_err(|error| error.to_string())
@@ -350,6 +190,17 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
         Err(e) => return format!("Error: {e}"),
     };
 
+    execute_scene_op(app, op, tool_call)
+}
+
+pub(super) fn execute_scene_op(
+    app: &mut super::super::Application,
+    op: SceneOp,
+    tool_call: &ToolCall,
+) -> String {
+    if let Some(result) = super::scene_query::execute(app, &op) {
+        return result;
+    }
     if let Err(msg) = check_protected_entity(&op, app) {
         return msg;
     }
@@ -375,10 +226,29 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
         cleanup_entity_hierarchy(app, entity);
     }
 
-    match SceneToolExecutor::execute(op, &mut app.world, &app.editor.component_registry) {
+    let spawn_registry;
+    let registry = if matches!(op, SceneOp::SpawnEntity { .. }) {
+        spawn_registry = super::component_registry::build_spawn_component_registry();
+        &spawn_registry
+    } else {
+        &app.editor.component_registry
+    };
+    match SceneToolExecutor::execute(op, &mut app.world, registry) {
         Ok((result, undo_group)) => {
-            app.editor.agent_undo_stack.push(undo_group);
-            app.editor.agent_redo_stack.clear();
+            if !undo_group.commands.is_empty() {
+                app.editor.agent_undo_stack.push(undo_group);
+                app.editor.agent_redo_stack.clear();
+                if app
+                    .editor
+                    .editor_ui
+                    .selected_entity
+                    .is_some_and(|id| result.affected_entities.contains(&id))
+                {
+                    app.editor.editor_ui.inspector_edit_entity = None;
+                    app.editor.inspector_slider_was_active = false;
+                    app.editor.inspector_drag_snapshot = None;
+                }
+            }
             if let Some((entity, parent)) = set_parent_args {
                 set_parent_components(app, entity, parent);
             }
@@ -393,7 +263,7 @@ fn execute_tool_call(app: &mut super::super::Application, tool_call: &ToolCall) 
             let mut json = serde_json::json!({
                 "success": result.success,
                 "message": result.message,
-                "entities": result.affected_entities.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                "entities": result.affected_entities.iter().map(|id| id.id().to_string()).collect::<Vec<_>>(),
             });
             if let Some(data) = result.data
                 && let Some(obj) = json.as_object_mut()
@@ -421,7 +291,7 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
 
     use crate::components::{DrawableComponent, TransformComponent};
     use crate::scene::entity_source::EntitySource;
-    use katla_agent::co_creator::SpawnEntityArgs;
+    use katla_agent::tool_args::SpawnEntityArgs;
     use katla_math::Vec3;
 
     let args: SpawnEntityArgs = serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
@@ -445,7 +315,6 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
         .is_none()
     {
         let shape = args.shape.as_deref().unwrap_or("cube");
-        let scale = args.scale.unwrap_or([1.0, 1.0, 1.0]);
 
         let (mesh_result, entity_source) = match shape {
             "sphere" => (
@@ -481,8 +350,8 @@ fn attach_spawn_visuals(app: &mut super::super::Application, entity: EntityId, t
                 },
             ),
             _ => (
-                primitives::create_cube(&mut app.renderer, scale),
-                EntitySource::Cube { size: scale },
+                primitives::create_cube(&mut app.renderer, [1.0; 3]),
+                EntitySource::Cube { size: [1.0; 3] },
             ),
         };
         let mesh_handle = match mesh_result {
@@ -531,16 +400,19 @@ pub(crate) fn check_protected_entity(
     let Some(entity) = target else { return Ok(()) };
 
     let cam_entity = app.camera.entity;
-    let gizmo_entity = app.editor.gizmo_state.entity;
 
     if entity == cam_entity {
         return Err(format!(
             "Error: Entity {entity} is the editor camera and cannot be modified"
         ));
     }
-    if gizmo_entity == Some(entity) {
+    if app
+        .world
+        .get_component::<crate::components::EditorHidden>(entity)
+        .is_some()
+    {
         return Err(format!(
-            "Error: Entity {entity} is the editor gizmo and cannot be modified"
+            "Error: Entity {entity} is editor-private and cannot be modified"
         ));
     }
     Ok(())
@@ -548,7 +420,7 @@ pub(crate) fn check_protected_entity(
 
 /// Convert a ToolCall's arguments into a SceneOp.
 fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
-    use katla_agent::co_creator::{
+    use katla_agent::tool_args::{
         AddComponentArgs, DestroyEntityArgs, DuplicateEntityArgs, GetComponentAttributesArgs,
         GetSceneHierarchyArgs, ListAvailableComponentsArgs, QueryEntitiesArgs, SetFieldArgs,
         SetParentArgs, SpawnEntityArgs,
@@ -643,7 +515,7 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
 }
 
 fn tool_call_to_resource_op(tool_call: &ToolCall) -> Result<ResourceOp, String> {
-    use katla_agent::co_creator::{
+    use katla_agent::tool_args::{
         CreateResourceArgs, GenerateResourceArgs, ListResourcesArgs, ReadResourceArgs,
         WriteResourceArgs,
     };
@@ -693,7 +565,7 @@ fn tool_call_to_resource_op(tool_call: &ToolCall) -> Result<ResourceOp, String> 
 }
 
 fn execute_spawn_model(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
-    use katla_agent::co_creator::SpawnModelArgs;
+    use katla_agent::tool_args::SpawnModelArgs;
 
     let args: SpawnModelArgs = match serde_json::from_value(tool_call.arguments.clone()) {
         Ok(a) => a,
@@ -718,7 +590,7 @@ fn execute_spawn_model(app: &mut super::super::Application, tool_call: &ToolCall
 }
 
 fn execute_load_scene(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
-    use katla_agent::co_creator::LoadSceneArgs;
+    use katla_agent::tool_args::LoadSceneArgs;
 
     let args: LoadSceneArgs = match serde_json::from_value(tool_call.arguments.clone()) {
         Ok(a) => a,
@@ -741,7 +613,7 @@ fn execute_load_scene(app: &mut super::super::Application, tool_call: &ToolCall)
 }
 
 fn execute_save_scene(app: &mut super::super::Application, tool_call: &ToolCall) -> String {
-    use katla_agent::co_creator::SaveSceneArgs;
+    use katla_agent::tool_args::SaveSceneArgs;
 
     let args: SaveSceneArgs = match serde_json::from_value(tool_call.arguments.clone()) {
         Ok(a) => a,
@@ -765,7 +637,7 @@ fn execute_save_scene(app: &mut super::super::Application, tool_call: &ToolCall)
     }
 }
 
-fn execute_resource_op(app: &super::super::Application, op: ResourceOp) -> String {
+pub(super) fn execute_resource_op(app: &super::super::Application, op: ResourceOp) -> String {
     match op {
         ResourceOp::ListResources { path, filter } => {
             execute_list_resources(app, &path, filter.as_deref())
@@ -1273,252 +1145,97 @@ fn generate_scene(description: &str) -> String {
     .to_string()
 }
 
-fn format_tool_call_summary(tc: &ToolCall) -> String {
-    use katla_agent::co_creator::{DestroyEntityArgs, DuplicateEntityArgs, SpawnEntityArgs};
-
-    match tc.name.as_str() {
-        "spawn_entity" => {
-            let args: SpawnEntityArgs =
-                serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
-            match args.position {
-                Some(pos) => {
-                    let coords = format!("{:.1}, {:.1}, {:.1}", pos[0], pos[1], pos[2]);
-                    match args.name {
-                        Some(n) => format!("Spawn \"{n}\" at ({coords})"),
-                        None => format!("Spawn entity at ({coords})"),
-                    }
-                }
-                None => "Spawn entity".to_string(),
-            }
-        }
-        "destroy_entity" => {
-            let args: DestroyEntityArgs =
-                serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
-            format!("Destroy entity {}", args.entity_id)
-        }
-        "set_field" => {
-            let comp = tc
-                .arguments
-                .get("component")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            let field = tc
-                .arguments
-                .get("field")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            format!("Set {comp}.{field}")
-        }
-        "query_entities" => {
-            let filter = tc
-                .arguments
-                .get("component_filter")
-                .and_then(|v| v.as_str())
-                .unwrap_or("*");
-            format!("Query {filter}")
-        }
-        "get_scene_hierarchy" => "Get scene hierarchy".to_string(),
-        "duplicate_entity" => {
-            let args: DuplicateEntityArgs =
-                serde_json::from_value(tc.arguments.clone()).unwrap_or_default();
-            format!("Duplicate entity {}", args.entity_id)
-        }
-        "list_available_components" => "List available components".to_string(),
-        "add_component" => {
-            let comp = tc
-                .arguments
-                .get("component")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            let eid = tc
-                .arguments
-                .get("entity_id")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            format!("Add {comp} to entity {eid}")
-        }
-        "get_component_attributes" => {
-            let comp = tc
-                .arguments
-                .get("component")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            let eid = tc
-                .arguments
-                .get("entity_id")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            format!("Get attributes of {comp} on entity {eid}")
-        }
-        "set_parent" => {
-            let eid = tc
-                .arguments
-                .get("entity_id")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let pid = tc.arguments.get("parent_id").and_then(|v| v.as_u64());
-            match pid {
-                Some(p) => format!("Set parent of entity {eid} to {p}"),
-                None => format!("Unparent entity {eid}"),
-            }
-        }
-        "list_resources" => {
-            let path = tc
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("assets");
-            format!("List resources in {path}")
-        }
-        "read_resource" => {
-            let path = tc
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            format!("Read {path}")
-        }
-        "write_resource" => {
-            let path = tc
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            format!("Write {path}")
-        }
-        "create_resource" => {
-            let path = tc
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            format!("Create {path}")
-        }
-        "spawn_model" => {
-            let path = tc
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            format!("Spawn model {path}")
-        }
-        "load_scene" => {
-            let path = tc
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            format!("Load scene {path}")
-        }
-        "save_scene" => {
-            let path = tc
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("default");
-            format!("Save scene to {path}")
-        }
-        "generate_resource" => {
-            let rtype = tc
-                .arguments
-                .get("resource_type")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            let path = tc
-                .arguments
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("?");
-            format!("Generate {rtype} -> {path}")
-        }
-        _ => tc.name.clone(),
-    }
-}
-
-fn format_tool_call_result(tc: &ToolCall, result: &str) -> String {
-    let summary = format_tool_call_summary(tc);
-    // Truncate very long results for display
-    let display_result = if result.len() > 200 {
-        format!("{}...", &result[..200])
-    } else {
-        result.to_string()
-    };
-    format!("{summary} -> {display_result}")
-}
-
-/// Execute local pattern-matching fallback via the CoCreatorAgent.
-fn process_local_request(app: &mut super::super::Application, text: &str) {
-    let response = app.editor.co_creator_agent.handle_local_request(text);
-    execute_local_actions(app, &response.actions);
-    app.editor
-        .editor_ui
-        .co_creator
-        .add_assistant_message(&response.text);
-}
-
-/// Execute local actions returned by the pattern-matching handler.
-fn execute_local_actions(app: &mut super::super::Application, actions: &[LocalAction]) {
-    for action in actions {
-        match action {
-            LocalAction::SpawnCube { position, size } => {
-                app.spawn_test_cube(*position, *size);
-            }
-            LocalAction::SpawnSphere { position, radius } => {
-                app.spawn_sphere(*position, *radius, 32, 16);
-            }
-            LocalAction::SpawnLight { position } => {
-                use crate::components::{PointLight, TransformComponent};
-                let entity = app.world.create_entity();
-                app.world.add_component(
-                    entity,
-                    TransformComponent::from_position(Vec3::new(
-                        position[0],
-                        position[1],
-                        position[2],
-                    )),
-                );
-                app.world
-                    .add_component(entity, PointLight::new([1.0, 1.0, 0.9], 10.0, 20.0));
-                app.attach_billboard_icon(
-                    entity,
-                    crate::components::billboard::BillboardIcon::Lightbulb,
-                );
-            }
-            LocalAction::SpawnCubeRing { count } => {
-                let n = (*count).min(10);
-                for i in 0..n {
-                    let angle = (i as f32 / n as f32) * std::f32::consts::TAU;
-                    let x = angle.cos() * 3.0;
-                    let z = angle.sin() * 3.0;
-                    app.spawn_test_cube([x, 0.5, z], [1.0, 1.0, 1.0]);
-                }
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{NameComponent, PointLight};
-
-    fn test_world_and_registry() -> (katla_ecs::World, ComponentRegistry) {
-        (
-            katla_ecs::World::new(),
-            super::super::component_registry::build_editor_component_registry(),
-        )
-    }
 
     #[test]
-    fn test_scene_context_json() {
-        let (mut world, registry) = test_world_and_registry();
-        let entity = world.create_entity();
-        world.add_component(entity, NameComponent::new("TestEntity"));
-        world.add_component(entity, PointLight::new([1.0, 0.0, 0.0], 5.0, 20.0));
-
-        let json = get_scene_context_json(&mut world, &registry, Some(entity));
-        assert!(json.contains("TestEntity"));
-        assert!(json.contains("entity_count"));
+    fn test_teen_room_fixture_placement_clearances_and_scene_tool_undo() {
+        use crate::components::{NameComponent, TransformComponent};
+        use crate::scene::{EntitySource, Scene};
+        use katla_ecs::World;
+        let base: Scene =
+            ron::from_str(include_str!("../../../../assets/scenes/shared-room.katla")).unwrap();
+        let furnished: Scene = ron::from_str(include_str!(
+            "../../../../assets/scenes/teen-room-blockout.katla"
+        ))
+        .unwrap();
+        let plan: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../assets/scenes/teen-room-plan.json"
+        ))
+        .unwrap();
+        let placements = plan["placements"].as_array().unwrap();
+        assert_eq!(
+            furnished.entities.len(),
+            base.entities.len() + placements.len()
+        );
+        assert_eq!(
+            serde_json::to_value(&furnished.entities[..base.entities.len()]).unwrap(),
+            serde_json::to_value(&base.entities).unwrap()
+        );
+        let registry = super::super::component_registry::build_spawn_component_registry();
+        let mut world = World::new();
+        let original = world.spawn((
+            NameComponent::new("Existing room"),
+            TransformComponent::default(),
+        ));
+        let mut undo = Vec::new();
+        for (placement, descriptor) in placements
+            .iter()
+            .zip(furnished.entities.iter().skip(base.entities.len()))
+        {
+            let tool = ToolCall {
+                id: "fixture".into(),
+                name: "spawn_entity".into(),
+                arguments: placement.clone(),
+            };
+            let op = tool_call_to_scene_op(&tool).unwrap();
+            let (result, group) = SceneToolExecutor::execute(op, &mut world, &registry).unwrap();
+            let id = result.affected_entities[0];
+            let transform = &world
+                .get_component::<TransformComponent>(id)
+                .unwrap()
+                .transform;
+            assert_eq!(transform.position.to_array(), descriptor.transform.position);
+            assert_eq!(transform.scale.to_array(), descriptor.transform.scale);
+            assert_eq!(
+                world.get_component::<NameComponent>(id).unwrap().name,
+                descriptor.name.as_ref().unwrap().as_str()
+            );
+            assert_eq!(descriptor.source, EntitySource::Cube { size: [1.0; 3] });
+            let bounds = crate::application::spawning::local_bounds_for_source(&descriptor.source)
+                .transform(&transform.make_mat4());
+            let low = bounds.min();
+            let high = bounds.max();
+            assert!(low.x() >= -3.9 && high.x() <= 3.9);
+            assert!(low.z() >= -6.8 && high.z() <= 2.9);
+            assert!(low.y() >= -0.00001 && high.y() <= 3.0);
+            if high.y() > 0.2 {
+                assert!(
+                    high.x() <= -1.0 || low.x() >= 1.0,
+                    "Central passage blocked by {}",
+                    descriptor.name.as_ref().unwrap()
+                );
+                for x in [-2.2, 2.2] {
+                    assert!(
+                        high.x() <= x - 0.8
+                            || low.x() >= x + 0.8
+                            || low.z() >= -5.0
+                            || high.z() <= -7.0,
+                        "Door approach blocked"
+                    );
+                }
+            }
+            undo.push(group);
+        }
+        for group in undo.iter_mut().rev() {
+            group.undo_all(&mut world).unwrap();
+        }
+        assert_eq!(world.entity_ids().collect::<Vec<_>>(), vec![original]);
+        assert_eq!(
+            world.get_component::<NameComponent>(original).unwrap().name,
+            "Existing room"
+        );
     }
 
     #[test]

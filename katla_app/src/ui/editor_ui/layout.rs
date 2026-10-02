@@ -251,14 +251,16 @@ impl EditorUI {
 
         // Floating panel contexts
         let theme_key = self.theme_key().to_string();
+        let mut connection_preferences = params.preferences.clone();
+        connection_preferences.external_chat.socket = self.co_creator.host_socket.clone();
+        connection_preferences.external_chat.thread_id = self.co_creator.host_thread.clone();
         self.view_tree.env_mut().set(PreferencesDrawCtx {
             is_open: self.preferences_panel.is_visible(),
             category: self.preferences_category,
-            preferences: params.preferences.clone(),
+            preferences: connection_preferences,
             editor_settings: self.editor_settings.clone(),
             theme: self.theme.clone(),
             theme_key,
-            llm_config: params.llm_config.clone(),
         });
 
         self.view_tree.env_mut().set(ParticleInspectorDrawCtx {
@@ -279,6 +281,8 @@ impl EditorUI {
                         .map(|m| (m.role.clone(), m.text.clone()))
                         .collect(),
                     processing: self.co_creator.processing,
+                    host_name: self.co_creator.host_name.clone(),
+                    input_epoch: self.co_creator.input_epoch,
                     status_message: self.co_creator.status_message.clone(),
                     user_msg_color: style.user_msg_color,
                     assistant_msg_color: style.assistant_msg_color,
@@ -432,10 +436,31 @@ impl EditorUI {
             .drain::<super::declarative::CoCreatorSubmitAction>()
         {
             if !action.text.trim().is_empty() {
-                self.co_creator.submit_message(&action.text);
                 self.pending_actions
                     .push(EditorAction::CoCreatorRequest(action.text));
             }
+        }
+        for _ in self
+            .view_tree
+            .actions_mut()
+            .drain::<super::declarative::CoCreatorConnectionSettingsAction>()
+        {
+            self.preferences_category = 3;
+            self.preferences_panel.visibility =
+                katla_ui::declarative::DraggablePanelVisibility::JustOpened;
+        }
+        for action in self
+            .view_tree
+            .actions_mut()
+            .drain::<super::declarative::CoCreatorConnectAction>()
+        {
+            self.co_creator.host_socket = action.socket.clone();
+            self.co_creator.host_thread = action.thread_id.clone();
+            self.pending_actions
+                .push(EditorAction::ConnectExternalChat {
+                    socket: action.socket,
+                    thread_id: action.thread_id,
+                });
         }
         for _ in self
             .view_tree

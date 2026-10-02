@@ -1,3 +1,7 @@
+pub mod protocol;
+pub mod tool_args;
+pub use protocol::{MessageRole, ToolCall};
+
 #[cfg(feature = "llm-assistant")]
 pub mod co_creator;
 
@@ -29,8 +33,7 @@ pub use config::LlmConfig;
 
 #[cfg(feature = "llm-assistant")]
 pub use llm::{
-    ChatMessage, ChatResponse, FinishReason, LlmError, MessageRole, StreamChunk, ToolCall,
-    ToolCallDelta, ToolDefinition,
+    ChatMessage, ChatResponse, FinishReason, LlmError, StreamChunk, ToolCallDelta, ToolDefinition,
 };
 
 #[cfg(feature = "llm-assistant")]
@@ -47,3 +50,6 @@ pub use mcp::{
     KatlaMcpServer, McpBridge, McpOp, McpOpKind, McpResponse, McpToolResult, PendingMcpRequest,
     start_mcp_server_thread,
 };
+
+#[cfg(feature = "mcp-server")]
+pub mod codex_host;

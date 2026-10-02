@@ -49,6 +49,10 @@ struct Args {
     #[arg(long)]
     headless: bool,
 
+    /// Render a bounded number of frames (use a larger budget for stdio MCP tests)
+    #[arg(long)]
+    frames: Option<std::num::NonZeroUsize>,
+
     /// Screenshot output path (requires --headless, default: /tmp/katla_screenshot.png)
     #[arg(long, value_name = "PATH")]
     screenshot: Option<String>,
@@ -254,6 +258,10 @@ fn main() {
         );
     }
 
+    if let Some(frames) = args.frames {
+        builder = builder.max_frames(frames.get());
+    }
+
     if args.headless || args.ui_test.is_some() || args.interaction_test.is_some() {
         if let Some(ref dir) = args.ui_test {
             builder = builder.ui_test_path(dir.clone());
@@ -264,13 +272,17 @@ fn main() {
         let screenshot_path = args
             .screenshot
             .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
-        let max_frames =
+        let default_frames =
             if args.single_frame || args.ui_test.is_some() || args.interaction_test.is_some() {
                 130
             } else {
                 10
             };
 
+        let max_frames = args
+            .frames
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(default_frames);
         let result = builder.build_headless(max_frames, screenshot_path);
         match result {
             Ok(mut app) => {

@@ -220,13 +220,16 @@ impl ViewTree {
             let fonts = ui.fonts.clone();
             let font_id = ui.current_font;
             let scale = ui.scale_factor;
-            let measure = |content: &str, font_size: Option<crate::style::FontSize>| {
+            let font_scale = ui.font_scale;
+            let measure = |content: &str,
+                           font_size: Option<crate::style::FontSize>,
+                           max_width: Option<f32>| {
                 let size = font_size
                     .unwrap_or(crate::style::FontSize::Medium)
-                    .to_pixels();
+                    .to_pixels_scaled(font_scale);
                 fonts
                     .borrow_mut()
-                    .measure_text(font_id, content, size, scale)
+                    .measure_text_shaped(font_id, content, size, scale, max_width)
             };
             taffy.sync(self, &measure); // &mut ViewTree for taffy_id writeback
         }
@@ -1943,7 +1946,8 @@ mod tests {
         let root_id = tree.root().unwrap();
         let mut taffy = TaffyNodeMap::new();
         // Use a simple measure that always returns zero
-        let measure = |_: &str, _: Option<crate::style::FontSize>| Vec2::new(0.0, 0.0);
+        let measure =
+            |_: &str, _: Option<crate::style::FontSize>, _: Option<f32>| Vec2::new(0.0, 0.0);
         taffy.sync(&mut tree, &measure);
         let _bounds = taffy.compute(root_id, Vec2::new(0.0, 0.0), &tree);
         // If we get here without panic, the test passes

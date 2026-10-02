@@ -60,8 +60,6 @@ impl Application {
             }
         };
 
-        self.gpu_resource_tracker.set_protected_material(material);
-
         self.editor.gizmo_resources = GizmoResources {
             shaft_mesh,
             cone_mesh,

@@ -46,6 +46,16 @@ impl Default for AudioSettings {
     }
 }
 
+/// Local attachment to an existing external conversation; contains no credentials.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct ExternalChatPreferences {
+    /// Private control socket published by the existing host.
+    pub socket: String,
+    /// Already existing conversation to rejoin in that host.
+    pub thread_id: String,
+}
+
 /// Application preferences that persist between sessions.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -65,6 +75,7 @@ pub struct Preferences {
     #[serde(default)]
     pub audio: AudioSettings,
     pub editor: EditorSettings,
+    pub external_chat: ExternalChatPreferences,
 }
 
 impl Default for Preferences {
@@ -78,6 +89,7 @@ impl Default for Preferences {
             font_scale: 1.0,
             audio: AudioSettings::default(),
             editor: EditorSettings::default(),
+            external_chat: ExternalChatPreferences::default(),
         }
     }
 }
@@ -167,6 +179,7 @@ font_scale = 1.25
             show_reverb_debug: false,
             font_scale: 1.5,
             editor: EditorSettings::default(),
+            external_chat: ExternalChatPreferences::default(),
             audio: AudioSettings {
                 master_volume: 0.8,
                 sfx_volume: 1.0,
@@ -199,9 +212,19 @@ mod persistence_tests {
         preferences.editor.snap_to_grid = false;
         preferences.editor.camera_speed = 75.0;
         preferences.editor.grid_size = 0.5;
+        preferences.external_chat.socket = "/tmp/codex-test-owner.sock".into();
+        preferences.external_chat.thread_id = "existing-owner".into();
         let encoded = toml::to_string(&preferences).unwrap();
         let restored: Preferences = toml::from_str(&encoded).unwrap();
         assert_eq!(preferences.editor, restored.editor);
+        assert_eq!(
+            preferences.external_chat.socket,
+            restored.external_chat.socket
+        );
+        assert_eq!(
+            preferences.external_chat.thread_id,
+            restored.external_chat.thread_id
+        );
         preferences.font_scale = f32::NAN;
         preferences.audio.master_volume = f32::INFINITY;
         preferences.editor.grid_size = f32::NEG_INFINITY;

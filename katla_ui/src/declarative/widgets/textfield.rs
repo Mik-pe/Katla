@@ -39,7 +39,7 @@ impl Widget for TextField {
     }
 
     fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
-        let text_size = measure(&self.placeholder, None);
+        let text_size = measure(&self.placeholder, None, None);
         let mut style = Style {
             size: Size {
                 width: Dimension::Length(text_size.x() + 16.0),

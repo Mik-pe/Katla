@@ -136,15 +136,9 @@ pub(crate) struct EditorState {
     pub(crate) prev_mouse_screen: Option<(f32, f32)>,
     /// Component registry for AI agent scene tools.
     pub(crate) component_registry: katla_ecs::scene_tool::ComponentRegistry,
-    /// Agent harness for AI co-creator execution.
-    pub(crate) _agent_harness: katla_ecs::agent::AgentHarness,
-    /// LLM configuration (API key, model, endpoint).
-    pub(crate) llm_config: katla_agent::LlmConfig,
-    /// Async bridge for background LLM calls.
-    pub(crate) async_bridge: Option<katla_agent::AsyncBridge>,
-    /// Co-creator agent: single source of truth for conversation state and LLM interaction.
-    pub(crate) co_creator_agent: katla_agent::CoCreatorAgent,
     /// MCP server bridge for external AI tool integration.
+    #[cfg(feature = "mcp")]
+    pub(crate) external_chat: crate::application::editor::external_chat::ExternalChatState,
     #[cfg(feature = "mcp")]
     pub(crate) mcp_state: crate::application::editor::mcp::McpState,
     pub(crate) undo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
@@ -175,12 +169,6 @@ impl EditorState {
         let component_registry =
             crate::application::editor::component_registry::build_editor_component_registry();
         let available = component_registry.type_names();
-        let llm_config = katla_agent::LlmConfig::load();
-        let async_bridge = katla_agent::AsyncBridge::with_rate_limits(
-            std::time::Duration::from_millis(llm_config.rate_limit_min_interval_ms),
-            llm_config.rate_limit_max_calls_per_minute,
-        )
-        .ok();
         let mut state = Self {
             ui_renderer,
             editor_ui: {
@@ -211,10 +199,8 @@ impl EditorState {
             billboard_resources: crate::billboard::BillboardResources::default(),
             prev_mouse_screen: None,
             component_registry,
-            _agent_harness: katla_ecs::agent::AgentHarness::new(),
-            llm_config,
-            async_bridge,
-            co_creator_agent: katla_agent::CoCreatorAgent::new(),
+            #[cfg(feature = "mcp")]
+            external_chat: crate::application::editor::external_chat::ExternalChatState::default(),
             #[cfg(feature = "mcp")]
             mcp_state: crate::application::editor::mcp::McpState::new(),
             undo_stack: Vec::new(),
@@ -227,6 +213,21 @@ impl EditorState {
             preview_voice: None,
             pending_document_action: None,
         };
+        state.editor_ui.co_creator.host_socket = std::env::var("KATLA_CODEX_SOCKET")
+            .unwrap_or_else(|_| preferences.external_chat.socket.clone());
+        state.editor_ui.co_creator.host_thread = std::env::var("KATLA_CODEX_THREAD")
+            .unwrap_or_else(|_| preferences.external_chat.thread_id.clone());
+        #[cfg(feature = "mcp")]
+        if !state.editor_ui.co_creator.host_socket.is_empty()
+            && !state.editor_ui.co_creator.host_thread.is_empty()
+        {
+            state.external_chat =
+                crate::application::editor::external_chat::ExternalChatState::connection(
+                    state.editor_ui.co_creator.host_socket.clone(),
+                    state.editor_ui.co_creator.host_thread.clone(),
+                );
+            state.editor_ui.co_creator.status_message = "Connecting…".into();
+        }
         state.editor_ui.set_available_components(available);
         state
     }
@@ -253,6 +254,7 @@ impl EditorState {
         if let Some(mut group) = self.undo_stack.pop() {
             if group.undo_all(world).is_ok() {
                 self.redo_stack.push(group);
+                self.editor_ui.inspector_edit_entity = None;
                 return true;
             }
             self.undo_stack.push(group);
@@ -264,6 +266,7 @@ impl EditorState {
         if let Some(mut group) = self.redo_stack.pop() {
             if group.redo_all(world).is_ok() {
                 self.undo_stack.push(group);
+                self.editor_ui.inspector_edit_entity = None;
                 return true;
             }
             self.redo_stack.push(group);
@@ -275,6 +278,9 @@ impl EditorState {
         if let Some(mut group) = self.agent_undo_stack.pop() {
             if group.undo_all(world).is_ok() {
                 self.agent_redo_stack.push(group);
+                self.editor_ui.inspector_edit_entity = None;
+                self.inspector_slider_was_active = false;
+                self.inspector_drag_snapshot = None;
                 return true;
             }
             self.agent_undo_stack.push(group);

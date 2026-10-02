@@ -27,6 +27,20 @@ For appearance, use [editor visual design](editor_ui_design.md). The sections
 below retain the design rationale and API sketches; source is the current API.
 
 
+The Scene assistant is a lightweight view of an existing external conversation.
+Connection settings persist separately under Preferences → Connection; the normal
+panel shows status/name, messages and a question field. A submitted question gets
+the next committed viewport image and metadata. Host streaming is scoped by turn
+and item, and a successful submission clears the declarative input via an epoch.
+`MeasureFn` takes content, optional font size and optional logical wrap width.
+Unwrapped widgets pass no width. Runtime measurement includes the active font
+scale. Text wrapping passes the same optional logical width to cosmic-text for both
+layout measurement and glyph drawing, preserving
+explicit newlines and the underlying message. The message area follows new
+content until the user scrolls upward; the input row remains outside that scroll.
+It does not start a parallel internal conversation. See the [shared-view and host
+contract](shared-editor-view.md) for transport ownership and native limitations.
+
 ## 1. Architecture Overview
 
 ### Current State: Immediate Mode

@@ -6,6 +6,7 @@ default-run = "katla"
 
 [features]
 default = []
+mcp = ["katla_app/mcp"]
 
 [[bin]]
 name = "katla"
@@ -21,3 +22,7 @@ katla_script = { workspace = true }
 clap = { workspace = true }
 log = { workspace = true }
 env_logger = { workspace = true }
+
+[[bin]]
+name = "katla-mcp"
+path = "src/mcp_proxy.rs"

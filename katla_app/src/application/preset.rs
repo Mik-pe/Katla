@@ -97,6 +97,7 @@ impl KatlaEditorFrameGraphPreset {
         });
         let load_depth = clear_depth.with_load(LoadOp::Load);
         builder = builder
+            .export_resource("viewport_0")
             .export_resource("object_id")
             .export_resource("backbuffer")
             .add_pass(

@@ -109,7 +109,7 @@ impl super::FontSystem {
         size: f32,
         scale_factor: f32,
     ) -> Vec2 {
-        self.measure_text_shaped(font_id, text, size, scale_factor)
+        self.measure_text_shaped(font_id, text, size, scale_factor, None)
     }
 
     /// Pre-cache common ASCII characters for a font.
