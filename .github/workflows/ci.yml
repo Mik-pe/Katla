@@ -118,8 +118,34 @@ jobs:
       - name: Check graphics and application crates
         run: cargo check -p katla_gfx -p katla_app --locked --quiet
 
-      - name: Test graphics library
-        run: cargo test -p katla_gfx --lib --locked --quiet -- --test-threads=1
+      - name: Probe default GPU Metal 4 support
+        id: metal4
+        run: |
+          metal4_supported="$(xcrun swift -e 'import Metal; print(MTLCreateSystemDefaultDevice()?.supportsFamily(.metal4) == true ? "true" : "false")')"
+          echo "supported=$metal4_supported" >> "$GITHUB_OUTPUT"
+          if [ "$metal4_supported" != "true" ]; then
+            echo "::notice::Native Metal 4 acceptance BLOCKED: the hosted virtual GPU lacks Metal 4. Portable tests and typed capability rejection still run."
+            echo "Native Metal 4 acceptance: **BLOCKED** — default GPU lacks Metal 4. This job validates the current SDK, portable graphics tests and typed rejection; physical GPU acceptance is recorded separately." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Verify Metal 4 capability rejection precedes native creation
+        run: cargo test -p katla_gfx --lib --locked --quiet metal::context::tests::test_metal_context_capability_precedes_native_creation -- --exact
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
+
+      - name: Test graphics library according to actual GPU capability
+        run: |
+          if [ "${{ steps.metal4.outputs.supported }}" = "true" ]; then
+            cargo test -p katla_gfx --lib --locked --quiet -- --test-threads=1
+          else
+            metal4_test_filters=()
+            while IFS= read -r filter; do
+              case "$filter" in ""|\#*) continue ;; esac
+              metal4_test_filters+=(--skip "$filter")
+            done < katla_gfx/tests/metal4-required-tests.txt
+            cargo test -p katla_gfx --lib --locked --quiet -- --test-threads=1 "${metal4_test_filters[@]}"
+          fi
         env:
           MTL_DEBUG_LAYER: "1"
           METAL_DEVICE_WRAPPER_TYPE: "1"
@@ -128,6 +154,7 @@ jobs:
         run: cargo clippy -p katla_gfx -p katla_app --locked --quiet -- -D warnings
 
       - name: Cross-backend contract suite (Metal with API validation)
+        if: steps.metal4.outputs.supported == 'true'
         run: cargo test -p katla_gfx --test contract --locked -- --ignored
         env:
           MTL_DEBUG_LAYER: "1"

@@ -21,3 +21,8 @@ The surface configures three drawables. Native presentation follows queue `waitF
 Validate native changes by launching with `METAL_DEVICE_WRAPPER_TYPE=1` before process startup. GPU output checks, multi-slot stress, aliasing, uploads, and terminal feedback tests complement portable graph tests.
 
 GPU profiling uses Metal 4 counter heaps owned by the three frame slots. Open profiling labels measure the graph submission; results become readable after that submission's exact feedback, with native ticks converted using the Mach timebase. Profiling emits no commands unless labels are open. See [frame ownership](metal4_frame_slots.md).
+
+Initialization requires the default device to support `MTLGPUFamilyMetal4`.
+Unsupported devices return a typed capability error before creating a native
+queue, compiler or allocator; there is no legacy command fallback. The hosted
+macos-26 virtual GPU may lack this capability, as documented in [CI](ci.md).

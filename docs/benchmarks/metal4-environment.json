@@ -1,5 +1,5 @@
 {
-  "captured_utc": "2026-10-02T07:09:57.576690+00:00",
+  "captured_utc": "2026-10-02T07:35:03.398579+00:00",
   "host": {
     "gpu": "Apple M5, 10 GPU cores",
     "cpu_cores": 10,
@@ -21,32 +21,32 @@
     "capture_sha256": "d3532df1b391aed6a81855b0a330bc3304468743c7cc078b422d45dbc4e0bc63"
   },
   "current": {
-    "source_sha256": "3303b92f9ed947c980807a605a14f4045ba82ff08cd16cd21839e11e53b2bab2",
+    "source_sha256": "d6e9c745c58dd47f26368df6a786aca68fc5fa2e930c5e71446fc83d7e2d4c4f",
     "source_hash_scope": "Sorted gfx/app Rust, WGSL, root/crate manifests and Cargo.lock, relative path NUL content NUL",
     "cold": {
-      "binary_sha256": "169ac4680ea811eaac4456af508b0106a5a5757b19defa9f652ae5e4512ff4db",
-      "startup_seconds": 6.789523167,
-      "total_seconds": 10.859798625000002,
+      "binary_sha256": "94e4384ef4a426c77bed159532da03890f22323ae0ef97568c0a707213dfea68",
+      "startup_seconds": 2.755248417,
+      "total_seconds": 3.973126375,
       "exit_code": 0,
       "events_before_first_frame": {
         "open": 1,
         "compile": 62
       },
       "events_after_first_frame": {},
-      "log": "/tmp/katla-final-cold-v3.log",
-      "capture": "/tmp/katla-final-cold-v3.png"
+      "log": "/tmp/katla-final-cold-v4.log",
+      "capture": "/tmp/katla-final-cold-v4.png"
     },
     "warm": {
-      "binary_sha256": "169ac4680ea811eaac4456af508b0106a5a5757b19defa9f652ae5e4512ff4db",
-      "startup_seconds": 0.477835125,
-      "total_seconds": 1.98773025,
+      "binary_sha256": "94e4384ef4a426c77bed159532da03890f22323ae0ef97568c0a707213dfea68",
+      "startup_seconds": 0.359644083,
+      "total_seconds": 1.421392625,
       "exit_code": 0,
       "events_before_first_frame": {
         "open": 1
       },
       "events_after_first_frame": {},
-      "log": "/tmp/katla-final-warm-v3.log",
-      "capture": "/tmp/katla-final-warm-v3.png"
+      "log": "/tmp/katla-final-warm-v4.log",
+      "capture": "/tmp/katla-final-warm-v4.png"
     },
     "instrumentation": "completion feedback/residency registration through native queue commit; exact slot wait; completed prior-slot GPU duration",
     "warm_native_cache_hits": 69,
@@ -135,8 +135,8 @@
     }
   },
   "csv_sha256": {
-    "metal4-frame-warm.csv": "8d4201a25ee52797895d85d71dba37cff9af26637179d70bcbc53275e284c93a",
-    "metal4-frame-baseline.csv": "ef6ad97e1cb3432199ecbf2f8ae955a1e0568e50487a5a7b14ccd08ec8e224a9",
-    "metal4-frame-cold.csv": "c4a3e2000b1d64078563a83d7f3d1d7602fdcf5cae624234c98455f17ec3a758"
+    "metal4-frame-warm.csv": "364fa14c3af9eb540e1f3675a33fa43cd6fc07f63d3ae5dd6878aebf0ece65cb",
+    "metal4-frame-baseline.csv": "0dcd4d53a683767c219c563c2eb73617b0dbb6ef8faaa0d85469662097530c03",
+    "metal4-frame-cold.csv": "af25afbef974700ec3aee0fb1ede8e7b441f962f8fafc1781306d901bc4ad4d1"
   }
 }

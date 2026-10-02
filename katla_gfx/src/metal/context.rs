@@ -532,6 +532,12 @@ impl MetalContext {
     fn create_command_queue(
         device: &ProtocolObject<dyn MTLDevice>,
     ) -> Result<Retained<ProtocolObject<dyn MTL4CommandQueue>>, RendererError> {
+        if !device.supportsFamily(MTLGPUFamily::Metal4) {
+            return Err(RendererError::UnsupportedFeature(format!(
+                "Metal 4 is required; GPU '{}' does not support MTLGPUFamilyMetal4",
+                device.name(),
+            )));
+        }
         let descriptor = MTL4CommandQueueDescriptor::new();
         descriptor.setLabel(Some(&objc2_foundation::NSString::from_str(
             "Katla Metal4 graphics queue",
@@ -872,6 +878,23 @@ mod tests {
     use crate::backend::resource::GpuImage;
     use crate::metal::shader;
     use crate::texture::TextureUsage;
+
+    #[test]
+    fn test_metal_context_capability_precedes_native_creation() {
+        let Some(device) = MTLCreateSystemDefaultDevice() else {
+            return;
+        };
+        let supports_metal4 = device.supportsFamily(MTLGPUFamily::Metal4);
+        match MetalContext::create_command_queue(&device) {
+            Ok(_) => assert!(supports_metal4),
+            Err(RendererError::UnsupportedFeature(reason)) => {
+                assert!(!supports_metal4);
+                assert!(reason.contains("MTLGPUFamilyMetal4"));
+                assert!(reason.contains(&device.name().to_string()));
+            }
+            Err(error) => panic!("unexpected Metal queue creation failure: {error}"),
+        }
+    }
 
     #[test]
     fn test_metal_context_headless() {

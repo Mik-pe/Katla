@@ -75,8 +75,8 @@ METAL_DEVICE_WRAPPER_TYPE=1 cargo test -p katla_gfx --lib test_metal4_pipeline_l
 
 Fresh-process full-editor observations use an isolated archive directory and the
 same development build under both Metal validation flags. Empty-cache launch to
-frame-loop entry took **6.790 s** with 62 native pipeline misses; the next
-process took **0.478 s** with **69 native hits and zero misses**. All cold
+frame-loop entry took **2.755 s** with 62 native pipeline misses; the next
+process took **0.360 s** with **69 native hits and zero misses**. All cold
 compilation finished before frame-loop entry; neither process compiled during
 frame rendering. These are single process observations on a shared host.
 See [scene validation and raw provenance](metal4_validation.md) for binary/source

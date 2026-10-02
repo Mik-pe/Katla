@@ -30,17 +30,18 @@ Katla intentionally follows the current macOS and Metal platform rather than mai
 GitHub-hosted macOS runners may expose a virtualized Metal device with fewer capabilities than physical Apple Silicon hardware. CI must still verify that Katla:
 
 - compiles against the selected current macOS and Xcode environment;
-- runs the complete `katla_gfx` library test suite;
+- runs all device-independent library tests and shader/reflection checks;
+- runs the full native library and contract suites when the exposed device supports `MTLGPUFamilyMetal4`;
 - detects unsupported GPU capabilities before issuing invalid Objective-C or Metal calls;
 - returns typed errors instead of aborting across the Objective-C/Rust boundary.
 
-Pixel-accurate rendering and performance validation should use a physical, self-hosted Apple Silicon runner when one is available. The hosted `macos-26` job remains the required current-SDK validation environment.
+The job probes the default device before testing. A virtual GPU without Metal 4 receives an explicit **BLOCKED** native-acceptance notice in the job summary; the typed capability-rejection regression still runs. The GPU-only exclusion manifest is `katla_gfx/tests/metal4-required-tests.txt`; it retains 72 Metal device-independent tests and 628 runnable library tests in the current inventory. Add new native fixtures to that manifest rather than disabling an entire Metal module. This is a hardware limitation, not native GPU acceptance. Physical Apple Silicon validation is recorded separately in `metal4_validation.md`. No legacy command path or older macOS runner is introduced.
 
 ## Cross-backend contract suite
 
-Both jobs run the shared contract suite (`katla_gfx/tests/contract/`) against
-the platform's native backend — Vulkan on lavapipe with the Khronos validation
-layers installed, Metal on Apple Silicon with `MTL_DEBUG_LAYER=1` and
+Linux runs the shared contract suite (`katla_gfx/tests/contract/`) against Vulkan
+on lavapipe with active Khronos validation. The macOS job runs it against Metal
+only when the default GPU supports Metal 4, with `MTL_DEBUG_LAYER=1` and
 `METAL_DEVICE_WRAPPER_TYPE=1`:
 
 ```bash
@@ -110,7 +111,7 @@ library fixtures serially to avoid lavapipe instance creation races. A separate
 Vulkan transient-alias integration step queues both frame slots across eight
 resize/rebuild cycles and checks validation messages and pixel contents.
 
-The macos-26 graphics library step runs with both `MTL_DEBUG_LAYER=1` and
+When Metal 4 is supported, the macos-26 graphics library step runs with both `MTL_DEBUG_LAYER=1` and
 `METAL_DEVICE_WRAPPER_TYPE=1`. Native tests cover three-slot ownership, stream
 replacement, UI isolation, private texture sampling, placement heaps, timestamp
 readback and frame aborts. Compilation or a screenshot alone is insufficient
