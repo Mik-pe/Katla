@@ -205,6 +205,12 @@ release together at renderer teardown. Native allocation failures propagate
 without consuming the tracked descriptor budget; retrying an exhausted fresh
 pool returns an error instead of growing indefinitely.
 
+Graphics encoding reuses one resource packet across a pass's drawing phases.
+Each phase starts with the pass constants before applying its own overrides;
+encoding never clones the complete phase list for individual draws. The native
+allocation-growth regression measures actual rendering after both slots warm
+up and requires approximately linear growth as phase counts increase.
+
 Explicit pass bindings take precedence over implicit draw bindings on both
 backends; duplicate explicit slots remain invalid. Skinned Vulkan draws resolve
 the shader's skeleton storage slot at group 2 or 3. Sampled depth/stencil

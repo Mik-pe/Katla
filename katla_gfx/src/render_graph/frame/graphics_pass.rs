@@ -1,7 +1,7 @@
 use super::{Frame, PassExecutionData};
 use crate::render_graph::{PassDesc, RenderGraphError};
 use crate::renderer::VulkanRenderer;
-use crate::renderer::frame_bindings::{PassDraw, PassDrawPhase};
+use crate::renderer::frame_bindings::{PassBindings, PassDraw, PassDrawPhase};
 use crate::vulkan::commandbuffer::CommandBuffer;
 use ash::vk;
 
@@ -66,6 +66,14 @@ impl Frame<'_, VulkanRenderer> {
             extent.width,
             extent.height,
         )]);
+        let mut packet = PassBindings {
+            pipelines: pass.bindings.pipelines.clone(),
+            buffers: pass.bindings.buffers.clone(),
+            images: pass.bindings.images.clone(),
+            samplers: pass.bindings.samplers.clone(),
+            constants: Vec::new(),
+            phases: Vec::new(),
+        };
         for phase in phases {
             let viewport = phase.viewport.unwrap_or_else(|| {
                 crate::Rect::new([0.0, 0.0], [extent.width as f32, extent.height as f32])
@@ -76,8 +84,7 @@ impl Frame<'_, VulkanRenderer> {
                 viewport.width(),
                 viewport.height(),
             )]);
-            let mut packet = pass.bindings.clone();
-            packet.phases.clear();
+            packet.constants.clone_from(&pass.bindings.constants);
             for constant in &phase.constants {
                 packet.constants.retain(|existing| {
                     (existing.group, existing.binding) != (constant.group, constant.binding)

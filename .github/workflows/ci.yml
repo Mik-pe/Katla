@@ -91,8 +91,10 @@ jobs:
       - name: Vulkan native capture and retained readback validation
         run: cargo test -p katla_gfx --lib renderer::capture_tests --locked -- --ignored --test-threads=1
 
-      - name: Vulkan descriptor pool growth and frame retirement validation
-        run: cargo test -p katla_gfx --lib descriptor_ --locked -- --ignored --test-threads=1
+      - name: Vulkan graphics binding allocation and retirement validation
+        run: |
+          cargo test -p katla_gfx --lib descriptor_ --locked -- --ignored --test-threads=1
+          cargo test -p katla_gfx --test graphics_phase_allocations --locked -- --ignored --test-threads=1
 
       - name: Upload render-graph diagnostics artifacts
         if: failure()

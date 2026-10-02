@@ -83,21 +83,32 @@ fn test_native_graphics_descriptor_pools_reuse_slots_after_submit_abort_and_resi
             [0., 1., 0., 1.]
         };
         let right = [0.0f32, 0., 1., 1.];
-        let mut packet = PassBindings::default();
+        let mut packet = PassBindings {
+            constants: vec![ConstantBinding {
+                group: 2,
+                binding: 0,
+                stages: ShaderStages::FRAGMENT,
+                bytes: right.into_iter().flat_map(f32::to_ne_bytes).collect(),
+            }],
+            ..Default::default()
+        };
         for draw in 0..300 {
             let is_left = draw < 150;
-            let color = if is_left { left } else { right };
             packet.phases.push(PassDrawPhase {
                 pipelines: vec![PassPipeline {
                     material,
                     vertex_layout: VertexLayout::empty(),
                 }],
-                constants: vec![ConstantBinding {
-                    group: 2,
-                    binding: 0,
-                    stages: ShaderStages::FRAGMENT,
-                    bytes: color.into_iter().flat_map(f32::to_ne_bytes).collect(),
-                }],
+                constants: if is_left {
+                    vec![ConstantBinding {
+                        group: 2,
+                        binding: 0,
+                        stages: ShaderStages::FRAGMENT,
+                        bytes: left.into_iter().flat_map(f32::to_ne_bytes).collect(),
+                    }]
+                } else {
+                    Vec::new()
+                },
                 draw: PassDraw::Vertices {
                     count: 3,
                     instances: 1,
