@@ -233,6 +233,10 @@ impl Widget for MenuBar {
                     Vec2::new(dropdown_width, group.items.len() as f32 * entry_height),
                 );
 
+                let previous_z = ctx.draw_list.z_index();
+                let popup_z = previous_z.max(crate::context::z_index::POPUP);
+                ctx.draw_list.set_z_index(popup_z);
+                ctx.register_hover_layer(popup_z, dropdown_bounds);
                 ctx.draw_rect(dropdown_bounds, ctx.style().window_bg);
                 ctx.draw_rect_border(
                     dropdown_bounds,
@@ -268,6 +272,7 @@ impl Widget for MenuBar {
                         font_size,
                     );
                 }
+                ctx.draw_list.set_z_index(previous_z);
             }
 
             x += label_size + item_spacing * 2.0;

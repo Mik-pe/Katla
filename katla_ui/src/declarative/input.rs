@@ -132,6 +132,46 @@ pub(crate) fn process_input(
         }
     }
 
+    // Open dropdowns own clicks before dock tabs or fields beneath them.
+    let open_menus: Vec<_> = tree
+        .iter_nodes()
+        .filter(|(_, node)| {
+            node.widget
+                .as_any()
+                .is::<super::widgets::menubar::MenuBar>()
+                && node.widget.wants_global_input(tree.state_arena())
+        })
+        .map(|(id, _)| id)
+        .collect();
+    for id in open_menus {
+        let mut actions = std::mem::take(tree.actions_mut());
+        let mut state = std::mem::take(tree.state_arena_mut());
+        let mut ctx = InputContext {
+            input,
+            mouse_pos: input.mouse_pos,
+            callbacks: &mut *callbacks,
+            actions: &mut actions,
+            view_id: id,
+            active_id: tree.interaction().active_id,
+            focused_id: tree.interaction().focused_id,
+        };
+        let consumed = tree.get(id).is_some_and(|node| {
+            node.widget.handle_input(
+                &mut ctx,
+                &mut state,
+                bounds_map.get(&id).copied().unwrap_or_default(),
+                &node.children,
+            ) == WidgetInputResult::Consumed
+        });
+        *tree.state_arena_mut() = state;
+        *tree.actions_mut() = actions;
+        if consumed {
+            result.input_consumed = true;
+            result.clicked_id = Some(id);
+            return result;
+        }
+    }
+
     // --- Hit test for new interactions ---
     let hit = hit_test(tree, input.mouse_pos, bounds_map);
 
@@ -692,6 +732,47 @@ mod tests {
             !result.input_consumed,
             "Bubble to root with no parent should not consume"
         );
+    }
+
+    #[test]
+    fn test_open_menu_consumes_click_over_another_widget() {
+        use super::super::constructors::{menu_entry, menu_group, menubar, zstack};
+        use super::super::descriptor::Alignment;
+        use super::super::widget::WidgetBox;
+        let mut tree = ViewTree::new();
+        let open_id = tree
+            .state_arena_mut()
+            .get_or_create(ViewId::default(), true);
+        let (underneath, called) = StubWidget::new(InputResult::Consumed);
+        tree.set_root(
+            zstack([
+                (
+                    Alignment::TopLeading,
+                    menubar(vec![menu_group("Edit", open_id, vec![menu_entry("Undo")])]).boxed(),
+                ),
+                (Alignment::TopLeading, underneath.boxed()),
+            ])
+            .boxed(),
+        );
+        let root = tree.root().unwrap();
+        let children = tree.get(root).unwrap().children.clone();
+        let mut bounds = HashMap::from([(root, Rect2D::new(Vec2::ZERO, Vec2::new(400.0, 300.0)))]);
+        bounds.insert(children[0], Rect2D::new(Vec2::ZERO, Vec2::new(400.0, 28.0)));
+        bounds.insert(
+            children[1],
+            Rect2D::new(Vec2::new(0.0, 28.0), Vec2::new(400.0, 100.0)),
+        );
+        let mut input = UiInputState::new();
+        input.mouse_pos = Vec2::new(50.0, 42.0);
+        input.set_mouse_button(mouse_button::LEFT, true);
+        let result = process_input(&mut tree, &input, &mut CallbackTable::new(), &bounds);
+        assert!(result.input_consumed);
+        assert_eq!(result.clicked_id, Some(children[0]));
+        assert!(
+            !called.get(),
+            "the underlying dock or field must not receive the popup click"
+        );
+        assert_eq!(tree.state_arena().get::<bool>(open_id), Some(false));
     }
 
     #[test]

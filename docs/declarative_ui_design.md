@@ -14,6 +14,9 @@ drags, including when the pointer leaves the row. Label and numeric value space
 do not change the value range; the numeric column reserves space for the range
 endpoints so the track does not move as the value changes.
 
+Open menu dropdowns draw on the popup layer and receive clicks before dock tabs
+or fields beneath them. Closing a menu does not send that click to the scene.
+
 Editor dock panels build in stable order because root BuildContext state hooks
 are positional. EditorOverlayView mounts only each DockTree leaf's active tab.
 Building inactive tabs retains state slots; leaving them unmounted prevents stale
