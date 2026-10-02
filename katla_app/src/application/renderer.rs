@@ -400,6 +400,12 @@ impl Application {
             }
         };
 
+        if let Err(error) = self.prepare_scene_gpu(delta_time) {
+            log::error!("Scene GPU preparation failed: {error}");
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
+
         // Tile grid dimensions for Forward+ light culling.
         // Tile grid must match the panel-sized scene render targets (set in
         // recreate_panel_rt_resources). Fall back to the swapchain extent before
@@ -1101,6 +1107,12 @@ impl Application {
             }
         };
 
+        if let Err(error) = self.prepare_scene_gpu(delta_time) {
+            log::error!("Scene GPU preparation failed: {error}");
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
+
         // Tile grid must match the panel-sized scene render targets (set in
         // recreate_panel_rt_resources). Fall back to the swapchain extent before
         // the first layout runs.
@@ -1186,9 +1198,6 @@ impl Application {
             draw_list.len()
         );
 
-        // Particle simulation drive: CPU state update + per-frame workgroup
-        // counts. The renderer dispatches the compute work inline at the top
-        // of its own render() (light-culling pattern).
         self.step_particle_simulation(delta_time);
 
         // One frame-owned copy of each prepared list: every pass submission

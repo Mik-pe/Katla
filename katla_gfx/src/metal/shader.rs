@@ -11,653 +11,7 @@ use naga::valid::{Capabilities, ValidationFlags, Validator};
 
 use crate::error::RendererError;
 
-/// Shader compilation profile selecting the appropriate binding map.
-#[derive(Debug, Clone)]
-pub(crate) enum ShaderProfile {
-    /// Standard graphics pipeline (bindless textures at buffer 9).
-    Graphics,
-    /// Particle billboard render shader (storage at [[buffer(0..4)]], frame
-    /// uniforms at [[buffer(5)]]; no bindless textures).
-    ParticleRender,
-    /// Particle compute shaders (emit / simulate / draw-command): storage
-    /// 0..4, frame_data 5, emitters 6. Explicit because naga's auto-assignment
-    /// skips entry-point-unused resources and would collide counters(4) with
-    /// frame_data(4) in the emit shader.
-    ParticleCompute,
-    /// UI shaders (different binding layout).
-    Ui,
-    /// Outline draw shaders (outline_params instead of bindless textures).
-    Outline,
-    /// Skinned outline draw shaders (joints + outline_params, no bindless).
-    OutlineSkinned,
-    /// Skinned shadow depth shaders (cascades + params + joints; joints at
-    /// [[buffer(4)]] to avoid colliding with shadow_params at buffer 3).
-    ShadowSkinned,
-}
-
-/// Create naga MSL options configured for Katla's binding layout.
-///
-/// Katla's descriptor layout:
-/// - Set 0, Binding 0: FrameUniforms (storage buffer) → [[buffer(0)]]
-/// - Set 0, Binding 1: ObjectUniforms array (storage buffer) → [[buffer(1)]]
-/// - Set 1, Binding 0: Bindless texture array → [[texture(N)]]
-/// - Set 1, Binding 1: Shared sampler → [[sampler(0)]]
-/// - Set 2, Binding 0: Joint matrices (storage buffer) → [[buffer(2)]]
-pub(crate) fn katla_msl_options() -> msl::Options {
-    let mut options = msl::Options {
-        lang_version: (2, 0),
-        fake_missing_bindings: true,
-        ..msl::Options::default()
-    };
-
-    let graphics_bindings = create_graphics_binding_map();
-    options
-        .per_entry_point_map
-        .insert("vs_main".to_string(), graphics_bindings.clone());
-    options
-        .per_entry_point_map
-        .insert("fs_main".to_string(), graphics_bindings);
-
-    options
-}
-
-/// MSL options for UI shaders.
-///
-/// UI shader binding layout:
-/// - Set 0, Binding 1: font_sampler → [[sampler(0)]]
-/// - Set 0, Binding 3: UiUniforms (screen_size) → [[buffer(3)]]
-/// - Set 1, Binding 0: Bindless texture array → [[buffer(9)]]
-/// - Set 1, Binding 1: Shared sampler → [[sampler(1)]]
-pub(crate) fn katla_msl_options_ui() -> msl::Options {
-    let mut options = msl::Options {
-        lang_version: (2, 0),
-        fake_missing_bindings: true,
-        ..msl::Options::default()
-    };
-
-    let ui_bindings = create_ui_binding_map();
-    options
-        .per_entry_point_map
-        .insert("vs_main".to_string(), ui_bindings.clone());
-    options
-        .per_entry_point_map
-        .insert("fs_main".to_string(), ui_bindings.clone());
-    options
-        .per_entry_point_map
-        .insert("vs_instanced".to_string(), ui_bindings.clone());
-    options
-        .per_entry_point_map
-        .insert("fs_instanced".to_string(), ui_bindings);
-
-    options
-}
-
-fn create_graphics_binding_map() -> msl::EntryPointResources {
-    let mut resources = msl::EntryPointResources::default();
-
-    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
-        // Set 0: Per-frame and per-object storage buffers
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(0),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(1),
-                ..Default::default()
-            },
-        ),
-        // Set 1: Bindless textures (argument buffer)
-        (
-            naga::ResourceBinding {
-                group: 1,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(9),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 1,
-                binding: 1,
-            },
-            msl::BindTarget {
-                sampler: Some(msl::BindSamplerTarget::Resource(0)),
-                ..Default::default()
-            },
-        ),
-        // Set 2: Skeletal animation / Shadow cascade params
-        (
-            naga::ResourceBinding {
-                group: 2,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(2),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 2,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(3),
-                ..Default::default()
-            },
-        ),
-        // Set 3: Forward+ light culling
-        (
-            naga::ResourceBinding {
-                group: 3,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(3),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 3,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(4),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 3,
-                binding: 2,
-            },
-            msl::BindTarget {
-                buffer: Some(5),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 3,
-                binding: 3,
-            },
-            msl::BindTarget {
-                buffer: Some(6),
-                ..Default::default()
-            },
-        ),
-        // Set 4: Shadow data
-        (
-            naga::ResourceBinding {
-                group: 4,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(7),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 4,
-                binding: 1,
-            },
-            msl::BindTarget {
-                texture: Some(1),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 4,
-                binding: 2,
-            },
-            msl::BindTarget {
-                sampler: Some(msl::BindSamplerTarget::Resource(1)),
-                ..Default::default()
-            },
-        ),
-    ];
-
-    for (binding, target) in bindings {
-        resources.resources.insert(*binding, target.clone());
-    }
-
-    // Buffer slot for runtime array size information
-    resources.sizes_buffer = Some(8);
-
-    resources
-}
-
-/// Particle compute shader binding map (emit / simulate / draw-command).
-///
-/// Fixed contract matching the encoder: particles/dead/alive/alive_next/
-/// counters at [[buffer(0..4)]], frame_data at 5, emitters at 6. Entries for
-/// resources a given shader doesn't declare are harmless lookups that never
-/// fire, and keep the mapping identical across all three shaders.
-fn create_particle_compute_binding_map() -> msl::EntryPointResources {
-    let mut resources = msl::EntryPointResources::default();
-
-    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(0),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(1),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 2,
-            },
-            msl::BindTarget {
-                buffer: Some(2),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 3,
-            },
-            msl::BindTarget {
-                buffer: Some(3),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 4,
-            },
-            msl::BindTarget {
-                buffer: Some(4),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 1,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(5),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 1,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(6),
-                ..Default::default()
-            },
-        ),
-    ];
-
-    for (binding, target) in bindings {
-        resources.resources.insert(*binding, target.clone());
-    }
-
-    resources
-}
-
-/// Particle render shader binding map.
-///
-/// Storage bindings keep their WGSL binding numbers as flat MSL buffer
-/// indices (0..4); frame uniforms land at [[buffer(1)]]. The vertex stage
-/// reads no vertex buffers (billboards are generated from vertex_index).
-fn create_particle_render_binding_map() -> msl::EntryPointResources {
-    let mut resources = msl::EntryPointResources::default();
-
-    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(0),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(1),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 2,
-            },
-            msl::BindTarget {
-                buffer: Some(2),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 3,
-            },
-            msl::BindTarget {
-                buffer: Some(3),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 4,
-            },
-            msl::BindTarget {
-                buffer: Some(4),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 1,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(5),
-                ..Default::default()
-            },
-        ),
-    ];
-
-    for (binding, target) in bindings {
-        resources.resources.insert(*binding, target.clone());
-    }
-
-    resources
-}
-
-fn create_ui_binding_map() -> msl::EntryPointResources {
-    let mut resources = msl::EntryPointResources::default();
-
-    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
-        // Set 0, Binding 1: font sampler
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 1,
-            },
-            msl::BindTarget {
-                sampler: Some(msl::BindSamplerTarget::Resource(0)),
-                ..Default::default()
-            },
-        ),
-        // Set 0, Binding 3: UiUniforms (screen_size)
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 3,
-            },
-            msl::BindTarget {
-                buffer: Some(3),
-                ..Default::default()
-            },
-        ),
-        // Set 0, Binding 4: Instance data storage buffer
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 4,
-            },
-            msl::BindTarget {
-                buffer: Some(11),
-                ..Default::default()
-            },
-        ),
-        // Set 1, Binding 0: Bindless texture array (argument buffer)
-        (
-            naga::ResourceBinding {
-                group: 1,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(9),
-                ..Default::default()
-            },
-        ),
-        // Set 1, Binding 1: Shared sampler
-        (
-            naga::ResourceBinding {
-                group: 1,
-                binding: 1,
-            },
-            msl::BindTarget {
-                sampler: Some(msl::BindSamplerTarget::Resource(1)),
-                ..Default::default()
-            },
-        ),
-    ];
-
-    for (binding, target) in bindings {
-        resources.resources.insert(*binding, target.clone());
-    }
-
-    resources.sizes_buffer = Some(8);
-
-    resources
-}
-
-/// Outline draw binding map (non-skinned).
-///
-/// group(0), binding(0) → buffer 0  (frame uniforms)
-/// group(0), binding(1) → buffer 1  (object storage)
-/// group(1), binding(0) → buffer 2  (outline_params)
-fn create_outline_binding_map() -> msl::EntryPointResources {
-    let mut resources = msl::EntryPointResources::default();
-
-    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(0),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(1),
-                ..Default::default()
-            },
-        ),
-        // outline_params at group(1), binding(0) → buffer 2
-        (
-            naga::ResourceBinding {
-                group: 1,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(2),
-                ..Default::default()
-            },
-        ),
-    ];
-
-    for (binding, target) in bindings {
-        resources.resources.insert(*binding, target.clone());
-    }
-
-    resources
-}
-
-/// Outline draw binding map (skinned).
-///
-/// group(0), binding(0) → buffer 0  (frame uniforms)
-/// group(0), binding(1) → buffer 1  (object storage)
-/// group(2), binding(0) → buffer 2  (joint matrices)
-/// group(3), binding(0) → buffer 3  (outline_params)
-fn create_outline_skinned_binding_map() -> msl::EntryPointResources {
-    let mut resources = msl::EntryPointResources::default();
-
-    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(0),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(1),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 2,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(2),
-                ..Default::default()
-            },
-        ),
-        // outline_params at group(3), binding(0) → buffer 3
-        (
-            naga::ResourceBinding {
-                group: 3,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(3),
-                ..Default::default()
-            },
-        ),
-    ];
-
-    for (binding, target) in bindings {
-        resources.resources.insert(*binding, target.clone());
-    }
-
-    resources
-}
-
-/// Binding map for the skinned shadow depth shader (shadow_depth_skinned.wgsl):
-/// frame(0:0)→b0, objects(0:1)→b1, cascades(2:0)→b2, params(2:1)→b3, joints(3:0)→b4.
-/// Buffer 4 avoids the collision with shadow_params at buffer 3 that the shared
-/// graphics map would produce (light buffers 4-6 are unused in the depth-only shader).
-fn create_shadow_skinned_binding_map() -> msl::EntryPointResources {
-    let mut resources = msl::EntryPointResources::default();
-
-    let bindings: &[(naga::ResourceBinding, msl::BindTarget)] = &[
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(0),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 0,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(1),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 2,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(2),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 2,
-                binding: 1,
-            },
-            msl::BindTarget {
-                buffer: Some(3),
-                ..Default::default()
-            },
-        ),
-        (
-            naga::ResourceBinding {
-                group: 3,
-                binding: 0,
-            },
-            msl::BindTarget {
-                buffer: Some(4),
-                ..Default::default()
-            },
-        ),
-    ];
-
-    for (binding, target) in bindings {
-        resources.resources.insert(*binding, target.clone());
-    }
-
-    // Runtime arrays (objects, joint_matrices) need bounds-check sizes in the VS.
-    resources.sizes_buffer = Some(8);
-
-    resources
-}
+pub(crate) use super::binding_schema::ShaderProfile;
 
 pub(crate) struct MetalShaderModule {
     pub(crate) entry_points: HashMap<String, Retained<ProtocolObject<dyn MTLFunction>>>,
@@ -681,79 +35,8 @@ pub(crate) fn compile_wgsl_to_metal(
         .validate(&module)
         .map_err(|e| RendererError::InvalidOperation(format!("Shader validation: {:?}", e)))?;
 
-    let msl_options = match profile {
-        ShaderProfile::Graphics => katla_msl_options(),
-        ShaderProfile::Ui => katla_msl_options_ui(),
-        ShaderProfile::Outline => {
-            let mut options = msl::Options {
-                lang_version: (2, 0),
-                fake_missing_bindings: true,
-                ..msl::Options::default()
-            };
-            let bindings = create_outline_binding_map();
-            options
-                .per_entry_point_map
-                .insert("vs_main".to_string(), bindings.clone());
-            options
-                .per_entry_point_map
-                .insert("fs_main".to_string(), bindings);
-            options
-        }
-        ShaderProfile::OutlineSkinned => {
-            let mut options = msl::Options {
-                lang_version: (2, 0),
-                fake_missing_bindings: true,
-                ..msl::Options::default()
-            };
-            let bindings = create_outline_skinned_binding_map();
-            options
-                .per_entry_point_map
-                .insert("vs_main".to_string(), bindings.clone());
-            options
-                .per_entry_point_map
-                .insert("fs_main".to_string(), bindings);
-            options
-        }
-        ShaderProfile::ParticleCompute => {
-            let mut options = msl::Options {
-                lang_version: (2, 0),
-                fake_missing_bindings: true,
-                ..msl::Options::default()
-            };
-            let bindings = create_particle_compute_binding_map();
-            options
-                .per_entry_point_map
-                .insert("cs_main".to_string(), bindings);
-            options
-        }
-        ShaderProfile::ParticleRender => {
-            let mut options = msl::Options {
-                lang_version: (2, 0),
-                fake_missing_bindings: true,
-                ..msl::Options::default()
-            };
-            let bindings = create_particle_render_binding_map();
-            options
-                .per_entry_point_map
-                .insert("vs_main".to_string(), bindings.clone());
-            options
-                .per_entry_point_map
-                .insert("fs_main".to_string(), bindings);
-            options
-        }
-        ShaderProfile::ShadowSkinned => {
-            let mut options = msl::Options {
-                lang_version: (2, 0),
-                fake_missing_bindings: true,
-                ..msl::Options::default()
-            };
-            let bindings = create_shadow_skinned_binding_map();
-            options
-                .per_entry_point_map
-                .insert("vs_main".to_string(), bindings);
-            options
-        }
-    };
+    let msl_options = super::binding_schema::options_for_module(profile, &module);
+    let table_layouts = super::binding_schema::reflect_table_layout(&module, &info, &msl_options)?;
     let pipeline_options = msl::PipelineOptions::default();
     let (msl_source, _translation_info) =
         msl::write_string(&module, &info, &msl_options, &pipeline_options)
@@ -775,16 +58,55 @@ pub(crate) fn compile_wgsl_to_metal(
         );
     }
 
-    let source = NSString::from_str(&msl_source);
-    let compile_options = MTLCompileOptions::new();
-    compile_options.setLanguageVersion(MTLLanguageVersion::Version3_0);
-
-    let library = device
-        .newLibraryWithSource_options_error(&source, Some(&compile_options))
-        .map_err(|err| {
-            let msg = err.localizedDescription().to_string();
-            RendererError::InvalidOperation(format!("Metal shader compile error: {}", msg))
-        })?;
+    let shader_key = super::pipeline_archive::hash_bytes(
+        format!(
+            "wgsl={};msl={};language=3.0;profile={profile:?};constants=[];options=default;abi={}",
+            super::pipeline_archive::hash_bytes(wgsl_source.as_bytes()),
+            super::pipeline_archive::hash_bytes(msl_source.as_bytes()),
+            super::binding_schema::BINDING_ABI_VERSION
+        )
+        .as_bytes(),
+    );
+    let library_key = format!("{}:{shader_key}", device.registryID());
+    let mut library_cache = library_cache()
+        .lock()
+        .map_err(|_| RendererError::InvalidOperation("Library cache poisoned".into()))?;
+    let compiled =
+        if let Some((_, library)) = library_cache.iter().find(|(key, _)| *key == library_key) {
+            library.clone()
+        } else {
+            let source = NSString::from_str(&msl_source);
+            let compile_options = MTLCompileOptions::new();
+            compile_options.setLanguageVersion(MTLLanguageVersion::Version3_0);
+            let descriptor = objc2_metal::MTL4LibraryDescriptor::new();
+            descriptor.setSource(Some(&source));
+            descriptor.setName(Some(&NSString::from_str(&shader_key)));
+            descriptor.setOptions(Some(&compile_options));
+            let compiler = super::pipeline_archive::new_compiler(device, None)?;
+            let started = std::time::Instant::now();
+            let completed = super::pipeline_archive::compile_on_worker(
+                compiler.clone(),
+                super::pipeline_archive::CompilerInput::Library(descriptor.clone()),
+            )?;
+            let library: Retained<ProtocolObject<dyn MTLLibrary>> =
+                unsafe { Retained::cast_unchecked(completed.0) };
+            log::debug!(
+                "pipeline_cache event=library_compile key={shader_key} elapsed_us={}",
+                started.elapsed().as_micros()
+            );
+            let compiled = std::sync::Arc::new(ImmutableLibrary {
+                library,
+                compiler,
+                descriptor,
+            });
+            library_cache.push_back((library_key, compiled.clone()));
+            while library_cache.len() > 32 {
+                library_cache.pop_front();
+            }
+            compiled
+        };
+    drop(library_cache);
+    let library = &compiled.library;
 
     let mut functions = HashMap::new();
     for name in entry_points {
@@ -795,6 +117,14 @@ pub(crate) fn compile_wgsl_to_metal(
                 name
             ))
         })?;
+        let layout = table_layouts
+            .iter()
+            .find(|layout| layout.entry_point == *name)
+            .cloned()
+            .ok_or_else(|| {
+                RendererError::InvalidOperation(format!("No reflection for entry '{name}'"))
+            })?;
+        register_function(&function, compiled.clone(), &shader_key, layout)?;
         functions.insert(name.to_string(), function);
     }
 
@@ -803,6 +133,94 @@ pub(crate) fn compile_wgsl_to_metal(
             entry_points: functions,
         },
     })
+}
+
+struct ImmutableLibrary {
+    library: Retained<ProtocolObject<dyn MTLLibrary>>,
+    compiler: Retained<ProtocolObject<dyn objc2_metal::MTL4Compiler>>,
+    descriptor: Retained<objc2_metal::MTL4LibraryDescriptor>,
+}
+// SAFETY: A completed Metal library is immutable and thread-safe.
+unsafe impl Send for ImmutableLibrary {}
+// SAFETY: Metal documents libraries and compiler contexts as thread-safe.
+unsafe impl Sync for ImmutableLibrary {}
+type LibraryCache =
+    std::sync::Mutex<std::collections::VecDeque<(String, std::sync::Arc<ImmutableLibrary>)>>;
+fn library_cache() -> &'static LibraryCache {
+    static CACHE: std::sync::OnceLock<LibraryCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::VecDeque::new()))
+}
+
+struct RegisteredLibrary {
+    compiled: std::sync::Arc<ImmutableLibrary>,
+    function: objc2::rc::Weak<ProtocolObject<dyn MTLFunction>>,
+    key: String,
+    layout: super::binding_schema::ArgumentTableLayout,
+}
+// SAFETY: Metal libraries are immutable after compilation and thread-safe.
+unsafe impl Send for RegisteredLibrary {}
+
+fn function_registry() -> &'static std::sync::Mutex<HashMap<usize, RegisteredLibrary>> {
+    static REGISTRY: std::sync::OnceLock<std::sync::Mutex<HashMap<usize, RegisteredLibrary>>> =
+        std::sync::OnceLock::new();
+    REGISTRY.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn register_function(
+    function: &ProtocolObject<dyn MTLFunction>,
+    compiled: std::sync::Arc<ImmutableLibrary>,
+    key: &str,
+    layout: super::binding_schema::ArgumentTableLayout,
+) -> Result<(), RendererError> {
+    let mut registry = function_registry()
+        .lock()
+        .map_err(|_| RendererError::InvalidOperation("Shader registry poisoned".into()))?;
+    registry.retain(|_, entry| entry.function.load().is_some());
+    registry.insert(
+        function as *const _ as usize,
+        RegisteredLibrary {
+            compiled,
+            function: objc2::rc::Weak::new(function),
+            key: key.into(),
+            layout,
+        },
+    );
+    Ok(())
+}
+
+pub(crate) fn function_layout(
+    function: &ProtocolObject<dyn MTLFunction>,
+) -> Result<super::binding_schema::ArgumentTableLayout, RendererError> {
+    let registry = function_registry()
+        .lock()
+        .map_err(|_| RendererError::InvalidOperation("Shader registry poisoned".into()))?;
+    registry
+        .get(&(function as *const _ as usize))
+        .map(|entry| entry.layout.clone())
+        .ok_or_else(|| {
+            RendererError::InvalidOperation("Missing function binding reflection".into())
+        })
+}
+
+pub(crate) fn function_descriptor(
+    function: &ProtocolObject<dyn MTLFunction>,
+) -> Result<(Retained<objc2_metal::MTL4LibraryFunctionDescriptor>, String), RendererError> {
+    let registry = function_registry()
+        .lock()
+        .map_err(|_| RendererError::InvalidOperation("Shader registry poisoned".into()))?;
+    let entry = registry
+        .get(&(function as *const _ as usize))
+        .ok_or_else(|| {
+            RendererError::InvalidOperation(
+                "Function was not created by the Metal compiler service".into(),
+            )
+        })?;
+    let descriptor = objc2_metal::MTL4LibraryFunctionDescriptor::new();
+    let _compiler = (&entry.compiled.compiler, &entry.compiled.descriptor);
+    descriptor.setLibrary(Some(&entry.compiled.library));
+    descriptor.setName(Some(&function.name()));
+    let key = format!("{};entry={}", entry.key, function.name());
+    Ok((descriptor, key))
 }
 
 #[cfg(test)]

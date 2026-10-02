@@ -14,7 +14,7 @@
 use objc2::rc::Retained;
 use objc2::runtime::{AnyObject, ProtocolObject};
 use objc2_foundation::NSSize;
-use objc2_metal::{MTLCommandBuffer, MTLDevice, MTLPixelFormat, MTLTexture};
+use objc2_metal::{MTL4CommandQueue, MTLDevice, MTLDrawable, MTLPixelFormat, MTLTexture};
 use objc2_quartz_core::{CAMetalDrawable, CAMetalLayer};
 use raw_window_handle::RawWindowHandle;
 
@@ -36,7 +36,7 @@ impl MetalSurface {
         let layer = CAMetalLayer::new();
         layer.setDevice(Some(device));
         layer.setPixelFormat(MTLPixelFormat::BGRA8Unorm_sRGB);
-        layer.setMaximumDrawableCount(3);
+        layer.setMaximumDrawableCount(super::metal_renderer::FRAMES_IN_FLIGHT);
         layer.setDisplaySyncEnabled(true);
         layer.setFramebufferOnly(false);
 
@@ -67,7 +67,7 @@ impl MetalSurface {
         let layer = CAMetalLayer::new();
         layer.setDevice(Some(device));
         layer.setPixelFormat(MTLPixelFormat::BGRA8Unorm_sRGB);
-        layer.setMaximumDrawableCount(3);
+        layer.setMaximumDrawableCount(super::metal_renderer::FRAMES_IN_FLIGHT);
         layer.setFramebufferOnly(false);
         layer.setDrawableSize(NSSize {
             width: width as f64,
@@ -93,10 +93,21 @@ impl MetalSurface {
         Ok(Some(texture))
     }
 
-    pub(crate) fn present(&mut self, command_buffer: &ProtocolObject<dyn MTLCommandBuffer>) {
-        if let Some(drawable) = self.current_drawable.take() {
-            command_buffer.presentDrawable(drawable.as_ref());
+    pub(crate) fn wait_for_drawable(&self, queue: &ProtocolObject<dyn MTL4CommandQueue>) {
+        if let Some(drawable) = &self.current_drawable {
+            queue.waitForDrawable(drawable.as_ref());
         }
+    }
+
+    pub(crate) fn present(&mut self, queue: &ProtocolObject<dyn MTL4CommandQueue>) {
+        if let Some(drawable) = self.current_drawable.take() {
+            queue.signalDrawable(drawable.as_ref());
+            drawable.present();
+        }
+    }
+
+    pub(crate) fn discard_drawable(&mut self) {
+        self.current_drawable = None;
     }
 
     pub(crate) fn resize(&mut self, width: u32, height: u32) {
@@ -159,41 +170,28 @@ fn attach_layer_to_nsview(
 
 #[cfg(test)]
 mod tests {
-    // `MetalSurface` owns AppKit-affine state (a `CAMetalLayer` attached to an
-    // `NSView`), so it must never regain blanket `Send`/`Sync` markers. If these
-    // bounds fail, someone re-introduced an unsafe impl — surface moves across
-    // threads must go through explicit main-thread ownership transfer instead.
     const _: () = {
-        const fn assert_not_send<T: ?Sized>() {}
-        const fn assert_not_sync<T: ?Sized>() {}
-        const fn assert_send<T: Send + ?Sized>() {}
-        const fn assert_sync<T: Sync + ?Sized>() {}
-        trait NegativeSend {}
-        impl<T: Send + ?Sized> NegativeSend for T {}
-        trait NegativeSync {}
-        impl<T: Sync + ?Sized> NegativeSync for T {}
-
-        // AppKit-affine: surface must never move or be shared across threads.
-        let _ = assert_not_send::<super::MetalSurface>;
-        let _ = assert_not_sync::<super::MetalSurface>;
-
-        // Command encoders are single-threaded by Metal's contract (one thread
-        // appends to a command buffer); they must stay !Send/!Sync so the type
-        // system pins encoding to the owning thread.
-        let _ = assert_not_send::<crate::metal::render_encoder::MetalRenderEncoder>;
-        let _ = assert_not_sync::<crate::metal::render_encoder::MetalRenderEncoder>;
-        let _ = assert_not_send::<crate::metal::compute_encoder::MetalComputeEncoder>;
-        let _ = assert_not_sync::<crate::metal::compute_encoder::MetalComputeEncoder>;
-        let _ = assert_not_send::<crate::metal::blit_encoder::MetalBlitEncoder>;
-        let _ = assert_not_sync::<crate::metal::blit_encoder::MetalBlitEncoder>;
-
-        // Thread-safe Metal objects (Apple-documented): device/queue context and
-        // immutable pipeline state may be shared.
-        let _ = assert_send::<crate::metal::context::MetalContext>;
-        let _ = assert_sync::<crate::metal::context::MetalContext>;
-        let _ = assert_send::<crate::metal::pipeline::MetalGraphicsPipeline>;
-        let _ = assert_sync::<crate::metal::pipeline::MetalGraphicsPipeline>;
-        let _ = assert_send::<crate::metal::pipeline::MetalComputePipeline>;
-        let _ = assert_sync::<crate::metal::pipeline::MetalComputePipeline>;
+        trait AmbiguousIfSend<A> {
+            fn marker() {}
+        }
+        impl<T: ?Sized> AmbiguousIfSend<()> for T {}
+        impl<T: Send + ?Sized> AmbiguousIfSend<u8> for T {}
+        trait AmbiguousIfSync<A> {
+            fn marker() {}
+        }
+        impl<T: ?Sized> AmbiguousIfSync<()> for T {}
+        impl<T: Sync + ?Sized> AmbiguousIfSync<u8> for T {}
+        let _ = <super::MetalSurface as AmbiguousIfSend<_>>::marker;
+        let _ = <super::MetalSurface as AmbiguousIfSync<_>>::marker;
+        let _ = <crate::metal::render_encoder::MetalRenderEncoder as AmbiguousIfSend<_>>::marker;
+        let _ = <crate::metal::render_encoder::MetalRenderEncoder as AmbiguousIfSync<_>>::marker;
+        let _ = <crate::metal::compute_encoder::MetalComputeEncoder as AmbiguousIfSend<_>>::marker;
+        let _ = <crate::metal::compute_encoder::MetalComputeEncoder as AmbiguousIfSync<_>>::marker;
+        let _ = <crate::metal::blit_encoder::MetalBlitEncoder as AmbiguousIfSend<_>>::marker;
+        let _ = <crate::metal::blit_encoder::MetalBlitEncoder as AmbiguousIfSync<_>>::marker;
+        const fn assert_send_sync<T: Send + Sync>() {}
+        let _ = assert_send_sync::<crate::metal::context::MetalContext>;
+        let _ = assert_send_sync::<crate::metal::pipeline::MetalGraphicsPipeline>;
+        let _ = assert_send_sync::<crate::metal::pipeline::MetalComputePipeline>;
     };
 }

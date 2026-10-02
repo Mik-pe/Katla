@@ -1,10 +1,7 @@
 //! Application-level particle drive.
 //!
-//! `step_particle_simulation` mirrors the Vulkan frame path's particle work
-//! for every backend: the ECS emitter sync (`ParticleSystem::update`) has
-//! already run by the time this is called (frame_loop), so this only performs
-//! the per-frame CPU state update and dispatch sizing. The Metal renderer
-//! dispatches the staged workgroups inline at the top of its own `render()`.
+//! Emitter updates prepare the acquired slot's data and dispatch dimensions.
+//! The compiled graph executes the simulation and orders its draw consumers.
 
 #[cfg(target_os = "macos")]
 use super::Application;
@@ -25,8 +22,13 @@ impl Application {
                     self.particle_system
                         .update(&mut self.world, driver, delta_time);
                 }
-                if let Err(e) = renderer.step_particle_system(delta_time) {
-                    log::error!("Particle simulation step failed: {}", e);
+                match renderer.step_particle_system(delta_time) {
+                    Ok((emit, simulate)) => {
+                        self.frame_graph.set_particle_emit_workgroup_count(emit);
+                        self.frame_graph
+                            .set_particle_simulate_workgroup_count(simulate);
+                    }
+                    Err(e) => log::error!("Particle simulation step failed: {}", e),
                 }
             }
         }

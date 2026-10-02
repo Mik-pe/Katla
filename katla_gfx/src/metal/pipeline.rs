@@ -9,6 +9,8 @@ use crate::backend::resource::{GpuComputePipeline, GpuGraphicsPipeline};
 #[derive(Clone)]
 pub(crate) struct MetalGraphicsPipeline {
     pub(crate) pipeline_state: Retained<ProtocolObject<dyn MTLRenderPipelineState>>,
+    pub(crate) vertex_layout: super::binding_schema::ArgumentTableLayout,
+    pub(crate) fragment_layout: Option<super::binding_schema::ArgumentTableLayout>,
     pub(crate) depth_stencil_state: Option<Retained<ProtocolObject<dyn MTLDepthStencilState>>>,
     pub(crate) cull_mode: MTLCullMode,
     pub(crate) front_face: MTLWinding,
@@ -28,6 +30,8 @@ unsafe impl Sync for MetalGraphicsPipeline {}
 pub(crate) struct MetalComputePipeline {
     pub(crate) pipeline_state: Retained<ProtocolObject<dyn MTLComputePipelineState>>,
     pub(crate) workgroup: [u32; 3],
+    pub(crate) uniform_bindings: Vec<(u32, u32)>,
+    pub(crate) table_layout: super::binding_schema::ArgumentTableLayout,
 }
 
 impl GpuComputePipeline for MetalComputePipeline {

@@ -36,6 +36,12 @@ pub(crate) enum TileMemoryEligibility {
     PartialSubresourceCoverage,
     /// No live pass writes the resource, so its contents are undefined.
     NeverWritten,
+    /// Attachment contents survive a native render-pass boundary.
+    CrossesRenderPass,
+    /// Declared native load/store operations require persistent backing.
+    AttachmentLoadOrStore,
+    /// Compressed formats cannot be native render attachments.
+    UnsupportedAttachmentFormat,
 }
 
 impl TileMemoryEligibility {
@@ -54,6 +60,9 @@ impl TileMemoryEligibility {
             }
             Self::PartialSubresourceCoverage => "an access covers only part of the resource",
             Self::NeverWritten => "no live pass writes the resource",
+            Self::CrossesRenderPass => "contents survive a render-pass boundary",
+            Self::AttachmentLoadOrStore => "attachment load/store requires persistent backing",
+            Self::UnsupportedAttachmentFormat => "format cannot use native tile attachment storage",
         }
     }
 
@@ -69,7 +78,10 @@ impl TileMemoryEligibility {
                 TileMemoryEligibility::AccessedOutsideAttachment => 1,
                 TileMemoryEligibility::PartialSubresourceCoverage => 2,
                 TileMemoryEligibility::NeverWritten => 3,
-                TileMemoryEligibility::Eligible => 4,
+                TileMemoryEligibility::CrossesRenderPass => 4,
+                TileMemoryEligibility::AttachmentLoadOrStore => 5,
+                TileMemoryEligibility::UnsupportedAttachmentFormat => 6,
+                TileMemoryEligibility::Eligible => 7,
             }
         }
 
@@ -117,6 +129,17 @@ fn member_tile_eligibility(
     } else {
         TileMemoryEligibility::NeverWritten
     }
+}
+
+/// Content survival requirements compiled from live accesses and boundaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TransientPersistence {
+    pub(crate) exported: bool,
+    pub(crate) crosses_render_pass: bool,
+    pub(crate) sampled: bool,
+    pub(crate) storage: bool,
+    pub(crate) transfer_or_readback: bool,
+    pub(crate) tile_memory: TileMemoryEligibility,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,6 +212,7 @@ pub(crate) struct TransientAllocationPlan {
     slots: Vec<PhysicalAllocationSlot>,
     member_bytes: BTreeMap<ResourceId, u64>,
     logical_bytes: u64,
+    persistence: BTreeMap<ResourceId, TransientPersistence>,
 }
 
 impl TransientAllocationPlan {
@@ -218,14 +242,46 @@ impl TransientAllocationPlan {
 
         let mut plan = Self::default();
         for (resource_id, resource, lifetime) in candidates {
-            let bytes = u64::from(resource.width)
-                .saturating_mul(u64::from(resource.height))
-                .saturating_mul(u64::from(resource.format.bytes_per_pixel()));
+            let [block_width, block_height] = resource.format.block_extent();
+            let bytes = u64::from(resource.width.div_ceil(block_width))
+                .saturating_mul(u64::from(resource.height.div_ceil(block_height)))
+                .saturating_mul(u64::from(resource.format.bytes_per_block()));
             plan.logical_bytes = plan.logical_bytes.saturating_add(bytes);
 
             let compatibility = TransientCompatibilityKey::from(resource);
             let exported = exported_resources.contains(&resource_id);
-            let tile_memory = member_tile_eligibility(resource_id, exported, image_accesses);
+            let mut tile_memory = member_tile_eligibility(resource_id, exported, image_accesses);
+            if tile_memory.is_eligible() && resource.format.block_extent() != [1, 1] {
+                tile_memory = TileMemoryEligibility::UnsupportedAttachmentFormat;
+            }
+            if tile_memory.is_eligible() && lifetime.first_pass != lifetime.last_pass {
+                tile_memory = TileMemoryEligibility::CrossesRenderPass;
+            }
+            let resource_accesses = image_accesses
+                .iter()
+                .filter(|access| access.resource == resource_id)
+                .collect::<Vec<_>>();
+            plan.persistence.insert(
+                resource_id,
+                TransientPersistence {
+                    exported,
+                    crosses_render_pass: lifetime.first_pass != lifetime.last_pass,
+                    sampled: resource_accesses
+                        .iter()
+                        .any(|access| access.usage == ResourceAccessUsage::Sampled),
+                    storage: resource_accesses
+                        .iter()
+                        .any(|access| access.usage == ResourceAccessUsage::Storage),
+                    transfer_or_readback: resource_accesses.iter().any(|access| {
+                        matches!(
+                            access.usage,
+                            ResourceAccessUsage::TransferSource
+                                | ResourceAccessUsage::TransferDestination
+                        )
+                    }),
+                    tile_memory,
+                },
+            );
             let reusable_slot = (!exported).then(|| {
                 plan.slots.iter().position(|slot| {
                     !slot.pinned
@@ -261,6 +317,69 @@ impl TransientAllocationPlan {
         }
 
         plan
+    }
+
+    pub(crate) fn apply_attachment_storage(
+        &mut self,
+        passes: &[super::pass::PassDesc],
+        lifetimes: &BTreeMap<ResourceId, ResourceLifetime>,
+    ) {
+        use crate::render_pass::{LoadOp, StoreOp};
+        for (&resource, persistence) in &mut self.persistence {
+            if !persistence.tile_memory.is_eligible() {
+                continue;
+            }
+            let has_stencil = self
+                .assignments
+                .get(&resource)
+                .and_then(|slot| self.slots.get(*slot as usize))
+                .is_some_and(|slot| {
+                    matches!(
+                        slot.compatibility.format,
+                        ImageFormat::D32SfloatS8Uint | ImageFormat::D24UnormS8Uint
+                    )
+                });
+            let discarded = lifetimes
+                .get(&resource)
+                .and_then(|lifetime| passes.get(lifetime.first_pass))
+                .is_some_and(|pass| {
+                    if let Some((_, ops)) = pass
+                        .color_attachments
+                        .iter()
+                        .find(|(id, _)| *id == resource)
+                    {
+                        ops.load != LoadOp::Load && ops.store == StoreOp::DontCare
+                    } else if pass.depth_target == Some(resource) {
+                        pass.depth_attachment.as_ref().is_some_and(|ops| {
+                            ops.depth.load != LoadOp::Load
+                                && ops.depth.store == StoreOp::DontCare
+                                && (!has_stencil
+                                    || (ops.stencil.load != LoadOp::Load
+                                        && ops.stencil.store == StoreOp::DontCare))
+                        })
+                    } else {
+                        false
+                    }
+                });
+            if !discarded {
+                persistence.tile_memory = TileMemoryEligibility::AttachmentLoadOrStore;
+            }
+        }
+        for slot in &mut self.slots {
+            slot.tile_memory = slot
+                .members
+                .iter()
+                .filter_map(|member| self.persistence.get(member))
+                .map(|persistence| persistence.tile_memory)
+                .fold(
+                    TileMemoryEligibility::Eligible,
+                    TileMemoryEligibility::combine,
+                );
+        }
+    }
+
+    pub(crate) fn persistence(&self, resource: ResourceId) -> Option<&TransientPersistence> {
+        self.persistence.get(&resource)
     }
 
     pub(crate) fn physical_allocation_id(&self, resource: ResourceId) -> Option<u32> {
@@ -427,7 +546,7 @@ mod tests {
         // verdicts below are per-resource.
         let resources = vec![resource("tile"), resource("sampled"), resource("partial")];
         let lifetimes = BTreeMap::from([
-            (ResourceId(0), lifetime(0, 3)),
+            (ResourceId(0), lifetime(0, 0)),
             (ResourceId(1), lifetime(0, 3)),
             (ResourceId(2), lifetime(0, 3)),
         ]);
@@ -471,6 +590,75 @@ mod tests {
             Some(TileMemoryEligibility::PartialSubresourceCoverage)
         );
         assert_eq!(plan.slot(9).map(|slot| slot.tile_memory), None);
+    }
+
+    #[test]
+    fn test_readback_access_rejects_memoryless_and_records_persistence() {
+        let resources = vec![resource("readback")];
+        let lifetimes = BTreeMap::from([(ResourceId(0), lifetime(0, 1))]);
+        let plan = TransientAllocationPlan::build(
+            &resources,
+            &resources,
+            &BTreeSet::new(),
+            &lifetimes,
+            &[
+                attachment_write(ResourceId(0)),
+                ImageAccess::new(
+                    ResourceId(0),
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::TransferSource,
+                    ResourceAccessStage::Transfer,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                ),
+            ],
+        );
+        let persistence = plan.persistence(ResourceId(0)).unwrap();
+        assert!(persistence.transfer_or_readback);
+        assert!(persistence.crosses_render_pass);
+        assert!(!persistence.tile_memory.is_eligible());
+    }
+
+    #[test]
+    fn test_compressed_sizes_and_classes_are_separate() {
+        let mut bc1 = resource("bc1");
+        bc1.format = ImageFormat::Bc1RgbaUnorm;
+        bc1.width = 7;
+        bc1.height = 5;
+        let mut bc3 = bc1.clone();
+        bc3.name = "bc3".into();
+        bc3.format = ImageFormat::Bc3RgbaUnorm;
+        let resources = vec![bc1, bc3];
+        let lifetimes = BTreeMap::from([
+            (ResourceId(0), lifetime(0, 0)),
+            (ResourceId(1), lifetime(1, 1)),
+        ]);
+        let plan = TransientAllocationPlan::build(
+            &resources,
+            &resources,
+            &BTreeSet::new(),
+            &lifetimes,
+            &[],
+        );
+        assert_eq!(plan.physical_allocation_count(), 2);
+        assert_eq!(plan.logical_bytes(), 4 * 8 + 4 * 16);
+    }
+
+    #[test]
+    fn test_attachment_contents_crossing_passes_require_private_storage() {
+        let resources = vec![resource("persisted")];
+        let lifetimes = BTreeMap::from([(ResourceId(0), lifetime(0, 1))]);
+        let plan = TransientAllocationPlan::build(
+            &resources,
+            &resources,
+            &BTreeSet::new(),
+            &lifetimes,
+            &[attachment_write(ResourceId(0))],
+        );
+        assert_eq!(
+            plan.slot(0).unwrap().tile_memory,
+            TileMemoryEligibility::CrossesRenderPass
+        );
+        assert_eq!(plan.tile_memory_eligible_bytes(), 0);
     }
 
     #[test]

@@ -49,6 +49,33 @@ impl AnyFrameGraph {
         }
     }
 
+    /// Import an active-slot built-in buffer into the graph namespace.
+    pub fn import_builtin_buffer(
+        &mut self,
+        name: impl Into<String>,
+        role: super::compute::BuiltinBuffer,
+        desc: super::resource::BufferDesc,
+    ) -> ResourceId {
+        match self {
+            Self::Vulkan(graph) => graph.import_builtin_buffer(name, role, desc),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.import_builtin_buffer(name, role, desc),
+        }
+    }
+
+    /// Declare real buffer dependencies on an existing graphics pass.
+    pub fn extend_pass_buffer_accesses(
+        &mut self,
+        name: &str,
+        accesses: Vec<super::access::BufferAccess>,
+    ) -> Result<(), RenderGraphError> {
+        match self {
+            Self::Vulkan(graph) => graph.extend_pass_buffer_accesses(name, accesses),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.extend_pass_buffer_accesses(name, accesses),
+        }
+    }
+
     pub fn pass_id(&self, name: &str) -> Option<PassId> {
         match self {
             AnyFrameGraph::Vulkan(fg) => fg.pass_id(name),
@@ -63,6 +90,26 @@ impl AnyFrameGraph {
             AnyFrameGraph::Vulkan(fg) => fg.resource_id(name),
             #[cfg(target_os = "macos")]
             AnyFrameGraph::Metal(fg) => fg.resource_id(name),
+        }
+    }
+
+    /// Warm reflected compute pipelines before the first frame is acquired.
+    pub fn initialize_compute_pipelines(
+        &mut self,
+        renderer: &mut crate::AnyRenderer,
+    ) -> Result<(), RenderGraphError> {
+        match (self, renderer) {
+            (Self::Vulkan(graph), crate::AnyRenderer::Vulkan(renderer)) => {
+                graph.initialize_compute_pipelines(renderer)
+            }
+            #[cfg(target_os = "macos")]
+            (Self::Metal(graph), crate::AnyRenderer::Metal(renderer)) => {
+                graph.initialize_compute_pipelines(renderer)
+            }
+            #[cfg(target_os = "macos")]
+            _ => Err(RenderGraphError::InvalidConfiguration(
+                "Graph backend differs from renderer".into(),
+            )),
         }
     }
 
@@ -95,6 +142,15 @@ impl AnyFrameGraph {
             AnyFrameGraph::Vulkan(fg) => fg.set_particle_simulate_workgroup_count(count),
             #[cfg(target_os = "macos")]
             AnyFrameGraph::Metal(fg) => fg.set_particle_simulate_workgroup_count(count),
+        }
+    }
+
+    /// Set the active animation workload for either backend.
+    pub fn set_animation_skeleton_count(&mut self, count: u32) {
+        match self {
+            Self::Vulkan(graph) => graph.set_animation_skeleton_count(count),
+            #[cfg(target_os = "macos")]
+            Self::Metal(graph) => graph.set_animation_skeleton_count(count),
         }
     }
 

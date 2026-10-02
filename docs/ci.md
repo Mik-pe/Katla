@@ -99,3 +99,19 @@ cargo +nightly-2026-08-04 miri test -p katla_ecs --lib params::tests::test_param
 Miri covers CPU reference provenance and lifetimes; native parallel tests cover
 actual worker overlap and ordering. Native GPU/window checks remain part of
 application acceptance and are distinct from these CPU checks.
+
+## Native graph and frame ownership acceptance
+
+Graphics library tests execute real buffer readback for neutral direct/indirect
+compute, same-pass command chains, animation interpolation/rest poses and a small
+particle pool on the platform's backend. Linux requires an active Khronos
+validation messenger with synchronization validation enabled; CI runs native
+library fixtures serially to avoid lavapipe instance creation races. A separate
+Vulkan transient-alias integration step queues both frame slots across eight
+resize/rebuild cycles and checks validation messages and pixel contents.
+
+The macos-26 graphics library step runs with both `MTL_DEBUG_LAYER=1` and
+`METAL_DEVICE_WRAPPER_TYPE=1`. Native tests cover three-slot ownership, stream
+replacement, UI isolation, private texture sampling, placement heaps, timestamp
+readback and frame aborts. Compilation or a screenshot alone is insufficient
+for these output/lifetime assertions.

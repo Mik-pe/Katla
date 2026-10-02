@@ -87,6 +87,9 @@ pub struct LightCullingBuffers {
 
     /// Number of lights currently uploaded.
     light_count: u32,
+    frame_slot: usize,
+    slot_sizes: [u64; 4],
+    slot_strides: [u64; 4],
 
     /// Number of lights uploaded in the previous frame.
     prev_light_count: u32,
@@ -119,6 +122,29 @@ impl LightCullingBuffers {
         let tile_header_size = (num_tiles as u64) * 4;
         let frame_data_size = std::mem::size_of::<LightCullFrameData>() as u64;
 
+        let limits = unsafe {
+            context
+                .instance
+                .get_physical_device_properties(context.physical_device)
+        }
+        .limits;
+        let slot_sizes = [
+            light_buffer_size,
+            tile_index_size,
+            tile_header_size,
+            frame_data_size,
+        ];
+        let slot_strides = slot_sizes.map(|size| {
+            size.div_ceil(
+                limits
+                    .min_storage_buffer_offset_alignment
+                    .max(limits.min_uniform_buffer_offset_alignment)
+                    .max(1),
+            ) * limits
+                .min_storage_buffer_offset_alignment
+                .max(limits.min_uniform_buffer_offset_alignment)
+                .max(1)
+        });
         info!(
             "Creating light culling buffers: {}x{} screen, {}x{} tiles, \
              light={}KB, tile_idx={}KB, tile_hdr={}KB, frame_data={}KB",
@@ -136,24 +162,32 @@ impl LightCullingBuffers {
         let (light_buffer, light_allocation) = create_buffer(
             &context,
             "light_culling_light_buffer",
-            light_buffer_size,
-            vk::BufferUsageFlags::STORAGE_BUFFER,
+            slot_strides[0] * crate::renderer::FRAMES_IN_FLIGHT as u64,
+            vk::BufferUsageFlags::STORAGE_BUFFER
+                | vk::BufferUsageFlags::TRANSFER_SRC
+                | vk::BufferUsageFlags::TRANSFER_DST,
             gpu_allocator::MemoryLocation::CpuToGpu,
         )?;
 
         let light_mapped_ptr = context
             .map_buffer(&light_allocation)
-            .expect("Failed to map buffer");
+            .map_err(|error| error.to_string())?;
         unsafe {
-            std::ptr::write_bytes(light_mapped_ptr, 0, light_buffer_size as usize);
+            std::ptr::write_bytes(
+                light_mapped_ptr,
+                0,
+                (slot_strides[0] * crate::renderer::FRAMES_IN_FLIGHT as u64) as usize,
+            );
         }
 
         // Tile index buffer (GPU-written, GPU-read)
         let (tile_index_buffer, tile_index_allocation) = create_buffer(
             &context,
             "light_culling_tile_index_buffer",
-            tile_index_size,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+            slot_strides[1] * crate::renderer::FRAMES_IN_FLIGHT as u64,
+            vk::BufferUsageFlags::STORAGE_BUFFER
+                | vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::TRANSFER_SRC,
             gpu_allocator::MemoryLocation::GpuOnly,
         )?;
 
@@ -161,8 +195,10 @@ impl LightCullingBuffers {
         let (tile_header_buffer, tile_header_allocation) = create_buffer(
             &context,
             "light_culling_tile_header_buffer",
-            tile_header_size,
-            vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+            slot_strides[2] * crate::renderer::FRAMES_IN_FLIGHT as u64,
+            vk::BufferUsageFlags::STORAGE_BUFFER
+                | vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::TRANSFER_SRC,
             gpu_allocator::MemoryLocation::GpuOnly,
         )?;
 
@@ -170,8 +206,10 @@ impl LightCullingBuffers {
         let (frame_data_buffer, frame_data_allocation) = create_buffer(
             &context,
             "light_culling_frame_data",
-            frame_data_size,
-            vk::BufferUsageFlags::UNIFORM_BUFFER,
+            slot_strides[3] * crate::renderer::FRAMES_IN_FLIGHT as u64,
+            vk::BufferUsageFlags::UNIFORM_BUFFER
+                | vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::TRANSFER_SRC,
             gpu_allocator::MemoryLocation::CpuToGpu,
         )?;
 
@@ -256,12 +294,31 @@ impl LightCullingBuffers {
             screen_width,
             screen_height,
             light_count: 0,
+            frame_slot: 0,
+            slot_sizes,
+            slot_strides,
             prev_light_count: 0,
             light_mapped_ptr,
             compute_descriptor_layout: Some(compute_descriptor_layout),
             fragment_descriptor_layout: Some(fragment_descriptor_layout),
             destroyed: false,
         })
+    }
+
+    pub(crate) fn set_frame_slot(&mut self, slot: usize) {
+        self.frame_slot = slot;
+    }
+
+    pub(crate) fn graph_buffer_offset(&self, role: crate::render_graph::BuiltinBuffer) -> u64 {
+        use crate::render_graph::BuiltinBuffer::*;
+        let index = match role {
+            LightData => 0,
+            LightTiles => 1,
+            LightHeaders => 2,
+            LightFrame => 3,
+            _ => return 0,
+        };
+        self.slot_strides[index] * self.frame_slot as u64
     }
 
     /// Upload point light data to the GPU.
@@ -272,7 +329,9 @@ impl LightCullingBuffers {
         if !self.light_mapped_ptr.is_null() {
             let dst = unsafe {
                 std::slice::from_raw_parts_mut(
-                    self.light_mapped_ptr as *mut PointLightGPU,
+                    self.light_mapped_ptr
+                        .add((self.slot_strides[0] * self.frame_slot as u64) as usize)
+                        as *mut PointLightGPU,
                     MAX_POINT_LIGHTS as usize,
                 )
             };
@@ -300,7 +359,11 @@ impl LightCullingBuffers {
             let dirty_count = new_count.max(self.prev_light_count);
             let flush_size = (dirty_count as usize * std::mem::size_of::<PointLightGPU>()) as u64;
             if flush_size > 0 {
-                let _ = self.context.flush_mapped_memory(alloc, 0, flush_size);
+                let _ = self.context.flush_mapped_memory(
+                    alloc,
+                    self.slot_strides[0] * self.frame_slot as u64,
+                    flush_size,
+                );
             }
         }
 
@@ -315,13 +378,14 @@ impl LightCullingBuffers {
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     frame_data as *const LightCullFrameData as *const u8,
-                    mapped.as_ptr() as *mut u8,
+                    (mapped.as_ptr() as *mut u8)
+                        .add((self.slot_strides[3] * self.frame_slot as u64) as usize),
                     std::mem::size_of::<LightCullFrameData>(),
                 );
             }
             let _ = self.context.flush_mapped_memory(
                 alloc,
-                0,
+                self.slot_strides[3] * self.frame_slot as u64,
                 std::mem::size_of::<LightCullFrameData>() as u64,
             );
         }
@@ -336,9 +400,13 @@ impl LightCullingBuffers {
         let num_tiles = self.tiles_x * self.tiles_y;
         let fill_size = (num_tiles as u64) * (std::mem::size_of::<u32>() as u64);
         unsafe {
-            self.context
-                .device
-                .cmd_fill_buffer(cmd, self.tile_header_buffer, 0, fill_size, 0);
+            self.context.device.cmd_fill_buffer(
+                cmd,
+                self.tile_header_buffer,
+                self.slot_strides[2] * self.frame_slot as u64,
+                fill_size,
+                0,
+            );
         }
     }
 
@@ -357,22 +425,22 @@ impl LightCullingBuffers {
 
         let light_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.light_buffer)
-            .offset(0)
+            .offset(self.slot_strides[0] * self.frame_slot as u64)
             .range(std::mem::size_of::<PointLightGPU>() as u64 * MAX_POINT_LIGHTS as u64)];
 
         let tile_index_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.tile_index_buffer)
-            .offset(0)
-            .range(vk::WHOLE_SIZE)];
+            .offset(self.slot_strides[1] * self.frame_slot as u64)
+            .range(self.slot_sizes[1])];
 
         let tile_header_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.tile_header_buffer)
-            .offset(0)
-            .range(vk::WHOLE_SIZE)];
+            .offset(self.slot_strides[2] * self.frame_slot as u64)
+            .range(self.slot_sizes[2])];
 
         let frame_data_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.frame_data_buffer)
-            .offset(0)
+            .offset(self.slot_strides[3] * self.frame_slot as u64)
             .range(std::mem::size_of::<LightCullFrameData>() as u64)];
 
         let writes = [
@@ -438,18 +506,18 @@ impl LightCullingBuffers {
     ) -> Result<(), RendererError> {
         let light_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.light_buffer)
-            .offset(0)
+            .offset(self.slot_strides[0] * self.frame_slot as u64)
             .range(std::mem::size_of::<PointLightGPU>() as u64 * MAX_POINT_LIGHTS as u64)];
 
         let tile_index_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.tile_index_buffer)
-            .offset(0)
-            .range(vk::WHOLE_SIZE)];
+            .offset(self.slot_strides[1] * self.frame_slot as u64)
+            .range(self.slot_sizes[1])];
 
         let tile_header_info = [vk::DescriptorBufferInfo::default()
             .buffer(self.tile_header_buffer)
-            .offset(0)
-            .range(vk::WHOLE_SIZE)];
+            .offset(self.slot_strides[2] * self.frame_slot as u64)
+            .range(self.slot_sizes[2])];
 
         let writes = [
             vk::WriteDescriptorSet::default()
@@ -488,6 +556,32 @@ impl LightCullingBuffers {
 
     pub fn fragment_descriptor_layout(&self) -> Option<vk::DescriptorSetLayout> {
         self.fragment_descriptor_layout
+    }
+
+    pub(crate) fn graph_buffer(
+        &self,
+        role: crate::render_graph::BuiltinBuffer,
+    ) -> Option<(vk::Buffer, u64)> {
+        use crate::render_graph::BuiltinBuffer::*;
+        let (buffer, allocation) = match role {
+            LightData => (self.light_buffer, self.light_allocation.as_ref()?),
+            LightTiles => (self.tile_index_buffer, self.tile_index_allocation.as_ref()?),
+            LightHeaders => (
+                self.tile_header_buffer,
+                self.tile_header_allocation.as_ref()?,
+            ),
+            LightFrame => (self.frame_data_buffer, self.frame_data_allocation.as_ref()?),
+            _ => return None,
+        };
+        let _ = allocation;
+        let index = match role {
+            LightData => 0,
+            LightTiles => 1,
+            LightHeaders => 2,
+            LightFrame => 3,
+            _ => return None,
+        };
+        Some((buffer, self.slot_sizes[index]))
     }
 
     pub fn frame_data_buffer(&self) -> vk::Buffer {

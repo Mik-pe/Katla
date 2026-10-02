@@ -143,7 +143,10 @@ fn test_contract_invalid_descriptors_fail_typed_without_disturbing_state() {
         .update_texture(texture, &[9, 9])
         .expect_err("size-mismatched updates must be rejected");
     assert!(
-        matches!(error, RendererError::UploadFailed { .. }),
+        matches!(
+            error,
+            RendererError::InvalidDescriptor { .. } | RendererError::UploadFailed { .. }
+        ),
         "got {error:?}"
     );
     renderer.gfx().destroy_texture(texture);

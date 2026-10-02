@@ -1,5 +1,3 @@
-use objc2_metal::MTLRenderCommandEncoder;
-
 use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::renderer::types::PreparedDraws;
 
@@ -17,48 +15,21 @@ impl MetalRenderer {
             encoder.bind_storage_buffer(object_buf, 0, 1, stages);
         }
 
-        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-            let stages = ShaderStages::VERTEX_FRAGMENT;
-            unsafe {
-                if stages.vertex {
-                    encoder
-                        .inner
-                        .setVertexBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
-                }
-                if stages.fragment {
-                    encoder
-                        .inner
-                        .setFragmentBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
-                }
-            }
-            encoder.use_buffer(
-                arg_buffer,
-                objc2_metal::MTLResourceUsage::Read,
-                objc2_metal::MTLRenderStages::Vertex | objc2_metal::MTLRenderStages::Fragment,
-            );
-            for texture in self.bindless_manager.registered_textures() {
-                encoder.use_texture(
-                    texture,
-                    objc2_metal::MTLResourceUsage::Read,
-                    objc2_metal::MTLRenderStages::Vertex | objc2_metal::MTLRenderStages::Fragment,
-                );
-            }
+        if let Some(snapshot) = self.bindless_manager.snapshot() {
+            encoder.bind_bindless(snapshot);
         }
 
         if let Some(ref sampler) = self.shared_sampler {
-            unsafe {
-                encoder
-                    .inner
-                    .setVertexSamplerState_atIndex(Some(&sampler.inner), 0);
-                encoder
-                    .inner
-                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
-            }
-        }
-
-        if let Some(ref buf_sizes) = self.buffer_sizes_buffer {
-            let stages = ShaderStages::VERTEX_FRAGMENT;
-            encoder.bind_storage_buffer(buf_sizes, 0, 8, stages);
+            encoder.bind_native_sampler(
+                &sampler.inner,
+                0,
+                crate::backend::command::ShaderStages::VERTEX,
+            );
+            encoder.bind_native_sampler(
+                &sampler.inner,
+                0,
+                crate::backend::command::ShaderStages::FRAGMENT,
+            );
         }
 
         if let Some(ref lc) = self.light_culling {
@@ -68,31 +39,16 @@ impl MetalRenderer {
             encoder.bind_storage_buffer(lc.tile_count_buffer(), 0, 5, stages);
         }
 
-        if let Some(ref shadow_buf) = self.shadow_cascade_buffer {
+        if let Some(ref shadow_buf) = self.shadow_cascade_buffers[self.frame_index()] {
             let stages = ShaderStages::FRAGMENT;
             encoder.bind_storage_buffer(shadow_buf, 0, 7, stages);
         }
 
         if let Some(ref sampler) = self.shadow_sampler {
-            unsafe {
-                encoder
-                    .inner
-                    .setFragmentSamplerState_atIndex(Some(&sampler.inner), 1);
-            }
-        }
-
-        if let Some(arg_buffer) = self.bindless_manager.argument_buffer() {
-            encoder.use_buffer(
-                arg_buffer,
-                objc2_metal::MTLResourceUsage::Read,
-                objc2_metal::MTLRenderStages::Fragment,
-            );
-        }
-        for texture in self.bindless_manager.registered_textures() {
-            encoder.use_texture(
-                texture,
-                objc2_metal::MTLResourceUsage::Read,
-                objc2_metal::MTLRenderStages::Fragment,
+            encoder.bind_native_sampler(
+                &sampler.inner,
+                1,
+                crate::backend::command::ShaderStages::FRAGMENT,
             );
         }
     }
@@ -156,7 +112,7 @@ impl MetalRenderer {
             encoder.bind_graphics_pipeline(pipeline);
 
             if !draw.skeleton.is_none()
-                && let Some(skeleton_buf) = self.skeletons.get(draw.skeleton)
+                && let Some(skeleton_buf) = self.skeletons[self.frame_index()].get(draw.skeleton)
             {
                 encoder.bind_storage_buffer(skeleton_buf, 0, 2, stages);
             }
@@ -166,18 +122,18 @@ impl MetalRenderer {
             // objects[0] in the shader maps to the correct per-object data.
             let object_offset = draw.instance_index as usize * OBJECT_UNIFORM_SIZE as usize;
             if let Some(object_buf) = self.current_object_storage_buffer() {
-                unsafe {
-                    encoder.inner.setVertexBuffer_offset_atIndex(
-                        Some(&object_buf.inner),
-                        object_offset,
-                        1,
-                    );
-                    encoder.inner.setFragmentBuffer_offset_atIndex(
-                        Some(&object_buf.inner),
-                        object_offset,
-                        1,
-                    );
-                }
+                encoder.bind_native_buffer(
+                    &object_buf.inner,
+                    (object_offset) as u64,
+                    1,
+                    crate::backend::command::ShaderStages::VERTEX,
+                );
+                encoder.bind_native_buffer(
+                    &object_buf.inner,
+                    (object_offset) as u64,
+                    1,
+                    crate::backend::command::ShaderStages::FRAGMENT,
+                );
             }
 
             // An empty dynamic mesh draws nothing.

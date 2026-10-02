@@ -199,7 +199,8 @@ unsafe extern "system" fn debug_callback(
 pub(super) fn check_validation_support(entry: &Entry) -> bool {
     unsafe {
         let available_layers = entry.enumerate_instance_layer_properties().unwrap();
-        let validation_name = CStr::from_ptr(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
+        let validation_name =
+            CStr::from_ptr(LAYER_KHRONOS_VALIDATION.as_ptr().cast::<std::ffi::c_char>());
         for layer in available_layers {
             let layer_name = std::ffi::CStr::from_ptr(layer.layer_name.as_ptr() as _);
             if layer_name == validation_name {
@@ -212,6 +213,11 @@ pub(super) fn check_validation_support(entry: &Entry) -> bool {
 }
 
 impl super::VulkanContext {
+    /// Whether native validation layers and their debug messenger are active.
+    pub fn validation_active(&self) -> bool {
+        self.debug_callback.is_some()
+    }
+
     /// Set a callback for validation messages.
     ///
     /// The callback receives the message text and severity level.

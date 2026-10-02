@@ -141,6 +141,23 @@ impl Texture {
         pixel_data: &[u8],
     ) -> Result<Self, crate::error::RendererError> {
         desc.validate_data(pixel_data.len())?;
+        if desc.depth != 1
+            || desc.array_layers != 1
+            || desc.mip_levels != 1
+            || desc.generate_mips
+            || desc.format.block_extent() != [1, 1]
+        {
+            return Err(crate::error::RendererError::UnsupportedFeature(format!(
+                "Vulkan asset texture creation does not support {:?} {}x{}x{} layers {} mips {} generation {}",
+                desc.format,
+                desc.width,
+                desc.height,
+                desc.depth,
+                desc.array_layers,
+                desc.mip_levels,
+                desc.generate_mips
+            )));
+        }
         Ok(Self::create_image(
             context.clone(),
             desc.width,
@@ -260,7 +277,7 @@ impl Texture {
                 ImageFormat::D32Sfloat
                 | ImageFormat::D32SfloatS8Uint
                 | ImageFormat::D24UnormS8Uint => 1,
-                ImageFormat::Auto => 4,
+                ImageFormat::Auto | ImageFormat::Bc1RgbaUnorm | ImageFormat::Bc3RgbaUnorm => 4,
             };
 
             Self {
@@ -593,11 +610,34 @@ impl Texture {
         )
     }
 
+    pub(crate) fn image(&self) -> VkImage {
+        self.image
+    }
+
+    pub(crate) fn format(&self) -> ImageFormat {
+        self.format
+    }
+
     /// Get the image view for this texture.
     ///
     /// Used for binding the texture to descriptors or the bindless system.
     pub fn image_view(&self) -> &VkImageView {
         &self.image_view
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        unsafe {
+            self.context
+                .device
+                .destroy_sampler(self.image_sampler.vk(), None);
+            self.context
+                .device
+                .destroy_image_view(self.image_view.vk(), None);
+        }
+        let allocation = unsafe { ManuallyDrop::take(&mut self.image_memory) };
+        self.context.free_image(self.image, allocation);
     }
 }
 
@@ -676,20 +716,5 @@ mod tests {
         let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
 
         assert_eq!(result, vec![255, 255, 255, 255]);
-    }
-}
-
-impl Drop for Texture {
-    fn drop(&mut self) {
-        unsafe {
-            self.context
-                .device
-                .destroy_sampler(self.image_sampler.vk(), None);
-            self.context
-                .device
-                .destroy_image_view(self.image_view.vk(), None);
-        }
-        let allocation = unsafe { ManuallyDrop::take(&mut self.image_memory) };
-        self.context.free_image(self.image, allocation);
     }
 }

@@ -47,7 +47,11 @@ impl Application {
         let descriptor =
             katla_gfx::PipelineDescriptor::pbr(unlit_shader_path.to_string_lossy().into_owned())
                 .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat)
-                .with_depth(katla_gfx::DepthState::disabled());
+                .with_depth(katla_gfx::DepthState {
+                    test: true,
+                    write: false,
+                    compare: katla_gfx::CompareOp::Always,
+                });
         let material = match self.renderer.compile_material(&descriptor) {
             Ok(m) => m,
             Err(e) => {

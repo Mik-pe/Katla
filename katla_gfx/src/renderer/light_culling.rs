@@ -232,6 +232,29 @@ impl LightSubsystem {
         }
     }
 
+    pub(crate) fn set_frame_slot(&mut self, slot: usize) {
+        if let Some(buffers) = &mut self.buffers {
+            buffers.set_frame_slot(slot);
+        }
+    }
+
+    pub(crate) fn prepare_graph_frame(&mut self, view: &[f32; 16], proj: &[f32; 16]) {
+        if let Some(buffers) = &mut self.buffers {
+            buffers.write_frame_data(&crate::lighting::LightCullFrameData {
+                view_matrix: *view,
+                proj_matrix: *proj,
+                light_count: buffers.light_count(),
+                tiles_x: buffers.tiles_x(),
+                tiles_y: buffers.tiles_y(),
+                screen_width: buffers.screen_width(),
+                screen_height: buffers.screen_height(),
+                _pad0: 0,
+                _pad1: 0,
+                _pad2: 0,
+            });
+        }
+    }
+
     /// Whether the light culling system is active.
     pub fn has_light_culling(&self) -> bool {
         self.buffers.is_some()
@@ -310,6 +333,12 @@ impl LightSubsystem {
 }
 
 impl super::VulkanRenderer {
+    pub(crate) fn prepare_graph_lights(&mut self) {
+        let view = self.frame_uniforms().view_matrix;
+        let proj = self.frame_uniforms().proj_matrix;
+        self.light_culling.prepare_graph_frame(&view, &proj);
+    }
+
     /// Initialize the Forward+ light culling system.
     ///
     /// Delegates to [`LightSubsystem::init`].

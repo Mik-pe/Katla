@@ -22,10 +22,23 @@ impl ResolvedMetalAttachments {
         graph: &FrameGraph<MetalRenderer>,
         drawable: &MetalTextureView,
         slot: usize,
+        renderer: &MetalRenderer,
     ) -> Result<Self, RendererError> {
         let resolve = |resource: ResourceId| -> Result<MetalTextureView, RendererError> {
             if graph.resource_name(resource) == Some("backbuffer") {
                 return Ok(drawable.clone());
+            }
+            if let Some(handle) = graph.imported_images.get(&resource) {
+                return renderer
+                    .textures
+                    .get(*handle)
+                    .map(|entry| entry._view.clone())
+                    .ok_or_else(|| {
+                        RendererError::InvalidOperation(format!(
+                            "Imported attachment {} references a destroyed texture",
+                            resource.0
+                        ))
+                    });
             }
             graph
                 .transient_texture_by_id(resource, slot)

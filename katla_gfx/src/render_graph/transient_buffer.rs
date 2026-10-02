@@ -10,6 +10,7 @@ use super::resource::BufferDesc;
 pub struct VulkanGraphBuffer {
     context: Rc<VulkanContext>,
     pub(crate) buffer: vk::Buffer,
+    pub(crate) offset: u64,
     allocation: Option<Allocation>,
     pub(crate) desc: BufferDesc,
 }
@@ -24,13 +25,42 @@ impl VulkanGraphBuffer {
         Self {
             context,
             buffer,
+            offset: 0,
             allocation: Some(allocation),
+            desc,
+        }
+    }
+
+    pub(crate) fn borrowed(
+        context: Rc<VulkanContext>,
+        buffer: vk::Buffer,
+        offset: u64,
+        desc: BufferDesc,
+    ) -> Self {
+        Self {
+            context,
+            buffer,
+            offset,
+            allocation: None,
             desc,
         }
     }
 
     pub(crate) fn size(&self) -> u64 {
         self.desc.size
+    }
+
+    #[cfg(all(test, not(target_os = "macos")))]
+    pub(crate) fn read_completed(&self) -> Result<Vec<u8>, crate::RendererError> {
+        let allocation = self.allocation.as_ref().ok_or_else(|| {
+            crate::RendererError::InvalidOperation(
+                "Readback requires an owned mapped graph buffer".into(),
+            )
+        })?;
+        self.context
+            .invalidate_mapped_memory(allocation, 0, self.desc.size)?;
+        let pointer = self.context.map_buffer(allocation)?;
+        Ok(unsafe { std::slice::from_raw_parts(pointer, self.desc.size as usize) }.to_vec())
     }
 
     pub fn vk_buffer(&self) -> vk::Buffer {

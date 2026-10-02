@@ -5,78 +5,71 @@
 //! before any consumer pass of the frame, and staging slots are recycled only
 //! after the consuming submission completes.
 
+use std::time::Instant;
+
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::metal::buffer::MetalBuffer;
 use crate::metal::context::MetalContext;
 use crate::metal::texture::MetalTexture;
-use crate::texture::ImageFormat;
+use crate::texture::{
+    ImageFormat, TextureDescriptor, TextureUploadBudget, TextureUploadMetrics, TextureUploadRegion,
+};
 
-/// Validates an upload against its descriptor. Returns a typed error naming
-/// the row pitch so callers can fix the data layout instead of guessing.
+#[cfg(test)]
 pub(crate) fn validate_upload(
     format: ImageFormat,
     width: u32,
     height: u32,
     len: usize,
 ) -> Result<(), RendererError> {
-    if matches!(
-        format,
-        ImageFormat::D32Sfloat | ImageFormat::D32SfloatS8Uint | ImageFormat::D24UnormS8Uint
-    ) {
-        return Err(RendererError::InvalidDescriptor {
-            resource: "texture".to_string(),
-            reason: format!(
-                "initial data upload into depth format {format:?} is not supported; render targets are created empty"
-            ),
-        });
-    }
-    if width == 0 || height == 0 {
-        return Err(RendererError::InvalidDescriptor {
-            resource: "texture".to_string(),
-            reason: format!("texture upload for {width}x{height}: zero extent"),
-        });
-    }
-    let bytes_per_pixel = format.bytes_per_pixel();
-    let bytes_per_row = width * bytes_per_pixel;
-    let expected = bytes_per_row as usize * height as usize;
-    if len != expected {
+    let desc = TextureDescriptor::new(width, height, format);
+    let layout = TextureUploadRegion::base(&desc).validate(&desc, len)?;
+    if layout.required_bytes != len {
         return Err(RendererError::UploadFailed {
-            resource: "texture".to_string(),
-            expected_bytes: expected,
+            resource: "texture".into(),
+            expected_bytes: layout.required_bytes,
             actual_bytes: len,
-            detail: format!("{width}x{height} {format:?}, row pitch {bytes_per_row}"),
+            detail: format!(
+                "{format:?} {width}x{height}, row pitch {}",
+                layout.bytes_per_row
+            ),
         });
     }
     Ok(())
 }
 
-#[derive(Clone)]
-struct StagingSlot {
-    buffer: MetalBuffer,
-}
-
-/// One staged upload awaiting its blit into private storage.
-#[derive(Clone)]
 struct PendingTextureUpload {
     staging: MetalBuffer,
     dst: MetalTexture,
+    region: TextureUploadRegion,
     bytes_per_row: usize,
-    width: u32,
-    height: u32,
+    bytes_per_image: usize,
+    generate_mips: bool,
 }
 
-/// Pooled staging buffers plus the batch of pending uploads.
+struct SubmittedTextureUploads {
+    submission_id: u64,
+    submitted: bool,
+    started: Instant,
+    uploads: Vec<PendingTextureUpload>,
+}
+
+/// Upload bytes are admitted atomically and belong to their exact submission until completion.
 #[derive(Default)]
 pub(crate) struct TextureUploadQueue {
     pending: Vec<PendingTextureUpload>,
-    in_flight: Vec<StagingSlot>,
-    free: Vec<StagingSlot>,
-    staged_bytes_this_batch: usize,
+    in_flight: Vec<SubmittedTextureUploads>,
+    free: Vec<MetalBuffer>,
+    budget: TextureUploadBudget,
+    metrics: TextureUploadMetrics,
 }
 
 impl TextureUploadQueue {
-    /// Copies `data` into a staging buffer and records the pending blit.
+    pub(crate) fn record_failure(&mut self) {
+        self.metrics.failure_count += 1;
+    }
+
     pub(crate) fn stage(
         &mut self,
         context: &MetalContext,
@@ -86,536 +79,320 @@ impl TextureUploadQueue {
         height: u32,
         data: &[u8],
     ) -> Result<(), RendererError> {
-        validate_upload(format, width, height, data.len())?;
-
-        let bytes_per_row = (width * format.bytes_per_pixel()) as usize;
-        let expected = bytes_per_row * height as usize;
-
-        let slot = match self.free.pop() {
-            Some(slot) if slot.buffer.size() as usize >= expected => slot,
-            _ => StagingSlot {
-                buffer: context.create_buffer(expected as u64, true)?,
-            },
-        };
-
-        let map = slot.buffer.map();
-        unsafe {
-            std::ptr::copy_nonoverlapping(data.as_ptr(), map, expected);
+        if format != dst.descriptor().format
+            || width != dst.descriptor().width
+            || height != dst.descriptor().height
+        {
+            self.record_failure();
+            return Err(RendererError::InvalidDescriptor {
+                resource: "texture upload".into(),
+                reason: "upload format or extent differs from destination texture".into(),
+            });
         }
-        slot.buffer.unmap();
+        let desc = dst.descriptor();
+        self.stage_region(context, dst, &desc, TextureUploadRegion::base(&desc), data)
+    }
 
+    pub(crate) fn stage_region(
+        &mut self,
+        context: &MetalContext,
+        dst: MetalTexture,
+        desc: &TextureDescriptor,
+        region: TextureUploadRegion,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        let result = self.stage_validated(context, dst, desc, region, data);
+        if result.is_err() {
+            self.record_failure();
+        }
+        result
+    }
+
+    fn stage_validated(
+        &mut self,
+        context: &MetalContext,
+        dst: MetalTexture,
+        desc: &TextureDescriptor,
+        region: TextureUploadRegion,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        let layout = region.validate(desc, data.len())?;
+        let fail = |detail: &str| RendererError::UploadFailed {
+            resource: desc.label.unwrap_or("texture upload").into(),
+            expected_bytes: layout.required_bytes,
+            actual_bytes: data.len(),
+            detail: format!(
+                "{:?} {:?}, mip {} layer {}: {detail}",
+                desc.format, region.extent, region.mip_level, region.array_layer
+            ),
+        };
+        let generate_mips = desc.generate_mips && desc.mip_levels > 1 && region.mip_level == 0;
+        if generate_mips
+            && (region.origin != [0; 3]
+                || region.extent != [desc.width, desc.height, desc.depth]
+                || desc.array_layers != 1
+                || desc.format.block_extent() != [1, 1]
+                || !desc.format.supports_mip_generation())
+        {
+            return Err(fail(
+                "mip generation requires a full uncompressed filterable base mip in a single-layer texture",
+            ));
+        }
+        // A common 256-byte row alignment works for all supported uncompressed and BC layouts.
+        let row_pitch = layout
+            .row_bytes
+            .checked_add(255)
+            .map(|v| v & !255)
+            .ok_or_else(|| fail("aligned row pitch overflow"))?;
+        let image_pitch = row_pitch
+            .checked_mul(layout.block_rows)
+            .ok_or_else(|| fail("aligned image pitch overflow"))?;
+        let bytes = image_pitch
+            .checked_mul(region.extent[2] as usize)
+            .ok_or_else(|| fail("staging size overflow"))?;
+        let queued = self
+            .metrics
+            .queued_bytes
+            .checked_add(bytes)
+            .ok_or_else(|| fail("queued size overflow"))?;
+        let upload_count = self
+            .in_flight
+            .iter()
+            .filter(|batch| !batch.submitted)
+            .fold(self.pending.len(), |count, batch| {
+                count.saturating_add(batch.uploads.len())
+            });
+        if queued > self.budget.max_queued_bytes
+            || queued > self.budget.max_bytes_per_submission
+            || upload_count >= self.budget.max_uploads_per_submission
+        {
+            return Err(fail(
+                "upload batch budget exhausted; retry after submission",
+            ));
+        }
+        let free_index = self
+            .free
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.size() as usize >= bytes)
+            .min_by_key(|(_, b)| b.size())
+            .map(|(i, _)| i);
+        let staging = if let Some(index) = free_index {
+            self.free.swap_remove(index)
+        } else {
+            while self.metrics.staging_bytes.saturating_add(bytes) > self.budget.max_staging_bytes
+                && !self.free.is_empty()
+            {
+                if let Some(buffer) = self.free.pop() {
+                    self.metrics.staging_bytes -= buffer.size() as usize;
+                }
+            }
+            if self.metrics.staging_bytes.saturating_add(bytes) > self.budget.max_staging_bytes {
+                return Err(fail(
+                    "in-flight staging budget exhausted; wait for completion",
+                ));
+            }
+            let buffer = context.create_buffer(bytes as u64, true)?;
+            self.metrics.staging_bytes += bytes;
+            self.metrics.staging_high_water_mark = self
+                .metrics
+                .staging_high_water_mark
+                .max(self.metrics.staging_bytes);
+            buffer
+        };
+        let map = staging.map();
+        if map.is_null() {
+            self.free.push(staging);
+            return Err(fail("staging buffer is not CPU mapped"));
+        }
+        unsafe {
+            std::ptr::write_bytes(map, 0, bytes);
+            for z in 0..region.extent[2] as usize {
+                for row in 0..layout.block_rows {
+                    std::ptr::copy_nonoverlapping(
+                        data.as_ptr()
+                            .add(z * layout.bytes_per_image + row * layout.bytes_per_row),
+                        map.add(z * image_pitch + row * row_pitch),
+                        layout.row_bytes,
+                    );
+                }
+            }
+        }
+        staging.unmap();
         self.pending.push(PendingTextureUpload {
-            staging: slot.buffer.clone(),
+            staging,
             dst,
-            bytes_per_row,
-            width,
-            height,
+            region,
+            bytes_per_row: row_pitch,
+            bytes_per_image: image_pitch,
+            generate_mips,
         });
-        self.staged_bytes_this_batch += expected;
-        self.in_flight.push(slot);
+        self.metrics.queued_bytes = queued;
         Ok(())
     }
 
-    /// Encodes blits for every pending upload into the current blit pass.
     pub(crate) fn encode_into(
         &mut self,
         encoder: &mut crate::metal::blit_encoder::MetalBlitEncoder,
+        submission_id: u64,
     ) {
-        for upload in self.pending.drain(..) {
-            encoder.copy_buffer_to_texture_staged(
+        if self.pending.is_empty() {
+            return;
+        }
+        use objc2_metal::MTL4CommandEncoder;
+        encoder
+            .inner
+            .barrierAfterQueueStages_beforeStages_visibilityOptions(
+                objc2_metal::MTLStages::All,
+                objc2_metal::MTLStages::Blit,
+                objc2_metal::MTL4VisibilityOptions::Device,
+            );
+        let uploads = std::mem::take(&mut self.pending);
+        let mut written = std::collections::HashSet::new();
+        for upload in &uploads {
+            use objc2_metal::MTLTexture;
+            let id = upload.dst.inner.gpuResourceID().to_raw();
+            let mip_end = if upload.generate_mips {
+                upload.dst.descriptor().mip_levels
+            } else {
+                upload.region.mip_level + 1
+            };
+            if (upload.region.mip_level..mip_end)
+                .any(|mip| written.contains(&(id, mip, upload.region.array_layer)))
+            {
+                encoder.barrier_transfers();
+            }
+            for mip in upload.region.mip_level..mip_end {
+                written.insert((id, mip, upload.region.array_layer));
+            }
+            encoder.copy_buffer_to_texture_region(
                 &upload.staging,
                 &upload.dst,
-                upload.bytes_per_row,
-                upload.width,
-                upload.height,
+                TextureUploadRegion {
+                    bytes_per_row: upload.bytes_per_row,
+                    bytes_per_image: upload.bytes_per_image,
+                    ..upload.region
+                },
             );
+            if upload.generate_mips {
+                encoder.generate_mipmaps(&upload.dst);
+            }
+        }
+        self.in_flight.push(SubmittedTextureUploads {
+            submission_id,
+            submitted: false,
+            started: Instant::now(),
+            uploads,
+        });
+    }
+
+    /// Publish staging ownership only when its command buffer is committed.
+    pub(crate) fn mark_submitted(&mut self, submission_id: u64) {
+        for batch in &mut self.in_flight {
+            if batch.submission_id == submission_id && !batch.submitted {
+                batch.submitted = true;
+                batch.started = Instant::now();
+                let bytes: usize = batch
+                    .uploads
+                    .iter()
+                    .map(|upload| upload.bytes_per_image * upload.region.extent[2] as usize)
+                    .sum();
+                self.metrics.queued_bytes -= bytes;
+                self.metrics.submitted_bytes += bytes as u64;
+            }
         }
     }
 
-    /// Returns staging slots whose consuming submission has completed to the pool.
-    pub(crate) fn retire_completed(&mut self) {
-        for slot in self.in_flight.drain(..) {
-            self.free.push(slot);
+    /// Replay staged bytes after an encoded command buffer is abandoned before submission.
+    pub(crate) fn cancel_unsubmitted(&mut self, submission_id: u64) {
+        if !self
+            .in_flight
+            .iter()
+            .any(|batch| batch.submission_id == submission_id && !batch.submitted)
+        {
+            return;
+        }
+        let mut restored = Vec::new();
+        let mut index = 0;
+        while index < self.in_flight.len() {
+            if self.in_flight[index].submission_id != submission_id
+                || self.in_flight[index].submitted
+            {
+                index += 1;
+                continue;
+            }
+            restored.extend(self.in_flight.remove(index).uploads);
+        }
+        restored.append(&mut self.pending);
+        self.pending = restored;
+    }
+
+    /// Completion of one submission cannot retire bytes owned by any other submission.
+    pub(crate) fn retire_completed(&mut self, submission_id: u64) {
+        let mut index = 0;
+        while index < self.in_flight.len() {
+            if self.in_flight[index].submission_id != submission_id
+                || !self.in_flight[index].submitted
+            {
+                index += 1;
+                continue;
+            }
+            let batch = self.in_flight.remove(index);
+            self.metrics.completed_batches += 1;
+            self.metrics.completion_latency_ns =
+                batch.started.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+            self.free
+                .extend(batch.uploads.into_iter().map(|upload| upload.staging));
         }
     }
 
-    /// True while any staged upload awaits encoding.
+    /// A terminal failed submission still completes ownership; its texture contents remain invalid.
+    pub(crate) fn retire_failed_submission(&mut self, submission_id: u64) {
+        if self
+            .in_flight
+            .iter()
+            .any(|batch| batch.submission_id == submission_id && batch.submitted)
+        {
+            self.record_failure();
+            self.retire_completed(submission_id);
+        }
+    }
+
     pub(crate) fn has_pending(&self) -> bool {
         !self.pending.is_empty()
+    }
+    pub(crate) fn pending_transfers(&self) -> Vec<(u64, TextureUploadRegion)> {
+        use objc2_metal::MTLTexture;
+        let mut transfers = Vec::new();
+        for upload in &self.pending {
+            let id = upload.dst.inner.gpuResourceID().to_raw();
+            transfers.push((id, upload.region));
+            if upload.generate_mips {
+                let desc = upload.dst.descriptor();
+                for mip_level in 1..desc.mip_levels {
+                    transfers.push((
+                        id,
+                        TextureUploadRegion {
+                            mip_level,
+                            array_layer: 0,
+                            origin: [0; 3],
+                            extent: [desc.width, desc.height, desc.depth]
+                                .map(|value| (value >> mip_level).max(1)),
+                            bytes_per_row: 0,
+                            bytes_per_image: 0,
+                        },
+                    ));
+                }
+            }
+        }
+        transfers
+    }
+
+    pub(crate) fn metrics(&self) -> TextureUploadMetrics {
+        self.metrics
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use objc2_metal::{MTLCommandBuffer, MTLOrigin, MTLRegion, MTLSize, MTLTexture};
-
-    use crate::backend::command::{GpuBlitEncoder, GpuCommandBuffer};
-    use crate::backend::resource::GpuBuffer;
-    use crate::texture::{TextureDescriptor, TextureUsage};
-
-    fn headless_context() -> MetalContext {
-        MetalContext::init_headless().unwrap()
-    }
-
-    #[test]
-    fn test_validate_upload_rejects_depth_formats() {
-        let result = validate_upload(ImageFormat::D32Sfloat, 4, 4, 64);
-        assert!(result.is_err(), "depth upload must be rejected");
-        let message = result.err().unwrap().to_string();
-        assert!(
-            message.contains("depth"),
-            "error names the depth format: {message}"
-        );
-    }
-
-    #[test]
-    fn test_validate_upload_rejects_size_mismatch() {
-        let result = validate_upload(ImageFormat::R8G8B8A8Unorm, 4, 4, 63);
-        assert!(result.is_err(), "size mismatch must be rejected");
-        let message = result.err().unwrap().to_string();
-        assert!(
-            message.contains("row pitch"),
-            "error names row pitch: {message}"
-        );
-    }
-
-    #[test]
-    fn test_validate_upload_accepts_exact_size() {
-        assert!(validate_upload(ImageFormat::R8G8B8A8Unorm, 4, 4, 64).is_ok());
-        assert!(validate_upload(ImageFormat::R8Unorm, 3, 5, 15).is_ok());
-    }
-
-    #[test]
-    fn test_roundtrip_preserves_bytes() {
-        let ctx = headless_context();
-        let width = 8;
-        let height = 8;
-        let pixels: Vec<u8> = (0..width * height * 4)
-            .map(|i| (i * 37 % 256) as u8)
-            .collect();
-
-        let desc = TextureDescriptor::new(width, height, ImageFormat::R8G8B8A8Unorm);
-        let (texture, _view) = ctx.create_texture(&desc).unwrap();
-
-        let mut queue = TextureUploadQueue::default();
-        queue
-            .stage(
-                &ctx,
-                texture.clone(),
-                ImageFormat::R8G8B8A8Unorm,
-                width,
-                height,
-                &pixels,
-            )
-            .unwrap();
-
-        let mut cmd_buffer = ctx.create_command_buffer();
-        cmd_buffer.begin();
-        {
-            let mut blit = cmd_buffer.begin_blit_pass_with_label("texture_upload");
-            queue.encode_into(&mut blit);
-            blit.end_encoding();
-        }
-        cmd_buffer.end();
-        cmd_buffer.submit(&ctx);
-        queue.retire_completed();
-        cmd_buffer.inner.waitUntilCompleted();
-
-        // Copy private result into a shared mirror and read back.
-        let (mirror, _) = ctx.create_texture_shared(&desc).unwrap();
-        let mut copy_cmd = ctx.create_command_buffer();
-        copy_cmd.begin();
-        {
-            let mut blit = copy_cmd.begin_blit_pass_with_label("texture_upload");
-            blit.copy_texture_to_texture(&texture, &mirror);
-            blit.end_encoding();
-        }
-        copy_cmd.end();
-        copy_cmd.submit(&ctx);
-        copy_cmd.inner.waitUntilCompleted();
-
-        let region = MTLRegion {
-            origin: MTLOrigin { x: 0, y: 0, z: 0 },
-            size: MTLSize {
-                width: width as usize,
-                height: height as usize,
-                depth: 1,
-            },
-        };
-        let mut out = vec![0u8; pixels.len()];
-        unsafe {
-            mirror.inner.getBytes_bytesPerRow_fromRegion_mipmapLevel(
-                std::ptr::NonNull::new(out.as_mut_ptr() as *mut std::ffi::c_void).unwrap(),
-                width as usize * 4,
-                region,
-                0,
-            );
-        }
-        assert_eq!(out, pixels, "roundtrip must preserve every byte");
-    }
-
-    #[test]
-    fn test_replace_region_vs_blit_content_identical() {
-        let ctx = headless_context();
-        let width = 8;
-        let height = 8;
-        let data: Vec<u8> = (0..width * height * 4)
-            .map(|i| (i * 37 % 256) as u8)
-            .collect();
-
-        let desc = TextureDescriptor::new(width, height, ImageFormat::R8G8B8A8Unorm);
-
-        // Path A: CPU write into a shared texture (legacy equivalent).
-        let (shared_tex, _) = ctx.create_texture_shared(&desc).unwrap();
-        let region = MTLRegion {
-            origin: MTLOrigin { x: 0, y: 0, z: 0 },
-            size: MTLSize {
-                width: width as usize,
-                height: height as usize,
-                depth: 1,
-            },
-        };
-        unsafe {
-            shared_tex
-                .inner
-                .replaceRegion_mipmapLevel_withBytes_bytesPerRow(
-                    region,
-                    0,
-                    std::ptr::NonNull::new(data.as_ptr() as *mut std::ffi::c_void).unwrap(),
-                    width as usize * 4,
-                );
-        }
-
-        // Path B: private texture + staged blit (current path).
-        let (private_tex, _) = ctx.create_texture(&desc).unwrap();
-        let mut queue = TextureUploadQueue::default();
-        queue
-            .stage(
-                &ctx,
-                private_tex.clone(),
-                ImageFormat::R8G8B8A8Unorm,
-                width,
-                height,
-                &data,
-            )
-            .unwrap();
-        let mut cmd = ctx.create_command_buffer();
-        cmd.begin();
-        {
-            let mut blit = cmd.begin_blit_pass_with_label("texture_upload");
-            queue.encode_into(&mut blit);
-            blit.end_encoding();
-        }
-        cmd.end();
-        cmd.submit(&ctx);
-        cmd.inner.waitUntilCompleted();
-
-        let (mirror, _) = ctx.create_texture_shared(&desc).unwrap();
-        let mut copy_cmd = ctx.create_command_buffer();
-        copy_cmd.begin();
-        {
-            let mut blit = copy_cmd.begin_blit_pass_with_label("texture_upload");
-            blit.copy_texture_to_texture(&private_tex, &mirror);
-            blit.end_encoding();
-        }
-        copy_cmd.end();
-        copy_cmd.submit(&ctx);
-        copy_cmd.inner.waitUntilCompleted();
-
-        let read = |tex: &MetalTexture| -> Vec<u8> {
-            let mut out = vec![0u8; data.len()];
-            unsafe {
-                tex.inner.getBytes_bytesPerRow_fromRegion_mipmapLevel(
-                    std::ptr::NonNull::new(out.as_mut_ptr() as *mut std::ffi::c_void).unwrap(),
-                    width as usize * 4,
-                    region,
-                    0,
-                );
-            }
-            out
-        };
-        assert_eq!(read(&shared_tex), data, "replaceRegion content");
-        assert_eq!(read(&mirror), data, "blit content");
-    }
-
-    #[test]
-    fn test_storage_mode_sampling_probe() {
-        use crate::backend::command::GpuComputeEncoder;
-
-        let ctx = headless_context();
-        let width = 4u32;
-        let height = 1u32;
-        let pixels: Vec<u8> = vec![
-            255, 0, 0, 255, 200, 0, 0, 255, 120, 0, 0, 255, 40, 0, 0, 255,
-        ];
-        let format = ImageFormat::R8G8B8A8Srgb;
-
-        const WGSL: &str = r#"
-            @group(0) @binding(0) var src_tex: texture_2d<f32>;
-            @group(0) @binding(1) var samp: sampler;
-            @group(0) @binding(2) var<storage, read_write> out: array<u32>;
-            @compute @workgroup_size(1)
-            fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
-                let u = (f32(gid.x) + 0.5) / 4.0;
-                let px = textureSampleLevel(src_tex, samp, vec2<f32>(u, 0.5), 0.0);
-                out[gid.x] = pack4x8unorm(vec4<f32>(px.rgb, 1.0));
-            }
-        "#;
-
-        let mut results: Vec<Vec<u32>> = Vec::new();
-        for private in [false, true] {
-            let desc = TextureDescriptor::new(width, height, format);
-            let (texture, view) = if private {
-                ctx.create_texture(&desc).unwrap()
-            } else {
-                ctx.create_texture_shared(&desc).unwrap()
-            };
-            let mut queue = TextureUploadQueue::default();
-            queue
-                .stage(&ctx, texture.clone(), format, width, height, &pixels)
-                .unwrap();
-            let mut cmd = ctx.create_command_buffer();
-            cmd.begin();
-            {
-                let mut blit = cmd.begin_blit_pass_with_label("texture_upload");
-                queue.encode_into(&mut blit);
-                blit.end_encoding();
-            }
-            cmd.end();
-            cmd.submit(&ctx);
-            cmd.inner.waitUntilCompleted();
-            queue.retire_completed();
-            assert!(!queue.has_pending(), "upload must complete");
-
-            let compiled = crate::metal::shader::compile_wgsl_to_metal(
-                &ctx.device,
-                WGSL,
-                &["cs_main"],
-                crate::metal::shader::ShaderProfile::Graphics,
-            )
-            .unwrap();
-            let cs = compiled.module.entry_points.get("cs_main").unwrap();
-            let pipeline = ctx.create_compute_pipeline(cs, [1, 1, 1]).unwrap();
-            let out_buf = ctx.create_buffer(16, true).unwrap();
-            let sampler = ctx.create_sampler().unwrap();
-
-            let mut cmd2 = ctx.create_command_buffer();
-            cmd2.begin();
-            let mut enc = cmd2.begin_compute_pass_with_label("texture_upload");
-            enc.bind_compute_pipeline(&pipeline);
-            enc.bind_texture(&view, 0);
-            enc.bind_sampler(&sampler, 0);
-            enc.bind_storage_buffer(&out_buf, 0, 0);
-            enc.dispatch(4, 1, 1);
-            enc.end_encoding();
-            cmd2.end();
-            cmd2.submit(&ctx);
-            cmd2.inner.waitUntilCompleted();
-
-            let mapped = out_buf.map();
-            let data = unsafe { std::slice::from_raw_parts(mapped as *const u32, 4) };
-            results.push(data.to_vec());
-            out_buf.unmap();
-        }
-        assert_eq!(
-            results[0], results[1],
-            "SHARED vs PRIVATE sampled differently: shared={:?} private={:?}",
-            results[0], results[1]
-        );
-        assert_eq!(results[0][0], 0xff0000ff, "probe must sample the red texel");
-    }
-    /// Reproduce the geometry pass sampling structure exactly: fragment shader
-    /// reads a texture through the bindless argument buffer at index 9 while a
-    /// render pass draws into an offscreen attachment. The only variable is the
-    /// uploaded texture's storage mode (shared vs private, identical staged-blit
-    /// bytes). If the outputs differ, the private-storage render anomaly lives in
-    /// the argument-buffer path, not in raw sampling.
-    #[test]
-    fn test_bindless_argument_buffer_storage_probe() {
-        use crate::backend::command::{ColorAttachmentInfo, GpuRenderEncoder, RenderPassInfo};
-        use crate::metal::MetalBackend;
-        use crate::metal::argument_buffer::MetalBindlessTextureManager;
-        use crate::pipeline::CompareOp;
-        use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-        use crate::texture::TextureDescriptor;
-        use objc2_metal::MTLRenderCommandEncoder;
-
-        let ctx = headless_context();
-        let width = 4u32;
-        let height = 1u32;
-        let pixels: Vec<u8> = vec![
-            255, 0, 0, 255, 200, 0, 0, 255, 120, 0, 0, 255, 40, 0, 0, 255,
-        ];
-        let format = ImageFormat::R8G8B8A8Srgb;
-
-        const WGSL: &str = r#"
-            @group(1) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 16>;
-            @group(1) @binding(1) var shared_sampler: sampler;
-
-            struct VsOut {
-                @builtin(position) pos: vec4f,
-            };
-
-            @vertex
-            fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
-                var p = array<vec2f, 3>(
-                    vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0)
-                );
-                var out: VsOut;
-                out.pos = vec4f(p[vi], 0.0, 1.0);
-                return out;
-            }
-
-            @fragment
-            fn fs_main(in: VsOut) -> @location(0) vec4f {
-                let uv = vec2f(in.pos.x, in.pos.y);
-                return textureSampleLevel(
-                    bindless_textures[0], shared_sampler, uv, 0.0
-                );
-            }
-        "#;
-
-        let compiled = crate::metal::shader::compile_wgsl_to_metal(
-            &ctx.device,
-            WGSL,
-            &["vs_main", "fs_main"],
-            crate::metal::shader::ShaderProfile::Graphics,
-        )
-        .unwrap();
-        let vs = compiled.module.entry_points.get("vs_main").unwrap();
-        let fs = compiled.module.entry_points.get("fs_main").unwrap();
-        let pipeline = ctx
-            .create_graphics_pipeline_with_vertex_descriptor(
-                vs,
-                Some(fs),
-                &[objc2_metal::MTLPixelFormat::RGBA8Unorm],
-                None,
-                false,
-                CompareOp::Always,
-                objc2_metal::MTLCullMode::None,
-                objc2_metal::MTLWinding::Clockwise,
-                Some(&objc2_metal::MTLVertexDescriptor::new()),
-                false,
-            )
-            .unwrap();
-
-        let mut results: Vec<Vec<u8>> = Vec::new();
-        for private in [false, true] {
-            let desc = TextureDescriptor::new(width, height, format);
-            let (texture, view) = if private {
-                ctx.create_texture(&desc).unwrap()
-            } else {
-                ctx.create_texture_shared(&desc).unwrap()
-            };
-            let mut queue = TextureUploadQueue::default();
-            queue
-                .stage(&ctx, texture.clone(), format, width, height, &pixels)
-                .unwrap();
-            let mut cmd = ctx.create_command_buffer();
-            cmd.begin();
-            {
-                let mut blit = cmd.begin_blit_pass_with_label("texture_upload");
-                queue.encode_into(&mut blit);
-                blit.end_encoding();
-            }
-            cmd.end();
-            cmd.submit(&ctx);
-            cmd.inner.waitUntilCompleted();
-            queue.retire_completed();
-            assert!(!queue.has_pending(), "upload must complete");
-
-            // (Re)build the argument buffer around this texture: the manager
-            // writes resource IDs at flush time, so re-registering per mode is
-            // the cheapest faithful approach.
-            let mut local_manager = MetalBindlessTextureManager::new(16).unwrap();
-            let default_desc = TextureDescriptor::new(1, 1, format);
-            let (default_texture, _) = ctx.create_texture_shared(&default_desc).unwrap();
-            local_manager.set_default_texture(default_texture.inner.as_ref());
-            let fs_fn = compiled.module.entry_points.get("fs_main").unwrap();
-            local_manager
-                .initialize_from_function(fs_fn.as_ref())
-                .unwrap();
-            let _slot = local_manager.register_texture(view.inner.as_ref());
-            local_manager.flush_argument_buffer();
-            let arg_buffer = local_manager.argument_buffer().unwrap();
-
-            // Offscreen color target.
-            let mut target_desc = TextureDescriptor::new(width, height, ImageFormat::R8G8B8A8Unorm);
-            target_desc.usage = TextureUsage::COLOR_ATTACHMENT;
-            let (target, target_view) = ctx.create_texture_shared(&target_desc).unwrap();
-
-            let sampler = ctx.create_sampler().unwrap();
-
-            let mut cmd2 = ctx.create_command_buffer();
-            cmd2.begin();
-            {
-                let mut enc = cmd2.begin_render_pass(RenderPassInfo::<MetalBackend> {
-                    color_attachments: vec![ColorAttachmentInfo::<MetalBackend> {
-                        view: target_view,
-                        load_op: LoadOp::Clear,
-                        store_op: StoreOp::Store,
-                        clear_value: ClearValue::Color([0.0, 0.0, 0.0, 1.0]),
-                    }],
-                    depth_attachment: None,
-                    debug_label: Some("texture_upload_test"),
-                });
-                enc.bind_graphics_pipeline(&pipeline);
-                unsafe {
-                    enc.inner
-                        .setFragmentBuffer_offset_atIndex(Some(arg_buffer), 0, 9);
-                    enc.inner
-                        .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
-                }
-                enc.use_buffer(
-                    arg_buffer,
-                    objc2_metal::MTLResourceUsage::Read,
-                    objc2_metal::MTLRenderStages::Fragment,
-                );
-                enc.use_texture(
-                    view.inner.as_ref(),
-                    objc2_metal::MTLResourceUsage::Read,
-                    objc2_metal::MTLRenderStages::Fragment,
-                );
-                enc.draw(3, 1, 0, 0);
-                enc.end_encoding();
-            }
-            cmd2.end();
-            cmd2.submit(&ctx);
-            cmd2.inner.waitUntilCompleted();
-
-            // Read the target back.
-            let bytes_per_row = width * 4;
-            let region = MTLRegion {
-                origin: MTLOrigin { x: 0, y: 0, z: 0 },
-                size: MTLSize {
-                    width: width as usize,
-                    height: height as usize,
-                    depth: 1,
-                },
-            };
-            let mut out = vec![0u8; (bytes_per_row * height) as usize];
-            unsafe {
-                target.inner.getBytes_bytesPerRow_fromRegion_mipmapLevel(
-                    std::ptr::NonNull::new(out.as_mut_ptr() as *mut std::ffi::c_void).unwrap(),
-                    bytes_per_row as usize,
-                    region,
-                    0,
-                );
-            }
-            results.push(out);
-        }
-
-        assert_eq!(
-            results[0], results[1],
-            "bindless arg-buffer path: SHARED vs PRIVATE rendered differently: \
-             shared={:?} private={:?}",
-            results[0], results[1]
-        );
-        let clear_only = [0u8, 0, 0, 255].repeat(4);
-        assert_ne!(
-            results[0], clear_only,
-            "target shows clear color only — probe rendered nothing, result is vacuous"
-        );
-    }
-}
+#[path = "texture_upload_tests.rs"]
+mod tests;

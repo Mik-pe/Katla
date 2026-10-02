@@ -71,8 +71,10 @@ pub struct Capabilities {
 
 #[cfg(not(target_os = "macos"))]
 fn platform_features(feature: RendererFeature) -> bool {
-    // Vulkan composites UI through the frame graph, not a direct UI pass.
-    feature != RendererFeature::DirectUiPass
+    !matches!(
+        feature,
+        RendererFeature::DirectUiPass | RendererFeature::TextureSubresourceUpload
+    )
 }
 
 #[cfg(target_os = "macos")]
@@ -315,6 +317,35 @@ pub fn build_graph(build: impl FnOnce(FrameGraphBuilder) -> FrameGraphBuilder) -
     {
         AnyFrameGraph::from_vulkan(builder.build::<VulkanRenderer>().expect("graph compiles"))
     }
+}
+
+/// Compile a PBR graph with the shader's declared sampled shadow input.
+pub fn build_pbr_graph(
+    build: impl FnOnce(FrameGraphBuilder) -> FrameGraphBuilder,
+) -> AnyFrameGraph {
+    use katla_gfx::render_graph::{GraphResourceDesc, GraphResourceType, PassBuilder, ShadowPass};
+    build_graph(|builder| {
+        build(
+            builder
+                .create_resource(GraphResourceDesc {
+                    name: "shadow_atlas".into(),
+                    resource_type: GraphResourceType::DepthAttachment {
+                        clear_value: 1.0,
+                        sampled: true,
+                    },
+                    format: ImageFormat::D32Sfloat,
+                    width: WIDTH,
+                    height: WIDTH,
+                    tracks_swapchain_size: false,
+                })
+                .add_pass(
+                    ShadowPass::new("shadow clear")
+                        .write_depth("shadow_atlas", ImageFormat::D32Sfloat)
+                        .resolution(WIDTH, WIDTH)
+                        .depth_target("shadow_atlas"),
+                ),
+        )
+    })
 }
 
 /// Release a scenario graph's GPU resources before the renderer is destroyed.

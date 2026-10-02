@@ -1,7 +1,7 @@
 # Active Context
 
-## Current Work
+## Follow-Up Work
 
-- Issue #31 remains open: animation, light-culling, and particle passes still need real graph buffer dependencies. Buffer resources, range-aware hazards, execution-stage validation, and native synchronization masks have landed. Animation systems now use the typed ECS query API delivered in #138.
-- Issue #33 remains open: imported-image acquire/present contracts, Vulkan backend-owned scene depth, external compute/upload synchronization, and explicit queue/encoder boundaries remain.
-- Issue #37 remains open: schema 11 now includes buffer allocation requirements and origins, but physical buffer allocation identities, frame-slot ownership, Metal residency, and finer native encoder traces remain.
+- #37 remains open: join native Metal binding, residency and feedback diagnostics into the complete portable graph-capture bundle.
+- #93 remains the broader ECS roadmap; the typed safe-parallel implementation in #138 is delivered. Extended sanitizer/soak coverage is still separate work.
+- Backend-neutral texture-view cleanup and compositing/stencil handlers remain in TODO.md. Optional all-feature MCP editor polling has a double mutable borrow and an unused router field; the default application path is validated.

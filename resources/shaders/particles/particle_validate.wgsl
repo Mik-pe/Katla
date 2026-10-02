@@ -72,16 +72,16 @@ struct ValidationParams {
 }
 
 @group(0) @binding(0)
-var<storage, read> particles: array<ParticleData, MAX_PARTICLES>;
+var<storage, read> particles: array<ParticleData>;
 
 @group(0) @binding(1)
-var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
+var<storage, read> alive_list: array<u32>;
 
 @group(0) @binding(2)
 var<storage, read> counters: ParticleCounters;
 
 @group(0) @binding(3)
-var<storage, read> emitters: array<EmitterConfig, MAX_EMITTERS>;
+var<storage, read> emitters: array<EmitterConfig>;
 
 @group(0) @binding(4)
 var<storage, read_write> results: ValidationResults;
@@ -156,10 +156,10 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
         }
     }
 
-    if (idx >= actual_alive_count) { return; }
+    if (idx >= min(actual_alive_count, arrayLength(&alive_list))) { return; }
 
     let particle_idx = alive_list[idx];
-    if (particle_idx >= MAX_PARTICLES) { return; }
+    if (particle_idx >= arrayLength(&particles)) { return; }
 
     let particle = particles[particle_idx];
     let emitter_idx = particle.emitter_index;
@@ -167,7 +167,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     // Skip particles that were never emitted (zero lifetime means uninitialized data)
     if (particle.lifetime <= 0.0) { return; }
 
-    if (emitter_idx >= params.emitter_count) { return; }
+    if (emitter_idx >= min(params.emitter_count, arrayLength(&emitters))) { return; }
 
     let emitter = emitters[emitter_idx];
 

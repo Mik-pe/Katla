@@ -13,10 +13,25 @@ use super::resource::{
     BufferDesc, BufferMemoryPolicy, BufferUsages, GraphBufferDesc, GraphResourceDesc,
     GraphResourceHandle, ImportedImageContract, ResourceState,
 };
-use crate::handle::BufferHandle;
+use crate::handle::{BufferHandle, TextureHandle};
 use crate::render_pass::{ClearValue, DepthStencilAttachmentOps, LoadOp};
 
 const BACKBUFFER_NAME: &str = super::BACKBUFFER_NAME;
+
+#[derive(Debug, PartialEq)]
+struct TransientAllocationMember {
+    resource: ResourceId,
+    format: crate::texture::ImageFormat,
+    width: u32,
+    height: u32,
+    resource_class: u8,
+}
+
+#[derive(Debug, PartialEq)]
+struct TransientAllocationContract {
+    members: Vec<TransientAllocationMember>,
+    policy: super::backend::TransientSlotPolicy,
+}
 
 /// Default state contract for the built-in backbuffer: contents from before
 /// the graph (the previously presented frame) are observable, so a pass may
@@ -123,7 +138,7 @@ fn validate_buffer_access_descriptor(
 ///
 /// These values change every frame and are set before calling `execute()`.
 /// Logically separate from the graph structure which is "built once, executed many times."
-pub(super) struct FrameParams {
+pub(crate) struct FrameParams {
     pub delta_time: f32,
     pub frame_count: usize,
     pub particle_emit_workgroup_count: u32,
@@ -187,6 +202,12 @@ pub struct FrameGraph<B: RenderGraphBackend> {
 
     /// External renderer-owned buffers imported by this graph.
     imported_buffers: HashMap<ResourceId, BufferHandle>,
+    /// Native texture identities for imported image contracts.
+    pub(crate) imported_images: HashMap<ResourceId, TextureHandle>,
+    external_image_accesses: Vec<super::ImageAccess>,
+    external_buffer_accesses: Vec<super::BufferAccess>,
+    external_uploads_pending: bool,
+    builtin_buffers: HashMap<ResourceId, super::compute::BuiltinBuffer>,
 
     /// Descriptors for all graph-visible buffers, keyed by graph resource id.
     buffer_desc_by_id: HashMap<ResourceId, BufferDesc>,
@@ -210,13 +231,15 @@ pub struct FrameGraph<B: RenderGraphBackend> {
     /// Per-frame transient textures. One set per frame-in-flight to prevent
     /// race conditions where frame N+1 modifies layout tracking while frame N is still executing.
     pub(super) transient_textures: Vec<HashMap<ResourceId, B::TransientTexture>>,
+    transient_allocation_contract: Option<Vec<TransientAllocationContract>>,
+    transient_allocation_contract_validated: bool,
 
     /// Per-frame graph-owned buffer allocations.
     pub(super) transient_buffers_by_frame: Vec<HashMap<ResourceId, B::TransientBuffer>>,
 
     /// Whether compatible, non-overlapping transient textures share physical
     /// memory from the compiled allocation plan. Debugging switch.
-    transient_aliasing: bool,
+    pub(super) transient_aliasing: bool,
 
     /// Whether each execution records the encoders it emitted. Off by default
     /// so the steady-state path pays nothing; see
@@ -242,6 +265,17 @@ pub struct FrameGraph<B: RenderGraphBackend> {
 
 // --- Backend-agnostic methods ---
 impl<B: RenderGraphBackend> FrameGraph<B> {
+    /// Bind the acquired output image's final consumer before compiling.
+    pub(crate) fn set_backbuffer_final_state(&mut self, final_state: ResourceState) {
+        if let Some(id) = self.resource_id(BACKBUFFER_NAME)
+            && let Some(contract) = self.imported_contracts.get_mut(&id)
+            && contract.required_final != Some(final_state)
+        {
+            contract.required_final = Some(final_state);
+            self.compiled = false;
+        }
+    }
+
     /// Create a new empty frame graph.
     pub fn new() -> Self {
         Self {
@@ -252,6 +286,11 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             exported_resources: BTreeSet::new(),
             imported_contracts: BTreeMap::new(),
             imported_buffers: HashMap::new(),
+            imported_images: HashMap::new(),
+            external_image_accesses: Vec::new(),
+            external_buffer_accesses: Vec::new(),
+            external_uploads_pending: false,
+            builtin_buffers: HashMap::new(),
             buffer_desc_by_id: HashMap::new(),
             pass_culling_enabled: false,
             execution_plan: None,
@@ -259,6 +298,8 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             transient_resources: Vec::new(),
             transient_buffers: Vec::new(),
             transient_textures: Vec::new(),
+            transient_allocation_contract: None,
+            transient_allocation_contract_validated: false,
             transient_buffers_by_frame: Vec::new(),
             transient_aliasing: true,
             trace_enabled: false,
@@ -362,17 +403,115 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         self.resources.get(id.0 as usize).map(|r| r.name.as_str())
     }
 
+    #[cfg(target_os = "macos")]
+    pub(crate) fn frame_parameters(&self) -> &FrameParams {
+        &self.params
+    }
+
     /// Build the canonical execution plan without mutating frame state.
     pub(crate) fn build_execution_plan(&self) -> Result<ExecutionPlan, RenderGraphError> {
-        if self.pass_culling_enabled {
+        let mut compiler = if self.pass_culling_enabled {
             GraphCompiler::from_pass_descs_with_exports(
                 &self.passes,
                 self.exported_resources.iter().copied(),
                 self.imported_contracts.clone(),
             )
-            .compile()
         } else {
-            GraphCompiler::from_pass_descs(&self.passes).compile()
+            let mut compiler = GraphCompiler::from_pass_descs(&self.passes);
+            compiler.imported_contracts = self.imported_contracts.clone();
+            compiler
+        };
+        compiler.external_image_accesses = self.external_image_accesses.clone();
+        compiler.external_uploads_pending = self.external_uploads_pending;
+        compiler.external_buffer_accesses = self.external_buffer_accesses.clone();
+        let mut plan = compiler.compile()?;
+        if self.transient_aliasing {
+            let allocation = TransientAllocationPlan::build(
+                &self.resources,
+                &self.transient_resources,
+                &self.exported_resources,
+                &plan.resource_lifetimes,
+                &plan.live_image_accesses,
+            );
+            for slot in allocation
+                .slots()
+                .iter()
+                .filter(|slot| slot.members.len() > 1)
+            {
+                for resource in &slot.members {
+                    if let Some(lifetime) = plan.resource_lifetimes.get(resource) {
+                        plan.sync.alias_handoffs[lifetime.first_pass].push(*resource);
+                    }
+                }
+            }
+        }
+        Ok(plan)
+    }
+
+    fn prepare_external_image_producers(&mut self, renderer: &B) {
+        let mut accesses = Vec::new();
+        let uploads = renderer.graph_texture_upload_producers();
+        let pending = !uploads.is_empty();
+        for (handle, upload) in uploads {
+            for (&resource, &imported) in &self.imported_images {
+                if imported == handle {
+                    accesses.push(super::ImageAccess::transfer_write(resource).with_range(
+                        super::ImageSubresourceRange::new(
+                            super::ImageAspects::COLOR,
+                            upload.mip_level,
+                            1,
+                            upload.array_layer,
+                            1,
+                        ),
+                    ));
+                }
+            }
+        }
+        if self.external_image_accesses != accesses || self.external_uploads_pending != pending {
+            self.external_uploads_pending = pending;
+            self.external_image_accesses = accesses;
+            self.compiled = false;
+        }
+    }
+
+    fn prepare_external_buffer_producers(&mut self, renderer: &B) {
+        let mut accesses = Vec::new();
+        for &resource in self.buffer_desc_by_id.keys() {
+            if let Some(buffer) = self.buffer_by_id(renderer, resource, renderer.current_frame()) {
+                for mut access in renderer.graph_buffer_previous_accesses(&buffer) {
+                    access.resource = resource;
+                    if !accesses.contains(&access) {
+                        accesses.push(access);
+                    }
+                }
+            }
+        }
+        accesses.sort_by_key(|access| (access.resource, access.range.offset, access.range.size));
+        if self.external_buffer_accesses != accesses {
+            self.external_buffer_accesses = accesses;
+            self.compiled = false;
+        }
+    }
+
+    /// Retain resolved canonical buffer scopes after successful native encoding.
+    pub(crate) fn record_buffer_execution(&self, renderer: &B) {
+        for pass in self.execution_order() {
+            for access in &self.passes[pass].buffer_accesses {
+                if let Some(buffer) =
+                    self.buffer_by_id(renderer, access.resource, renderer.current_frame())
+                {
+                    let range = access.range.intersection(super::BufferByteRange::new(
+                        0,
+                        B::transient_buffer_size(&buffer),
+                    ));
+                    if let Some(range) = range {
+                        renderer.record_graph_buffer_accesses(
+                            &buffer,
+                            &[super::BufferAccess { range, ..*access }],
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -383,39 +522,21 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         }
 
         self.validate_declared_buffer_accesses()?;
+        for pass in &self.passes {
+            super::compute::validate_commands(pass).map_err(|reason| {
+                RenderGraphError::Validation(
+                    super::error::GraphValidationError::InvalidComputeCommand {
+                        pass: pass.name.clone(),
+                        reason,
+                    },
+                )
+            })?;
+        }
         let plan = self.build_execution_plan()?;
         self.validate_attachment_ops(&plan)?;
-        self.validate_imported_state_contracts(&plan)?;
+        self.transient_allocation_contract_validated = false;
         self.execution_plan = Some(plan);
         self.compiled = true;
-        Ok(())
-    }
-
-    /// Validate imported-image state contracts against the compiled plan.
-    ///
-    /// A required final state is reachable when a live pass accesses the image
-    /// (the backend can always transition after the last access). An image no
-    /// live pass touches never leaves its declared initial state, so a
-    /// required final state differing from it is a structural error.
-    fn validate_imported_state_contracts(
-        &self,
-        plan: &ExecutionPlan,
-    ) -> Result<(), RenderGraphError> {
-        for (&resource, contract) in &self.imported_contracts {
-            let Some(required) = contract.required_final else {
-                continue;
-            };
-            if contract.initial != required
-                && !plan.resource_lifetimes.contains_key(&resource)
-                && let Some(name) = self.resource_name(resource)
-            {
-                return Err(GraphValidationError::UnreachableImportedFinalState {
-                    resource: name.to_string(),
-                    required,
-                }
-                .into());
-            }
-        }
         Ok(())
     }
 
@@ -498,28 +619,15 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
                     }
                     .into());
                 }
-                // Contents may only be loaded when they are observable: an
-                // earlier live pass produced them, or the image is imported
-                // with a non-Undefined initial state.
-                if ops.load == LoadOp::Load && !produced.contains(resource) {
-                    let imported_contents_observable = self
-                        .imported_contracts
-                        .get(resource)
-                        .is_some_and(|contract| contract.initial != ResourceState::Undefined);
-                    if !imported_contents_observable {
-                        let error = if self.imported_contracts.contains_key(resource) {
-                            GraphValidationError::LoadingUndefinedImportedContents {
-                                pass: pass.name.clone(),
-                                resource: name,
-                            }
-                        } else {
-                            GraphValidationError::LoadingUndefinedAttachment {
-                                pass: pass.name.clone(),
-                                resource: name,
-                            }
-                        };
-                        return Err(error.into());
+                if ops.load == LoadOp::Load
+                    && !self.imported_contracts.contains_key(resource)
+                    && !produced.contains(resource)
+                {
+                    return Err(GraphValidationError::LoadingUndefinedAttachment {
+                        pass: pass.name.clone(),
+                        resource: name,
                     }
+                    .into());
                 }
             }
 
@@ -666,10 +774,102 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         &mut self,
         commands: Vec<(crate::handle::SkeletonHandle, u32, u32)>,
     ) {
-        self.params.skeleton_copy_commands = commands;
+        use super::access::{
+            BufferAccess, BufferByteRange, BufferUsage, ResourceAccessMode, ResourceAccessStage,
+        };
+        if self.params.skeleton_copy_commands == commands {
+            return;
+        }
+        self.params.skeleton_copy_commands = commands.clone();
+        let Some(output) = self.resource_id("scene_AnimationOutput") else {
+            return;
+        };
+        let skeleton_ids = self
+            .builtin_buffers
+            .iter()
+            .filter_map(|(id, role)| {
+                matches!(role, super::compute::BuiltinBuffer::Skeleton(_)).then_some(*id)
+            })
+            .collect::<HashSet<_>>();
+        for pass in &mut self.passes {
+            pass.buffer_accesses
+                .retain(|access| !skeleton_ids.contains(&access.resource));
+        }
+        let mut copy_commands = Vec::new();
+        let mut copy_accesses = Vec::new();
+        let mut vertex_accesses = Vec::new();
+        for (handle, offset, count) in commands {
+            let bytes = u64::from(count) * 64;
+            if bytes == 0 {
+                continue;
+            }
+            let target = self.import_builtin_buffer(
+                format!("scene_skeleton_{}_{}", handle.index(), handle.generation()),
+                super::compute::BuiltinBuffer::Skeleton(handle),
+                BufferDesc::new(
+                    bytes,
+                    super::resource::BufferUsages::STORAGE
+                        | super::resource::BufferUsages::TRANSFER_DESTINATION,
+                    super::resource::BufferMemoryPolicy::DeviceLocal,
+                ),
+            );
+            copy_commands.push(super::compute::ComputeCommand::CopyBuffer {
+                source: output,
+                destination: target,
+                source_offset: u64::from(offset) * 64,
+                destination_offset: 0,
+                size: bytes,
+            });
+            copy_accesses.push(BufferAccess::new(
+                output,
+                ResourceAccessMode::Read,
+                BufferUsage::TransferSource,
+                ResourceAccessStage::Transfer,
+                BufferByteRange::new(u64::from(offset) * 64, bytes),
+            ));
+            copy_accesses.push(BufferAccess::new(
+                target,
+                ResourceAccessMode::Write,
+                BufferUsage::TransferDestination,
+                ResourceAccessStage::Transfer,
+                BufferByteRange::new(0, bytes),
+            ));
+            vertex_accesses.push(BufferAccess::new(
+                target,
+                ResourceAccessMode::Read,
+                BufferUsage::Storage,
+                ResourceAccessStage::VertexShader,
+                BufferByteRange::new(0, bytes),
+            ));
+        }
+        for pass in &mut self.passes {
+            if pass.name == "animation_skeleton_copy" {
+                pass.commands = copy_commands.clone();
+                pass.set_buffer_accesses(copy_accesses.clone());
+            } else if pass.pass_type == PassType::Graphics
+                && matches!(
+                    pass.kind,
+                    Some(
+                        super::pass::PassKind::DepthPrepass
+                            | super::pass::PassKind::Shadow
+                            | super::pass::PassKind::Geometry
+                            | super::pass::PassKind::ObjectId
+                            | super::pass::PassKind::Outline
+                    )
+                )
+            {
+                let mut accesses = pass.buffer_accesses.clone();
+                accesses.extend(vertex_accesses.iter().copied());
+                pass.set_buffer_accesses(accesses);
+            }
+        }
+        self.compiled = false;
+        self.execution_plan = None;
     }
 
     /// Cleanup and destroy all transient textures.
+    ///
+    /// The caller must complete all GPU work using these allocations first.
     pub fn cleanup(&mut self) {
         log::info!(
             "Cleaning up frame graph transient textures ({} frames)",
@@ -678,6 +878,8 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         let total_textures: usize = self.transient_textures.iter().map(|m| m.len()).sum();
         log::info!("  Total textures to clean up: {}", total_textures);
         self.transient_textures.clear();
+        self.transient_allocation_contract = None;
+        self.transient_allocation_contract_validated = false;
         self.transient_buffers_by_frame.clear();
         self.compositing_descriptor_sets
             .borrow_mut()
@@ -809,12 +1011,60 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         backend: &'a B,
         id: ResourceId,
         frame_idx: usize,
-    ) -> Option<&'a B::TransientBuffer> {
-        self.transient_buffer_by_id(id, frame_idx).or_else(|| {
-            self.imported_buffers
-                .get(&id)
-                .and_then(|handle| B::buffer_by_handle(backend, *handle))
-        })
+    ) -> Option<super::backend::ResolvedGraphBuffer<'a, B>> {
+        if let Some(role) = self.builtin_buffers.get(&id) {
+            return backend
+                .builtin_buffer(*role)
+                .map(super::backend::ResolvedGraphBuffer::Imported);
+        }
+        self.transient_buffer_by_id(id, frame_idx)
+            .or_else(|| {
+                self.imported_buffers
+                    .get(&id)
+                    .and_then(|handle| B::buffer_by_handle(backend, *handle))
+            })
+            .map(super::backend::ResolvedGraphBuffer::Borrowed)
+    }
+
+    /// Import a renderer subsystem allocation, resolved independently for each frame slot.
+    pub fn import_builtin_buffer(
+        &mut self,
+        name: impl Into<String>,
+        role: super::compute::BuiltinBuffer,
+        desc: BufferDesc,
+    ) -> ResourceId {
+        let id = self.create_resource_id(name);
+        self.builtin_buffers.insert(id, role);
+        self.compiled = false;
+        self.buffer_desc_by_id.insert(id, desc);
+        self.execution_plan = None;
+        id
+    }
+
+    /// Whether a buffer is owned by an optional built-in subsystem.
+    pub(crate) fn is_builtin_buffer(&self, resource: ResourceId) -> bool {
+        self.builtin_buffers.contains_key(&resource)
+    }
+
+    /// Add buffer consumers to an existing pass while preserving its image contract.
+    pub fn extend_pass_buffer_accesses(
+        &mut self,
+        name: &str,
+        accesses: impl IntoIterator<Item = super::access::BufferAccess>,
+    ) -> Result<(), RenderGraphError> {
+        let pass = self
+            .passes
+            .iter_mut()
+            .find(|pass| pass.name == name)
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(format!("Missing pass '{name}'"))
+            })?;
+        let mut combined = pass.buffer_accesses.clone();
+        combined.extend(accesses);
+        pass.set_buffer_accesses(combined);
+        self.execution_plan = None;
+        self.compiled = false;
+        Ok(())
     }
 
     /// Buffer descriptor declared for a named graph resource.
@@ -874,6 +1124,22 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
                     access.range,
                     desc,
                 )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Warm every live compute pipeline before acquiring or encoding a frame.
+    pub fn initialize_compute_pipelines(
+        &mut self,
+        backend: &mut B,
+    ) -> Result<(), RenderGraphError> {
+        self.compile()?;
+        for pass in &self.passes {
+            for command in &pass.commands {
+                if let super::compute::ComputeCommand::Dispatch(dispatch) = command {
+                    backend.prepare_compute_pipeline(&dispatch.kernel.descriptor())?;
+                }
             }
         }
         Ok(())
@@ -939,10 +1205,19 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
     /// Disable transient memory aliasing for debugging.
     ///
     /// Must be called before [`Self::initialize_transient_textures`]; every
-    /// transient texture then gets a standalone allocation without changing
+    /// transient texture then gets a standalone allocation, and memoryless selection
+    /// is disabled, without changing
     /// graph semantics.
-    pub fn set_transient_aliasing(&mut self, enabled: bool) {
-        self.transient_aliasing = enabled;
+    pub fn set_transient_aliasing(&mut self, enabled: bool) -> Result<(), RenderGraphError> {
+        if self.transient_aliasing != enabled && !self.transient_textures.is_empty() {
+            return Err(RenderGraphError::BackendError("Transient storage policy cannot change while native allocations exist; wait for GPU completion and clean up the graph first".into()));
+        }
+        if self.transient_aliasing != enabled {
+            self.transient_aliasing = enabled;
+            self.compiled = false;
+            self.execution_plan = None;
+        }
+        Ok(())
     }
 
     /// Enable or disable recording of the emitted encoder trace.
@@ -992,22 +1267,31 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         )
     }
 
+    /// Whether this pass begins the lifetime of a texture in an aliased range.
+    pub(crate) fn texture_alias_handoff_before(&self, pass_index: usize) -> bool {
+        self.execution_plan
+            .as_ref()
+            .and_then(|plan| plan.sync.alias_handoffs.get(pass_index))
+            .is_some_and(|handoffs| !handoffs.is_empty())
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(crate) fn pass_boundary(&self, index: usize) -> Option<&super::PassBoundary> {
+        self.execution_plan
+            .as_ref()?
+            .sync
+            .pass_boundaries
+            .get(index)?
+            .as_ref()
+    }
+
     /// Group transient resources into physical allocation slots.
     ///
     /// Driven by the compiled allocation plan: compatible resources whose
     /// live intervals do not overlap share a slot. Resources without a
-    /// compiled lifetime (culled or unused) become standalone groups in
-    /// declaration order; single-member slots route to the backend's
-    /// standalone creation path.
+    /// compiled lifetime (culled or unused) receive no allocation. A disabled
+    /// optimization policy gives each live texture an independent group.
     fn transient_allocation_groups(&self) -> Result<Vec<Vec<GraphResourceDesc>>, RenderGraphError> {
-        if !self.transient_aliasing {
-            return Ok(self
-                .transient_resources
-                .iter()
-                .map(|desc| vec![desc.clone()])
-                .collect());
-        }
-
         let plan = self.build_execution_plan()?;
         let allocation = TransientAllocationPlan::build(
             &self.resources,
@@ -1030,8 +1314,9 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
                     )
                 })?;
             match allocation.physical_allocation_id(resource_id) {
+                Some(_) if !self.transient_aliasing => standalone.push(vec![desc.clone()]),
                 Some(slot) => by_slot.entry(slot).or_default().push(desc.clone()),
-                None => standalone.push(vec![desc.clone()]),
+                None => {}
             }
         }
 
@@ -1041,17 +1326,101 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             .collect())
     }
 
+    fn build_transient_allocation_contract(
+        &self,
+        groups: &[Vec<GraphResourceDesc>],
+    ) -> Result<Vec<TransientAllocationContract>, RenderGraphError> {
+        let plan = self.build_execution_plan()?;
+        let mut allocation = TransientAllocationPlan::build(
+            &self.resources,
+            &self.transient_resources,
+            &self.exported_resources,
+            &plan.resource_lifetimes,
+            &plan.live_image_accesses,
+        );
+        allocation.apply_attachment_storage(&self.passes, &plan.resource_lifetimes);
+        groups
+            .iter()
+            .enumerate()
+            .map(|(group_index, group)| {
+                let members = group
+                    .iter()
+                    .map(|desc| {
+                        let resource = self.resource_id(&desc.name).ok_or_else(|| {
+                            RenderGraphError::Validation(
+                                GraphValidationError::MissingResourceNamespaceEntry(
+                                    desc.name.clone(),
+                                ),
+                            )
+                        })?;
+                        let resource_class = match desc.resource_type {
+                            super::resource::GraphResourceType::ColorAttachment { .. } => 0,
+                            super::resource::GraphResourceType::DepthAttachment {
+                                sampled: false,
+                                ..
+                            } => 1,
+                            super::resource::GraphResourceType::DepthAttachment {
+                                sampled: true,
+                                ..
+                            } => 2,
+                            super::resource::GraphResourceType::SampledImage => 3,
+                        };
+                        Ok(TransientAllocationMember {
+                            resource,
+                            format: desc.format,
+                            width: desc.width,
+                            height: desc.height,
+                            resource_class,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, RenderGraphError>>()?;
+                let uses = |usage| {
+                    members.iter().any(|member| {
+                        plan.live_image_accesses.iter().any(|access| {
+                            access.resource == member.resource && access.usage == usage
+                        })
+                    })
+                };
+                let policy = super::backend::TransientSlotPolicy {
+                    frame_slot: 0,
+                    allocation_slot: group_index as u32,
+                    optimize: self.transient_aliasing,
+                    memoryless: self.transient_aliasing
+                        && members.iter().all(|member| {
+                            allocation
+                                .persistence(member.resource)
+                                .is_some_and(|persistence| persistence.tile_memory.is_eligible())
+                        }),
+                    storage: uses(super::access::ResourceAccessUsage::Storage),
+                    transfer_destination: uses(
+                        super::access::ResourceAccessUsage::TransferDestination,
+                    ),
+                };
+                Ok(TransientAllocationContract { members, policy })
+            })
+            .collect()
+    }
+
     /// Initialize transient textures using the backend.
     ///
     /// Creates per-frame sets of textures — one per frame-in-flight —
     /// grouped into physical allocation slots by the compiled plan.
     pub fn initialize_transient_textures(&mut self, backend: &B) -> Result<(), RenderGraphError> {
-        if !self.transient_textures.is_empty() {
+        if self.compiled && self.transient_allocation_contract_validated {
+            return Ok(());
+        }
+        let groups = self.transient_allocation_groups()?;
+        let contract = self.build_transient_allocation_contract(&groups)?;
+        if let Some(existing) = &self.transient_allocation_contract {
+            // Fresh groups prove every old shared range still has disjoint live intervals.
+            if *existing != contract {
+                return Err(RenderGraphError::AllocationContractChanged);
+            }
+            self.transient_allocation_contract_validated = true;
             return Ok(());
         }
 
         let frames = B::transient_texture_frames();
-        let groups = self.transient_allocation_groups()?;
 
         log::info!(
             "Initializing {} transient textures in {} allocation groups ({} frames in flight, aliasing {})",
@@ -1061,11 +1430,15 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             if self.transient_aliasing { "on" } else { "off" },
         );
 
-        for _frame_idx in 0..frames {
+        let mut frame_slots = Vec::with_capacity(frames);
+        for frame_idx in 0..frames {
             let mut frame_textures = HashMap::new();
-
-            for group in &groups {
-                let textures = B::create_transient_slot(backend, group)?;
+            for (group, compiled) in groups.iter().zip(&contract) {
+                let policy = super::backend::TransientSlotPolicy {
+                    frame_slot: frame_idx,
+                    ..compiled.policy
+                };
+                let textures = B::create_transient_slot(backend, group, policy)?;
                 for (desc, texture) in group.iter().zip(textures) {
                     let resource_id =
                         self.resource_by_name
@@ -1082,8 +1455,11 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
                 }
             }
 
-            self.transient_textures.push(frame_textures);
+            frame_slots.push(frame_textures);
         }
+        self.transient_textures = frame_slots;
+        self.transient_allocation_contract = Some(contract);
+        self.transient_allocation_contract_validated = true;
 
         Ok(())
     }
@@ -1166,6 +1542,8 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         }
 
         self.transient_textures.clear();
+        self.transient_allocation_contract = None;
+        self.transient_allocation_contract_validated = false;
 
         for desc in &mut self.transient_resources {
             if desc.tracks_swapchain_size {
@@ -1287,12 +1665,15 @@ impl FrameGraph<crate::MetalRenderer> {
     where
         F: FnOnce(&mut super::frame::Frame<'_, crate::MetalRenderer>),
     {
+        self.prepare_external_image_producers(renderer);
         if !self.compiled {
             self.compile()?;
         }
 
         self.initialize_transient_textures(renderer)?;
         self.initialize_transient_buffers(renderer)?;
+        self.prepare_external_buffer_producers(renderer);
+        self.compile()?;
 
         let frame_idx = renderer.frame_index();
         let mut frame = super::frame::Frame::new(self, renderer, 0, frame_idx);
@@ -1396,12 +1777,15 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
         image_index: u32,
         f: impl FnOnce(&mut super::frame::Frame<'_, crate::renderer::VulkanRenderer>),
     ) -> Result<(), RenderGraphError> {
+        self.prepare_external_image_producers(renderer);
         if !self.compiled {
             self.compile()?;
         }
 
         self.initialize_transient_textures(renderer)?;
         self.initialize_transient_buffers(renderer)?;
+        self.prepare_external_buffer_producers(renderer);
+        self.compile()?;
 
         let frame_idx = renderer.current_frame();
 
@@ -1476,6 +1860,7 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
         if self.trace_enabled {
             self.last_execution_trace = frame.execution_trace().clone();
         }
+        self.record_buffer_execution(renderer);
 
         Ok(())
     }
@@ -1500,7 +1885,7 @@ impl FrameGraph<crate::renderer::VulkanRenderer> {
 #[derive(Debug, Clone)]
 struct ImportedResource {
     name: String,
-    handle: GraphResourceHandle,
+    handle: TextureHandle,
     contract: ImportedImageContract,
 }
 
@@ -1577,7 +1962,7 @@ impl FrameGraphBuilder {
     pub fn import_resource(
         mut self,
         name: impl Into<String>,
-        handle: GraphResourceHandle,
+        handle: TextureHandle,
         contract: ImportedImageContract,
     ) -> Self {
         self.resources.push(ImportedResource {
@@ -1727,6 +2112,7 @@ impl FrameGraphBuilder {
             }
         }
 
+        let mut buffer_identities = HashMap::new();
         for buffer in &self.buffers {
             if buffer.name.trim().is_empty() {
                 return Err(GraphValidationError::EmptyResourceName.into());
@@ -1748,8 +2134,20 @@ impl FrameGraphBuilder {
                     GraphValidationError::DuplicateResourceName(buffer.name.clone()).into(),
                 );
             }
+            if let Some(first) = buffer_identities.insert(
+                (buffer.handle.index(), buffer.handle.generation()),
+                buffer.name.clone(),
+            ) {
+                return Err(GraphValidationError::DuplicateImportedIdentity {
+                    kind: "buffer",
+                    first,
+                    duplicate: buffer.name.clone(),
+                }
+                .into());
+            }
         }
 
+        let mut image_identities = HashMap::new();
         for resource in &self.resources {
             if resource.name.trim().is_empty() {
                 return Err(GraphValidationError::EmptyResourceName.into());
@@ -1763,6 +2161,17 @@ impl FrameGraphBuilder {
                 return Err(
                     GraphValidationError::DuplicateResourceName(resource.name.clone()).into(),
                 );
+            }
+            if let Some(first) = image_identities.insert(
+                (resource.handle.index(), resource.handle.generation()),
+                resource.name.clone(),
+            ) {
+                return Err(GraphValidationError::DuplicateImportedIdentity {
+                    kind: "image",
+                    first,
+                    duplicate: resource.name.clone(),
+                }
+                .into());
             }
         }
 
@@ -1854,6 +2263,7 @@ impl FrameGraphBuilder {
         for resource in &resources {
             let id = graph.create_resource_id(resource.name.clone());
             graph.imported_contracts.insert(id, resource.contract);
+            graph.imported_images.insert(id, resource.handle);
         }
         for buffer in buffers {
             let id = graph.create_resource_id(buffer.name);
@@ -1868,9 +2278,6 @@ impl FrameGraphBuilder {
         let mut global_resource_map = HashMap::new();
         for (name, &resource_id) in &graph.resource_by_name {
             global_resource_map.insert(name.clone(), GraphResourceHandle::new(resource_id.0));
-        }
-        for resource in &resources {
-            global_resource_map.insert(resource.name.clone(), resource.handle);
         }
 
         let exported_resource_ids = exported_resources
@@ -1983,6 +2390,10 @@ impl FrameGraphBuilder {
             pass.depth_attachment = pass_builder.depth_attachment;
             pass.kind = pass_builder.kind;
             pass.side_effect = pass_builder.side_effect;
+            if let Some(commands) = pass_data.downcast_ref::<Vec<super::compute::ComputeCommand>>()
+            {
+                pass.commands = commands.clone();
+            }
 
             pass.color_attachments = pass_builder
                 .color_attachments
@@ -2077,12 +2488,14 @@ mod tests {
     struct MockBackend {
         /// Member count of each `create_transient_slot` call, in call order.
         slot_member_counts: std::rc::Rc<std::cell::RefCell<Vec<usize>>>,
+        policies: std::rc::Rc<std::cell::RefCell<Vec<super::super::backend::TransientSlotPolicy>>>,
     }
 
     impl MockBackend {
         fn new() -> Self {
             Self {
                 slot_member_counts: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+                policies: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
             }
         }
     }
@@ -2109,8 +2522,10 @@ mod tests {
         fn create_transient_slot(
             &self,
             members: &[super::super::resource::GraphResourceDesc],
+            policy: super::super::backend::TransientSlotPolicy,
         ) -> Result<Vec<Self::TransientTexture>, RenderGraphError> {
             self.slot_member_counts.borrow_mut().push(members.len());
+            self.policies.borrow_mut().push(policy);
             Ok(members
                 .iter()
                 .map(|_| MockTexture {
@@ -2500,7 +2915,7 @@ mod tests {
     fn test_frame_graph_builder_with_resources() {
         let builder = FrameGraphBuilder::new().import_resource(
             "ext",
-            GraphResourceHandle::new(42),
+            TextureHandle::from_raw(42, 0),
             ImportedImageContract::undefined(),
         );
 
@@ -2544,7 +2959,7 @@ mod tests {
                 .create_resource(validation_resource("color", 1, 1))
                 .import_resource(
                     "color",
-                    GraphResourceHandle::new(7),
+                    TextureHandle::from_raw(7, 0),
                     ImportedImageContract::undefined(),
                 ),
         );
@@ -2560,12 +2975,12 @@ mod tests {
             FrameGraphBuilder::new()
                 .import_resource(
                     "external",
-                    GraphResourceHandle::new(1),
+                    TextureHandle::from_raw(1, 0),
                     ImportedImageContract::undefined(),
                 )
                 .import_resource(
                     "external",
-                    GraphResourceHandle::new(2),
+                    TextureHandle::from_raw(2, 0),
                     ImportedImageContract::undefined(),
                 ),
         );
@@ -2626,7 +3041,7 @@ mod tests {
         assert_eq!(
             validation_error(FrameGraphBuilder::new().import_resource(
                 "external",
-                GraphResourceHandle::NONE,
+                TextureHandle::NONE,
                 ImportedImageContract::undefined(),
             )),
             GraphValidationError::InvalidImportedResource("external".to_string())
@@ -3113,6 +3528,139 @@ mod tests {
     }
 
     #[test]
+    fn test_culled_textures_have_no_native_allocation_in_either_debug_mode() {
+        use super::super::builder::SimplePass;
+        let mut graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("live", 16, 16))
+            .create_resource(validation_resource("dead", 16, 16))
+            .add_side_effect_pass(
+                SimplePass::new("live pass", PassType::Graphics)
+                    .without_depth()
+                    .write("live")
+                    .attachment("live", AttachmentOps::clear(ClearValue::Color([0.0; 4]))),
+            )
+            .add_pass(
+                SimplePass::new("dead pass", PassType::Graphics)
+                    .without_depth()
+                    .write("dead")
+                    .attachment("dead", AttachmentOps::clear(ClearValue::Color([0.0; 4]))),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        for optimize in [true, false] {
+            graph.cleanup();
+            graph.set_transient_aliasing(optimize).unwrap();
+            let backend = MockBackend::new();
+            graph.initialize_transient_textures(&backend).unwrap();
+            assert_eq!(*backend.slot_member_counts.borrow(), vec![1, 1]);
+            assert!(graph.transient_texture("dead", 0).is_none());
+        }
+    }
+
+    #[test]
+    fn test_alias_handoffs_are_cached_for_first_use_and_debug_mode_rejects_live_change() {
+        use super::super::builder::SimplePass;
+        let mut graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("early", 16, 16))
+            .create_resource(validation_resource("late", 16, 16))
+            .add_side_effect_pass(
+                SimplePass::new("early pass", PassType::Graphics)
+                    .without_depth()
+                    .write("early")
+                    .attachment("early", AttachmentOps::clear(ClearValue::Color([0.0; 4]))),
+            )
+            .add_side_effect_pass(
+                SimplePass::new("late pass", PassType::Graphics)
+                    .without_depth()
+                    .write("late")
+                    .attachment("late", AttachmentOps::clear(ClearValue::Color([0.0; 4]))),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        assert!(graph.texture_alias_handoff_before(0));
+        assert!(graph.texture_alias_handoff_before(1));
+        graph
+            .initialize_transient_textures(&MockBackend::new())
+            .unwrap();
+        assert!(graph.set_transient_aliasing(false).is_err());
+        assert!(graph.texture_alias_handoff_before(0));
+        graph.cleanup();
+        graph.set_transient_aliasing(false).unwrap();
+        graph.compile().unwrap();
+        assert!(!graph.texture_alias_handoff_before(0));
+        let diagnostics = graph.diagnostics().unwrap();
+        assert_eq!(diagnostics.summary.physical_transient_allocations, 2);
+        assert_eq!(diagnostics.summary.transient_alias_savings_bytes, 0);
+    }
+
+    #[test]
+    fn test_memoryless_policy_requires_tile_local_discard_and_owns_frame_slot() {
+        use super::super::builder::SimplePass;
+        use crate::render_pass::StoreOp;
+        let mut graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("tile", 16, 16))
+            .add_side_effect_pass(
+                SimplePass::new("tile pass", PassType::Graphics)
+                    .without_depth()
+                    .write("tile")
+                    .attachment(
+                        "tile",
+                        AttachmentOps::clear(ClearValue::Color([0.0; 4]))
+                            .with_store(StoreOp::DontCare),
+                    ),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+        let policies = backend.policies.borrow();
+        assert!(policies.iter().all(|policy| policy.memoryless));
+        assert_eq!(
+            policies
+                .iter()
+                .map(|policy| policy.frame_slot)
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        drop(policies);
+        graph.cleanup();
+        graph.set_transient_aliasing(false).unwrap();
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+        assert!(
+            backend
+                .policies
+                .borrow()
+                .iter()
+                .all(|policy| !policy.memoryless && !policy.optimize)
+        );
+    }
+
+    #[test]
+    fn test_store_action_prevents_memoryless_even_for_one_pass() {
+        use super::super::builder::SimplePass;
+        let mut graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("stored", 16, 16))
+            .add_side_effect_pass(
+                SimplePass::new("store pass", PassType::Graphics)
+                    .without_depth()
+                    .write("stored")
+                    .attachment("stored", AttachmentOps::clear(ClearValue::Color([0.0; 4]))),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+        assert!(
+            backend
+                .policies
+                .borrow()
+                .iter()
+                .all(|policy| !policy.memoryless)
+        );
+    }
+
+    #[test]
     fn transient_aliasing_groups_non_overlapping_compatible_transients() {
         let mut graph = TestGraph::new();
         graph.create_resource_id("early");
@@ -3138,6 +3686,128 @@ mod tests {
         graph.initialize_transient_textures(&backend).unwrap();
 
         // One two-member slot per frame in flight.
+        assert_eq!(*backend.slot_member_counts.borrow(), vec![2, 2]);
+    }
+
+    #[test]
+    fn test_allocation_contract_rejects_new_overlap_until_cleanup() {
+        let mut graph = TestGraph::new();
+        let early = graph.create_resource_id("early");
+        let late = graph.create_resource_id("late");
+        graph.transient_resources = vec![
+            validation_resource("early", 64, 64),
+            validation_resource("late", 64, 64),
+        ];
+        graph.add_pass(PassDesc::new(
+            "early write",
+            PassType::Graphics,
+            vec![],
+            vec![early],
+        ));
+        graph.add_pass(PassDesc::new(
+            "late write",
+            PassType::Graphics,
+            vec![],
+            vec![late],
+        ));
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+        assert_eq!(*backend.slot_member_counts.borrow(), vec![2, 2]);
+        graph.add_pass(PassDesc::new(
+            "later early read",
+            PassType::Graphics,
+            vec![early],
+            vec![],
+        ));
+        assert!(matches!(
+            graph.initialize_transient_textures(&backend),
+            Err(RenderGraphError::AllocationContractChanged)
+        ));
+        assert_eq!(*backend.slot_member_counts.borrow(), vec![2, 2]);
+        assert!(graph.transient_texture("early", 0).is_some());
+        graph.cleanup();
+        graph.initialize_transient_textures(&backend).unwrap();
+        assert_eq!(*backend.slot_member_counts.borrow(), vec![2, 2, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn test_allocation_contract_rejects_sampling_old_memoryless_storage() {
+        use super::super::builder::SimplePass;
+        use crate::render_pass::StoreOp;
+        let mut graph = FrameGraphBuilder::new()
+            .create_resource(validation_resource("tile", 16, 16))
+            .add_side_effect_pass(
+                SimplePass::new("tile pass", PassType::Graphics)
+                    .without_depth()
+                    .write("tile")
+                    .attachment(
+                        "tile",
+                        AttachmentOps {
+                            load: LoadOp::Clear,
+                            store: StoreOp::DontCare,
+                            clear_value: ClearValue::Color([0.0; 4]),
+                        },
+                    ),
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+        assert!(
+            backend
+                .policies
+                .borrow()
+                .iter()
+                .all(|policy| policy.memoryless)
+        );
+        let tile = graph.resource_id("tile").unwrap();
+        let mut sample = PassDesc::new("sample tile", PassType::Compute, vec![tile], vec![]);
+        sample.side_effect = true;
+        graph.add_pass(sample);
+        assert!(matches!(
+            graph.initialize_transient_textures(&backend),
+            Err(RenderGraphError::AllocationContractChanged)
+        ));
+        graph.cleanup();
+        graph.initialize_transient_textures(&backend).unwrap();
+        assert!(
+            backend
+                .policies
+                .borrow()
+                .iter()
+                .skip(2)
+                .all(|policy| !policy.memoryless)
+        );
+    }
+
+    #[test]
+    fn test_allocation_contract_accepts_changed_disjoint_intervals() {
+        let mut graph = TestGraph::new();
+        let early = graph.create_resource_id("early");
+        let late = graph.create_resource_id("late");
+        graph.transient_resources = vec![
+            validation_resource("early", 64, 64),
+            validation_resource("late", 64, 64),
+        ];
+        graph.add_pass(PassDesc::new(
+            "early write",
+            PassType::Graphics,
+            vec![],
+            vec![early],
+        ));
+        graph.add_pass(PassDesc::new(
+            "late write",
+            PassType::Graphics,
+            vec![],
+            vec![late],
+        ));
+        let backend = MockBackend::new();
+        graph.initialize_transient_textures(&backend).unwrap();
+        graph.insert_pass(
+            1,
+            PassDesc::new("early read", PassType::Graphics, vec![early], vec![]),
+        );
+        graph.initialize_transient_textures(&backend).unwrap();
         assert_eq!(*backend.slot_member_counts.borrow(), vec![2, 2]);
     }
 
@@ -3197,7 +3867,7 @@ mod tests {
             vec![],
             vec![ResourceId(1)],
         ));
-        graph.set_transient_aliasing(false);
+        graph.set_transient_aliasing(false).unwrap();
 
         let backend = MockBackend::new();
         graph.initialize_transient_textures(&backend).unwrap();
@@ -3281,20 +3951,20 @@ mod tests {
     // --- Imported-image state contracts (#30) ---
 
     #[test]
-    fn imported_contracts_reject_unreachable_final_states() {
-        let error = validation_error(
-            FrameGraphBuilder::new().import_resource(
+    fn test_unused_imported_image_compiles_its_final_transition() {
+        let graph = FrameGraphBuilder::new()
+            .import_resource(
                 "external",
-                GraphResourceHandle::new(7),
+                TextureHandle::from_raw(7, 0),
                 ImportedImageContract::arrives_in(ResourceState::ShaderRead)
                     .must_end_in(ResourceState::TransferSrc),
-            ),
-        );
-        assert!(matches!(
-            error,
-            GraphValidationError::UnreachableImportedFinalState { resource, required }
-                if resource == "external" && required == ResourceState::TransferSrc
-        ));
+            )
+            .build::<MockBackend>()
+            .unwrap();
+        let ops = graph.final_image_sync_ops();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].before_pass, None);
+        assert_eq!(ops[0].reason, super::super::SyncReason::ImportedFinal);
     }
 
     #[test]
@@ -3302,7 +3972,7 @@ mod tests {
         FrameGraphBuilder::new()
             .import_resource(
                 "external",
-                GraphResourceHandle::new(7),
+                TextureHandle::from_raw(7, 0),
                 ImportedImageContract::arrives_in(ResourceState::ShaderRead)
                     .must_end_in(ResourceState::TransferSrc),
             )
@@ -3339,8 +4009,32 @@ mod tests {
         );
         assert!(matches!(
             error,
-            GraphValidationError::LoadingUndefinedImportedContents { pass, resource }
-                if pass == "overlay" && resource == BACKBUFFER_NAME
+            GraphValidationError::LoadingUninitializedImport { pass, resource: 0, aspects }
+                if pass == "overlay" && aspects == super::super::ImageAspects::COLOR
+        ));
+    }
+    #[test]
+    fn test_duplicate_native_import_identities_are_rejected_before_scheduling() {
+        let texture = TextureHandle::from_raw(8, 2);
+        let error = validation_error(
+            FrameGraphBuilder::new()
+                .import_resource("first", texture, ImportedImageContract::undefined())
+                .import_resource("second", texture, ImportedImageContract::undefined()),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::DuplicateImportedIdentity { kind: "image", .. }
+        ));
+        let buffer = BufferHandle::from_raw(8, 2);
+        let desc = BufferDesc::new(64, BufferUsages::STORAGE, BufferMemoryPolicy::DeviceLocal);
+        let error = validation_error(
+            FrameGraphBuilder::new()
+                .import_buffer("first", buffer, desc)
+                .import_buffer("second", buffer, desc),
+        );
+        assert!(matches!(
+            error,
+            GraphValidationError::DuplicateImportedIdentity { kind: "buffer", .. }
         ));
     }
 }

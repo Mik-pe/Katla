@@ -1,14 +1,8 @@
 //! Vulkan realization of the compiled synchronization plan.
 //!
-//! Each backend-neutral sync operation translates to one synchronization2
-//! image barrier whose stage, access, layout, and subresource range come from
-//! the typed access states — never from layout-pair inference. Buffer barriers
-//! resolve both graph-owned and imported handles. Imported images still keep
-//! their renderer-local acquire/present barriers, and backend-owned depth is
-//! not a graph resource yet, so consecutive depth-using passes keep the
-//! explicit render-pass-instance boundary barrier.
+//! Native stage, access, layout, and range scopes come from compiled accesses.
+//! Imported textures and the acquired output are resolved alongside transients.
 
-use crate::barrier::ImageBarrier;
 use crate::render_graph::access::{
     BufferUsage, ImageAspects, ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
@@ -30,32 +24,12 @@ impl Frame<'_, VulkanRenderer> {
         cmd: &CommandBuffer,
         pass_index: usize,
     ) -> Result<(), RenderGraphError> {
-        let device = &self.renderer.context.device;
         let cmd_vk = cmd.vk_command_buffer();
 
-        // Backend-owned depth: not a graph resource yet. The Vulkan spec
-        // requires a barrier between render-pass instances sharing an
-        // attachment even when the layout does not change.
-        if self
-            .graph
-            .pass(pass_index)
-            .is_some_and(|pass| pass.uses_depth && pass.depth_target.is_none())
-            && self.depth_buffer_written
-        {
-            let frame_idx = self.current_frame();
-            if let Some(depth_texture) = self
-                .renderer
-                .frame_context
-                .depth_render_textures
-                .get(frame_idx)
-            {
-                ImageBarrier::depth_render_pass_sync(&cmd_vk, device, depth_texture.image.vk());
-            }
-        }
-
-        let image_ops = self.graph.image_sync_ops(pass_index);
+        let image_ops = self.graph.image_sync_ops(pass_index).to_vec();
         let buffer_ops = self.graph.buffer_sync_ops(pass_index);
-        if image_ops.is_empty() && buffer_ops.is_empty() {
+        let alias_handoff = self.graph.texture_alias_handoff_before(pass_index);
+        if image_ops.is_empty() && buffer_ops.is_empty() && !alias_handoff {
             return Ok(());
         }
         let Some(pass) = self.graph.pass(pass_index) else {
@@ -64,20 +38,8 @@ impl Frame<'_, VulkanRenderer> {
         let frame_idx = self.current_frame();
 
         let mut image_barriers = Vec::with_capacity(image_ops.len());
-        for op in image_ops {
-            let Some(transient) = self.graph.transient_texture_by_id(op.resource, frame_idx) else {
-                log::debug!(
-                    "[SYNC] Pass '{}' op on non-transient '{}': realized by the importer",
-                    pass.name,
-                    self.graph.resource_name(op.resource).unwrap_or("?")
-                );
-                continue;
-            };
-
-            let barrier = sync_op_barrier(op, transient);
-            if let Some(barrier) = barrier {
-                image_barriers.push(barrier);
-            }
+        for op in &image_ops {
+            image_barriers.extend(self.resolve_image_sync_barriers(op)?);
         }
 
         let mut buffer_barriers = Vec::with_capacity(buffer_ops.len());
@@ -86,6 +48,9 @@ impl Frame<'_, VulkanRenderer> {
                 .graph
                 .buffer_by_id(self.renderer, op.resource, frame_idx)
             else {
+                if self.graph.is_builtin_buffer(op.resource) {
+                    continue;
+                }
                 return Err(RenderGraphError::BackendError(format!(
                     "Pass '{}' cannot resolve graph buffer '{}' for synchronization",
                     pass.name,
@@ -113,7 +78,7 @@ impl Frame<'_, VulkanRenderer> {
             buffer_barriers.push(
                 BufferMemoryBarrier2::new(
                     VkBuffer::new(buffer.buffer),
-                    op.range.offset,
+                    buffer.offset + op.range.offset,
                     range_size,
                 )
                 .src_stage(src_stage)
@@ -123,11 +88,22 @@ impl Frame<'_, VulkanRenderer> {
             );
         }
 
-        if image_barriers.is_empty() && buffer_barriers.is_empty() {
+        if image_barriers.is_empty() && buffer_barriers.is_empty() && !alias_handoff {
             return Ok(());
         }
 
         let mut dependency = DependencyInfo::new();
+        if alias_handoff {
+            dependency.memory_barriers.push(
+                vk::MemoryBarrier2::default()
+                    .src_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+                    .src_access_mask(vk::AccessFlags2::MEMORY_WRITE)
+                    .dst_stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)
+                    .dst_access_mask(
+                        vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE,
+                    ),
+            );
+        }
         for barrier in image_barriers {
             dependency = dependency.add_image_barrier(barrier);
         }
@@ -135,43 +111,107 @@ impl Frame<'_, VulkanRenderer> {
             dependency = dependency.add_buffer_barrier2(barrier);
         }
         dependency.build(|dependency| unsafe {
-            device.cmd_pipeline_barrier2(cmd_vk, dependency);
+            self.renderer
+                .context
+                .device
+                .cmd_pipeline_barrier2(cmd_vk, dependency);
         });
 
         Ok(())
     }
 
+    fn resolve_image_sync_barriers(
+        &mut self,
+        op: &ImageSyncOp,
+    ) -> Result<Vec<ImageMemoryBarrier2>, RenderGraphError> {
+        if let Some(texture) = self
+            .graph
+            .transient_texture_by_id(op.resource, self.current_frame())
+        {
+            self.renderer
+                .frame_context
+                .pending_transient_layouts
+                .borrow_mut()
+                .record(texture);
+            return Ok(sync_op_barriers(op, texture));
+        }
+        let (image, aspects, initial_layout) =
+            if self.graph.resource_id(crate::render_graph::BACKBUFFER_NAME) == Some(op.resource) {
+                (
+                    self.renderer.frame_context.swapchain_images[self.image_index as usize],
+                    ImageAspects::COLOR,
+                    self.renderer.frame_context.swapchain_image_layouts[self.image_index as usize]
+                        .get(),
+                )
+            } else {
+                let texture = self
+                    .graph
+                    .imported_images
+                    .get(&op.resource)
+                    .and_then(|&handle| self.renderer.texture_manager.get_texture(handle))
+                    .ok_or_else(|| {
+                        RenderGraphError::ResourceNotFound(format!(
+                            "Cannot resolve imported image '{}' for synchronization",
+                            self.graph.resource_name(op.resource).unwrap_or("?")
+                        ))
+                    })?;
+                (
+                    texture.image(),
+                    format_aspects(texture.format().into()),
+                    state_layout(op.before),
+                )
+            };
+        let pieces = self.imported_image_states.entry(op.resource).or_default();
+        let mut ranges = Vec::new();
+        let mut remainder = vec![op.range];
+        for &(piece, state) in pieces.iter() {
+            if let Some(range) = piece.intersection(op.range) {
+                ranges.push((range, state_layout(state)));
+                remainder = remainder
+                    .iter()
+                    .flat_map(|range| range.subtract(piece))
+                    .collect();
+            }
+        }
+        ranges.extend(remainder.into_iter().map(|range| (range, initial_layout)));
+        let mut barriers = Vec::new();
+        for (range, layout) in ranges {
+            let ranged_op = ImageSyncOp { range, ..*op };
+            if let Some(barrier) = image_sync_barrier(&ranged_op, image, aspects, layout) {
+                *pieces = pieces
+                    .iter()
+                    .flat_map(|&(piece, old)| {
+                        piece
+                            .subtract(range)
+                            .into_iter()
+                            .map(move |piece| (piece, old))
+                    })
+                    .collect();
+                pieces.push((range, op.after));
+                barriers.push(barrier);
+            }
+        }
+        Ok(barriers)
+    }
+
     /// Insert the frame-end operations satisfying imported final-state
     /// contracts, after the last live pass.
     ///
-    /// Only operations resolving to graph transients realize here; imported
-    /// images (including the backbuffer) are realized by their importer.
+    /// Acquired and imported images obey the same compiled final operations.
     pub(super) fn insert_final_sync_barriers(
         &mut self,
         cmd: &CommandBuffer,
     ) -> Result<(), RenderGraphError> {
-        let ops = self.graph.final_image_sync_ops();
+        let ops = self.graph.final_image_sync_ops().to_vec();
         if ops.is_empty() {
             return Ok(());
         }
 
-        let device = &self.renderer.context.device;
         let cmd_vk = cmd.vk_command_buffer();
-        let frame_idx = self.current_frame();
 
         let mut barriers = Vec::with_capacity(ops.len());
-        for op in ops {
-            let Some(transient) = self.graph.transient_texture_by_id(op.resource, frame_idx) else {
-                log::debug!(
-                    "[SYNC] Frame-end op on non-transient '{}': realized by the importer",
-                    self.graph.resource_name(op.resource).unwrap_or("?")
-                );
-                continue;
-            };
-
-            if let Some(barrier) = sync_op_barrier(op, transient) {
-                barriers.push(barrier);
-            }
+        for op in &ops {
+            barriers.extend(self.resolve_image_sync_barriers(op)?);
         }
 
         if barriers.is_empty() {
@@ -183,7 +223,10 @@ impl Frame<'_, VulkanRenderer> {
             dependency = dependency.add_image_barrier(barrier);
         }
         dependency.build(|dependency| unsafe {
-            device.cmd_pipeline_barrier2(cmd_vk, dependency);
+            self.renderer
+                .context
+                .device
+                .cmd_pipeline_barrier2(cmd_vk, dependency);
         });
 
         Ok(())
@@ -230,23 +273,39 @@ fn buffer_access_mask(usage: BufferUsage, mode: ResourceAccessMode) -> AccessFla
 /// after) always encode because render-pass instances may overlap without
 /// them. Returns `None` when nothing must be encoded, or when the operation's
 /// aspects do not intersect the image's real aspects.
-fn sync_op_barrier(
+fn sync_op_barriers(
     op: &ImageSyncOp,
     transient: &crate::render_graph::TransientTexture,
-) -> Option<ImageMemoryBarrier2> {
-    let texture_aspects = if transient.format == vk::Format::D32_SFLOAT {
-        ImageAspects::DEPTH
-    } else {
-        ImageAspects::COLOR
-    };
-    let barrier = image_sync_barrier(
-        op,
-        VkImage::new(transient.image),
-        texture_aspects,
-        transient.current_layout(),
-    )?;
-    transient.set_layout(barrier.new_layout);
-    Some(barrier)
+) -> Vec<ImageMemoryBarrier2> {
+    let texture_aspects = format_aspects(transient.format);
+    let ranges = transient
+        .layouts
+        .borrow()
+        .ranges(op.range, vk::ImageLayout::UNDEFINED);
+    let mut barriers = Vec::new();
+    for (range, layout) in ranges {
+        let ranged_op = ImageSyncOp { range, ..*op };
+        if let Some(barrier) = image_sync_barrier(
+            &ranged_op,
+            VkImage::new(transient.image),
+            texture_aspects,
+            layout,
+        ) {
+            transient.set_range_layout(range, barrier.new_layout);
+            barriers.push(barrier);
+        }
+    }
+    barriers
+}
+
+fn format_aspects(format: vk::Format) -> ImageAspects {
+    match format {
+        vk::Format::D32_SFLOAT => ImageAspects::DEPTH,
+        vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT => {
+            ImageAspects::DEPTH | ImageAspects::STENCIL
+        }
+        _ => ImageAspects::COLOR,
+    }
 }
 
 fn image_sync_barrier(
@@ -359,7 +418,7 @@ fn stage_mask(stage: ResourceAccessStage) -> PipelineStage2Flags {
         ResourceAccessStage::Transfer => PipelineStage2Flags::TRANSFER,
         // The presentation engine reads the image after submission completes;
         // the present semaphore orders the hand-off, not a pipeline stage.
-        ResourceAccessStage::Present => PipelineStage2Flags::BOTTOM_OF_PIPE,
+        ResourceAccessStage::Present => PipelineStage2Flags::empty(),
         ResourceAccessStage::AllGraphics => PipelineStage2Flags::ALL_GRAPHICS,
     }
 }
@@ -567,5 +626,59 @@ mod tests {
                 (expected_stage, expected_access)
             );
         }
+    }
+    #[test]
+    fn test_present_contract_releases_to_the_external_engine_without_a_fake_stage() {
+        let mut op = storage_op();
+        op.after = ImageSyncState::Access {
+            usage: ResourceAccessUsage::Present,
+            stage: ResourceAccessStage::Present,
+            mode: ResourceAccessMode::Write,
+        };
+        op.reason = SyncReason::ImportedFinal;
+        let barrier = image_sync_barrier(
+            &op,
+            VkImage::new(vk::Image::null()),
+            ImageAspects::COLOR,
+            vk::ImageLayout::GENERAL,
+        )
+        .unwrap()
+        .into_vk();
+        assert_eq!(barrier.new_layout, vk::ImageLayout::PRESENT_SRC_KHR);
+        assert_eq!(
+            barrier.src_stage_mask,
+            vk::PipelineStageFlags2::COMPUTE_SHADER
+        );
+        assert_eq!(barrier.src_access_mask, vk::AccessFlags2::SHADER_WRITE);
+        assert!(barrier.dst_stage_mask.is_empty());
+        assert!(barrier.dst_access_mask.is_empty());
+    }
+
+    #[test]
+    fn test_subresource_barriers_retain_mips_layers_and_both_depth_aspects() {
+        let mut op = storage_op();
+        op.range = crate::render_graph::ImageSubresourceRange::new(
+            ImageAspects::DEPTH | ImageAspects::STENCIL,
+            2,
+            1,
+            3,
+            2,
+        );
+        let barrier = image_sync_barrier(
+            &op,
+            VkImage::new(vk::Image::null()),
+            ImageAspects::DEPTH | ImageAspects::STENCIL,
+            vk::ImageLayout::GENERAL,
+        )
+        .unwrap()
+        .into_vk();
+        assert_eq!(
+            barrier.subresource_range.aspect_mask,
+            vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
+        );
+        assert_eq!(barrier.subresource_range.base_mip_level, 2);
+        assert_eq!(barrier.subresource_range.level_count, 1);
+        assert_eq!(barrier.subresource_range.base_array_layer, 3);
+        assert_eq!(barrier.subresource_range.layer_count, 2);
     }
 }

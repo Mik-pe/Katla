@@ -40,6 +40,14 @@ pub struct TextureDescriptor {
     pub width: u32,
     /// Height in pixels.
     pub height: u32,
+    /// Depth slices (greater than one creates a 3D texture).
+    pub depth: u32,
+    /// Array layers; 3D textures must use one layer.
+    pub array_layers: u32,
+    /// Allocated mip levels.
+    pub mip_levels: u32,
+    /// Generate the mip chain after a complete base-level upload.
+    pub generate_mips: bool,
     /// Pixel format.
     pub format: ImageFormat,
     /// Usage flags.
@@ -53,6 +61,10 @@ impl Default for TextureDescriptor {
         Self {
             width: 1,
             height: 1,
+            depth: 1,
+            array_layers: 1,
+            mip_levels: 1,
+            generate_mips: false,
             format: ImageFormat::R8G8B8A8Srgb,
             usage: TextureUsage::default(),
             label: None,
@@ -66,6 +78,10 @@ impl TextureDescriptor {
         Self {
             width,
             height,
+            depth: 1,
+            array_layers: 1,
+            mip_levels: 1,
+            generate_mips: false,
             format,
             usage: TextureUsage::default(),
             label: None,
@@ -109,11 +125,14 @@ impl TextureDescriptor {
         self
     }
 
-    /// Bytes a full upload requires, or `None` when the dimensions overflow.
+    /// Bytes for the tightly packed base mip in the first array layer.
+    /// Returns `None` when the dimensions overflow.
     pub fn expected_bytes(&self) -> Option<usize> {
-        (self.width as usize)
-            .checked_mul(self.height as usize)?
-            .checked_mul(self.format.bytes_per_pixel() as usize)
+        let [bw, bh] = self.format.block_extent();
+        (self.width.div_ceil(bw) as usize)
+            .checked_mul(self.height.div_ceil(bh) as usize)?
+            .checked_mul(self.depth as usize)?
+            .checked_mul(self.format.bytes_per_block() as usize)
     }
 
     /// Validate pixel data against this descriptor without touching the GPU.
@@ -121,7 +140,7 @@ impl TextureDescriptor {
     /// Empty data is legitimate: it creates the texture uninitialized for
     /// later upload (render targets). Non-empty data with the wrong length
     /// fails with [`crate::error::RendererError::InvalidDescriptor`], as do
-    /// zero extents — never a silent mis-sized texture.
+    /// invalid extent, mip count or array/3D combinations — never a silent mis-sized texture.
     pub fn validate_data(&self, data_len: usize) -> Result<(), crate::error::RendererError> {
         let Some(expected) = self.expected_bytes() else {
             return Err(crate::error::RendererError::InvalidDescriptor {
@@ -132,12 +151,52 @@ impl TextureDescriptor {
                 ),
             });
         };
-        if self.width == 0 || self.height == 0 {
+        if self.width == 0
+            || self.height == 0
+            || self.depth == 0
+            || self.array_layers == 0
+            || self.mip_levels == 0
+            || self.mip_levels > 32 - self.width.max(self.height).max(self.depth).leading_zeros()
+            || (self.depth > 1 && self.array_layers != 1)
+        {
             return Err(crate::error::RendererError::InvalidDescriptor {
                 resource: "texture".to_string(),
                 reason: format!(
-                    "{}x{} {:?}: zero extent",
+                    "{}x{} {:?}: invalid extent, mip count or array/3D combination",
                     self.width, self.height, self.format
+                ),
+            });
+        }
+        let depth = self.format.is_depth_stencil();
+        let compressed = self.format.block_extent() != [1, 1];
+        if self.format == ImageFormat::Auto
+            || (depth
+                && (data_len != 0
+                    || self
+                        .usage
+                        .intersects(TextureUsage::COLOR_ATTACHMENT | TextureUsage::STORAGE)))
+            || (!depth && self.usage.contains(TextureUsage::DEPTH_STENCIL_ATTACHMENT))
+            || (compressed
+                && (self.depth != 1
+                    || self
+                        .usage
+                        .intersects(TextureUsage::COLOR_ATTACHMENT | TextureUsage::STORAGE)))
+            || (self.generate_mips
+                && (depth
+                    || compressed
+                    || self.array_layers != 1
+                    || !self.format.supports_mip_generation()))
+        {
+            return Err(crate::error::RendererError::InvalidDescriptor {
+                resource: self.label.unwrap_or("texture").into(),
+                reason: format!(
+                    "{:?} {}x{}x{} layers {} mips {}: unsupported format, upload, usage or mip-generation policy",
+                    self.format,
+                    self.width,
+                    self.height,
+                    self.depth,
+                    self.array_layers,
+                    self.mip_levels
                 ),
             });
         }

@@ -64,7 +64,7 @@ jobs:
         run: cargo check -p katla_gfx --lib --locked --quiet
 
       - name: Test graphics library
-        run: cargo test -p katla_gfx --lib --locked --quiet
+        run: cargo test -p katla_gfx --lib --locked --quiet -- --test-threads=1
 
       - name: Lint graphics library
         run: cargo clippy -p katla_gfx --lib --locked --quiet -- -D warnings
@@ -75,6 +75,9 @@ jobs:
         # skipped: lavapipe segfaults inside that driver path (the same
         # tests pass on real Intel Vulkan and run in the macOS Metal job).
         run: cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1 --skip graphics::pbr
+
+      - name: Vulkan transient allocation, aliasing and resize validation
+        run: cargo test -p katla_gfx --test transient_aliasing --locked -- --ignored --test-threads=1
 
       - name: Upload render-graph diagnostics artifacts
         if: failure()
@@ -116,7 +119,10 @@ jobs:
         run: cargo check -p katla_gfx -p katla_app --locked --quiet
 
       - name: Test graphics library
-        run: cargo test -p katla_gfx --lib --locked --quiet
+        run: cargo test -p katla_gfx --lib --locked --quiet -- --test-threads=1
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
 
       - name: Lint graphics and application crates
         run: cargo clippy -p katla_gfx -p katla_app --locked --quiet -- -D warnings

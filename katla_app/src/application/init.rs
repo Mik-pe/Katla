@@ -109,299 +109,21 @@ impl Application {
             self.init_billboard_resources();
         }
 
-        // Initialize particle emit pipeline
-        let particle_emit_shader_path = self.resources.shader_path("particles/particle_emit.wgsl");
-        self.renderer
-            .unwrap_vulkan()
-            .init_particle_emit_pipeline(&particle_emit_shader_path)
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to initialize particle emit pipeline: {e}"),
-            })?;
-
-        // Initialize particle simulate pipeline
-        let particle_simulate_shader_path = self
-            .resources
-            .shader_path("particles/particle_simulate.wgsl");
-        self.renderer
-            .unwrap_vulkan()
-            .init_particle_simulate_pipeline(&particle_simulate_shader_path)
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to initialize particle simulate pipeline: {e}"),
-            })?;
-
-        // Initialize particle draw command pipeline (writes indirect draw buffer after simulate)
-        let particle_draw_command_shader_path = self
-            .resources
-            .shader_path("particles/particle_draw_command.wgsl");
-        self.renderer
-            .unwrap_vulkan()
-            .init_particle_draw_command_pipeline(&particle_draw_command_shader_path)
-            .map_err(|e| AppError::RendererInitFailed {
-                reason: format!("Failed to initialize particle draw command pipeline: {e}"),
-            })?;
-
-        // Add particle compute passes to frame graph
-        // These must be added after particle pipelines are initialized
-        if let Some(ref particle_system) = self.renderer.unwrap_vulkan().particle_system {
-            let emit_pipeline = particle_system.emit_pipeline_handle().ok_or_else(|| {
-                AppError::RendererInitFailed {
-                    reason: "Particle emit pipeline not initialized".to_string(),
-                }
-            })?;
-            let simulate_pipeline =
-                particle_system.simulate_pipeline_handle().ok_or_else(|| {
-                    AppError::RendererInitFailed {
-                        reason: "Particle simulate pipeline not initialized".to_string(),
-                    }
-                })?;
-
-            use katla_gfx::render_graph::PassDesc;
-            use katla_gfx::render_graph::PassType;
-            use katla_gfx::render_graph::RenderGraphError;
-
-            // Insert particle compute passes at the beginning of the frame graph.
-            // Vulkan requires compute dispatches to run outside render passes, and the
-            // particle render pass (inline after geometry) reads their output, so these
-            // must execute before any graphics passes.
-            self.frame_graph.insert_pass(
-                0,
-                PassDesc::new("particle_simulate", PassType::Compute, vec![], vec![])
-                    .with_side_effect()
-                    .with_pipeline(simulate_pipeline)
-                    .with_compute_fn(|frame, cmd, _pipeline_handle| {
-                        let workgroup_count = frame.particle_simulate_workgroup_count();
-                        let emit_ran = frame.particle_emit_ran;
-
-                        {
-                            let renderer = frame.renderer_mut();
-                            let current_frame = renderer.current_frame();
-                            let particle_system = match renderer.particle_system.as_mut() {
-                                Some(ps) => ps,
-                                None => return Ok(()),
-                            };
-
-                            if workgroup_count == 0 {
-                                log::debug!("Skipping particle simulate - workgroup_count is 0");
-                                return Ok(());
-                            }
-
-                            particle_system
-                                .update_compute_descriptor_binding(current_frame)
-                                .map_err(|e| {
-                                    RenderGraphError::BackendError(format!(
-                                        "Failed to update particle compute descriptor binding: {}",
-                                        e
-                                    ))
-                                })?;
-
-                            particle_system.reset_simulate_counters(
-                                cmd.vk_command_buffer(),
-                                emit_ran,
-                                current_frame,
-                            );
-
-                            particle_system
-                                .record_simulate_dispatch(
-                                    cmd.vk_command_buffer(),
-                                    &renderer.asset_registry,
-                                    workgroup_count,
-                                    current_frame,
-                                )
-                                .map_err(|e| {
-                                    RenderGraphError::BackendError(format!(
-                                        "Particle simulate dispatch failed: {}",
-                                        e
-                                    ))
-                                })?;
-
-                            if let Err(e) = particle_system.record_draw_command_dispatch(
-                                cmd.vk_command_buffer(),
-                                &renderer.asset_registry,
-                                current_frame,
-                            ) {
-                                log::warn!("Failed to record draw command dispatch: {}", e);
-                            }
-                        }
-
-                        Ok(())
-                    }),
-            );
-
-            self.frame_graph.insert_pass(
-                0,
-                PassDesc::new("particle_emit", PassType::Compute, vec![], vec![])
-                    .with_side_effect()
-                    .with_pipeline(emit_pipeline)
-                    .with_compute_fn(|frame, cmd, _pipeline_handle| {
-                        let workgroup_count = frame.particle_emit_workgroup_count();
-
-                        {
-                            let renderer = frame.renderer_mut();
-                            let current_frame = renderer.current_frame();
-                            let particle_system = match renderer.particle_system.as_mut() {
-                                Some(ps) => ps,
-                                None => return Ok(()),
-                            };
-
-                            if workgroup_count == 0 {
-                                log::debug!("Skipping particle emit - workgroup_count is 0");
-                                return Ok(());
-                            }
-
-                            particle_system
-                                .update_compute_descriptor_binding(current_frame)
-                                .map_err(|e| {
-                                    RenderGraphError::BackendError(format!(
-                                        "Failed to update particle compute descriptor binding: {}",
-                                        e
-                                    ))
-                                })?;
-
-                            particle_system
-                                .record_emit_dispatch(
-                                    cmd.vk_command_buffer(),
-                                    &renderer.asset_registry,
-                                    workgroup_count,
-                                    current_frame,
-                                )
-                                .map_err(|e| {
-                                    RenderGraphError::BackendError(format!(
-                                        "Particle emit dispatch failed: {}",
-                                        e
-                                    ))
-                                })?;
-                        }
-
-                        frame.particle_emit_ran = true;
-                        Ok(())
-                    }),
-            );
-
-            info!("Added particle compute passes to frame graph");
-        }
-
         // Initialize animation pose evaluation pipeline
         let anim_shader_path = self
             .resources
             .shader_path("compute/animation/pose_eval.wgsl");
-        if let Err(e) = self.renderer.init_animation_pipeline(&anim_shader_path) {
-            warn!("Failed to initialize animation pipeline: {}", e);
-        } else {
-            info!("Animation pose evaluation pipeline initialized");
-        }
+        self.renderer
+            .init_animation_pipeline(&anim_shader_path)
+            .map_err(|error| AppError::RendererInitFailed {
+                reason: error.to_string(),
+            })?;
 
         // Create GPU animation system (ECS queries only, GPU resources on renderer)
         self.gpu_animation_system =
             Some(crate::systems::gpu_animation_system::GpuAnimationSystem::new());
 
-        // Add animation compute pass to frame graph.
-        // Inserted at position 0 so it runs before light_culling, particle passes,
-        // and all graphics passes. This ensures skeleton matrices are ready
-        // for the subsequent copy commands and vertex shader skinning.
-        if let Some(pipeline_handle) = self.renderer.unwrap_vulkan().animation_pipeline_handle() {
-            use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
-            self.frame_graph.insert_pass(
-                0,
-                PassDesc::new("animation_pose_eval", PassType::Compute, vec![], vec![])
-                    .with_side_effect()
-                    .with_pipeline(pipeline_handle)
-                    .with_compute_fn(|frame, cmd, _pipeline_handle| {
-                        let skeleton_count = frame.animation_skeleton_count();
-                        if skeleton_count == 0 {
-                            return Ok(());
-                        }
-
-                        let copy_cmds = frame.skeleton_copy_commands().to_vec();
-                        let renderer = frame.renderer_mut();
-
-                        let pipeline = match renderer.animation_pipeline.as_ref() {
-                            Some(p) => p,
-                            None => return Ok(()),
-                        };
-                        let buffers = match renderer.animation_buffers.as_ref() {
-                            Some(b) => b,
-                            None => return Ok(()),
-                        };
-
-                        pipeline.record_dispatch(
-                            cmd.vk_command_buffer(),
-                            &renderer.asset_registry,
-                            skeleton_count,
-                        );
-
-                        // Barrier: compute write → copy read
-                        pipeline.add_output_barrier(
-                            cmd.vk_command_buffer(),
-                            buffers,
-                            ash::vk::PipelineStageFlags2::COPY,
-                            ash::vk::AccessFlags2::TRANSFER_READ,
-                        );
-
-                        // Copy per-entity joint matrices from output buffer to SkeletonBuffers
-                        let output_buf = match buffers.output_buffer() {
-                            Ok(buf) => buf,
-                            Err(_) => return Ok(()),
-                        };
-                        for &(handle, joint_offset, joint_count) in &copy_cmds {
-                            renderer.copy_skeleton_from_compute_output(
-                                cmd.vk_command_buffer(),
-                                handle,
-                                output_buf,
-                                joint_offset,
-                                joint_count,
-                            );
-                        }
-
-                        // Global barrier: transfer write → vertex shader read
-                        // Covers all skeleton buffers written by the copies above.
-                        if !copy_cmds.is_empty() {
-                            let vk_cmd = cmd.vk_command_buffer();
-                            let barrier = ash::vk::MemoryBarrier2::default()
-                                .src_stage_mask(ash::vk::PipelineStageFlags2::COPY)
-                                .dst_stage_mask(ash::vk::PipelineStageFlags2::VERTEX_SHADER)
-                                .src_access_mask(ash::vk::AccessFlags2::TRANSFER_WRITE)
-                                .dst_access_mask(ash::vk::AccessFlags2::SHADER_READ);
-                            let barriers = [barrier];
-                            let dep_info =
-                                ash::vk::DependencyInfo::default().memory_barriers(&barriers);
-                            unsafe {
-                                renderer
-                                    .context()
-                                    .device
-                                    .cmd_pipeline_barrier2(vk_cmd, &dep_info);
-                            }
-                        }
-
-                        Ok::<(), RenderGraphError>(())
-                    }),
-            );
-            info!("Added animation pose evaluation compute pass to frame graph");
-        }
-
-        // Add light culling compute pass to frame graph.
-        // This must run after animation_pose_eval (which computes skeleton matrices)
-        // and before particle passes and geometry rendering.
-        // Inserted at position 1 so it follows animation_pose_eval at position 0.
-        if self.renderer.capabilities().supports_light_culling {
-            use katla_gfx::render_graph::{PassDesc, PassType, RenderGraphError};
-            self.frame_graph.insert_pass(
-                1,
-                PassDesc::new("light_culling", PassType::Compute, vec![], vec![])
-                    .with_side_effect()
-                    .with_compute_fn(|frame, cmd, _pipeline_handle| {
-                        let renderer = frame.renderer_mut();
-                        let view = renderer.frame_uniforms().view_matrix;
-                        let proj = renderer.frame_uniforms().proj_matrix;
-                        renderer.dispatch_light_culling(cmd.vk_command_buffer(), &view, &proj);
-                        Ok::<(), RenderGraphError>(())
-                    }),
-            );
-            info!("Added light culling compute pass to frame graph");
-        }
-
-        // Re-resolve pass IDs after insert_pass calls may have shifted indices
-        self.pass_ids
-            .refresh(&self.frame_graph, &self.frame_graph_bindings.passes)?;
+        self.install_scene_compute_graph()?;
 
         // Initialize transient textures and register with bindless system
         self.frame_graph
@@ -580,11 +302,11 @@ impl Application {
         let anim_shader_path = self
             .resources
             .shader_path("compute/animation/pose_eval.wgsl");
-        if let Err(e) = self.renderer.init_animation_pipeline(&anim_shader_path) {
-            warn!("Failed to initialize Metal animation pipeline: {}", e);
-        } else {
-            info!("Animation pipeline initialized (Metal)");
-        }
+        self.renderer
+            .init_animation_pipeline(&anim_shader_path)
+            .map_err(|error| AppError::RendererInitFailed {
+                reason: error.to_string(),
+            })?;
 
         // Initialize sky pipeline for procedural atmosphere
         let sky_shader_path = self.resources.shader_path("sky.wgsl");
@@ -713,6 +435,10 @@ impl Application {
                 self.editor.editor_ui.set_viewport_bindless_index(vp_idx);
             }
         }
+
+        self.gpu_animation_system =
+            Some(crate::systems::gpu_animation_system::GpuAnimationSystem::new());
+        self.install_scene_compute_graph()?;
 
         Ok(())
     }

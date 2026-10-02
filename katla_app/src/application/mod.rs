@@ -35,6 +35,7 @@ mod particle_drive;
 mod picking;
 mod renderer;
 mod resource_loading;
+mod scene_compute_graph;
 pub(crate) mod spawning;
 pub(crate) mod ui_test;
 

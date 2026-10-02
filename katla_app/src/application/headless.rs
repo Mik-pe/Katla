@@ -14,6 +14,7 @@ pub const HEADLESS_SCALE_FACTOR: f32 = 2.0;
 
 use crate::application::Application;
 use crate::error::AppResult;
+#[cfg(not(target_os = "macos"))]
 use katla_gfx::GpuRenderer;
 #[cfg(target_os = "macos")]
 use katla_gfx::MetalTextureRetained;
@@ -66,8 +67,12 @@ impl Application {
         // (via .take()), so we must clone it beforehand.
         #[cfg(target_os = "macos")]
         let mut last_offscreen: Option<MetalTextureRetained> = None;
+        #[cfg(target_os = "macos")]
+        let mut frame_metrics = Vec::with_capacity(max_frames);
 
         for _frame in 0..max_frames {
+            #[cfg(target_os = "macos")]
+            let frame_started = std::time::Instant::now();
             // Interaction test: inject synthetic input before this frame renders.
             #[cfg(feature = "editor")]
             if let Some(ref mut runner) = interaction_test {
@@ -77,6 +82,17 @@ impl Application {
             #[cfg(target_os = "macos")]
             {
                 last_offscreen = self.run_one_headless_frame();
+                if let Some(renderer) = self.renderer.as_metal() {
+                    let metrics = renderer.frame_metrics();
+                    frame_metrics.push([
+                        frame_started.elapsed().as_secs_f64() * 1_000_000.0,
+                        metrics.cpu_submit.as_secs_f64() * 1_000_000.0,
+                        metrics.slot_wait.as_secs_f64() * 1_000_000.0,
+                        metrics.gpu_frame_time.as_secs_f64() * 1_000_000.0,
+                        metrics.cpu_lead as f64,
+                        metrics.in_flight as f64,
+                    ]);
+                }
             }
             #[cfg(not(target_os = "macos"))]
             self.run_one_headless_frame();
@@ -114,8 +130,11 @@ impl Application {
             let _ = &mut interaction_test;
         }
 
-        // Wait for GPU to finish the last frame
-        self.renderer.wait_for_device();
+        #[cfg(target_os = "macos")]
+        info!(
+            "Metal headless frame samples (frame/submit/slot-wait/completed-GPU microseconds, CPU-lead, in-flight): {}",
+            serde_json::json!(frame_metrics)
+        );
 
         // Save screenshot from the last frame's offscreen texture (standard mode only)
         if ui_test.is_none() && interaction_test.is_none() {
@@ -222,16 +241,10 @@ impl Application {
         #[cfg(target_os = "macos")]
         self.renderer.set_headless_drawable(offscreen);
 
-        self.prepare_scene_gpu(dt);
         self.poll_background_loader();
 
         // Render editor frame (same as windowed — includes UI generation)
         self.render_editor_frame(dt);
-
-        // Wait for the GPU to finish rendering before returning the texture.
-        // Without this, getBytes() reads partial/stale data because the command
-        // buffer submitted during render_frame is asynchronous.
-        self.renderer.wait_for_device();
 
         #[cfg(target_os = "macos")]
         {
@@ -244,6 +257,13 @@ impl Application {
         path: &str,
         #[cfg(target_os = "macos")] texture: Option<MetalTextureRetained>,
     ) -> AppResult<()> {
+        #[cfg(target_os = "macos")]
+        if let Some(renderer) = self.renderer.as_metal() {
+            renderer
+                .wait_for_last_submission()
+                .map_err(|source| crate::error::AppError::Graphics { source })?;
+        }
+
         #[cfg(target_os = "macos")]
         let Some(texture) = texture else {
             log::error!("No offscreen texture available for screenshot");

@@ -8,6 +8,38 @@ use super::error::RenderGraphError;
 use super::resource::{BufferDesc, GraphResourceDesc};
 use crate::texture::ImageFormat;
 
+/// Compiled storage policy for one frame-owned physical texture range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransientSlotPolicy {
+    /// Frame slot that owns this allocation until GPU completion.
+    pub frame_slot: usize,
+    /// Stable compiled physical allocation index.
+    pub allocation_slot: u32,
+    /// Enable physical aliasing and tile-memory selection.
+    pub optimize: bool,
+    /// Every member is a single-pass attachment with discarded contents.
+    pub memoryless: bool,
+    /// Native shader write capability required by live accesses.
+    pub storage: bool,
+    /// Native transfer destination capability required by live accesses.
+    pub transfer_destination: bool,
+}
+
+/// Backend-observed storage for a logical transient texture.
+#[derive(Debug, Clone)]
+pub struct NativeTransientAllocation {
+    /// Process-local identity used only to deduplicate physical ranges.
+    pub identity: u64,
+    /// Byte offset of the texture range in its native backing allocation.
+    pub offset: u64,
+    /// Native reserved byte count for this physical range.
+    pub bytes: u64,
+    /// Equivalent standalone native allocation requirement for this texture.
+    pub logical_bytes: u64,
+    /// Backend storage strategy selected for the observed allocation.
+    pub strategy: &'static str,
+}
+
 /// Backend interface for render graph execution.
 ///
 /// Each GPU backend (Vulkan, Metal) implements this trait to provide
@@ -17,6 +49,16 @@ use crate::texture::ImageFormat;
 /// without knowing about GPU-specific types. Backend implementations handle
 /// all GPU-specific details internally.
 pub trait RenderGraphBackend: Sized + 'static {
+    /// Pending uploads that precede this frame's graph encoding.
+    fn graph_texture_upload_producers(
+        &self,
+    ) -> Vec<(
+        crate::handle::TextureHandle,
+        crate::texture::TextureUploadRegion,
+    )> {
+        Vec::new()
+    }
+
     /// Backend-specific transient texture type.
     type TransientTexture;
 
@@ -38,7 +80,15 @@ pub trait RenderGraphBackend: Sized + 'static {
     fn create_transient_slot(
         &self,
         members: &[GraphResourceDesc],
+        policy: TransientSlotPolicy,
     ) -> Result<Vec<Self::TransientTexture>, RenderGraphError>;
+
+    /// Inspect actual storage after native texture allocation.
+    fn transient_allocation_info(
+        _texture: &Self::TransientTexture,
+    ) -> Option<NativeTransientAllocation> {
+        None
+    }
 
     /// Create one graph-owned buffer allocation.
     fn create_transient_buffer(
@@ -63,6 +113,47 @@ pub trait RenderGraphBackend: Sized + 'static {
         &self,
         handle: crate::handle::BufferHandle,
     ) -> Option<&Self::TransientBuffer>;
+
+    /// Resolve an active-slot renderer-owned allocation imported into the graph.
+    fn builtin_buffer(
+        &self,
+        _role: super::compute::BuiltinBuffer,
+    ) -> Option<Self::TransientBuffer> {
+        None
+    }
+
+    /// Byte offset of a graph-visible slice within its native allocation.
+    fn buffer_offset(_buffer: &Self::TransientBuffer) -> u64 {
+        0
+    }
+
+    /// Prior canonical access scopes of this resolved native buffer slice.
+    fn graph_buffer_previous_accesses(
+        &self,
+        _buffer: &Self::TransientBuffer,
+    ) -> Vec<super::BufferAccess> {
+        Vec::new()
+    }
+
+    /// Retain scopes for subsequent submissions, including other frame graphs.
+    fn record_graph_buffer_accesses(
+        &self,
+        _buffer: &Self::TransientBuffer,
+        _accesses: &[super::BufferAccess],
+    ) {
+    }
+
+    /// Warm a reflected pipeline before any frame command encoding begins.
+    fn prepare_compute_pipeline(
+        &mut self,
+        descriptor: &super::compute::ComputePipelineDesc,
+    ) -> Result<(), RenderGraphError> {
+        Err(super::error::GraphValidationError::InvalidComputeCommand {
+            pass: descriptor.entry.clone(),
+            reason: "Compute shader pipelines are unsupported by this backend".into(),
+        }
+        .into())
+    }
 
     /// Current frame index (for double-buffered resources).
     fn current_frame(&self) -> usize;
@@ -104,4 +195,20 @@ pub trait RenderGraphBackend: Sized + 'static {
 
     /// Get the depth buffer image view for a specific frame index.
     fn depth_image_view(&self, frame_index: usize) -> Option<Self::ImageView>;
+}
+
+/// Borrowed allocation or a non-owning view of a renderer subsystem buffer.
+pub enum ResolvedGraphBuffer<'a, B: RenderGraphBackend> {
+    Borrowed(&'a B::TransientBuffer),
+    Imported(B::TransientBuffer),
+}
+
+impl<B: RenderGraphBackend> std::ops::Deref for ResolvedGraphBuffer<'_, B> {
+    type Target = B::TransientBuffer;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Borrowed(buffer) => buffer,
+            Self::Imported(buffer) => buffer,
+        }
+    }
 }

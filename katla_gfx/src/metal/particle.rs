@@ -3,15 +3,9 @@
 //! Mirrors the Vulkan `GlobalParticleSystem` using Metal compute pipelines.
 //! Uses the same WGSL shaders compiled to MSL via naga.
 
-use objc2::rc::Retained;
-use objc2::runtime::ProtocolObject;
-use objc2_metal::{
-    MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLComputePipelineState, MTLDevice,
-};
-
 use log::info;
 
-use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
+use crate::backend::command::{GpuBlitEncoder, GpuCommandBuffer};
 use crate::backend::resource::GpuBuffer;
 use crate::error::RendererError;
 use crate::handle::EmitterHandle;
@@ -19,10 +13,8 @@ use crate::particles::types::EmitterConfig;
 use crate::pipeline::CompareOp;
 
 use super::buffer::MetalBuffer;
-use super::compute_encoder::MetalComputeEncoder;
 use super::context::MetalContext;
 use super::metal_renderer::{FRAMES_IN_FLIGHT, frame_slot};
-use super::shader;
 
 /// Maximum particles supported by shaders (must match MAX_PARTICLES in WGSL)
 const SHADER_MAX_PARTICLES: u32 = 1_048_576;
@@ -64,7 +56,7 @@ struct FrameData {
     total_simulate_count: u32,
     burst_count: u32,
     frame_index: u32,
-    _pad: u32,
+    max_particles: u32,
 }
 
 /// Atomic counters for particle management (16 bytes).
@@ -110,9 +102,10 @@ impl BufferLayout {
 
         let dead_list_offset = particles_size;
         let alive_offset = dead_list_offset + dead_list_size;
-        let alive_frame_offset = [alive_offset, alive_offset + alive_list_size];
+        let alive_frame_offset =
+            std::array::from_fn(|slot| alive_offset + slot as u64 * alive_list_size);
 
-        let total_size = alive_offset + 2 * alive_list_size;
+        let total_size = alive_offset + FRAMES_IN_FLIGHT as u64 * alive_list_size;
 
         Self {
             _particles_size: particles_size,
@@ -140,9 +133,6 @@ pub(crate) struct MetalParticleSubsystem {
     _emitter_config_buffers: [MetalBuffer; FRAMES_IN_FLIGHT],
 
     // Compute pipelines
-    _emit_pipeline: Retained<ProtocolObject<dyn MTLComputePipelineState>>,
-    _simulate_pipeline: Retained<ProtocolObject<dyn MTLComputePipelineState>>,
-    _draw_command_pipeline: Retained<ProtocolObject<dyn MTLComputePipelineState>>,
     render_pipeline: Option<super::pipeline::MetalGraphicsPipeline>,
 
     // Buffer layout
@@ -198,15 +188,19 @@ impl MetalParticleSubsystem {
 
         let counters_buf_0 = context.create_buffer(counters_size, true)?;
         let counters_buf_1 = context.create_buffer(counters_size, true)?;
+        let counters_buf_2 = context.create_buffer(counters_size, true)?;
         let indirect_draw_buf_0 = context.create_buffer(indirect_draw_size, true)?;
         let indirect_draw_buf_1 = context.create_buffer(indirect_draw_size, true)?;
+        let indirect_draw_buf_2 = context.create_buffer(indirect_draw_size, true)?;
         let frame_data_buf_0 = context.create_buffer(frame_data_size, true)?;
         let frame_data_buf_1 = context.create_buffer(frame_data_size, true)?;
+        let frame_data_buf_2 = context.create_buffer(frame_data_size, true)?;
         let emitter_config_buf_0 = context.create_buffer(emitter_config_size, true)?;
         let emitter_config_buf_1 = context.create_buffer(emitter_config_size, true)?;
+        let emitter_config_buf_2 = context.create_buffer(emitter_config_size, true)?;
 
         // Initialize counters: dead_count = max_particles, all else 0
-        for buf in [&counters_buf_0, &counters_buf_1] {
+        for buf in [&counters_buf_0, &counters_buf_1, &counters_buf_2] {
             let counters = ParticleCounters {
                 alive_count: 0,
                 dead_count: max_particles,
@@ -224,96 +218,22 @@ impl MetalParticleSubsystem {
             buf.unmap();
         }
 
-        // Compile compute shaders
-        let emit_source = super::metal_renderer::read_shader("particles/particle_emit.wgsl")?;
-        let simulate_source =
-            super::metal_renderer::read_shader("particles/particle_simulate.wgsl")?;
-        let draw_command_source =
-            super::metal_renderer::read_shader("particles/particle_draw_command.wgsl")?;
-
-        let emit_compiled = shader::compile_wgsl_to_metal(
-            &context.device,
-            &emit_source,
-            &["cs_main"],
-            shader::ShaderProfile::ParticleCompute,
-        )?;
-        let simulate_compiled = shader::compile_wgsl_to_metal(
-            &context.device,
-            &simulate_source,
-            &["cs_main"],
-            shader::ShaderProfile::ParticleCompute,
-        )?;
-        let draw_command_compiled = shader::compile_wgsl_to_metal(
-            &context.device,
-            &draw_command_source,
-            &["cs_main"],
-            shader::ShaderProfile::ParticleCompute,
-        )?;
-
-        let emit_fn = emit_compiled
-            .module
-            .entry_points
-            .get("cs_main")
-            .ok_or_else(|| RendererError::InvalidOperation("Emit entry point not found".into()))?;
-        let simulate_fn = simulate_compiled
-            .module
-            .entry_points
-            .get("cs_main")
-            .ok_or_else(|| {
-                RendererError::InvalidOperation("Simulate entry point not found".into())
-            })?;
-        let draw_command_fn = draw_command_compiled
-            .module
-            .entry_points
-            .get("cs_main")
-            .ok_or_else(|| {
-                RendererError::InvalidOperation("Draw command entry point not found".into())
-            })?;
-
-        let emit_pipeline = context
-            .device
-            .newComputePipelineStateWithFunction_error(emit_fn)
-            .map_err(|e| {
-                let msg = e.localizedDescription().to_string();
-                RendererError::ResourceCreationFailed(format!(
-                    "Failed to create emit compute pipeline: {}",
-                    msg
-                ))
-            })?;
-
-        let simulate_pipeline = context
-            .device
-            .newComputePipelineStateWithFunction_error(simulate_fn)
-            .map_err(|e| {
-                let msg = e.localizedDescription().to_string();
-                RendererError::ResourceCreationFailed(format!(
-                    "Failed to create simulate compute pipeline: {}",
-                    msg
-                ))
-            })?;
-
-        let draw_command_pipeline = context
-            .device
-            .newComputePipelineStateWithFunction_error(draw_command_fn)
-            .map_err(|e| {
-                let msg = e.localizedDescription().to_string();
-                RendererError::ResourceCreationFailed(format!(
-                    "Failed to create draw command compute pipeline: {}",
-                    msg
-                ))
-            })?;
-
         info!("Metal particle system initialized successfully");
 
         let system = Self {
             _particle_buffer: particle_buffer,
-            _counters_buffers: [counters_buf_0, counters_buf_1],
-            _indirect_draw_buffers: [indirect_draw_buf_0, indirect_draw_buf_1],
-            _frame_data_buffers: [frame_data_buf_0, frame_data_buf_1],
-            _emitter_config_buffers: [emitter_config_buf_0, emitter_config_buf_1],
-            _emit_pipeline: emit_pipeline,
-            _simulate_pipeline: simulate_pipeline,
-            _draw_command_pipeline: draw_command_pipeline,
+            _counters_buffers: [counters_buf_0, counters_buf_1, counters_buf_2],
+            _indirect_draw_buffers: [
+                indirect_draw_buf_0,
+                indirect_draw_buf_1,
+                indirect_draw_buf_2,
+            ],
+            _frame_data_buffers: [frame_data_buf_0, frame_data_buf_1, frame_data_buf_2],
+            _emitter_config_buffers: [
+                emitter_config_buf_0,
+                emitter_config_buf_1,
+                emitter_config_buf_2,
+            ],
             render_pipeline: None,
             _layout: layout,
             _emitters: Vec::with_capacity(MAX_EMITTERS as usize),
@@ -350,20 +270,18 @@ impl MetalParticleSubsystem {
 
         let mut cmd_buffer = context.create_command_buffer();
         cmd_buffer.begin();
-        let blit_encoder = cmd_buffer.inner.blitCommandEncoder().expect("blit encoder");
-        unsafe {
-            blit_encoder.copyFromBuffer_sourceOffset_toBuffer_destinationOffset_size(
-                &staging.inner,
-                0,
-                &self._particle_buffer.inner,
-                self._layout.dead_list_offset as usize,
-                dead_list_size as usize,
-            );
-            blit_encoder.endEncoding();
-        }
+        let mut encoder = cmd_buffer.begin_blit_pass_with_label("particle_index_initialization");
+        encoder.copy_buffer_to_buffer(
+            &staging,
+            0,
+            &self._particle_buffer,
+            self._layout.dead_list_offset,
+            dead_list_size,
+        );
+        encoder.end_encoding();
         cmd_buffer.end();
         cmd_buffer.submit(context);
-        cmd_buffer.inner.waitUntilCompleted();
+        cmd_buffer.wait_until_completed()?;
 
         for buf in &self._counters_buffers {
             let counters = ParticleCounters {
@@ -517,7 +435,7 @@ impl MetalParticleSubsystem {
                 total_simulate_count,
                 burst_count: total_burst_count,
                 frame_index,
-                _pad: 0,
+                max_particles: self._max_particles,
             };
 
             let ptr = self._frame_data_buffers[fi].map();
@@ -545,30 +463,6 @@ impl MetalParticleSubsystem {
             }
         }
 
-        {
-            let prev_fi = (fi + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
-            let prev_ptr = self._counters_buffers[prev_fi].map() as *const ParticleCounters;
-            let prev_counters = unsafe { *prev_ptr };
-            self._counters_buffers[prev_fi].unmap();
-
-            let new_counters = ParticleCounters {
-                alive_count: 0,
-                dead_count: prev_counters.dead_count,
-                emit_count: prev_counters.alive_count,
-                workgroups_finished: 0,
-            };
-
-            let ptr = self._counters_buffers[fi].map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    &new_counters as *const ParticleCounters as *const u8,
-                    ptr,
-                    std::mem::size_of::<ParticleCounters>(),
-                );
-            }
-            self._counters_buffers[fi].unmap();
-        }
-
         for state in &mut self._emitter_states {
             state._burst_count = 0;
         }
@@ -584,21 +478,6 @@ impl MetalParticleSubsystem {
     #[cfg(test)]
     pub(crate) fn max_particles(&self) -> u32 {
         self._max_particles
-    }
-
-    #[cfg(test)]
-    pub(crate) fn alive_count(&self) -> u32 {
-        self._estimated_max_alive
-    }
-
-    #[cfg(test)]
-    pub(crate) fn max_estimated_alive(&self) -> u32 {
-        self._estimated_max_alive
-    }
-
-    #[cfg(test)]
-    pub(crate) fn total_emitted(&self) -> u64 {
-        self._total_emitted
     }
 
     fn calculate_emit_count(&mut self, delta_time: f32) -> u32 {
@@ -685,93 +564,50 @@ impl MetalParticleSubsystem {
 
     // -- GPU dispatch --
 
-    /// Encode the emit / simulate / draw-command dispatches for this frame.
-    ///
-    /// Runs inside the frame's command buffer (light-culling pattern), before
-    /// any render pass, so the indirect draw command is fresh when the particle
-    /// render record executes. Workgroup counts are CPU-derived exactly like
-    /// the Vulkan graph path: emit covers this frame's emissions, simulate is
-    /// over-dispatched from the emitter-based alive estimate, draw command is
-    /// a single workgroup.
-    ///
-    /// `emit_workgroups == 0` skips the emit dispatch; simulate always runs at
-    /// least one workgroup so the alive-list swap still happens.
-    pub(crate) fn encode_compute(
+    pub(crate) fn buffer_slice(
         &self,
-        encoder: &mut MetalComputeEncoder,
+        role: crate::render_graph::BuiltinBuffer,
         frame_index: u32,
-        emit_workgroups: u32,
-        simulate_workgroups: u32,
-    ) {
-        let fi = frame_slot(frame_index);
-        let prev_fi = (fi + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT;
-        let layout = &self._layout;
+    ) -> Option<(&MetalBuffer, u64, u64)> {
+        use crate::render_graph::BuiltinBuffer::*;
+        let slot = frame_slot(frame_index);
+        let (offset, size) = match role {
+            ParticleData => (0, self._layout._particles_size),
+            ParticleDeadList => (self._layout.dead_list_offset, self._layout._dead_list_size),
+            ParticleAliveRead => (
+                self._layout._alive_frame_offset[(slot + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT],
+                self._layout._alive_list_size,
+            ),
+            ParticleAliveWrite => (
+                self._layout._alive_frame_offset[slot],
+                self._layout._alive_list_size,
+            ),
+            _ => {
+                let buffer = self.builtin_buffer(role, frame_index)?;
+                return Some((buffer, 0, buffer.size()));
+            }
+        };
+        Some((&self._particle_buffer, offset, size))
+    }
 
-        if emit_workgroups > 0 {
-            encoder.bind_compute_pipeline_raw(&self._emit_pipeline);
-            encoder.bind_storage_buffer(&self._particle_buffer, 0, 0);
-            encoder.bind_storage_buffer_at_offset(
-                &self._particle_buffer,
-                layout.dead_list_offset,
-                0,
-                1,
-            );
-            encoder.bind_storage_buffer_at_offset(
-                &self._particle_buffer,
-                layout._alive_frame_offset[fi],
-                0,
-                2,
-            );
-            encoder.bind_storage_buffer_at_offset(
-                &self._particle_buffer,
-                layout._alive_frame_offset[fi],
-                0,
-                3,
-            );
-            encoder.bind_storage_buffer(&self._counters_buffers[fi], 0, 4);
-            encoder.bind_storage_buffer(&self._frame_data_buffers[fi], 0, 5);
-            encoder.bind_storage_buffer(&self._emitter_config_buffers[fi], 0, 6);
-            encoder.dispatch_raw(emit_workgroups.max(1), 1, 1, PARTICLE_EMIT_WORKGROUP_SIZE);
+    pub(crate) fn builtin_buffer(
+        &self,
+        role: crate::render_graph::BuiltinBuffer,
+        frame_index: u32,
+    ) -> Option<&MetalBuffer> {
+        use crate::render_graph::BuiltinBuffer::*;
+        let slot = frame_slot(frame_index);
+        match role {
+            ParticleData => Some(&self._particle_buffer),
+            ParticleCounters => Some(&self._counters_buffers[slot]),
+            ParticlePreviousCounters => {
+                Some(&self._counters_buffers[(slot + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT])
+            }
+            ParticleIndirect => Some(&self._indirect_draw_buffers[slot]),
+            ParticleFrame => Some(&self._frame_data_buffers[slot]),
+            ParticleEmitters => Some(&self._emitter_config_buffers[slot]),
+            _ => None,
         }
-
-        encoder.memory_barrier_buffers();
-
-        encoder.bind_compute_pipeline_raw(&self._simulate_pipeline);
-        encoder.bind_storage_buffer(&self._particle_buffer, 0, 0);
-        encoder.bind_storage_buffer_at_offset(
-            &self._particle_buffer,
-            layout.dead_list_offset,
-            0,
-            1,
-        );
-        encoder.bind_storage_buffer_at_offset(
-            &self._particle_buffer,
-            layout._alive_frame_offset[fi],
-            0,
-            2,
-        );
-        encoder.bind_storage_buffer_at_offset(
-            &self._particle_buffer,
-            layout._alive_frame_offset[prev_fi],
-            0,
-            3,
-        );
-        encoder.bind_storage_buffer(&self._counters_buffers[fi], 0, 4);
-        encoder.bind_storage_buffer(&self._frame_data_buffers[fi], 0, 5);
-        encoder.bind_storage_buffer(&self._emitter_config_buffers[fi], 0, 6);
-        encoder.dispatch_raw(
-            simulate_workgroups.max(1),
-            1,
-            1,
-            PARTICLE_SIMULATE_WORKGROUP_SIZE,
-        );
-
-        encoder.memory_barrier_buffers();
-
-        encoder.bind_compute_pipeline_raw(&self._draw_command_pipeline);
-        encoder.bind_storage_buffer(&self._counters_buffers[fi], 0, 0);
-        encoder.bind_storage_buffer(&self._indirect_draw_buffers[fi], 0, 1);
-        encoder.dispatch_raw(1, 1, 1, 1);
     }
 }
 
@@ -940,7 +776,7 @@ mod tests {
         assert!(layout._alive_frame_offset[1] > layout._alive_frame_offset[0]);
         assert_eq!(
             layout.total_size,
-            layout._alive_frame_offset[1] + layout._alive_list_size
+            layout._alive_frame_offset[2] + layout._alive_list_size
         );
     }
 }
@@ -968,26 +804,32 @@ pub(crate) fn render_particles(
 
     // ParticleRender binding map: storage 0..4 stay flat, frame uniforms at 5
     // (slot 1 belongs to dead_list — double-binding it would clobber uniforms).
-    encoder.bind_storage_buffer(&system._particle_buffer, 0, 0, ShaderStages::VERTEX);
+    encoder.bind_storage_buffer_range_render(
+        &system._particle_buffer,
+        0,
+        u64::from(system._max_particles) * 64,
+        0,
+        ShaderStages::VERTEX,
+    );
     encoder.bind_storage_buffer(frame_uniforms, 0, 5, ShaderStages::VERTEX);
-    encoder.bind_storage_buffer_at_offset_render(
+    encoder.bind_storage_buffer_range_render(
         &system._particle_buffer,
         system._layout.dead_list_offset,
-        0,
+        u64::from(system._max_particles) * 4,
         1,
         ShaderStages::VERTEX,
     );
-    encoder.bind_storage_buffer_at_offset_render(
+    encoder.bind_storage_buffer_range_render(
         &system._particle_buffer,
         system._layout._alive_frame_offset[fi],
-        0,
+        u64::from(system._max_particles) * 4,
         2,
         ShaderStages::VERTEX,
     );
-    encoder.bind_storage_buffer_at_offset_render(
+    encoder.bind_storage_buffer_range_render(
         &system._particle_buffer,
         system._layout._alive_frame_offset[fi],
-        0,
+        u64::from(system._max_particles) * 4,
         3,
         ShaderStages::VERTEX,
     );

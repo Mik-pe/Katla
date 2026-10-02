@@ -23,7 +23,7 @@ use super::access::{
 };
 use super::error::RenderGraphError;
 use super::handles::ResourceId;
-use super::pass::PassDesc;
+use super::pass::{PassDesc, PassType};
 use super::resource::ImportedImageContract;
 use super::sync_plan::build_sync_plan;
 
@@ -84,6 +84,38 @@ pub struct ExecutionPlan {
     /// Synchronization operations derived from the same typed accesses and
     /// edges that produced the dependency DAG.
     pub(super) sync: SyncPlan,
+}
+
+fn validate_image_scope(name: &str, access: &ImageAccess) -> Result<(), RenderGraphError> {
+    use super::access::{ResourceAccessStage as S, ResourceAccessUsage as U};
+    let shader = matches!(
+        access.stage,
+        S::VertexShader | S::FragmentShader | S::ComputeShader | S::AllGraphics
+    );
+    let valid = match access.usage {
+        U::Sampled => shader && access.mode == ResourceAccessMode::Read,
+        U::Storage => shader,
+        U::ColorAttachment => access.stage == S::ColorAttachmentOutput,
+        U::DepthStencilAttachment => access.stage == S::DepthStencil,
+        U::TransferSource => access.stage == S::Transfer && access.mode == ResourceAccessMode::Read,
+        U::TransferDestination => {
+            access.stage == S::Transfer && access.mode == ResourceAccessMode::Write
+        }
+        U::Present => access.stage == S::Present && access.mode == ResourceAccessMode::Write,
+    };
+    if valid && !access.range.is_empty() {
+        Ok(())
+    } else {
+        Err(super::error::GraphValidationError::InvalidImageAccess {
+            pass: name.to_owned(),
+            resource: access.resource.0,
+            reason: format!(
+                "{:?} {:?} at {:?} over {:?}",
+                access.mode, access.usage, access.stage, access.range
+            ),
+        }
+        .into())
+    }
 }
 
 /// Dependency graph node.
@@ -256,6 +288,8 @@ fn apply_access<R: AccessRange>(
 #[derive(Debug, Clone)]
 pub struct PassInfo {
     pub name: String,
+    /// Encoding operation, independent of the diagnostic name.
+    pub operation: PassType,
     pub reads: Vec<ResourceId>,
     pub writes: Vec<ResourceId>,
     /// Typed image accesses: the authoritative dependency-analysis input.
@@ -264,6 +298,12 @@ pub struct PassInfo {
     /// Typed buffer accesses, analyzed against byte ranges exactly as image
     /// accesses are analyzed against subresource ranges.
     pub buffer_accesses: Vec<BufferAccess>,
+    /// Authored attachment content requirements and store effects.
+    pub attachment_ops: Vec<(
+        ResourceId,
+        super::ImageAspects,
+        crate::render_pass::AttachmentOps,
+    )>,
     pub side_effect: bool,
 }
 
@@ -271,10 +311,27 @@ impl From<&PassDesc> for PassInfo {
     fn from(desc: &PassDesc) -> Self {
         Self {
             name: desc.name.clone(),
+            operation: desc.pass_type,
             reads: desc.reads.clone(),
             writes: desc.writes.clone(),
             image_accesses: desc.image_accesses.clone(),
             buffer_accesses: desc.buffer_accesses.clone(),
+            attachment_ops: desc
+                .color_attachments
+                .iter()
+                .map(|&(resource, ops)| (resource, super::ImageAspects::COLOR, ops))
+                .chain(
+                    desc.depth_target
+                        .zip(desc.depth_attachment)
+                        .into_iter()
+                        .flat_map(|(resource, ops)| {
+                            [
+                                (resource, super::ImageAspects::DEPTH, ops.depth),
+                                (resource, super::ImageAspects::STENCIL, ops.stencil),
+                            ]
+                        }),
+                )
+                .collect(),
             side_effect: desc.side_effect,
         }
     }
@@ -299,6 +356,9 @@ pub struct GraphCompiler {
     pub(crate) final_writers: HashMap<ResourceId, usize>,
     pub(crate) exported_resources: BTreeSet<ResourceId>,
     pub(crate) imported_contracts: BTreeMap<ResourceId, ImportedImageContract>,
+    pub(crate) external_image_accesses: Vec<ImageAccess>,
+    pub(crate) external_buffer_accesses: Vec<BufferAccess>,
+    pub(crate) external_uploads_pending: bool,
     pub(crate) culling_enabled: bool,
 }
 
@@ -315,6 +375,9 @@ impl GraphCompiler {
             final_writers: HashMap::new(),
             exported_resources: BTreeSet::new(),
             imported_contracts: BTreeMap::new(),
+            external_image_accesses: Vec::new(),
+            external_buffer_accesses: Vec::new(),
+            external_uploads_pending: false,
             culling_enabled: false,
         }
     }
@@ -675,8 +738,86 @@ impl GraphCompiler {
         (dag, parallel_groups)
     }
 
+    fn validate_imported_attachment_contents(
+        &self,
+        sorted: &[usize],
+    ) -> Result<(), RenderGraphError> {
+        use crate::render_pass::{LoadOp, StoreOp};
+        let mut defined: BTreeMap<ResourceId, Vec<ImageSubresourceRange>> = self
+            .imported_contracts
+            .iter()
+            .map(|(&resource, contract)| {
+                (
+                    resource,
+                    if contract.initial == super::ResourceState::Undefined {
+                        Vec::new()
+                    } else {
+                        vec![ImageSubresourceRange::whole(super::ImageAspects::ALL)]
+                    },
+                )
+            })
+            .collect();
+        for &index in sorted {
+            let pass = &self.passes[index];
+            for &(resource, aspects, ops) in &pass.attachment_ops {
+                let Some(regions) = defined.get(&resource) else {
+                    continue;
+                };
+                if ops.load == LoadOp::Load {
+                    let mut missing = vec![ImageSubresourceRange::whole(aspects)];
+                    for &region in regions {
+                        missing = missing
+                            .iter()
+                            .flat_map(|range| range.subtract(region))
+                            .collect();
+                    }
+                    if !missing.is_empty() {
+                        return Err(super::GraphValidationError::LoadingUninitializedImport {
+                            pass: pass.name.clone(),
+                            resource: resource.0,
+                            aspects,
+                        }
+                        .into());
+                    }
+                }
+            }
+            for access in &pass.image_accesses {
+                if access.mode.writes()
+                    && !matches!(
+                        access.usage,
+                        super::ResourceAccessUsage::ColorAttachment
+                            | super::ResourceAccessUsage::DepthStencilAttachment
+                    )
+                    && let Some(regions) = defined.get_mut(&access.resource)
+                {
+                    regions.push(access.range);
+                }
+            }
+            for &(resource, aspects, ops) in &pass.attachment_ops {
+                let Some(regions) = defined.get_mut(&resource) else {
+                    continue;
+                };
+                let range = ImageSubresourceRange::whole(aspects);
+                if ops.store == StoreOp::DontCare {
+                    *regions = regions
+                        .iter()
+                        .flat_map(|region| region.subtract(range))
+                        .collect();
+                } else if ops.load == LoadOp::Clear {
+                    regions.push(range);
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Compile the render graph into one internally consistent execution plan.
     pub fn compile(mut self) -> Result<ExecutionPlan, RenderGraphError> {
+        for pass in &self.passes {
+            for access in &pass.image_accesses {
+                validate_image_scope(&pass.name, access)?;
+            }
+        }
         self.analyze_dependencies();
 
         if let Some(cycle) = self.detect_cycle() {
@@ -693,6 +834,7 @@ impl GraphCompiler {
         let sorted_passes = self
             .topological_sort_live(&live_graph, &live_passes)
             .map_err(RenderGraphError::DependencyCycle)?;
+        self.validate_imported_attachment_contents(&sorted_passes)?;
         let (dag, parallel_groups) =
             self.build_execution_metadata(&live_graph, &sorted_passes, &live_passes);
         let culled_passes = live_passes
@@ -708,7 +850,15 @@ impl GraphCompiler {
             .filter(|(_, live)| **live)
             .flat_map(|(pass, _)| pass.image_accesses.iter().copied())
             .collect();
-        let sync = build_sync_plan(&self.passes, &sorted_passes, &self.imported_contracts);
+        let sync = build_sync_plan(
+            &self.passes,
+            &sorted_passes,
+            &dag,
+            &self.imported_contracts,
+            &self.external_image_accesses,
+            &self.external_buffer_accesses,
+            self.external_uploads_pending,
+        );
 
         Ok(ExecutionPlan {
             sorted_passes,
@@ -752,10 +902,12 @@ mod tests {
             .collect();
         PassInfo {
             name: name.to_string(),
+            operation: PassType::Graphics,
             reads,
             writes,
             image_accesses,
             buffer_accesses: Vec::new(),
+            attachment_ops: Vec::new(),
             side_effect: false,
         }
     }
@@ -786,6 +938,7 @@ mod tests {
     fn typed_pass(name: &str, accesses: Vec<ImageAccess>) -> PassInfo {
         PassInfo {
             name: name.to_string(),
+            operation: PassType::Graphics,
             reads: accesses
                 .iter()
                 .filter(|a| a.mode.reads())
@@ -802,6 +955,7 @@ mod tests {
                 .collect(),
             image_accesses: accesses,
             buffer_accesses: Vec::new(),
+            attachment_ops: Vec::new(),
             side_effect: false,
         }
     }
@@ -830,6 +984,7 @@ mod tests {
     fn buffer_pass(name: &str, accesses: Vec<BufferAccess>) -> PassInfo {
         PassInfo {
             name: name.to_string(),
+            operation: PassType::Graphics,
             reads: accesses
                 .iter()
                 .filter(|a| a.mode.reads())
@@ -846,6 +1001,7 @@ mod tests {
                 .collect(),
             image_accesses: Vec::new(),
             buffer_accesses: accesses,
+            attachment_ops: Vec::new(),
             side_effect: false,
         }
     }
@@ -1488,15 +1644,26 @@ mod tests {
         );
         assert_eq!(
             op(2),
-            &[ImageSyncOp {
-                resource: rid(0),
-                range: ImageSubresourceRange::WHOLE_COLOR,
-                before: sampled_read,
-                after: storage_write,
-                before_pass: Some(1),
-                pass: 2,
-                reason: SyncReason::Hazard(ResourceHazardKind::WriteAfterRead),
-            }]
+            &[
+                ImageSyncOp {
+                    resource: rid(0),
+                    range: ImageSubresourceRange::WHOLE_COLOR,
+                    before: sampled_read,
+                    after: storage_write,
+                    before_pass: Some(1),
+                    pass: 2,
+                    reason: SyncReason::Hazard(ResourceHazardKind::WriteAfterRead),
+                },
+                ImageSyncOp {
+                    resource: rid(0),
+                    range: ImageSubresourceRange::WHOLE_COLOR,
+                    before: storage_write,
+                    after: storage_write,
+                    before_pass: Some(0),
+                    pass: 2,
+                    reason: SyncReason::Hazard(ResourceHazardKind::WriteAfterWrite),
+                },
+            ]
         );
         assert_eq!(
             op(3),
@@ -1600,5 +1767,119 @@ mod tests {
         );
         assert_eq!(plan.sorted_passes, vec![2]);
         assert_eq!(plan.culled_passes, vec![0, 1]);
+    }
+    #[test]
+    fn test_undefined_import_load_requires_an_authored_producer_for_each_aspect() {
+        use crate::render_pass::{AttachmentOps, ClearValue};
+        for aspects in [
+            ImageAspects::COLOR,
+            ImageAspects::DEPTH,
+            ImageAspects::STENCIL,
+        ] {
+            let range = ImageSubresourceRange::whole(aspects);
+            let (usage, stage) = if aspects == ImageAspects::COLOR {
+                (
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
+                )
+            } else {
+                (
+                    ResourceAccessUsage::DepthStencilAttachment,
+                    ResourceAccessStage::DepthStencil,
+                )
+            };
+            let mut load = typed_pass(
+                "load",
+                vec![ImageAccess::new(
+                    rid(0),
+                    ResourceAccessMode::ReadWrite,
+                    usage,
+                    stage,
+                    range,
+                )],
+            );
+            load.attachment_ops
+                .push((rid(0), aspects, AttachmentOps::load()));
+            let mut compiler = GraphCompiler::new(vec![load.clone()]);
+            compiler
+                .imported_contracts
+                .insert(rid(0), ImportedImageContract::undefined());
+            assert!(matches!(
+                compiler.compile(),
+                Err(RenderGraphError::Validation(
+                    super::super::GraphValidationError::LoadingUninitializedImport {
+                        resource: 0,
+                        ..
+                    }
+                ))
+            ));
+            let mut clear = typed_pass(
+                "clear",
+                vec![ImageAccess::new(
+                    rid(0),
+                    ResourceAccessMode::Write,
+                    usage,
+                    stage,
+                    range,
+                )],
+            );
+            clear.attachment_ops.push((
+                rid(0),
+                aspects,
+                AttachmentOps::clear(if aspects == ImageAspects::COLOR {
+                    ClearValue::OPAQUE_BLACK
+                } else {
+                    ClearValue::DepthStencil {
+                        depth: 0.0,
+                        stencil: 0,
+                    }
+                }),
+            ));
+            let mut compiler = GraphCompiler::new(vec![clear, load.clone()]);
+            compiler
+                .imported_contracts
+                .insert(rid(0), ImportedImageContract::undefined());
+            assert!(compiler.compile().is_ok());
+            let mut compiler = GraphCompiler::new(vec![load]);
+            compiler.imported_contracts.insert(
+                rid(0),
+                ImportedImageContract::arrives_in(super::super::ResourceState::ShaderRead),
+            );
+            assert!(compiler.compile().is_ok());
+        }
+    }
+
+    #[test]
+    fn test_discarded_import_attachment_cannot_supply_a_later_load() {
+        use crate::render_pass::{AttachmentOps, ClearValue, StoreOp};
+        let mut clear = typed_pass(
+            "clear discarded",
+            vec![ImageAccess::color_attachment_write(rid(0))],
+        );
+        clear.attachment_ops.push((
+            rid(0),
+            ImageAspects::COLOR,
+            AttachmentOps {
+                store: StoreOp::DontCare,
+                ..AttachmentOps::clear(ClearValue::OPAQUE_BLACK)
+            },
+        ));
+        let mut load = typed_pass(
+            "load discarded",
+            vec![ImageAccess::color_attachment_read_write(rid(0))],
+        );
+        load.attachment_ops
+            .push((rid(0), ImageAspects::COLOR, AttachmentOps::load()));
+        let mut compiler = GraphCompiler::new(vec![clear, load]);
+        compiler.imported_contracts.insert(
+            rid(0),
+            ImportedImageContract::arrives_in(super::super::ResourceState::ShaderRead),
+        );
+        assert!(matches!(
+            compiler.compile(),
+            Err(RenderGraphError::Validation(
+                super::super::GraphValidationError::LoadingUninitializedImport { .. }
+            ))
+        ));
     }
 }

@@ -43,11 +43,6 @@ impl Frame<'_, VulkanRenderer> {
             extent,
         };
 
-        // Issue compute-to-graphics buffer barriers BEFORE entering dynamic rendering.
-        if let Some(ref ps) = self.renderer.particle_system {
-            ps.pre_render_barriers(cmd.vk_command_buffer(), frame_idx);
-        }
-
         cmd.begin_rendering(
             &color_attachments,
             depth_attachment.as_ref(),
@@ -110,64 +105,6 @@ impl Frame<'_, VulkanRenderer> {
 
         cmd.end_rendering();
 
-        Ok(())
-    }
-
-    /// Execute a compute pass (GPU compute work).
-    pub(super) fn execute_compute_pass(
-        &mut self,
-        cmd: &CommandBuffer,
-        pass: &PassDesc,
-        pipeline_handle: crate::handle::PipelineHandle,
-        dispatch: Option<(u32, u32, u32)>,
-    ) -> Result<(), RenderGraphError> {
-        let current_frame = self.current_frame();
-        log::debug!(
-            "[COMPUTE] Pass '{}' execution: frame_idx={}, pipeline={:?}",
-            pass.name,
-            current_frame,
-            pipeline_handle
-        );
-
-        if let Some(ref compute_fn) = pass.compute_fn {
-            return compute_fn(self, cmd, pipeline_handle);
-        }
-
-        let device = &self.renderer.context.device;
-        let compute_pipeline = self
-            .renderer
-            .asset_registry
-            .get_pipeline(pipeline_handle)
-            .ok_or_else(|| {
-                RenderGraphError::PipelineNotSet(format!(
-                    "Pipeline {:?} not found",
-                    pipeline_handle
-                ))
-            })?;
-
-        let vk_pipeline = compute_pipeline.vk_pipeline();
-
-        unsafe {
-            device.cmd_bind_pipeline(
-                cmd.vk_command_buffer(),
-                vk::PipelineBindPoint::COMPUTE,
-                vk_pipeline,
-            );
-        }
-
-        let (x, y, z) = dispatch.unwrap_or((64, 1, 1));
-
-        unsafe {
-            device.cmd_dispatch(cmd.vk_command_buffer(), x, y, z);
-        }
-
-        log::debug!(
-            "Compute pass '{}' dispatched ({}, {}, {})",
-            pass.name,
-            x,
-            y,
-            z
-        );
         Ok(())
     }
 }

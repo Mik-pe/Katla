@@ -120,7 +120,7 @@ impl GlobalParticleSystem {
                     total_simulate_count,
                     burst_count,
                     frame_index,
-                    _pad: 0,
+                    max_particles: self.max_particles,
                 };
 
                 log::debug!(
@@ -225,11 +225,10 @@ impl GlobalParticleSystem {
         }
     }
 
-    pub fn record_emit_dispatch(
+    pub fn bind_emit_kernel(
         &self,
         command_buffer: vk::CommandBuffer,
         asset_registry: &AssetRegistry,
-        emit_workgroups: u32,
         frame_index: usize,
     ) -> Result<(), RendererError> {
         let pipeline = self.pipelines.emit.ok_or("Emit pipeline not created")?;
@@ -242,57 +241,6 @@ impl GlobalParticleSystem {
         let vk_layout = compute_pipeline.vk_layout();
 
         let device = &self.context.device;
-
-        let prev_fi = (frame_index + 1) % 2;
-        let counters_buffer = self.buffer.counters_buffer(frame_index);
-        let prev_counters_buffer = self.buffer.counters_buffer(prev_fi);
-
-        let copy_regions = [
-            vk::BufferCopy {
-                src_offset: 0,
-                dst_offset: 8,
-                size: 4,
-            },
-            vk::BufferCopy {
-                src_offset: 4,
-                dst_offset: 4,
-                size: 4,
-            },
-        ];
-        unsafe {
-            device.cmd_copy_buffer(
-                command_buffer,
-                prev_counters_buffer,
-                counters_buffer,
-                &copy_regions,
-            );
-        }
-
-        let zero_bytes = 0u32.to_le_bytes();
-        unsafe {
-            device.cmd_update_buffer(command_buffer, counters_buffer, 0, &zero_bytes);
-        }
-
-        let fill_barrier = vk::BufferMemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-            .dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::SHADER_WRITE)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .buffer(counters_buffer)
-            .offset(0)
-            .size(std::mem::size_of::<ParticleCounters>() as u64);
-
-        unsafe {
-            device.cmd_pipeline_barrier(
-                command_buffer,
-                vk::PipelineStageFlags::TRANSFER,
-                vk::PipelineStageFlags::COMPUTE_SHADER,
-                vk::DependencyFlags::empty(),
-                &[],
-                std::slice::from_ref(&fill_barrier),
-                &[],
-            );
-        }
 
         unsafe {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
@@ -374,20 +322,13 @@ impl GlobalParticleSystem {
             }
         }
 
-        unsafe {
-            device.cmd_dispatch(command_buffer, emit_workgroups, 1, 1);
-        }
-
-        self.emit_to_simulate_barrier(command_buffer, frame_index)?;
-
         Ok(())
     }
 
-    pub fn record_simulate_dispatch(
+    pub fn bind_simulate_kernel(
         &self,
         command_buffer: vk::CommandBuffer,
         asset_registry: &AssetRegistry,
-        simulate_workgroups: u32,
         frame_index: usize,
     ) -> Result<(), RendererError> {
         let device = &self.context.device;
@@ -487,21 +428,17 @@ impl GlobalParticleSystem {
             }
         }
 
-        unsafe {
-            device.cmd_dispatch(command_buffer, simulate_workgroups, 1, 1);
-        }
-
         Ok(())
     }
 
-    /// Record a 1-workgroup dispatch that writes the indirect draw command.
+    /// Bind the finalization kernel for a native validation fixture.
     ///
-    /// This must be called AFTER `record_simulate_dispatch`. Uses push
+    /// This must be called AFTER `bind_simulate_kernel`. Uses push
     /// descriptors so bindings are recorded inline in the command buffer.
     /// A compute-to-compute barrier ensures the simulate's alive_count
     /// writes are visible before reading, and the draw command write is
     /// visible to subsequent compute reads (e.g. validation shader).
-    pub fn record_draw_command_dispatch(
+    pub fn bind_draw_command_kernel(
         &self,
         command_buffer: vk::CommandBuffer,
         asset_registry: &AssetRegistry,
@@ -521,37 +458,6 @@ impl GlobalParticleSystem {
 
         let vk_pipeline = compute_pipeline.vk_pipeline();
         let vk_layout = compute_pipeline.vk_layout();
-
-        // Barrier: simulate wrote counters (alive_count), draw command reads them
-        let counters_barrier = vk::BufferMemoryBarrier2::default()
-            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
-            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .buffer(self.buffer.counters_buffer(fi))
-            .offset(0)
-            .size(std::mem::size_of::<buffer::ParticleCounters>() as u64);
-
-        // Barrier: draw command will write indirect draw buffer
-        let indirect_draw_barrier = vk::BufferMemoryBarrier2::default()
-            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
-            .dst_access_mask(vk::AccessFlags2::SHADER_WRITE)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .buffer(self.buffer.indirect_draw_buffer(fi))
-            .offset(0)
-            .size(16);
-
-        let barriers = [counters_barrier, indirect_draw_barrier];
-        let dep_info = vk::DependencyInfo::default().buffer_memory_barriers(&barriers);
-
-        unsafe {
-            device.cmd_pipeline_barrier2(command_buffer, &dep_info);
-        }
 
         unsafe {
             device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::COMPUTE, vk_pipeline);
@@ -597,42 +503,6 @@ impl GlobalParticleSystem {
                 0,
                 &push_descriptor_writes,
             );
-        }
-
-        unsafe {
-            device.cmd_dispatch(command_buffer, 1, 1, 1);
-        }
-
-        // Barrier: make draw command write visible to subsequent compute reads
-        // (e.g. validation shader). The render pass handles its own
-        // COMPUTE→DRAW_INDIRECT transition.
-        let draw_read_barrier = vk::BufferMemoryBarrier2::default()
-            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
-            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .buffer(self.buffer.indirect_draw_buffer(fi))
-            .offset(0)
-            .size(16);
-
-        let particle_barrier = vk::BufferMemoryBarrier2::default()
-            .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
-            .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
-            .dst_access_mask(vk::AccessFlags2::SHADER_READ)
-            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-            .buffer(self.buffer.particle_buffer())
-            .offset(0)
-            .size(self.buffer.layout().total_size);
-
-        let post_barriers = [draw_read_barrier, particle_barrier];
-        let post_dep_info = vk::DependencyInfo::default().buffer_memory_barriers(&post_barriers);
-
-        unsafe {
-            device.cmd_pipeline_barrier2(command_buffer, &post_dep_info);
         }
 
         Ok(())

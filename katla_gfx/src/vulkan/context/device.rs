@@ -149,7 +149,7 @@ fn create_device_inner(
 
     let mut device_layers = vec![];
     if with_validation_layers {
-        device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
+        device_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr().cast::<std::ffi::c_char>());
     }
 
     let vk13_features = vk::PhysicalDeviceVulkan13Features {
@@ -405,7 +405,7 @@ fn create_instance_inner(
         }
         log::info!("VK_LAYER_KHRONOS_validation found, enabling validation layers");
         extension_names_raw.push(ash::ext::debug_utils::NAME.as_ptr());
-        instance_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr() as *const i8);
+        instance_layers.push(LAYER_KHRONOS_VALIDATION.as_ptr().cast::<std::ffi::c_char>());
     }
 
     let app_info = vk::ApplicationInfo::default()

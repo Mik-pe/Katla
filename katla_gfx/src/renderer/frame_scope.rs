@@ -6,7 +6,8 @@
 //! or an out-of-date surface that must be recreated. Every frame-local operation —
 //! uniforms, per-object data, lights, shadow cascades, graph execution — takes that
 //! token, so writes cannot be issued against a frame that was never acquired, has
-//! already been presented, or belongs to an abandoned acquisition.
+//! already been presented, or belongs to an abandoned acquisition. Successful
+//! rendering freezes frame-local writes; present commits the pending work once.
 //!
 //! `acquire_frame` waits until the returned slot's previous submission has completed
 //! before handing out the token, so frame-local writes can never race a slot still

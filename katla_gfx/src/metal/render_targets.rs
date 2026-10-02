@@ -31,9 +31,5 @@ impl MetalRenderer {
                 self.depth_stencil_view = Some(view);
             }
         }
-
-        if let Err(e) = self.picking.resize(&self.context, width, height) {
-            log::warn!("Failed to resize picking object-ID texture: {}", e);
-        }
     }
 }

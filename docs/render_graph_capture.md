@@ -59,8 +59,9 @@ finishes on its own; headless mode decides its own frame count (`-s` runs the
 where the frame is rendered, not the graph.
 
 The dump is backend-neutral text, so the same command records the same graph on
-Vulkan (Linux) and Metal (macOS). Backend-only fields such as Metal residency or
-argument-table identity are not part of the export yet — see issue
+Vulkan (Linux) and Metal (macOS). Native Metal argument-table layouts, residency membership and commit feedback
+are available in submission diagnostics. Their integration into this portable
+export remains on issue
 [#37](https://github.com/Mik-pe/Katla/issues/37).
 
 ## Comparing two captures
@@ -162,11 +163,12 @@ pass. Fullscreen inputs and parameters belong to each compiled pass record.
 
 Tracked on [#37](https://github.com/Mik-pe/Katla/issues/37):
 
-- Metal argument-table layout, residency-set membership, and commit-feedback
-  identity.
-- Frame-slot ownership on transient allocations.
+- Integrating native Metal argument-table layout, residency membership and commit
+  feedback into the portable capture bundle.
+- Extending the existing per-slot native allocation records with complete
+  submission ownership and queue identities.
 - Encoder-internal sub-pass detail (compute and blit encoder boundaries are
   recorded as pass-level entries, not per-instruction).
 
-These fields need the backend stages that produce them; the export deliberately
-does not invent them.
+Native diagnostics and compiler records provide the underlying data. The full
+capture bundle must join them with exact submission identities.

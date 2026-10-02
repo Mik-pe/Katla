@@ -1,7 +1,5 @@
 // Shared particle types and constants (must match Rust side).
 
-const MAX_PARTICLES: u32 = 1048576u; // 1M particles
-
 // Particle data structure (must match ParticleData in buffer.rs)
 // WGSL struct size is padded to multiple of 16 (vec3f alignment).
 struct ParticleData {
@@ -25,7 +23,7 @@ struct FrameData {
     total_simulate_count: u32,
     burst_count: u32,
     frame_index: u32,
-    _pad: u32,
+    max_particles: u32,
 }
 
 // Atomic counters for particle management
@@ -67,7 +65,6 @@ struct EmitterConfig {
     _pad2_2: f32,
 }
 
-const MAX_EMITTERS: u32 = 1024u;
 
 // Emitter shape enumeration
 const EMITTER_SHAPE_POINT: u32 = 0u;

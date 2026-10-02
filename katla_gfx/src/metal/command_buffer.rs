@@ -1,11 +1,11 @@
 use std::ptr::NonNull;
-use std::sync::OnceLock;
 
 use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
-    MTLCommandBuffer, MTLCommandBufferStatus, MTLCommandEncoder, MTLRenderPassDescriptor,
+    MTL4CommandAllocator, MTL4CommandBuffer, MTL4CommandEncoder, MTL4CommandQueue,
+    MTL4CommitFeedback, MTL4CommitOptions, MTL4RenderPassDescriptor,
 };
 
 use crate::backend::command::*;
@@ -21,14 +21,17 @@ use super::render_encoder::MetalRenderEncoder;
 use super::texture::MetalTexture;
 
 pub(crate) struct MetalCommandBuffer {
-    pub(crate) inner: Retained<ProtocolObject<dyn MTLCommandBuffer>>,
+    pub(crate) inner: Retained<ProtocolObject<dyn MTL4CommandBuffer>>,
+    pub(crate) allocator: Retained<ProtocolObject<dyn MTL4CommandAllocator>>,
+    pub(crate) completion: super::submission::SubmissionCompletion,
+    pub(crate) resources: std::rc::Rc<super::encoding_resources::EncodingResources>,
 }
 
 impl MetalCommandBuffer {
     pub(crate) fn render_pass_descriptor(
         desc: &RenderPassInfo<MetalBackend>,
-    ) -> Retained<MTLRenderPassDescriptor> {
-        let pass_desc = MTLRenderPassDescriptor::new();
+    ) -> Retained<MTL4RenderPassDescriptor> {
+        let pass_desc = MTL4RenderPassDescriptor::new();
 
         for (i, attachment) in desc.color_attachments.iter().enumerate() {
             let color_desc = unsafe { pass_desc.colorAttachments().objectAtIndexedSubscript(i) };
@@ -78,93 +81,70 @@ impl MetalCommandBuffer {
 
         pass_desc
     }
-
-    fn log_gpu_error(cmd_buffer: &ProtocolObject<dyn MTLCommandBuffer>) {
-        let status = cmd_buffer.status();
-        if status != MTLCommandBufferStatus::Error {
-            return;
-        }
-
-        let label = cmd_buffer
-            .label()
-            .map(|l| l.to_string())
-            .unwrap_or_default();
-
-        let Some(error) = cmd_buffer.error() else {
-            log::error!(
-                "Metal command buffer '{}' failed with Error status but no NSError",
-                label
-            );
-            return;
-        };
-
-        match super::diagnostics::GpuCommandBufferDiagnostics::from_error(&label, &error) {
-            Some(diagnostics) => {
-                log::error!("Metal GPU failure: {}", diagnostics.render());
-                if let Some(faulted) = diagnostics.faulted_encoder() {
-                    log::error!(
-                        "First faulted encoder: '{}' (signposts: {})",
-                        faulted.label,
-                        if faulted.debug_signposts.is_empty() {
-                            "none".to_owned()
-                        } else {
-                            faulted.debug_signposts.join(",")
-                        }
-                    );
-                }
-            }
-            None => log::error!(
-                "Metal command buffer '{}' failed without diagnostics",
-                label
-            ),
-        }
-    }
 }
 
 impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
-    fn begin(&mut self) {}
+    fn begin(&mut self) {
+        self.inner.beginCommandBufferWithAllocator(&self.allocator);
+        self.inner
+            .useResidencySet(self.resources.residency.native());
+    }
 
-    fn end(&mut self) {}
+    fn end(&mut self) {
+        self.inner.endCommandBuffer();
+    }
 
-    fn submit(&self, _context: &<MetalBackend as GpuBackend>::Context) {
-        // The completion block captures nothing, so a single process-lifetime
-        // instance is immutable and safe to register from any thread; Metal
-        // retains it per command buffer. Allocating a fresh block per submit
-        // would hand Metal one unbalanced Rc refcount per frame.
-        // Data audit (issue #57): the handler runs on an arbitrary
-        // Metal-managed thread. It receives only the ObjC-owned command-buffer
-        // reference, reads its status/error, and logs — no captured Rust state,
-        // no surface/layer mutation, nothing non-Send crosses the boundary.
-        // Readback paths (picking) use synchronous waitUntilCompleted instead
-        // of completion handlers.
-        type CompletionBlock = RcBlock<dyn Fn(NonNull<ProtocolObject<dyn MTLCommandBuffer>>)>;
-        #[allow(clippy::type_complexity)]
-        type RawCompletionBlock =
-            *mut block2::DynBlock<dyn Fn(NonNull<ProtocolObject<dyn MTLCommandBuffer>>)>;
-        struct SharedBlock(RawCompletionBlock);
-        // SAFETY: the wrapped pointer owns a capture-free Block: immutable after
-        // creation, invocation thread-safe (Block ABI), never freed (leaked by
-        // design so the single instance can be registered on every submit).
-        unsafe impl Send for SharedBlock {}
-        unsafe impl Sync for SharedBlock {}
-        static COMPLETION: OnceLock<SharedBlock> = OnceLock::new();
-        let SharedBlock(block_ptr) = COMPLETION.get_or_init(|| {
-            #[allow(clippy::type_complexity)]
-            let block: CompletionBlock = RcBlock::new(
-                |cmd_buffer: NonNull<ProtocolObject<dyn MTLCommandBuffer>>| {
-                    let cmd_buffer = unsafe { cmd_buffer.as_ref() };
-                    Self::log_gpu_error(cmd_buffer);
-                },
-            );
-            SharedBlock(RcBlock::into_raw(block))
-        });
-        unsafe {
-            self.inner.addCompletedHandler(*block_ptr);
+    fn submit(&self, context: &<MetalBackend as GpuBackend>::Context) {
+        if let Err(error) = self.resources.check() {
+            log::error!("Metal encoding rejected: {error}");
+            return;
         }
-        self.inner.commit();
+        assert!(
+            self.completion.mark_submitted(),
+            "command buffer may only be submitted once"
+        );
+        self.resources.residency.commit();
+        let completion = self.completion.clone();
+        let feedback = RcBlock::new(
+            move |native: NonNull<ProtocolObject<dyn MTL4CommitFeedback>>| {
+                let native = unsafe { native.as_ref() };
+                let error = native
+                    .error()
+                    .as_ref()
+                    .map(|error| super::submission::CommitError::from_native(error));
+                if let Some(error) = &error {
+                    log::error!("Metal4 submission failed: {error:?}");
+                }
+                completion.finish(super::submission::CommitFeedback {
+                    gpu_start: native.GPUStartTime(),
+                    gpu_end: native.GPUEndTime(),
+                    error,
+                });
+            },
+        );
+        let options = MTL4CommitOptions::new();
+        let mut buffers = [NonNull::from(&*self.inner)];
+        unsafe {
+            options.addFeedbackHandler(RcBlock::as_ptr(&feedback));
+            context
+                .command_queue
+                .commit_count_options(NonNull::from(&mut buffers[0]), 1, &options);
+        }
     }
 
     fn begin_render_pass(&mut self, desc: RenderPassInfo<MetalBackend>) -> MetalRenderEncoder {
+        for attachment in &desc.color_attachments {
+            self.resources
+                .residency
+                .add_texture(&attachment.view.inner)
+                .expect("Metal attachment residency");
+        }
+        if let Some(attachment) = &desc.depth_attachment {
+            self.resources
+                .residency
+                .add_texture(&attachment.view.inner)
+                .expect("Metal depth residency");
+        }
         let pass_desc = Self::render_pass_descriptor(&desc);
 
         let encoder = self
@@ -174,7 +154,7 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
         if let Some(label) = desc.debug_label {
             encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
         }
-        MetalRenderEncoder::new(encoder)
+        MetalRenderEncoder::new(encoder, self.resources.clone())
     }
 
     fn begin_compute_pass_with_label(&mut self, label: &'static str) -> MetalComputeEncoder {
@@ -183,16 +163,16 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
             .computeCommandEncoder()
             .expect("Failed to create compute encoder");
         encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
-        MetalComputeEncoder::new(encoder)
+        MetalComputeEncoder::new(encoder, self.resources.clone())
     }
 
     fn begin_blit_pass_with_label(&mut self, label: &'static str) -> MetalBlitEncoder {
         let encoder = self
             .inner
-            .blitCommandEncoder()
+            .computeCommandEncoder()
             .expect("Failed to create blit encoder");
         encoder.setLabel(Some(&objc2_foundation::NSString::from_str(label)));
-        MetalBlitEncoder::new(encoder)
+        MetalBlitEncoder::new(encoder, self.resources.clone())
     }
 
     fn begin_compute_pass(&mut self) -> MetalComputeEncoder {
@@ -200,15 +180,15 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
             .inner
             .computeCommandEncoder()
             .expect("Failed to create compute encoder");
-        MetalComputeEncoder::new(encoder)
+        MetalComputeEncoder::new(encoder, self.resources.clone())
     }
 
     fn begin_blit_pass(&mut self) -> MetalBlitEncoder {
         let encoder = self
             .inner
-            .blitCommandEncoder()
+            .computeCommandEncoder()
             .expect("Failed to create blit encoder");
-        MetalBlitEncoder::new(encoder)
+        MetalBlitEncoder::new(encoder, self.resources.clone())
     }
 
     fn copy_buffer_to_texture(
@@ -219,17 +199,34 @@ impl GpuCommandBuffer<MetalBackend> for MetalCommandBuffer {
     ) {
         let encoder = self
             .inner
-            .blitCommandEncoder()
+            .computeCommandEncoder()
             .expect("Failed to create blit encoder for copy");
 
-        let mut blit = super::blit_encoder::MetalBlitEncoder::new(encoder);
+        let mut blit = super::blit_encoder::MetalBlitEncoder::new(encoder, self.resources.clone());
         blit.copy_buffer_to_texture(src, dst, regions);
         blit.inner.endEncoding();
     }
 }
 
-unsafe impl Send for MetalCommandBuffer {}
-unsafe impl Sync for MetalCommandBuffer {}
+impl MetalCommandBuffer {
+    pub(crate) fn wait_until_completed(
+        &self,
+    ) -> Result<super::submission::CommitFeedback, crate::error::RendererError> {
+        let label = self
+            .inner
+            .label()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        self.resources.check()?;
+        self.completion.result(&label)
+    }
+}
+
+impl Drop for MetalCommandBuffer {
+    fn drop(&mut self) {
+        self.completion.wait();
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -247,7 +244,7 @@ mod tests {
         cmd_buffer.begin();
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
-        cmd_buffer.inner.waitUntilCompleted();
+        cmd_buffer.wait_until_completed().unwrap();
     }
 
     #[test]
@@ -277,13 +274,11 @@ mod tests {
 
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
-        cmd_buffer.inner.waitUntilCompleted();
+        cmd_buffer.wait_until_completed().unwrap();
     }
 
     #[test]
     fn test_compute_dispatch() {
-        use objc2_metal::MTLDevice;
-
         let ctx = headless_context();
 
         let buffer = ctx.create_buffer(256, true).unwrap();
@@ -306,14 +301,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
         .unwrap();
 
         let cs = shader.module.entry_points.get("cs_main").unwrap();
-        let pipeline_state = ctx
-            .device
-            .newComputePipelineStateWithFunction_error(cs)
-            .expect("Failed to create compute pipeline state");
-        let pipeline = super::super::pipeline::MetalComputePipeline {
-            pipeline_state,
-            workgroup: [64, 1, 1],
-        };
+        let pipeline = ctx.create_compute_pipeline(cs, [64, 1, 1]).unwrap();
 
         let mut cmd_buffer = ctx.create_command_buffer();
         cmd_buffer.begin();
@@ -326,7 +314,7 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
 
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
-        cmd_buffer.inner.waitUntilCompleted();
+        cmd_buffer.wait_until_completed().unwrap();
     }
 
     #[test]
@@ -345,6 +333,6 @@ fn cs_main(@builtin(global_invocation_id) gid: vec3u) {
 
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
-        cmd_buffer.inner.waitUntilCompleted();
+        cmd_buffer.wait_until_completed().unwrap();
     }
 }

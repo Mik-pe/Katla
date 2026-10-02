@@ -6,7 +6,7 @@
 
 use std::rc::Rc;
 
-use super::backend::RenderGraphBackend;
+use super::backend::{NativeTransientAllocation, RenderGraphBackend, TransientSlotPolicy};
 use super::error::RenderGraphError;
 use super::resource::{
     BufferDesc, BufferMemoryPolicy, BufferUsages, GraphResourceDesc, GraphResourceType,
@@ -15,6 +15,7 @@ use super::transient_buffer::VulkanGraphBuffer;
 use super::transient_texture::{TransientTexture, VkSlotMemory};
 use crate::renderer::VulkanRenderer;
 use ash::vk;
+use ash::vk::Handle;
 
 impl RenderGraphBackend for VulkanRenderer {
     type TransientTexture = TransientTexture;
@@ -24,11 +25,44 @@ impl RenderGraphBackend for VulkanRenderer {
     fn create_transient_slot(
         &self,
         members: &[GraphResourceDesc],
+        policy: TransientSlotPolicy,
     ) -> Result<Vec<Self::TransientTexture>, RenderGraphError> {
         if let [single] = members {
-            return Ok(vec![create_standalone_transient_texture(self, single)?]);
+            return Ok(vec![create_standalone_transient_texture(
+                self, single, policy,
+            )?]);
         }
-        create_aliased_transient_textures(self, members)
+        create_aliased_transient_textures(self, members, policy)
+    }
+
+    fn transient_allocation_info(
+        texture: &Self::TransientTexture,
+    ) -> Option<NativeTransientAllocation> {
+        use ash::vk::Handle;
+        if let Some(memory) = texture.slot_memory() {
+            Some(NativeTransientAllocation {
+                identity: memory.memory().as_raw(),
+                offset: 0,
+                bytes: memory.bytes(),
+                logical_bytes: memory.bytes(),
+                strategy: if memory.lazily_allocated() {
+                    "vulkan_lazy_alias"
+                } else {
+                    "vulkan_memory_alias"
+                },
+            })
+        } else {
+            texture
+                .allocation
+                .as_ref()
+                .map(|allocation| NativeTransientAllocation {
+                    identity: unsafe { allocation.memory() }.as_raw(),
+                    offset: allocation.offset(),
+                    bytes: allocation.size(),
+                    logical_bytes: allocation.size(),
+                    strategy: "vulkan_standalone",
+                })
+        }
     }
 
     fn create_transient_buffer(
@@ -81,6 +115,111 @@ impl RenderGraphBackend for VulkanRenderer {
         self.graph_buffers.get(handle)
     }
 
+    fn builtin_buffer(&self, role: super::compute::BuiltinBuffer) -> Option<Self::TransientBuffer> {
+        use super::compute::BuiltinBuffer::*;
+        let (buffer, size) = match role {
+            AnimationParams | AnimationClips | AnimationChannels | AnimationTimes
+            | AnimationValues | AnimationJoints | AnimationWorld | AnimationOutput => {
+                self.animation_buffers.as_ref()?.graph_buffer(role)?
+            }
+            Skeleton(handle) => {
+                let skeleton = self.skeleton_buffers.get(handle)?;
+                (self.skeleton_buffer_handle(handle)?, skeleton.size())
+            }
+            LightData | LightTiles | LightHeaders | LightFrame => {
+                self.light_culling_buffers()?.graph_buffer(role)?
+            }
+            ParticleData
+            | ParticleDeadList
+            | ParticleAliveRead
+            | ParticleAliveWrite
+            | ParticleCounters
+            | ParticlePreviousCounters
+            | ParticleIndirect
+            | ParticleFrame
+            | ParticleEmitters => self
+                .particle_system
+                .as_ref()?
+                .graph_buffer(role, self.current_frame())?,
+        };
+        let usage = match role {
+            LightFrame | ParticleFrame => BufferUsages::UNIFORM,
+            Skeleton(_) => BufferUsages::STORAGE | BufferUsages::TRANSFER_DESTINATION,
+            ParticleIndirect => {
+                BufferUsages::STORAGE
+                    | BufferUsages::INDIRECT
+                    | BufferUsages::TRANSFER_DESTINATION
+                    | BufferUsages::TRANSFER_SOURCE
+            }
+            _ => {
+                BufferUsages::STORAGE
+                    | BufferUsages::TRANSFER_SOURCE
+                    | BufferUsages::TRANSFER_DESTINATION
+            }
+        };
+        Some(VulkanGraphBuffer::borrowed(
+            self.context.clone(),
+            buffer,
+            match role {
+                AnimationParams | AnimationWorld | AnimationOutput => {
+                    self.animation_buffers.as_ref()?.graph_buffer_offset(role)
+                }
+                LightData | LightTiles | LightHeaders | LightFrame => {
+                    self.light_culling_buffers()?.graph_buffer_offset(role)
+                }
+                _ => self
+                    .particle_system
+                    .as_ref()
+                    .and_then(|system| system.graph_buffer_offset(role, self.current_frame()))
+                    .unwrap_or(0),
+            },
+            BufferDesc::new(size, usage, BufferMemoryPolicy::DeviceLocal),
+        ))
+    }
+
+    fn buffer_offset(buffer: &Self::TransientBuffer) -> u64 {
+        buffer.offset
+    }
+
+    fn graph_buffer_previous_accesses(
+        &self,
+        buffer: &Self::TransientBuffer,
+    ) -> Vec<super::BufferAccess> {
+        self.context.graph_buffer_history.borrow().previous(
+            buffer.buffer.as_raw(),
+            buffer.offset,
+            buffer.size(),
+        )
+    }
+
+    fn record_graph_buffer_accesses(
+        &self,
+        buffer: &Self::TransientBuffer,
+        accesses: &[super::BufferAccess],
+    ) {
+        self.context.graph_buffer_history.borrow_mut().record(
+            buffer.buffer.as_raw(),
+            buffer.offset,
+            accesses,
+        );
+    }
+
+    fn prepare_compute_pipeline(
+        &mut self,
+        descriptor: &super::compute::ComputePipelineDesc,
+    ) -> Result<(), RenderGraphError> {
+        if self.graph_compute_pipelines.contains_key(descriptor) {
+            return Ok(());
+        }
+        let pipeline = super::vulkan_compute::VulkanGraphComputePipeline::new(
+            self.context.clone(),
+            descriptor,
+        )?;
+        self.graph_compute_pipelines
+            .insert(descriptor.clone(), pipeline);
+        Ok(())
+    }
+
     fn current_frame(&self) -> usize {
         VulkanRenderer::current_frame(self)
     }
@@ -118,7 +257,10 @@ impl RenderGraphBackend for VulkanRenderer {
     }
 
     fn transient_texture_is_depth(texture: &Self::TransientTexture) -> bool {
-        texture.format == vk::Format::D32_SFLOAT
+        matches!(
+            texture.format,
+            vk::Format::D32_SFLOAT | vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT
+        )
     }
 
     fn transient_texture_bindless_slot(texture: &Self::TransientTexture) -> Option<u32> {
@@ -173,17 +315,16 @@ pub(crate) fn vk_buffer_usages(usages: BufferUsages) -> vk::BufferUsageFlags {
     flags
 }
 
-/// Whether a resource's contents are only ever attachment data within a
-/// render pass. Such resources may back onto lazily allocated memory,
-/// which tile-based architectures can keep entirely in tile memory.
-fn is_attachment_only(desc: &GraphResourceDesc) -> bool {
-    match desc.resource_type {
-        GraphResourceType::DepthAttachment { sampled, .. } => !sampled,
-        GraphResourceType::ColorAttachment { .. } | GraphResourceType::SampledImage => false,
+fn transient_image_usage(desc: &GraphResourceDesc, tile_local: bool) -> vk::ImageUsageFlags {
+    if tile_local {
+        return vk::ImageUsageFlags::TRANSIENT_ATTACHMENT
+            | match desc.resource_type {
+                GraphResourceType::DepthAttachment { .. } => {
+                    vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                }
+                _ => vk::ImageUsageFlags::COLOR_ATTACHMENT,
+            };
     }
-}
-
-fn transient_image_usage(desc: &GraphResourceDesc) -> vk::ImageUsageFlags {
     match desc.resource_type {
         GraphResourceType::ColorAttachment { .. } => {
             vk::ImageUsageFlags::COLOR_ATTACHMENT
@@ -197,9 +338,6 @@ fn transient_image_usage(desc: &GraphResourceDesc) -> vk::ImageUsageFlags {
             let mut usage = vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
             if sampled {
                 usage |= vk::ImageUsageFlags::SAMPLED;
-            } else {
-                // Attachment-only depth may live in lazily allocated memory.
-                usage |= vk::ImageUsageFlags::TRANSIENT_ATTACHMENT;
             }
             usage
         }
@@ -209,7 +347,10 @@ fn transient_image_usage(desc: &GraphResourceDesc) -> vk::ImageUsageFlags {
     }
 }
 
-fn transient_image_create_info(desc: &GraphResourceDesc) -> vk::ImageCreateInfo<'static> {
+fn transient_image_create_info(
+    desc: &GraphResourceDesc,
+    policy: TransientSlotPolicy,
+) -> vk::ImageCreateInfo<'static> {
     vk::ImageCreateInfo::default()
         .image_type(vk::ImageType::TYPE_2D)
         .extent(vk::Extent3D {
@@ -223,7 +364,19 @@ fn transient_image_create_info(desc: &GraphResourceDesc) -> vk::ImageCreateInfo<
         .tiling(vk::ImageTiling::OPTIMAL)
         .initial_layout(vk::ImageLayout::UNDEFINED)
         .samples(vk::SampleCountFlags::TYPE_1)
-        .usage(transient_image_usage(desc))
+        .usage(
+            transient_image_usage(desc, policy.memoryless)
+                | if policy.storage {
+                    vk::ImageUsageFlags::STORAGE
+                } else {
+                    vk::ImageUsageFlags::empty()
+                }
+                | if policy.transfer_destination {
+                    vk::ImageUsageFlags::TRANSFER_DST
+                } else {
+                    vk::ImageUsageFlags::empty()
+                },
+        )
         .sharing_mode(vk::SharingMode::EXCLUSIVE)
 }
 
@@ -232,7 +385,15 @@ fn transient_aspect(desc: &GraphResourceDesc) -> vk::ImageAspectFlags {
         desc.resource_type,
         GraphResourceType::DepthAttachment { .. }
     ) {
-        vk::ImageAspectFlags::DEPTH
+        if matches!(
+            desc.format,
+            crate::texture::ImageFormat::D32SfloatS8Uint
+                | crate::texture::ImageFormat::D24UnormS8Uint
+        ) {
+            vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
+        } else {
+            vk::ImageAspectFlags::DEPTH
+        }
     } else {
         vk::ImageAspectFlags::COLOR
     }
@@ -270,16 +431,29 @@ fn create_transient_image_view(
 fn create_standalone_transient_texture(
     backend: &VulkanRenderer,
     desc: &GraphResourceDesc,
+    policy: TransientSlotPolicy,
 ) -> Result<TransientTexture, RenderGraphError> {
     let (image, allocation) = backend
         .context
         .create_image(
-            transient_image_create_info(desc),
+            transient_image_create_info(desc, policy),
             gpu_allocator::MemoryLocation::GpuOnly,
         )
         .map_err(|_e| RenderGraphError::AllocationFailed(0))?;
 
-    let image_view = create_transient_image_view(backend, image, desc)?;
+    let image_view = match create_transient_image_view(backend, image, desc) {
+        Ok(view) => view,
+        Err(error) => {
+            unsafe {
+                backend.context.device.destroy_image(image, None);
+            }
+            backend
+                .context
+                .allocator
+                .free(allocation, "failed transient texture");
+            return Err(error);
+        }
+    };
 
     Ok(TransientTexture::new(
         backend.context.clone(),
@@ -342,12 +516,13 @@ fn select_slot_memory_type(
 fn create_aliased_transient_textures(
     backend: &VulkanRenderer,
     members: &[GraphResourceDesc],
+    policy: TransientSlotPolicy,
 ) -> Result<Vec<TransientTexture>, RenderGraphError> {
     let device = &backend.context.device;
 
     let mut images = Vec::with_capacity(members.len());
     for desc in members {
-        let info = transient_image_create_info(desc).flags(vk::ImageCreateFlags::ALIAS);
+        let info = transient_image_create_info(desc, policy).flags(vk::ImageCreateFlags::ALIAS);
         match unsafe { device.create_image(&info, None) } {
             Ok(image) => images.push(image),
             Err(_e) => {
@@ -359,10 +534,34 @@ fn create_aliased_transient_textures(
         }
     }
 
+    let mut requires_dedicated = false;
     let requirements = images
         .iter()
-        .map(|&image| unsafe { device.get_image_memory_requirements(image) })
+        .map(|&image| {
+            let mut dedicated = vk::MemoryDedicatedRequirements::default();
+            let mut requirements = vk::MemoryRequirements2::default().push_next(&mut dedicated);
+            unsafe {
+                device.get_image_memory_requirements2(
+                    &vk::ImageMemoryRequirementsInfo2::default().image(image),
+                    &mut requirements,
+                );
+            }
+            let memory_requirements = requirements.memory_requirements;
+            requires_dedicated |= dedicated.requires_dedicated_allocation == vk::TRUE;
+            memory_requirements
+        })
         .collect::<Vec<_>>();
+    if requires_dedicated {
+        for image in images {
+            unsafe {
+                device.destroy_image(image, None);
+            }
+        }
+        return members
+            .iter()
+            .map(|desc| create_standalone_transient_texture(backend, desc, policy))
+            .collect();
+    }
     let bytes = requirements
         .iter()
         .map(|requirements| requirements.size)
@@ -378,9 +577,20 @@ fn create_aliased_transient_textures(
             .instance
             .get_physical_device_memory_properties(backend.context.physical_device)
     };
-    let attachment_only = members.iter().all(is_attachment_only);
-    let memory_type_index = select_slot_memory_type(&memory_properties, type_bits, attachment_only)
-        .ok_or(RenderGraphError::AllocationFailed(bytes as usize))?;
+    let attachment_only = policy.memoryless;
+    let Some(memory_type_index) =
+        select_slot_memory_type(&memory_properties, type_bits, attachment_only)
+    else {
+        for image in &images {
+            unsafe {
+                device.destroy_image(*image, None);
+            }
+        }
+        return members
+            .iter()
+            .map(|desc| create_standalone_transient_texture(backend, desc, policy))
+            .collect();
+    };
 
     let memory = match unsafe {
         device.allocate_memory(
@@ -407,6 +617,8 @@ fn create_aliased_transient_textures(
         memory,
         bytes,
         attachment_only && lazily_allocated,
+        policy.frame_slot,
+        policy.allocation_slot,
     ));
 
     let mut textures = Vec::with_capacity(members.len());
@@ -420,7 +632,17 @@ fn create_aliased_transient_textures(
             )));
         }
 
-        let image_view = create_transient_image_view(backend, image, desc)?;
+        let image_view = match create_transient_image_view(backend, image, desc) {
+            Ok(view) => view,
+            Err(error) => {
+                for remaining in &images[textures.len()..] {
+                    unsafe {
+                        device.destroy_image(*remaining, None);
+                    }
+                }
+                return Err(error);
+            }
+        };
         let mut texture = TransientTexture::new(
             backend.context.clone(),
             image,
@@ -434,7 +656,7 @@ fn create_aliased_transient_textures(
         );
         texture.set_slot_memory(slot_memory.clone());
         log::debug!(
-            "Aliased '{}' into a {} KiB {} slot allocation",
+            "Aliased '{}' into a {} KiB {} slot allocation (frame {}, slot {})",
             desc.name,
             texture.slot_memory().map(VkSlotMemory::bytes).unwrap_or(0) / 1024,
             if texture
@@ -444,7 +666,9 @@ fn create_aliased_transient_textures(
                 "lazily allocated"
             } else {
                 "device-local"
-            }
+            },
+            slot_memory.frame_slot(),
+            slot_memory.allocation_slot(),
         );
         textures.push(texture);
     }

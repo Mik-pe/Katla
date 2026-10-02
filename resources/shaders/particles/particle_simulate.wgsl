@@ -18,19 +18,19 @@
 
 // Global resources (Set 0: static buffers)
 @group(0) @binding(0)
-var<storage, read_write> particles: array<ParticleData, MAX_PARTICLES>;
+var<storage, read_write> particles: array<ParticleData>;
 
 @group(0) @binding(1)
-var<storage, read_write> dead_list: array<u32, MAX_PARTICLES>;
+var<storage, read_write> dead_list: array<u32>;
 
 // Alive list (read) - contains particles to simulate (emitted + survivors)
 @group(0) @binding(2)
-var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
+var<storage, read> alive_list: array<u32>;
 
 // Alive list next (write) - surviving particles written here.
 // On the CPU side, binding 3 is pointed at alive[(frame+1)%2] via descriptor update.
 @group(0) @binding(3)
-var<storage, read_write> alive_list_next: array<u32, MAX_PARTICLES>;
+var<storage, read_write> alive_list_next: array<u32>;
 
 @group(0) @binding(4)
 var<storage, read_write> counters: ParticleCounters;
@@ -41,7 +41,7 @@ var<uniform> frame_data: FrameData;
 
 // Per-emitter configurations (Set 1: updated via push descriptors)
 @group(1) @binding(1)
-var<storage, read> emitters: array<EmitterConfig, MAX_EMITTERS>;
+var<storage, read> emitters: array<EmitterConfig>;
 
 fn simulate_particle(particle: ptr<function, ParticleData>, delta_time: f32) {
     let emitter = emitters[(*particle).emitter_index];
@@ -98,27 +98,34 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     //   - When emit was skipped: emit_count = cached_alive_count (set by reset_simulate_counters)
     // This prevents processing stale alive_list entries when the dead pool is exhausted
     // and fewer particles were emitted than requested.
-    let total_particles = counters.emit_count;
+    let capacity = min(frame_data.max_particles, arrayLength(&particles));
+    let total_particles = min(counters.emit_count, min(frame_data.max_particles, arrayLength(&alive_list)));
 
     if (idx < total_particles) {
         let particle_idx = alive_list[idx];
 
-        if (particle_idx < MAX_PARTICLES) {
+        if (particle_idx < capacity) {
             var particle = particles[particle_idx];
 
-            simulate_particle(&particle, frame_data.delta_time);
+            if (particle.emitter_index < arrayLength(&emitters)) {
+                simulate_particle(&particle, frame_data.delta_time);
+            } else {
+                particle.lifetime = 0.0;
+            }
 
             if (particle.lifetime > 0.0) {
                 particles[particle_idx] = particle;
 
                 let survivor_slot = atomicAdd(&counters.alive_count, 1u);
 
-                if (survivor_slot < MAX_PARTICLES) {
+                if (survivor_slot < min(capacity, arrayLength(&alive_list_next))) {
                     alive_list_next[survivor_slot] = particle_idx;
+                } else {
+                    atomicSub(&counters.alive_count, 1u);
                 }
             } else {
                 let dead_slot = atomicAdd(&counters.dead_count, 1u);
-                if (dead_slot < MAX_PARTICLES) {
+                if (dead_slot < min(capacity, arrayLength(&dead_list))) {
                     dead_list[dead_slot] = particle_idx;
                 } else {
                     atomicSub(&counters.dead_count, 1u);

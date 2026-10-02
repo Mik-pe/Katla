@@ -21,21 +21,32 @@ serde_json = { workspace = true }
 log = { workspace = true }
 bitflags = { workspace = true }
 smallvec = "1"
+sha2 = "0.10"
 itertools = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
+mach2 = "0.5"
 objc2 = { version = "0.6", features = ["exception"] }
-objc2-metal = { version = "0.3", features = [
-    "MTLDevice", "MTLCommandQueue", "MTLCommandBuffer",
-    "MTLCommandEncoder", "MTLRenderCommandEncoder", "MTLComputeCommandEncoder", "MTLBlitCommandEncoder",
+objc2-metal = { version = "0.3", default-features = false, features = [
+    "std", "block2", "objc2-core-foundation", "MTLTypes", "MTL4BufferRange",
+    "MTLRenderCommandEncoder", "MTL4Counters",
+    "MTLDevice",
+    "MTLCommandEncoder",
     "MTLTexture", "MTLBuffer", "MTLSampler", "MTLPipeline",
-    "MTLArgumentEncoder", "MTLFence", "MTLEvent", "MTLHeap",
-    "MTLBinaryArchive", "MTLDrawable",
+    "MTLEvent", "MTLHeap",
+    "MTLDrawable",
     "MTLRenderPipeline", "MTLComputePipeline", "MTLDepthStencil",
-    "MTLVertexDescriptor", "MTLRenderPass", "MTLComputePass", "MTLBlitPass",
+    "MTLVertexDescriptor", "MTLRenderPass",
     "MTLLibrary", "MTLFunctionDescriptor", "MTLFunctionConstantValues",
     "MTLAllocation", "MTLResource", "MTLPixelFormat", "MTLArgument",
-    "MTLDataType", "MTLCounters",
+    "MTLDataType",
+    "MTL4CommandAllocator", "MTL4CommandBuffer", "MTL4CommandQueue",
+    "MTL4CommandEncoder", "MTL4RenderCommandEncoder", "MTL4ComputeCommandEncoder",
+    "MTL4RenderPass", "MTL4ArgumentTable", "MTL4CommitFeedback",
+    "MTLResidencySet", "MTL4Compiler", "MTL4CompilerTask", "MTL4Archive",
+    "MTL4PipelineDataSetSerializer", "MTL4PipelineState", "MTL4LibraryDescriptor",
+    "MTL4LibraryFunctionDescriptor", "MTL4FunctionDescriptor",
+    "MTL4RenderPipeline", "MTL4ComputePipeline",
 ] }
 objc2-quartz-core = { version = "0.3", features = ["CAMetalLayer"] }
 objc2-foundation = { version = "0.3", features = ["NSString", "NSArray", "NSDictionary", "NSRange", "NSGeometry", "NSError"] }

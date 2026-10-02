@@ -448,6 +448,35 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn update_texture_region(
+        &mut self,
+        handle: TextureHandle,
+        region: crate::texture::TextureUploadRegion,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.update_texture_region(handle, region, data),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.update_texture_region(handle, region, data),
+        }
+    }
+
+    fn pending_texture_uploads(&self) -> Vec<(TextureHandle, crate::texture::TextureUploadRegion)> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.pending_texture_uploads(),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.pending_texture_uploads(),
+        }
+    }
+
+    fn texture_upload_metrics(&self) -> Option<crate::texture::TextureUploadMetrics> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.texture_upload_metrics(),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.texture_upload_metrics(),
+        }
+    }
+
     fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32> {
         match self {
             AnyRenderer::Vulkan(r) => r.get_bindless_slot(handle),

@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use ash::vk;
+use ash::vk::Handle;
 use gpu_allocator::{
     MemoryLocation,
     vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator},
@@ -338,6 +339,9 @@ impl VulkanContext {
 
     /// Free a buffer and its allocation.
     pub(crate) fn free_buffer(&self, buffer: vk::Buffer, allocation: Allocation) {
+        self.graph_buffer_history
+            .borrow_mut()
+            .retire(buffer.as_raw());
         self.allocator.free(allocation, "buffer");
         unsafe { self.device.destroy_buffer(buffer, None) };
     }

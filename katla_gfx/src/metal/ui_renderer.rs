@@ -9,8 +9,6 @@ use crate::error::RendererError;
 use crate::renderer::types::UIDrawList;
 use crate::vertex::{UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES};
 
-use objc2_metal::MTLRenderCommandEncoder;
-
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
 use super::pipeline::MetalGraphicsPipeline;
@@ -35,6 +33,7 @@ fn ui_uniforms(draw_list: &UIDrawList) -> [f32; 4] {
 /// Owns dynamic vertex/index/instance buffers.
 /// The actual rendering is driven by `MetalRenderer::render_ui_pass()`
 /// which binds textures and pipelines from the renderer's own storage.
+#[derive(Clone)]
 pub(crate) struct MetalUIRenderer {
     vertex_buffer: Option<MetalBuffer>,
     index_buffer: Option<MetalBuffer>,
@@ -150,6 +149,10 @@ impl MetalUIRenderer {
             return Ok(());
         }
 
+        self.vertex_buffer_capacity = 0;
+        self.index_buffer_capacity = 0;
+        self.instance_buffer_capacity = 0;
+
         // Upload vertex/index data for complex geometry
         if !draw_list.indices.is_empty() {
             let vertex_data = bytemuck::cast_slice(&draw_list.vertices);
@@ -216,6 +219,96 @@ impl MetalUIRenderer {
             }
         }
 
+        Ok(())
+    }
+
+    pub(crate) fn preflight_commands(
+        &self,
+        plan: &super::graphics_preflight::GraphicsPreflight<'_>,
+        list: &UIDrawList,
+        fallback: &MetalGraphicsPipeline,
+    ) -> Result<(), RendererError> {
+        for cmd in &list.commands {
+            if cmd.count == 0 {
+                continue;
+            }
+            plan.inline(16, 3, true, true);
+            if cmd.is_instanced {
+                if cmd
+                    .offset
+                    .checked_add(cmd.count)
+                    .is_none_or(|end| end as usize > list.instances.len())
+                {
+                    return Err(RendererError::InvalidOperation(
+                        "UI instance command exceeds uploaded data".into(),
+                    ));
+                }
+                let instance = self.instance_buffer.as_ref().ok_or_else(|| {
+                    RendererError::InvalidOperation("UI instance buffer missing".into())
+                })?;
+                let stride = std::mem::size_of::<crate::vertex::VertexUIInstance>() as u64;
+                plan.buffer(
+                    instance,
+                    u64::from(cmd.offset) * stride,
+                    u64::from(cmd.count) * stride,
+                    11,
+                    true,
+                    false,
+                )?;
+                plan.full_buffer(
+                    self.unit_quad_vertex_buffer.as_ref().ok_or_else(|| {
+                        RendererError::InvalidOperation("UI quad vertex buffer missing".into())
+                    })?,
+                    10,
+                    true,
+                    false,
+                )?;
+                plan.buffer(
+                    self.unit_quad_index_buffer.as_ref().ok_or_else(|| {
+                        RendererError::InvalidOperation("UI quad index buffer missing".into())
+                    })?,
+                    0,
+                    24,
+                    30,
+                    false,
+                    false,
+                )?;
+                plan.pipeline(self.instanced_pipeline.as_ref().unwrap_or(fallback))?;
+            } else {
+                if cmd
+                    .offset
+                    .checked_add(cmd.count)
+                    .is_none_or(|end| end as usize > list.indices.len())
+                    || list
+                        .indices
+                        .iter()
+                        .any(|index| *index as usize >= list.vertices.len())
+                {
+                    return Err(RendererError::InvalidOperation(
+                        "UI indexed command exceeds uploaded data".into(),
+                    ));
+                }
+                plan.full_buffer(
+                    self.vertex_buffer.as_ref().ok_or_else(|| {
+                        RendererError::InvalidOperation("UI vertex buffer missing".into())
+                    })?,
+                    10,
+                    true,
+                    false,
+                )?;
+                plan.buffer(
+                    self.index_buffer.as_ref().ok_or_else(|| {
+                        RendererError::InvalidOperation("UI index buffer missing".into())
+                    })?,
+                    u64::from(cmd.offset) * 4,
+                    u64::from(cmd.count) * 4,
+                    30,
+                    false,
+                    false,
+                )?;
+                plan.pipeline(fallback)?;
+            }
+        }
         Ok(())
     }
 
@@ -290,13 +383,14 @@ impl MetalUIRenderer {
                 let instance_offset =
                     cmd.offset as usize * std::mem::size_of::<crate::vertex::VertexUIInstance>();
                 if let Some(ref inst_buf) = self.instance_buffer {
-                    unsafe {
-                        encoder.inner.setVertexBuffer_offset_atIndex(
-                            Some(&inst_buf.inner),
-                            instance_offset,
-                            11,
-                        );
-                    }
+                    encoder.bind_storage_buffer_range_render(
+                        inst_buf,
+                        instance_offset as u64,
+                        u64::from(cmd.count)
+                            * std::mem::size_of::<crate::vertex::VertexUIInstance>() as u64,
+                        11,
+                        crate::backend::command::ShaderStages::VERTEX,
+                    );
                 }
                 if let Some(ref quad_ib) = self.unit_quad_index_buffer {
                     encoder.bind_index_buffer(

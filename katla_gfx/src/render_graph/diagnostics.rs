@@ -61,7 +61,7 @@ use super::sync_plan::BufferSyncState;
 use super::{ImageSyncOp, ImageSyncState, ResourceHazardKind};
 
 /// Schema version for serialized render-graph diagnostics.
-pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 11;
+pub const RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION: u32 = 12;
 
 /// Stable, backend-neutral snapshot of a render graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -70,6 +70,7 @@ pub struct RenderGraphDiagnostics {
     pub summary: RenderGraphDiagnosticSummary,
     pub resources: Vec<RenderGraphDiagnosticResource>,
     pub passes: Vec<RenderGraphDiagnosticPass>,
+    pub external_image_producers: Vec<RenderGraphDiagnosticExternalProducer>,
     pub dependencies: Vec<RenderGraphDiagnosticDependency>,
     pub synchronization: Vec<RenderGraphDiagnosticTransition>,
     /// Compiled buffer synchronization operations, in execution order. Buffer
@@ -78,6 +79,36 @@ pub struct RenderGraphDiagnostics {
     pub execution_order: Vec<usize>,
     pub parallel_groups: Vec<Vec<usize>>,
     pub transient_slots: Vec<RenderGraphDiagnosticAllocationSlot>,
+    /// Compiler projection before allocation; backend-observed facts afterwards.
+    pub allocation_source: String,
+    pub native_allocations: Vec<RenderGraphDiagnosticNativeAllocation>,
+}
+
+/// Backend-observed physical range owned by one frame slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticNativeAllocation {
+    pub id: u32,
+    pub frame_slot: usize,
+    pub resources: Vec<RenderGraphDiagnosticResourceRef>,
+    pub offset: u64,
+    pub bytes: u64,
+    pub logical_bytes: u64,
+    pub strategy: String,
+    pub alias_savings_bytes: u64,
+    pub tile_storage_savings_bytes: u64,
+    /// Unknown without hardware counters; discard stores alone do not imply traffic.
+    pub bandwidth_savings_estimate_bytes: Option<u64>,
+}
+
+/// Content persistence required by the live resource accesses.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticPersistence {
+    pub exported: bool,
+    pub crosses_render_pass: bool,
+    pub sampled: bool,
+    pub storage: bool,
+    pub transfer_or_readback: bool,
+    pub tile_memory_eligible: bool,
 }
 
 /// One compiled buffer synchronization operation.
@@ -201,6 +232,7 @@ pub struct RenderGraphDiagnosticResource {
     pub lifetime: Option<RenderGraphDiagnosticResourceLifetime>,
     /// Stable backend-neutral physical allocation slot assigned by the alias planner.
     pub physical_allocation_id: Option<u32>,
+    pub persistence: Option<RenderGraphDiagnosticPersistence>,
     /// Declared initial/final state contract, present for imported images.
     pub imported_contract: Option<RenderGraphDiagnosticImportedContract>,
 }
@@ -291,6 +323,7 @@ impl fmt::Display for RenderGraphDiagnosticBufferDescriptor {
 pub enum RenderGraphDiagnosticPassType {
     Graphics,
     Compute,
+    Transfer,
 }
 
 /// Stable resource reference used by pass diagnostics.
@@ -396,6 +429,10 @@ pub struct RenderGraphDiagnosticPass {
     pub index: usize,
     pub name: String,
     pub pass_type: RenderGraphDiagnosticPassType,
+    pub queue: Option<String>,
+    pub encoder: Option<String>,
+    pub alias_handoffs: Vec<RenderGraphDiagnosticResourceRef>,
+    pub external_upload_dependency: bool,
     pub kind: Option<String>,
     pub reads: Vec<RenderGraphDiagnosticResourceRef>,
     pub writes: Vec<RenderGraphDiagnosticResourceRef>,
@@ -413,6 +450,14 @@ pub struct RenderGraphDiagnosticPass {
     pub side_effect: bool,
     pub live: bool,
     pub culled: bool,
+}
+
+/// Explicit upload producer encoded before graph consumers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RenderGraphDiagnosticExternalProducer {
+    pub queue: String,
+    pub encoder: String,
+    pub access: RenderGraphDiagnosticImageAccess,
 }
 
 /// Declared load/store/clear operations for one color target.
@@ -531,7 +576,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
                 })
             })
             .collect();
-        Ok(RenderGraphDiagnostics::from_parts(
+        let mut diagnostics = RenderGraphDiagnostics::from_parts(
             &self.passes,
             &self.resources,
             &self.transient_resources,
@@ -539,7 +584,113 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             &self.imported_contracts,
             &buffers,
             &plan,
-        ))
+        );
+        if !self.transient_aliasing {
+            let mut standalone = Vec::new();
+            for resource in &mut diagnostics.resources {
+                let Some(id) = resource.physical_allocation_id else {
+                    continue;
+                };
+                let Some(projected) = diagnostics
+                    .transient_slots
+                    .iter()
+                    .find(|slot| slot.id == id)
+                else {
+                    continue;
+                };
+                let Some(lifetime) = resource.lifetime.as_ref() else {
+                    continue;
+                };
+                let mut slot = projected.clone();
+                slot.id = standalone.len() as u32;
+                slot.resources = vec![RenderGraphDiagnosticResourceRef {
+                    id: resource.id,
+                    name: resource.name.clone(),
+                }];
+                slot.logical_bytes = slot.bytes;
+                slot.saved_bytes = 0;
+                slot.tile_memory = RenderGraphDiagnosticTileMemory {
+                    eligible: false,
+                    reason: "transient optimization disabled".into(),
+                };
+                slot.first_execution_position = lifetime.first_execution_position;
+                slot.last_execution_position = lifetime.last_execution_position;
+                resource.physical_allocation_id = Some(slot.id);
+                standalone.push(slot);
+            }
+            diagnostics.transient_slots = standalone;
+            diagnostics.summary.physical_transient_allocations = diagnostics.transient_slots.len();
+            diagnostics.summary.physical_transient_bytes =
+                diagnostics.summary.logical_transient_bytes;
+            diagnostics.summary.transient_alias_savings_bytes = 0;
+            diagnostics.summary.tile_memory_eligible_bytes = 0;
+        }
+        let mut identities = BTreeMap::new();
+        for (frame_slot, textures) in self.transient_textures.iter().enumerate() {
+            let mut textures = textures.iter().collect::<Vec<_>>();
+            textures.sort_by_key(|(resource, _)| **resource);
+            for (&resource, texture) in textures {
+                let Some(native) = B::transient_allocation_info(texture) else {
+                    continue;
+                };
+                let key = (frame_slot, native.identity, native.offset);
+                let next_id = diagnostics.native_allocations.len() as u32;
+                let id = *identities.entry(key).or_insert_with(|| {
+                    diagnostics
+                        .native_allocations
+                        .push(RenderGraphDiagnosticNativeAllocation {
+                            id: next_id,
+                            frame_slot,
+                            resources: Vec::new(),
+                            offset: native.offset,
+                            bytes: native.bytes,
+                            logical_bytes: 0,
+                            strategy: native.strategy.into(),
+                            alias_savings_bytes: 0,
+                            tile_storage_savings_bytes: 0,
+                            bandwidth_savings_estimate_bytes: None,
+                        });
+                    next_id
+                });
+                let allocation = &mut diagnostics.native_allocations[id as usize];
+                allocation
+                    .resources
+                    .push(resource_ref(resource, &self.resources));
+                allocation.logical_bytes = allocation
+                    .logical_bytes
+                    .saturating_add(native.logical_bytes);
+                if native.strategy == "memoryless" {
+                    allocation.tile_storage_savings_bytes = allocation.logical_bytes;
+                } else {
+                    allocation.alias_savings_bytes =
+                        allocation.logical_bytes.saturating_sub(allocation.bytes);
+                }
+            }
+        }
+        if !diagnostics.native_allocations.is_empty() {
+            diagnostics.allocation_source = "native_frame_allocations".into();
+            diagnostics.summary.physical_transient_allocations = diagnostics
+                .native_allocations
+                .iter()
+                .filter(|allocation| allocation.bytes > 0)
+                .count();
+            diagnostics.summary.physical_transient_bytes = diagnostics
+                .native_allocations
+                .iter()
+                .map(|allocation| allocation.bytes)
+                .sum();
+            diagnostics.summary.logical_transient_bytes = diagnostics
+                .native_allocations
+                .iter()
+                .map(|allocation| allocation.logical_bytes)
+                .sum();
+            diagnostics.summary.transient_alias_savings_bytes = diagnostics
+                .native_allocations
+                .iter()
+                .map(|allocation| allocation.alias_savings_bytes)
+                .sum();
+        }
+        Ok(diagnostics)
     }
 }
 
@@ -563,13 +714,15 @@ impl RenderGraphDiagnostics {
             .enumerate()
             .map(|(position, &pass)| (pass, position))
             .collect::<BTreeMap<_, _>>();
-        let allocation_plan = TransientAllocationPlan::build(
+        let mut allocation_plan = TransientAllocationPlan::build(
             resources,
             transient_resources,
             exported_resources,
             &plan.resource_lifetimes,
             &plan.live_image_accesses,
         );
+
+        allocation_plan.apply_attachment_storage(passes, &plan.resource_lifetimes);
 
         let diagnostic_resources = resources
             .iter()
@@ -612,6 +765,16 @@ impl RenderGraphDiagnostics {
                         .map(RenderGraphDiagnosticResourceLifetime::from),
                     physical_allocation_id: allocation_plan
                         .physical_allocation_id(ResourceId(index as u32)),
+                    persistence: allocation_plan.persistence(ResourceId(index as u32)).map(
+                        |requirements| RenderGraphDiagnosticPersistence {
+                            exported: requirements.exported,
+                            crosses_render_pass: requirements.crosses_render_pass,
+                            sampled: requirements.sampled,
+                            storage: requirements.storage,
+                            transfer_or_readback: requirements.transfer_or_readback,
+                            tile_memory_eligible: requirements.tile_memory.is_eligible(),
+                        },
+                    ),
                     imported_contract: imported_contracts.get(&ResourceId(index as u32)).map(
                         |contract| RenderGraphDiagnosticImportedContract {
                             initial: format!("{:?}", contract.initial),
@@ -635,7 +798,21 @@ impl RenderGraphDiagnostics {
                     pass_type: match pass.pass_type {
                         PassType::Graphics => RenderGraphDiagnosticPassType::Graphics,
                         PassType::Compute => RenderGraphDiagnosticPassType::Compute,
+                        PassType::Transfer => RenderGraphDiagnosticPassType::Transfer,
                     },
+                    queue: plan.sync.pass_boundaries[node.pass_index]
+                        .as_ref()
+                        .map(|boundary| format!("{:?}", boundary.queue).to_lowercase()),
+                    encoder: plan.sync.pass_boundaries[node.pass_index]
+                        .as_ref()
+                        .map(|boundary| format!("{:?}", boundary.encoder).to_lowercase()),
+                    external_upload_dependency: plan.sync.pass_boundaries[node.pass_index]
+                        .as_ref()
+                        .is_some_and(|boundary| boundary.external_upload_dependency),
+                    alias_handoffs: resource_refs(
+                        &plan.sync.alias_handoffs[node.pass_index],
+                        resources,
+                    ),
                     kind: pass.kind.map(|kind| format!("{kind:?}")),
                     reads: resource_refs(&node.reads, resources),
                     writes: resource_refs(&node.writes, resources),
@@ -743,12 +920,24 @@ impl RenderGraphDiagnostics {
             summary,
             resources: diagnostic_resources,
             passes: diagnostic_passes,
+            external_image_producers: plan
+                .sync
+                .external_image_producers
+                .iter()
+                .map(|producer| RenderGraphDiagnosticExternalProducer {
+                    queue: format!("{:?}", producer.queue).to_lowercase(),
+                    encoder: format!("{:?}", producer.encoder).to_lowercase(),
+                    access: diagnostic_image_access(producer.access, resources),
+                })
+                .collect(),
             dependencies,
             synchronization,
             buffer_synchronization,
             execution_order: plan.sorted_passes.clone(),
             parallel_groups: plan.parallel_groups.clone(),
             transient_slots,
+            allocation_source: "compiler_projection".into(),
+            native_allocations: Vec::new(),
         }
     }
 
@@ -978,6 +1167,26 @@ impl RenderGraphDiagnostics {
             }
         }
 
+        for allocation in &self.native_allocations {
+            let _ = writeln!(
+                output,
+                "  native_{} [shape=box,label=\"frame {} {}\\noffset {} bytes {}\\nalias saved {} tile saved {}\"];",
+                allocation.id,
+                allocation.frame_slot,
+                allocation.strategy,
+                allocation.offset,
+                allocation.bytes,
+                allocation.alias_savings_bytes,
+                allocation.tile_storage_savings_bytes
+            );
+            for resource in &allocation.resources {
+                let _ = writeln!(
+                    output,
+                    "  native_{} -> r{} [style=dashed];",
+                    allocation.id, resource.id
+                );
+            }
+        }
         output.push_str("}\n");
         output
     }
@@ -1002,6 +1211,49 @@ impl fmt::Display for RenderGraphDiagnostics {
             self.summary.parallel_levels
         )?;
 
+        for producer in &self.external_image_producers {
+            writeln!(
+                f,
+                "  external {} / {}: {}",
+                producer.queue, producer.encoder, producer.access
+            )?;
+        }
+        for pass in &self.passes {
+            if let (Some(queue), Some(encoder)) = (&pass.queue, &pass.encoder) {
+                writeln!(
+                    f,
+                    "  boundary p{}: {} / {}, predecessors {:?}, alias handoffs {:?}",
+                    pass.index,
+                    queue,
+                    encoder,
+                    pass.predecessors,
+                    pass.alias_handoffs
+                        .iter()
+                        .map(|resource| resource.id)
+                        .collect::<Vec<_>>()
+                )?;
+            }
+        }
+        writeln!(f, "  allocation source: {}", self.allocation_source)?;
+        for allocation in &self.native_allocations {
+            writeln!(
+                f,
+                "  native allocation {} frame {}: {} offset {} bytes {}, logical {}, alias saved {}, tile saved {}, resources {:?}",
+                allocation.id,
+                allocation.frame_slot,
+                allocation.strategy,
+                allocation.offset,
+                allocation.bytes,
+                allocation.logical_bytes,
+                allocation.alias_savings_bytes,
+                allocation.tile_storage_savings_bytes,
+                allocation
+                    .resources
+                    .iter()
+                    .map(|resource| resource.id)
+                    .collect::<Vec<_>>()
+            )?;
+        }
         for resource in &self.resources {
             if let Some(buffer) = &resource.buffer {
                 let origin = match resource.origin {
@@ -1809,7 +2061,7 @@ mod tests {
         assert_eq!(json["passes"][0]["image_accesses"][0]["mode"], "write");
         assert_eq!(json["passes"][1]["image_accesses"][0]["usage"], "sampled");
         assert_eq!(json["summary"]["dependency_edges"], 4);
-        assert_eq!(json["summary"]["synchronization_transitions"], 9);
+        assert_eq!(json["summary"]["synchronization_transitions"], 10);
         assert_eq!(json["summary"]["physical_transient_allocations"], 2);
         assert_eq!(json["summary"]["logical_transient_bytes"], 65536);
         assert_eq!(json["summary"]["physical_transient_bytes"], 65536);
@@ -2372,9 +2624,9 @@ mod tests {
             &plan,
         );
 
-        // Two operations: the writer's first use of its bytes, and the
-        // reader's RAW hazard against that write.
-        assert_eq!(diagnostics.summary.buffer_synchronization_ops, 2);
+        // Frame-start scopes retain the previous writer and reader, then
+        // the current reader depends on this frame's writer.
+        assert_eq!(diagnostics.summary.buffer_synchronization_ops, 3);
         let op = diagnostics
             .buffer_synchronization
             .iter()
@@ -2421,7 +2673,7 @@ mod tests {
         );
         assert_eq!(
             json["summary"]["buffer_synchronization_ops"],
-            serde_json::json!(2)
+            serde_json::json!(3)
         );
     }
 

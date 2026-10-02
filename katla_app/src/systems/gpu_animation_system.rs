@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use log::{debug, warn};
+use log::debug;
 
 use katla_ecs::EntityId;
 use katla_ecs::World;
-use katla_gfx::{PoseComputeBuffers, PoseComputePipeline, RendererError};
+use katla_gfx::{AnimationBufferUploader, AnimationUpload, RendererError};
 
 use crate::animation::components::{AnimatedModel, AnimationPlayer};
 use crate::animation::gpu_clip_loader::{
@@ -89,8 +89,7 @@ impl GpuAnimationSystem {
     pub fn prepare(
         &mut self,
         world: &mut World,
-        pipeline: &mut PoseComputePipeline,
-        buffers: &mut PoseComputeBuffers,
+        buffers: &mut dyn AnimationBufferUploader,
     ) -> Result<(), RendererError> {
         let entities: Vec<_> = world
             .query::<(&AnimatedModel, &Skin, &Skeleton, &AnimationPlayer)>()
@@ -166,7 +165,6 @@ impl GpuAnimationSystem {
 
         self.entity_clip_map = new_entity_clip_map;
         self.entity_order = entities.iter().map(|(e, _, _, _, _)| *e).collect();
-        self.upload_fingerprint = fingerprint;
         self.gpu_data = Some(GpuAnimData {
             clip_headers: all_clip_headers,
             channel_infos: all_channel_infos,
@@ -178,14 +176,14 @@ impl GpuAnimationSystem {
         self.max_skeletons = entities.len();
         self.max_joints = total_joints;
 
-        self.upload_static_data(pipeline, buffers)?;
+        self.upload_static_data(buffers)?;
+        self.upload_fingerprint = fingerprint;
         Ok(())
     }
 
     fn upload_static_data(
         &mut self,
-        pipeline: &mut PoseComputePipeline,
-        buffers: &mut PoseComputeBuffers,
+        buffers: &mut dyn AnimationBufferUploader,
     ) -> Result<(), RendererError> {
         let data = match &self.gpu_data {
             Some(d) => d,
@@ -196,45 +194,15 @@ impl GpuAnimationSystem {
             return Ok(());
         }
 
-        let headers_size =
-            (data.clip_headers.len() * std::mem::size_of::<katla_gfx::AnimClipHeader>()) as u64;
-        let channels_size =
-            (data.channel_infos.len() * std::mem::size_of::<katla_gfx::AnimChannelInfo>()) as u64;
-        let times_size = (data.keyframe_times.len() * std::mem::size_of::<f32>()) as u64;
-        let values_size = (data.keyframe_values.len() * std::mem::size_of::<f32>()) as u64;
-
-        if let Err(e) = buffers.allocate_params(self.max_skeletons) {
-            warn!("Failed to allocate pose compute params buffer: {}", e);
-            return Ok(());
-        }
-        if let Err(e) =
-            buffers.allocate_clip_data(headers_size, channels_size, times_size, values_size)
-        {
-            warn!("Failed to allocate pose compute clip data buffers: {}", e);
-            return Ok(());
-        }
-        if let Err(e) = buffers.allocate_joints(self.max_joints) {
-            warn!("Failed to allocate pose compute joints buffer: {}", e);
-            return Ok(());
-        }
-        if let Err(e) = buffers.allocate_world(self.max_joints) {
-            warn!("Failed to allocate pose compute world buffer: {}", e);
-            return Ok(());
-        }
-        if let Err(e) = buffers.allocate_output(self.max_joints) {
-            warn!("Failed to allocate pose compute output buffer: {}", e);
-            return Ok(());
-        }
-
-        buffers.upload_clip_data(
-            &data.clip_headers,
-            &data.channel_infos,
-            &data.keyframe_times,
-            &data.keyframe_values,
-        );
-        buffers.upload_joints(&data.joint_infos);
-
-        pipeline.update_bindings(buffers)?;
+        buffers.upload_static_data(AnimationUpload {
+            headers: &data.clip_headers,
+            channels: &data.channel_infos,
+            times: &data.keyframe_times,
+            values: &data.keyframe_values,
+            joints: &data.joint_infos,
+            max_skeletons: self.max_skeletons,
+            max_joints: self.max_joints,
+        })?;
 
         debug!(
             "Uploaded GPU animation static data: {} skeletons, {} joints, {} clips",
@@ -250,7 +218,7 @@ impl GpuAnimationSystem {
     ///
     /// Iterates in `entity_order` to guarantee joint offsets match those
     /// assigned during `prepare()`.
-    pub fn update_params(&self, world: &mut World, buffers: &mut PoseComputeBuffers) {
+    pub fn update_params(&self, world: &mut World, buffers: &mut dyn AnimationBufferUploader) {
         let mut params = Vec::with_capacity(self.entity_order.len());
 
         for entity in &self.entity_order {

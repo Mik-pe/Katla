@@ -54,7 +54,7 @@ pub struct FrameData {
     pub total_simulate_count: u32,
     pub burst_count: u32,
     pub frame_index: u32,
-    pub _pad: u32,
+    pub max_particles: u32,
 }
 
 /// Atomic counters for particle management (16 bytes).
@@ -391,7 +391,8 @@ impl GlobalParticleBuffer {
                 .usage(
                     vk::BufferUsageFlags::STORAGE_BUFFER
                         | vk::BufferUsageFlags::INDIRECT_BUFFER
-                        | vk::BufferUsageFlags::TRANSFER_SRC,
+                        | vk::BufferUsageFlags::TRANSFER_SRC
+                        | vk::BufferUsageFlags::TRANSFER_DST,
                 )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
@@ -770,6 +771,6 @@ mod tests {
         assert_eq!(std::mem::offset_of!(FrameData, total_simulate_count), 16);
         assert_eq!(std::mem::offset_of!(FrameData, burst_count), 20);
         assert_eq!(std::mem::offset_of!(FrameData, frame_index), 24);
-        assert_eq!(std::mem::offset_of!(FrameData, _pad), 28);
+        assert_eq!(std::mem::offset_of!(FrameData, max_particles), 28);
     }
 }

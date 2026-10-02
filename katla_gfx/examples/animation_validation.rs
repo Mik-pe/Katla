@@ -290,7 +290,12 @@ fn dispatch_and_readback(
     };
 
     // Record dispatch
-    pipeline.record_dispatch(cmd, asset_registry, params.len() as u32);
+    pipeline.bind_kernel(cmd, asset_registry);
+    unsafe {
+        context
+            .device
+            .cmd_dispatch(cmd, (params.len() as u32).div_ceil(64), 1, 1);
+    }
 
     // Barrier: COMPUTE_SHADER -> TRANSFER (output buffer)
     pipeline.add_output_barrier(

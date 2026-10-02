@@ -13,27 +13,35 @@ impl MetalRenderer {
         desc: &TextureDescriptor,
         data: &[u8],
     ) -> Result<TextureHandle, RendererError> {
-        // Initial data goes through the staged upload queue and is blitted at
-        // the start of the frame. Textures keep Shared storage until the
-        // private-storage sampling anomaly is root-caused (see issue #58).
-        // Empty data creates the texture uninitialized for later upload.
-        desc.validate_data(data.len())?;
-        let (texture, view) = self.context.create_texture(desc)?;
-        if !data.is_empty() {
-            // Staging after creation: propagate the error without inserting
-            // anything. The Metal texture drops with its refcount; no slot
-            // was registered. Callers decide fallback policy explicitly.
-            self.texture_uploads.stage(
+        desc.validate_data(data.len())
+            .inspect_err(|_| self.texture_uploads.record_failure())?;
+        let (texture, view) = self
+            .context
+            .create_texture(desc)
+            .inspect_err(|_| self.texture_uploads.record_failure())?;
+        let bindless_slot = if desc.depth == 1 && desc.array_layers == 1 {
+            Some(
+                self.bindless_manager
+                    .register_texture(&texture.inner)
+                    .inspect_err(|_| self.texture_uploads.record_failure())?,
+            )
+        } else {
+            None
+        };
+        if !data.is_empty()
+            && let Err(error) = self.texture_uploads.stage_region(
                 &self.context,
                 texture.clone(),
-                desc.format,
-                desc.width,
-                desc.height,
+                desc,
+                crate::texture::TextureUploadRegion::base(desc),
                 data,
-            )?;
+            )
+        {
+            if let Some(slot) = bindless_slot {
+                self.bindless_manager.release_slot(slot);
+            }
+            return Err(error);
         }
-
-        let bindless_slot = self.bindless_manager.register_texture(&texture.inner).ok();
 
         let entry = MetalTextureEntry {
             texture: texture.clone(),
@@ -106,8 +114,48 @@ impl MetalRenderer {
             let height = view.inner.height() as u32;
             (format, width, height, texture)
         };
+        texture
+            .descriptor()
+            .validate_data(data.len())
+            .inspect_err(|_| self.texture_uploads.record_failure())?;
         self.texture_uploads
             .stage(&self.context, texture, format, width, height, data)?;
         Ok(())
+    }
+    pub(crate) fn update_texture_region_impl(
+        &mut self,
+        handle: TextureHandle,
+        region: crate::texture::TextureUploadRegion,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        let texture = self
+            .textures
+            .get(handle)
+            .ok_or_else(|| RendererError::StaleHandle {
+                resource: "texture".into(),
+                detail: format!("{handle:?} in Metal update_texture_region"),
+            })?
+            .texture
+            .clone();
+        let desc = texture.descriptor();
+        self.texture_uploads
+            .stage_region(&self.context, texture, &desc, region, data)
+    }
+    pub(crate) fn pending_texture_uploads_impl(
+        &self,
+    ) -> Vec<(TextureHandle, crate::texture::TextureUploadRegion)> {
+        if !self.texture_uploads.has_pending() {
+            return Vec::new();
+        }
+        let handles: std::collections::HashMap<_, _> = self
+            .textures
+            .iter_enumerated()
+            .map(|(handle, entry)| (entry.texture.inner.gpuResourceID().to_raw(), handle))
+            .collect();
+        self.texture_uploads
+            .pending_transfers()
+            .into_iter()
+            .filter_map(|(id, region)| handles.get(&id).copied().map(|handle| (handle, region)))
+            .collect()
     }
 }

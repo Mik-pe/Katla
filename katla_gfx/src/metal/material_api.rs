@@ -1,5 +1,4 @@
 use objc2::runtime::ProtocolObject;
-use objc2_metal::MTLPixelFormat;
 
 use crate::error::RendererError;
 use crate::handle::MaterialHandle;
@@ -16,6 +15,7 @@ impl MetalRenderer {
         descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError> {
         descriptor.validate()?;
+        self.bindless_manager.initialize(&self.context.device)?;
         if !descriptor.specialization.is_empty() {
             return Err(RendererError::UnsupportedFeature(
                 "specialization constants are not yet supported by the Metal backend".to_string(),
@@ -27,76 +27,61 @@ impl MetalRenderer {
             ));
         }
 
-        // Compile the declared configuration eagerly; further configurations
-        // compile on demand when a pass first uses the material
-        // (ensure_material_variant_impl). `Auto` keeps the legacy default
-        // (HDR geometry for the app's tonemap chain, sRGB UI).
         let declared_format = match descriptor.color_format {
             ImageFormat::Auto if !descriptor.is_ui_layout() => ImageFormat::R16G16B16A16Sfloat,
             ImageFormat::Auto => ImageFormat::B8G8R8A8Srgb,
             format => format,
         };
-        let key = PipelineVariantKey::resolve(descriptor, declared_format);
-        let pipeline = self.build_pipeline_for_key(descriptor, &key)?;
+        let wgsl_source = read_shader(&descriptor.shader_path)?;
+        let mut variants = std::collections::HashMap::new();
+        let formats = if descriptor.color_format != ImageFormat::R32Uint {
+            vec![
+                ImageFormat::R8G8B8A8Srgb,
+                ImageFormat::R8G8B8A8Unorm,
+                ImageFormat::B8G8R8A8Srgb,
+                ImageFormat::R8Unorm,
+                ImageFormat::Rg8Unorm,
+                ImageFormat::R32Sfloat,
+                ImageFormat::R16G16B16A16Sfloat,
+            ]
+        } else {
+            vec![declared_format]
+        };
+        for format in formats {
+            let key = PipelineVariantKey::resolve(descriptor, format);
+            let pipeline =
+                Self::build_pipeline_for_key(&self.context, descriptor, &key, &wgsl_source)?;
+            variants.insert(key, pipeline);
+        }
 
-        // For UI, also compile the instanced entry points into the shared
-        // instanced pipeline used by the UI record encoder. Everything is
-        // built before the material is registered so a failure here leaves
-        // no half-registered material behind.
         let instanced = if descriptor.is_ui_layout() {
-            let wgsl_source = read_shader(&descriptor.shader_path)?;
-            let instanced_entry_points = vec!["vs_instanced", "fs_instanced"];
-            let instanced_compiled = shader::compile_wgsl_to_metal(
-                &self.context.device,
+            let instanced_descriptor = descriptor
+                .clone()
+                .with_graphics_entries("vs_instanced", "fs_instanced");
+            let key = PipelineVariantKey::resolve(&instanced_descriptor, ImageFormat::B8G8R8A8Srgb);
+            let pipeline = Self::build_pipeline_for_key(
+                &self.context,
+                &instanced_descriptor,
+                &key,
                 &wgsl_source,
-                &instanced_entry_points,
-                shader::ShaderProfile::Ui,
             )?;
-            let instanced_vs = instanced_compiled
-                .module
-                .entry_points
-                .get("vs_instanced")
-                .ok_or_else(|| {
-                    RendererError::InvalidOperation("Instanced vertex entry point not found".into())
-                })?;
-            let instanced_fs = instanced_compiled
-                .module
-                .entry_points
-                .get("fs_instanced")
-                .ok_or_else(|| {
-                    RendererError::InvalidOperation(
-                        "Instanced fragment entry point not found".into(),
-                    )
-                })?;
-
-            let vd = super::context::ui_instanced_vertex_descriptor();
-            Some(
-                self.context
-                    .create_graphics_pipeline_with_vertex_descriptor(
-                        instanced_vs.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>,
-                        Some(instanced_fs.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                        &[MTLPixelFormat::BGRA8Unorm_sRGB],
-                        None,
-                        false,
-                        crate::pipeline::CompareOp::Always,
-                        objc2_metal::MTLCullMode::None,
-                        objc2_metal::MTLWinding::Clockwise,
-                        Some(&vd),
-                        true,
-                    )?,
-            )
+            variants.insert(key, pipeline.clone());
+            Some(pipeline)
         } else {
             None
         };
 
         let handle = self.materials.insert(MetalMaterial {
             descriptor: descriptor.clone(),
-            variants: std::collections::HashMap::from([(key, pipeline)]),
+            variants,
+            pending_reload: None,
             textures: crate::renderer::registry::MaterialTextures::default(),
         });
 
         if let Some(instanced) = instanced {
-            self.ui_renderer.set_instanced_pipeline(instanced);
+            for ui in &mut self.ui_renderers {
+                ui.set_instanced_pipeline(instanced.clone());
+            }
         }
 
         Ok(handle)
@@ -108,9 +93,10 @@ impl MetalRenderer {
     /// Vulkan backend resolves), so both backends build identical logical
     /// variants for the same configuration.
     fn build_pipeline_for_key(
-        &mut self,
+        context: &super::context::MetalContext,
         descriptor: &PipelineDescriptor,
         key: &PipelineVariantKey,
+        wgsl_source: &str,
     ) -> Result<super::pipeline::MetalGraphicsPipeline, RendererError> {
         use crate::pipeline::CullMode;
         use crate::renderer::pipeline_descriptor::PipelineStages;
@@ -125,8 +111,6 @@ impl MetalRenderer {
                 "compute pipelines have no graphics variants".to_string(),
             ));
         };
-
-        let wgsl_source = read_shader(&descriptor.shader_path)?;
 
         log::debug!(
             "compile_material: shader_path={}, wgsl_size={} bytes",
@@ -145,12 +129,8 @@ impl MetalRenderer {
             shader::ShaderProfile::Graphics
         };
 
-        let compiled = shader::compile_wgsl_to_metal(
-            &self.context.device,
-            &wgsl_source,
-            &entry_points,
-            profile,
-        )?;
+        let compiled =
+            shader::compile_wgsl_to_metal(&context.device, wgsl_source, &entry_points, profile)?;
 
         let vertex_fn = compiled
             .module
@@ -162,20 +142,6 @@ impl MetalRenderer {
 
         let fragment_fn = compiled.module.entry_points.get(fragment_entry.as_str());
 
-        // Derive the bindless argument-buffer encoder from an actual compiled
-        // shader function. This avoids the arbitrary-layout MTLDevice API that
-        // raises an Objective-C exception on AppleParavirtDevice.
-        if !self.bindless_manager.is_initialized() {
-            let fragment_function = fragment_fn.ok_or_else(|| {
-                RendererError::InitializationFailed(
-                    "The first Metal graphics material has no fragment function for bindless layout reflection"
-                        .into(),
-                )
-            })?;
-            self.bindless_manager
-                .initialize_from_function(fragment_function.as_ref())?;
-        }
-
         // Attachment formats come from the variant key, not from renderer
         // state: the resolved color format plus the shared depth derivation.
         let color_formats = &[super::format::to_mtl_pixel_format(key.color_format())];
@@ -186,110 +152,136 @@ impl MetalRenderer {
             descriptor.vertex == VertexLayout::pbr() && matches!(descriptor.cull, CullMode::None);
 
         let pipeline = if descriptor.is_ui_layout() {
-            let vd = super::context::ui_vertex_descriptor();
-            self.context
-                .create_graphics_pipeline_with_vertex_descriptor(
-                    vertex_fn,
-                    fragment_fn
-                        .as_ref()
-                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                    color_formats,
-                    depth_format,
-                    false,
-                    crate::pipeline::CompareOp::Always,
-                    objc2_metal::MTLCullMode::None,
-                    objc2_metal::MTLWinding::Clockwise,
-                    Some(&vd),
-                    true,
-                )?
+            let vd = if vertex_entry == "vs_instanced" {
+                super::context::ui_instanced_vertex_descriptor()
+            } else {
+                super::context::ui_vertex_descriptor()
+            };
+            context.create_graphics_pipeline_with_vertex_descriptor(
+                vertex_fn,
+                fragment_fn
+                    .as_ref()
+                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                color_formats,
+                depth_format,
+                false,
+                crate::pipeline::CompareOp::Always,
+                objc2_metal::MTLCullMode::None,
+                objc2_metal::MTLWinding::Clockwise,
+                Some(&vd),
+                true,
+            )?
         } else if is_skinned {
             let vd = super::context::pbr_skinned_vertex_descriptor();
-            self.context
-                .create_graphics_pipeline_with_vertex_descriptor(
-                    vertex_fn,
-                    fragment_fn
-                        .as_ref()
-                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                    color_formats,
-                    depth_format,
-                    descriptor.depth.write,
-                    descriptor.depth.compare,
-                    objc2_metal::MTLCullMode::Back,
-                    objc2_metal::MTLWinding::Clockwise,
-                    Some(&vd),
-                    false,
-                )?
+            context.create_graphics_pipeline_with_vertex_descriptor(
+                vertex_fn,
+                fragment_fn
+                    .as_ref()
+                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                color_formats,
+                depth_format,
+                descriptor.depth.write,
+                descriptor.depth.compare,
+                objc2_metal::MTLCullMode::Back,
+                objc2_metal::MTLWinding::Clockwise,
+                Some(&vd),
+                false,
+            )?
         } else if is_billboard {
-            self.context
-                .create_graphics_pipeline_with_vertex_descriptor(
-                    vertex_fn,
-                    fragment_fn
-                        .as_ref()
-                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                    color_formats,
-                    depth_format,
-                    descriptor.depth.write,
-                    descriptor.depth.compare,
-                    objc2_metal::MTLCullMode::None,
-                    objc2_metal::MTLWinding::Clockwise,
-                    None,
-                    true,
-                )?
+            context.create_graphics_pipeline_with_vertex_descriptor(
+                vertex_fn,
+                fragment_fn
+                    .as_ref()
+                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                color_formats,
+                depth_format,
+                descriptor.depth.write,
+                descriptor.depth.compare,
+                objc2_metal::MTLCullMode::None,
+                objc2_metal::MTLWinding::Clockwise,
+                None,
+                true,
+            )?
         } else {
             let vd = super::context::default_pbr_vertex_descriptor();
-            self.context
-                .create_graphics_pipeline_with_vertex_descriptor(
-                    vertex_fn,
-                    fragment_fn
-                        .as_ref()
-                        .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-                    color_formats,
-                    depth_format,
-                    descriptor.depth.write,
-                    descriptor.depth.compare,
-                    objc2_metal::MTLCullMode::Back,
-                    objc2_metal::MTLWinding::Clockwise,
-                    Some(&vd),
-                    false,
-                )?
+            context.create_graphics_pipeline_with_vertex_descriptor(
+                vertex_fn,
+                fragment_fn
+                    .as_ref()
+                    .map(|f| f.as_ref() as &ProtocolObject<dyn objc2_metal::MTLFunction>),
+                color_formats,
+                depth_format,
+                descriptor.depth.write,
+                descriptor.depth.compare,
+                objc2_metal::MTLCullMode::Back,
+                objc2_metal::MTLWinding::Clockwise,
+                Some(&vd),
+                false,
+            )?
         };
 
         Ok(pipeline)
     }
 
-    /// Ensure a pipeline variant of the material is compiled for a color
-    /// format.
-    ///
-    /// Cached variants return immediately; a miss compiles one new pipeline
-    /// for this exact target configuration. Called with every pass's
-    /// declared output format before Metal encodes any draw lists.
+    /// Verify startup warmup completed before acquiring or encoding a frame.
     pub(crate) fn ensure_material_variant_impl(
         &mut self,
         material: MaterialHandle,
         requested_format: ImageFormat,
     ) -> Result<(), RendererError> {
-        let descriptor = {
-            let mat = self.materials.get(material).ok_or_else(|| {
-                RendererError::InvalidOperation(format!("Material handle {material:?} not found"))
-            })?;
-            let key = PipelineVariantKey::resolve(&mat.descriptor, requested_format);
-            if mat.variants.contains_key(&key) {
-                return Ok(());
-            }
-            mat.descriptor.clone()
-        };
-
-        let key = PipelineVariantKey::resolve(&descriptor, requested_format);
-        log::debug!(
-            "Compiling pipeline variant for material {material:?} (color {:?}, depth {:?})",
-            key.color_format(),
-            key.depth_format()
-        );
-        let pipeline = self.build_pipeline_for_key(&descriptor, &key)?;
-        if let Some(mat) = self.materials.get_mut(material) {
-            mat.variants.insert(key, pipeline);
+        self.poll_material_reloads_impl();
+        let mat = self.materials.get(material).ok_or_else(|| {
+            RendererError::InvalidOperation(format!("Material handle {material:?} not found"))
+        })?;
+        let key = PipelineVariantKey::resolve(&mat.descriptor, requested_format);
+        if mat.variants.contains_key(&key) {
+            return Ok(());
         }
-        Ok(())
+        Err(RendererError::InvalidOperation(format!(
+            "Material {material:?} variant {requested_format:?} was not registered during startup warmup"
+        )))
+    }
+
+    pub(crate) fn poll_material_reloads_impl(&mut self) {
+        let handles: Vec<_> = self
+            .materials
+            .iter_enumerated()
+            .map(|(handle, _)| handle)
+            .collect();
+        for handle in handles {
+            let Some(material) = self.materials.get_mut(handle) else {
+                continue;
+            };
+            let Some(receiver) = material.pending_reload.as_ref() else {
+                continue;
+            };
+            match receiver.try_recv() {
+                Ok(Ok(variants)) => {
+                    if material.descriptor.is_ui_layout() {
+                        use crate::renderer::pipeline_descriptor::PipelineStages;
+                        if let Some((_, instanced)) = variants.iter().find(|(key, _)| matches!(&key.descriptor().stages, PipelineStages::Graphics { vertex_entry, .. } if vertex_entry == "vs_instanced")) {
+                            for ui in &mut self.ui_renderers { ui.set_instanced_pipeline(instanced.clone()); }
+                        }
+                    }
+                    material.variants = variants;
+                    material.pending_reload = None;
+                    log::info!("pipeline_cache event=reload_swap material={handle:?}");
+                }
+                Ok(Err(error)) => {
+                    material.pending_reload = None;
+                    log::warn!(
+                        "pipeline_cache event=reload_failed material={handle:?} reason={error}"
+                    );
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    material.pending_reload = None;
+                    log::warn!(
+                        "pipeline_cache event=reload_failed material={handle:?} reason=worker_disconnected"
+                    );
+                }
+            }
+        }
     }
 
     /// Look up the compiled variant pipeline for a material at a color
@@ -315,9 +307,8 @@ impl MetalRenderer {
 
     /// Whether the handle references a registered material.
     ///
-    /// The collect-time variant pre-compilation skips unknown handles with
-    /// a warning, matching the encoder's per-draw resilience; compile
-    /// failures for known materials stay fatal.
+    /// Draw collection skips unknown handles with a warning; every known
+    /// handle must already have its requested variant ready.
     pub(crate) fn has_material_impl(&self, material: MaterialHandle) -> bool {
         self.materials.get(material).is_some()
     }
@@ -365,40 +356,159 @@ impl MetalRenderer {
         self.materials.remove(handle);
     }
 
-    /// Drop every compiled variant of materials whose shader matches the
-    /// changed file. The next use of each affected material recompiles the
-    /// variants it needs from disk. Returns the number of affected
-    /// materials.
+    /// Compile replacements on a worker and retain the previous pipelines
+    /// until every registered variant has compiled successfully.
     pub(crate) fn recompile_materials_for_shader_impl(
         &mut self,
         changed_path: &std::path::Path,
     ) -> usize {
-        let file_name = changed_path.file_name().and_then(|n| n.to_str());
-        let Some(file_name) = file_name else {
+        if changed_path
+            .extension()
+            .is_none_or(|extension| extension != "wgsl")
+        {
             return 0;
-        };
-
-        let handles: Vec<MaterialHandle> = self
+        }
+        let handles: Vec<_> = self
             .materials
             .iter_enumerated()
-            .filter_map(|(handle, mat)| {
-                let mat_file = std::path::Path::new(&mat.descriptor.shader_path)
-                    .file_name()?
-                    .to_str()?;
-                (mat_file == file_name).then_some(handle)
-            })
+            .filter_map(|(handle, mat)| (!mat.descriptor.shader_path.is_empty()).then_some(handle))
             .collect();
-
         let count = handles.len();
         for handle in handles {
-            if let Some(mat) = self.materials.get_mut(handle) {
+            let Some(material) = self.materials.get_mut(handle) else {
+                continue;
+            };
+            let descriptor = material.descriptor.clone();
+            let keys: Vec<_> = material.variants.keys().cloned().collect();
+            let (sender, receiver) = std::sync::mpsc::channel();
+            material.pending_reload = Some(receiver);
+            std::thread::spawn(move || {
+                let started = std::time::Instant::now();
+                let result = (|| -> Result<_, RendererError> {
+                    let context = super::context::MetalContext::init_headless_with_size(1, 1)?;
+                    let source = read_shader(&descriptor.shader_path)?;
+                    let mut replacements = std::collections::HashMap::new();
+                    for key in keys {
+                        let pipeline = Self::build_pipeline_for_key(
+                            &context,
+                            key.descriptor(),
+                            &key,
+                            &source,
+                        )?;
+                        replacements.insert(key, pipeline);
+                    }
+                    Ok(replacements)
+                })()
+                .map_err(|error| error.to_string());
                 log::info!(
-                    "Invalidating pipeline variants of material {handle:?} for shader '{}'",
-                    mat.descriptor.shader_path
+                    "pipeline_cache event=reload_complete shader={} success={} elapsed_us={}",
+                    descriptor.shader_path,
+                    result.is_ok(),
+                    started.elapsed().as_micros()
                 );
-                mat.variants.clear();
-            }
+                let _ = sender.send(result);
+            });
         }
         count
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use objc2_metal::MTLDevice;
+    use std::time::{Duration, Instant};
+
+    const SOURCE: &str = "@vertex fn vs_main(@builtin(vertex_index) index:u32)->@builtin(position) vec4f { return vec4f(0.0,0.0,0.0,1.0); } @fragment fn fs_main()->@location(0) vec4f { return vec4f(1.0,0.0,0.0,1.0); }";
+
+    fn wait_for_reload(renderer: &mut MetalRenderer, handle: MaterialHandle) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while renderer
+            .materials
+            .get(handle)
+            .unwrap()
+            .pending_reload
+            .is_some()
+        {
+            renderer.poll_material_reloads_impl();
+            assert!(Instant::now() < deadline, "reload worker did not finish");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    #[test]
+    fn test_async_reload_retains_previous_pipeline_on_failure_and_swaps_success() {
+        let path =
+            std::env::temp_dir().join(format!("katla-metal4-reload-{}.wgsl", std::process::id()));
+        std::fs::write(&path, SOURCE).unwrap();
+        let context = super::super::context::MetalContext::init_headless().unwrap();
+        let mut renderer = MetalRenderer::new(context).unwrap();
+        let descriptor = PipelineDescriptor::simple(path.to_string_lossy());
+        let handle = renderer.compile_material_impl(&descriptor).unwrap();
+        let original = renderer
+            .material_pipeline(handle, ImageFormat::B8G8R8A8Srgb)
+            .unwrap();
+        let original_count = renderer.materials.get(handle).unwrap().variants.len();
+        let misses = renderer
+            .context
+            .pipeline_archive
+            .as_ref()
+            .unwrap()
+            .stats()
+            .misses;
+        renderer
+            .ensure_material_variant_impl(handle, ImageFormat::R16G16B16A16Sfloat)
+            .unwrap();
+        assert_eq!(
+            renderer
+                .context
+                .pipeline_archive
+                .as_ref()
+                .unwrap()
+                .stats()
+                .misses,
+            misses,
+            "frame preparation started a compile"
+        );
+        std::fs::write(&path, "invalid shader").unwrap();
+        assert_eq!(renderer.recompile_materials_for_shader_impl(&path), 1);
+        assert_eq!(
+            renderer.materials.get(handle).unwrap().variants.len(),
+            original_count
+        );
+        wait_for_reload(&mut renderer, handle);
+        let retained = renderer
+            .material_pipeline(handle, ImageFormat::B8G8R8A8Srgb)
+            .unwrap();
+        assert!(std::ptr::eq(
+            &*original.pipeline_state,
+            &*retained.pipeline_state
+        ));
+        std::fs::write(
+            &path,
+            SOURCE.replace("vec4f(1.0,0.0,0.0,1.0)", "vec4f(0.0,1.0,0.0,1.0)"),
+        )
+        .unwrap();
+        let reload_started = Instant::now();
+        assert_eq!(renderer.recompile_materials_for_shader_impl(&path), 1);
+        wait_for_reload(&mut renderer, handle);
+        println!(
+            "METAL4_MATERIAL_RELOAD gpu={} variants={} elapsed_us={}",
+            renderer.context.device.name(),
+            original_count,
+            reload_started.elapsed().as_micros()
+        );
+        let replacement = renderer
+            .material_pipeline(handle, ImageFormat::B8G8R8A8Srgb)
+            .unwrap();
+        assert!(!std::ptr::eq(
+            &*original.pipeline_state,
+            &*replacement.pipeline_state
+        ));
+        assert_eq!(
+            renderer.materials.get(handle).unwrap().variants.len(),
+            original_count
+        );
+        std::fs::remove_file(path).unwrap();
     }
 }

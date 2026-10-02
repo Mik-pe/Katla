@@ -222,7 +222,11 @@ impl GlobalParticleSystem {
                 (MAX_EMITTERS as usize * std::mem::size_of::<EmitterConfig>()) as u64;
             let emitter_buffer_info = vk::BufferCreateInfo::default()
                 .size(emitter_size)
-                .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
+                .usage(
+                    vk::BufferUsageFlags::STORAGE_BUFFER
+                        | vk::BufferUsageFlags::TRANSFER_SRC
+                        | vk::BufferUsageFlags::TRANSFER_DST,
+                )
                 .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
             let (emitter_buffer, emitter_allocation) = context

@@ -33,7 +33,7 @@ cargo clippy                   # Lint
 cargo fmt                      # Format
 cargo run                      # Run the app
 cargo run -- -s                # Limited-frame mode (100 frames, validation)
-METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- -s  # Metal validation (macOS)
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- -s  # Metal validation (macOS)
 ```
 
 ## Features
@@ -43,7 +43,7 @@ METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- -s  # Metal validation (macOS)
 
 ## Shader Pipeline
 
-WGSL shaders compiled at runtime via naga → SPIR-V (Vulkan) or MSL (Metal). Hot reload supported.
+WGSL is canonical: Naga produces SPIR-V for Vulkan and MSL for Metal. Metal 4 compiler work and native archive persistence run through one worker service; known variants are warmed before frames, and reload swaps only successfully compiled replacements. Frame encoding cannot compile a pipeline. Sampled Metal textures use bounded staged uploads into private GPU storage. See the pipeline, binding/residency, frame-slot and texture-upload documents under docs/.
 
 ## Asset Pipeline
 

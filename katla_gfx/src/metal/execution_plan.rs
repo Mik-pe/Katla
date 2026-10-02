@@ -44,6 +44,8 @@ pub(crate) struct MetalPassRecord {
     pub(crate) pass_index: usize,
     pub(crate) name: String,
     pub(crate) kind: PassKind,
+    pub(crate) pass_type: PassType,
+    pub(crate) commands: Vec<crate::render_graph::ComputeCommand>,
     pub(crate) reads: Vec<ResourceId>,
     pub(crate) writes: Vec<ResourceId>,
     pub(crate) image_accesses: Vec<ImageAccess>,
@@ -62,19 +64,16 @@ impl MetalPassRecord {
         format_at: &impl Fn(ResourceId) -> Option<ImageFormat>,
         name_at: &impl Fn(ResourceId) -> Option<String>,
     ) -> Result<Self, RenderGraphError> {
-        if pass.pass_type == PassType::Compute {
-            return Err(RenderGraphError::BackendError(format!(
-                "Metal pass '{}' is compute; backend-neutral compute commands are not implemented",
-                pass.name
-            )));
-        }
-
-        let kind = pass.kind.ok_or_else(|| {
-            RenderGraphError::BackendError(format!(
-                "Metal pass '{}' has no executable semantic kind",
-                pass.name
-            ))
-        })?;
+        let kind = if pass.pass_type != PassType::Graphics {
+            PassKind::Geometry
+        } else {
+            pass.kind.ok_or_else(|| {
+                RenderGraphError::BackendError(format!(
+                    "Metal pass '{}' has no executable semantic kind",
+                    pass.name
+                ))
+            })?
+        };
 
         match kind {
             PassKind::Shadow
@@ -98,6 +97,8 @@ impl MetalPassRecord {
             pass_index,
             name: pass.name.clone(),
             kind,
+            pass_type: pass.pass_type,
+            commands: pass.commands.clone(),
             reads: pass.reads.clone(),
             writes: pass.writes.clone(),
             image_accesses: pass.image_accesses.clone(),
@@ -221,16 +222,11 @@ impl MetalPassRecord {
     }
 }
 
-/// How Metal realizes one compiled image or buffer synchronization operation.
-///
-/// Metal has no image layouts. Encoder load/store actions realize render-target
-/// transitions, while driver-tracked resources cover image and buffer hazards
-/// between encoders. The hand-placed tonemap→UI fence predates this plan and
-/// remains until queue and encoder boundary requirements are modeled explicitly.
+/// Native stage barriers implement compiled image and buffer hazards.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MetalSyncCoverage {
-    /// Driver-tracked hazards between encoders cover the operation.
-    TrackedResource,
+    /// Compiled native queue-stage visibility orders the operation.
+    ExplicitStageBarrier,
     /// The first use has no prior GPU access to order.
     NoPriorAccess,
 }
@@ -241,8 +237,7 @@ pub(crate) struct MetalSyncRecord {
     /// Pass the operation precedes; `None` at frame end.
     pub(crate) pass: Option<usize>,
     pub(crate) resource: ResourceId,
-    /// Present for buffer synchronization records; images cover their full
-    /// tracked resource and therefore have no byte range.
+    /// Declared byte scope for buffer operations; image scopes remain in the compiled image synchronization plan.
     pub(crate) buffer_range: Option<BufferByteRange>,
     pub(crate) coverage: MetalSyncCoverage,
 }
@@ -253,7 +248,7 @@ impl MetalSyncRecord {
             pass,
             resource: op.resource,
             buffer_range: None,
-            coverage: MetalSyncCoverage::TrackedResource,
+            coverage: MetalSyncCoverage::ExplicitStageBarrier,
         }
     }
 
@@ -265,7 +260,7 @@ impl MetalSyncRecord {
             coverage: if op.before == crate::render_graph::BufferSyncState::Undefined {
                 MetalSyncCoverage::NoPriorAccess
             } else {
-                MetalSyncCoverage::TrackedResource
+                MetalSyncCoverage::ExplicitStageBarrier
             },
         }
     }
@@ -283,6 +278,7 @@ impl MetalExecutionPlan {
     pub(crate) fn compile(
         frame_graph: &FrameGraph<MetalRenderer>,
         backbuffer_format: ImageFormat,
+        renderer: Option<&MetalRenderer>,
     ) -> Result<Self, RenderGraphError> {
         let order = frame_graph.execution_order();
         // Transient resources carry their declared format; the imported
@@ -292,7 +288,16 @@ impl MetalExecutionPlan {
                 if frame_graph.resource_name(id) == Some("backbuffer") {
                     Some(backbuffer_format)
                 } else {
-                    None
+                    frame_graph
+                        .imported_images
+                        .get(&id)
+                        .and_then(|handle| {
+                            renderer.and_then(|renderer| renderer.textures.get(*handle))
+                        })
+                        .map(|entry| {
+                            use crate::backend::resource::GpuImage;
+                            entry.texture.format()
+                        })
                 }
             })
         };
@@ -375,6 +380,8 @@ impl MetalExecutionPlan {
                     pass_index,
                     name: format!("pass_{pass_index}"),
                     kind,
+                    pass_type: PassType::Graphics,
+                    commands: Vec::new(),
                     reads: Vec::new(),
                     writes: Vec::new(),
                     image_accesses: Vec::new(),
@@ -609,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn classifies_compiled_sync_ops_as_tracked_resource_coverage() {
+    fn test_classifies_compiled_sync_ops_as_explicit_stage_coverage() {
         let geometry = pass("geometry", PassType::Graphics, Some(PassKind::Geometry));
         let tonemap = pass("tonemap", PassType::Graphics, Some(PassKind::Fullscreen));
         let passes = vec![geometry, tonemap];
@@ -663,27 +670,27 @@ mod tests {
                     pass: Some(1),
                     resource: ResourceId(3),
                     buffer_range: None,
-                    coverage: MetalSyncCoverage::TrackedResource,
+                    coverage: MetalSyncCoverage::ExplicitStageBarrier,
                 },
                 MetalSyncRecord {
                     pass: None,
                     resource: ResourceId(3),
                     buffer_range: None,
-                    coverage: MetalSyncCoverage::TrackedResource,
+                    coverage: MetalSyncCoverage::ExplicitStageBarrier,
                 },
             ]
         );
     }
 
     #[test]
-    fn rejects_compute_before_command_buffer_creation() {
-        let passes = vec![pass(
-            "light_cull",
-            PassType::Compute,
-            Some(PassKind::Geometry),
-        )];
-        let error = compile(&passes, &[0]).unwrap_err().to_string();
-        assert!(error.contains("backend-neutral compute commands"));
+    fn test_accepts_neutral_compute_and_transfer_records() {
+        let passes = vec![
+            pass("compute", PassType::Compute, None),
+            pass("transfer", PassType::Transfer, None),
+        ];
+        let plan = compile(&passes, &[0, 1]).unwrap();
+        assert_eq!(plan.passes()[0].pass_type, PassType::Compute);
+        assert_eq!(plan.passes()[1].pass_type, PassType::Transfer);
     }
 
     #[test]

@@ -12,10 +12,6 @@ pub struct SwapData {
     /// Per-swapchain-image semaphores to avoid reuse issues
     image_available_semaphores: Vec<vk::Semaphore>,
     render_finished_semaphores: Vec<vk::Semaphore>,
-    /// Per-frame semaphores signaled when a frame's GPU work is complete.
-    /// Waited on by the next frame to ensure proper synchronization across
-    /// all pipeline stages (COMPUTE, TRANSFER, CLEAR, etc.).
-    frame_complete_semaphores: Vec<vk::Semaphore>,
 }
 
 impl SwapData {
@@ -48,17 +44,6 @@ impl SwapData {
             })
             .collect::<Result<_, _>>()?;
 
-        let frame_complete_semaphores: Vec<_> = (0..frames_in_flight)
-            .map(|_| {
-                unsafe { device.create_semaphore(&semaphore_info, None) }.map_err(|e| {
-                    RendererError::InitializationFailed(format!(
-                        "Failed to create frame complete semaphore: {:?}",
-                        e
-                    ))
-                })
-            })
-            .collect::<Result<_, _>>()?;
-
         let fence_info = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
         let in_flight_fences: Vec<_> = (0..frames_in_flight)
             .map(|_| {
@@ -79,7 +64,6 @@ impl SwapData {
             in_flight_fences,
             image_available_semaphores,
             render_finished_semaphores,
-            frame_complete_semaphores,
         })
     }
 
@@ -132,27 +116,12 @@ impl SwapData {
         self.in_flight_fences[self.frame]
     }
 
-    /// Get the frame complete semaphore for the current frame.
-    /// This should be signaled when the frame's GPU work is done.
-    pub fn frame_complete_semaphore(&self) -> vk::Semaphore {
-        self.frame_complete_semaphores[self.frame]
-    }
-
-    /// Get the frame complete semaphore for the previous frame.
-    /// This should be waited on at the start of a new frame to ensure
-    /// the previous frame's GPU work (including TRANSFER/CLEAR) is complete.
-    pub fn previous_frame_complete_semaphore(&self) -> vk::Semaphore {
-        self.frame_complete_semaphores
-            [(self.frame + self.frames_in_flight - 1) % self.frames_in_flight]
-    }
-
     pub fn destroy(&mut self, device: &Device) {
         unsafe {
             for &semaphore in self
                 .image_available_semaphores
                 .iter()
                 .chain(self.render_finished_semaphores.iter())
-                .chain(self.frame_complete_semaphores.iter())
             {
                 device.destroy_semaphore(semaphore, None);
             }

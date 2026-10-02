@@ -2,8 +2,7 @@
 
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
-    MTLFunction, MTLPixelFormat, MTLRenderCommandEncoder, MTLVertexDescriptor, MTLVertexFormat,
-    MTLVertexStepFunction,
+    MTLFunction, MTLPixelFormat, MTLVertexDescriptor, MTLVertexFormat, MTLVertexStepFunction,
 };
 
 use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
@@ -155,7 +154,6 @@ pub(crate) fn render_cascades(
     frame_uniform_buffer: &MetalBuffer,
     object_storage_buffer: &MetalBuffer,
     shadow_cascade_buffer: &MetalBuffer,
-    buffer_sizes: Option<&MetalBuffer>,
     cascade_count: u32,
     meshes: &ResourceStorage<super::metal_renderer::MetalMesh, crate::handle::MeshMarker>,
     materials: &ResourceStorage<
@@ -170,12 +168,6 @@ pub(crate) fn render_cascades(
     encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
     encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
     encoder.bind_storage_buffer(shadow_cascade_buffer, 0, 2, stages);
-    // naga emits runtime-array bounds checks against [[buffer(8)]]; without it
-    // every objects[] read clamps and all shadow vertices collapse to origin.
-    if let Some(buffer_sizes) = buffer_sizes {
-        encoder.bind_storage_buffer(buffer_sizes, 0, 8, stages);
-    }
-
     // Render into each cascade's quadrant of the atlas. The sampling side
     // (cascade_uv_offset_scale) maps cascade i into the quadrant at
     // (col * 0.5, row * 0.5) with row = 1 - i/2 in UV space, and Metal
@@ -275,13 +267,13 @@ fn encode_cascade_draws(
         // to the correct per-object data.
         let object_offset =
             draw.instance_index as usize * super::metal_renderer::OBJECT_UNIFORM_SIZE as usize;
-        unsafe {
-            encoder.inner.setVertexBuffer_offset_atIndex(
-                Some(&object_storage_buffer.inner),
-                object_offset,
-                1,
-            );
-        }
+
+        encoder.bind_native_buffer(
+            &object_storage_buffer.inner,
+            (object_offset) as u64,
+            1,
+            crate::backend::command::ShaderStages::VERTEX,
+        );
 
         encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }

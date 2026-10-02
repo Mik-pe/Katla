@@ -5,9 +5,7 @@
 //! 2. Outline draw pass: Render selected objects slightly scaled up, only where stencil != 1
 
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{
-    MTLCompareFunction, MTLFunction, MTLPixelFormat, MTLRenderCommandEncoder, MTLStencilOperation,
-};
+use objc2_metal::{MTLCompareFunction, MTLFunction, MTLPixelFormat, MTLStencilOperation};
 
 use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::error::RendererError;
@@ -292,13 +290,13 @@ pub(crate) fn render_stencil_mark(
         // to the correct per-object data.
         let object_offset =
             draw.instance_index as usize * super::metal_renderer::OBJECT_UNIFORM_SIZE as usize;
-        unsafe {
-            encoder.inner.setVertexBuffer_offset_atIndex(
-                Some(&object_storage_buffer.inner),
-                object_offset,
-                1,
-            );
-        }
+
+        encoder.bind_native_buffer(
+            &object_storage_buffer.inner,
+            (object_offset) as u64,
+            1,
+            crate::backend::command::ShaderStages::VERTEX,
+        );
 
         encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }
@@ -400,13 +398,13 @@ pub(crate) fn render_outline(
         // to the correct per-object data.
         let object_offset =
             draw.instance_index as usize * super::metal_renderer::OBJECT_UNIFORM_SIZE as usize;
-        unsafe {
-            encoder.inner.setVertexBuffer_offset_atIndex(
-                Some(&object_storage_buffer.inner),
-                object_offset,
-                1,
-            );
-        }
+
+        encoder.bind_native_buffer(
+            &object_storage_buffer.inner,
+            (object_offset) as u64,
+            1,
+            crate::backend::command::ShaderStages::VERTEX,
+        );
 
         encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
     }

@@ -7,12 +7,23 @@
 use crate::metal::buffer::MetalGraphBuffer;
 use crate::metal::metal_renderer::{FRAMES_IN_FLIGHT, MetalRenderer};
 use crate::metal::metal_transient_texture::MetalTransientTexture;
-use crate::render_graph::backend::RenderGraphBackend;
+use crate::render_graph::backend::{
+    NativeTransientAllocation, RenderGraphBackend, TransientSlotPolicy,
+};
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::resource::{BufferDesc, BufferMemoryPolicy, GraphResourceDesc};
-use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
+use crate::texture::ImageFormat;
 
 impl RenderGraphBackend for MetalRenderer {
+    fn graph_texture_upload_producers(
+        &self,
+    ) -> Vec<(
+        crate::handle::TextureHandle,
+        crate::texture::TextureUploadRegion,
+    )> {
+        crate::renderer::gpu_renderer::GpuRenderer::pending_texture_uploads(self)
+    }
+
     type TransientTexture = MetalTransientTexture;
     type ImageView = crate::metal::texture::MetalTextureView;
     type TransientBuffer = MetalGraphBuffer;
@@ -20,14 +31,41 @@ impl RenderGraphBackend for MetalRenderer {
     fn create_transient_slot(
         &self,
         members: &[GraphResourceDesc],
+        policy: TransientSlotPolicy,
     ) -> Result<Vec<Self::TransientTexture>, RenderGraphError> {
-        // Metal heap aliasing is not implemented yet; every slot member
-        // gets a standalone private allocation from the same compiled
-        // grouping.
-        members
-            .iter()
-            .map(|desc| self.create_standalone_transient_texture(desc))
-            .collect()
+        crate::metal::transient_heap::create_slot(&self.context.device, members, policy)
+    }
+
+    fn transient_allocation_info(
+        texture: &Self::TransientTexture,
+    ) -> Option<NativeTransientAllocation> {
+        let allocation = &texture.allocation;
+        log::debug!(
+            "Inspect Metal allocation frame {} slot {} alias {}",
+            allocation.frame_slot,
+            allocation.slot,
+            allocation.aliased
+        );
+        let identity = allocation
+            .heap
+            .as_ref()
+            .map(|heap| objc2::rc::Retained::as_ptr(heap) as *const () as usize as u64)
+            .unwrap_or_else(|| {
+                objc2::rc::Retained::as_ptr(&texture.texture.inner) as *const () as usize as u64
+            });
+        Some(NativeTransientAllocation {
+            identity,
+            offset: allocation.offset,
+            bytes: allocation.bytes,
+            logical_bytes: allocation.logical_bytes,
+            strategy: if allocation.memoryless {
+                "memoryless"
+            } else if allocation.heap.is_some() {
+                "metal_placement_heap"
+            } else {
+                "private_standalone"
+            },
+        })
     }
 
     fn create_transient_buffer(
@@ -68,6 +106,125 @@ impl RenderGraphBackend for MetalRenderer {
         self.graph_buffers.get(handle)
     }
 
+    fn buffer_offset(buffer: &Self::TransientBuffer) -> u64 {
+        buffer.offset
+    }
+
+    fn graph_buffer_previous_accesses(
+        &self,
+        buffer: &Self::TransientBuffer,
+    ) -> Vec<crate::render_graph::BufferAccess> {
+        use objc2_metal::MTLBuffer;
+        self.buffer_history.borrow().previous(
+            buffer.buffer.inner.gpuAddress(),
+            buffer.offset,
+            buffer.desc.size,
+        )
+    }
+    fn record_graph_buffer_accesses(
+        &self,
+        buffer: &Self::TransientBuffer,
+        accesses: &[crate::render_graph::BufferAccess],
+    ) {
+        self.pending_buffer_accesses.borrow_mut().push(
+            crate::metal::frame_lifecycle::MetalBufferExecution {
+                buffer: buffer.buffer.clone(),
+                offset: buffer.offset,
+                accesses: accesses.to_vec(),
+            },
+        );
+    }
+
+    fn prepare_compute_pipeline(
+        &mut self,
+        descriptor: &crate::render_graph::ComputePipelineDesc,
+    ) -> Result<(), RenderGraphError> {
+        if self.compute_pipelines.contains_key(descriptor) {
+            return Ok(());
+        }
+        let interface = descriptor
+            .interface()
+            .map_err(RenderGraphError::BackendError)?;
+        let shader = crate::metal::shader::compile_wgsl_to_metal(
+            &self.context.device,
+            &descriptor.wgsl,
+            &[&descriptor.entry],
+            crate::metal::shader::ShaderProfile::Graphics,
+        )
+        .map_err(|error| RenderGraphError::BackendError(error.to_string()))?;
+        let function = shader
+            .module
+            .entry_points
+            .get(&descriptor.entry)
+            .ok_or_else(|| RenderGraphError::BackendError("compute entry point missing".into()))?;
+        let mut pipeline = self
+            .context
+            .create_compute_pipeline(function, interface.workgroup_size)
+            .map_err(|error| RenderGraphError::BackendError(error.to_string()))?;
+        pipeline.uniform_bindings = interface
+            .bindings
+            .iter()
+            .filter(|binding| binding.usage == crate::render_graph::BufferUsage::Uniform)
+            .map(|binding| (binding.group, binding.binding))
+            .collect();
+        self.compute_pipelines.insert(descriptor.clone(), pipeline);
+        Ok(())
+    }
+
+    fn builtin_buffer(
+        &self,
+        role: crate::render_graph::BuiltinBuffer,
+    ) -> Option<Self::TransientBuffer> {
+        use crate::backend::resource::GpuBuffer;
+        use crate::render_graph::BuiltinBuffer::*;
+        use crate::render_graph::{BufferMemoryPolicy, BufferUsages};
+        let (buffer, offset, size) = match role {
+            Skeleton(handle) => {
+                let buffer = self.skeletons[self.frame_index()].get(handle)?;
+                (buffer, 0, buffer.size())
+            }
+            LightData | LightTiles | LightHeaders | LightFrame => {
+                let light = self.light_culling.as_ref()?;
+                let buffer = match role {
+                    LightData => light.light_buffer(),
+                    LightTiles => light.tile_index_buffer(),
+                    LightHeaders => light.tile_count_buffer(),
+                    _ => light.frame_buffer(),
+                };
+                (buffer, 0, buffer.size())
+            }
+            ParticleData
+            | ParticleDeadList
+            | ParticleAliveRead
+            | ParticleAliveWrite
+            | ParticleCounters
+            | ParticlePreviousCounters
+            | ParticleIndirect
+            | ParticleFrame
+            | ParticleEmitters => self
+                .particle_system
+                .as_ref()?
+                .buffer_slice(role, self.frame_index)?,
+            _ => {
+                let buffer = self.animation_system.as_ref()?.builtin_buffer(role)?;
+                (buffer, 0, buffer.size())
+            }
+        };
+        Some(MetalGraphBuffer {
+            buffer: buffer.clone(),
+            offset,
+            desc: BufferDesc::new(
+                size,
+                BufferUsages::STORAGE
+                    | BufferUsages::UNIFORM
+                    | BufferUsages::TRANSFER_SOURCE
+                    | BufferUsages::TRANSFER_DESTINATION
+                    | BufferUsages::INDIRECT,
+                BufferMemoryPolicy::CpuVisible,
+            ),
+        })
+    }
+
     fn current_frame(&self) -> usize {
         self.frame_index()
     }
@@ -80,6 +237,9 @@ impl RenderGraphBackend for MetalRenderer {
         &mut self,
         texture: &Self::TransientTexture,
     ) -> Result<u32, RenderGraphError> {
+        if texture.allocation.memoryless {
+            return Err(RenderGraphError::BackendError("Memoryless attachments cannot be registered for shader access; declare an exported resource before allocation".into()));
+        }
         self.register_metal_bindless_texture(&texture.view.inner)
             .map_err(|e| RenderGraphError::BackendError(e.to_string()))
     }
@@ -129,44 +289,5 @@ impl RenderGraphBackend for MetalRenderer {
 
     fn depth_image_view(&self, _frame_index: usize) -> Option<Self::ImageView> {
         self.depth_stencil_view.clone()
-    }
-}
-
-impl MetalRenderer {
-    fn create_standalone_transient_texture(
-        &self,
-        desc: &GraphResourceDesc,
-    ) -> Result<MetalTransientTexture, RenderGraphError> {
-        let usage = match desc.resource_type {
-            crate::render_graph::resource::GraphResourceType::ColorAttachment { .. } => {
-                TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED
-            }
-            crate::render_graph::resource::GraphResourceType::DepthAttachment {
-                sampled, ..
-            } => {
-                let mut u = TextureUsage::DEPTH_STENCIL_ATTACHMENT;
-                if sampled {
-                    u |= TextureUsage::SAMPLED;
-                }
-                u
-            }
-            crate::render_graph::resource::GraphResourceType::SampledImage => TextureUsage::SAMPLED,
-        };
-
-        let tex_desc =
-            TextureDescriptor::new(desc.width, desc.height, desc.format).with_usage(usage);
-
-        let (texture, view) = self
-            .context
-            .create_texture(&tex_desc)
-            .map_err(|e| RenderGraphError::BackendError(e.to_string()))?;
-
-        Ok(MetalTransientTexture::new(
-            texture,
-            view,
-            desc.format,
-            desc.width,
-            desc.height,
-        ))
     }
 }

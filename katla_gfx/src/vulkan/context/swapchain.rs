@@ -125,6 +125,14 @@ impl VulkanFrameCtx {
             swapchain: Some(swapchain),
             offscreen_targets: Vec::new(),
             swapchain_image_views,
+            swapchain_image_layouts: (0..swapchain_images_wrapped.len())
+                .map(|_| std::cell::Cell::new(vk::ImageLayout::UNDEFINED))
+                .collect(),
+            swapchain_image_contents: (0..swapchain_images_wrapped.len())
+                .map(|_| std::cell::Cell::new(false))
+                .collect(),
+            pending_output_contents: std::cell::Cell::new(None),
+            pending_transient_layouts: Default::default(),
             swapchain_images: swapchain_images_wrapped,
             depth_render_textures,
             command_buffers,
@@ -178,6 +186,14 @@ impl VulkanFrameCtx {
             swapchain: None,
             extent,
             scene_extent: extent,
+            swapchain_image_layouts: (0..images.len())
+                .map(|_| std::cell::Cell::new(vk::ImageLayout::UNDEFINED))
+                .collect(),
+            swapchain_image_contents: (0..images.len())
+                .map(|_| std::cell::Cell::new(false))
+                .collect(),
+            pending_output_contents: std::cell::Cell::new(None),
+            pending_transient_layouts: Default::default(),
             swapchain_images: images,
             swapchain_image_views: views,
             offscreen_targets: targets,
@@ -224,6 +240,15 @@ impl VulkanFrameCtx {
             .iter()
             .map(|img| VkImage::new(*img))
             .collect();
+
+        self.swapchain_image_layouts = (0..swapchain_images.len())
+            .map(|_| std::cell::Cell::new(vk::ImageLayout::UNDEFINED))
+            .collect();
+        self.swapchain_image_contents = (0..swapchain_images.len())
+            .map(|_| std::cell::Cell::new(false))
+            .collect();
+        self.pending_output_contents.set(None);
+        self.pending_transient_layouts.borrow_mut().rollback();
 
         self.swapchain_image_views = swapchain_images
             .iter()

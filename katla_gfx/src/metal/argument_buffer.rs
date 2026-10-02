@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::collections::{BTreeMap, VecDeque};
+use std::rc::Rc;
+
+use super::residency::MetalResidency;
 use std::mem::size_of;
 use std::panic::AssertUnwindSafe;
 
@@ -6,8 +9,8 @@ use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
-    MTLArgumentBuffersTier, MTLArgumentEncoder, MTLBuffer, MTLDevice, MTLFunction, MTLResourceID,
-    MTLResourceOptions, MTLTexture,
+    MTLArgumentBuffersTier, MTLBuffer, MTLDevice, MTLResource, MTLResourceID, MTLResourceOptions,
+    MTLStorageMode, MTLTexture,
 };
 
 use crate::error::RendererError;
@@ -15,29 +18,57 @@ use crate::error::RendererError;
 /// Maximum number of textures in the bindless array.
 const MAX_BINDLESS_TEXTURES: u32 = 4096;
 
-/// Naga maps Katla's bindless texture array to `[[buffer(9)]]` in MSL.
-const BINDLESS_ARGUMENT_BUFFER_INDEX: usize = 9;
-
-/// How texture references are written into the argument buffer.
-enum ArgumentBufferEncoding {
-    /// Tier 2 argument buffers contain one `MTLResourceID` per texture slot.
-    DirectResourceIds,
-    /// Tier 1 devices use the private layout reflected from the shader function.
-    Encoder(Retained<ProtocolObject<dyn MTLArgumentEncoder>>),
+/// Immutable bindless data and native residency retained by each submission.
+pub(crate) struct BindlessSnapshot {
+    pub(crate) buffer: Retained<ProtocolObject<dyn MTLBuffer>>,
+    pub(crate) residency: Rc<MetalResidency>,
+    pub(crate) generation: u64,
 }
 
-/// Metal bindless texture manager using an argument buffer.
-///
-/// Texture slots may be registered before a shader is compiled. The backing
-/// argument buffer is initialized lazily from the first fragment function so
-/// the renderer can choose the encoding path supported by the actual device.
+struct DirtySlots {
+    slots: Vec<u32>,
+    marked: Vec<bool>,
+}
+
+impl DirtySlots {
+    fn new(capacity: usize) -> Self {
+        Self {
+            slots: Vec::new(),
+            marked: vec![false; capacity],
+        }
+    }
+    fn insert(&mut self, slot: u32) {
+        if !self.marked[slot as usize] {
+            self.marked[slot as usize] = true;
+            self.slots.push(slot);
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.slots.is_empty()
+    }
+    fn clear(&mut self) {
+        for slot in self.slots.drain(..) {
+            self.marked[slot as usize] = false;
+        }
+    }
+}
+
+struct CachedSnapshot {
+    transient_bindings: Vec<(u32, u64)>,
+    snapshot: Rc<BindlessSnapshot>,
+}
+
+/// Owns immutable bindless snapshots consumed through Metal 4 argument tables.
 pub(crate) struct MetalBindlessTextureManager {
     textures: Vec<Option<Retained<ProtocolObject<dyn MTLTexture>>>>,
     free_slots: Vec<u32>,
-    encoding: Option<ArgumentBufferEncoding>,
-    argument_buffer: Option<Retained<ProtocolObject<dyn MTLBuffer>>>,
+    snapshot: Option<Rc<BindlessSnapshot>>,
+    device: Option<Retained<ProtocolObject<dyn MTLDevice>>>,
+    generation: u64,
     default_texture: Option<Retained<ProtocolObject<dyn MTLTexture>>>,
-    dirty_slots: HashSet<u32>,
+    dirty_slots: DirtySlots,
+    transient_slots: BTreeMap<u32, u64>,
+    slot_snapshots: VecDeque<CachedSnapshot>,
 }
 
 impl MetalBindlessTextureManager {
@@ -52,131 +83,133 @@ impl MetalBindlessTextureManager {
         Ok(Self {
             textures: vec![None; capacity as usize],
             free_slots: (0..capacity).rev().collect(),
-            encoding: None,
-            argument_buffer: None,
+            snapshot: None,
+            device: None,
+            generation: 0,
             default_texture: None,
-            dirty_slots: HashSet::new(),
+            dirty_slots: DirtySlots::new(capacity as usize),
+            transient_slots: BTreeMap::new(),
+            slot_snapshots: VecDeque::new(),
         })
     }
 
     pub(crate) fn set_default_texture(&mut self, texture: &ProtocolObject<dyn MTLTexture>) {
+        self.slot_snapshots.clear();
         self.default_texture = Some(texture.retain());
+        for (slot, texture) in self.textures.iter().enumerate() {
+            if texture.is_none() {
+                self.dirty_slots.insert(slot as u32);
+            }
+        }
     }
 
     pub(crate) fn is_initialized(&self) -> bool {
-        self.encoding.is_some() && self.argument_buffer.is_some()
+        self.snapshot.is_some()
     }
 
-    /// Return why this device cannot execute Katla's bindless shader profile.
-    ///
-    /// GitHub's `AppleParavirtDevice` reports Tier 1 but does not implement the
-    /// argument-encoder selector required to obtain Tier 1's private layout. The
-    /// condition is detected before calling that selector or submitting GPU work.
     pub(crate) fn unsupported_device_reason(
         device: &ProtocolObject<dyn MTLDevice>,
     ) -> Option<String> {
-        if device.argumentBuffersSupport() == MTLArgumentBuffersTier::Tier2 {
-            return None;
-        }
-
-        let name = device.name().to_string();
-        name.to_ascii_lowercase().contains("paravirt").then(|| {
+        (device.argumentBuffersSupport() != MTLArgumentBuffersTier::Tier2).then(|| {
             format!(
-                "Metal device '{name}' exposes only Tier 1 argument buffers but does not implement shader argument-encoder reflection"
+                "Metal device '{}' cannot execute Katla's Metal 4 bindless ABI",
+                device.name()
             )
         })
     }
 
-    /// Initialize the bindless argument buffer for the device used by `function`.
-    ///
-    /// Tier 2 uses direct `MTLResourceID` encoding. Tier 1 uses the layout
-    /// reflected from the compiled shader function. Every Objective-C call that
-    /// can raise is scoped in an exception boundary and converted into a normal
-    /// `RendererError`.
-    pub(crate) fn initialize_from_function(
+    pub(crate) fn initialize(
         &mut self,
-        function: &ProtocolObject<dyn MTLFunction>,
+        device: &ProtocolObject<dyn MTLDevice>,
     ) -> Result<(), RendererError> {
         if self.is_initialized() {
             return Ok(());
         }
-
-        let default_texture = self.default_texture.clone().ok_or_else(|| {
-            RendererError::InitializationFailed(
-                "Metal bindless argument buffer has no default texture".into(),
-            )
-        })?;
-        let device = function.device();
-
-        if let Some(reason) = Self::unsupported_device_reason(&device) {
+        if let Some(reason) = Self::unsupported_device_reason(device) {
             return Err(RendererError::UnsupportedFeature(reason));
         }
-
-        if device.argumentBuffersSupport() == MTLArgumentBuffersTier::Tier2 {
-            return self.initialize_direct_resource_ids(&device, default_texture.as_ref());
-        }
-
-        let encoder = objc2::exception::catch(AssertUnwindSafe(|| unsafe {
-            function.newArgumentEncoderWithBufferIndex(BINDLESS_ARGUMENT_BUFFER_INDEX)
-        }))
-        .map_err(|exception| {
-            RendererError::UnsupportedFeature(format!(
-                "Metal device '{}' could not reflect the bindless shader layout at buffer {}: {:?}",
-                device.name(),
-                BINDLESS_ARGUMENT_BUFFER_INDEX,
-                exception
-            ))
-        })?;
-
-        let encoded_length = encoder.encodedLength();
-        if encoded_length == 0 {
-            return Err(RendererError::InitializationFailed(format!(
-                "Metal shader reported an empty bindless argument layout at buffer {}",
-                BINDLESS_ARGUMENT_BUFFER_INDEX
-            )));
-        }
-
-        let buffer = Self::allocate_buffer(&device, encoded_length)?;
-        unsafe {
-            encoder.setArgumentBuffer_offset(Some(&buffer), 0);
-            for (index, slot) in self.textures.iter().enumerate() {
-                let texture = slot.as_deref().unwrap_or(default_texture.as_ref());
-                encoder.setTexture_atIndex(Some(texture), index);
-            }
-        }
-
-        log::info!(
-            "Initialized Metal Tier 1 bindless argument buffer with reflected shader layout"
-        );
-        self.encoding = Some(ArgumentBufferEncoding::Encoder(encoder));
-        self.argument_buffer = Some(buffer);
-        self.dirty_slots.clear();
-        Ok(())
+        self.device = Some(device.retain());
+        self.rebuild_snapshot()
     }
 
-    fn initialize_direct_resource_ids(
-        &mut self,
-        device: &ProtocolObject<dyn MTLDevice>,
-        default_texture: &ProtocolObject<dyn MTLTexture>,
-    ) -> Result<(), RendererError> {
-        let encoded_length = self
-            .textures
-            .len()
-            .checked_mul(size_of::<MTLResourceID>())
-            .ok_or_else(|| {
-                RendererError::InitializationFailed(
-                    "Metal bindless argument-buffer size overflow".into(),
-                )
-            })?;
-        let buffer = Self::allocate_buffer(device, encoded_length)?;
-        Self::write_all_resource_ids(&buffer, &self.textures, default_texture)?;
-
-        log::info!(
-            "Initialized Metal bindless argument buffer with {} direct resource IDs",
-            self.textures.len()
-        );
-        self.encoding = Some(ArgumentBufferEncoding::DirectResourceIds);
-        self.argument_buffer = Some(buffer);
+    fn rebuild_snapshot(&mut self) -> Result<(), RendererError> {
+        let key: Vec<_> = self
+            .transient_slots
+            .iter()
+            .map(|(&slot, &id)| (slot, id))
+            .collect();
+        if let Some(cached) = self
+            .slot_snapshots
+            .iter()
+            .find(|candidate| candidate.transient_bindings == key)
+        {
+            self.snapshot = Some(cached.snapshot.clone());
+            self.dirty_slots.clear();
+            return Ok(());
+        }
+        let device = self.device.as_deref().ok_or_else(|| {
+            RendererError::InitializationFailed("Bindless device is absent".into())
+        })?;
+        let default = self.default_texture.as_deref().ok_or_else(|| {
+            RendererError::InitializationFailed("Bindless default texture is absent".into())
+        })?;
+        let buffer =
+            Self::allocate_buffer(device, self.textures.len() * size_of::<MTLResourceID>())?;
+        if let Some(previous) = self.snapshot.as_ref() {
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    previous.buffer.contents().as_ptr().cast::<u8>(),
+                    buffer.contents().as_ptr().cast::<u8>(),
+                    buffer.length(),
+                );
+            }
+            for &slot in &self.dirty_slots.slots {
+                Self::write_resource_id(
+                    &buffer,
+                    slot,
+                    self.textures[slot as usize].as_deref().unwrap_or(default),
+                )?;
+            }
+        } else {
+            Self::write_all_resource_ids(&buffer, &self.textures, default)?;
+        }
+        let residency = Rc::new(MetalResidency::new(device, "persistent_bindless")?);
+        residency.add_buffer(&buffer)?;
+        residency.add_texture(default)?;
+        for texture in self.textures.iter().flatten() {
+            residency.add_texture(texture)?;
+        }
+        residency.commit();
+        self.generation = self.generation.checked_add(1).ok_or_else(|| {
+            RendererError::InvalidOperation("Bindless snapshot generation exhausted".into())
+        })?;
+        self.snapshot = Some(Rc::new(BindlessSnapshot {
+            buffer,
+            residency,
+            generation: self.generation,
+        }));
+        if log::log_enabled!(log::Level::Debug)
+            && let Some(snapshot) = &self.snapshot
+        {
+            let diagnostics = snapshot.residency.diagnostics();
+            log::debug!(
+                "Published bindless snapshot {}: {} allocations, {} estimated resident bytes",
+                snapshot.generation,
+                diagnostics.allocation_count,
+                diagnostics.estimated_resident_bytes
+            );
+        }
+        if !key.is_empty() {
+            if let Some(snapshot) = self.snapshot.clone() {
+                self.slot_snapshots.push_back(CachedSnapshot {
+                    transient_bindings: key,
+                    snapshot,
+                });
+            }
+            while self.slot_snapshots.len() > 3 {
+                self.slot_snapshots.pop_front();
+            }
+        }
         self.dirty_slots.clear();
         Ok(())
     }
@@ -269,25 +302,54 @@ impl MetalBindlessTextureManager {
         &mut self,
         texture: &ProtocolObject<dyn MTLTexture>,
     ) -> Result<u32, RendererError> {
+        if texture.storageMode() == MTLStorageMode::Memoryless {
+            return Err(RendererError::InvalidOperation(
+                "Tile-local memoryless attachments cannot enter shader-visible bindless tables"
+                    .into(),
+            ));
+        }
         let slot = self.free_slots.pop().ok_or_else(|| {
             RendererError::InvalidOperation("No free bindless texture slots available".into())
         })?;
+        self.slot_snapshots.clear();
         self.textures[slot as usize] = Some(texture.retain());
         self.dirty_slots.insert(slot);
         Ok(slot)
     }
 
-    pub(crate) fn update_texture(
+    /// Allocate one graph-visible bindless address shared by its frame slots.
+    pub(crate) fn register_transient_texture(
+        &mut self,
+        texture: &ProtocolObject<dyn MTLTexture>,
+    ) -> Result<u32, RendererError> {
+        let id = Self::texture_resource_id(texture)?;
+        let slot = self.register_texture(texture)?;
+        self.transient_slots.insert(slot, id);
+        Ok(slot)
+    }
+
+    /// Select the active graph allocation without invalidating stable slot snapshots.
+    pub(crate) fn update_transient_texture(
         &mut self,
         slot: u32,
         texture: &ProtocolObject<dyn MTLTexture>,
     ) -> Result<(), RendererError> {
-        if slot as usize >= self.textures.len() {
+        if texture.storageMode() == MTLStorageMode::Memoryless {
+            return Err(RendererError::InvalidOperation(
+                "Tile-local memoryless attachments cannot enter shader-visible bindless tables"
+                    .into(),
+            ));
+        }
+        if !self.transient_slots.contains_key(&slot) {
             return Err(RendererError::InvalidOperation(format!(
-                "Bindless slot {} out of bounds",
-                slot
+                "Bindless slot {slot} is not a graph resource"
             )));
         }
+        let id = Self::texture_resource_id(texture)?;
+        if self.transient_slots.get(&slot) == Some(&id) {
+            return Ok(());
+        }
+        self.transient_slots.insert(slot, id);
         self.textures[slot as usize] = Some(texture.retain());
         self.dirty_slots.insert(slot);
         Ok(())
@@ -297,60 +359,24 @@ impl MetalBindlessTextureManager {
         if slot as usize >= self.textures.len() || self.textures[slot as usize].is_none() {
             return false;
         }
+        self.slot_snapshots.clear();
+        self.transient_slots.remove(&slot);
         self.textures[slot as usize] = None;
         self.dirty_slots.insert(slot);
         self.free_slots.push(slot);
         true
     }
 
-    /// Re-encode only slots changed since the previous frame.
-    pub(crate) fn flush_argument_buffer(&mut self) {
-        if self.dirty_slots.is_empty() {
-            return;
+    /// Publish a replacement snapshot without modifying any in-flight table.
+    pub(crate) fn publish_snapshot(&mut self) -> Result<(), RendererError> {
+        if self.dirty_slots.is_empty() || self.device.is_none() {
+            return Ok(());
         }
-        let Some(encoding) = self.encoding.as_ref() else {
-            return;
-        };
-        let Some(buffer) = self.argument_buffer.as_deref() else {
-            return;
-        };
-        let Some(default) = self.default_texture.as_deref() else {
-            return;
-        };
-
-        match encoding {
-            ArgumentBufferEncoding::DirectResourceIds => {
-                for &slot in &self.dirty_slots {
-                    let texture = self.textures[slot as usize].as_deref().unwrap_or(default);
-                    if let Err(error) = Self::write_resource_id(buffer, slot, texture) {
-                        log::error!("Failed to update Metal bindless slot {}: {}", slot, error);
-                        return;
-                    }
-                }
-            }
-            ArgumentBufferEncoding::Encoder(encoder) => unsafe {
-                encoder.setArgumentBuffer_offset(Some(buffer), 0);
-                for &slot in &self.dirty_slots {
-                    let texture = self.textures[slot as usize].as_deref().unwrap_or(default);
-                    encoder.setTexture_atIndex(Some(texture), slot as usize);
-                }
-            },
-        }
-
-        self.dirty_slots.clear();
+        self.rebuild_snapshot()
     }
 
-    pub(crate) fn argument_buffer(&self) -> Option<&ProtocolObject<dyn MTLBuffer>> {
-        self.argument_buffer.as_deref()
-    }
-
-    pub(crate) fn registered_textures(
-        &self,
-    ) -> impl Iterator<Item = &ProtocolObject<dyn MTLTexture>> {
-        self.textures
-            .iter()
-            .filter_map(|texture| texture.as_deref())
-            .chain(self.default_texture.as_deref())
+    pub(crate) fn snapshot(&self) -> Option<Rc<BindlessSnapshot>> {
+        self.snapshot.clone()
     }
 }
 
@@ -359,7 +385,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_zero_capacity() {
+    fn test_rejects_zero_capacity() {
         let result = MetalBindlessTextureManager::new(0);
         assert!(matches!(
             result,
@@ -369,11 +395,209 @@ mod tests {
     }
 
     #[test]
-    fn direct_layout_matches_resource_id_array_size() {
+    fn test_direct_layout_matches_resource_id_array_size() {
         assert_eq!(size_of::<MTLResourceID>(), size_of::<u64>());
         assert_eq!(
             MAX_BINDLESS_TEXTURES as usize * size_of::<MTLResourceID>(),
             32 * 1024
         );
+    }
+    fn texture(device: &ProtocolObject<dyn MTLDevice>) -> Retained<ProtocolObject<dyn MTLTexture>> {
+        let descriptor = objc2_metal::MTLTextureDescriptor::new();
+        descriptor.setPixelFormat(objc2_metal::MTLPixelFormat::RGBA8Unorm);
+        unsafe {
+            descriptor.setWidth(1);
+            descriptor.setHeight(1);
+        }
+        descriptor.setUsage(objc2_metal::MTLTextureUsage::ShaderRead);
+        device.newTextureWithDescriptor(&descriptor).unwrap()
+    }
+
+    fn snapshot_id(snapshot: &BindlessSnapshot, slot: u32) -> u64 {
+        unsafe {
+            snapshot
+                .buffer
+                .contents()
+                .as_ptr()
+                .cast::<u64>()
+                .add(slot as usize)
+                .read()
+        }
+    }
+
+    #[test]
+    fn test_streamed_replacement_and_slot_reuse_preserve_inflight_snapshot() {
+        let device = objc2_metal::MTLCreateSystemDefaultDevice().unwrap();
+        let default = texture(&device);
+        let first = texture(&device);
+        let replacement = texture(&device);
+        let mut manager = MetalBindlessTextureManager::new(4).unwrap();
+        manager.set_default_texture(&default);
+        manager.device = Some(device);
+        let slot = manager.register_texture(&first).unwrap();
+        manager.rebuild_snapshot().unwrap();
+        let inflight = manager.snapshot().unwrap();
+        assert!(manager.release_slot(slot));
+        assert_eq!(manager.register_texture(&replacement).unwrap(), slot);
+        manager.rebuild_snapshot().unwrap();
+        let updated = manager.snapshot().unwrap();
+        assert_eq!(snapshot_id(&inflight, slot), first.gpuResourceID().to_raw());
+        assert_eq!(
+            snapshot_id(&updated, slot),
+            replacement.gpuResourceID().to_raw()
+        );
+        assert_ne!(inflight.generation, updated.generation);
+        inflight.residency.validate_texture(&first).unwrap();
+        assert!(inflight.residency.validate_texture(&replacement).is_err());
+        updated.residency.validate_texture(&replacement).unwrap();
+        assert!(updated.residency.validate_texture(&first).is_err());
+        assert!(manager.release_slot(slot));
+        assert!(!manager.release_slot(slot));
+        manager.rebuild_snapshot().unwrap();
+        assert_eq!(
+            snapshot_id(&manager.snapshot().unwrap(), slot),
+            default.gpuResourceID().to_raw()
+        );
+        assert_eq!(manager.register_texture(&first).unwrap(), slot);
+        manager.rebuild_snapshot().unwrap();
+        assert_eq!(
+            snapshot_id(&updated, slot),
+            replacement.gpuResourceID().to_raw()
+        );
+        assert_eq!(snapshot_id(&inflight, slot), first.gpuResourceID().to_raw());
+    }
+
+    #[test]
+    fn test_non_graph_slot_update_is_rejected() {
+        let device = objc2_metal::MTLCreateSystemDefaultDevice().unwrap();
+        let mut manager = MetalBindlessTextureManager::new(2).unwrap();
+        assert!(
+            manager
+                .update_transient_texture(0, &texture(&device))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_graph_slot_snapshot_reuse_and_streaming_invalidation() {
+        let device = objc2_metal::MTLCreateSystemDefaultDevice().unwrap();
+        let textures: Vec<_> = (0..3).map(|_| texture(&device)).collect();
+        let mut manager = MetalBindlessTextureManager::new(8).unwrap();
+        manager.set_default_texture(&texture(&device));
+        manager.device = Some(device.clone());
+        let slot = manager.register_transient_texture(&textures[0]).unwrap();
+        let mut snapshots = Vec::new();
+        for texture in &textures {
+            manager.update_transient_texture(slot, texture).unwrap();
+            manager.publish_snapshot().unwrap();
+            snapshots.push(manager.snapshot().unwrap());
+        }
+        for (index, texture) in textures.iter().enumerate() {
+            manager.update_transient_texture(slot, texture).unwrap();
+            manager.publish_snapshot().unwrap();
+            assert!(Rc::ptr_eq(&manager.snapshot().unwrap(), &snapshots[index]));
+            assert_eq!(
+                snapshot_id(&snapshots[index], slot),
+                texture.gpuResourceID().to_raw()
+            );
+        }
+        let streamed = texture(&device);
+        let persistent_slot = manager.register_texture(&streamed).unwrap();
+        manager.publish_snapshot().unwrap();
+        let current = manager.snapshot().unwrap();
+        assert!(
+            !snapshots
+                .iter()
+                .any(|previous| Rc::ptr_eq(previous, &current))
+        );
+        assert_eq!(
+            snapshot_id(&current, persistent_slot),
+            streamed.gpuResourceID().to_raw()
+        );
+        current.residency.validate_texture(&streamed).unwrap();
+        for previous in &snapshots {
+            assert!(previous.residency.validate_texture(&streamed).is_err());
+        }
+    }
+
+    #[test]
+    #[ignore = "native encoder binding setup benchmark"]
+    fn test_benchmark_encoder_setup_registered_texture_scaling() {
+        use objc2_metal::{MTL4ArgumentTable, MTL4ArgumentTableDescriptor};
+        let device = objc2_metal::MTLCreateSystemDefaultDevice().unwrap();
+        for count in [1, 64, 512, 4096] {
+            let mut manager = MetalBindlessTextureManager::new(count).unwrap();
+            manager.set_default_texture(&texture(&device));
+            manager.device = Some(device.clone());
+            for _ in 0..count {
+                manager.register_texture(&texture(&device)).unwrap();
+            }
+            manager.rebuild_snapshot().unwrap();
+            let descriptor = MTL4ArgumentTableDescriptor::new();
+            descriptor.setMaxBufferBindCount(10);
+            descriptor.setInitializeBindings(true);
+            let table = device
+                .newArgumentTableWithDescriptor_error(&descriptor)
+                .unwrap();
+            let mut measurements = Vec::new();
+            for _ in 0..15 {
+                let started = std::time::Instant::now();
+                for _ in 0..100_000 {
+                    let snapshot = std::hint::black_box(manager.snapshot().unwrap());
+                    snapshot
+                        .residency
+                        .validate_buffer(&snapshot.buffer)
+                        .unwrap();
+                    unsafe {
+                        table.setAddress_atIndex(snapshot.buffer.gpuAddress(), 9);
+                    }
+                    std::hint::black_box(snapshot.residency.native());
+                }
+                measurements.push(started.elapsed().as_nanos() as f64 / 100_000.0);
+            }
+            measurements.sort_by(f64::total_cmp);
+            println!(
+                "registered_textures={count} native_binding_setup_ns median={:.1} p95={:.1}",
+                measurements[7], measurements[14]
+            );
+        }
+    }
+    #[test]
+    #[ignore = "native frame-slot snapshot publication benchmark"]
+    fn test_benchmark_slot_publication_registered_texture_scaling() {
+        let device = objc2_metal::MTLCreateSystemDefaultDevice().unwrap();
+        for count in [1, 64, 512, 4096] {
+            let mut manager = MetalBindlessTextureManager::new(count).unwrap();
+            manager.set_default_texture(&texture(&device));
+            manager.device = Some(device.clone());
+            let graph_textures: Vec<_> = (0..3).map(|_| texture(&device)).collect();
+            let slot = manager
+                .register_transient_texture(&graph_textures[0])
+                .unwrap();
+            for _ in 1..count {
+                manager.register_texture(&texture(&device)).unwrap();
+            }
+            for texture in &graph_textures {
+                manager.update_transient_texture(slot, texture).unwrap();
+                manager.publish_snapshot().unwrap();
+            }
+            let mut measurements = Vec::new();
+            for _ in 0..15 {
+                let started = std::time::Instant::now();
+                for iteration in 0..100_000 {
+                    manager
+                        .update_transient_texture(slot, &graph_textures[iteration % 3])
+                        .unwrap();
+                    manager.publish_snapshot().unwrap();
+                    std::hint::black_box(manager.snapshot().unwrap());
+                }
+                measurements.push(started.elapsed().as_nanos() as f64 / 100_000.0);
+            }
+            measurements.sort_by(f64::total_cmp);
+            println!(
+                "registered_textures={count} frame_slot_publication_ns median={:.1} p95={:.1}",
+                measurements[7], measurements[14]
+            );
+        }
     }
 }

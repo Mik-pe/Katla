@@ -1,5 +1,6 @@
 mod barriers;
 mod compositing;
+mod compute_commands;
 mod depth_prepass;
 mod draw_calls;
 mod draw_helpers;
@@ -31,13 +32,11 @@ pub struct Frame<'a, B: RenderGraphBackend> {
     pub(super) renderer: &'a mut B,
     pub(super) image_index: u32,
     pub(super) pending: HashMap<usize, PassExecutionData>,
-    /// Whether the backend-owned depth texture has been written this frame.
-    ///
-    /// Scheduling fact for barrier insertion only — attachment load/store
-    /// behavior always comes from the pass's declared ops.
-    pub(super) depth_buffer_written: bool,
+    pub(super) imported_image_states: HashMap<
+        super::handles::ResourceId,
+        Vec<(super::ImageSubresourceRange, super::ImageSyncState)>,
+    >,
     /// Whether the particle emit compute pass ran this frame.
-    pub particle_emit_ran: bool,
     /// What this frame's backend actually encoded, in encode order.
     ///
     /// Populated by the backend as it creates encoders; the graph-level
@@ -86,7 +85,7 @@ fn dispatch_encodes(pass: &PassDesc) -> bool {
         PassType::Graphics => {
             !matches!(pass.kind, Some(PassKind::Fullscreen)) || pass.pipeline.is_some()
         }
-        PassType::Compute => pass.compute_fn.is_some() || pass.pipeline.is_some(),
+        PassType::Compute | PassType::Transfer => !pass.commands.is_empty(),
     }
 }
 
@@ -103,8 +102,7 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
             renderer,
             image_index,
             pending: HashMap::new(),
-            depth_buffer_written: false,
-            particle_emit_ran: false,
+            imported_image_states: HashMap::new(),
             execution_trace: super::trace::ResourceExecutionTrace::new(),
             trace_enabled: false,
         }
@@ -143,7 +141,7 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     /// The returned backend buffer can be used by a backend-specific compute
     /// callback after its native handle is extracted. Imported renderer-owned
     /// buffers and graph-owned transient buffers share this lookup path.
-    pub fn buffer(&self, name: &str) -> Option<&B::TransientBuffer> {
+    pub fn buffer(&self, name: &str) -> Option<super::backend::ResolvedGraphBuffer<'_, B>> {
         let id = self.graph.resource_id(name)?;
         self.graph
             .buffer_by_id(self.renderer, id, self.current_frame())
@@ -279,6 +277,21 @@ fn depth_attachment_info(
         })
 }
 
+fn next_output_contents(
+    name: &str,
+    defined: bool,
+    ops: crate::render_pass::AttachmentOps,
+) -> Result<bool, RenderGraphError> {
+    use crate::render_pass::{LoadOp, StoreOp};
+    if ops.load == LoadOp::Load && !defined {
+        return Err(super::GraphValidationError::LoadingUninitializedOutput {
+            pass: name.to_owned(),
+        }
+        .into());
+    }
+    Ok(ops.store == StoreOp::Store)
+}
+
 impl<'a> Frame<'a, VulkanRenderer> {
     pub(super) fn color_target_extent(&self, pass: &PassDesc) -> ash::vk::Extent2D {
         if self
@@ -294,8 +307,21 @@ impl<'a> Frame<'a, VulkanRenderer> {
                 self.graph
                     .transient_texture_by_id(*id, self.current_frame())
                     .map(|texture| texture.extent)
+                    .or_else(|| {
+                        self.imported_texture(*id).map(|texture| ash::vk::Extent2D {
+                            width: texture.width,
+                            height: texture.height,
+                        })
+                    })
             })
             .unwrap_or(self.renderer.frame_context.scene_extent)
+    }
+
+    fn imported_texture(&self, id: super::ResourceId) -> Option<&crate::vulkan::texture::Texture> {
+        self.graph
+            .imported_images
+            .get(&id)
+            .and_then(|&handle| self.renderer.texture_manager.get_texture(handle))
     }
 
     /// Resolve the image view of a declared color target.
@@ -315,6 +341,7 @@ impl<'a> Frame<'a, VulkanRenderer> {
         self.graph
             .transient_texture_by_id(id, self.current_frame())
             .map(|texture| texture.image_view.vk())
+            .or_else(|| self.imported_texture(id).map(|texture| texture.image_view().vk()))
             .ok_or_else(|| {
                 RenderGraphError::ResourceNotFound(format!(
                     "Color target '{}' not found. Use 'backbuffer' for swapchain or create a transient resource.",
@@ -328,6 +355,10 @@ impl<'a> Frame<'a, VulkanRenderer> {
         self.graph
             .transient_texture_by_id(id, self.current_frame())
             .map(|texture| texture.format)
+            .or_else(|| {
+                self.imported_texture(id)
+                    .map(|texture| texture.format().into())
+            })
             .unwrap_or(ash::vk::Format::UNDEFINED)
     }
 
@@ -384,10 +415,8 @@ impl<'a> Frame<'a, VulkanRenderer> {
 
     /// Resolve the declared depth and stencil attachments for a pass.
     ///
-    /// Targets the backend-owned frame depth texture; per-aspect load/store/
-    /// clear behavior comes from the pass's declared depth ops. Returns
-    /// `(depth, stencil)`; stencil is `None` when the frame depth has no
-    /// stencil aspect.
+    /// Resolves the graph's declared transient or imported depth texture and
+    /// its per-aspect attachment operations.
     pub(super) fn resolve_frame_depth_attachments(
         &self,
         pass: &PassDesc,
@@ -412,9 +441,14 @@ impl<'a> Frame<'a, VulkanRenderer> {
 
         let frame_idx = self.current_frame();
         if let Some(id) = pass.depth_target {
-            let texture = self
+            let (view, format) = self
                 .graph
                 .transient_texture_by_id(id, frame_idx)
+                .map(|texture| (texture.image_view.vk(), texture.format))
+                .or_else(|| {
+                    self.imported_texture(id)
+                        .map(|texture| (texture.image_view().vk(), texture.format().into()))
+                })
                 .ok_or_else(|| {
                     RenderGraphError::InvalidConfiguration(format!(
                         "Pass '{}' cannot resolve graph depth target {}",
@@ -431,72 +465,44 @@ impl<'a> Frame<'a, VulkanRenderer> {
                 },
             };
             let stencil = matches!(
-                texture.format,
+                format,
                 ash::vk::Format::D32_SFLOAT_S8_UINT | ash::vk::Format::D24_UNORM_S8_UINT
             )
-            .then(|| {
-                depth_attachment_info(
-                    texture.image_view.vk(),
-                    &ops.stencil,
-                    clear(ops.stencil.clear_value),
-                )
-            });
+            .then(|| depth_attachment_info(view, &ops.stencil, clear(ops.stencil.clear_value)));
             return Ok((
                 Some(depth_attachment_info(
-                    texture.image_view.vk(),
+                    view,
                     &ops.depth,
                     clear(ops.depth.clear_value),
                 )),
                 stencil,
             ));
         }
-        let depth_texture = self
-            .renderer
-            .frame_context
-            .depth_render_textures
-            .get(frame_idx)
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration(format!(
-                    "depth_render_textures missing entry for frame {}",
-                    frame_idx
-                ))
-            })?;
-
-        let clear = match ops.depth.clear_value {
-            ClearValue::DepthStencil { depth, stencil } => {
-                ash::vk::ClearDepthStencilValue { depth, stencil }
-            }
-            _ => ash::vk::ClearDepthStencilValue {
-                depth: 0.0,
-                stencil: 0,
-            },
-        };
-
-        if let Some(ref ds_view) = depth_texture.depth_stencil_image_view {
-            Ok((
-                Some(depth_attachment_info(ds_view.vk(), &ops.depth, clear)),
-                Some(depth_attachment_info(ds_view.vk(), &ops.stencil, clear)),
-            ))
-        } else {
-            Ok((
-                Some(depth_attachment_info(
-                    depth_texture.image_view.vk(),
-                    &ops.depth,
-                    clear,
-                )),
-                None,
-            ))
-        }
+        Err(RenderGraphError::InvalidConfiguration(format!(
+            "Pass '{}' uses depth without a declared graph target",
+            pass.name
+        )))
     }
 
     /// Execute all passes in order.
     pub(super) fn execute_passes(&mut self) -> Result<(), RenderGraphError> {
-        self.particle_emit_ran = false;
-
         let frame_idx = self.current_frame();
         let cmd = self.renderer.frame_context.command_buffers[frame_idx].clone();
         let execution_order = self.graph.execution_order();
+        let mut output_defined =
+            self.renderer.frame_context.swapchain_image_contents[self.image_index as usize].get();
+        let output_id = self.graph.resource_id(BACKBUFFER_NAME);
 
+        for &index in &execution_order {
+            let pass = &self.graph.passes[index];
+            if let Some((_, ops)) = pass
+                .color_attachments
+                .iter()
+                .find(|(id, _)| Some(*id) == output_id)
+            {
+                output_defined = next_output_contents(&pass.name, output_defined, *ops)?;
+            }
+        }
         for index in execution_order {
             let pass = &self.graph.passes[index];
             let data = self.pending.remove(&index).unwrap_or_default();
@@ -571,22 +577,9 @@ impl<'a> Frame<'a, VulkanRenderer> {
                         }
                     }
                 },
-                super::pass::PassType::Compute => {
-                    if let Some(ref compute_fn) = pass.compute_fn {
-                        compute_fn(self, &cmd, pass.pipeline.unwrap_or_default())?;
-                    } else if let Some(pipeline) = pass.pipeline {
-                        self.execute_compute_pass(&cmd, pass, pipeline, data.dispatch)?;
-                    } else {
-                        log::warn!(
-                            "Compute pass '{}' has no pipeline and no compute_fn",
-                            pass.name
-                        );
-                    }
+                super::pass::PassType::Compute | super::pass::PassType::Transfer => {
+                    self.execute_compute_commands(&cmd, pass, data.dispatch)?;
                 }
-            }
-
-            if pass.uses_depth {
-                self.depth_buffer_written = true;
             }
 
             if self.trace_enabled {
@@ -629,7 +622,43 @@ impl<'a> Frame<'a, VulkanRenderer> {
         }
 
         self.insert_final_sync_barriers(&cmd)?;
+        self.renderer
+            .frame_context
+            .pending_output_contents
+            .set(Some((self.image_index as usize, output_defined)));
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod output_contract_tests {
+    use super::*;
+    use crate::render_pass::{AttachmentOps, ClearValue, StoreOp};
+
+    #[test]
+    fn test_fresh_acquired_output_rejects_load_without_initialization() {
+        assert!(matches!(
+            next_output_contents("overlay", false, AttachmentOps::load()),
+            Err(RenderGraphError::Validation(
+                super::super::GraphValidationError::LoadingUninitializedOutput { .. }
+            ))
+        ));
+        let defined = next_output_contents(
+            "clear",
+            false,
+            AttachmentOps::clear(ClearValue::Color([0.0; 4])),
+        )
+        .unwrap();
+        assert!(next_output_contents("overlay", defined, AttachmentOps::load()).unwrap());
+    }
+
+    #[test]
+    fn test_discarded_output_contents_cannot_be_loaded_later() {
+        let mut discard = AttachmentOps::load();
+        discard.store = StoreOp::DontCare;
+        let defined = next_output_contents("discard", true, discard).unwrap();
+        assert!(!defined);
+        assert!(next_output_contents("load", defined, AttachmentOps::load()).is_err());
     }
 }

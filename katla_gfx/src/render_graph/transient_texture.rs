@@ -1,10 +1,59 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use super::ImageSubresourceRange;
 use crate::sync::VkImageView;
 use crate::vulkan::context::VulkanContext;
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
+
+struct ImageLayoutSnapshot {
+    tracker: Rc<RefCell<ImageLayoutTracker>>,
+    current: Rc<Cell<vk::ImageLayout>>,
+    before: ImageLayoutTracker,
+    before_current: vk::ImageLayout,
+}
+
+/// Reverses encoded image state changes when their command buffer is abandoned.
+#[derive(Default)]
+pub(crate) struct ImageLayoutJournal {
+    snapshots: Vec<ImageLayoutSnapshot>,
+    identities: std::collections::BTreeSet<usize>,
+}
+
+impl ImageLayoutJournal {
+    pub(crate) fn record(&mut self, texture: &TransientTexture) {
+        self.record_tracker(&texture.layouts, &texture.current_layout);
+    }
+
+    fn record_tracker(
+        &mut self,
+        tracker: &Rc<RefCell<ImageLayoutTracker>>,
+        current: &Rc<Cell<vk::ImageLayout>>,
+    ) {
+        if self.identities.insert(Rc::as_ptr(tracker) as usize) {
+            self.snapshots.push(ImageLayoutSnapshot {
+                tracker: tracker.clone(),
+                current: current.clone(),
+                before: tracker.borrow().clone(),
+                before_current: current.get(),
+            });
+        }
+    }
+
+    pub(crate) fn rollback(&mut self) {
+        for snapshot in self.snapshots.drain(..) {
+            *snapshot.tracker.borrow_mut() = snapshot.before;
+            snapshot.current.set(snapshot.before_current);
+        }
+        self.identities.clear();
+    }
+
+    pub(crate) fn commit(&mut self) {
+        self.snapshots.clear();
+        self.identities.clear();
+    }
+}
 
 /// Device memory shared by every transient texture aliased into one
 /// physical allocation slot.
@@ -19,6 +68,8 @@ pub(crate) struct VkSlotMemory {
     memory: vk::DeviceMemory,
     bytes: u64,
     lazily_allocated: bool,
+    frame_slot: usize,
+    allocation_slot: u32,
 }
 
 impl VkSlotMemory {
@@ -27,13 +78,24 @@ impl VkSlotMemory {
         memory: vk::DeviceMemory,
         bytes: u64,
         lazily_allocated: bool,
+        frame_slot: usize,
+        allocation_slot: u32,
     ) -> Self {
         Self {
             context,
             memory,
             bytes,
             lazily_allocated,
+            frame_slot,
+            allocation_slot,
         }
+    }
+
+    pub(crate) fn frame_slot(&self) -> usize {
+        self.frame_slot
+    }
+    pub(crate) fn allocation_slot(&self) -> u32 {
+        self.allocation_slot
     }
 
     pub(crate) fn memory(&self) -> vk::DeviceMemory {
@@ -54,6 +116,47 @@ impl Drop for VkSlotMemory {
         unsafe {
             self.context.device.free_memory(self.memory, None);
         }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ImageLayoutTracker {
+    pieces: Vec<(ImageSubresourceRange, vk::ImageLayout)>,
+}
+
+impl ImageLayoutTracker {
+    pub(crate) fn ranges(
+        &self,
+        range: ImageSubresourceRange,
+        initial: vk::ImageLayout,
+    ) -> Vec<(ImageSubresourceRange, vk::ImageLayout)> {
+        let mut result = Vec::new();
+        let mut remainder = vec![range];
+        for &(piece, layout) in &self.pieces {
+            if let Some(overlap) = piece.intersection(range) {
+                result.push((overlap, layout));
+                remainder = remainder
+                    .iter()
+                    .flat_map(|range| range.subtract(piece))
+                    .collect();
+            }
+        }
+        result.extend(remainder.into_iter().map(|range| (range, initial)));
+        result
+    }
+
+    pub(crate) fn set(&mut self, range: ImageSubresourceRange, layout: vk::ImageLayout) {
+        self.pieces = self
+            .pieces
+            .iter()
+            .flat_map(|&(piece, old)| {
+                piece
+                    .subtract(range)
+                    .into_iter()
+                    .map(move |piece| (piece, old))
+            })
+            .collect();
+        self.pieces.push((range, layout));
     }
 }
 
@@ -78,7 +181,8 @@ pub struct TransientTexture {
     /// This is used to update the descriptor when the texture is recreated.
     pub(super) bindless_slot: Option<u32>,
     /// Current GPU layout - tracked to ensure correct barrier old_layout.
-    current_layout: Cell<vk::ImageLayout>,
+    current_layout: Rc<Cell<vk::ImageLayout>>,
+    pub(crate) layouts: Rc<RefCell<ImageLayoutTracker>>,
 }
 
 impl TransientTexture {
@@ -100,7 +204,8 @@ impl TransientTexture {
             format,
             extent,
             bindless_slot: None,
-            current_layout: Cell::new(vk::ImageLayout::UNDEFINED),
+            current_layout: Rc::new(Cell::new(vk::ImageLayout::UNDEFINED)),
+            layouts: Rc::new(RefCell::new(ImageLayoutTracker::default())),
         }
     }
 
@@ -122,9 +227,9 @@ impl TransientTexture {
         self.current_layout.get()
     }
 
-    /// Update the tracked layout after a barrier transition.
-    pub(crate) fn set_layout(&self, new_layout: vk::ImageLayout) {
-        self.current_layout.set(new_layout);
+    pub(crate) fn set_range_layout(&self, range: ImageSubresourceRange, layout: vk::ImageLayout) {
+        self.current_layout.set(layout);
+        self.layouts.borrow_mut().set(range, layout);
     }
 
     /// Get the raw Vulkan image view handle.
@@ -146,5 +251,81 @@ impl Drop for TransientTexture {
             // Shared slot memory outlives every member image and is freed
             // when the last `Rc<VkSlotMemory>` drops.
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render_graph::ImageAspects;
+
+    #[test]
+    fn test_disjoint_subresources_keep_distinct_native_layouts() {
+        let mip0 = ImageSubresourceRange::new(ImageAspects::COLOR, 0, 1, 0, 1);
+        let mip1 = ImageSubresourceRange::new(ImageAspects::COLOR, 1, 1, 0, 1);
+        let mut tracker = ImageLayoutTracker::default();
+        tracker.set(mip0, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+        tracker.set(mip1, vk::ImageLayout::TRANSFER_DST_OPTIMAL);
+        assert_eq!(
+            tracker.ranges(mip0, vk::ImageLayout::UNDEFINED),
+            vec![(mip0, vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)]
+        );
+        assert_eq!(
+            tracker.ranges(mip1, vk::ImageLayout::UNDEFINED),
+            vec![(mip1, vk::ImageLayout::TRANSFER_DST_OPTIMAL)]
+        );
+        tracker.set(mip0, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        assert_eq!(
+            tracker.ranges(mip1, vk::ImageLayout::UNDEFINED),
+            vec![(mip1, vk::ImageLayout::TRANSFER_DST_OPTIMAL)]
+        );
+    }
+
+    #[test]
+    fn test_whole_range_transition_partitions_its_source_layouts() {
+        let mip0 = ImageSubresourceRange::new(ImageAspects::COLOR, 0, 1, 0, 1);
+        let both = ImageSubresourceRange::new(ImageAspects::COLOR, 0, 2, 0, 1);
+        let mut tracker = ImageLayoutTracker::default();
+        tracker.set(mip0, vk::ImageLayout::GENERAL);
+        let ranges = tracker.ranges(both, vk::ImageLayout::UNDEFINED);
+        assert_eq!(ranges.len(), 2);
+        assert_eq!(ranges[0], (mip0, vk::ImageLayout::GENERAL));
+        assert_eq!(ranges[1].0.base_mip_level, 1);
+        assert_eq!(ranges[1].1, vk::ImageLayout::UNDEFINED);
+    }
+}
+
+#[cfg(test)]
+mod journal_tests {
+    use super::*;
+
+    #[test]
+    fn test_aborted_range_transitions_restore_the_actual_layout() {
+        let tracker = Rc::new(RefCell::new(ImageLayoutTracker::default()));
+        let current = Rc::new(Cell::new(vk::ImageLayout::UNDEFINED));
+        let range = ImageSubresourceRange::WHOLE_COLOR;
+        let mut journal = ImageLayoutJournal::default();
+        journal.record_tracker(&tracker, &current);
+        tracker.borrow_mut().set(range, vk::ImageLayout::GENERAL);
+        current.set(vk::ImageLayout::GENERAL);
+        journal.record_tracker(&tracker, &current);
+        tracker
+            .borrow_mut()
+            .set(range, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
+        journal.rollback();
+        assert_eq!(
+            tracker.borrow().ranges(range, vk::ImageLayout::UNDEFINED)[0].1,
+            vk::ImageLayout::UNDEFINED
+        );
+        assert_eq!(current.get(), vk::ImageLayout::UNDEFINED);
+        journal.record_tracker(&tracker, &current);
+        tracker.borrow_mut().set(range, vk::ImageLayout::GENERAL);
+        current.set(vk::ImageLayout::GENERAL);
+        journal.commit();
+        journal.rollback();
+        assert_eq!(
+            tracker.borrow().ranges(range, vk::ImageLayout::UNDEFINED)[0].1,
+            vk::ImageLayout::GENERAL
+        );
     }
 }

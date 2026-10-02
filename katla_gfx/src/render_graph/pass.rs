@@ -11,18 +11,6 @@ use crate::render_graph::handles::ResourceId;
 use crate::render_graph::resource::GraphResourceHandle;
 use crate::render_pass::{AttachmentOps, DepthStencilAttachmentOps, LoadOp};
 
-/// Callback for custom compute dispatch logic (Vulkan-specific).
-///
-/// Receives mutable access to the frame (and thus the renderer),
-/// the command buffer, and the pipeline handle assigned to the pass.
-pub type ComputeFn = Box<
-    dyn for<'a> Fn(
-        &mut super::frame::Frame<'a, crate::renderer::VulkanRenderer>,
-        &crate::vulkan::commandbuffer::CommandBuffer,
-        crate::handle::PipelineHandle,
-    ) -> Result<(), super::error::RenderGraphError>,
->;
-
 /// Type of render pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PassType {
@@ -31,6 +19,8 @@ pub enum PassType {
     Graphics,
     /// Compute pass (GPU compute work).
     Compute,
+    /// Buffer and image transfer work.
+    Transfer,
 }
 
 /// Semantic kind of a render pass, used for dispatch routing.
@@ -105,8 +95,8 @@ pub struct PassDesc {
     /// Compositing pass data: viewport textures with rectangles.
     /// Set for CompositePass, None for other pass types.
     pub compositing_viewports: Option<Vec<(GraphResourceHandle, ViewportRect)>>,
-    /// Optional compute dispatch callback for compute passes (Vulkan-specific).
-    pub compute_fn: Option<ComputeFn>,
+    /// Backend-neutral commands executed by a compute or transfer pass.
+    pub commands: Vec<super::compute::ComputeCommand>,
 
     /// Semantic kind of this pass, used for dispatch routing.
     /// Set at build time by each pass template.
@@ -142,7 +132,7 @@ impl PassDesc {
             depth_target: None,
             depth_attachment: None,
             compositing_viewports: None,
-            compute_fn: None,
+            commands: Vec::new(),
             kind: None,
             side_effect: false,
         }
@@ -278,17 +268,13 @@ impl PassDesc {
         self
     }
 
-    /// Attach a compute dispatch callback to this pass (Vulkan-specific).
-    pub fn with_compute_fn(
+    /// Record backend-neutral compute and transfer commands.
+    pub fn with_commands(
         mut self,
-        f: impl Fn(
-            &mut super::frame::Frame<'_, crate::renderer::VulkanRenderer>,
-            &crate::vulkan::commandbuffer::CommandBuffer,
-            crate::handle::PipelineHandle,
-        ) -> Result<(), super::error::RenderGraphError>
-        + 'static,
+        commands: impl IntoIterator<Item = super::compute::ComputeCommand>,
     ) -> Self {
-        self.compute_fn = Some(Box::new(f));
+        self.commands = commands.into_iter().collect();
+        self.uses_depth = false;
         self
     }
 
@@ -344,7 +330,7 @@ mod tests {
         assert!(desc.color_attachments.is_empty());
         assert!(desc.depth_attachment.is_none());
         assert!(desc.compositing_viewports.is_none());
-        assert!(desc.compute_fn.is_none());
+        assert!(desc.commands.is_empty());
         assert!(desc.kind.is_none());
         assert!(!desc.side_effect);
         assert!(desc.uses_depth);

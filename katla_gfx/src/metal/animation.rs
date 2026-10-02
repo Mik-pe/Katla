@@ -19,30 +19,16 @@
 use crate::error::RendererError;
 
 use super::context::MetalContext;
-use super::pipeline::MetalComputePipeline;
-use super::shader;
 
 #[cfg(test)]
 use log::info;
-#[cfg(test)]
-use objc2_metal::MTLCommandBuffer;
 
-#[cfg(test)]
 use crate::animation::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
-#[cfg(test)]
-use crate::backend::command::{GpuCommandBuffer, GpuComputeEncoder};
-#[cfg(test)]
 use crate::backend::resource::GpuBuffer;
 
-#[cfg(test)]
 use super::buffer::MetalBuffer;
 
-/// Workgroup size for pose compute shader (must match @workgroup_size in WGSL).
-#[cfg(test)]
-const POSE_COMPUTE_WORKGROUP_SIZE: u32 = 64;
-
 /// GPU buffers for the pose compute dispatch.
-#[cfg(test)]
 pub(crate) struct AnimationBuffers {
     params: Option<MetalBuffer>,
     clip_headers: Option<MetalBuffer>,
@@ -54,7 +40,6 @@ pub(crate) struct AnimationBuffers {
     output_matrices: Option<MetalBuffer>,
 }
 
-#[cfg(test)]
 impl AnimationBuffers {
     fn new() -> Self {
         Self {
@@ -69,6 +54,7 @@ impl AnimationBuffers {
         }
     }
 
+    #[cfg(test)]
     fn allocate_params(
         &mut self,
         context: &MetalContext,
@@ -82,6 +68,7 @@ impl AnimationBuffers {
         Ok(())
     }
 
+    #[cfg(test)]
     fn allocate_clip_data(
         &mut self,
         context: &MetalContext,
@@ -109,6 +96,7 @@ impl AnimationBuffers {
         Ok(())
     }
 
+    #[cfg(test)]
     fn allocate_joints(
         &mut self,
         context: &MetalContext,
@@ -122,6 +110,7 @@ impl AnimationBuffers {
         Ok(())
     }
 
+    #[cfg(test)]
     fn allocate_world(
         &mut self,
         context: &MetalContext,
@@ -135,6 +124,7 @@ impl AnimationBuffers {
         Ok(())
     }
 
+    #[cfg(test)]
     fn allocate_output(
         &mut self,
         context: &MetalContext,
@@ -175,10 +165,12 @@ impl AnimationBuffers {
         upload_slice_to_buffer(&self.joints, joints);
     }
 
+    #[cfg(test)]
     fn upload_world_matrices(&self, matrices: &[[f32; 16]]) {
         upload_slice_to_buffer(&self.world_matrices, matrices);
     }
 
+    #[cfg(test)]
     pub fn read_output(&self) -> Vec<[f32; 16]> {
         let Some(ref buf) = self.output_matrices else {
             return Vec::new();
@@ -193,14 +185,9 @@ impl AnimationBuffers {
         buf.unmap();
         result
     }
-
-    pub fn output_buffer(&self) -> Option<&MetalBuffer> {
-        self.output_matrices.as_ref()
-    }
 }
 
 /// Upload a typed slice into a CPU-accessible Metal buffer.
-#[cfg(test)]
 fn upload_slice_to_buffer<T: bytemuck::Pod>(buffer: &Option<MetalBuffer>, data: &[T]) {
     let Some(buf) = buffer else { return };
     if data.is_empty() {
@@ -226,62 +213,30 @@ struct SkeletonEntry {
 /// Manages the compute pipeline and data buffers for skeletal animation
 /// pose evaluation on the GPU.
 pub struct MetalAnimationSystem {
-    pipeline: Option<MetalComputePipeline>,
-    #[cfg(test)]
-    buffers: AnimationBuffers,
+    active_slot: usize,
+    device: Option<objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLDevice>>>,
+    buffers: [AnimationBuffers; super::metal_renderer::FRAMES_IN_FLIGHT],
     #[cfg(test)]
     skeleton_entries: Vec<SkeletonEntry>,
-    #[cfg(test)]
     skeleton_count: usize,
-    #[cfg(test)]
     total_joints: usize,
 }
 
 impl MetalAnimationSystem {
     pub(crate) fn new() -> Self {
         Self {
-            pipeline: None,
-            #[cfg(test)]
-            buffers: AnimationBuffers::new(),
+            active_slot: 0,
+            device: None,
+            buffers: std::array::from_fn(|_| AnimationBuffers::new()),
             #[cfg(test)]
             skeleton_entries: Vec::new(),
-            #[cfg(test)]
             skeleton_count: 0,
-            #[cfg(test)]
             total_joints: 0,
         }
     }
 
-    /// Initialize the compute pipeline by compiling the given WGSL shader.
-    pub(crate) fn init_pipeline_with_source(
-        &mut self,
-        context: &MetalContext,
-        shader_path: &std::path::Path,
-    ) -> Result<(), RendererError> {
-        let wgsl_source = std::fs::read_to_string(shader_path).map_err(|e| {
-            RendererError::InvalidOperation(format!(
-                "Failed to read animation shader '{}': {}",
-                shader_path.display(),
-                e
-            ))
-        })?;
-
-        let compiled = shader::compile_wgsl_to_metal(
-            &context.device,
-            &wgsl_source,
-            &["cs_main"],
-            shader::ShaderProfile::Graphics,
-        )?;
-
-        let cs_fn = compiled.module.entry_points.get("cs_main").ok_or_else(|| {
-            RendererError::InvalidOperation(
-                "cs_main entry point not found in animation shader".into(),
-            )
-        })?;
-
-        let pipeline = context.create_compute_pipeline(cs_fn, [64, 1, 1])?;
-        self.pipeline = Some(pipeline);
-        Ok(())
+    pub(crate) fn initialize(&mut self, context: &MetalContext) {
+        self.device = Some(context.device.clone());
     }
 
     /// Number of active skeletons.
@@ -340,21 +295,21 @@ impl MetalAnimationSystem {
         self.skeleton_count = num_skeletons;
         self.total_joints = total_joints;
 
-        self.buffers.allocate_params(context, num_skeletons)?;
-        self.buffers.allocate_clip_data(
-            context,
-            clip_headers,
-            channel_infos,
-            keyframe_times,
-            keyframe_values,
-        )?;
-        self.buffers.allocate_joints(context, total_joints)?;
-        self.buffers.allocate_world(context, total_joints)?;
-        self.buffers.allocate_output(context, total_joints)?;
-
-        self.buffers
-            .upload_clip_data(clip_headers, channel_infos, keyframe_times, keyframe_values);
-        self.buffers.upload_joints(joint_infos);
+        for buffers in &mut self.buffers {
+            buffers.allocate_params(context, num_skeletons)?;
+            buffers.allocate_clip_data(
+                context,
+                clip_headers,
+                channel_infos,
+                keyframe_times,
+                keyframe_values,
+            )?;
+            buffers.allocate_joints(context, total_joints)?;
+            buffers.allocate_world(context, total_joints)?;
+            buffers.allocate_output(context, total_joints)?;
+            buffers.upload_clip_data(clip_headers, channel_infos, keyframe_times, keyframe_values);
+            buffers.upload_joints(joint_infos);
+        }
 
         info!(
             "Prepared Metal animation: {} skeletons, {} joints",
@@ -364,96 +319,32 @@ impl MetalAnimationSystem {
         Ok(())
     }
 
-    /// Update per-frame animation params and dispatch the compute pass.
-    #[cfg(test)]
-    pub fn dispatch(&mut self, context: &MetalContext, params: &[SkeletonAnimParams]) {
-        let Some(ref pipeline) = self.pipeline else {
-            return;
-        };
-        if params.is_empty() {
-            return;
-        }
-
-        self.buffers.update_params(params);
-
-        let mut cmd_buffer = context.create_command_buffer();
-        cmd_buffer.begin();
-
-        let mut encoder = cmd_buffer.begin_compute_pass_with_label("skinning");
-        encoder.bind_compute_pipeline(pipeline);
-
-        if let Some(ref buf) = self.buffers.params {
-            encoder.bind_storage_buffer(buf, 0, 0);
-        }
-        if let Some(ref buf) = self.buffers.clip_headers {
-            encoder.bind_storage_buffer(buf, 0, 1);
-        }
-        if let Some(ref buf) = self.buffers.channel_infos {
-            encoder.bind_storage_buffer(buf, 0, 2);
-        }
-        if let Some(ref buf) = self.buffers.keyframe_times {
-            encoder.bind_storage_buffer(buf, 0, 3);
-        }
-        if let Some(ref buf) = self.buffers.keyframe_values {
-            encoder.bind_storage_buffer(buf, 0, 4);
-        }
-        if let Some(ref buf) = self.buffers.joints {
-            encoder.bind_storage_buffer(buf, 0, 5);
-        }
-        if let Some(ref buf) = self.buffers.world_matrices {
-            encoder.bind_storage_buffer(buf, 0, 6);
-        }
-        if let Some(ref buf) = self.buffers.output_matrices {
-            encoder.bind_storage_buffer(buf, 0, 7);
-        }
-
-        let workgroups = params.len() as u32;
-        let workgroup_count = workgroups.div_ceil(POSE_COMPUTE_WORKGROUP_SIZE);
-        encoder.dispatch(workgroup_count, 1, 1);
-        encoder.end_encoding();
-
-        cmd_buffer.end();
-        cmd_buffer.submit(context);
-        cmd_buffer.inner.waitUntilCompleted();
+    /// Stage pose parameters for the active graph frame slot.
+    pub fn update_params(&mut self, params: &[SkeletonAnimParams]) {
+        self.buffers[self.active_slot].update_params(params);
     }
 
-    /// Copy computed joint matrices from the output buffer to a skeleton buffer.
-    #[cfg(test)]
-    pub fn copy_to_skeleton(
+    pub(crate) fn select_slot(&mut self, slot: usize) {
+        self.active_slot = slot;
+    }
+
+    pub(crate) fn builtin_buffer(
         &self,
-        _context: &MetalContext,
-        skeleton_buffer: &MetalBuffer,
-        joint_offset: u32,
-        joint_count: u32,
-    ) {
-        let Some(ref output) = self.buffers.output_matrices else {
-            return;
-        };
-
-        let src_offset = (joint_offset as u64) * 64;
-        let size = (joint_count as u64) * 64;
-
-        let src_ptr = output.map();
-        let dst_ptr = skeleton_buffer.map();
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(src_ptr.add(src_offset as usize), dst_ptr, size as usize);
+        role: crate::render_graph::BuiltinBuffer,
+    ) -> Option<&MetalBuffer> {
+        use crate::render_graph::BuiltinBuffer::*;
+        let buffers = &self.buffers[self.active_slot];
+        match role {
+            AnimationParams => buffers.params.as_ref(),
+            AnimationClips => buffers.clip_headers.as_ref(),
+            AnimationChannels => buffers.channel_infos.as_ref(),
+            AnimationTimes => buffers.keyframe_times.as_ref(),
+            AnimationValues => buffers.keyframe_values.as_ref(),
+            AnimationJoints => buffers.joints.as_ref(),
+            AnimationWorld => buffers.world_matrices.as_ref(),
+            AnimationOutput => buffers.output_matrices.as_ref(),
+            _ => None,
         }
-
-        output.unmap();
-        skeleton_buffer.unmap();
-    }
-
-    /// Get the output buffer reference.
-    #[cfg(test)]
-    pub fn output_buffer(&self) -> Option<&MetalBuffer> {
-        self.buffers.output_buffer()
-    }
-
-    /// Read back computed joint matrices from the output buffer.
-    #[cfg(test)]
-    pub fn read_output(&self) -> Vec<[f32; 16]> {
-        self.buffers.read_output()
     }
 }
 
@@ -469,7 +360,6 @@ mod tests {
     #[test]
     fn test_animation_system_creation() {
         let system = MetalAnimationSystem::new();
-        assert!(system.pipeline.is_none());
         assert_eq!(system.skeleton_count(), 0);
     }
 
@@ -698,5 +588,55 @@ mod tests {
         assert_eq!(commands.len(), 2);
         assert_eq!(commands[0], (SkeletonHandle::from_raw(0, 0), 0, 4));
         assert_eq!(commands[1], (SkeletonHandle::from_raw(1, 0), 4, 6));
+    }
+}
+
+impl crate::AnimationBufferUploader for MetalAnimationSystem {
+    fn upload_static_data(
+        &mut self,
+        upload: crate::animation::AnimationUpload<'_>,
+    ) -> Result<(), RendererError> {
+        use objc2_metal::MTLDevice;
+        let device = self.device.as_ref().ok_or_else(|| {
+            RendererError::InitializationFailed("Animation device not initialized".into())
+        })?;
+        let allocate = |size: usize| -> Result<MetalBuffer, RendererError> {
+            let size = size.max(16);
+            let native = device
+                .newBufferWithLength_options(
+                    size,
+                    objc2_metal::MTLResourceOptions::StorageModeShared,
+                )
+                .ok_or_else(|| RendererError::AllocationFailed {
+                    resource: "animation buffer".into(),
+                    reason: "device refused allocation".into(),
+                })?;
+            Ok(MetalBuffer::new(native, size as u64))
+        };
+        for buffers in &mut self.buffers {
+            buffers.params = Some(allocate(
+                upload.max_skeletons.max(1) * std::mem::size_of::<SkeletonAnimParams>(),
+            )?);
+            buffers.clip_headers = Some(allocate(std::mem::size_of_val(upload.headers))?);
+            buffers.channel_infos = Some(allocate(
+                std::mem::size_of_val(upload.channels)
+                    .max(std::mem::size_of::<crate::animation::AnimChannelInfo>()),
+            )?);
+            buffers.keyframe_times = Some(allocate(std::mem::size_of_val(upload.times))?);
+            buffers.keyframe_values = Some(allocate(std::mem::size_of_val(upload.values))?);
+            buffers.joints = Some(allocate(
+                upload.max_joints.max(1) * std::mem::size_of::<JointInfo>(),
+            )?);
+            buffers.world_matrices = Some(allocate(upload.max_joints.max(1) * 64)?);
+            buffers.output_matrices = Some(allocate(upload.max_joints.max(1) * 64)?);
+            buffers.upload_clip_data(upload.headers, upload.channels, upload.times, upload.values);
+            buffers.upload_joints(upload.joints);
+        }
+        self.skeleton_count = upload.max_skeletons;
+        self.total_joints = upload.max_joints;
+        Ok(())
+    }
+    fn update_params(&mut self, params: &[SkeletonAnimParams]) {
+        MetalAnimationSystem::update_params(self, params);
     }
 }

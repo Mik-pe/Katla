@@ -10,6 +10,8 @@ use crate::texture::ImageFormat;
 
 pub(crate) fn to_mtl_pixel_format(format: ImageFormat) -> MTLPixelFormat {
     match format {
+        ImageFormat::Bc1RgbaUnorm => MTLPixelFormat::BC1_RGBA,
+        ImageFormat::Bc3RgbaUnorm => MTLPixelFormat::BC3_RGBA,
         ImageFormat::Auto => MTLPixelFormat::BGRA8Unorm_sRGB,
         ImageFormat::R8G8B8A8Srgb => MTLPixelFormat::RGBA8Unorm_sRGB,
         ImageFormat::R8G8B8A8Unorm => MTLPixelFormat::RGBA8Unorm,
@@ -75,9 +77,6 @@ pub(crate) fn to_mtl_texture_usage(usage: crate::texture::TextureUsage) -> MTLTe
     if usage.contains(crate::texture::TextureUsage::DEPTH_STENCIL_ATTACHMENT) {
         result |= MTLTextureUsage::RenderTarget;
     }
-    if usage.contains(crate::texture::TextureUsage::COPY_DST) {
-        result |= MTLTextureUsage::ShaderWrite;
-    }
     result
 }
 
@@ -92,6 +91,8 @@ mod tests {
             ImageFormat::R8G8B8A8Srgb,
             ImageFormat::R8G8B8A8Unorm,
             ImageFormat::B8G8R8A8Srgb,
+            ImageFormat::Bc1RgbaUnorm,
+            ImageFormat::Bc3RgbaUnorm,
             ImageFormat::R8Unorm,
             ImageFormat::Rg8Unorm,
             ImageFormat::R32Sfloat,

@@ -18,18 +18,18 @@
 
 // Global resources (Set 0: static buffers)
 @group(0) @binding(0)
-var<storage, read_write> particles: array<ParticleData, MAX_PARTICLES>;
+var<storage, read_write> particles: array<ParticleData>;
 
 @group(0) @binding(1)
-var<storage, read_write> dead_list: array<u32, MAX_PARTICLES>;
+var<storage, read_write> dead_list: array<u32>;
 
 // Alive list (read_write) - contains survivors from previous frame, emit appends new particles here
 @group(0) @binding(2)
-var<storage, read_write> alive_list: array<u32, MAX_PARTICLES>;
+var<storage, read_write> alive_list: array<u32>;
 
 // Alive list next (write) - newly emitted particles go here for simulate pass
 @group(0) @binding(3)
-var<storage, read_write> alive_list_next: array<u32, MAX_PARTICLES>;
+var<storage, read_write> alive_list_next: array<u32>;
 
 @group(0) @binding(4)
 var<storage, read_write> counters: ParticleCounters;
@@ -40,7 +40,7 @@ var<uniform> frame_data: FrameData;
 
 // Per-emitter configurations (Set 1: updated via push descriptors)
 @group(1) @binding(1)
-var<storage, read> emitters: array<EmitterConfig, MAX_EMITTERS>;
+var<storage, read> emitters: array<EmitterConfig>;
 
 // Pseudo-random number generation
 fn hash(seed: u32) -> u32 {
@@ -169,19 +169,21 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let idx = global_id.x;
 
     if (idx >= frame_data.total_emit_count) { return; }
-    if (frame_data.emitter_count == 0u) { return; }
+    let emitter_count = min(frame_data.emitter_count, arrayLength(&emitters));
+    let capacity = min(frame_data.max_particles, min(arrayLength(&particles), min(arrayLength(&dead_list), arrayLength(&alive_list))));
+    if (emitter_count == 0u || capacity == 0u) { return; }
 
     let wg_id = idx / 256u;
     let local_id = idx % 256u;
-    let emitter_idx = (wg_id + local_id) % frame_data.emitter_count;
+    let emitter_idx = (wg_id + local_id) % emitter_count;
 
-    if (emitter_idx >= MAX_EMITTERS) {
+    if (emitter_idx >= emitter_count) {
         return;
     }
 
     let original_dead_count = atomicSub(&counters.dead_count, 1u);
 
-    if (original_dead_count == 0u || original_dead_count > MAX_PARTICLES) {
+    if (original_dead_count == 0u || original_dead_count > capacity) {
         atomicAdd(&counters.dead_count, 1u);
         return;
     }
@@ -189,7 +191,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     let dead_slot = original_dead_count - 1u;
     let particle_idx = dead_list[dead_slot];
 
-    if (particle_idx >= MAX_PARTICLES) {
+    if (particle_idx >= capacity) {
         atomicAdd(&counters.dead_count, 1u);
         return;
     }
@@ -197,9 +199,12 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     var seed = frame_data.random_seed + idx * 7u;
     var new_particle = emit_particle(particle_idx, emitter_idx, &seed);
 
-    particles[particle_idx] = new_particle;
-
     let write_slot = atomicAdd(&counters.emit_count, 1u);
-
+    if (write_slot >= capacity) {
+        atomicSub(&counters.emit_count, 1u);
+        atomicAdd(&counters.dead_count, 1u);
+        return;
+    }
+    particles[particle_idx] = new_particle;
     alive_list[write_slot] = particle_idx;
 }

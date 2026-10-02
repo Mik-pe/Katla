@@ -42,8 +42,15 @@
 // Layer 1: Backend-agnostic graph structure (no GPU types)
 pub mod access;
 mod allocation_plan;
+mod buffer_history;
 mod builder;
+pub(crate) use buffer_history::BufferExecutionHistory;
+#[cfg(test)]
+mod builtin_compute_tests;
 mod compiler;
+mod compute;
+#[cfg(test)]
+mod compute_tests;
 mod diagnostics;
 mod error;
 mod execution_plan_diagnostics;
@@ -66,22 +73,31 @@ mod frame;
 mod metal_backend;
 pub(crate) mod transient_buffer;
 mod transient_texture;
+pub(crate) use transient_texture::ImageLayoutJournal;
 mod vulkan_backend;
+pub(crate) mod vulkan_compute;
 
 // Public API
 pub use access::{
     BufferAccess, BufferByteRange, BufferUsage, ImageAccess, ImageAspects, ImageSubresourceRange,
     ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
 };
-pub use backend::RenderGraphBackend;
+pub use backend::{
+    NativeTransientAllocation, RenderGraphBackend, ResolvedGraphBuffer, TransientSlotPolicy,
+};
 pub use builder::{PassBuilder, SimplePass};
+pub use compute::{
+    BuiltinBuffer, BuiltinComputeKernel, ComputeBinding, ComputeBindingLayout, ComputeCommand,
+    ComputeDispatch, ComputeDispatchSize, ComputeInterface, ComputeKernel, ComputePipelineDesc,
+};
 pub use diagnostics::{
     RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAllocationSlot,
     RenderGraphDiagnosticBufferAccess, RenderGraphDiagnosticBufferByteRange,
     RenderGraphDiagnosticBufferDescriptor, RenderGraphDiagnosticBufferMemory,
     RenderGraphDiagnosticBufferSyncOp, RenderGraphDiagnosticBufferUsage,
     RenderGraphDiagnosticCompatibilityClass, RenderGraphDiagnosticDependency,
-    RenderGraphDiagnosticHazard, RenderGraphDiagnosticImageAccess, RenderGraphDiagnosticImageStage,
+    RenderGraphDiagnosticExternalProducer, RenderGraphDiagnosticHazard,
+    RenderGraphDiagnosticImageAccess, RenderGraphDiagnosticImageStage,
     RenderGraphDiagnosticImageSubresourceRange, RenderGraphDiagnosticImportedContract,
     RenderGraphDiagnosticPass, RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
     RenderGraphDiagnosticResourceAccessMode, RenderGraphDiagnosticResourceAccessUsage,
@@ -98,15 +114,17 @@ pub use frame_graph::{FrameGraph, FrameGraphBuilder};
 pub use handles::{PassId, ResourceId};
 pub use pass::{PassDesc, PassKind, PassType};
 pub use passes::{
-    CompositePass, DepthPrepass, FullscreenPass, GeometryPass, OutlinePass, OverlayParams,
-    OverlayPass, ParticlePass, ShadowPass, StencilIndicatorPass, TonemapOperator, TonemapParams,
-    UIPass, ViewportPass, ViewportRect,
+    CompositePass, ComputePass, DepthPrepass, FullscreenPass, GeometryPass, OutlinePass,
+    OverlayParams, OverlayPass, ParticlePass, ShadowPass, StencilIndicatorPass, TonemapOperator,
+    TonemapParams, UIPass, ViewportPass, ViewportRect,
 };
 pub use resource::{
     BufferDesc, BufferMemoryPolicy, BufferUsages, GraphBufferDesc, GraphResourceDesc,
     GraphResourceHandle, GraphResourceType, ImportedImageContract, ResourceState,
 };
-pub use sync_plan::{BufferSyncOp, BufferSyncState};
+pub use sync_plan::{
+    BufferSyncOp, BufferSyncState, EncoderKind, ExternalImageProducer, PassBoundary, QueueClass,
+};
 pub(crate) use sync_plan::{ImageSyncOp, ImageSyncState, ResourceHazardKind, SyncPlan, SyncReason};
 pub use trace::{
     EmittedPassOutcome, FRAME_DEPTH_TARGET, ResourceExecutionTrace, ResourceExecutionTraceEntry,

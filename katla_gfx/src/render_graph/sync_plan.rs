@@ -216,11 +216,49 @@ pub struct BufferSyncOp {
 /// are held in the parallel `pass_buffer_ops` list.
 #[derive(Debug, Clone, Default)]
 pub struct SyncPlan {
+    /// Physical-range handoffs before each pass, filled by allocation compilation.
+    pub alias_handoffs: Vec<Vec<ResourceId>>,
+    /// Transfer producers encoded before graph passes on the declared queue.
+    pub external_image_producers: Vec<ExternalImageProducer>,
+    /// Queue and encoder requirements indexed by declared pass.
+    pub pass_boundaries: Vec<Option<PassBoundary>>,
     pub pass_ops: Vec<Vec<ImageSyncOp>>,
     pub final_ops: Vec<ImageSyncOp>,
     /// Buffer operations to execute before each pass, indexed by declared pass
     /// index, matching `pass_ops`.
     pub pass_buffer_ops: Vec<Vec<BufferSyncOp>>,
+}
+
+/// Queue on which graph operations execute. No implicit asynchronous work is permitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueClass {
+    Graphics,
+}
+
+/// Native encoding domain selected by the declared operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncoderKind {
+    Render,
+    Compute,
+    Blit,
+}
+
+/// One external upload's typed producer scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExternalImageProducer {
+    pub access: ImageAccess,
+    pub queue: QueueClass,
+    pub encoder: EncoderKind,
+}
+
+/// An encoder boundary and its canonical ordering requirements.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassBoundary {
+    pub queue: QueueClass,
+    pub encoder: EncoderKind,
+    pub predecessors: Vec<usize>,
+    /// The pass may sample bindless textures produced by the external upload batch.
+    pub external_upload_dependency: bool,
 }
 
 /// One tracked state piece of a resource.
@@ -256,22 +294,262 @@ fn hazard_between(before: ImageSyncState, after: ImageSyncState) -> Option<Resou
 pub(crate) fn build_sync_plan(
     passes: &[super::compiler::PassInfo],
     sorted_passes: &[usize],
+    dag: &[super::compiler::PassDagNode],
     imported_contracts: &BTreeMap<ResourceId, ImportedImageContract>,
+    external_image_accesses: &[ImageAccess],
+    external_buffer_accesses: &[BufferAccess],
+    external_uploads_pending: bool,
 ) -> SyncPlan {
-    let (_, first_cycle_end_states) = scan_passes(passes, sorted_passes, imported_contracts, None);
-    let (pass_ops, end_states) = scan_passes(
+    let (_, first_cycle_end_states) = scan_passes(
         passes,
         sorted_passes,
         imported_contracts,
+        external_image_accesses,
+        None,
+    );
+    let (mut pass_ops, end_states) = scan_passes(
+        passes,
+        sorted_passes,
+        imported_contracts,
+        external_image_accesses,
         Some(&first_cycle_end_states),
     );
     let final_ops = build_final_ops(&end_states, imported_contracts);
-    let pass_buffer_ops = scan_buffer_passes(passes, sorted_passes);
+    let mut buffer_seeds = buffer_cycle_seeds(passes, sorted_passes);
+    for access in external_buffer_accesses {
+        let pieces = buffer_seeds.entry(access.resource).or_default();
+        let state = BufferSyncState::of_access(access);
+        if !pieces
+            .iter()
+            .any(|piece| piece.range == access.range && piece.state == state)
+        {
+            pieces.push(BufferStatePiece {
+                range: access.range,
+                state,
+                pass: None,
+            });
+        }
+    }
+    let mut pass_buffer_ops = scan_buffer_passes(passes, sorted_passes, &buffer_seeds);
+    complete_hazard_scopes(
+        passes,
+        sorted_passes,
+        dag,
+        external_image_accesses,
+        &buffer_seeds,
+        &mut pass_ops,
+        &mut pass_buffer_ops,
+    );
+    let mut pass_boundaries = vec![None; passes.len()];
+    for &pass in sorted_passes {
+        pass_boundaries[pass] = Some(PassBoundary {
+            queue: QueueClass::Graphics,
+            encoder: match passes[pass].operation {
+                super::pass::PassType::Graphics => EncoderKind::Render,
+                super::pass::PassType::Compute => EncoderKind::Compute,
+                super::pass::PassType::Transfer => EncoderKind::Blit,
+            },
+            predecessors: dag[pass].predecessors.clone(),
+            external_upload_dependency: external_uploads_pending
+                && matches!(
+                    passes[pass].operation,
+                    super::pass::PassType::Graphics | super::pass::PassType::Compute
+                ),
+        });
+    }
 
     SyncPlan {
+        alias_handoffs: vec![Vec::new(); passes.len()],
+        external_image_producers: external_image_accesses
+            .iter()
+            .copied()
+            .map(|access| ExternalImageProducer {
+                access,
+                queue: QueueClass::Graphics,
+                encoder: EncoderKind::Blit,
+            })
+            .collect(),
+        pass_boundaries,
         pass_ops,
         final_ops,
         pass_buffer_ops,
+    }
+}
+
+/// Complete execution scopes from the canonical DAG. The layout scan tracks
+/// the latest access, while independent readers can leave several outstanding
+/// stages. Each edge retains its producer scope until a barrier at that scope
+/// has made the same destination access visible.
+fn complete_hazard_scopes(
+    passes: &[super::compiler::PassInfo],
+    sorted: &[usize],
+    dag: &[super::compiler::PassDagNode],
+    external_images: &[ImageAccess],
+    buffer_seeds: &BTreeMap<ResourceId, Vec<BufferStatePiece>>,
+    images: &mut [Vec<ImageSyncOp>],
+    buffers: &mut [Vec<BufferSyncOp>],
+) {
+    let mut image_frontiers: BTreeMap<ResourceId, Vec<(usize, ImageAccess)>> = BTreeMap::new();
+    for &access in external_images {
+        image_frontiers
+            .entry(access.resource)
+            .or_default()
+            .push((usize::MAX, access));
+    }
+    let mut buffer_frontiers: BTreeMap<ResourceId, Vec<(usize, BufferAccess)>> = BTreeMap::new();
+    for (&resource, pieces) in buffer_seeds {
+        for piece in pieces {
+            if let BufferSyncState::Access { usage, stage, mode } = piece.state {
+                buffer_frontiers.entry(resource).or_default().push((
+                    usize::MAX,
+                    BufferAccess::new(resource, mode, usage, stage, piece.range),
+                ));
+            }
+        }
+    }
+
+    let mut image_visibility: BTreeMap<(usize, ResourceId), Vec<ImageSyncOp>> = BTreeMap::new();
+    let mut buffer_visibility: BTreeMap<(usize, ResourceId), Vec<BufferSyncOp>> = BTreeMap::new();
+    for &consumer in sorted {
+        for after in &passes[consumer].image_accesses {
+            let frontier = image_frontiers.entry(after.resource).or_default();
+            for &(producer, before) in frontier.iter() {
+                if producer != usize::MAX && !dag[consumer].predecessors.contains(&producer) {
+                    continue;
+                }
+                let Some(range) = before.range.intersection(after.range) else {
+                    continue;
+                };
+                let before_state = ImageSyncState::of_access(&before);
+                let after_state = ImageSyncState::of_access(after);
+                let Some(hazard) = hazard_between(before_state, after_state) else {
+                    continue;
+                };
+                let covered = images[consumer].iter().any(|op| {
+                    op.resource == after.resource
+                        && op.range == range
+                        && op.before == before_state
+                        && op.after == after_state
+                });
+                let visible = hazard == ResourceHazardKind::ReadAfterWrite
+                    && image_visibility
+                        .get(&(producer, after.resource))
+                        .is_some_and(|ops| {
+                            ops.iter()
+                                .any(|op| op.range == range && op.after == after_state)
+                        });
+                if !covered && !visible {
+                    images[consumer].push(ImageSyncOp {
+                        resource: after.resource,
+                        range,
+                        before: before_state,
+                        after: after_state,
+                        before_pass: (producer != usize::MAX).then_some(producer),
+                        pass: consumer,
+                        reason: if producer == usize::MAX {
+                            SyncReason::InitialUse
+                        } else {
+                            SyncReason::Hazard(hazard)
+                        },
+                    });
+                }
+            }
+            if after.mode.writes() {
+                *frontier = frontier
+                    .iter()
+                    .flat_map(|&(pass, access)| {
+                        access
+                            .range
+                            .subtract(after.range)
+                            .into_iter()
+                            .map(move |range| (pass, ImageAccess { range, ..access }))
+                    })
+                    .collect();
+            }
+            frontier.push((consumer, *after));
+        }
+        for after in &passes[consumer].buffer_accesses {
+            let frontier = buffer_frontiers.entry(after.resource).or_default();
+            for &(producer, before) in frontier.iter() {
+                if producer != usize::MAX && !dag[consumer].predecessors.contains(&producer) {
+                    continue;
+                }
+                let Some(range) = before.range.intersection(after.range) else {
+                    continue;
+                };
+                let before_state = BufferSyncState::of_access(&before);
+                let after_state = BufferSyncState::of_access(after);
+                let Some(hazard) = buffer_hazard_between(before_state, after_state) else {
+                    continue;
+                };
+                let covered = buffers[consumer].iter().any(|op| {
+                    op.resource == after.resource
+                        && op.range == range
+                        && op.before == before_state
+                        && op.after == after_state
+                });
+                let visible = hazard == ResourceHazardKind::ReadAfterWrite
+                    && buffer_visibility
+                        .get(&(producer, after.resource))
+                        .is_some_and(|ops| {
+                            ops.iter()
+                                .any(|op| op.range == range && op.after == after_state)
+                        });
+                if !covered && !visible {
+                    buffers[consumer].push(BufferSyncOp {
+                        resource: after.resource,
+                        range,
+                        before: before_state,
+                        after: after_state,
+                        before_pass: (producer != usize::MAX).then_some(producer),
+                        pass: consumer,
+                        reason: if producer == usize::MAX {
+                            SyncReason::InitialUse
+                        } else {
+                            SyncReason::Hazard(hazard)
+                        },
+                    });
+                }
+            }
+            if after.mode.writes() {
+                *frontier = frontier
+                    .iter()
+                    .flat_map(|&(pass, access)| {
+                        access
+                            .range
+                            .subtract(after.range)
+                            .into_iter()
+                            .map(move |range| (pass, BufferAccess { range, ..access }))
+                    })
+                    .collect();
+            }
+            frontier.push((consumer, *after));
+        }
+        for op in &images[consumer] {
+            if let Some(producer) = op.before_pass.or_else(|| {
+                external_images
+                    .iter()
+                    .any(|access| access.resource == op.resource)
+                    .then_some(usize::MAX)
+            }) {
+                image_visibility
+                    .entry((producer, op.resource))
+                    .or_default()
+                    .push(*op);
+            }
+        }
+        for op in &buffers[consumer] {
+            if let Some(producer) = op.before_pass.or_else(|| {
+                buffer_seeds
+                    .contains_key(&op.resource)
+                    .then_some(usize::MAX)
+            }) {
+                buffer_visibility
+                    .entry((producer, op.resource))
+                    .or_default()
+                    .push(*op);
+            }
+        }
     }
 }
 
@@ -284,19 +562,49 @@ struct BufferStatePiece {
     pass: Option<usize>,
 }
 
+/// Retain all scopes that can be outstanding when the next frame starts.
+fn buffer_cycle_seeds(
+    passes: &[super::compiler::PassInfo],
+    sorted: &[usize],
+) -> BTreeMap<ResourceId, Vec<BufferStatePiece>> {
+    let mut states: BTreeMap<ResourceId, Vec<BufferStatePiece>> = BTreeMap::new();
+    for &pass in sorted {
+        for access in &passes[pass].buffer_accesses {
+            let pieces = states.entry(access.resource).or_default();
+            if access.mode.writes() {
+                *pieces = pieces
+                    .iter()
+                    .flat_map(|piece| {
+                        piece
+                            .range
+                            .subtract(access.range)
+                            .into_iter()
+                            .map(|range| BufferStatePiece { range, ..*piece })
+                    })
+                    .collect();
+            }
+            pieces.push(BufferStatePiece {
+                range: access.range,
+                state: BufferSyncState::of_access(access),
+                pass: None,
+            });
+        }
+    }
+    states
+}
+
 /// One forward scan over the sorted live passes, tracking buffer byte ranges.
 ///
 /// Buffers have no layout, so the scan emits an operation only when a hazard
-/// orders two accesses (RAW/WAR/WAW) or changes their usage/stage. First uses
-/// are recorded without a prior GPU access. Imported buffers carry allocation
-/// descriptors but no initial/final state contracts; their importer must order
-/// external GPU work before graph execution.
+/// orders two accesses (RAW/WAR/WAW). Seeds include repeated graph scopes and
+/// retained physical scopes from earlier submissions, including other graphs.
 fn scan_buffer_passes(
     passes: &[super::compiler::PassInfo],
     sorted_passes: &[usize],
+    seeds: &BTreeMap<ResourceId, Vec<BufferStatePiece>>,
 ) -> Vec<Vec<BufferSyncOp>> {
     let mut pass_ops: Vec<Vec<BufferSyncOp>> = vec![Vec::new(); passes.len()];
-    let mut states: BTreeMap<ResourceId, Vec<BufferStatePiece>> = BTreeMap::new();
+    let mut states = seeds.clone();
 
     for &pass_index in sorted_passes {
         for access in &passes[pass_index].buffer_accesses {
@@ -313,12 +621,16 @@ fn scan_buffer_passes(
 
                 // Same bytes, same state: nothing to do without a hazard.
                 let hazard = match piece.pass {
-                    Some(before_pass) if before_pass != pass_index => {
-                        buffer_hazard_between(piece.state, target)
-                    }
-                    _ => None,
+                    Some(before_pass) if before_pass == pass_index => None,
+                    _ => buffer_hazard_between(piece.state, target),
                 };
-                if piece.state == target && hazard.is_none() {
+                if hazard.is_none()
+                    && (piece.state == target
+                        || (piece.state.reads()
+                            && !piece.state.writes()
+                            && target.reads()
+                            && !target.writes()))
+                {
                     continue;
                 }
 
@@ -330,8 +642,8 @@ fn scan_buffer_passes(
                     before_pass: piece.pass,
                     pass: pass_index,
                     reason: match hazard {
+                        _ if piece.pass.is_none() => SyncReason::InitialUse,
                         Some(kind) => SyncReason::Hazard(kind),
-                        None if piece.pass.is_none() => SyncReason::InitialUse,
                         None => SyncReason::StateChange,
                     },
                 });
@@ -410,10 +722,39 @@ fn scan_passes(
     passes: &[super::compiler::PassInfo],
     sorted_passes: &[usize],
     imported_contracts: &BTreeMap<ResourceId, ImportedImageContract>,
+    external_image_accesses: &[ImageAccess],
     steady_state_seeds: Option<&BTreeMap<ResourceId, Vec<StatePiece>>>,
 ) -> (Vec<Vec<ImageSyncOp>>, BTreeMap<ResourceId, Vec<StatePiece>>) {
     let mut pass_ops: Vec<Vec<ImageSyncOp>> = vec![Vec::new(); passes.len()];
     let mut states: BTreeMap<ResourceId, Vec<StatePiece>> = BTreeMap::new();
+
+    for access in external_image_accesses {
+        let pieces = states.entry(access.resource).or_default();
+        if pieces.is_empty()
+            && let Some(contract) = imported_contracts.get(&access.resource)
+        {
+            pieces.push(StatePiece {
+                range: ImageSubresourceRange::whole(super::ImageAspects::ALL),
+                state: ImageSyncState::of_contract_state(contract.initial),
+                pass: None,
+            });
+        }
+        *pieces = pieces
+            .iter()
+            .flat_map(|piece| {
+                piece
+                    .range
+                    .subtract(access.range)
+                    .into_iter()
+                    .map(|range| StatePiece { range, ..*piece })
+            })
+            .collect();
+        pieces.push(StatePiece {
+            range: access.range,
+            state: ImageSyncState::of_access(access),
+            pass: None,
+        });
+    }
 
     for &pass_index in sorted_passes {
         for access in &passes[pass_index].image_accesses {
@@ -454,6 +795,12 @@ fn scan_passes(
                     }
                     _ => None,
                 };
+                let same_read_layout = matches!((piece.state, target),
+                    (ImageSyncState::Access { usage: before, mode: ResourceAccessMode::Read, .. },
+                     ImageSyncState::Access { usage: after, mode: ResourceAccessMode::Read, .. }) if before == after);
+                if same_read_layout && piece.state != target && hazard.is_none() {
+                    continue;
+                }
                 if piece.state == target && hazard.is_none() {
                     // A frame-start state that already matches needs no
                     // steady-state transition, but freshly created textures
@@ -552,8 +899,18 @@ fn build_final_ops(
         };
         let final_state = ImageSyncState::of_contract_state(required);
         let Some(pieces) = states.get(resource) else {
-            // No live pass touched the image; compile-time validation already
-            // rejected unreachable required-final states.
+            let initial = ImageSyncState::of_contract_state(contract.initial);
+            if initial != final_state {
+                ops.push(ImageSyncOp {
+                    resource: *resource,
+                    range: ImageSubresourceRange::whole(super::access::ImageAspects::ALL),
+                    before: initial,
+                    after: final_state,
+                    before_pass: None,
+                    pass: usize::MAX,
+                    reason: SyncReason::ImportedFinal,
+                });
+            }
             continue;
         };
 
@@ -616,10 +973,12 @@ mod tests {
         );
         PassInfo {
             name: name.to_string(),
+            operation: PassType::Graphics,
             reads,
             writes,
             image_accesses: Vec::new(),
             buffer_accesses: accesses,
+            attachment_ops: Vec::new(),
             side_effect: false,
         }
     }
@@ -665,10 +1024,12 @@ mod tests {
         );
         PassInfo {
             name: name.to_string(),
+            operation: PassType::Graphics,
             reads,
             writes,
             image_accesses: accesses,
             buffer_accesses: Vec::new(),
+            attachment_ops: Vec::new(),
             side_effect: false,
         }
     }
@@ -970,10 +1331,9 @@ mod tests {
         let plan = compile(passes);
 
         let ops = &plan.sync.pass_buffer_ops[1];
-        // The writer covered 0..64 and the reader touches 32..96, so the
-        // operation splits: a RAW hazard over the shared 32..64 bytes, and a
-        // first use for the untouched 64..96 tail.
-        assert_eq!(ops.len(), 2);
+        // The untouched tail already has read visibility from the prior
+        // frame; only the newly written intersection requires ordering.
+        assert_eq!(ops.len(), 1);
 
         let hazard = ops
             .iter()
@@ -982,13 +1342,6 @@ mod tests {
         assert_eq!(hazard.resource, rid(0));
         assert_eq!(hazard.range, BufferByteRange::new(32, 32));
         assert_eq!(hazard.before_pass, Some(0));
-
-        let untouched = ops
-            .iter()
-            .find(|op| op.reason == SyncReason::InitialUse)
-            .expect("initial use for the uncovered tail");
-        assert_eq!(untouched.range, BufferByteRange::new(64, 32));
-        assert_eq!(untouched.before, BufferSyncState::Undefined);
     }
 
     #[test]
@@ -1030,7 +1383,7 @@ mod tests {
     }
 
     #[test]
-    fn a_first_buffer_use_needs_no_barrier_but_is_recorded() {
+    fn test_first_buffer_write_orders_the_prior_frame_state() {
         let passes = vec![buffer_pass(
             "only",
             vec![buf(rid(0), ResourceAccessMode::Write, 0, 64)],
@@ -1039,7 +1392,10 @@ mod tests {
 
         let ops = &plan.sync.pass_buffer_ops[0];
         assert_eq!(ops.len(), 1);
-        assert_eq!(ops[0].before, BufferSyncState::Undefined);
+        assert_eq!(
+            ops[0].before,
+            BufferSyncState::of_access(&buf(rid(0), ResourceAccessMode::Write, 0, 64))
+        );
         assert_eq!(ops[0].reason, SyncReason::InitialUse);
         assert_eq!(ops[0].before_pass, None);
     }
@@ -1112,5 +1468,329 @@ mod tests {
         assert!(plan.sync.pass_buffer_ops[0].is_empty());
         assert!(plan.sync.pass_ops[1].is_empty());
         assert_eq!(plan.sync.pass_buffer_ops[1].len(), 1);
+    }
+    #[test]
+    fn test_independent_image_readers_retain_the_writer_scope() {
+        let producer = ImageAccess::storage_write(rid(0));
+        let fragment = ImageAccess::new(
+            rid(0),
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::Storage,
+            ResourceAccessStage::FragmentShader,
+            ImageSubresourceRange::WHOLE_COLOR,
+        );
+        let vertex = ImageAccess::new(
+            rid(0),
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::Storage,
+            ResourceAccessStage::VertexShader,
+            ImageSubresourceRange::WHOLE_COLOR,
+        );
+        let plan = compile(vec![
+            pass("writer", vec![producer]),
+            pass("first", vec![fragment]),
+            pass("second", vec![vertex]),
+        ]);
+        assert!(
+            plan.sync.pass_ops[2]
+                .iter()
+                .any(|op| op.before_pass == Some(0)
+                    && op.before == ImageSyncState::of_access(&producer)
+                    && op.after == ImageSyncState::of_access(&vertex))
+        );
+    }
+
+    #[test]
+    fn test_writers_wait_for_every_outstanding_buffer_reader_stage() {
+        let fragment =
+            BufferAccess::storage_read(rid(0)).with_stage(ResourceAccessStage::FragmentShader);
+        let vertex =
+            BufferAccess::storage_read(rid(0)).with_stage(ResourceAccessStage::VertexShader);
+        let writer = BufferAccess::storage_write(rid(0));
+        let plan = compile(vec![
+            buffer_pass("first", vec![fragment]),
+            buffer_pass("second", vec![vertex]),
+            buffer_pass("write", vec![writer]),
+        ]);
+        for reader in [fragment, vertex] {
+            assert!(
+                plan.sync.pass_buffer_ops[2]
+                    .iter()
+                    .any(|op| op.before == BufferSyncState::of_access(&reader)
+                        && op.reason == SyncReason::Hazard(ResourceHazardKind::WriteAfterRead))
+            );
+        }
+    }
+
+    #[test]
+    fn test_independent_buffer_readers_retain_the_writer_scope() {
+        let producer = BufferAccess::storage_write(rid(0));
+        let fragment =
+            BufferAccess::storage_read(rid(0)).with_stage(ResourceAccessStage::FragmentShader);
+        let vertex =
+            BufferAccess::storage_read(rid(0)).with_stage(ResourceAccessStage::VertexShader);
+        let plan = compile(vec![
+            buffer_pass("writer", vec![producer]),
+            buffer_pass("first", vec![fragment]),
+            buffer_pass("second", vec![vertex]),
+        ]);
+        assert!(
+            plan.sync.pass_buffer_ops[2]
+                .iter()
+                .any(|op| op.before_pass == Some(0)
+                    && op.before == BufferSyncState::of_access(&producer)
+                    && op.after == BufferSyncState::of_access(&vertex))
+        );
+    }
+
+    #[test]
+    fn test_boundaries_follow_operations_and_dag_instead_of_names() {
+        let mut graphics = pass(
+            "particle_simulate",
+            vec![ImageAccess::storage_write(rid(0))],
+        );
+        graphics.operation = PassType::Graphics;
+        let mut transfer = pass("geometry", vec![ImageAccess::transfer_read(rid(0))]);
+        transfer.operation = PassType::Transfer;
+        let mut compute = buffer_pass("ui", vec![BufferAccess::storage_write(rid(1))]);
+        compute.operation = PassType::Compute;
+        let plan = compile(vec![graphics, transfer, compute]);
+        assert_eq!(
+            plan.sync.pass_boundaries[0].as_ref().unwrap().encoder,
+            EncoderKind::Render
+        );
+        let boundary = plan.sync.pass_boundaries[1].as_ref().unwrap();
+        assert_eq!(boundary.encoder, EncoderKind::Blit);
+        assert_eq!(boundary.queue, QueueClass::Graphics);
+        assert_eq!(boundary.predecessors, vec![0]);
+        assert_eq!(
+            plan.sync.pass_boundaries[2].as_ref().unwrap().encoder,
+            EncoderKind::Compute
+        );
+    }
+
+    #[test]
+    fn test_untouched_import_final_transition_preserves_undefined_contents() {
+        let mut contracts = BTreeMap::new();
+        contracts.insert(
+            rid(0),
+            ImportedImageContract::undefined().must_end_in(ResourceState::PresentSrc),
+        );
+        let plan = compile_with_contracts(Vec::new(), contracts);
+        assert_eq!(plan.sync.final_ops.len(), 1);
+        let op = plan.sync.final_ops[0];
+        assert_eq!(op.before, ImageSyncState::Undefined);
+        assert_eq!(op.before_pass, None);
+        assert_eq!(op.reason, SyncReason::ImportedFinal);
+        assert!(plan.sync.pass_boundaries.is_empty());
+    }
+    #[test]
+    fn test_external_upload_ranges_seed_the_exact_consumer_scope() {
+        let mip = ImageSubresourceRange::new(ImageAspects::COLOR, 2, 1, 1, 1);
+        let producer = ImageAccess::transfer_write(rid(0)).with_range(mip);
+        let consumer = ImageAccess::new(
+            rid(0),
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::Sampled,
+            ResourceAccessStage::VertexShader,
+            mip,
+        );
+        let mut compiler = GraphCompiler::new(vec![pass("consume", vec![consumer])]);
+        compiler.imported_contracts.insert(
+            rid(0),
+            ImportedImageContract::arrives_in(ResourceState::ShaderRead),
+        );
+        compiler.external_image_accesses.push(producer);
+        let plan = compiler.compile().unwrap();
+        assert_eq!(plan.sync.external_image_producers.len(), 1);
+        assert_eq!(
+            plan.sync.external_image_producers[0].encoder,
+            EncoderKind::Blit
+        );
+        let op = plan.sync.pass_ops[0][0];
+        assert_eq!(op.range, mip);
+        assert_eq!(op.before, ImageSyncState::of_access(&producer));
+        assert_eq!(op.after, ImageSyncState::of_access(&consumer));
+        assert_eq!(op.before_pass, None);
+    }
+
+    #[test]
+    fn test_unchanged_imported_mips_keep_their_declared_initial_scope() {
+        let uploaded = ImageSubresourceRange::new(ImageAspects::COLOR, 2, 1, 0, 1);
+        let untouched = ImageSubresourceRange::new(ImageAspects::COLOR, 0, 1, 0, 1);
+        let consumer = ImageAccess::new(
+            rid(0),
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::TransferSource,
+            ResourceAccessStage::Transfer,
+            untouched,
+        );
+        let mut compiler = GraphCompiler::new(vec![pass("consume", vec![consumer])]);
+        compiler.imported_contracts.insert(
+            rid(0),
+            ImportedImageContract::arrives_in(ResourceState::ShaderRead),
+        );
+        compiler
+            .external_image_accesses
+            .push(ImageAccess::transfer_write(rid(0)).with_range(uploaded));
+        let plan = compiler.compile().unwrap();
+        let op = plan.sync.pass_ops[0][0];
+        assert_eq!(op.range, untouched);
+        assert_eq!(
+            op.before,
+            ImageSyncState::of_contract_state(ResourceState::ShaderRead)
+        );
+    }
+    #[test]
+    fn test_invalid_image_usage_cannot_lower_to_an_empty_native_access_mask() {
+        let invalid = ImageAccess::new(
+            rid(0),
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::TransferDestination,
+            ResourceAccessStage::Transfer,
+            ImageSubresourceRange::WHOLE_COLOR,
+        );
+        assert!(matches!(
+            GraphCompiler::new(vec![pass("invalid", vec![invalid])]).compile(),
+            Err(crate::render_graph::RenderGraphError::Validation(
+                crate::render_graph::GraphValidationError::InvalidImageAccess { .. }
+            ))
+        ));
+        let invalid = ImageAccess::new(
+            rid(0),
+            ResourceAccessMode::Write,
+            ResourceAccessUsage::Sampled,
+            ResourceAccessStage::FragmentShader,
+            ImageSubresourceRange::WHOLE_COLOR,
+        );
+        assert!(
+            GraphCompiler::new(vec![pass("invalid", vec![invalid])])
+                .compile()
+                .is_err()
+        );
+    }
+    #[test]
+    fn test_bindless_uploads_require_explicit_shader_encoder_visibility() {
+        let mut graphics = pass("scene", Vec::new());
+        graphics.operation = PassType::Graphics;
+        let mut compute = pass("material_compute", Vec::new());
+        compute.operation = PassType::Compute;
+        let mut transfer = pass("readback", Vec::new());
+        transfer.operation = PassType::Transfer;
+        let mut compiler = GraphCompiler::new(vec![graphics, compute, transfer]);
+        compiler.external_uploads_pending = true;
+        let plan = compiler.compile().unwrap();
+        assert!(plan.sync.external_image_producers.is_empty());
+        assert!(
+            plan.sync.pass_boundaries[0]
+                .as_ref()
+                .unwrap()
+                .external_upload_dependency
+        );
+        assert!(
+            plan.sync.pass_boundaries[1]
+                .as_ref()
+                .unwrap()
+                .external_upload_dependency
+        );
+        assert!(
+            !plan.sync.pass_boundaries[2]
+                .as_ref()
+                .unwrap()
+                .external_upload_dependency
+        );
+    }
+    #[test]
+    fn test_read_only_buffer_stage_changes_do_not_create_false_ordering() {
+        let fragment =
+            BufferAccess::storage_read(rid(0)).with_stage(ResourceAccessStage::FragmentShader);
+        let vertex =
+            BufferAccess::storage_read(rid(0)).with_stage(ResourceAccessStage::VertexShader);
+        let plan = compile(vec![
+            buffer_pass("fragment", vec![fragment]),
+            buffer_pass("vertex", vec![vertex]),
+        ]);
+        assert!(plan.sync.pass_buffer_ops[1].is_empty());
+        assert!(
+            plan.sync.pass_boundaries[1]
+                .as_ref()
+                .unwrap()
+                .predecessors
+                .is_empty()
+        );
+    }
+    #[test]
+    fn test_external_upload_visibility_reaches_each_shader_reader_stage() {
+        let range = ImageSubresourceRange::WHOLE_COLOR;
+        let producer = ImageAccess::transfer_write(rid(0)).with_range(range);
+        let fragment = ImageAccess::new(
+            rid(0),
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::Sampled,
+            ResourceAccessStage::FragmentShader,
+            range,
+        );
+        let vertex = ImageAccess::new(
+            rid(0),
+            ResourceAccessMode::Read,
+            ResourceAccessUsage::Sampled,
+            ResourceAccessStage::VertexShader,
+            range,
+        );
+        let mut compiler = GraphCompiler::new(vec![
+            pass("fragment", vec![fragment]),
+            pass("vertex", vec![vertex]),
+        ]);
+        compiler.external_image_accesses.push(producer);
+        let plan = compiler.compile().unwrap();
+        assert!(
+            plan.sync.pass_ops[1]
+                .iter()
+                .any(|op| op.before == ImageSyncState::of_access(&producer)
+                    && op.after == ImageSyncState::of_access(&vertex)
+                    && op.before_pass.is_none())
+        );
+    }
+    #[test]
+    fn test_shared_buffer_first_write_orders_all_previous_frame_readers() {
+        let write = BufferAccess::storage_write(rid(0));
+        let fragment =
+            BufferAccess::storage_read(rid(0)).with_stage(ResourceAccessStage::FragmentShader);
+        let vertex =
+            BufferAccess::storage_read(rid(0)).with_stage(ResourceAccessStage::VertexShader);
+        let plan = compile(vec![
+            buffer_pass("write", vec![write]),
+            buffer_pass("fragment", vec![fragment]),
+            buffer_pass("vertex", vec![vertex]),
+        ]);
+        for access in [write, fragment, vertex] {
+            assert!(
+                plan.sync.pass_buffer_ops[0]
+                    .iter()
+                    .any(|op| op.before == BufferSyncState::of_access(&access)
+                        && op.before_pass.is_none()
+                        && op.after == BufferSyncState::of_access(&write))
+            );
+        }
+    }
+    #[test]
+    fn test_new_topology_orders_the_retained_external_buffer_writer() {
+        let writer = BufferAccess::storage_write(rid(9)).with_range(BufferByteRange::new(16, 32));
+        let transfer = BufferAccess::new(
+            rid(9),
+            ResourceAccessMode::Read,
+            BufferUsage::TransferSource,
+            ResourceAccessStage::Transfer,
+            BufferByteRange::new(24, 8),
+        );
+        let mut compiler =
+            GraphCompiler::new(vec![buffer_pass("new read only graph", vec![transfer])]);
+        compiler.external_buffer_accesses.push(writer);
+        let plan = compiler.compile().unwrap();
+        assert!(plan.sync.pass_buffer_ops[0].iter().any(|op| op.before
+            == BufferSyncState::of_access(&writer)
+            && op.after == BufferSyncState::of_access(&transfer)
+            && op.range == transfer.range
+            && op.before_pass.is_none()));
     }
 }

@@ -11,19 +11,19 @@
 
 // Particle data buffer (Set 0, Binding 0)
 @group(0) @binding(0)
-var<storage, read> particles: array<ParticleData, MAX_PARTICLES>;
+var<storage, read> particles: array<ParticleData>;
 
 // Dead particle list (Set 0, Binding 1) - unused in render but must match layout
 @group(0) @binding(1)
-var<storage, read> dead_list: array<u32, MAX_PARTICLES>;
+var<storage, read> dead_list: array<u32>;
 
 // Alive particle index list (Set 0, Binding 2)
 @group(0) @binding(2)
-var<storage, read> alive_list: array<u32, MAX_PARTICLES>;
+var<storage, read> alive_list: array<u32>;
 
 // Alive list next (Set 0, Binding 3) - unused in render but must match layout
 @group(0) @binding(3)
-var<storage, read> alive_list_next: array<u32, MAX_PARTICLES>;
+var<storage, read> alive_list_next: array<u32>;
 
 // Counters (Set 0, Binding 4) - unused in render but must match layout
 @group(0) @binding(4)
@@ -57,7 +57,13 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    let particle_index = alive_list[vertex_id / 6u];
+    out.clip_position = vec4f(0.0, 0.0, 2.0, 1.0);
+    out.color = vec4f(0.0);
+    out.uv = vec2f(0.0);
+    let alive_index = vertex_id / 6u;
+    if (alive_index >= arrayLength(&alive_list)) { return out; }
+    let particle_index = alive_list[alive_index];
+    if (particle_index >= arrayLength(&particles)) { return out; }
     let particle = particles[particle_index];
     let corner = get_quad_corner(vertex_id);
 

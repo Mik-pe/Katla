@@ -297,6 +297,59 @@ impl GlobalParticleSystem {
         self.pipelines.render
     }
 
+    pub(crate) fn graph_buffer(
+        &self,
+        role: crate::render_graph::BuiltinBuffer,
+        slot: usize,
+    ) -> Option<(vk::Buffer, u64)> {
+        use crate::render_graph::BuiltinBuffer::*;
+        match role {
+            ParticleData => Some((
+                self.buffer.particle_buffer(),
+                self.buffer.layout().particles_size,
+            )),
+            ParticleDeadList => Some((
+                self.buffer.particle_buffer(),
+                self.buffer.layout().dead_list_size,
+            )),
+            ParticleAliveRead | ParticleAliveWrite => Some((
+                self.buffer.particle_buffer(),
+                self.buffer.layout().alive_list_size,
+            )),
+            ParticleCounters => Some((
+                self.buffer.counters_buffer(slot),
+                std::mem::size_of::<buffer::ParticleCounters>() as u64,
+            )),
+            ParticlePreviousCounters => Some((
+                self.buffer.counters_buffer((slot + 1) % 2),
+                std::mem::size_of::<buffer::ParticleCounters>() as u64,
+            )),
+            ParticleIndirect => Some((self.buffer.indirect_draw_buffer(slot), 16)),
+            ParticleFrame => self.buffers.frame_data[slot % 2]
+                .as_ref()
+                .map(|(buffer, allocation)| (*buffer, allocation.size())),
+            ParticleEmitters => self.buffers.emitter_configs[slot % 2]
+                .as_ref()
+                .map(|(buffer, allocation)| (*buffer, allocation.size())),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn graph_buffer_offset(
+        &self,
+        role: crate::render_graph::BuiltinBuffer,
+        slot: usize,
+    ) -> Option<u64> {
+        use crate::render_graph::BuiltinBuffer::*;
+        match role {
+            ParticleData => Some(0),
+            ParticleDeadList => Some(self.buffer.layout().dead_list_offset),
+            ParticleAliveRead => Some(self.buffer.layout().alive_frame_offset[slot % 2]),
+            ParticleAliveWrite => Some(self.buffer.layout().alive_frame_offset[(slot + 1) % 2]),
+            _ => None,
+        }
+    }
+
     pub fn particle_buffer(&self) -> vk::Buffer {
         self.buffer.particle_buffer()
     }

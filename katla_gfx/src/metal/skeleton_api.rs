@@ -9,28 +9,38 @@ impl MetalRenderer {
         &mut self,
         joint_count: usize,
     ) -> Result<SkeletonHandle, RendererError> {
-        let buffer_size = (joint_count * 64) as u64;
-        let buffer = self.context.create_buffer(buffer_size, true)?;
-
-        let identity: [f32; 16] = [
-            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ];
-        let ptr = buffer.map();
-        unsafe {
-            let dst = ptr as *mut [f32; 16];
-            for i in 0..joint_count {
-                dst.add(i).write(identity);
+        let mut handle = SkeletonHandle::NONE;
+        for storage in &mut self.skeletons {
+            let buffer = self
+                .context
+                .create_buffer((joint_count * 64) as u64, true)?;
+            let identity: [f32; 16] = [
+                1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.,
+            ];
+            unsafe {
+                let dst = buffer.map().cast::<[f32; 16]>();
+                for joint in 0..joint_count {
+                    dst.add(joint).write(identity);
+                }
             }
+            handle = storage.insert(buffer);
         }
-        buffer.unmap();
-
-        Ok(self.skeletons.insert(buffer))
+        Ok(handle)
     }
 
     pub(crate) fn update_skeleton_impl(&mut self, handle: SkeletonHandle, matrices: &[[f32; 16]]) {
-        let Some(buffer) = self.skeletons.get_mut(handle) else {
+        let slot = self.frame_index();
+        let Some(buffer) = self.skeletons[slot].get_mut(handle) else {
             return;
         };
+        let replacement = match self.context.create_buffer(buffer.size(), true) {
+            Ok(replacement) => replacement,
+            Err(error) => {
+                log::error!("Skeleton upload allocation failed: {error}");
+                return;
+            }
+        };
+        *buffer = replacement;
         let max_matrices = (buffer.size() / 64) as usize;
         let count = matrices.len().min(max_matrices);
         let ptr = buffer.map();
@@ -43,6 +53,8 @@ impl MetalRenderer {
     }
 
     pub(crate) fn destroy_skeleton_impl(&mut self, handle: SkeletonHandle) {
-        self.skeletons.remove(handle);
+        for storage in &mut self.skeletons {
+            storage.remove(handle);
+        }
     }
 }

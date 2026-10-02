@@ -217,6 +217,10 @@ pub struct VulkanRenderer {
     /// Backend-neutral buffer resources addressable from render graphs.
     pub(crate) graph_buffers:
         ResourceStorage<crate::render_graph::transient_buffer::VulkanGraphBuffer, BufferMarker>,
+    pub(crate) graph_compute_pipelines: std::collections::HashMap<
+        crate::render_graph::ComputePipelineDesc,
+        crate::render_graph::vulkan_compute::VulkanGraphComputePipeline,
+    >,
     /// Compositing descriptor set layout for multi-viewport compositing.
     /// Created during initialization and used when compiling compositing materials.
     pub(crate) compositing_descriptor_set_layout: vk::DescriptorSetLayout,
@@ -241,7 +245,6 @@ pub struct VulkanRenderer {
     /// Global particle system for GPU-driven particle effects.
     pub particle_system: Option<crate::particles::GlobalParticleSystem>,
     /// GPU animation pose evaluation pipeline.
-    pub animation_pipeline: Option<crate::animation::PoseComputePipeline>,
     /// GPU animation buffers for pose evaluation.
     pub animation_buffers: Option<crate::animation::PoseComputeBuffers>,
     /// Light culling subsystem (Forward+ dynamic lighting).
@@ -266,11 +269,9 @@ pub struct VulkanRenderer {
     /// Base bindless index for per-frame depth textures.
     /// Actual index for frame N is `depth_texture_base_index + N`.
     depth_texture_base_index: Option<u32>,
-    /// Tracks whether the first frame has been rendered.
-    /// Used to skip the inter-frame semaphore wait on the very first frame.
-    first_frame_rendered: bool,
     /// The currently open frame-scoped token (see `renderer::frame_scope`).
     active_frame: Option<crate::renderer::frame_scope::FrameToken>,
+    frame_rendered: bool,
     /// Monotonic counter handed to successive acquired frames.
     frame_generation: u64,
     /// Why the open frame is poisoned (a render failure); `present` refuses to submit.
@@ -554,6 +555,7 @@ impl VulkanRenderer {
             skeleton_descriptors: ResourceStorage::new(),
             skeleton_buffers: ResourceStorage::new(),
             graph_buffers: ResourceStorage::new(),
+            graph_compute_pipelines: std::collections::HashMap::new(),
             compositing_descriptor_set_layout,
             frame_uniforms: FrameUniforms::default(),
             last_presented_image_index: None,
@@ -565,7 +567,6 @@ impl VulkanRenderer {
             ui_renderer,
             timestamp_queries,
             particle_system: None,
-            animation_pipeline: None,
             animation_buffers: None,
             light_culling: light_culling::LightSubsystem::default(),
             shared_empty_descriptor_layout,
@@ -576,8 +577,8 @@ impl VulkanRenderer {
             outline: outline::OutlineSubsystem::default(),
             picking: picking::PickingSubsystem::default(),
             depth_texture_base_index: None,
-            first_frame_rendered: false,
             active_frame: None,
+            frame_rendered: false,
             frame_generation: 0,
             frame_poisoned: None,
             capabilities: gpu_capabilities,
@@ -857,10 +858,6 @@ impl VulkanRenderer {
         }
 
         // Destroy animation pipeline and buffers
-        if let Some(mut pipeline) = self.animation_pipeline.take() {
-            info!("Destroying animation pose compute pipeline");
-            pipeline.destroy();
-        }
         self.animation_buffers = None; // Drop handles cleanup via Drop impl
 
         // Destroy all registered assets first (materials, meshes)
@@ -938,6 +935,8 @@ impl VulkanRenderer {
     pub fn wait_for_device(&self) {
         if let Err(e) = unsafe { self.context.device.device_wait_idle() } {
             error!("device_wait_idle failed: {e}");
+        } else {
+            self.context.graph_buffer_history.borrow_mut().clear();
         }
     }
 
@@ -947,7 +946,6 @@ impl VulkanRenderer {
     ) -> Result<(), crate::error::RendererError> {
         self.wait_for_device();
         self.context.wait_and_drain_all_staged_uploads();
-        self.first_frame_rendered = false;
 
         let old_extent = self.frame_context.extent;
         info!("=== Recreating swapchain ===");

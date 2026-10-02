@@ -1,12 +1,34 @@
 //! Error types for render graph.
 
-use std::fmt;
-
 use super::resource::ResourceState;
+
+use std::fmt;
 
 /// Structural errors detected before a render graph is compiled or allocated.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GraphValidationError {
+    /// Two graph names import one native identity without an alias contract.
+    DuplicateImportedIdentity {
+        kind: &'static str,
+        first: String,
+        duplicate: String,
+    },
+    /// An acquired native output has never stored defined contents.
+    LoadingUninitializedOutput { pass: String },
+    /// An attachment load consumes undefined imported contents.
+    LoadingUninitializedImport {
+        pass: String,
+        resource: u32,
+        aspects: super::ImageAspects,
+    },
+    /// Image visibility or mode is incompatible with its declared usage.
+    InvalidImageAccess {
+        pass: String,
+        resource: u32,
+        reason: String,
+    },
+    /// A recorded command violates its reflected resource contract.
+    InvalidComputeCommand { pass: String, reason: String },
     /// A resource declaration or import has an empty name.
     EmptyResourceName,
     /// A resource name is declared more than once.
@@ -86,15 +108,6 @@ pub enum GraphValidationError {
     DepthOpsWithoutDepthUse(String),
     /// A depth clear value is outside the [0, 1] range.
     InvalidDepthClearValue { pass: String, depth: f32 },
-    /// A pass loads the contents of an imported image whose contract declares
-    /// them unobservable (initial state `Undefined`).
-    LoadingUndefinedImportedContents { pass: String, resource: String },
-    /// An imported image's required final state is unreachable: no live pass
-    /// accesses the image, so the graph cannot move it from its initial state.
-    UnreachableImportedFinalState {
-        resource: String,
-        required: ResourceState,
-    },
     /// A state contract was declared for a resource that is not imported.
     ImportContractOnNonImported { resource: String },
 }
@@ -102,6 +115,39 @@ pub enum GraphValidationError {
 impl fmt::Display for GraphValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::DuplicateImportedIdentity {
+                kind,
+                first,
+                duplicate,
+            } => write!(
+                f,
+                "{kind} imports '{first}' and '{duplicate}' refer to one native identity"
+            ),
+            Self::LoadingUninitializedImport {
+                pass,
+                resource,
+                aspects,
+            } => write!(
+                f,
+                "pass '{pass}' loads undefined imported r{resource} contents at {aspects:?}"
+            ),
+            Self::LoadingUninitializedOutput { pass } => write!(
+                f,
+                "pass '{pass}' loads an acquired output without initialized contents"
+            ),
+            Self::InvalidImageAccess {
+                pass,
+                resource,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "pass '{pass}' declares invalid image access r{resource}: {reason}"
+                )
+            }
+            Self::InvalidComputeCommand { pass, reason } => {
+                write!(f, "invalid compute command in pass '{pass}': {reason}")
+            }
             Self::EmptyResourceName => write!(f, "resource names must not be empty"),
             Self::DuplicateResourceName(name) => {
                 write!(f, "resource '{}' is declared more than once", name)
@@ -243,18 +289,6 @@ impl fmt::Display for GraphValidationError {
                 "pass '{}' uses depth clear value {} outside [0, 1]",
                 pass, depth
             ),
-            Self::LoadingUndefinedImportedContents { pass, resource } => write!(
-                f,
-                "pass '{}' loads imported '{}' whose contents are not declared observable \
-                 (import it with a non-Undefined initial state)",
-                pass, resource
-            ),
-            Self::UnreachableImportedFinalState { resource, required } => write!(
-                f,
-                "imported '{}' must end in state {:?} but no live pass accesses it; \
-                 export or read it, or relax the contract",
-                resource, required
-            ),
             Self::ImportContractOnNonImported { resource } => write!(
                 f,
                 "state contract declared for '{}' which is not an imported image",
@@ -285,6 +319,8 @@ pub enum RenderGraphError {
     },
     /// Invalid configuration.
     InvalidConfiguration(String),
+    /// Graph storage requirements changed after native allocations were created.
+    AllocationContractChanged,
     /// Allocation failed.
     AllocationFailed(usize),
     /// Pipeline not set.
@@ -325,6 +361,10 @@ impl fmt::Display for RenderGraphError {
             Self::InvalidConfiguration(msg) => {
                 write!(f, "Invalid configuration: {}", msg)
             }
+            Self::AllocationContractChanged => write!(
+                f,
+                "Transient allocation contract changed; complete GPU work, cleanup the graph, and initialize its allocations again"
+            ),
             Self::AllocationFailed(size) => {
                 write!(
                     f,

@@ -1,5 +1,5 @@
 {
-  "schema_version": 11,
+  "schema_version": 12,
   "summary": {
     "declared_passes": 5,
     "live_passes": 4,
@@ -33,6 +33,7 @@
         "last_pass": 3
       },
       "physical_allocation_id": null,
+      "persistence": null,
       "imported_contract": {
         "initial": "ColorAttachment",
         "required_final": "PresentSrc"
@@ -55,6 +56,14 @@
         "last_pass": 1
       },
       "physical_allocation_id": 0,
+      "persistence": {
+        "exported": false,
+        "crosses_render_pass": true,
+        "sampled": true,
+        "storage": true,
+        "transfer_or_readback": false,
+        "tile_memory_eligible": false
+      },
       "imported_contract": null
     },
     {
@@ -74,6 +83,14 @@
         "last_pass": 2
       },
       "physical_allocation_id": 1,
+      "persistence": {
+        "exported": false,
+        "crosses_render_pass": true,
+        "sampled": true,
+        "storage": true,
+        "transfer_or_readback": false,
+        "tile_memory_eligible": false
+      },
       "imported_contract": null
     },
     {
@@ -93,6 +110,14 @@
         "last_pass": 3
       },
       "physical_allocation_id": 0,
+      "persistence": {
+        "exported": false,
+        "crosses_render_pass": true,
+        "sampled": true,
+        "storage": true,
+        "transfer_or_readback": false,
+        "tile_memory_eligible": false
+      },
       "imported_contract": null
     },
     {
@@ -120,6 +145,7 @@
         "last_pass": 3
       },
       "physical_allocation_id": null,
+      "persistence": null,
       "imported_contract": null
     },
     {
@@ -146,6 +172,7 @@
         "last_pass": 1
       },
       "physical_allocation_id": null,
+      "persistence": null,
       "imported_contract": null
     },
     {
@@ -167,6 +194,7 @@
       "exported": false,
       "lifetime": null,
       "physical_allocation_id": null,
+      "persistence": null,
       "imported_contract": null
     }
   ],
@@ -175,6 +203,10 @@
       "index": 0,
       "name": "shadow",
       "pass_type": "graphics",
+      "queue": "graphics",
+      "encoder": "render",
+      "alias_handoffs": [],
+      "external_upload_dependency": false,
       "kind": null,
       "reads": [],
       "writes": [
@@ -220,6 +252,10 @@
       "index": 1,
       "name": "geometry",
       "pass_type": "graphics",
+      "queue": "graphics",
+      "encoder": "render",
+      "alias_handoffs": [],
+      "external_upload_dependency": false,
       "kind": null,
       "reads": [
         {
@@ -310,6 +346,10 @@
       "index": 2,
       "name": "lighting",
       "pass_type": "graphics",
+      "queue": "graphics",
+      "encoder": "render",
+      "alias_handoffs": [],
+      "external_upload_dependency": false,
       "kind": null,
       "reads": [
         {
@@ -400,6 +440,10 @@
       "index": 3,
       "name": "present",
       "pass_type": "graphics",
+      "queue": "graphics",
+      "encoder": "render",
+      "alias_handoffs": [],
+      "external_upload_dependency": false,
       "kind": null,
       "reads": [
         {
@@ -488,6 +532,10 @@
       "index": 4,
       "name": "unused_compute",
       "pass_type": "graphics",
+      "queue": null,
+      "encoder": null,
+      "alias_handoffs": [],
+      "external_upload_dependency": false,
       "kind": null,
       "reads": [],
       "writes": [
@@ -523,6 +571,7 @@
       "culled": true
     }
   ],
+  "external_image_producers": [],
   "dependencies": [
     {
       "from_pass": 0,
@@ -988,19 +1037,19 @@
   "buffer_synchronization": [
     {
       "resource": {
-        "id": 5,
-        "name": "frame_constants"
+        "id": 4,
+        "name": "indirect_commands"
       },
       "range": {
         "offset": 0,
-        "size": 18446744073709551615
+        "size": 64
       },
-      "before": "undefined",
-      "after": "read Uniform @ AllGraphics",
+      "before": "write Storage @ ComputeShader",
+      "after": "write Storage @ ComputeShader",
       "before_pass": null,
       "before_name": null,
-      "pass": 1,
-      "pass_name": "geometry",
+      "pass": 2,
+      "pass_name": "lighting",
       "hazard": null,
       "reason": "initial_use"
     },
@@ -1013,7 +1062,7 @@
         "offset": 0,
         "size": 64
       },
-      "before": "undefined",
+      "before": "read Indirect @ DrawIndirect",
       "after": "write Storage @ ComputeShader",
       "before_pass": null,
       "before_name": null,
@@ -1116,5 +1165,7 @@
       "first_execution_position": 1,
       "last_execution_position": 2
     }
-  ]
+  ],
+  "allocation_source": "compiler_projection",
+  "native_allocations": []
 }

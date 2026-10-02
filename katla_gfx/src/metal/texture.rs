@@ -1,6 +1,6 @@
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
-use objc2_metal::MTLTexture;
+use objc2_metal::{MTLResource, MTLTexture};
 
 use crate::backend::resource::{GpuImage, GpuImageView};
 use crate::backend::traits::GpuBackend;
@@ -11,6 +11,8 @@ use super::MetalBackend;
 pub struct MetalTexture {
     pub inner: Retained<ProtocolObject<dyn MTLTexture>>,
     format: ImageFormat,
+    generate_mips: bool,
+    label: Option<&'static str>,
 }
 
 impl Clone for MetalTexture {
@@ -18,13 +20,46 @@ impl Clone for MetalTexture {
         Self {
             inner: self.inner.clone(),
             format: self.format,
+            generate_mips: self.generate_mips,
+            label: self.label,
         }
     }
 }
 
 impl MetalTexture {
     pub fn new(inner: Retained<ProtocolObject<dyn MTLTexture>>, format: ImageFormat) -> Self {
-        Self { inner, format }
+        Self {
+            inner,
+            format,
+            generate_mips: false,
+            label: None,
+        }
+    }
+}
+
+impl MetalTexture {
+    pub(crate) fn with_upload_policy(
+        mut self,
+        generate: bool,
+        label: Option<&'static str>,
+    ) -> Self {
+        self.generate_mips = generate;
+        self.label = label;
+        if let Some(label) = label {
+            self.inner
+                .setLabel(Some(&objc2_foundation::NSString::from_str(label)));
+        }
+        self
+    }
+    pub(crate) fn descriptor(&self) -> crate::texture::TextureDescriptor {
+        let mut desc =
+            crate::texture::TextureDescriptor::new(self.width(), self.height(), self.format);
+        desc.depth = self.inner.depth() as u32;
+        desc.array_layers = self.inner.arrayLength() as u32;
+        desc.mip_levels = self.mip_levels();
+        desc.generate_mips = self.generate_mips;
+        desc.label = self.label;
+        desc
     }
 }
 

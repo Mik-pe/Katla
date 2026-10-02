@@ -1,102 +1,23 @@
-# Metal Backend Architecture
+# Metal backend
 
-The native Metal backend of `katla_gfx` as it exists today. This document replaced the pre-implementation plan (`archive/metal_backend_implementation.md`) in August 2026; every module and type named here is verified against the tree.
+Katla uses the Metal 4 core API through objc2-metal on macOS. The required Apple Silicon CI platform is `macos-26`. Vulkan and Metal consume the same compiled render graph, including compute commands, imported image contracts, subresource synchronization, attachment operations, and transient allocation lifetimes.
 
----
+`MetalContext` owns one native `MTL4CommandQueue`. Three frame slots each own an `MTL4CommandAllocator`. Acquisition waits only for the slot being reused, receives its exact terminal commit feedback, retires its upload staging, and resets its allocator. Encoding creates a `MTL4CommandBuffer` with that allocator and attaches native residency sets again after begin. Submission does not wait for the previous frame. See [frame ownership](metal4_frame_slots.md).
 
-## 1. Backend Landscape
+`MetalExecutionPlan` lowers declared passes into native render and compute encoders. Copy and fill operations use Metal 4 compute command encoder transfer operations. There is no separate native blit encoder or alternative command path. Builtin and application WGSL compute kernels use the same prepared, reflected pipeline registry. Shader compilation finishes before encoding; graph commands specify binding identities, byte ranges, constants, and direct or indirect workgroup counts.
 
-`katla_gfx` is a cross-backend rendering library:
+Metal 4 resources are untracked. `sync.rs` lowers compiled producer and consumer scopes to explicit queue stage visibility barriers, including external texture uploads and terminal imported-image contracts. Alias handoffs additionally use `ResourceAlias` visibility. A tracked native heap descriptor never substitutes for those barriers. `transient_heap.rs` allocates real placement heaps; memoryless attachments require the compiled whole-lifetime eligibility proof.
 
-- **Vulkan** — via `ash` + `ash-window`, all platforms.
-- **Metal** — via `objc2-metal`, compiled on macOS only (`cfg(target_os = "macos")` in `katla_gfx/src/lib.rs`).
+`render_encoder.rs` and `compute_encoder.rs` populate native `MTL4ArgumentTable` objects from shader reflection. Runtime-array metadata uses the exact declared bound byte length. Missing reflected bindings produce a renderer error before commit. `argument_buffer.rs` publishes immutable bindless resource-ID snapshots, with cached transient frame variants. `residency.rs` retains physical allocations, heap owners, and stable persistent buffer sets. Every submission retains its tables, pipeline states, samplers, residency snapshots, attachment resources, and inline constants until its own completion. See [binding and residency](metal-binding-residency.md).
 
-Selection is explicit, never implicit:
+`pipeline_archive.rs` uses the Metal 4 compiler and native archives with content-addressed source, binding-schema, workgroup, and render-state identities. Material variants are prepared ahead of encoding. Background reloads publish complete replacements; an unsuccessful reload leaves the previous ready variants usable.
 
-- `AnyRenderer::new_metal(...)` / `AnyRenderer::new_vulkan(...)` for runtime selection through the `GpuRenderer` trait.
-- `MetalRenderer` / `VulkanRenderer` directly for compile-time commitment.
+`texture_upload.rs` stages validated subresource uploads into private textures, supports arrays and 3D textures, and generates mip chains explicitly. Staging retires after the exact consuming commit feedback; aborted unsubmitted work returns to the pending queue. See [texture upload contracts](metal_texture_uploads.md).
 
-Backend-neutral contracts live in `katla_gfx/src/backend/traits.rs` (`GpuBackend`, `GpuContext<B>`) and `katla_gfx/src/renderer.rs` (`GpuRenderer`: pipelines, materials, frame submission).
+The surface configures three drawables. Native presentation follows queue `waitForDrawable`, commit, queue `signalDrawable`, then drawable `present`. Headless frames use the same command and completion path. Screenshots wait for the latest submitted frame; explicit shutdown and rebuild operations drain outstanding submissions.
 
-**macOS 26 policy** (AGENTS.md, binding): CI uses exactly one explicit Apple Silicon runner, `macos-26`. No `macos-latest`, no older-generation compatibility jobs. When Katla adopts a newer macOS generation, `macos-26` is replaced directly and `docs/ci.md` updates in the same change.
+`diagnostics.rs` preserves the Metal 4 feedback error domain, code, and description. Native feedback supplies GPU start and end times; `MetalFrameMetrics` exposes CPU commit cost, slot wait, observed GPU duration, and CPU lead. Encoding remains thread-affine; callback blocks capture only synchronized completion data and owning resources retire on the encoding thread.
 
-## 2. Module Ownership
+Validate native changes by launching with `METAL_DEVICE_WRAPPER_TYPE=1` before process startup. GPU output checks, multi-slot stress, aliasing, uploads, and terminal feedback tests complement portable graph tests.
 
-All Metal code is `pub(crate)` under `katla_gfx/src/metal/` (declared in `mod.rs`), behind `cfg(target_os = "macos")`. Grouped by responsibility:
-
-**Device and context**
-- `context.rs` — `MetalContext`: default device via `MTLCreateSystemDefaultDevice`, command queue, depth/stencil state factory, headless initialization (`init_headless_with_size`, offscreen `CAMetalLayer`).
-
-**Command path** (pre-Metal-4 `MTLCommandQueue`/encoder model; see [#54](https://github.com/Mik-pe/Katla/issues/54) for the clean-cut migration)
-- `command_buffer.rs` — `MetalCommandBuffer`, submit with capture-free static completion handler.
-- `render_encoder.rs`, `compute_encoder.rs`, `blit_encoder.rs` — encoders; deliberately `!Send`/`!Sync` (single-threaded encoding, enforced by const assertions, [#57](https://github.com/Mik-pe/Katla/issues/57)).
-
-**Frame pipeline**
-- `frame_lifecycle.rs` — `acquire_frame` / `present_frame` / `abort_frame`, the Metal side of the frame-scoped contract ([#89](https://github.com/Mik-pe/Katla/issues/89)).
-- `execution_plan.rs` — `MetalExecutionPlan`: ordered executable pass records compiled from the backend-neutral render graph. Metal consumes these records directly; it does not rebuild topology.
-- `frame_render.rs` — record-stream execution; `validate_frame_submissions` runs pure plan/data contract checks **before any encoder is created** (unknown pass submissions, multi-draw-list UI passes, missing depth target → typed `RendererError`, drawable dropped so no partial frame can present).
-- `render_targets.rs`, `depth_prepass.rs`, `draw_helpers.rs` — target management and shared draw encoding.
-
-**Resources**
-- `buffer.rs`, `texture.rs`, `sampler.rs`, `format.rs` — native resource wrappers and format conversion.
-- `metal_transient_texture.rs` — render-graph transient textures.
-
-**Services**
-- `texture_upload.rs` — `TextureUploadQueue`: staged uploads; initial data never lives in a Shared texture (pooled staging → blit → Private, retired after the consuming submission). See [#58](https://github.com/Mik-pe/Katla/issues/58).
-- `pipeline_archive.rs` — `MetalPipelineArchive`: persistent `MTLBinaryArchive` + metadata sidecar at `~/Library/Caches/dev.ravboet.katla/pipelines/` with keyed invalidation (`ArchiveRejection`: Absent / MetadataMismatch / Corrupt) and `PipelineCacheStats` observability. See [#53](https://github.com/Mik-pe/Katla/issues/53).
-- `argument_buffer.rs` — bindless argument buffer; passes declare explicit residency. See [#55](https://github.com/Mik-pe/Katla/issues/55).
-- `timestamp_queries.rs`, `diagnostics.rs` — GPU timing and `GpuDiagnosticsMode` (validation/release command-buffer diagnostics, deterministic encoder labels, `GpuExecutionFailure.encoders` attached to renderer errors).
-
-**Materials and shaders**
-- `shader.rs` — WGSL → naga front-end → validation → naga MSL back-end with per-profile binding maps (`katla_msl_options`, `ShaderProfile` variants such as `ShadowSkinned`). **No SPIR-V, no SPIRV-Cross, no MoltenVK anywhere on the Metal path.**
-- `material_api.rs`, `pipeline.rs`, `init_pipelines.rs` — material compilation and pipeline state creation.
-- `mesh_api.rs`, `skeleton_api.rs`, `texture_api.rs`, `viewport_api.rs` — resource upload/management APIs.
-
-**Render passes**
-- `shadow.rs` — cascaded shadow maps (shared cascade data with Vulkan).
-- `light_culling.rs` — Forward+ light culling.
-- `outline.rs`, `picking.rs` (object-ID pass), `ui_renderer.rs`, `font_atlas.rs`, `animation.rs`.
-- `particle.rs` — WIP, `#[cfg(test)]`-gated; not yet wired into the Metal render graph.
-
-**Application and surface**
-- `surface.rs` — `MetalSurface`: window drawable ownership. **Thread-affinity model**: the surface, its current drawable, and all layer mutations (acquire, present, resize, attachment) are confined to the main thread that owns the backing `NSView`; `MetalSurface` is `!Send`/`!Sync` by const assertion. Device/queue and immutable pipeline state keep audited `unsafe impl Send`/`Sync` with SAFETY comments citing Apple guarantees. Headless rendering never constructs a surface (offscreen layer owned by the context).
-- `metal_renderer.rs` — `MetalRenderer`: the `GpuRenderer` implementation tying it all together.
-- `sync.rs` — fence/semaphore equivalents for the current single-slot frame model.
-
-## 3. Frame Lifecycle
-
-1. `acquire_frame` — waits for the previous submission and acquires the drawable (windowed: `MetalSurface`; headless: offscreen texture already set as the current drawable), returning a frame token.
-2. Application builds/updates the frame graph (application-owned topology; the editor pipeline is one preset among possible graphs — empty, UI-only, custom pass graphs are all valid).
-3. Graph compiler produces the deterministic `MetalExecutionPlan` (dead passes culled; liveness roots are exported resources and side-effect passes).
-4. Frame-local writes (`set_frame_uniforms`, `execute_draw_calls`, light/cascade uploads) take the token; `render` validates submissions against the plan (typed errors before encoding), then encodes one encoder per pass record — attachments, load/store/clear from graph declarations where defined; some semantic handlers still resolve backend-owned textures (see §6).
-5. `present` consumes the token: submit with completion handling, drawable presented via the surface. `abort` abandons the frame instead — nothing is submitted or presented, and the slot is reusable.
-
-**Known limitation:** frames are single-slot serialized — one frame in flight, no per-slot resource ownership yet. [#36](https://github.com/Mik-pe/Katla/issues/36) defines frame-slot lifetimes; [#54](https://github.com/Mik-pe/Katla/issues/54) builds the Metal 4 command model on top.
-
-## 4. Resource Model
-
-- Textures intended for GPU use are Private storage; CPU bytes enter exclusively through `TextureUploadQueue` staging. One documented CPU-readback exception exists in `create_texture_shared`.
-- Bindless textures bind through one argument buffer; the geometry pass declares its residency explicitly rather than scanning the registry.
-- Pipelines are created through descriptors that consult `MetalPipelineArchive` and register into it; corrupt/stale archives rebuild atomically. Pipeline cache keys cover shader source hashes, entry points, layouts, formats, and blend/depth/stencil/raster state.
-- Transient render-graph textures are realized per frame; live-range aliasing is not yet implemented ([#35](https://github.com/Mik-pe/Katla/issues/35)).
-
-## 5. Render-Graph Integration
-
-The render graph (`katla_gfx/src/render_graph/`) has three layers: pure structure/compilation (no GPU types), the `RenderGraphBackend` trait, and per-backend implementations (`vulkan_backend.rs`, `metal_backend.rs`). The graph owns topology, ordering, liveness, and diagnostics (text/JSON/DOT). Metal owns native resource realization and command encoding only — it may reject unsupported executable payloads before command-buffer creation but must not invent passes or silently add editor behavior.
-
-Graph-side work still open: buffer resources with range-aware dependencies ([#31](https://github.com/Mik-pe/Katla/issues/31)), typed image accesses/subresource ranges ([#30](https://github.com/Mik-pe/Katla/issues/30)), one compiled synchronization plan for both backends ([#33](https://github.com/Mik-pe/Katla/issues/33)), backend-neutral compute commands ([#32](https://github.com/Mik-pe/Katla/issues/32)), full executable-payload generification ([#56](https://github.com/Mik-pe/Katla/issues/56)).
-
-## 6. Honest Gaps
-
-- **Direct-to-drawable legacy path:** removed. Validation gates every frame; missing state is a typed `RendererError`, never a silent fallback (closed via [#51](https://github.com/Mik-pe/Katla/issues/51)).
-- **Single-slot serialization:** no real frames in flight until [#36](https://github.com/Mik-pe/Katla/issues/36) + [#54](https://github.com/Mik-pe/Katla/issues/54).
-- **Texture upload:** the staged queue is live, but mip-chain policy, subresource partial updates, and per-frame byte bounds remain on [#58](https://github.com/Mik-pe/Katla/issues/58), which is blocked on a documented shared→private storage anomaly (Xcode GPU capture pending — do not flip storage modes).
-- **Pipeline cache:** archive + observability are live; async warmup, off-thread hot reload, and the latency benchmark remain on [#53](https://github.com/Mik-pe/Katla/issues/53).
-- **Metal 4:** command path, argument tables, and residency sets are clean-cut migrations on [#54](https://github.com/Mik-pe/Katla/issues/54) and [#55](https://github.com/Mik-pe/Katla/issues/55) — no dual-runtime transition is planned.
-
-## 7. Related Documents
-
-- `vulkan_to_metal_mapping.md` — Vulkan-side API equivalents (historical migration aid from the `ash`-era; the native backend does not follow it).
-- `backend_agnostic_render_graph.md` — render-graph design background (superseded in part by the implemented graph; see `render_graph/mod.rs`).
-- `archive/metal_backend_implementation.md` — the superseded implementation plan (historical only).
-- `memory-bank/systemPatterns.md` — whole-engine architecture.
+GPU profiling uses Metal 4 counter heaps owned by the three frame slots. Open profiling labels measure the graph submission; results become readable after that submission's exact feedback, with native ticks converted using the Mach timebase. Profiling emits no commands unless labels are open. See [frame ownership](metal4_frame_slots.md).

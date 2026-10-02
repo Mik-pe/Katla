@@ -116,6 +116,8 @@ pub struct VulkanContext {
     /// Each entry holds its fence, command buffer, and staging allocation
     /// alive until the next frame-slot wait retires it.
     pub(crate) pending_staged_uploads: std::cell::RefCell<Vec<PendingStagedUpload>>,
+    pub(crate) graph_buffer_history:
+        std::cell::RefCell<crate::render_graph::BufferExecutionHistory>,
 }
 
 /// One submitted staged upload awaiting fence completion.
@@ -134,6 +136,11 @@ pub struct VulkanFrameCtx {
     pub(crate) scene_extent: vk::Extent2D,
     pub(crate) offscreen_targets: Vec<RenderTexture>,
     pub(crate) swapchain_images: Vec<VkImage>,
+    pub(crate) swapchain_image_layouts: Vec<std::cell::Cell<vk::ImageLayout>>,
+    pub(crate) swapchain_image_contents: Vec<std::cell::Cell<bool>>,
+    pub(crate) pending_output_contents: std::cell::Cell<Option<(usize, bool)>>,
+    pub(crate) pending_transient_layouts:
+        std::cell::RefCell<crate::render_graph::ImageLayoutJournal>,
     /// Per-frame depth render textures (one per FRAMES_IN_FLIGHT).
     /// Each in-flight frame uses its own depth buffer to prevent data races
     /// when multiple frames execute concurrently on the GPU (e.g., MAILBOX present mode).
@@ -340,6 +347,7 @@ impl VulkanContext {
             push_descriptor_khr,
             non_coherent_atom_size,
             pending_staged_uploads: std::cell::RefCell::new(Vec::new()),
+            graph_buffer_history: Default::default(),
         })
     }
 
@@ -500,6 +508,7 @@ impl VulkanContext {
             push_descriptor_khr,
             non_coherent_atom_size,
             pending_staged_uploads: std::cell::RefCell::new(Vec::new()),
+            graph_buffer_history: Default::default(),
         })
     }
 }

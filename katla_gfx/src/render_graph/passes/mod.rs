@@ -77,3 +77,6 @@ pub use particles::ParticlePass;
 pub use shadow::ShadowPass;
 pub use ui::UIPass;
 pub use viewport::ViewportPass;
+
+mod compute;
+pub use compute::ComputePass;

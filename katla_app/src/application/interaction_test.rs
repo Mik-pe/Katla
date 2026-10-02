@@ -25,9 +25,8 @@ mod target {
     pub const HIERARCHY_SPHERE_1_0: (f32, f32) = (117.0, 181.0);
     /// Hierarchy list body, used as the wheel-scroll position.
     pub const HIERARCHY_BODY: (f32, f32) = (117.0, 300.0);
-    /// Green torus on the right side of the viewport — clear of the selected
-    /// entity's gizmo hit zone (axes extend ~12px around their lines).
-    pub const VIEWPORT_OBJECT: (f32, f32) = (803.0, 255.0);
+    /// Solid front face of CenterCube, below the light icon and away from the selected gizmo.
+    pub const VIEWPORT_OBJECT: (f32, f32) = (440.0, 275.0);
     /// Empty sky above the torus, away from all geometry.
     pub const VIEWPORT_EMPTY_SKY: (f32, f32) = (940.0, 110.0);
     /// "Console" tab in the bottom dock strip (tabs at y 525..555).
@@ -378,7 +377,7 @@ impl InteractionTestRunner {
             }
             State::ShotViewport if frame == 42 => {
                 let name = Self::selected_name(app);
-                let picked = name.is_some() && name.as_deref() != Some("Sphere_1_0");
+                let picked = name.as_deref() == Some("CenterCube");
                 self.record(
                     "viewport_click_picks_object",
                     picked,

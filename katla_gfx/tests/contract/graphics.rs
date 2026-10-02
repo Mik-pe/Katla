@@ -55,9 +55,10 @@ mod pbr {
             .gfx()
             .create_mesh(&vertices, &[0u32, 1, 2], PrimitiveTopology::TriangleList)
             .expect("contract triangle mesh");
-        let graph = harness::build_graph(|builder| {
+        let graph = harness::build_pbr_graph(|builder| {
             builder.add_pass(
                 GeometryPass::new("geometry")
+                    .read("shadow_atlas")
                     .without_depth()
                     .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                     .clear_color([0.0, 0.0, 0.0, 1.0])
@@ -591,18 +592,20 @@ mod pbr {
     fn test_contract_material_renders_consistently_across_graph_configs() {
         let mut scenario = geometry_scenario("contract: material across graph configs");
         let material = scenario.material;
-        let mut dark_graph = harness::build_graph(|builder| {
+        let mut dark_graph = harness::build_pbr_graph(|builder| {
             builder.add_pass(
                 GeometryPass::new("geometry")
+                    .read("shadow_atlas")
                     .without_depth()
                     .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                     .clear_color([0.0, 0.0, 0.0, 1.0])
                     .material(material),
             )
         });
-        let mut blue_graph = harness::build_graph(|builder| {
+        let mut blue_graph = harness::build_pbr_graph(|builder| {
             builder.add_pass(
                 GeometryPass::new("geometry")
+                    .read("shadow_atlas")
                     .without_depth()
                     .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb)
                     .clear_color([0.0, 0.0, 0.5, 1.0])

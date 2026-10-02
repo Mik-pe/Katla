@@ -255,6 +255,31 @@ pub trait GpuRenderer: Sized + 'static {
         ))
     }
 
+    /// Queue a validated mip/layer/3D region update ([`RendererFeature::TextureSubresourceUpload`]).
+    /// Available on Metal;
+    /// other backends reject it before touching the texture.
+    fn update_texture_region(
+        &mut self,
+        handle: TextureHandle,
+        region: crate::texture::TextureUploadRegion,
+        data: &[u8],
+    ) -> Result<(), RendererError> {
+        let _ = (handle, region, data);
+        Err(RendererError::UnsupportedFeature(
+            "texture subresource uploads are unavailable on this backend".into(),
+        ))
+    }
+
+    /// Pending transfer producers, consumed by graph import synchronization before encoding.
+    fn pending_texture_uploads(&self) -> Vec<(TextureHandle, crate::texture::TextureUploadRegion)> {
+        Vec::new()
+    }
+
+    /// Current upload service gauges, when the backend owns a staged upload service.
+    fn texture_upload_metrics(&self) -> Option<crate::texture::TextureUploadMetrics> {
+        None
+    }
+
     /// Get the bindless slot for a texture handle.
     fn get_bindless_slot(&self, handle: TextureHandle) -> Option<u32>;
 
@@ -588,7 +613,7 @@ impl GpuRenderer for VulkanRenderer {
         frame: &FrameToken,
         uniforms: FrameUniforms,
     ) -> Result<(), RendererError> {
-        self.frame_check(frame)?;
+        self.frame_write_check(frame)?;
         VulkanRenderer::set_frame_uniforms(self, uniforms);
         Ok(())
     }
@@ -598,7 +623,7 @@ impl GpuRenderer for VulkanRenderer {
         frame: &FrameToken,
         draw_list: &DrawList,
     ) -> Result<(), RendererError> {
-        self.frame_check(frame)?;
+        self.frame_write_check(frame)?;
         VulkanRenderer::execute_draw_calls(self, draw_list)
     }
 
@@ -608,7 +633,7 @@ impl GpuRenderer for VulkanRenderer {
         uniforms: &FrameUniforms,
         draw_calls: &[DrawCall],
     ) -> Result<DrawList, RendererError> {
-        self.frame_check(frame)?;
+        self.frame_write_check(frame)?;
         VulkanRenderer::draw(self, uniforms, draw_calls)
     }
 
@@ -617,13 +642,13 @@ impl GpuRenderer for VulkanRenderer {
         frame: &FrameToken,
         lights: &[PointLightGPU],
     ) -> Result<(), RendererError> {
-        self.frame_check(frame)?;
+        self.frame_write_check(frame)?;
         VulkanRenderer::upload_lights(self, lights);
         Ok(())
     }
 
     fn upload_shadow_cascades(&mut self, frame: &FrameToken) -> Result<(), RendererError> {
-        self.frame_check(frame)?;
+        self.frame_write_check(frame)?;
         VulkanRenderer::upload_shadow_cascades(self);
         Ok(())
     }
@@ -666,7 +691,7 @@ impl GpuRenderer for VulkanRenderer {
         match feature {
             // Vulkan renders UI through the frame graph (`frame.submit_ui()`),
             // not through a direct queued UI pass.
-            RendererFeature::DirectUiPass => false,
+            RendererFeature::DirectUiPass | RendererFeature::TextureSubresourceUpload => false,
             RendererFeature::AnimationCompute
             | RendererFeature::LightCulling
             | RendererFeature::PassPipelines

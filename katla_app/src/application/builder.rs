@@ -647,13 +647,6 @@ impl ApplicationBuilder {
             .init_particle_render_pipeline(&particle_shader_path)
             .map_err(|e| crate::error::AppError::Graphics { source: e })?;
 
-        // Note: Particle compute pipelines (emit and simulate) will be initialized
-        // later in Application::init() after the builder returns.
-        // The particle system handles compute passes directly during execution,
-        // not as part of the frame graph passes.
-        // Workgroup counts are calculated dynamically each frame based on
-        // emit_count and alive_count.
-
         let graph = renderer
             .create_frame_graph()
             // Create HDR color texture for geometry pass output

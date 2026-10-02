@@ -1,27 +1,26 @@
 //! Metal GPU picking subsystem.
 //!
-//! Renders instance indices to an R32Uint texture, then reads back a single
+//! Reads instance indices from the submitted graph R32Uint attachment and copies a single
 //! pixel via a blit encoder + Shared buffer for CPU-side entity resolution.
 
 #[cfg(test)]
 use crate::backend::command::{ColorAttachmentInfo, RenderPassInfo};
-use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_foundation::NSString;
 use objc2_metal::MTLTexture;
-use objc2_metal::{
-    MTLBlitCommandEncoder, MTLCommandBuffer, MTLCommandEncoder, MTLOrigin, MTLPixelFormat,
-    MTLRenderCommandEncoder, MTLSize,
-};
+use objc2_metal::{MTL4CommandBuffer, MTLPixelFormat};
 
-use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
-use crate::backend::resource::GpuBuffer;
+use crate::backend::command::{
+    GpuBlitEncoder, GpuCommandBuffer, GpuRenderEncoder, IndexType, ShaderStages,
+};
+use crate::backend::resource::{GpuBuffer, GpuImageView};
 use crate::error::RendererError;
 use crate::handle::{MaterialMarker, MeshMarker, ResourceStorage, SkeletonMarker};
 use crate::pipeline::CompareOp;
 #[cfg(test)]
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
-use crate::texture::{ImageFormat, TextureDescriptor, TextureUsage};
+#[cfg(test)]
+use crate::texture::{ImageFormat, TextureDescriptor};
 
 use super::buffer::MetalBuffer;
 use super::context::MetalContext;
@@ -29,12 +28,20 @@ use super::metal_renderer::{MetalMaterial, MetalMesh};
 use super::pipeline::MetalGraphicsPipeline;
 use super::texture::MetalTextureView;
 
+#[derive(Clone)]
+pub(crate) struct MetalPickingSource {
+    pub(crate) view: MetalTextureView,
+    pub(crate) slot: usize,
+    pub(crate) generation: u64,
+}
+
 /// Pending picking readback on Metal.
 struct PendingPick {
+    source: MetalPickingSource,
     /// Frame number when the pick was triggered.
     frame: usize,
     /// Command buffer used for the blit copy.
-    command_buffer: Retained<ProtocolObject<dyn MTLCommandBuffer>>,
+    command_buffer: super::command_buffer::MetalCommandBuffer,
     /// Shared buffer containing the single u32 pixel readback.
     readback_buffer: MetalBuffer,
     /// Whether the result has been consumed.
@@ -43,30 +50,22 @@ struct PendingPick {
 
 /// Metal picking subsystem.
 ///
-/// Owns the object-ID texture, picking pipelines, and readback state.
+/// Owns picking pipelines and the exact submitted-source readback state.
 pub(crate) struct MetalPickingSubsystem {
-    /// R32Uint texture for rendering object IDs.
-    object_id_texture: Option<MetalTextureView>,
     /// Picking pipeline for static meshes.
     pipeline: Option<MetalGraphicsPipeline>,
     /// Picking pipeline for skinned meshes.
     pipeline_skinned: Option<MetalGraphicsPipeline>,
     /// Pending pixel readback.
     pending: Option<PendingPick>,
-    /// Cached texture dimensions.
-    texture_width: u32,
-    texture_height: u32,
 }
 
 impl MetalPickingSubsystem {
     pub(crate) fn new() -> Self {
         Self {
-            object_id_texture: None,
             pipeline: None,
             pipeline_skinned: None,
             pending: None,
-            texture_width: 0,
-            texture_height: 0,
         }
     }
 
@@ -76,34 +75,6 @@ impl MetalPickingSubsystem {
 
     pub(crate) fn pipeline_skinned(&self) -> Option<&MetalGraphicsPipeline> {
         self.pipeline_skinned.as_ref()
-    }
-
-    pub(crate) fn set_render_target(&mut self, view: MetalTextureView) {
-        self.texture_width = view.inner.width() as u32;
-        self.texture_height = view.inner.height() as u32;
-        self.object_id_texture = Some(view);
-    }
-
-    /// Create or recreate the object-ID texture.
-    pub(crate) fn resize(
-        &mut self,
-        context: &MetalContext,
-        width: u32,
-        height: u32,
-    ) -> Result<(), RendererError> {
-        if width == self.texture_width && height == self.texture_height {
-            return Ok(());
-        }
-
-        let desc = TextureDescriptor::new(width, height, ImageFormat::R32Uint)
-            .with_usage(TextureUsage::COLOR_ATTACHMENT | TextureUsage::SAMPLED);
-
-        let (_texture, view) = context.create_texture(&desc)?;
-
-        self.object_id_texture = Some(view);
-        self.texture_width = width;
-        self.texture_height = height;
-        Ok(())
     }
 
     /// Create the static picking pipeline.
@@ -158,6 +129,7 @@ impl MetalPickingSubsystem {
         &mut self,
         context: &MetalContext,
         frame: usize,
+        source: MetalPickingSource,
         x: u32,
         y: u32,
     ) -> Result<(), RendererError> {
@@ -167,9 +139,7 @@ impl MetalPickingSubsystem {
             let completed = self
                 .pending
                 .as_ref()
-                .map(|p| {
-                    p.command_buffer.status() == objc2_metal::MTLCommandBufferStatus::Completed
-                })
+                .map(|p| p.command_buffer.completion.is_complete())
                 .unwrap_or(true);
             if !completed {
                 log::debug!("Previous picking readback still in flight, skipping new pick");
@@ -179,9 +149,16 @@ impl MetalPickingSubsystem {
             self.pending = None;
         }
 
-        let id_texture = self.object_id_texture.as_ref().ok_or_else(|| {
-            RendererError::InvalidOperation("Object-ID texture not created".into())
-        })?;
+        let id_texture = &source.view;
+        if id_texture.inner.pixelFormat() != MTLPixelFormat::R32Uint
+            || x as usize >= id_texture.inner.width()
+            || y as usize >= id_texture.inner.height()
+        {
+            return Err(RendererError::InvalidOperation(
+                "Picking source must be an R32Uint graph attachment with in-bounds coordinates"
+                    .into(),
+            ));
+        }
 
         // Create a small Shared buffer for the 4-byte pixel readback
         let readback_buffer = context.create_buffer(4, true).map_err(|e| {
@@ -191,44 +168,22 @@ impl MetalPickingSubsystem {
             ))
         })?;
 
-        let cmd_buffer = context.create_command_buffer();
-        let label = NSString::from_str("picking_readback");
-        cmd_buffer.inner.setLabel(Some(&label));
-
-        // Use blit encoder to copy a single pixel from GPU-private texture to Shared buffer
-        let blit_encoder = cmd_buffer
-            .inner
-            .blitCommandEncoder()
-            .expect("Failed to create blit encoder for picking readback");
-
-        unsafe {
-            blit_encoder.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toBuffer_destinationOffset_destinationBytesPerRow_destinationBytesPerImage(
-                &id_texture.inner,
-                0,
-                0,
-                MTLOrigin {
-                    x: x as usize,
-                    y: y as usize,
-                    z: 0,
-                },
-                MTLSize {
-                    width: 1,
-                    height: 1,
-                    depth: 1,
-                },
-                &readback_buffer.inner,
-                0,
-                4,
-                4,
-            );
-        }
-
-        blit_encoder.endEncoding();
-        cmd_buffer.inner.commit();
+        let mut cmd_buffer = context.create_command_buffer();
+        cmd_buffer.begin();
+        cmd_buffer.inner.setLabel(Some(&NSString::from_str(&format!(
+            "picking.slot.{}.frame.{}",
+            source.slot, source.generation
+        ))));
+        let mut encoder = cmd_buffer.begin_blit_pass_with_label("picking_readback");
+        encoder.copy_texture_pixel_to_buffer(id_texture.image(), x, y, &readback_buffer);
+        encoder.end_encoding();
+        cmd_buffer.end();
+        cmd_buffer.submit(context);
 
         self.pending = Some(PendingPick {
+            source,
             frame,
-            command_buffer: cmd_buffer.inner,
+            command_buffer: cmd_buffer,
             readback_buffer,
             resolved: false,
         });
@@ -246,8 +201,12 @@ impl MetalPickingSubsystem {
             return None;
         }
 
-        let status = pending.command_buffer.status();
-        if status != objc2_metal::MTLCommandBufferStatus::Completed {
+        if !pending.command_buffer.completion.is_complete() {
+            return None;
+        }
+        if let Err(error) = pending.command_buffer.wait_until_completed() {
+            log::error!("Picking readback failed: {error}");
+            self.pending = None;
             return None;
         }
 
@@ -257,10 +216,25 @@ impl MetalPickingSubsystem {
         pending.readback_buffer.unmap();
 
         let frame = pending.frame;
+        log::debug!(
+            "Picking completed from slot {} generation {}",
+            pending.source.slot,
+            pending.source.generation
+        );
         pending.resolved = true;
         self.pending = None;
 
         Some((frame, value))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn wait_for_test_readback(&self) {
+        self.pending
+            .as_ref()
+            .unwrap()
+            .command_buffer
+            .wait_until_completed()
+            .unwrap();
     }
 
     pub(crate) fn has_pending_readback(&self) -> bool {
@@ -313,8 +287,8 @@ pub(crate) fn render_object_id_pass(
         let is_skinned = !draw.skeleton.is_none() && picking_skinned_pipeline.is_some();
 
         if is_skinned != current_is_skinned {
-            if is_skinned {
-                encoder.bind_graphics_pipeline(picking_skinned_pipeline.unwrap());
+            if is_skinned && let Some(pipeline) = picking_skinned_pipeline {
+                encoder.bind_graphics_pipeline(pipeline);
                 encoder.bind_storage_buffer(frame_uniform_buffer, 0, 0, stages);
                 encoder.bind_storage_buffer(object_storage_buffer, 0, 1, stages);
             } else {
@@ -332,28 +306,21 @@ pub(crate) fn render_object_id_pass(
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
 
-        // Metal's instance_id starts from 0 regardless of baseInstance,
-        // so rebind the object buffer with an offset so objects[0] maps
-        // to the correct per-object data.
-        let object_offset =
-            draw.instance_index as usize * super::metal_renderer::OBJECT_UNIFORM_SIZE as usize;
-        unsafe {
-            encoder.inner.setVertexBuffer_offset_atIndex(
-                Some(&object_storage_buffer.inner),
-                object_offset,
-                1,
-            );
-        }
-
-        encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
+        encoder.draw_indexed(
+            mesh.index_count,
+            draw.instance_count().max(1),
+            0,
+            0,
+            draw.instance_index,
+        );
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::backend::command::{GpuCommandBuffer, GpuRenderEncoder};
-    use crate::backend::resource::GpuBuffer;
+    use crate::backend::command::{GpuBlitEncoder, GpuCommandBuffer, GpuRenderEncoder};
+    use crate::backend::resource::{GpuBuffer, GpuImageView};
     use crate::metal::shader::{self, ShaderProfile};
     use crate::texture::TextureUsage;
 
@@ -362,31 +329,20 @@ mod tests {
         let subsystem = MetalPickingSubsystem::new();
         assert!(subsystem.pipeline.is_none());
         assert!(subsystem.pipeline_skinned.is_none());
-        assert!(subsystem.object_id_texture.is_none());
         assert!(!subsystem.has_pending_readback());
     }
 
     /// Read a single u32 pixel from an R32Uint texture at (x, y).
     fn read_pixel_r32(ctx: &MetalContext, texture: &MetalTextureView, x: u32, y: u32) -> u32 {
         let readback = ctx.create_buffer(4, true).unwrap();
-        let cmd_buffer = ctx.create_command_buffer();
-        let blit = cmd_buffer.inner.blitCommandEncoder().unwrap();
-        unsafe {
-            blit.copyFromTexture_sourceSlice_sourceLevel_sourceOrigin_sourceSize_toBuffer_destinationOffset_destinationBytesPerRow_destinationBytesPerImage(
-                &texture.inner,
-                0,
-                0,
-                MTLOrigin { x: x as usize, y: y as usize, z: 0 },
-                MTLSize { width: 1, height: 1, depth: 1 },
-                &readback.inner,
-                0,
-                4,
-                4,
-            );
-        }
-        blit.endEncoding();
-        cmd_buffer.inner.commit();
-        cmd_buffer.inner.waitUntilCompleted();
+        let mut cmd_buffer = ctx.create_command_buffer();
+        cmd_buffer.begin();
+        let mut blit = cmd_buffer.begin_blit_pass_with_label("picking_test_readback");
+        blit.copy_texture_pixel_to_buffer(texture.image(), x, y, &readback);
+        blit.end_encoding();
+        cmd_buffer.end();
+        cmd_buffer.submit(ctx);
+        cmd_buffer.wait_until_completed().unwrap();
 
         let ptr = readback.map() as *const u32;
         let value = unsafe { std::ptr::read(ptr) };
@@ -516,7 +472,7 @@ struct VertexOutput {
         encoder.end_encoding();
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
-        cmd_buffer.inner.waitUntilCompleted();
+        cmd_buffer.wait_until_completed().unwrap();
 
         // Read pixels at top center and bottom center
         let top_pixel = read_pixel_r32(&ctx, &view, width / 2, 0);
@@ -657,7 +613,7 @@ struct VertexOutput {
         encoder.end_encoding();
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
-        cmd_buffer.inner.waitUntilCompleted();
+        cmd_buffer.wait_until_completed().unwrap();
 
         // Simulate the picking readback. The user clicks at the top of the viewport.
         // The picking code maps this to physical_y = 0 (top row of the picking texture).

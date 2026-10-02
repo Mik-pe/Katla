@@ -23,7 +23,7 @@ The render graph is generic over `GpuRenderer`. `FrameGraphBuilder` provides a f
 
 ## Descriptor Set Layout (Vulkan-only)
 
-Vulkan uses a **3-set descriptor layout**. Metal uses argument buffers instead.
+Vulkan uses a **3-set descriptor layout**. Metal 4 uses reflected per-stage argument tables, immutable bindless resource-ID buffers, and submission-owned residency snapshots.
 
 - **Set 0** — Per-frame uniforms + per-object storage buffer array (indexed by `instance_index`)
 - **Set 1** — Bindless texture array (up to 4096) + shared sampler
@@ -33,7 +33,7 @@ For shader authors: access textures via `bindless_textures[texture_indices.x]`. 
 
 ## Image Barriers (Vulkan-only)
 
-Use `ImageBarrier` helpers — never manually construct `vk::ImageMemoryBarrier`. The API uses explicit source layouts. Automatic stage/access mask deduction, Vulkan 1.3 sync2.
+Graph synchronization comes from the compiled synchronization plan. Vulkan consumes that plan with explicit subresource layouts and Vulkan 1.3 sync2. Use `ImageBarrier` helpers for non-graph operations; never manually construct `vk::ImageMemoryBarrier` or add a second graph barrier path.
 
 Before using `vk::` types, check for existing wrappers/helpers first.
 

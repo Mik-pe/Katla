@@ -865,15 +865,36 @@ fn main() -> ExitCode {
                 );
             }
 
+            particle_system.reset_simulate_counters(
+                command_buffer.vk_command_buffer(),
+                false,
+                frame_index_for_descriptor,
+            );
+
             // Record emit dispatch
             if emit_workgroups > 0 {
-                if let Err(e) = particle_system.record_emit_dispatch(
+                if let Err(e) = particle_system.bind_emit_kernel(
                     command_buffer.vk_command_buffer(),
                     &asset_registry,
-                    emit_workgroups,
                     frame_index_for_descriptor,
                 ) {
                     log::warn!("Failed to record emit dispatch: {}", e);
+                } else {
+                    unsafe {
+                        context.device.cmd_dispatch(
+                            command_buffer.vk_command_buffer(),
+                            emit_workgroups,
+                            1,
+                            1,
+                        );
+                    }
+                    if let Err(error) = particle_system.emit_to_simulate_barrier(
+                        command_buffer.vk_command_buffer(),
+                        frame_index_for_descriptor,
+                    ) {
+                        log::error!("Particle emit barrier failed: {error}");
+                        return ExitCode::from(1);
+                    }
                 }
             }
 
@@ -885,24 +906,51 @@ fn main() -> ExitCode {
                     frame_index_for_descriptor,
                 );
 
-                if let Err(e) = particle_system.record_simulate_dispatch(
+                if let Err(e) = particle_system.bind_simulate_kernel(
                     command_buffer.vk_command_buffer(),
                     &asset_registry,
-                    simulate_workgroups,
                     frame_index_for_descriptor,
                 ) {
                     log::warn!("Failed to record simulate dispatch: {}", e);
+                } else {
+                    unsafe {
+                        context.device.cmd_dispatch(
+                            command_buffer.vk_command_buffer(),
+                            simulate_workgroups,
+                            1,
+                            1,
+                        );
+                    }
+                }
+                let barrier = vk::MemoryBarrier2::default()
+                    .src_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+                    .src_access_mask(vk::AccessFlags2::SHADER_WRITE)
+                    .dst_stage_mask(vk::PipelineStageFlags2::COMPUTE_SHADER)
+                    .dst_access_mask(
+                        vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE,
+                    );
+                unsafe {
+                    context.device.cmd_pipeline_barrier2(
+                        command_buffer.vk_command_buffer(),
+                        &vk::DependencyInfo::default().memory_barriers(&[barrier]),
+                    );
                 }
 
                 // Write indirect draw command after simulate (1-workgroup dispatch
                 // with barrier ensures correct alive_count visibility).
-                // Push descriptors are recorded inline by record_draw_command_dispatch.
-                if let Err(e) = particle_system.record_draw_command_dispatch(
+                // Push descriptors are recorded inline by bind_draw_command_kernel.
+                if let Err(e) = particle_system.bind_draw_command_kernel(
                     command_buffer.vk_command_buffer(),
                     &asset_registry,
                     frame_index_for_descriptor,
                 ) {
                     log::warn!("Failed to record draw command dispatch: {}", e);
+                } else {
+                    unsafe {
+                        context
+                            .device
+                            .cmd_dispatch(command_buffer.vk_command_buffer(), 1, 1, 1);
+                    }
                 }
             }
 

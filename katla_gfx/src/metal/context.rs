@@ -2,11 +2,12 @@ use objc2::Message;
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
 use objc2_metal::{
-    MTLCommandQueue, MTLCompareFunction, MTLCreateSystemDefaultDevice, MTLDepthStencilDescriptor,
-    MTLDepthStencilState, MTLDevice, MTLFunction, MTLGPUFamily, MTLPixelFormat,
-    MTLRenderPipelineDescriptor, MTLResourceOptions, MTLStencilDescriptor, MTLStencilOperation,
-    MTLStorageMode, MTLTextureDescriptor, MTLVertexDescriptor, MTLVertexFormat,
-    MTLVertexStepFunction,
+    MTL4CommandAllocator, MTL4CommandAllocatorDescriptor, MTL4CommandQueue,
+    MTL4CommandQueueDescriptor, MTLCompareFunction, MTLCreateSystemDefaultDevice,
+    MTLDepthStencilDescriptor, MTLDepthStencilState, MTLDevice, MTLFunction, MTLGPUFamily,
+    MTLPixelFormat, MTLRenderPipelineDescriptor, MTLResourceOptions, MTLStencilDescriptor,
+    MTLStencilOperation, MTLStorageMode, MTLTextureDescriptor, MTLVertexDescriptor,
+    MTLVertexFormat, MTLVertexStepFunction,
 };
 
 use crate::backend::traits::{GpuBackend, GpuContext};
@@ -15,6 +16,7 @@ use crate::pipeline::CompareOp;
 use crate::texture::TextureDescriptor;
 
 /// Stencil face operations for depth/stencil state creation.
+#[derive(Debug)]
 pub(crate) struct StencilFaceOps {
     pub compare_func: MTLCompareFunction,
     pub stencil_fail_op: MTLStencilOperation,
@@ -288,7 +290,7 @@ impl GpuBackend for MetalBackend {
 
 pub(crate) struct MetalContext {
     pub(crate) device: Retained<ProtocolObject<dyn MTLDevice>>,
-    pub(crate) command_queue: Retained<ProtocolObject<dyn MTLCommandQueue>>,
+    pub(crate) command_queue: Retained<ProtocolObject<dyn MTL4CommandQueue>>,
     pub(crate) surface: MetalSurface,
     pub(crate) pipeline_archive: Option<super::pipeline_archive::MetalPipelineArchive>,
 }
@@ -325,9 +327,7 @@ impl MetalContext {
     ) -> Result<Self, RendererError> {
         let device = MTLCreateSystemDefaultDevice()
             .ok_or_else(|| RendererError::InitializationFailed("No Metal device found".into()))?;
-        let command_queue = device.newCommandQueue().ok_or_else(|| {
-            RendererError::InitializationFailed("Failed to create command queue".into())
-        })?;
+        let command_queue = Self::create_command_queue(&device)?;
         let surface = MetalSurface::new(window, display, &device)?;
         let pipeline_archive = Self::open_pipeline_archive(&device);
         Ok(Self {
@@ -342,23 +342,20 @@ impl MetalContext {
     pub(crate) fn init_headless() -> Result<Self, RendererError> {
         let device = MTLCreateSystemDefaultDevice()
             .ok_or_else(|| RendererError::InitializationFailed("No Metal device found".into()))?;
-        let command_queue = device.newCommandQueue().ok_or_else(|| {
-            RendererError::InitializationFailed("Failed to create command queue".into())
-        })?;
+        let command_queue = Self::create_command_queue(&device)?;
+        let pipeline_archive = Self::open_pipeline_archive(&device);
         Ok(Self {
             device,
             command_queue,
             surface: MetalSurface::headless(),
-            pipeline_archive: None,
+            pipeline_archive,
         })
     }
 
     pub(crate) fn init_headless_with_size(width: u32, height: u32) -> Result<Self, RendererError> {
         let device = MTLCreateSystemDefaultDevice()
             .ok_or_else(|| RendererError::InitializationFailed("No Metal device found".into()))?;
-        let command_queue = device.newCommandQueue().ok_or_else(|| {
-            RendererError::InitializationFailed("Failed to create command queue".into())
-        })?;
+        let command_queue = Self::create_command_queue(&device)?;
         let surface = MetalSurface::headless_with_device(&device, width, height);
         let pipeline_archive = Self::open_pipeline_archive(&device);
         Ok(Self {
@@ -394,6 +391,7 @@ impl MetalContext {
         &self,
         descriptor: &TextureDescriptor,
     ) -> Result<(MetalTexture, MetalTextureView), RendererError> {
+        descriptor.validate_data(0)?;
         let tex_desc = unsafe {
             MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
                 to_mtl_pixel_format(descriptor.format),
@@ -402,6 +400,25 @@ impl MetalContext {
                 false,
             )
         };
+        unsafe {
+            tex_desc.setMipmapLevelCount(descriptor.mip_levels as usize);
+            tex_desc.setDepth(descriptor.depth as usize);
+            tex_desc.setArrayLength(descriptor.array_layers as usize);
+        }
+        tex_desc.setTextureType(if descriptor.depth > 1 {
+            objc2_metal::MTLTextureType::Type3D
+        } else if descriptor.array_layers > 1 {
+            objc2_metal::MTLTextureType::Type2DArray
+        } else {
+            objc2_metal::MTLTextureType::Type2D
+        });
+        if descriptor.format.block_extent() != [1, 1] && !self.device.supportsBCTextureCompression()
+        {
+            return Err(RendererError::UnsupportedFeature(format!(
+                "{:?} block compression is unsupported by this Metal device",
+                descriptor.format
+            )));
+        }
         tex_desc.setUsage(to_mtl_texture_usage(descriptor.usage));
         tex_desc.setStorageMode(MTLStorageMode::Shared);
         let texture = self
@@ -410,11 +427,17 @@ impl MetalContext {
             .ok_or_else(|| RendererError::AllocationFailed {
                 resource: "metal texture".to_string(),
                 reason: format!(
-                    "{}x{} {:?}: device refused the texture descriptor",
-                    descriptor.width, descriptor.height, descriptor.format
+                    "{}x{}x{} {:?}, layers {}, mips {}: device refused the texture descriptor",
+                    descriptor.width,
+                    descriptor.height,
+                    descriptor.depth,
+                    descriptor.format,
+                    descriptor.array_layers,
+                    descriptor.mip_levels
                 ),
             })?;
-        let metal_texture = MetalTexture::new(texture.clone(), descriptor.format);
+        let metal_texture = MetalTexture::new(texture.clone(), descriptor.format)
+            .with_upload_policy(descriptor.generate_mips, descriptor.label);
         let view = MetalTextureView::new(texture, metal_texture.clone());
         Ok((metal_texture, view))
     }
@@ -423,6 +446,7 @@ impl MetalContext {
         &self,
         descriptor: &TextureDescriptor,
     ) -> Result<(MetalTexture, MetalTextureView), RendererError> {
+        descriptor.validate_data(0)?;
         let tex_desc = unsafe {
             MTLTextureDescriptor::texture2DDescriptorWithPixelFormat_width_height_mipmapped(
                 to_mtl_pixel_format(descriptor.format),
@@ -431,8 +455,27 @@ impl MetalContext {
                 false,
             )
         };
+        unsafe {
+            tex_desc.setMipmapLevelCount(descriptor.mip_levels as usize);
+            tex_desc.setDepth(descriptor.depth as usize);
+            tex_desc.setArrayLength(descriptor.array_layers as usize);
+        }
+        tex_desc.setTextureType(if descriptor.depth > 1 {
+            objc2_metal::MTLTextureType::Type3D
+        } else if descriptor.array_layers > 1 {
+            objc2_metal::MTLTextureType::Type2DArray
+        } else {
+            objc2_metal::MTLTextureType::Type2D
+        });
+        if descriptor.format.block_extent() != [1, 1] && !self.device.supportsBCTextureCompression()
+        {
+            return Err(RendererError::UnsupportedFeature(format!(
+                "{:?} block compression is unsupported by this Metal device",
+                descriptor.format
+            )));
+        }
         tex_desc.setUsage(to_mtl_texture_usage(descriptor.usage));
-        tex_desc.setStorageMode(MTLStorageMode::Shared);
+        tex_desc.setStorageMode(MTLStorageMode::Private);
 
         let texture = self
             .device
@@ -440,17 +483,24 @@ impl MetalContext {
             .ok_or_else(|| RendererError::AllocationFailed {
                 resource: "metal texture".to_string(),
                 reason: format!(
-                    "{}x{} {:?}: device refused the texture descriptor",
-                    descriptor.width, descriptor.height, descriptor.format
+                    "{}x{}x{} {:?}, layers {}, mips {}: device refused the texture descriptor",
+                    descriptor.width,
+                    descriptor.height,
+                    descriptor.depth,
+                    descriptor.format,
+                    descriptor.array_layers,
+                    descriptor.mip_levels
                 ),
             })?;
-        let metal_texture = MetalTexture::new(texture.clone(), descriptor.format);
+        let metal_texture = MetalTexture::new(texture.clone(), descriptor.format)
+            .with_upload_policy(descriptor.generate_mips, descriptor.label);
         let view = MetalTextureView::new(texture, metal_texture.clone());
         Ok((metal_texture, view))
     }
 
     pub(crate) fn create_sampler(&self) -> Result<MetalSamplerState, RendererError> {
         let desc = objc2_metal::MTLSamplerDescriptor::new();
+        desc.setSupportArgumentBuffers(true);
         desc.setMinFilter(objc2_metal::MTLSamplerMinMagFilter::Linear);
         desc.setMagFilter(objc2_metal::MTLSamplerMinMagFilter::Linear);
         desc.setMipFilter(objc2_metal::MTLSamplerMipFilter::Linear);
@@ -469,6 +519,7 @@ impl MetalContext {
         &self,
         desc: &objc2_metal::MTLSamplerDescriptor,
     ) -> Result<MetalSamplerState, RendererError> {
+        desc.setSupportArgumentBuffers(true);
         let sampler = self
             .device
             .newSamplerStateWithDescriptor(desc)
@@ -478,26 +529,58 @@ impl MetalContext {
         Ok(MetalSamplerState { inner: sampler })
     }
 
-    pub(crate) fn create_command_buffer(&self) -> MetalCommandBuffer {
-        let cmd_buffer = self
-            .command_queue
-            .commandBuffer()
-            .expect("Failed to allocate command buffer");
-        MetalCommandBuffer { inner: cmd_buffer }
+    fn create_command_queue(
+        device: &ProtocolObject<dyn MTLDevice>,
+    ) -> Result<Retained<ProtocolObject<dyn MTL4CommandQueue>>, RendererError> {
+        let descriptor = MTL4CommandQueueDescriptor::new();
+        descriptor.setLabel(Some(&objc2_foundation::NSString::from_str(
+            "Katla Metal4 graphics queue",
+        )));
+        device
+            .newMTL4CommandQueueWithDescriptor_error(&descriptor)
+            .map_err(|error| {
+                RendererError::InitializationFailed(error.localizedDescription().to_string())
+            })
     }
 
-    /// Create a command buffer through `MTLCommandBufferDescriptor`, enabling
-    /// per-encoder execution status when diagnostics are on.
-    pub(crate) fn create_command_buffer_with_diagnostics(
+    pub(crate) fn create_command_allocator(
         &self,
-        mode: super::diagnostics::GpuDiagnosticsMode,
+        slot: usize,
+    ) -> Result<Retained<ProtocolObject<dyn MTL4CommandAllocator>>, RendererError> {
+        let descriptor = MTL4CommandAllocatorDescriptor::new();
+        descriptor.setLabel(Some(&objc2_foundation::NSString::from_str(&format!(
+            "frame_slot.{slot}.allocator"
+        ))));
+        self.device
+            .newCommandAllocatorWithDescriptor_error(&descriptor)
+            .map_err(|error| RendererError::AllocationFailed {
+                resource: "Metal4 command allocator".into(),
+                reason: error.localizedDescription().to_string(),
+            })
+    }
+
+    pub(crate) fn create_command_buffer(&self) -> MetalCommandBuffer {
+        let allocator = self
+            .create_command_allocator(usize::MAX)
+            .expect("Metal4 command allocator");
+        self.create_command_buffer_for_allocator(allocator, "standalone")
+    }
+
+    pub(crate) fn create_command_buffer_for_allocator(
+        &self,
+        allocator: Retained<ProtocolObject<dyn MTL4CommandAllocator>>,
+        label: &str,
     ) -> MetalCommandBuffer {
-        let descriptor = super::diagnostics::command_buffer_descriptor(mode);
-        let cmd_buffer = self
-            .command_queue
-            .commandBufferWithDescriptor(&descriptor)
-            .expect("Failed to allocate command buffer");
-        MetalCommandBuffer { inner: cmd_buffer }
+        let inner = self
+            .device
+            .newCommandBuffer()
+            .expect("Metal4 command buffer");
+        MetalCommandBuffer {
+            inner,
+            allocator,
+            completion: Default::default(),
+            resources: super::encoding_resources::EncodingResources::new(&self.device, label),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -577,16 +660,9 @@ impl MetalContext {
         };
         descriptor.setVertexDescriptor(Some(&vd));
 
-        let pipeline_state = self
-            .device
-            .newRenderPipelineStateWithDescriptor_error(&descriptor)
-            .map_err(|err| {
-                let msg = err.localizedDescription().to_string();
-                RendererError::ResourceCreationFailed(format!(
-                    "Failed to create graphics pipeline: {}",
-                    msg
-                ))
-            })?;
+        let pipeline_state = self.pipeline_archive.as_ref().ok_or_else(|| {
+            RendererError::InitializationFailed("Metal pipeline compiler service unavailable".into())
+        })?.create_render_pipeline(&descriptor, &format!("depth_write={depth_write_enabled};depth_compare={depth_compare:?};cull={cull_mode:?};front={front_face:?};stencil=none"))?;
 
         let depth_stencil_state = if depth_format.is_some() {
             Some(self.create_depth_stencil_state(
@@ -598,6 +674,10 @@ impl MetalContext {
         };
 
         Ok(MetalGraphicsPipeline {
+            vertex_layout: super::shader::function_layout(vertex_function)?,
+            fragment_layout: fragment_function
+                .map(super::shader::function_layout)
+                .transpose()?,
             pipeline_state,
             depth_stencil_state,
             cull_mode,
@@ -712,24 +792,9 @@ impl MetalContext {
         };
         descriptor.setVertexDescriptor(Some(&vd));
 
-        if let Some(archive) = self.pipeline_archive.as_ref() {
-            archive.attach_to_render_descriptor(&descriptor);
-        }
-
-        let pipeline_state = self
-            .device
-            .newRenderPipelineStateWithDescriptor_error(&descriptor)
-            .map_err(|err| {
-                let msg = err.localizedDescription().to_string();
-                RendererError::ResourceCreationFailed(format!(
-                    "Failed to create graphics pipeline: {}",
-                    msg
-                ))
-            })?;
-
-        if let Some(archive) = self.pipeline_archive.as_ref() {
-            archive.register_render_pipeline(&descriptor);
-        }
+        let pipeline_state = self.pipeline_archive.as_ref().ok_or_else(|| {
+            RendererError::InitializationFailed("Metal pipeline compiler service unavailable".into())
+        })?.create_render_pipeline(&descriptor, &format!("depth_write={depth_write_enabled};depth_compare={depth_compare:?};cull={cull_mode:?};front={front_face:?};stencil={stencil_face:?}"))?;
 
         let depth_stencil_state = if depth_format.is_some() {
             Some(self.create_depth_stencil_state_with_stencil(
@@ -742,6 +807,10 @@ impl MetalContext {
         };
 
         Ok(MetalGraphicsPipeline {
+            vertex_layout: super::shader::function_layout(vertex_function)?,
+            fragment_layout: fragment_function
+                .map(super::shader::function_layout)
+                .transpose()?,
             pipeline_state,
             depth_stencil_state,
             cull_mode,
@@ -756,19 +825,17 @@ impl MetalContext {
         workgroup: [u32; 3],
     ) -> Result<MetalComputePipeline, RendererError> {
         let pipeline_state = self
-            .device
-            .newComputePipelineStateWithFunction_error(function)
-            .map_err(|err| {
-                let msg = err.localizedDescription().to_string();
-                RendererError::ResourceCreationFailed(format!(
-                    "Failed to create compute pipeline: {}",
-                    msg
-                ))
-            })?;
-        if let Some(archive) = self.pipeline_archive.as_ref() {
-            archive.register_compute_pipeline(function);
-        }
+            .pipeline_archive
+            .as_ref()
+            .ok_or_else(|| {
+                RendererError::InitializationFailed(
+                    "Metal pipeline compiler service unavailable".into(),
+                )
+            })?
+            .create_compute_pipeline(function, workgroup)?;
         Ok(MetalComputePipeline {
+            uniform_bindings: Vec::new(),
+            table_layout: super::shader::function_layout(function)?,
             pipeline_state,
             workgroup,
         })
@@ -785,10 +852,10 @@ impl MetalContext {
     }
 }
 
-// SAFETY: `MetalContext` owns `MTLDevice` and `MTLCommandQueue` plus immutable
+// SAFETY: `MetalContext` owns `MTLDevice` and `MTL4CommandQueue` plus immutable
 // feature/capability state. Apple's Metal documentation guarantees both
 // `MTLDevice` ("A GPU ... you can access ... from multiple threads") and
-// `MTLCommandQueue` ("MTLCommandQueue is thread-safe") for concurrent use; the
+// `MTL4CommandQueue` ("MTL4CommandQueue is thread-safe") for concurrent use; the
 // context holds no encoder, drawable, or layer state. Command *buffers* allocated
 // from the queue are NOT thread-safe and are confined to the encoding thread by
 // the `!Send`/`!Sync` command-buffer and encoder types in this module.
@@ -805,7 +872,6 @@ mod tests {
     use crate::backend::resource::GpuImage;
     use crate::metal::shader;
     use crate::texture::TextureUsage;
-    use objc2_metal::MTLCommandBuffer;
 
     #[test]
     fn test_metal_context_headless() {
@@ -1100,6 +1166,6 @@ struct VertexOutput {
 
         cmd_buffer.end();
         cmd_buffer.submit(&ctx);
-        cmd_buffer.inner.waitUntilCompleted();
+        cmd_buffer.wait_until_completed().unwrap();
     }
 }

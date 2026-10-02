@@ -218,7 +218,9 @@ pub(crate) mod metal;
 
 // Re-export animation types — shared data types always available
 pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
-pub use animation::{PoseComputeBuffers, PoseComputePipeline};
+pub use animation::{
+    AnimationBufferUploader, AnimationUpload, PoseComputeBuffers, PoseComputePipeline,
+};
 
 // Re-export types used by katla_app
 pub use renderer::PointLightGPU;
@@ -271,7 +273,10 @@ pub use handle::{
 pub use material::MaterialDomain;
 
 // Texture management
-pub use texture::{ImageFormat, TextureDescriptor, TextureUsage};
+pub use texture::{
+    ImageFormat, TextureDescriptor, TextureUploadBudget, TextureUploadLayout, TextureUploadMetrics,
+    TextureUploadRegion, TextureUsage,
+};
 
 // Vertex types (public module for discoverability and extensibility)
 pub use vertex::{

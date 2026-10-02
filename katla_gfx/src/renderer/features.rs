@@ -36,6 +36,8 @@ pub enum RendererFeature {
     TimestampQueries,
     /// In-place texture upload (`update_texture`).
     TextureInPlaceUpdate,
+    /// Explicit texture mip/layer/3D region uploads (`update_texture_region`).
+    TextureSubresourceUpload,
     /// Per-frame depth-texture bindless registration
     /// (`register_depth_textures_bindless`).
     DepthBindlessRegistration,
@@ -55,6 +57,7 @@ impl RendererFeature {
         Self::ParticleSystem,
         Self::TimestampQueries,
         Self::TextureInPlaceUpdate,
+        Self::TextureSubresourceUpload,
         Self::DepthBindlessRegistration,
         Self::DirectUiPass,
     ];
@@ -69,6 +72,7 @@ impl RendererFeature {
             Self::ParticleSystem => "particle_system",
             Self::TimestampQueries => "timestamp_queries",
             Self::TextureInPlaceUpdate => "texture_in_place_update",
+            Self::TextureSubresourceUpload => "texture_subresource_upload",
             Self::DepthBindlessRegistration => "depth_bindless_registration",
             Self::DirectUiPass => "direct_ui_pass",
         }

@@ -18,9 +18,6 @@ use crate::vulkan::material::compute_pipeline::ComputePipelineBuilder;
 
 use super::types::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
 
-/// Workgroup size for pose compute shader (must match @workgroup_size in WGSL).
-const POSE_COMPUTE_WORKGROUP_SIZE: u32 = 64;
-
 /// Number of storage buffer bindings in the pose compute descriptor set.
 const BINDING_COUNT: u32 = 8;
 
@@ -40,7 +37,11 @@ fn allocate_upload_buffer(
 
     let buffer_info = vk::BufferCreateInfo::default()
         .size(size)
-        .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_DST)
+        .usage(
+            vk::BufferUsageFlags::STORAGE_BUFFER
+                | vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::TRANSFER_SRC,
+        )
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
     // Build the replacement first: if any step fails, the previous buffer
@@ -85,6 +86,11 @@ pub struct PoseComputeBuffers {
     params_buffer: Option<vk::Buffer>,
     params_allocation: Option<Allocation>,
     params_size: u64,
+    frame_slot: usize,
+    params_stride: u64,
+    world_stride: u64,
+    world_size: u64,
+    output_stride: u64,
 
     // Binding 1 – static clip headers
     clip_headers_buffer: Option<vk::Buffer>,
@@ -125,6 +131,11 @@ impl PoseComputeBuffers {
             params_buffer: None,
             params_allocation: None,
             params_size: 0,
+            frame_slot: 0,
+            params_stride: 0,
+            world_stride: 0,
+            world_size: 0,
+            output_stride: 0,
             clip_headers_buffer: None,
             clip_headers_allocation: None,
             channel_infos_buffer: None,
@@ -144,6 +155,38 @@ impl PoseComputeBuffers {
         }
     }
 
+    pub(crate) fn wait_for_static_upload(&self) -> Result<(), RendererError> {
+        unsafe { self.context.device.device_wait_idle() }
+            .map_err(|error| RendererError::InvalidOperation(error.to_string()))
+    }
+
+    pub(crate) fn set_frame_slot(&mut self, slot: usize) {
+        self.frame_slot = slot;
+    }
+
+    fn slot_stride(&self, size: u64) -> u64 {
+        let alignment = unsafe {
+            self.context
+                .instance
+                .get_physical_device_properties(self.context.physical_device)
+        }
+        .limits
+        .min_storage_buffer_offset_alignment
+        .max(1);
+        size.div_ceil(alignment) * alignment
+    }
+
+    pub(crate) fn graph_buffer_offset(&self, role: crate::render_graph::BuiltinBuffer) -> u64 {
+        use crate::render_graph::BuiltinBuffer::*;
+        let stride = match role {
+            AnimationParams => self.params_stride,
+            AnimationWorld => self.world_stride,
+            AnimationOutput => self.output_stride,
+            _ => 0,
+        };
+        stride * self.frame_slot as u64
+    }
+
     // -- Allocation helpers --------------------------------------------------
 
     /// Allocate (or reallocate) the CPU→GPU params buffer for `max_skeletons`.
@@ -153,6 +196,7 @@ impl PoseComputeBuffers {
             return Ok(());
         }
 
+        self.params_stride = self.slot_stride(size);
         // Tear down previous allocation if any
         if let (Some(buf), Some(alloc)) = (self.params_buffer.take(), self.params_allocation.take())
         {
@@ -160,14 +204,17 @@ impl PoseComputeBuffers {
         }
 
         let buffer_info = vk::BufferCreateInfo::default()
-            .size(size)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER)
+            .size(self.params_stride * crate::renderer::FRAMES_IN_FLIGHT as u64)
+            .usage(
+                vk::BufferUsageFlags::STORAGE_BUFFER
+                    | vk::BufferUsageFlags::TRANSFER_SRC
+                    | vk::BufferUsageFlags::TRANSFER_DST,
+            )
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let (buffer, allocation) = self
             .context
-            .allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu)
-            .expect("Failed to allocate pose compute params buffer");
+            .allocate_buffer(&buffer_info, MemoryLocation::CpuToGpu)?;
 
         self.params_buffer = Some(buffer);
         self.params_allocation = Some(allocation);
@@ -245,9 +292,11 @@ impl PoseComputeBuffers {
     /// Allocate GPU-only scratch buffer for world transforms (hierarchy propagation).
     pub fn allocate_world(&mut self, max_joints: usize) -> Result<(), RendererError> {
         let size = (max_joints * 64) as u64; // mat4x4<f32> = 64 bytes
+        self.world_stride = self.slot_stride(size);
+        self.world_size = size;
         allocate_upload_buffer(
             &self.context,
-            size,
+            self.world_stride * crate::renderer::FRAMES_IN_FLIGHT as u64,
             "pose_world",
             &mut self.world_buffer,
             &mut self.world_allocation,
@@ -267,20 +316,24 @@ impl PoseComputeBuffers {
             return Ok(());
         }
 
+        self.output_stride = self.slot_stride(size);
         if let (Some(buf), Some(alloc)) = (self.output_buffer.take(), self.output_allocation.take())
         {
             self.context.free_buffer(buf, alloc);
         }
 
         let buffer_info = vk::BufferCreateInfo::default()
-            .size(size)
-            .usage(vk::BufferUsageFlags::STORAGE_BUFFER | vk::BufferUsageFlags::TRANSFER_SRC)
+            .size(self.output_stride * crate::renderer::FRAMES_IN_FLIGHT as u64)
+            .usage(
+                vk::BufferUsageFlags::STORAGE_BUFFER
+                    | vk::BufferUsageFlags::TRANSFER_SRC
+                    | vk::BufferUsageFlags::TRANSFER_DST,
+            )
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
         let (buffer, allocation) = self
             .context
-            .allocate_buffer(&buffer_info, MemoryLocation::GpuOnly)
-            .expect("Failed to allocate pose compute output buffer");
+            .allocate_buffer(&buffer_info, MemoryLocation::GpuOnly)?;
 
         self.output_buffer = Some(buffer);
         self.output_allocation = Some(allocation);
@@ -314,11 +367,16 @@ impl PoseComputeBuffers {
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     params.as_ptr() as *const u8,
-                    mapped.as_ptr() as *mut u8,
+                    (mapped.as_ptr() as *mut u8)
+                        .add((self.params_stride * self.frame_slot as u64) as usize),
                     byte_len as usize,
                 );
             }
-            let _ = self.context.flush_mapped_memory(alloc, 0, byte_len);
+            let _ = self.context.flush_mapped_memory(
+                alloc,
+                self.params_stride * self.frame_slot as u64,
+                byte_len,
+            );
         }
     }
 
@@ -372,6 +430,43 @@ impl PoseComputeBuffers {
     // -- Buffer accessors ----------------------------------------------------
 
     /// Returns params buffer handle, or `Err` if not yet allocated.
+    pub(crate) fn graph_buffer(
+        &self,
+        role: crate::render_graph::BuiltinBuffer,
+    ) -> Option<(vk::Buffer, u64)> {
+        use crate::render_graph::BuiltinBuffer::*;
+        let (buffer, allocation) = match role {
+            AnimationParams => (self.params_buffer?, self.params_allocation.as_ref()?),
+            AnimationClips => (
+                self.clip_headers_buffer?,
+                self.clip_headers_allocation.as_ref()?,
+            ),
+            AnimationChannels => (
+                self.channel_infos_buffer?,
+                self.channel_infos_allocation.as_ref()?,
+            ),
+            AnimationTimes => (
+                self.keyframe_times_buffer?,
+                self.keyframe_times_allocation.as_ref()?,
+            ),
+            AnimationValues => (
+                self.keyframe_values_buffer?,
+                self.keyframe_values_allocation.as_ref()?,
+            ),
+            AnimationJoints => (self.joints_buffer?, self.joints_allocation.as_ref()?),
+            AnimationWorld => (self.world_buffer?, self.world_allocation.as_ref()?),
+            AnimationOutput => (self.output_buffer?, self.output_allocation.as_ref()?),
+            _ => return None,
+        };
+        let size = match role {
+            AnimationParams => self.params_size,
+            AnimationWorld => self.world_size,
+            AnimationOutput => self.output_size,
+            _ => allocation.size(),
+        };
+        Some((buffer, size))
+    }
+
     pub fn params_buffer(&self) -> Result<vk::Buffer, RendererError> {
         self.params_buffer
             .ok_or(RendererError::InitializationFailed(
@@ -682,12 +777,7 @@ impl PoseComputePipeline {
     ///
     /// Binds the pipeline and descriptor set, then dispatches
     /// `(skeleton_count + 63) / 64` workgroups.
-    pub fn record_dispatch(
-        &self,
-        cmd: vk::CommandBuffer,
-        asset_registry: &AssetRegistry,
-        skeleton_count: u32,
-    ) {
+    pub fn bind_kernel(&self, cmd: vk::CommandBuffer, asset_registry: &AssetRegistry) {
         let handle = match self.pipeline_handle {
             Some(h) => h,
             None => return,
@@ -720,11 +810,6 @@ impl PoseComputePipeline {
                     &[],
                 );
             }
-        }
-
-        let workgroups = skeleton_count.div_ceil(POSE_COMPUTE_WORKGROUP_SIZE);
-        unsafe {
-            self.context.device.cmd_dispatch(cmd, workgroups, 1, 1);
         }
     }
 

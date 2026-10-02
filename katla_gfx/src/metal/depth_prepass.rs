@@ -4,7 +4,7 @@
 //! before the main geometry pass for early-Z rejection.
 
 use objc2::runtime::ProtocolObject;
-use objc2_metal::{MTLFunction, MTLRenderCommandEncoder};
+use objc2_metal::MTLFunction;
 
 use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::error::RendererError;
@@ -137,7 +137,7 @@ pub(crate) fn render_depth_prepass(
     materials: &ResourceStorage<MetalMaterial, MaterialMarker>,
     draws: crate::renderer::types::PreparedDraws<'_>,
     skeleton_buffers: &ResourceStorage<MetalBuffer, SkeletonMarker>,
-    bindless_argument_buffer: Option<&objc2::runtime::ProtocolObject<dyn objc2_metal::MTLBuffer>>,
+    bindless: Option<std::rc::Rc<super::argument_buffer::BindlessSnapshot>>,
     shared_sampler: Option<&super::sampler::MetalSamplerState>,
 ) {
     encoder.bind_graphics_pipeline(depth_pipeline);
@@ -196,31 +196,15 @@ pub(crate) fn render_depth_prepass(
                 // The billboard fragment samples the bindless icon texture to
                 // discard transparent texels before depth is written.
                 if target_variant == PipelineVariant::Billboard {
-                    if let Some(argument_buffer) = bindless_argument_buffer {
-                        unsafe {
-                            encoder.inner.setVertexBuffer_offset_atIndex(
-                                Some(argument_buffer),
-                                0,
-                                9,
-                            );
-                            encoder.inner.setFragmentBuffer_offset_atIndex(
-                                Some(argument_buffer),
-                                0,
-                                9,
-                            );
-                        }
-                        encoder.use_buffer(
-                            argument_buffer,
-                            objc2_metal::MTLResourceUsage::Read,
-                            objc2_metal::MTLRenderStages::Fragment,
-                        );
+                    if let Some(snapshot) = &bindless {
+                        encoder.bind_bindless(snapshot.clone());
                     }
                     if let Some(sampler) = shared_sampler {
-                        unsafe {
-                            encoder
-                                .inner
-                                .setFragmentSamplerState_atIndex(Some(&sampler.inner), 0);
-                        }
+                        encoder.bind_native_sampler(
+                            &sampler.inner,
+                            0,
+                            crate::backend::command::ShaderStages::FRAGMENT,
+                        );
                     }
                 }
             }
@@ -234,20 +218,13 @@ pub(crate) fn render_depth_prepass(
         encoder.bind_vertex_buffer(&mesh.vertex_buffer, 0, 10);
         encoder.bind_index_buffer(&mesh.index_buffer, 0, IndexType::Uint32);
 
-        // Metal's instance_id starts from 0 regardless of baseInstance,
-        // so rebind the object buffer with an offset so objects[0] maps
-        // to the correct per-object data.
-        let object_offset =
-            draw.instance_index as usize * super::metal_renderer::OBJECT_UNIFORM_SIZE as usize;
-        unsafe {
-            encoder.inner.setVertexBuffer_offset_atIndex(
-                Some(&object_storage_buffer.inner),
-                object_offset,
-                1,
-            );
-        }
-
-        encoder.draw_indexed(mesh.index_count, draw.instance_count().max(1), 0, 0, 0);
+        encoder.draw_indexed(
+            mesh.index_count,
+            draw.instance_count().max(1),
+            0,
+            0,
+            draw.instance_index,
+        );
     }
 }
 

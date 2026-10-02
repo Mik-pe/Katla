@@ -7,7 +7,6 @@
 
 use ash::vk;
 
-use crate::barrier::ImageBarrier;
 use crate::error::RendererError;
 use crate::render_graph::Frame;
 use crate::renderer::VulkanRenderer;
@@ -28,6 +27,16 @@ impl VulkanRenderer {
         }
     }
 
+    pub(crate) fn frame_write_check(&self, frame: &FrameToken) -> Result<(), RendererError> {
+        self.frame_check(frame)?;
+        if self.frame_rendered {
+            return Err(RendererError::InvalidOperation(
+                "Frame-local writes must precede render".into(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Abort any still-open frame, either explicitly (caller aborts) or
     /// implicitly (a new frame is acquired while this one is still open).
     pub(crate) fn frame_clear(&mut self) {
@@ -37,7 +46,13 @@ impl VulkanRenderer {
                 self.current_frame()
             );
         }
+        self.frame_rendered = false;
         self.frame_poisoned = None;
+        self.frame_context.pending_output_contents.set(None);
+        self.frame_context
+            .pending_transient_layouts
+            .borrow_mut()
+            .rollback();
     }
 
     /// Wait for the current frame slot's previous GPU submission to complete.
@@ -168,6 +183,11 @@ impl VulkanRenderer {
         F: FnOnce(&mut Frame<'_, VulkanRenderer>),
     {
         self.frame_check(frame)?;
+        if self.frame_rendered {
+            return Err(RendererError::InvalidOperation(
+                "Frame graph already rendered for this acquired token".into(),
+            ));
+        }
         if let Some(reason) = &self.frame_poisoned {
             return Err(RendererError::InvalidOperation(format!(
                 "frame is poisoned by a previous render failure and cannot render again: {reason}"
@@ -195,37 +215,17 @@ impl VulkanRenderer {
                 })?;
         }
 
-        // Transition the surface image to COLOR_ATTACHMENT_OPTIMAL for rendering.
-        // Use transition_from_undefined because after acquire the actual layout
-        // is platform-specific and load_op=CLEAR discards contents. Headless
-        // targets take the same path (their readback expects the final
-        // TRANSFER_SRC_OPTIMAL below).
-        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        ImageBarrier::transition_from_undefined(
-            &cmd,
-            &self.context.device,
-            swapchain_image,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-        );
+        frame_graph.set_backbuffer_final_state(if headless {
+            crate::render_graph::ResourceState::TransferSrc
+        } else {
+            crate::render_graph::ResourceState::PresentSrc
+        });
 
         if let Err(e) = frame_graph.execute(self, image_index, f) {
             let error = RendererError::RenderGraphError(e);
             self.frame_poisoned = Some(format!("{error:?}"));
             return Err(error);
         }
-
-        let swapchain_image = self.frame_context.swapchain_images[image_index as usize].vk();
-        ImageBarrier::transition(
-            &cmd,
-            &self.context.device,
-            swapchain_image,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            if headless {
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL
-            } else {
-                vk::ImageLayout::PRESENT_SRC_KHR
-            },
-        );
 
         unsafe {
             self.context.device.end_command_buffer(cmd).map_err(|e| {
@@ -235,7 +235,21 @@ impl VulkanRenderer {
             })?;
         }
 
+        self.frame_rendered = true;
         Ok(())
+    }
+
+    fn commit_output_state(&self, image: usize, layout: vk::ImageLayout) {
+        self.frame_context
+            .pending_transient_layouts
+            .borrow_mut()
+            .commit();
+        self.frame_context.swapchain_image_layouts[image].set(layout);
+        if let Some((pending_image, contents)) = self.frame_context.pending_output_contents.take()
+            && pending_image == image
+        {
+            self.frame_context.swapchain_image_contents[image].set(contents);
+        }
     }
 
     /// Present implementation: submit the recorded work and present. Consumes
@@ -271,6 +285,7 @@ impl VulkanRenderer {
                 &[],
                 self.swap_data.in_flight_fence(),
             );
+            self.commit_output_state(image_index as usize, vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
             self.swap_data.wait_for_fence(&self.context.device)?;
             self.swap_data.step_frame();
             return Ok(());
@@ -282,41 +297,20 @@ impl VulkanRenderer {
             .as_ref()
             .expect("window swapchain");
         let render_finished_semaphore = self.swap_data.render_finished_semaphore(image_index);
-        let frame_complete_semaphore = self.swap_data.frame_complete_semaphore();
-        let signal_semaphores = [render_finished_semaphore, frame_complete_semaphore];
+        let signal_semaphores = [render_finished_semaphore];
         let swapchains = [swapchain.swapchain];
         let image_indices = [image_index];
 
-        // On the first frame there's no previous frame to wait on.
-        // After that, wait on the previous frame's completion semaphore at ALL_COMMANDS
-        // to cover TRANSFER/CLEAR from vkCmdUpdateBuffer and TRANSFER_READ from vkCmdCopyBuffer.
-        if self.first_frame_rendered {
-            let wait_semaphores = [
-                self.swap_data.image_available_semaphore(),
-                self.swap_data.previous_frame_complete_semaphore(),
-            ];
-            let wait_stage_masks = [
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::PipelineStageFlags::ALL_COMMANDS,
-            ];
-            self.context.gfx_queue.submit_with_stages(
-                &[&self.frame_context.command_buffers[frame_idx]],
-                &wait_semaphores,
-                &signal_semaphores,
-                self.swap_data.in_flight_fence(),
-                &wait_stage_masks,
-            );
-        } else {
-            self.first_frame_rendered = true;
-            let wait_semaphores = [self.swap_data.image_available_semaphore()];
-            self.context.gfx_queue.submit(
-                &[&self.frame_context.command_buffers[frame_idx]],
-                &wait_semaphores,
-                &signal_semaphores,
-                self.swap_data.in_flight_fence(),
-            );
-        }
+        let wait_semaphores = [self.swap_data.image_available_semaphore()];
+        self.context.gfx_queue.submit_with_stages(
+            &[&self.frame_context.command_buffers[frame_idx]],
+            &wait_semaphores,
+            &signal_semaphores,
+            self.swap_data.in_flight_fence(),
+            &[vk::PipelineStageFlags::ALL_COMMANDS],
+        );
 
+        self.commit_output_state(image_index as usize, vk::ImageLayout::PRESENT_SRC_KHR);
         let present_wait_semaphores = [render_finished_semaphore];
         let present_info = vk::PresentInfoKHR::default()
             .wait_semaphores(&present_wait_semaphores)
@@ -404,6 +398,10 @@ pub(crate) fn acquire_frame(
     }
 
     let token = FrameToken::new(renderer.current_frame(), renderer.frame_generation);
+    if let Some(buffers) = &mut renderer.animation_buffers {
+        buffers.set_frame_slot(token.slot());
+    }
+    renderer.light_culling.set_frame_slot(token.slot());
     renderer.frame_generation += 1;
     renderer.active_frame = Some(token);
     Ok(FrameAcquisition::Ready(token))

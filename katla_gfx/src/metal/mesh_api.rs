@@ -74,6 +74,8 @@ impl MetalRenderer {
             vertex_stride: std::mem::size_of::<T>() as u32,
             usage: MeshUsage::Static,
         };
+        self.persistent_buffers
+            .replace(&[], &[&mesh.vertex_buffer.inner, &mesh.index_buffer.inner])?;
         Ok(self.meshes.insert(mesh))
     }
 
@@ -133,23 +135,15 @@ impl MetalRenderer {
             vertex_stride: stride as u32,
             usage: descriptor.usage,
         };
+        self.persistent_buffers
+            .replace(&[], &[&mesh.vertex_buffer.inner, &mesh.index_buffer.inner])?;
         Ok(self.meshes.insert(mesh))
     }
 
-    /// Update a dynamic mesh with new vertex and index data.
-    ///
-    /// Implements the same backend-neutral contract as Vulkan's
-    /// `update_mesh_dynamic` (see
-    /// `crate::renderer::registry::validate_dynamic_update`): the blob must
-    /// describe exactly `vertex_count` vertices of the recorded stride and
-    /// every index must be in range; success publishes one consistent mesh,
-    /// shrinking never reallocates, growth allocates replacement buffers
-    /// before any state changes, and failure leaves the previous mesh intact.
-    ///
-    /// Retirement: replaced `MTLBuffer`s are dropped immediately, which is
-    /// safe on Metal — command buffers retain the resources their encoded
-    /// commands reference until the command buffer completes, so in-flight
-    /// submissions keep the old buffers alive.
+    /// Publish immutable vertex/index replacements for a dynamic mesh.
+    /// Capacities are retained on shrink and grow geometrically. Allocation,
+    /// upload, and residency publication finish before replacing the live mesh;
+    /// submitted command buffers retain every previous allocation they use.
     pub(crate) fn update_mesh_dynamic_impl(
         &mut self,
         mesh: MeshHandle,
@@ -175,66 +169,117 @@ impl MetalRenderer {
             indices,
         )?;
 
-        // Fallible phase: allocate and fill replacement buffers for anything
-        // that no longer fits, before touching the mesh.
-        let needed_vertex = vertex_data.len() as u64;
-        let vertex_replacement = if m.vertex_buffer.size() < needed_vertex {
-            let new_capacity = needed_vertex.max(m.vertex_buffer.size() * 2);
-            let buffer = self.context.create_buffer(new_capacity, true)?;
-            let ptr = buffer.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(vertex_data.as_ptr(), ptr, vertex_data.len());
-            }
-            buffer.unmap();
-            Some(buffer)
+        let vertex_needed = vertex_data.len() as u64;
+        let vertex_capacity = if vertex_needed > m.vertex_buffer.size() {
+            vertex_needed.max(m.vertex_buffer.size().saturating_mul(2))
         } else {
-            None
+            m.vertex_buffer.size()
         };
+        let vertex_buffer = self.context.create_buffer(vertex_capacity, true)?;
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                vertex_data.as_ptr(),
+                vertex_buffer.map(),
+                vertex_data.len(),
+            );
+        }
+        vertex_buffer.unmap();
 
-        let index_bytes_len = indices.len() * 4;
-        let needed_index = index_bytes_len as u64;
-        let index_replacement = if m.index_buffer.size() < needed_index {
-            let new_capacity = needed_index.max(m.index_buffer.size() * 2);
-            let buffer = self.context.create_buffer(new_capacity, true)?;
-            let index_bytes = unsafe {
-                std::slice::from_raw_parts(indices.as_ptr() as *const u8, index_bytes_len)
-            };
-            let ptr = buffer.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(index_bytes.as_ptr(), ptr, index_bytes.len());
-            }
-            buffer.unmap();
-            Some(buffer)
+        let index_bytes = bytemuck::cast_slice(indices);
+        let index_needed = index_bytes.len() as u64;
+        let index_capacity = if index_needed > m.index_buffer.size() {
+            index_needed.max(m.index_buffer.size().saturating_mul(2))
         } else {
-            None
+            m.index_buffer.size()
         };
+        let index_buffer = self.context.create_buffer(index_capacity, true)?;
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                index_bytes.as_ptr(),
+                index_buffer.map(),
+                index_bytes.len(),
+            );
+        }
+        index_buffer.unmap();
 
-        // Commit phase: infallible copies through mapped shared storage and
-        // field updates. Dropped old buffers stay alive through any in-flight
-        // command buffer referencing them (Metal resource retention).
-        if let Some(new_vertex) = vertex_replacement {
-            m.vertex_buffer = new_vertex;
-        } else {
-            let ptr = m.vertex_buffer.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(vertex_data.as_ptr(), ptr, vertex_data.len());
-            }
-            m.vertex_buffer.unmap();
-        }
-        if let Some(new_index) = index_replacement {
-            m.index_buffer = new_index;
-        } else {
-            let index_bytes = unsafe {
-                std::slice::from_raw_parts(indices.as_ptr() as *const u8, index_bytes_len)
-            };
-            let ptr = m.index_buffer.map();
-            unsafe {
-                std::ptr::copy_nonoverlapping(index_bytes.as_ptr(), ptr, index_bytes.len());
-            }
-            m.index_buffer.unmap();
-        }
+        self.persistent_buffers.replace(
+            &[&m.vertex_buffer.inner, &m.index_buffer.inner],
+            &[&vertex_buffer.inner, &index_buffer.inner],
+        )?;
+        m.vertex_buffer = vertex_buffer;
+        m.index_buffer = index_buffer;
         m.index_count = indices.len() as u32;
         m.vertex_count = vertex_count;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::command::{GpuBlitEncoder, GpuCommandBuffer};
+    use crate::renderer::registry::{MeshDescriptor, PrimitiveTopology};
+    use crate::vertex::VertexUI;
+    use objc2_metal::{MTL4CommandBuffer, MTLBuffer};
+
+    #[test]
+    fn test_native_same_capacity_mesh_replacement_preserves_pending_gpu_read() {
+        let mut renderer =
+            MetalRenderer::new(super::super::context::MetalContext::init_headless().unwrap())
+                .unwrap();
+        let vertices = [VertexUI::new([1.0, 2.0], [0.0, 1.0], [1, 2, 3, 255], 0); 3];
+        let descriptor = MeshDescriptor::from_types::<VertexUI, u32>(
+            PrimitiveTopology::TriangleList,
+            MeshUsage::Dynamic,
+            3,
+            3,
+        );
+        let handle = renderer
+            .register_mesh_raw_impl(&descriptor, bytemuck::cast_slice(&vertices), &[0, 1, 2])
+            .unwrap();
+        let original = renderer.meshes.get(handle).unwrap().vertex_buffer.clone();
+        let original_index = renderer
+            .meshes
+            .get(handle)
+            .unwrap()
+            .index_buffer
+            .inner
+            .gpuAddress();
+        let snapshot = renderer.persistent_buffers.snapshot();
+        let probe = renderer
+            .context
+            .create_buffer(original.size(), true)
+            .unwrap();
+        let mut command = renderer.context.create_command_buffer();
+        command.begin();
+        command.inner.useResidencySet(snapshot.native());
+        command
+            .resources
+            .retain_persistent_residency(snapshot.clone());
+        let mut blit = command.begin_blit_pass();
+        blit.copy_buffer_to_buffer(&original, 0, &probe, 0, original.size());
+        blit.end_encoding();
+        command.end();
+        let replacements = [VertexUI::new([9.0, 10.0], [1.0, 0.0], [9, 8, 7, 255], 0); 3];
+        renderer
+            .update_mesh_dynamic_impl(handle, bytemuck::cast_slice(&replacements), 3, &[2, 1, 0])
+            .unwrap();
+        let replaced = renderer.meshes.get(handle).unwrap();
+        assert_ne!(
+            replaced.vertex_buffer.inner.gpuAddress(),
+            original.inner.gpuAddress()
+        );
+        assert_ne!(replaced.index_buffer.inner.gpuAddress(), original_index);
+        assert_eq!(replaced.vertex_buffer.size(), original.size());
+        snapshot.validate_buffer(&original.inner).unwrap();
+        assert!(
+            snapshot
+                .validate_buffer(&replaced.vertex_buffer.inner)
+                .is_err()
+        );
+        command.submit(&renderer.context);
+        command.wait_until_completed().unwrap();
+        let actual = unsafe { std::slice::from_raw_parts(probe.map(), original.size() as usize) };
+        assert_eq!(actual, bytemuck::cast_slice::<VertexUI, u8>(&vertices));
     }
 }

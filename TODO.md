@@ -22,15 +22,14 @@ Individual tasks should be small enough to complete in a single focused session.
 
 - [ ] ~~Add `set_geometry_hdr_view` and `set_tonemap_output_view` to `GpuRenderer` trait~~ — superseded by B items above; the enum wrapper approach keeps these on `AnyRenderer` rather than the trait
 
-### E. Align Metal backend with shared FrameGraph<B> execution path
+### E. Align Metal backend with the compiled frame graph
 
-- [ ] Add particles pass dispatch through `RenderGraphBackend` on Metal
+- [x] Dispatch particle rendering from compiled pass records on Metal
+- [x] Execute backend-neutral compute and transfer commands on both backends
+- [x] Resolve Metal attachments, buffers and synchronization from the canonical compiled graph
+- [x] Remove the hardcoded Metal pass sequence and out-of-graph compute path
 - [ ] Add compositing pass dispatch through `RenderGraphBackend` on Metal
 - [ ] Add stencil-indicator pass dispatch through `RenderGraphBackend` on Metal
-- [ ] Add generic compute pass dispatch through `RenderGraphBackend` on Metal
-- [ ] Refactor Metal `collect_draw_lists()` to produce `FrameGraph<MetalRenderer>` nodes instead of a hardcoded list
-- [ ] Wire Metal `render_frame()` through `FrameGraph<MetalRenderer>::execute()` instead of the hardcoded pass sequence
-- [ ] Remove the Metal-specific hardcoded pass execution path once data-driven graph execution is working
 
 ## Audio System
 
