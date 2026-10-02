@@ -3,9 +3,8 @@
 //! This is used when SSE intrinsics are not available or when the scalar
 //! implementation is explicitly preferred.
 
-use core::{
-    f32,
-    ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign},
+use core::ops::{
+    Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Neg, Sub, SubAssign,
 };
 
 /// 3-dimensional vector - scalar implementation

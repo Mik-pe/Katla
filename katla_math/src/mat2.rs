@@ -1,7 +1,4 @@
-use core::{
-    f32,
-    ops::{Add, Div, Index, Mul, Neg, Sub},
-};
+use core::ops::{Add, Div, Index, Mul, Neg, Sub};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Mat2(pub [Vec2; 2]);

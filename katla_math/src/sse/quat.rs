@@ -10,7 +10,7 @@ use core::arch::x86_64::*;
 use core::arch::x86::*;
 
 use crate::{Mat3, Mat4, Vec3, Vec4};
-use core::{f32, ops::Index, ops::Mul};
+use core::{ops::Index, ops::Mul};
 
 const QUAT_NORMALIZED_THRESHOLD: f32 = 0.001;
 

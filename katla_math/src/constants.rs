@@ -26,8 +26,8 @@ pub const DEG_TO_RAD: f32 = PI / 180.0;
 /// Radians to degrees conversion factor
 pub const RAD_TO_DEG: f32 = 180.0 / PI;
 
-/// Golden ratio (φ) - not available in core::f32::consts
-pub const GOLDEN_RATIO: f32 = 1.618_034;
+/// Golden ratio (φ).
+pub const GOLDEN_RATIO: f32 = core::f32::consts::GOLDEN_RATIO;
 
 /// Square root of 3 - not available in core::f32::consts
 pub const SQRT_3: f32 = 1.732_050_8;
