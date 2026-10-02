@@ -12,4 +12,4 @@ SIMD math library. Zero dependencies on other crates.
 
 - Use `Transform` for position/rotation/scale — it has `make_mat4()` for the composed matrix.
 - Colors in spawning functions are sRGB, converted to linear internally.
-- Read `memory-bank/systemPatterns.md` for the full type listing.
+- See [math conventions](../docs/architecture.md#math-and-color) and the [type exports](src/lib.rs) when changing math APIs.

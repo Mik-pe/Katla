@@ -1,6 +1,6 @@
-# Katla UI Design Brief
+# Editor visual design
 
-> Not a copy of Reality Composer Pro — inspired by its quality bar and design language. Katla has its own layout and identity, but shares the same premium feel.
+These are design targets for editor UI work, not a claim that every current screen meets them. Theme/widget source defines the rendered values. Read the [declarative architecture](declarative_ui_design.md) for implementation contracts.
 
 ## Core Principles
 
@@ -58,11 +58,17 @@ Two accent colors used in ~3% of pixel area. Most of the UI is neutral dark. Pre
 - Katla uses Vulkan/Metal, not RealityKit
 - Katla's own identity while sharing the quality language
 
-## The "Secret Sauce" Checklist
-- [ ] Restraint of color (two accents, ~3% coverage)
-- [ ] Generous vertical rhythm (32px rows)
-- [ ] Grid stays out of the way (low contrast)
-- [ ] Iconography discipline (consistent stroke weight, no fills)
-- [ ] Single high-status CTA per region
-- [ ] Depth through tonal layers, not borders
-- [ ] Viewport dominates the window
+
+## Inspiration and layout
+
+Reality Composer Pro inspires restraint, spacing, layered surfaces and a dominant
+viewport. Katla keeps its own general-purpose engine identity and Vulkan/Metal
+rendering, with independently dockable panels rather than a fixed four-panel DCC.
+A useful reference balance is hierarchy 16%, viewport 60–65%, inspector 22%, with
+a bottom project/timeline area around 25% height. Treat these as visual reference
+ratios, not mandatory panel geometry.
+
+The reference uses SF Pro, green selection and blue secondary controls. Katla's
+chosen identity uses Roboto, orange actions and cyan selection. Reference details
+include 4pt spacing increments, 6px field gaps, 12px panel padding and 6–10px corner
+radii. Borders should be subtle rather than form a grid around every control.

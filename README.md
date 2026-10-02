@@ -2,11 +2,11 @@
 
 ![Katla](assets/katla-logo.svg)
 
-A Vulkan game engine in Rust. Playground for graphics experiments. 🐒
+A Vulkan/Metal render engine in Rust. A playground for graphics experiments and game development. 🐒
 
 ## What's Inside 📦
 
-- **Vulkan 1.3** 🔺 - Dynamic rendering, Synchronization2, VMA integration, bindless textures
+- **Vulkan 1.3 and native Metal 4** 🔺 - Compiled render graphs, explicit synchronization, frame ownership and bindless resources
 - **Custom ECS** 🧩 - Sparse set storage, query system, component derive macros
 - **Render graph** 📊 - Resource lifetime management, automatic barrier insertion
 - **PBR materials** 💎 - Hot reload support, template-based definitions
@@ -21,11 +21,21 @@ A Vulkan game engine in Rust. Playground for graphics experiments. 🐒
 
 | Crate | Description |
 |-------|-------------|
-| `katla_gfx` | Vulkan wrapper, render graph, materials |
+| `katla_gfx` | Vulkan/Metal GPU core, render graph, materials |
 | `katla_ecs` | Entity component system |
 | `katla_math` | SIMD math library |
-| `katla_ui` | Declarative UI system — Widget trait, focus chains, dockable panels, cosmic-text pipeline, GPU-instanced rendering, CodeEditor (622 tests) |
+| `katla_ui` | Declarative UI system — Widget trait, focus chains, dockable panels, cosmic-text pipeline, GPU-instanced rendering, CodeEditor |
 | `katla_app` | Application framework, components, systems |
+
+## Documentation
+
+Start with the [task-oriented documentation index](docs/README.md). Read
+[architecture](docs/architecture.md) for crate boundaries and ownership,
+[ECS](docs/ecs.md) for systems, [graphics composition](docs/graphics_core.md) for
+rendering, and [editor visual design](docs/editor_ui_design.md) for UI work.
+[CI policy](docs/ci.md) and [native Metal evidence](docs/metal4_validation.md)
+separate portable checks from physical GPU acceptance. Git/GitHub track delivery
+history; [TODO](TODO.md) tracks remaining engineering work.
 
 ## Running 🏃
 

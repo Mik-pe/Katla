@@ -1,5 +1,10 @@
 # katla_gfx
 
+Read [graphics ownership](../docs/graphics_core.md) for core API changes.
+For native Metal work, use [backend contracts](../docs/metal_backend.md) and
+[frame-slot ownership](../docs/metal4_frame_slots.md); for graph hazards, use
+[synchronization](../docs/render_graph_synchronization.md).
+
 ## Cross-Backend Architecture
 
 Two rendering backends, selected at runtime via `AnyRenderer`:

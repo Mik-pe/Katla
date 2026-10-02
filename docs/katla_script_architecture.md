@@ -1,5 +1,21 @@
 # Katla Script Architecture: Luau Scripting via mlua
 
+## Runtime contracts
+
+ScriptEngine is thread-affine and executes through exclusive World systems.
+Per-entity instances receive on_spawn, on_update and on_destroy. Sandboxing strips
+debug, io, package, require and dangerous os functions. The instruction limit is
+10 million, timeout five seconds; ten consecutive errors disable an instance.
+Engine interactions use pending-command resources with one-frame visibility,
+never synchronous cross-system calls. Paths are relative to the script directory;
+bare names resolve to .luau. New bindings require the Lua function, ScriptCommand
+variant, pending resource and app processing logic. See the
+[current command/resource exports](../katla_script/src/lib.rs) for the inventory.
+
+The sections below retain implementation rationale and design sketches. These
+runtime contracts and source define current behavior.
+
+
 ## Executive Summary
 
 This document proposes a `katla_script` crate that embeds a Luau VM (via `mlua` with the `luau` feature flag) into the Katla engine. Scripts attach to entities via a `ScriptComponent`, receive lifecycle hooks (`on_spawn`, `on_update`, `on_destroy`), and access ECS components through a sandboxed API bridge.

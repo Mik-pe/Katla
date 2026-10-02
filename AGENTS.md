@@ -1,112 +1,38 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents when working with code in this repository.
+Katla is a Vulkan/Metal render engine in Rust 2024 with ECS architecture.
+Read the touched crate's AGENTS.md when it exists. Follow documentation for the
+area being changed; [docs/README.md](docs/README.md) is the task-oriented index.
 
-When making changes to a workspace crate, read the crate's own AGENTS.md (e.g. `katla_gfx/AGENTS.md`) if it exists, as it may contain crate-specific rules and conventions.
+## Read for the task
 
-## Memory Bank
+- Crate boundaries, assets and math: [architecture](docs/architecture.md).
+- Rendering: [graphics ownership](docs/graphics_core.md), [graph API](katla_gfx/src/render_graph/API.md); for Metal, [backend contracts](docs/metal_backend.md).
+- ECS: [ownership and systems](docs/ecs.md); for storage/performance decisions, [benchmarks](docs/ecs_benchmarks.md).
+- Editor UI: [declarative architecture](docs/declarative_ui_design.md) and [visual design](docs/editor_ui_design.md).
+- Scripts or physics: [Luau integration](docs/katla_script_architecture.md) or [Rapier decision](docs/physics-engine-adr.md).
+- Validation/CI: [CI policy](docs/ci.md), [cross-backend contracts](docs/contract-suite.md), [native Metal evidence](docs/metal4_validation.md).
 
-`memory-bank/` is how you remember across sessions. You are stateless — these files are your state.
+Keep the relevant document current when its contract changes. Git/GitHub track
+publication and delivery history; TODO.md tracks unresolved engineering work.
 
-**Every session:**
-1. Read all files in `memory-bank/` before making changes
-2. Update `activeContext.md` and `progress.md` when you finish work
+## Technical rules
 
-**Principles:**
-- Write what you'd need re-explained if you started fresh — architecture decisions, conventions, gotchas, what's in-flight
-- Never leave stale entries. If code was removed, decisions reversed, or bugs fixed — delete the old reference
-- Keep `activeContext.md` lean: only what's in-flight right now
-- `systemPatterns.md` is the architecture bible — update it when crate structure or conventions change
-- Don't put code snippets or implementation details in memory bank — the code is the source of truth
-- When in doubt, update. Stale docs are worse than no docs
+- Preserve crate dependency boundaries. Scene/editor composition belongs in the app; the GPU core owns generic resources, frames and compiled execution.
+- Replace superseded code and all usages. No parallel legacy implementation, compatibility/deprecation path or default no-op workaround.
+- Matrices are column-major: `Mat4(pub [Vec4; 4])`, `m[col][row]`. Never transpose to adapt a backend.
+- Rendering changes require native validation of the affected path. Builds and screenshots alone do not prove GPU behavior. Set `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1` before launching Metal; report unavailable hardware explicitly.
+- Metal CI uses exactly `macos-26` on Apple Silicon. Never add older macOS jobs or `macos-latest`. Replace the runner and docs/ci.md together when adopting a newer generation.
+- Remove unused code or gate it with cfg; no dead-code suppression. Prefer small responsibility modules, simple types, Result/Option and pub(crate) until an external use exists.
+- Avoid production unwrap, obvious comments and issue-specific comments. Document public APIs with /// and modules with //!. Tests use the test_ prefix; hot paths use inline.
+- Log unrecoverable GPU failures at error, recoverable fallbacks at warn, lifecycle at info and diagnostics at debug.
 
-## Project Overview
+## Checks and commits
 
-Katla is a Vulkan/Metal 3D render engine in Rust using ECS architecture. See `memory-bank/systemPatterns.md` for the full architecture description.
+Use cargo check/test/clippy for the affected crates and cargo fmt after edits.
+Native compute checks: `cargo test -p katla_gfx --lib render_graph::native_compute_tests -- --nocapture`.
+Windowed Metal validation: `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- -s`.
 
-## Build and Test Commands
-
-```bash
-cargo check                    # Quick typecheck
-cargo build                    # Build all workspace crates
-cargo build -p katla_ecs       # Build specific package
-
-# Test
-cargo test                     # Run all tests
-cargo test --workspace         # Explicit workspace tests
-cargo test -p katla_ecs        # Test specific package
-cargo test test_entity_id_creation  # Run single test
-cargo test -- --nocapture      # Show stdout
-
-# Lint
-cargo clippy                   # Linter
-cargo clippy --fix             # Auto-fix
-cargo fmt                      # Format
-
-# Run
-cargo run                     # Run the application
-cargo run -- -s               # Run in limited-frame mode (100 frames)
-METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- -s  # Metal validation (macOS)
-cargo test -p katla_gfx --lib render_graph::native_compute_tests -- --nocapture  # Native compute validation
-```
-
-## Command Line Arguments
-
-- `-s, --single-frame` — Run in limited-frame mode (100 frames)
-- `-v, --gpu-validation` — Enable GPU-assisted validation (Vulkan only)
-
-## Metal Validation
-
-`METAL_DEVICE_WRAPPER_TYPE=1` must be set before process launch — `std::env::set_var()` is too late.
-
-## CI Runner Policy
-
-- Metal CI uses exactly one explicit Apple Silicon runner: `macos-26`.
-- Do not add an older macOS compatibility job. Katla does not maintain backwards-compatible macOS CI.
-- Do not use `macos-latest`; it is a mutable alias rather than an explicit platform decision.
-- Do not add `macos-15` or `macos-14` to required CI.
-- When Katla adopts a newer macOS generation, replace `macos-26` directly and update `docs/ci.md` in the same change. Do not retain the previous generation.
-
-## Working Conventions
-
-- **Task Continuity**: Continue through the task list without asking for confirmation between tasks.
-- **No Backwards Compatibility**: Don't maintain backwards compatibility or deprecation paths. Remove old code and update all usages.
-- **No Hybrid Implementations**: Don't have multiple ways of doing the same thing. Remove the old approach entirely.
-- **No AI Slop Comments**: Don't add comments that state the obvious. Don't add comments about the current issue.
-
-## Git Commit Conventions
-
-```
-Summary line (50-72 chars, imperative mood)
-
-- Optional detail bullets
-- Describe WHAT was done, not WHY
-```
-
-Rules: test before committing, one logical change per commit, imperative mood, no `Update` (be specific), no Co-Authored-By.
-
-## Matrix Conventions
-
-Column-major only. `Mat4(pub [Vec4; 4])`. `m[col][row]`. Do NOT transpose. This matches Vulkan/GLSL.
-
-## Code Style
-
-- No `#[allow(dead_code)]` — remove unused code or use `#[cfg(...)]`
-- `StructName`, `function_name`, `CONSTANT_NAME`
-- Tests prefixed with `test_`
-- Prefer multiple files over large modules
-- Avoid complex nested types (`Result<Rc<Option<RefCell<Option<T>>>>`)
-- `Option<T>` / `Result<T, E>`, avoid `unwrap()` in production (fine in `#[test]`)
-- `///` for public APIs, `//!` for module-level
-- `pub(crate)` until there's a clear external use case
-- `#[inline]` on hot paths
-- Run `cargo fmt` after changes
-
-## Logging
-
-| Level | Use For |
-|-------|---------|
-| `error!` | Unrecoverable: GPU device lost, swapchain creation failed |
-| `warn!` | Recoverable: missing optional data, using fallback |
-| `info!` | Lifecycle: window resized, model loaded, hot reload |
-| `debug!` | Diagnostic: parsed X vertices, shader reloaded, entity spawned |
+Test before committing. One logical change per commit; use an imperative 50–72
+character summary, describe what changed, avoid “Update” and Co-Authored-By.
+Continue authorized tasks without confirmation between routine steps.

@@ -14,4 +14,4 @@ Luau scripting via mlua. Scripts attach to entities via ECS components.
 
 - Script paths are relative to the scripts directory. Bare names resolve as `.luau` (e.g. `"player"` → `"player.luau"`).
 - When adding new script bindings, add the Lua function, a `ScriptCommand` variant, a pending-command resource, and processing logic in katla_app.
-- Read `memory-bank/systemPatterns.md` for the full pending-command resource table and lifecycle hooks.
+- Read [Luau runtime contracts](../docs/katla_script_architecture.md#runtime-contracts) when changing lifecycle, sandboxing or deferred commands.

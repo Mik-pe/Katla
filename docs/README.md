@@ -1,43 +1,31 @@
-# Katla Documentation
+# Katla documentation
 
-## Memory Bank (`../memory-bank/`)
+Read the contracts for the area being changed. Source and manifests define the
+current API/dependencies; Git/GitHub record commits, issues and CI. Unresolved
+engineering work belongs in [TODO](../TODO.md).
 
-The primary source of project knowledge for AI agents. Read and maintain these files:
+## Choose by task
 
-| File | What |
-|------|------|
-| `projectbrief.md` | What Katla is and why |
-| `systemPatterns.md` | Architecture, conventions, crate responsibilities |
-| `techContext.md` | Dependencies, build commands |
-| `activeContext.md` | What's being worked on right now |
-| `progress.md` | What's done, in progress, upcoming |
+| Task | Start here | Read when relevant |
+| --- | --- | --- |
+| Crate boundaries, assets or math | [Architecture](architecture.md) | [Scene format](../katla_app/src/scene/README.md) |
+| ECS systems, queries or lifecycle | [ECS ownership](ecs.md) | [Measured storage/scheduling decisions](ecs_benchmarks.md) |
+| GPU API or scene/editor rendering | [Graphics ownership](graphics_core.md) | [Graph API](../katla_gfx/src/render_graph/API.md), [contracts](contract-suite.md) |
+| Metal implementation | [Metal backend](metal_backend.md) | [Frame slots](metal4_frame_slots.md), [bindings/residency](metal-binding-residency.md), [pipeline cache](metal_pipeline_cache.md), [texture uploads](metal_texture_uploads.md) |
+| Graph dependencies or allocation | [Synchronization](render_graph_synchronization.md) | [Compute](render_graph_compute.md), [transient storage](transient_storage.md) |
+| Native/compiled trace mismatch | [Capture and comparison](render_graph_capture.md) | [Vulkan/Metal mapping](vulkan_to_metal_mapping.md) |
+| Editor UI behavior | [Declarative UI](declarative_ui_design.md) | [Visual design and inspiration](editor_ui_design.md) |
+| Scripts | [Luau runtime contracts](katla_script_architecture.md#runtime-contracts) | [ECS ownership](ecs.md) |
+| Physics | [Rapier decision and runtime contract](physics-engine-adr.md) | [Character controller design](character-controller-design.md) |
+| Build, CI or native acceptance | [CI policy and commands](ci.md) | [Cross-backend contracts](contract-suite.md), [Metal evidence/provenance](metal4_validation.md) |
 
-## Reference Docs
+## Design and evidence
 
-Active design documents and API references:
+[Backend-neutral graph design](backend_agnostic_render_graph.md) provides design
+context alongside the current graph API. [Benchmarks](benchmarks/) retain
+source-hashed raw observations; validation documents state their scope and
+hardware limitations. Update the relevant contract when its behavior changes.
+Avoid a parallel delivery/status log.
 
-| File | Description |
-|------|-------------|
-| `vulkan_to_metal_mapping.md` | Current Vulkan and Metal 4 command/resource mapping |
-| `metal_backend.md` | Native Metal 4 backend architecture reference |
-| `metal4_validation.md` | Native acceptance and measured before/after frame/startup behavior |
-| `metal4_frame_slots.md` | Frame ownership, completion and command submission |
-| `metal-binding-residency.md` | Reflected argument tables and residency ownership |
-| `metal_pipeline_cache.md` | Native pipeline archives, warmup and shader reload |
-| `metal_texture_uploads.md` | Private texture storage and staged subresource uploads |
-| `transient_storage.md` | Compiled lifetime allocation, aliasing and tile storage |
-| `render_graph_compute.md` | Neutral graph compute commands and built-in dependencies |
-| `render_graph_synchronization.md` | Compiled resource hazards and backend translation |
-| `archive/metal_backend_implementation.md` | Superseded pre-implementation Metal plan (historical) |
-| `backend_agnostic_render_graph.md` | Backend-agnostic render graph design |
-| `render_graph_capture.md` | Capturing, diffing, and blessing render-graph diagnostics |
-| `declarative_ui_design.md` | Declarative UI system architecture |
-| `katla_script_architecture.md` | Luau scripting system design |
-| `ecs.md` | ECS ownership, typed systems, commands, lifecycle and migration |
-| `ecs_benchmarks.md` | Reproducible sparse/archetype and scheduling measurements |
-| `physics-engine-adr.md` | ADR: Why Rapier3D was chosen |
-| `character-controller-design.md` | ECS-facing character controller architecture and implementation plan |
-
-## Archive (`archive/`)
-
-Completed work logs, migration plans, and one-off research. Archived for historical reference — not actively maintained.
+[Archive](archive/) contains completed plans and research for historical context;
+it is not the current operating contract.

@@ -1,6 +1,6 @@
 # ECS ownership and system authoring
 
-Katla stores components in per-type sparse sets. Entity IDs contain an index and
+Katla stores components in per-type paged sparse sets (1024-entry pages). Queries select the smallest column and preserve its dense order. Entity IDs contain an index and
 its generation. Clearing a world invalidates its live IDs without resetting
 generations; exhausting a generation retires the slot. Sparse lookups compare
 the complete ID, so a stale handle cannot address a replacement entity.
@@ -119,7 +119,9 @@ retention remain separate items in the ECS roadmap.
 
 Editor inspection, scene tools, serialization, scripts and physics continue to
 use the same generational World component API. Exclusive systems can perform
-structural changes directly because no typed batch overlaps them.
+structural changes directly because no typed batch overlaps them. Clearing systems
+during exclusive execution stops the remaining schedule and invokes shutdown once
+at the boundary.
 
 ## Implementation boundaries
 

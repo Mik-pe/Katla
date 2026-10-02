@@ -24,4 +24,4 @@ Custom ECS framework. Zero dependencies on other Katla crates.
 - Components are pure data. Systems contain the logic.
 - Resources (`Resource` trait) are global singletons, not per-entity.
 - Use `world.spawn((A, B, C))` for entity creation — don't manually call `create_entity` + `add_component` for each.
-- Read `memory-bank/systemPatterns.md` for the full architecture description of sparse sets, typed parameters, exclusive systems, queries, storage, and events. See `docs/ecs.md` for ownership and authoring.
+- Read [ECS ownership and authoring](../docs/ecs.md) for storage, queries, systems and lifecycle contracts; use [benchmarks](../docs/ecs_benchmarks.md) for storage/performance decisions.

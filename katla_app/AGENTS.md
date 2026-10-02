@@ -2,6 +2,9 @@
 
 Application framework and editor for the Katla engine.
 
+For scene/rendering changes, read [graphics ownership](../docs/graphics_core.md);
+for UI appearance, read [editor visual design](../docs/editor_ui_design.md).
+
 ## Frame Order
 
 Each frame in `RedrawRequested` follows a strict ordering -- do not reorder without understanding the GPU sync implications:

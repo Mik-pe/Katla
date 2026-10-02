@@ -13,4 +13,4 @@ Rapier3D physics wrapper with ECS components.
 
 - Shapes are in local space, transformed to world via entity's `TransformComponent`.
 - Physics state sync happens in katla_app's physics system, not in this crate.
-- Read `memory-bank/systemPatterns.md` for the full shape types and resource list.
+- Read [physics integration](../docs/physics-engine-adr.md#current-runtime-contract) when changing ownership, shapes or simulation gating.

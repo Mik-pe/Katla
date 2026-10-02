@@ -109,3 +109,13 @@ Use **Rapier3D** as the primary physics backend.
 - **Positive**: Feature-rich — joints, CCD, character controllers available when needed
 - **Negative**: Additional dependency (~200KB), less control over solver internals
 - **Negative**: Rapier's API may not perfectly align with every Katla convention, requiring adapter code
+
+## Current runtime contract
+
+PhysicsWorld owns Rapier state; game code uses the ECS-facing wrapper.
+RigidBody and ColliderShape represent Sphere, Box, Capsule, Trimesh, ConvexHull
+and Heightfield shapes in local space. The app synchronizes world transforms.
+PhysicsActive gates simulation and defaults false outside play mode.
+CollisionFilter uses reciprocal layer/mask bitfields. Mesh colliders refer to
+MeshHandle; the app supplies MeshColliderData before constructing colliders.
+See [component exports](../katla_physics/src/lib.rs) for current types.

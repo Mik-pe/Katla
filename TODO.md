@@ -548,7 +548,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - Add the regression test before or in the same commit as the fix.
 - Do not re-enable parallel runtime execution as part of an intermediate refactor.
 - Preserve public behavior unless the task explicitly changes the contract.
-- Update `katla_ecs/AGENTS.md` and `memory-bank/systemPatterns.md` when an architectural contract changes.
+- Update `katla_ecs/AGENTS.md` and `docs/ecs.md` when an architectural contract changes.
 - Run the task's listed checks plus `cargo fmt --all -- --check` before marking it complete.
 
 #### Completed containment replacement

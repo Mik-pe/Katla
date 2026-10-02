@@ -64,3 +64,18 @@ reader stages, WAR/WAW ordering, buffer slices, transfer upload scopes, untouche
 imported final contracts, operation-derived encoder boundaries, and independent
 mip layouts. Native validation must additionally exercise the backend's actual
 encoded scopes and presentation/upload paths.
+
+## Access declarations and liveness
+
+Built-in pass templates declare typed NamedImageAccess explicitly. Coarse access
+refinement is only for low-level PassDesc/SimplePass. Generic sampled reads cover
+all aspects; narrow ranges only with knowledge of the actual image format. A
+color-only declaration must not silently remove a depth sampling dependency.
+
+Exported resources and explicit side effects are liveness roots. Preserve all
+surviving final writers for disjoint byte ranges, mips and layers; fully
+overwritten writers may be culled. Loads and blending declare read-before-write.
+Reject submissions to culled passes, and never encode hidden work for an absent
+pass. Named depth_target declarations identify graph-owned depth attachments.
+Native encoders translate the compiled order and authored color/depth/stencil
+operations without singleton scene targets or semantic pass-name heuristics.

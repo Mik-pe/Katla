@@ -14,4 +14,4 @@ Declarative retained-mode UI system on top of immediate-mode rendering core.
 - Layout is handled by Taffy (Flexbox). Widget trees are laid out before drawing.
 - State is per-node via `BuildContext::state()`. It survives frames and auto-cleans on node removal.
 - Actions are typed and drained each frame. Don't accumulate them across frames.
-- Read `memory-bank/systemPatterns.md` for the full widget catalog and rendering pipeline.
+- Read [UI runtime contracts](../docs/declarative_ui_design.md#runtime-contracts) for state, docking and rendering. For editor appearance, use [visual design](../docs/editor_ui_design.md).

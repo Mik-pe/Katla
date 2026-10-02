@@ -1,5 +1,26 @@
 # Declarative UI Architecture for Katla
 
+## Runtime contracts
+
+The declarative Build/ViewTree API is the normal application interface. The
+immediate-mode context is a low-level custom-widget primitive. Drain typed
+actions every frame; per-node state survives until its node is removed.
+Taffy performs Flexbox layout before drawing. DrawList combines 56-byte
+instanced quads with vertices/commands for complex geometry. TextureId is opaque;
+the app maps it to GPU handles. Clipping belongs to each draw command.
+
+Editor dock panels build in stable order because root BuildContext state hooks
+are positional. EditorOverlayView mounts only each DockTree leaf's active tab.
+Building inactive tabs retains state slots; leaving them unmounted prevents stale
+environment drawing and input. DockSpace alone owns tabs/splitters through the
+global-input pass without blocking panel hit testing. The editor applies dock
+actions after ViewTree::frame(); splitter ratios use local split bounds and moves
+retain the exact dragged tab identity.
+
+For appearance, use [editor visual design](editor_ui_design.md). The sections
+below retain the design rationale and API sketches; source is the current API.
+
+
 ## 1. Architecture Overview
 
 ### Current State: Immediate Mode

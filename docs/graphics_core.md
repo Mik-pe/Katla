@@ -117,3 +117,26 @@ completed tickets are consumed, while only the latest click can change selection
 See [the graph API](../katla_gfx/src/render_graph/API.md) for resource/access
 declarations and [capture diagnostics](render_graph_capture.md) for passive
 inspection of compiled contracts and actual native emissions.
+
+## Acquisition and prepared draws
+
+Acquiring a busy slot waits for its exact prior submission. Unavailable surfaces
+produce no token; OutOfDate requires recreation. Only accepted presentation
+advances the slot. Reacquiring an open frame abandons it on the same slot with a
+new identity. FrameToken is Copy: dropping a copy has no lifecycle meaning.
+A failed render poisons the frame; present rejects partial work until abort.
+
+Draw submissions use one Rc<DrawList> per prepared list and borrow it across
+passes. Preserve global object slots and submit order; do not rebuild merged
+lists. Metal uploads each unique list once per frame while initializing every
+referenced slot. Bindless descriptor slots are GPU addressing, not CPU resource
+identity: resource handles always validate index and generation.
+
+Vulkan headless rendering owns two offscreen targets. Windowed resize uses
+physical pixel dimensions clamped to surface limits and replaces synchronization
+objects with the swapchain. Release the surface before native window teardown.
+Frame fences reset immediately before submission; rejection restores a signaled
+fence or returns a typed poisoned-state error. Scene attachment extents remain
+independent of output extents. Core object storage begins at byte zero; Vulkan
+timestamp profiling is unsupported. Native Metal profiling follows its
+[frame-slot contract](metal4_frame_slots.md).
