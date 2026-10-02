@@ -94,6 +94,7 @@ jobs:
       - name: Vulkan graphics binding allocation and retirement validation
         run: |
           cargo test -p katla_gfx --lib descriptor_ --locked -- --ignored --test-threads=1
+          cargo test -p katla_gfx --lib vulkan::frame_resources --locked -- --ignored --test-threads=1
           cargo test -p katla_gfx --test graphics_phase_allocations --locked -- --ignored --test-threads=1
 
       - name: Upload render-graph diagnostics artifacts

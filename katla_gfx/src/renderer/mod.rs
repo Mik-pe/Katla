@@ -1,10 +1,4 @@
-//! Vulkan renderer implementation modules.
-//!
-//! This module organizes VulkanRenderer methods into logical groups:
-//!
-//! - `frame` - Frame rendering and swapchain management
-//! - `viewport` - Viewport system management
-//! - `ui` - UI buffer and texture management
+//! Vulkan renderer implementation and backend-neutral device contracts.
 
 // Backend-agnostic modules (always available)
 pub(crate) mod types;
@@ -35,7 +29,6 @@ pub(crate) mod mesh_manager;
 pub(crate) mod registry;
 pub(crate) mod skeleton_api;
 pub(crate) mod texture_api;
-pub(crate) mod ui_renderer;
 
 // Public re-exports (always available — backend-agnostic types)
 pub use crate::handle::{
@@ -59,7 +52,6 @@ use crate::error::RendererError;
 use crate::handle::{BufferMarker, ResourceStorage, SkeletonMarker};
 use crate::renderer::retirement::RetirementSnapshot;
 use crate::texture::{TextureDescriptor, TextureManager};
-use crate::vulkan::IndexType;
 use crate::vulkan::bindless_texture::{BindlessTextureManager, MAX_BINDLESS_TEXTURES};
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::context::VulkanFrameCtx;
@@ -70,97 +62,12 @@ use crate::vulkan::retirement::{
 };
 use crate::vulkan::swapdata::SwapData;
 use crate::vulkan::vertex_attribute::AttributeType;
-use crate::vulkan::vertexbuffer::{IndexBuffer, VertexBuffer};
 use ash::vk;
 use log::{error, info};
 use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use std::{ffi::CString, rc::Rc};
 
-/// Per-frame UI rendering resources.
-pub(crate) struct UiFrameResources {
-    /// Per-frame UI vertex buffers (complex geometry).
-    pub vertex_buffers: Vec<VertexBuffer>,
-    /// Per-frame UI index buffers (complex geometry).
-    pub index_buffers: Vec<IndexBuffer>,
-    /// Per-frame UI instance buffers (instanced quads).
-    pub instance_buffers: Vec<VertexBuffer>,
-    /// Per-frame unit quad vertex buffers.
-    pub unit_quad_vertex_buffers: Vec<VertexBuffer>,
-    /// Per-frame unit quad index buffers.
-    pub unit_quad_index_buffers: Vec<IndexBuffer>,
-    /// Per-frame UI descriptor sets (owns both set and pool, automatic cleanup).
-    pub descriptor_sets: Vec<Option<crate::vulkan::descriptor_set::DescriptorSet>>,
-    /// Screen-size uniform allocation for each frame slot.
-    pub uniform_buffers: Vec<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
-}
-
-impl UiFrameResources {
-    /// Create new UI frame resources with pre-allocated buffers.
-    fn new(context: &Rc<VulkanContext>) -> Self {
-        let mut vertex_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut index_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut instance_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut unit_quad_vertex_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut unit_quad_index_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut descriptor_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
-
-        for _ in 0..FRAMES_IN_FLIGHT {
-            vertex_buffers.push(VertexBuffer::new(context.clone(), 1024 * 1024, 65536));
-            index_buffers.push(IndexBuffer::new(
-                context.clone(),
-                1024 * 1024,
-                IndexType::Uint32,
-                65536,
-            ));
-            instance_buffers.push(VertexBuffer::with_usage(
-                context.clone(),
-                1024 * 1024,
-                65536,
-                vk::BufferUsageFlags::STORAGE_BUFFER,
-            ));
-            unit_quad_vertex_buffers.push(VertexBuffer::new(
-                context.clone(),
-                256, // 4 vertices × 8 bytes = 32 bytes, small
-                4,
-            ));
-            unit_quad_index_buffers.push(IndexBuffer::new(
-                context.clone(),
-                256, // 6 indices × 4 bytes = 24 bytes, small
-                IndexType::Uint32,
-                6,
-            ));
-            descriptor_sets.push(None);
-        }
-
-        // UI uniform buffer (screen_size) - 16 bytes, CPU-visible
-        let uniform_buffer_info = vk::BufferCreateInfo::default()
-            .size(16) // 4 floats: screen_size[2] + padding[2]
-            .usage(vk::BufferUsageFlags::UNIFORM_BUFFER)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let uniform_buffers = (0..FRAMES_IN_FLIGHT)
-            .map(|_| {
-                context
-                    .allocate_buffer(
-                        &uniform_buffer_info,
-                        gpu_allocator::MemoryLocation::CpuToGpu,
-                    )
-                    .expect("Failed to allocate UI uniform buffer")
-            })
-            .collect();
-
-        Self {
-            vertex_buffers,
-            index_buffers,
-            instance_buffers,
-            unit_quad_vertex_buffers,
-            unit_quad_index_buffers,
-            descriptor_sets,
-            uniform_buffers,
-        }
-    }
-}
-
+/// Vulkan renderer owning native resources and reusable in-flight frame slots.
 pub struct VulkanRenderer {
     pub(crate) context: Rc<VulkanContext>,
     pub(crate) frame_context: VulkanFrameCtx,
@@ -197,10 +104,7 @@ pub struct VulkanRenderer {
     >,
     pub(crate) texture_readbacks:
         std::collections::HashMap<u64, graph_readback::VulkanTextureReadback>,
-    pub(crate) graphics_descriptors: Vec<crate::vulkan::descriptor_arena::DescriptorArena>,
-    pub(crate) graphics_constants:
-        Vec<Vec<crate::render_graph::transient_buffer::VulkanGraphBuffer>>,
-    pub(crate) graphics_image_views: Vec<Vec<vk::ImageView>>,
+    pub(crate) frame_resources: Vec<crate::vulkan::frame_resources::FrameResources>,
     pub(crate) graphics_samplers:
         std::collections::HashMap<super::renderer::frame_bindings::SamplingMode, vk::Sampler>,
     pub(crate) pending_graph_buffers: std::collections::HashSet<u64>,
@@ -214,8 +118,6 @@ pub struct VulkanRenderer {
     acquired_surface_image: Option<u32>,
     /// Material compiler for compiling materials from shaders.
     pub(crate) material_compiler: MaterialCompiler,
-    /// Optional scratch storage for native UI encoding.
-    pub(crate) ui_renderer: ui_renderer::UIRenderer,
     /// The currently open frame-scoped token (see `renderer::frame_scope`).
     active_frame: Option<crate::renderer::frame_scope::FrameToken>,
     frame_rendered: bool,
@@ -370,12 +272,8 @@ impl VulkanRenderer {
         let material_compiler = MaterialCompiler::new(context.clone(), &bindless_manager);
         info!("Material compiler initialized");
 
-        let graphics_descriptors = (0..FRAMES_IN_FLIGHT)
-            .map(|_| {
-                crate::vulkan::descriptor_arena::DescriptorArena::new(
-                    context.gfx_cmdpool.owner.native.clone(),
-                )
-            })
+        let frame_resources = (0..FRAMES_IN_FLIGHT)
+            .map(|_| crate::vulkan::frame_resources::FrameResources::new(context.clone()))
             .collect();
 
         Ok(Self {
@@ -393,9 +291,7 @@ impl VulkanRenderer {
             pending_texture_exports: Vec::new(),
             committed_texture_exports: Default::default(),
             texture_readbacks: Default::default(),
-            graphics_descriptors,
-            graphics_constants: (0..FRAMES_IN_FLIGHT).map(|_| Vec::new()).collect(),
-            graphics_image_views: (0..FRAMES_IN_FLIGHT).map(|_| Vec::new()).collect(),
+            frame_resources,
             graphics_samplers: Default::default(),
             pending_graph_buffers: Default::default(),
             graph_buffer_consumers: Default::default(),
@@ -403,7 +299,6 @@ impl VulkanRenderer {
             last_presented_image_index: None,
             material_compiler,
             acquired_surface_image: None,
-            ui_renderer: ui_renderer::UIRenderer::new(),
             active_frame: None,
             frame_rendered: false,
             last_submission: None,
@@ -511,18 +406,8 @@ impl VulkanRenderer {
         self.drain_retirements_all();
         self.context.drain_all_submissions();
 
-        for arena in &mut self.graphics_descriptors {
-            arena.clear();
-        }
-        for buffers in &mut self.graphics_constants {
-            buffers.clear();
-        }
-        for views in &mut self.graphics_image_views {
-            for view in views.drain(..) {
-                unsafe {
-                    self.context.device.destroy_image_view(view, None);
-                }
-            }
+        for resources in &mut self.frame_resources {
+            resources.clear();
         }
         for (_, sampler) in self.graphics_samplers.drain() {
             unsafe {
@@ -535,8 +420,6 @@ impl VulkanRenderer {
 
         // Destroy material compiler (cleans up descriptor layouts)
         self.material_compiler.destroy();
-
-        self.ui_renderer.destroy(&self.context);
 
         self.context.pre_destroy();
         self.skeleton_buffers = ResourceStorage::new();
@@ -566,18 +449,8 @@ impl VulkanRenderer {
         }
         self.wait_for_device();
         self.frame_clear();
-        for arena in &mut self.graphics_descriptors {
-            arena.reset()?;
-        }
-        for constants in &mut self.graphics_constants {
-            constants.clear();
-        }
-        for views in &mut self.graphics_image_views {
-            for view in views.drain(..) {
-                unsafe {
-                    self.context.device.destroy_image_view(view, None);
-                }
-            }
+        for resources in &mut self.frame_resources {
+            resources.reset()?;
         }
         self.graph_buffer_consumers
             .values_mut()
@@ -1039,14 +912,13 @@ mod tests {
         assert_eq!(renderer.skeleton_buffers.len(), 0);
         assert!(renderer.graph_compute_pipelines.is_empty());
         assert!(renderer.graphics_samplers.is_empty());
-        assert!(renderer.graphics_constants.iter().all(Vec::is_empty));
         assert!(
             renderer
-                .graphics_descriptors
+                .frame_resources
                 .iter()
-                .all(|arena| arena.pool_count() == 0)
+                .all(|resources| resources.upload_block_count() == 0
+                    && resources.descriptors.pool_count() == 0)
         );
-        assert!(!renderer.ui_renderer.is_installed());
         renderer.destroy();
     }
 }

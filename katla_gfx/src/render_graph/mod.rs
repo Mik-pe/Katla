@@ -77,6 +77,7 @@ pub(crate) mod transient_buffer;
 mod transient_texture;
 pub(crate) use transient_texture::ImageLayoutJournal;
 mod vulkan_backend;
+pub(crate) use vulkan_backend::vk_buffer_usages;
 pub(crate) mod vulkan_compute;
 
 // Public API

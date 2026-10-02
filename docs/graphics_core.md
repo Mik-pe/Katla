@@ -188,8 +188,8 @@ staging allocations. Submitted one-time command buffers and optional staging
 allocations remain owned until fence completion or an idle device drain, even
 if a CPU wait fails.
 
-Vulkan resets a retired slot's command buffer before releasing its descriptor
-and inline-data storage. This also discards partial recording and dynamic
+Vulkan resets a retired slot's command buffer before recycling its descriptor
+and upload storage. This also discards partial recording and dynamic
 rendering state from a rejected frame. Graphics render areas and color pipeline
 variants resolve from the declared native attachments, including depth-only
 passes and targets smaller than the output. Incompatible attachment extents
@@ -204,6 +204,16 @@ while an earlier submission can use them. Pools retain their native device and
 release together at renderer teardown. Native allocation failures propagate
 without consuming the tracked descriptor budget; retrying an exhausted fresh
 pool returns an error instead of growing indefinitely.
+
+One native frame-resource owner retains descriptor pools, upload blocks and
+sampled image views. Immutable inline constants and UI uniforms, instances,
+vertices and indices use aligned, disjoint ranges in reusable CPU-visible
+blocks. Growing storage preserves earlier ranges, and slot retirement resets
+offsets without reallocating the blocks. Writes flush through the ordinary
+graph-buffer path. Every UI pass allocates fresh descriptors and data ranges;
+later passes cannot overwrite earlier geometry or screen-size uniforms. UI
+draw commands upload each geometry source once per pass and bind its offsets.
+There is no separate UI descriptor cache or scratch-resource manager.
 
 Graphics encoding reuses one resource packet across a pass's drawing phases.
 Each phase starts with the pass constants before applying its own overrides;

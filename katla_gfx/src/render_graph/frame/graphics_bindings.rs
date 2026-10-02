@@ -1,7 +1,7 @@
 use ash::vk;
 
 use super::Frame;
-use crate::render_graph::{BufferDesc, BufferMemoryPolicy, BufferUsages, RenderGraphError};
+use crate::render_graph::RenderGraphError;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::frame_bindings::{PassBindings, SamplingMode};
 use crate::renderer::graphics_interface::GraphicsBindingKind;
@@ -122,7 +122,8 @@ impl Frame<'_, VulkanRenderer> {
                         .descriptor_count(count)
                 })
                 .collect();
-            let set = self.renderer.graphics_descriptors[slot]
+            let set = self.renderer.frame_resources[slot]
+                .descriptors
                 .allocate(layouts[reflected.group as usize], &sizes)?;
             sets.insert(reflected.group, set);
         }
@@ -150,25 +151,7 @@ impl Frame<'_, VulkanRenderer> {
                     let info = if let Some(constant) = packet.constants.iter().find(|value| {
                         value.group == reflected.group && value.binding == reflected.binding
                     }) {
-                        let usages = if usage == crate::render_graph::BufferUsage::Uniform {
-                            BufferUsages::UNIFORM
-                        } else {
-                            BufferUsages::STORAGE
-                        };
-                        let desc = BufferDesc::new(
-                            constant.bytes.len() as u64,
-                            usages,
-                            BufferMemoryPolicy::CpuVisible,
-                        );
-                        let buffer = <VulkanRenderer as crate::render_graph::RenderGraphBackend>::create_transient_buffer(self.renderer, desc)?;
-                        buffer
-                            .write(0, &constant.bytes)
-                            .map_err(|error| RenderGraphError::BackendError(error.to_string()))?;
-                        let info = vk::DescriptorBufferInfo::default()
-                            .buffer(buffer.vk_buffer())
-                            .range(desc.size);
-                        self.renderer.graphics_constants[slot].push(buffer);
-                        info
+                        self.renderer.frame_resources[slot].upload(&constant.bytes)?
                     } else if let Some(binding) = packet.buffers.iter().find(|value| {
                         value.group == reflected.group && value.binding == reflected.binding
                     }) {
@@ -424,12 +407,6 @@ impl Frame<'_, VulkanRenderer> {
                 base_array_layer: 0,
                 layer_count: 1,
             });
-        let view = unsafe { self.renderer.context.device.create_image_view(&info, None) }.map_err(
-            |error| {
-                RenderGraphError::BackendError(format!("Graphics image subresource view: {error}"))
-            },
-        )?;
-        self.renderer.graphics_image_views[slot].push(view);
-        Ok(view)
+        Ok(self.renderer.frame_resources[slot].create_image_view(&info)?)
     }
 }

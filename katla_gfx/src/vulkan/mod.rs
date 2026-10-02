@@ -4,7 +4,7 @@ pub(crate) mod commandbuffer;
 pub(crate) mod commandpool;
 pub(crate) mod context;
 pub(crate) mod descriptor_arena;
-pub(crate) mod descriptor_set;
+pub(crate) mod frame_resources;
 pub(crate) mod material;
 pub(crate) mod pipeline_state;
 pub(crate) mod queue;

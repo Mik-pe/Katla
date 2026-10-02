@@ -134,8 +134,10 @@ fn test_vulkan_native_capture_on_off_preserves_graph_workload_and_submission() {
         };
         renderer.render(&frame, &mut graph, |_| {}).unwrap();
         measurements.push((
-            renderer.graphics_descriptors[frame.slot()].allocated_sets(),
-            renderer.graphics_constants[frame.slot()].len(),
+            renderer.frame_resources[frame.slot()]
+                .descriptors
+                .allocated_sets(),
+            renderer.frame_resources[frame.slot()].uploaded_ranges(),
             renderer.pending_graph_buffers.len(),
             renderer.asset_registry.material_variant_count(),
         ));

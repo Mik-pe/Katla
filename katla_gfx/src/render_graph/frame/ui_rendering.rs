@@ -1,3 +1,5 @@
+//! Native UI encoding with immutable per-pass geometry and bindings.
+
 use crate::handle::PipelineHandle;
 use crate::render_graph::error::RenderGraphError;
 use crate::render_graph::frame::Frame;
@@ -40,7 +42,7 @@ impl Frame<'_, VulkanRenderer> {
             "UI pass has no material specified. Use .material() on UIPass.".to_string(),
         ))?;
 
-        let (_, format) = self.graphics_target_config(pass)?;
+        let (extent, format) = self.graphics_target_config(pass)?;
         self.renderer
             .ensure_material_compiled(material_handle, format)
             .map_err(|e| {
@@ -82,59 +84,29 @@ impl Frame<'_, VulkanRenderer> {
             .asset_registry
             .get_pipeline_handles(instanced_pipeline_handle)?;
 
-        let frame_idx = self.renderer.current_frame();
-        let has_instances = !ui_draw_list.instances.is_empty();
-        let has_vertices = !ui_draw_list.indices.is_empty();
-
-        // Upload instance buffers (unit quad index buffer + per-instance data)
-        // Instance data is bound as a storage buffer at descriptor binding 4,
-        // not as a vertex buffer — the shader reads it via instance_data[] array.
-        let instance_buffer: Option<vk::Buffer> = if has_instances {
-            let (instance_vb, unit_quad_ib) =
-                self.get_or_update_ui_instance_buffers(frame_idx, ui_draw_list)?;
-            // Bind unit quad index buffer
-            cmd.bind_index_buffer(unit_quad_ib, 0, vk::IndexType::UINT32);
-            Some(instance_vb.0)
+        let slot = self.current_frame();
+        let resources = &mut self.renderer.frame_resources[slot];
+        let instance_buffer = if ui_draw_list.instances.is_empty() {
+            None
+        } else {
+            Some(resources.upload(bytemuck::cast_slice(&ui_draw_list.instances))?)
+        };
+        let geometry = if ui_draw_list.indices.is_empty() {
+            None
+        } else {
+            Some((
+                resources.upload(bytemuck::cast_slice(&ui_draw_list.vertices))?,
+                resources.upload(bytemuck::cast_slice(&ui_draw_list.indices))?,
+            ))
+        };
+        let unit_quad = if instance_buffer.is_some() {
+            Some((
+                resources.upload(bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_VERTICES))?,
+                resources.upload(bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES))?,
+            ))
         } else {
             None
         };
-
-        // Upload vertex/index buffers for complex geometry
-        if has_vertices {
-            let (vertex_buffer, index_buffer) =
-                self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
-
-            let has_vertex_cmds = ui_draw_list.commands.iter().any(|c| !c.is_instanced);
-            if has_vertex_cmds {
-                cmd.bind_vertex_buffer(vertex_buffer.0, 0);
-                cmd.bind_index_buffer(index_buffer, 0, vk::IndexType::UINT32);
-            }
-        }
-
-        // For mixed mode, we need to bind both vertex and instance buffers
-        // Bind unit quad vertex buffer at binding 0 for instanced draws
-        if has_instances {
-            let (unit_quad_vb, unit_quad_ib) = self.get_or_update_ui_unit_quad(frame_idx)?;
-            cmd.bind_index_buffer(unit_quad_ib, 0, vk::IndexType::UINT32);
-            unsafe {
-                self.renderer.context.device.cmd_bind_vertex_buffers(
-                    cmd.vk_command_buffer(),
-                    0, // binding 0 for unit quad
-                    std::slice::from_ref(&unit_quad_vb),
-                    &[0],
-                );
-            }
-        } else if has_vertices {
-            // Re-bind the vertex buffer at binding 0
-            let (vertex_buffer, _) = self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
-            cmd.bind_vertex_buffer(vertex_buffer.0, 0);
-        }
-
-        let extent = self.renderer.frame_context.extent;
-
-        // Bind UI descriptor sets (sampler, uniforms, instance storage buffer, bindless textures)
-        // Use screen_size from draw list (logical pixels, matches vertex coordinates)
-        // Both pipelines share the same descriptor set layout, so binding once is sufficient.
         self.bind_ui_descriptor_sets(
             cmd,
             variant.pipeline,
@@ -144,297 +116,77 @@ impl Frame<'_, VulkanRenderer> {
             sampler,
         )?;
 
-        for draw_cmd in &ui_draw_list.commands {
-            // clip_rect is in logical pixels, convert to physical pixels for Vulkan scissor
-            if let Some([x, y, width, height]) = draw_cmd.clip_rect {
+        for draw in &ui_draw_list.commands {
+            let scissor = if let Some([x, y, width, height]) = draw.clip_rect {
                 let scale = ui_draw_list.scale_factor;
-                let scissor = crate::sync::Rect2D::new(
-                    (x * scale).max(0.0) as i32,
-                    (y * scale).max(0.0) as i32,
-                    (width * scale).max(0.0) as u32,
-                    (height * scale).max(0.0) as u32,
-                );
-                cmd.set_scissor(&[scissor]);
+                crate::sync::Rect2D::new(
+                    (x * scale).max(0.) as i32,
+                    (y * scale).max(0.) as i32,
+                    (width * scale).max(0.) as u32,
+                    (height * scale).max(0.) as u32,
+                )
             } else {
-                cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
-                    extent.width,
-                    extent.height,
-                )]);
+                crate::sync::Rect2D::from_extent(extent.width, extent.height)
+            };
+            cmd.set_scissor(&[scissor]);
+            let (vertex, index) = if draw.is_instanced {
+                unit_quad.as_ref()
+            } else {
+                geometry.as_ref()
             }
-
-            if draw_cmd.is_instanced {
-                // Bind instanced pipeline (vs_instanced/fs_instanced + UnitQuadVertex)
-                unsafe {
-                    self.renderer.context.device.cmd_bind_pipeline(
-                        cmd.vk_command_buffer(),
-                        vk::PipelineBindPoint::GRAPHICS,
-                        instanced_pipeline,
-                    );
-                }
-                // Re-bind unit quad vertex buffer at binding 0
-                let (unit_quad_vb, unit_quad_ib) = self.get_or_update_ui_unit_quad(frame_idx)?;
-                cmd.bind_index_buffer(unit_quad_ib, 0, vk::IndexType::UINT32);
-                unsafe {
-                    self.renderer.context.device.cmd_bind_vertex_buffers(
-                        cmd.vk_command_buffer(),
-                        0,
-                        std::slice::from_ref(&unit_quad_vb),
-                        &[0],
-                    );
-                }
-
-                // Instanced draw: unit quad + per-instance data
-                unsafe {
-                    self.renderer.context.device.cmd_draw_indexed(
-                        cmd.vk_command_buffer(),
-                        6,              // unit quad has 6 indices
-                        draw_cmd.count, // instance count
-                        0,              // first index (unit quad starts at 0)
-                        0,
-                        draw_cmd.offset, // first instance
-                    );
-                }
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration("UI draw has no matching geometry".into())
+            })?;
+            cmd.bind_vertex_buffer(vertex.buffer, vertex.offset);
+            cmd.bind_index_buffer(index.buffer, index.offset, vk::IndexType::UINT32);
+            let pipeline = if draw.is_instanced {
+                instanced_pipeline
             } else {
-                // Bind regular pipeline (vs_main/fs_main + UiVertex)
-                unsafe {
-                    self.renderer.context.device.cmd_bind_pipeline(
-                        cmd.vk_command_buffer(),
-                        vk::PipelineBindPoint::GRAPHICS,
-                        regular_pipeline,
-                    );
-                }
-                // Re-bind vertex buffer for non-instanced path (full UiVertex at binding 0)
-                if has_vertices {
-                    let (vertex_buffer, index_buffer) =
-                        self.get_or_update_ui_buffers(frame_idx, ui_draw_list)?;
-                    cmd.bind_vertex_buffer(vertex_buffer.0, 0);
-                    cmd.bind_index_buffer(index_buffer, 0, vk::IndexType::UINT32);
-                }
-
-                // Vertex-based draw: complex geometry
-                unsafe {
-                    self.renderer.context.device.cmd_draw_indexed(
-                        cmd.vk_command_buffer(),
-                        draw_cmd.count,  // index count
-                        1,               // instance count
-                        draw_cmd.offset, // first index
-                        0,
-                        0,
-                    );
-                }
+                regular_pipeline
+            };
+            unsafe {
+                self.renderer.context.device.cmd_bind_pipeline(
+                    cmd.vk_command_buffer(),
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline,
+                );
+            }
+            if draw.is_instanced {
+                cmd.draw_indexed(6, draw.count, 0, 0, draw.offset);
+            } else {
+                cmd.draw_indexed(draw.count, 1, draw.offset, 0, 0);
             }
         }
-
         cmd.set_scissor(&[crate::sync::Rect2D::from_extent(
             extent.width,
             extent.height,
         )]);
-
         Ok(())
     }
 
-    /// Update per-frame UI vertex and index buffers with new data.
-    ///
-    /// This reuses buffers across frames to avoid memory leaks. Buffers are
-    /// resized if needed to accommodate larger data; the replaced storage
-    /// retires because in-flight frames may still draw from it.
-    pub(super) fn get_or_update_ui_buffers(
-        &mut self,
-        frame_idx: usize,
-        ui_draw_list: &UIDrawList,
-    ) -> Result<((vk::Buffer, u32), vk::Buffer), RenderGraphError> {
-        let vertex_bytes = bytemuck::cast_slice(&ui_draw_list.vertices);
-        let index_bytes = bytemuck::cast_slice(&ui_draw_list.indices);
-
-        let (vb_handle, ib_handle, replaced_vb, replaced_ib) = {
-            let ui_resources = self
-                .renderer
-                .ui_renderer
-                .ui_resources_mut(&self.renderer.context);
-
-            let vb = &mut ui_resources.vertex_buffers[frame_idx];
-            let replaced_vb = vb.upload_data(vertex_bytes);
-            let vb_handle = (vb.object(), vb.count());
-
-            let ib = &mut ui_resources.index_buffers[frame_idx];
-            let replaced_ib = ib.upload_data(index_bytes);
-            let ib_handle = ib.object();
-
-            (vb_handle, ib_handle, replaced_vb, replaced_ib)
-        };
-        if let Some(retired) = replaced_vb {
-            self.renderer.retire(retired);
-        }
-        if let Some(retired) = replaced_ib {
-            self.renderer.retire(retired);
-        }
-
-        Ok((vb_handle, ib_handle))
-    }
-
-    /// Upload per-frame instance buffer and unit quad index buffer for instanced UI rendering.
-    ///
-    /// Grown buffers retire their replaced storage: in-flight frames may
-    /// still draw from it.
-    pub(super) fn get_or_update_ui_instance_buffers(
-        &mut self,
-        frame_idx: usize,
-        ui_draw_list: &UIDrawList,
-    ) -> Result<((vk::Buffer, u32), vk::Buffer), RenderGraphError> {
-        let instance_bytes = bytemuck::cast_slice(&ui_draw_list.instances);
-        let unit_quad_index_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES);
-
-        let (instance_handle, quad_ib_handle, replaced_instance, replaced_quad) = {
-            let ui_resources = self
-                .renderer
-                .ui_renderer
-                .ui_resources_mut(&self.renderer.context);
-
-            // Upload instance data
-            let instance_ib = &mut ui_resources.instance_buffers[frame_idx];
-            let replaced_instance = instance_ib.upload_data(instance_bytes);
-            let instance_handle = (instance_ib.object(), instance_ib.count());
-
-            // Upload unit quad index buffer (same every frame, but simple to re-upload)
-            let quad_ib = &mut ui_resources.unit_quad_index_buffers[frame_idx];
-            let replaced_quad = quad_ib.upload_data(unit_quad_index_bytes);
-            let quad_ib_handle = quad_ib.object();
-
-            (
-                instance_handle,
-                quad_ib_handle,
-                replaced_instance,
-                replaced_quad,
-            )
-        };
-        if let Some(retired) = replaced_instance {
-            self.renderer.retire(retired);
-        }
-        if let Some(retired) = replaced_quad {
-            self.renderer.retire(retired);
-        }
-
-        Ok((instance_handle, quad_ib_handle))
-    }
-
-    /// Get or create the unit quad vertex buffer for instanced UI rendering.
-    ///
-    /// Grown buffers retire their replaced storage: in-flight frames may
-    /// still draw from it.
-    pub(super) fn get_or_update_ui_unit_quad(
-        &mut self,
-        frame_idx: usize,
-    ) -> Result<(vk::Buffer, vk::Buffer), RenderGraphError> {
-        let quad_vertex_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_VERTICES);
-        let quad_index_bytes = bytemuck::cast_slice(&crate::vertex::UNIT_QUAD_INDICES);
-
-        let (quad_vb_handle, quad_ib_handle, replaced_vb, replaced_ib) = {
-            let ui_resources = self
-                .renderer
-                .ui_renderer
-                .ui_resources_mut(&self.renderer.context);
-
-            let quad_vb = &mut ui_resources.unit_quad_vertex_buffers[frame_idx];
-            let replaced_vb = quad_vb.upload_data(quad_vertex_bytes);
-            let quad_vb_handle = quad_vb.object();
-
-            let quad_ib = &mut ui_resources.unit_quad_index_buffers[frame_idx];
-            let replaced_ib = quad_ib.upload_data(quad_index_bytes);
-            let quad_ib_handle = quad_ib.object();
-
-            (quad_vb_handle, quad_ib_handle, replaced_vb, replaced_ib)
-        };
-        if let Some(retired) = replaced_vb {
-            self.renderer.retire(retired);
-        }
-        if let Some(retired) = replaced_ib {
-            self.renderer.retire(retired);
-        }
-
-        Ok((quad_vb_handle, quad_ib_handle))
-    }
-
-    /// Bind UI descriptor sets (Set 0: sampler, uniforms, instance buffer; Set 1: bindless textures).
-    pub(super) fn bind_ui_descriptor_sets(
+    fn bind_ui_descriptor_sets(
         &mut self,
         cmd: &CommandBuffer,
-        pipeline_handle: PipelineHandle,
+        pipeline: PipelineHandle,
         pipeline_layout: vk::PipelineLayout,
         screen_size: [f32; 2],
-        instance_buffer: Option<vk::Buffer>,
+        instances: Option<vk::DescriptorBufferInfo>,
         sampler: vk::Sampler,
     ) -> Result<(), RenderGraphError> {
-        // Get the pipeline to access its descriptor set layouts (separate borrow to avoid conflicts)
-        let descriptor_set_layout = {
-            let pipeline = self
-                .renderer
-                .asset_registry
-                .get_pipeline(pipeline_handle)
-                .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline_handle))?;
-
-            let descriptor_set_layouts = pipeline.descriptor_set_layouts();
-            if descriptor_set_layouts.is_empty() {
-                return Err(RenderGraphError::InvalidConfiguration(
-                    "UI pipeline has no descriptor set layouts".to_string(),
-                ));
-            }
-
-            descriptor_set_layouts[0]
-        };
-
-        // Now we can mutate the renderer state
-        let frame_idx = self.renderer.current_frame();
-        let descriptor_set = self.get_or_create_ui_descriptor_set(
-            frame_idx,
-            descriptor_set_layout,
-            screen_size,
-            instance_buffer,
-            sampler,
-        )?;
-
-        // Bind descriptor set 0 (sampler, uniforms)
-        cmd.bind_descriptor_sets(pipeline_layout, 0, &[descriptor_set], &[]);
-
-        let bindless_descriptor_set = self.renderer.bindless_manager.descriptor_set();
-        cmd.bind_descriptor_sets(pipeline_layout, 1, &[bindless_descriptor_set.vk()], &[]);
-
-        Ok(())
-    }
-
-    /// Get or create per-frame UI descriptor set.
-    pub(super) fn get_or_create_ui_descriptor_set(
-        &mut self,
-        frame_idx: usize,
-        layout: vk::DescriptorSetLayout,
-        screen_size: [f32; 2],
-        instance_buffer: Option<vk::Buffer>,
-        sampler: vk::Sampler,
-    ) -> Result<vk::DescriptorSet, RenderGraphError> {
-        let ui_resources = self
+        let layout = self
             .renderer
-            .ui_renderer
-            .ui_resources_mut(&self.renderer.context);
-
-        // Ensure we have storage for this frame
-        while ui_resources.descriptor_sets.len() <= frame_idx {
-            ui_resources.descriptor_sets.push(None);
-        }
-
-        let descriptor_set_handle = ui_resources.descriptor_sets[frame_idx]
-            .as_ref()
-            .map(|ds| ds.vk());
-
-        let _ = ui_resources; // Release borrow before calling update
-
-        if let Some(ds_handle) = descriptor_set_handle {
-            self.update_ui_descriptor_set(ds_handle, screen_size, instance_buffer, sampler)?;
-            return Ok(ds_handle);
-        }
-
-        let pool_sizes = [
-            vk::DescriptorPoolSize::default()
-                .ty(vk::DescriptorType::SAMPLED_IMAGE)
-                .descriptor_count(1),
+            .asset_registry
+            .get_pipeline(pipeline)
+            .ok_or(RenderGraphError::InvalidPipelineHandle(pipeline))?
+            .descriptor_set_layouts()
+            .first()
+            .copied()
+            .ok_or_else(|| {
+                RenderGraphError::InvalidConfiguration(
+                    "UI pipeline has no descriptor layout".into(),
+                )
+            })?;
+        let sizes = [
             vk::DescriptorPoolSize::default()
                 .ty(vk::DescriptorType::SAMPLER)
                 .descriptor_count(1),
@@ -445,178 +197,50 @@ impl Frame<'_, VulkanRenderer> {
                 .ty(vk::DescriptorType::STORAGE_BUFFER)
                 .descriptor_count(1),
         ];
-
-        let pool_info = vk::DescriptorPoolCreateInfo::default()
-            .pool_sizes(&pool_sizes)
-            .max_sets(1);
-
-        let descriptor_pool = unsafe {
-            self.renderer
-                .context
-                .device
-                .create_descriptor_pool(&pool_info, None)
-                .map_err(|e| {
-                    RenderGraphError::InvalidConfiguration(format!(
-                        "Failed to create UI descriptor pool: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        let layouts = [layout];
-        let allocate_info = vk::DescriptorSetAllocateInfo::default()
-            .descriptor_pool(descriptor_pool)
-            .set_layouts(&layouts);
-
-        let descriptor_sets = unsafe {
-            self.renderer
-                .context
-                .device
-                .allocate_descriptor_sets(&allocate_info)
-                .map_err(|e| {
-                    RenderGraphError::InvalidConfiguration(format!(
-                        "Failed to allocate UI descriptor set: {:?}",
-                        e
-                    ))
-                })?
-        };
-
-        let descriptor_set = descriptor_sets[0];
-
-        // Wrap in DescriptorSet for automatic cleanup (owns pool and layout)
-        let descriptor_set_wrapper = crate::vulkan::descriptor_set::DescriptorSet::from_raw(
-            descriptor_set,
-            descriptor_pool,
-            None, // Layout is owned by Pipeline, not by the descriptor set
-            self.renderer.context.device.clone(),
-        );
-
-        // Store descriptor set (owns pool, automatic cleanup)
-        let ui_resources = self
-            .renderer
-            .ui_renderer
-            .ui_resources_mut(&self.renderer.context);
-        if frame_idx < ui_resources.descriptor_sets.len() {
-            ui_resources.descriptor_sets[frame_idx] = Some(descriptor_set_wrapper);
-        }
-        let _ = ui_resources;
-
-        self.update_ui_descriptor_set(descriptor_set, screen_size, instance_buffer, sampler)?;
-
-        Ok(descriptor_set)
-    }
-
-    /// Update UI descriptor set with sampler, uniforms, and instance storage buffer.
-    pub(super) fn update_ui_descriptor_set(
-        &mut self,
-        descriptor_set: vk::DescriptorSet,
-        screen_size: [f32; 2],
-        instance_buffer: Option<vk::Buffer>,
-        sampler: vk::Sampler,
-    ) -> Result<(), RenderGraphError> {
-        let frame_slot = self.current_frame();
-
-        let uniform_data = [screen_size[0], screen_size[1], 1.0, 0.0];
-        let uniform_bytes = bytemuck::cast_slice(&uniform_data);
-
-        let uniform_buffer = {
-            let ui_resources = self
-                .renderer
-                .ui_renderer
-                .ui_resources_mut(&self.renderer.context);
-
-            ui_resources
-                .uniform_buffers
-                .get(frame_slot)
-                .ok_or_else(|| {
-                    RenderGraphError::InvalidConfiguration("UI frame slot unavailable".into())
-                })?
-                .0
-        };
-
-        let uniform_ptr = {
-            let allocation = &self
-                .renderer
-                .ui_renderer
-                .ui_resources_mut(&self.renderer.context)
-                .uniform_buffers
-                .get(frame_slot)
-                .ok_or_else(|| {
-                    RenderGraphError::InvalidConfiguration("UI frame slot unavailable".into())
-                })?
-                .1;
-            self.renderer.context.map_buffer(allocation)?
-        };
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(uniform_bytes.as_ptr(), uniform_ptr, uniform_bytes.len());
-        }
-        let allocation = &self
-            .renderer
-            .ui_renderer
-            .ui_resources_mut(&self.renderer.context)
-            .uniform_buffers[frame_slot]
-            .1;
-        self.renderer
-            .context
-            .flush_mapped_memory(allocation, 0, uniform_bytes.len() as u64)?;
-
-        let uniform_buffer_info = vk::DescriptorBufferInfo::default()
-            .buffer(uniform_buffer)
-            .offset(0)
-            .range(uniform_bytes.len() as vk::DeviceSize);
-
-        let image_info = vk::DescriptorImageInfo::default()
-            .sampler(sampler)
-            .image_view(vk::ImageView::null()) // Null for sampler-only write
-            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL);
-
-        let mut writes = vec![
-            // Binding 1: sampler
+        let slot = self.current_frame();
+        let resources = &mut self.renderer.frame_resources[slot];
+        let set = resources.descriptors.allocate(layout, &sizes)?;
+        let uniforms = resources.upload(bytemuck::cast_slice(&[
+            screen_size[0],
+            screen_size[1],
+            1.0,
+            0.0,
+        ]))?;
+        let image = vk::DescriptorImageInfo::default().sampler(sampler);
+        let mut writes: smallvec::SmallVec<[vk::WriteDescriptorSet<'_>; 3]> = smallvec::smallvec![
             vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
+                .dst_set(set)
                 .dst_binding(1)
-                .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::SAMPLER)
-                .descriptor_count(1)
-                .image_info(std::slice::from_ref(&image_info)),
-            // Binding 3: screen size uniform
+                .image_info(std::slice::from_ref(&image)),
             vk::WriteDescriptorSet::default()
-                .dst_set(descriptor_set)
+                .dst_set(set)
                 .dst_binding(3)
-                .dst_array_element(0)
                 .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                .descriptor_count(1)
-                .buffer_info(std::slice::from_ref(&uniform_buffer_info)),
+                .buffer_info(std::slice::from_ref(&uniforms)),
         ];
-
-        // Binding 4: instance data storage buffer (only when instances exist)
-        let instance_buffer_info = instance_buffer.map(|buf| {
-            vk::DescriptorBufferInfo::default()
-                .buffer(buf)
-                .offset(0)
-                .range(vk::WHOLE_SIZE)
-        });
-
-        if let Some(ref info) = instance_buffer_info {
+        if let Some(info) = &instances {
             writes.push(
                 vk::WriteDescriptorSet::default()
-                    .dst_set(descriptor_set)
+                    .dst_set(set)
                     .dst_binding(4)
-                    .dst_array_element(0)
                     .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                    .descriptor_count(1)
                     .buffer_info(std::slice::from_ref(info)),
             );
         }
-
         unsafe {
             self.renderer
                 .context
                 .device
                 .update_descriptor_sets(&writes, &[]);
         }
-
+        cmd.bind_descriptor_sets(pipeline_layout, 0, &[set], &[]);
+        cmd.bind_descriptor_sets(
+            pipeline_layout,
+            1,
+            &[self.renderer.bindless_manager.descriptor_set().vk()],
+            &[],
+        );
         Ok(())
     }
 }

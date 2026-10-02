@@ -98,13 +98,7 @@ impl VulkanRenderer {
         self.retire_buffer_consumers(fence);
         let slot = self.current_frame();
         self.frame_context.command_buffers[slot].reset()?;
-        self.graphics_descriptors[slot].reset()?;
-        self.graphics_constants[slot].clear();
-        for view in self.graphics_image_views[slot].drain(..) {
-            unsafe {
-                self.context.device.destroy_image_view(view, None);
-            }
-        }
+        self.frame_resources[slot].reset()?;
         let expired_slots = self.retirements.drain_completed(
             self.swap_data.frame_counter(),
             self.swap_data.frames_in_flight(),
