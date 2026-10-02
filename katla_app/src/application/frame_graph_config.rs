@@ -243,7 +243,9 @@ mod tests {
     fn graph_with_passes(names: &[&str]) -> FrameGraph {
         let mut graph = FrameGraph::new();
         for name in names {
-            graph.add_pass(PassDesc::new(*name, PassType::Graphics, vec![], vec![]));
+            graph
+                .add_pass(PassDesc::new(*name, PassType::Graphics, vec![], vec![]))
+                .unwrap();
         }
         graph
     }
@@ -305,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn refresh_reindexes_and_clears_removed_capabilities() {
+    fn test_refresh_preserves_handles_and_clears_removed_capabilities() {
         let mut graph = graph_with_passes(&["geometry"]);
         let mut bindings = FrameGraphPassBindings {
             geometry: Some("geometry".into()),
@@ -314,10 +316,13 @@ mod tests {
         let mut ids = PassIds::resolve(&graph, &bindings).unwrap();
         assert_eq!(ids.geometry, graph.pass_id("geometry"));
 
-        graph.insert_pass(
-            0,
-            PassDesc::new("before_geometry", PassType::Graphics, vec![], vec![]),
-        );
+        graph
+            .insert_pass(
+                0,
+                PassDesc::new("before_geometry", PassType::Graphics, vec![], vec![]),
+            )
+            .unwrap();
+        assert_eq!(ids.geometry, graph.pass_id("geometry"));
         ids.refresh(&graph, &bindings).unwrap();
         assert_eq!(ids.geometry, graph.pass_id("geometry"));
 

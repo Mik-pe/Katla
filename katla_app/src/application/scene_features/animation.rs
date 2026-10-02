@@ -196,16 +196,20 @@ impl AnimationFeatures {
         let accesses = dispatch
             .accesses()
             .map_err(|reason| AppError::RendererInitFailed { reason })?;
-        graph.insert_pass(
-            0,
-            PassDesc::new(COPY_PASS, PassType::Transfer, vec![], vec![]),
-        );
-        graph.insert_pass(
-            0,
-            PassDesc::new(POSE_PASS, PassType::Compute, vec![], vec![])
-                .with_buffer_accesses(accesses)
-                .with_commands([ComputeCommand::Dispatch(dispatch)]),
-        );
+        graph
+            .insert_pass(
+                0,
+                PassDesc::new(COPY_PASS, PassType::Transfer, vec![], vec![]),
+            )
+            .map_err(graph_error)?;
+        graph
+            .insert_pass(
+                0,
+                PassDesc::new(POSE_PASS, PassType::Compute, vec![], vec![])
+                    .with_buffer_accesses(accesses)
+                    .with_commands([ComputeCommand::Dispatch(dispatch)]),
+            )
+            .map_err(graph_error)?;
         self.resources = Some(resources);
         Ok(())
     }

@@ -253,11 +253,13 @@ fn test_buffer_stage_validation_survives_graph_mutation() {
         .build::<MockBackend>()
         .unwrap();
     let data = graph.resource_id("data").unwrap();
-    graph.add_pass(
-        PassDesc::new("invalid", PassType::Graphics, vec![], vec![]).with_buffer_accesses([
-            BufferAccess::uniform_read(data).with_stage(ResourceAccessStage::Transfer),
-        ]),
-    );
+    graph
+        .add_pass(
+            PassDesc::new("invalid", PassType::Graphics, vec![], vec![]).with_buffer_accesses([
+                BufferAccess::uniform_read(data).with_stage(ResourceAccessStage::Transfer),
+            ]),
+        )
+        .unwrap();
     assert!(matches!(
         graph.compile(),
         Err(RenderGraphError::Validation(
@@ -429,8 +431,8 @@ fn test_frame_graph_add_and_index_passes() {
     let p1 = PassDesc::new("a", PassType::Graphics, vec![], vec![rid(1)]);
     let p2 = PassDesc::new("b", PassType::Graphics, vec![rid(1)], vec![rid(2)]);
 
-    graph.add_pass(p1);
-    graph.add_pass(p2);
+    graph.add_pass(p1).unwrap();
+    graph.add_pass(p2).unwrap();
 
     assert_eq!(graph.pass_count(), 2);
     assert_eq!(graph.pass_index("a"), Some(0));
@@ -441,13 +443,19 @@ fn test_frame_graph_add_and_index_passes() {
 #[test]
 fn test_frame_graph_insert_pass_reindexes() {
     let mut graph = TestGraph::new();
-    graph.add_pass(PassDesc::new("a", PassType::Graphics, vec![], vec![]));
-    graph.add_pass(PassDesc::new("b", PassType::Graphics, vec![], vec![]));
+    graph
+        .add_pass(PassDesc::new("a", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    graph
+        .add_pass(PassDesc::new("b", PassType::Graphics, vec![], vec![]))
+        .unwrap();
 
-    graph.insert_pass(
-        1,
-        PassDesc::new("inserted", PassType::Graphics, vec![], vec![]),
-    );
+    graph
+        .insert_pass(
+            1,
+            PassDesc::new("inserted", PassType::Graphics, vec![], vec![]),
+        )
+        .unwrap();
 
     assert_eq!(graph.pass_count(), 3);
     assert_eq!(graph.pass_index("a"), Some(0));
@@ -458,11 +466,15 @@ fn test_frame_graph_insert_pass_reindexes() {
 #[test]
 fn test_frame_graph_add_pass_resets_compiled() {
     let mut graph = TestGraph::new();
-    graph.add_pass(PassDesc::new("a", PassType::Graphics, vec![], vec![]));
+    graph
+        .add_pass(PassDesc::new("a", PassType::Graphics, vec![], vec![]))
+        .unwrap();
     graph.compile().unwrap();
     assert!(graph.compiled);
 
-    graph.add_pass(PassDesc::new("b", PassType::Graphics, vec![], vec![]));
+    graph
+        .add_pass(PassDesc::new("b", PassType::Graphics, vec![], vec![]))
+        .unwrap();
     assert!(!graph.compiled);
     assert!(graph.execution_plan.is_none());
 }
@@ -867,17 +879,19 @@ fn test_imported_buffer_retirement_rejects_live_references() {
     let next = graph
         .import_buffer("other", BufferHandle::from_raw(2, 0), desc)
         .unwrap();
-    let pass = graph.add_pass(
-        PassDesc::new("consume", PassType::Compute, vec![], vec![]).with_buffer_accesses([
-            super::super::BufferAccess::new(
-                id,
-                ResourceAccessMode::Read,
-                BufferUsage::Storage,
-                ResourceAccessStage::ComputeShader,
-                BufferByteRange::WHOLE,
-            ),
-        ]),
-    );
+    let pass = graph
+        .add_pass(
+            PassDesc::new("consume", PassType::Compute, vec![], vec![]).with_buffer_accesses([
+                super::super::BufferAccess::new(
+                    id,
+                    ResourceAccessMode::Read,
+                    BufferUsage::Storage,
+                    ResourceAccessStage::ComputeShader,
+                    BufferByteRange::WHOLE,
+                ),
+            ]),
+        )
+        .unwrap();
     assert!(matches!(
         graph.remove_imported_buffer(id),
         Err(RenderGraphError::Validation(
@@ -1062,7 +1076,10 @@ fn builder_culls_unobserved_branches_but_keeps_the_backbuffer_chain() {
     let present = graph.pass_id("present").unwrap();
     assert_eq!(graph.is_pass_live(dead), Some(false));
     assert_eq!(graph.is_pass_live(present), Some(true));
-    assert_eq!(graph.execution_order(), vec![present.0 as usize]);
+    assert_eq!(
+        graph.execution_order(),
+        vec![graph.pass_position(present).unwrap()]
+    );
 }
 
 #[test]
@@ -1326,18 +1343,22 @@ fn transient_aliasing_groups_non_overlapping_compatible_transients() {
         validation_resource("early", 64, 64),
         validation_resource("late", 64, 64),
     ];
-    graph.add_pass(PassDesc::new(
-        "first",
-        PassType::Graphics,
-        vec![],
-        vec![ResourceId(0)],
-    ));
-    graph.add_pass(PassDesc::new(
-        "second",
-        PassType::Graphics,
-        vec![],
-        vec![ResourceId(1)],
-    ));
+    graph
+        .add_pass(PassDesc::new(
+            "first",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(0)],
+        ))
+        .unwrap();
+    graph
+        .add_pass(PassDesc::new(
+            "second",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(1)],
+        ))
+        .unwrap();
 
     let backend = MockBackend::new();
     graph.initialize_transient_textures(&backend).unwrap();
@@ -1355,27 +1376,33 @@ fn test_allocation_contract_rejects_new_overlap_until_cleanup() {
         validation_resource("early", 64, 64),
         validation_resource("late", 64, 64),
     ];
-    graph.add_pass(PassDesc::new(
-        "early write",
-        PassType::Graphics,
-        vec![],
-        vec![early],
-    ));
-    graph.add_pass(PassDesc::new(
-        "late write",
-        PassType::Graphics,
-        vec![],
-        vec![late],
-    ));
+    graph
+        .add_pass(PassDesc::new(
+            "early write",
+            PassType::Graphics,
+            vec![],
+            vec![early],
+        ))
+        .unwrap();
+    graph
+        .add_pass(PassDesc::new(
+            "late write",
+            PassType::Graphics,
+            vec![],
+            vec![late],
+        ))
+        .unwrap();
     let backend = MockBackend::new();
     graph.initialize_transient_textures(&backend).unwrap();
     assert_eq!(*backend.slot_member_counts.borrow(), vec![2, 2]);
-    graph.add_pass(PassDesc::new(
-        "later early read",
-        PassType::Graphics,
-        vec![early],
-        vec![],
-    ));
+    graph
+        .add_pass(PassDesc::new(
+            "later early read",
+            PassType::Graphics,
+            vec![early],
+            vec![],
+        ))
+        .unwrap();
     assert!(matches!(
         graph.initialize_transient_textures(&backend),
         Err(RenderGraphError::AllocationContractChanged)
@@ -1420,7 +1447,7 @@ fn test_allocation_contract_rejects_sampling_old_memoryless_storage() {
     let tile = graph.resource_id("tile").unwrap();
     let mut sample = PassDesc::new("sample tile", PassType::Compute, vec![tile], vec![]);
     sample.side_effect = true;
-    graph.add_pass(sample);
+    graph.add_pass(sample).unwrap();
     assert!(matches!(
         graph.initialize_transient_textures(&backend),
         Err(RenderGraphError::AllocationContractChanged)
@@ -1446,24 +1473,30 @@ fn test_allocation_contract_accepts_changed_disjoint_intervals() {
         validation_resource("early", 64, 64),
         validation_resource("late", 64, 64),
     ];
-    graph.add_pass(PassDesc::new(
-        "early write",
-        PassType::Graphics,
-        vec![],
-        vec![early],
-    ));
-    graph.add_pass(PassDesc::new(
-        "late write",
-        PassType::Graphics,
-        vec![],
-        vec![late],
-    ));
+    graph
+        .add_pass(PassDesc::new(
+            "early write",
+            PassType::Graphics,
+            vec![],
+            vec![early],
+        ))
+        .unwrap();
+    graph
+        .add_pass(PassDesc::new(
+            "late write",
+            PassType::Graphics,
+            vec![],
+            vec![late],
+        ))
+        .unwrap();
     let backend = MockBackend::new();
     graph.initialize_transient_textures(&backend).unwrap();
-    graph.insert_pass(
-        1,
-        PassDesc::new("early read", PassType::Graphics, vec![early], vec![]),
-    );
+    graph
+        .insert_pass(
+            1,
+            PassDesc::new("early read", PassType::Graphics, vec![early], vec![]),
+        )
+        .unwrap();
     graph.initialize_transient_textures(&backend).unwrap();
     assert_eq!(*backend.slot_member_counts.borrow(), vec![2, 2]);
 }
@@ -1477,24 +1510,30 @@ fn transient_aliasing_keeps_overlapping_transients_separate() {
         validation_resource("a", 64, 64),
         validation_resource("b", 64, 64),
     ];
-    graph.add_pass(PassDesc::new(
-        "write_a",
-        PassType::Graphics,
-        vec![],
-        vec![ResourceId(0)],
-    ));
-    graph.add_pass(PassDesc::new(
-        "write_b",
-        PassType::Graphics,
-        vec![],
-        vec![ResourceId(1)],
-    ));
-    graph.add_pass(PassDesc::new(
-        "read_a",
-        PassType::Graphics,
-        vec![ResourceId(0)],
-        vec![],
-    ));
+    graph
+        .add_pass(PassDesc::new(
+            "write_a",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(0)],
+        ))
+        .unwrap();
+    graph
+        .add_pass(PassDesc::new(
+            "write_b",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(1)],
+        ))
+        .unwrap();
+    graph
+        .add_pass(PassDesc::new(
+            "read_a",
+            PassType::Graphics,
+            vec![ResourceId(0)],
+            vec![],
+        ))
+        .unwrap();
 
     let backend = MockBackend::new();
     graph.initialize_transient_textures(&backend).unwrap();
@@ -1512,18 +1551,22 @@ fn transient_aliasing_disabled_creates_standalone_textures() {
         validation_resource("early", 64, 64),
         validation_resource("late", 64, 64),
     ];
-    graph.add_pass(PassDesc::new(
-        "first",
-        PassType::Graphics,
-        vec![],
-        vec![ResourceId(0)],
-    ));
-    graph.add_pass(PassDesc::new(
-        "second",
-        PassType::Graphics,
-        vec![],
-        vec![ResourceId(1)],
-    ));
+    graph
+        .add_pass(PassDesc::new(
+            "first",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(0)],
+        ))
+        .unwrap();
+    graph
+        .add_pass(PassDesc::new(
+            "second",
+            PassType::Graphics,
+            vec![],
+            vec![ResourceId(1)],
+        ))
+        .unwrap();
     graph.set_transient_aliasing(false).unwrap();
 
     let backend = MockBackend::new();
@@ -1687,4 +1730,140 @@ fn test_duplicate_native_import_identities_are_rejected_before_scheduling() {
         error,
         GraphValidationError::DuplicateImportedIdentity { kind: "buffer", .. }
     ));
+}
+
+#[test]
+fn test_pass_handles_survive_insertion_and_address_the_original_pass() {
+    let mut graph = TestGraph::new();
+    let target = graph
+        .add_pass(PassDesc::new("target", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    graph
+        .insert_pass(
+            0,
+            PassDesc::new("before", PassType::Graphics, vec![], vec![]),
+        )
+        .unwrap();
+    assert_eq!(graph.pass_id("target"), Some(target));
+    let mut bindings = crate::renderer::frame_bindings::PassBindings::default();
+    bindings
+        .constants
+        .push(crate::renderer::frame_bindings::ConstantBinding {
+            group: 0,
+            binding: 0,
+            stages: crate::backend::command::ShaderStages::FRAGMENT,
+            bytes: vec![1; 16],
+        });
+    graph.set_pass_bindings(target, bindings).unwrap();
+    assert!(graph.pass(0).unwrap().bindings.constants.is_empty());
+    assert_eq!(
+        graph.pass(1).unwrap().bindings.constants[0].bytes,
+        vec![1; 16]
+    );
+}
+
+#[test]
+fn test_foreign_pass_handles_cannot_mutate_a_matching_index() {
+    let mut first = TestGraph::new();
+    let foreign = first
+        .add_pass(PassDesc::new("first", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    let mut second = TestGraph::new();
+    let local = second
+        .add_pass(PassDesc::new("second", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    assert_ne!(foreign, local);
+    assert!(matches!(
+        second.set_pass_bindings(foreign, Default::default()),
+        Err(RenderGraphError::PassNotFound(_))
+    ));
+    assert!(matches!(
+        second.set_pass_commands(foreign, vec![], vec![]),
+        Err(RenderGraphError::PassNotFound(_))
+    ));
+    assert_eq!(second.pass_id("second"), Some(local));
+}
+
+#[test]
+fn test_foreign_frame_submissions_fail_before_backend_execution() {
+    let mut first = TestGraph::new();
+    let foreign = first
+        .add_pass(PassDesc::new("first", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    let mut second = TestGraph::new();
+    second
+        .add_pass(PassDesc::new("second", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    second.compile().unwrap();
+    let mut backend = MockBackend::new();
+    let mut frame = crate::render_graph::Frame::new(&second, &mut backend, 0, 0);
+    frame.submit(
+        foreign,
+        std::rc::Rc::new(crate::renderer::types::DrawList::new()),
+    );
+    assert!(matches!(
+        frame.validate_submissions(),
+        Err(RenderGraphError::PassNotFound(_))
+    ));
+    assert!(frame.pending.is_empty());
+}
+
+#[test]
+fn test_invalid_pass_insertions_preserve_the_compiled_graph() {
+    let mut graph = TestGraph::new();
+    let saved = graph
+        .add_pass(PassDesc::new("saved", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    graph.compile().unwrap();
+    assert!(matches!(
+        graph.insert_pass(
+            2,
+            PassDesc::new("out of bounds", PassType::Graphics, vec![], vec![])
+        ),
+        Err(RenderGraphError::InvalidConfiguration(_))
+    ));
+    assert!(matches!(
+        graph.add_pass(PassDesc::new("saved", PassType::Graphics, vec![], vec![])),
+        Err(RenderGraphError::Validation(
+            GraphValidationError::DuplicatePassName(_)
+        ))
+    ));
+    assert!(matches!(
+        graph.insert_pass(0, PassDesc::new("  ", PassType::Graphics, vec![], vec![])),
+        Err(RenderGraphError::Validation(
+            GraphValidationError::EmptyPassName
+        ))
+    ));
+    assert!(graph.compiled);
+    assert_eq!(graph.pass_count(), 1);
+    assert_eq!(graph.pass_id("saved"), Some(saved));
+    assert_eq!(graph.is_pass_live(saved), Some(true));
+}
+
+#[test]
+fn test_saved_handle_submits_to_the_original_pass_after_multiple_insertions() {
+    let mut graph = TestGraph::new();
+    let saved = graph
+        .add_pass(PassDesc::new("saved", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    for (position, name) in [(0, "a"), (0, "b"), (2, "c"), (4, "d")] {
+        let inserted = graph
+            .insert_pass(
+                position,
+                PassDesc::new(name, PassType::Graphics, vec![], vec![]),
+            )
+            .unwrap();
+        assert_eq!(graph.pass_id(name), Some(inserted));
+    }
+    graph.compile().unwrap();
+    assert_eq!(graph.is_pass_live(saved), Some(true));
+    let mut backend = MockBackend::new();
+    let mut frame = crate::render_graph::Frame::new(&graph, &mut backend, 0, 0);
+    frame.submit(
+        saved,
+        std::rc::Rc::new(crate::renderer::types::DrawList::new()),
+    );
+    frame.validate_submissions().unwrap();
+    assert_eq!(frame.pending.len(), 1);
+    assert!(frame.pending.contains_key(&3));
 }

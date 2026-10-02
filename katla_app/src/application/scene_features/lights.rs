@@ -120,19 +120,23 @@ impl LightFeatures {
         });
         let dispatch = self.dispatch()?;
         let accesses = dispatch.accesses().map_err(other_error)?;
-        graph.insert_pass(
-            0,
-            PassDesc::new("light_culling", PassType::Compute, vec![], vec![])
-                .with_buffer_accesses(accesses)
-                .with_commands([ComputeCommand::Dispatch(dispatch)]),
-        );
+        graph
+            .insert_pass(
+                0,
+                PassDesc::new("light_culling", PassType::Compute, vec![], vec![])
+                    .with_buffer_accesses(accesses)
+                    .with_commands([ComputeCommand::Dispatch(dispatch)]),
+            )
+            .map_err(other_error)?;
         let (commands, accesses) = self.clear_commands()?;
-        graph.insert_pass(
-            0,
-            PassDesc::new("light_tiles_clear", PassType::Transfer, vec![], vec![])
-                .with_buffer_accesses(accesses)
-                .with_commands(commands),
-        );
+        graph
+            .insert_pass(
+                0,
+                PassDesc::new("light_tiles_clear", PassType::Transfer, vec![], vec![])
+                    .with_buffer_accesses(accesses)
+                    .with_commands(commands),
+            )
+            .map_err(other_error)?;
         if graph.pass_id("geometry").is_some() {
             graph
                 .extend_pass_buffer_accesses("geometry", self.graphics_accesses()?)

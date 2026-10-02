@@ -26,6 +26,7 @@ pub struct Frame<'a, B: RenderGraphBackend> {
     pub(super) renderer: &'a mut B,
     pub(super) image_index: u32,
     pub(super) pending: HashMap<usize, PassExecutionData>,
+    invalid_pass: Option<PassId>,
     pub(super) imported_image_states: HashMap<
         super::handles::ResourceId,
         Vec<(super::ImageSubresourceRange, super::ImageSyncState)>,
@@ -79,6 +80,7 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
             renderer,
             image_index,
             pending: HashMap::new(),
+            invalid_pass: None,
             imported_image_states: HashMap::new(),
             execution_trace: super::trace::ResourceExecutionTrace::new(),
             trace_enabled: false,
@@ -96,6 +98,9 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     }
 
     pub(super) fn validate_submissions(&self) -> Result<(), RenderGraphError> {
+        if let Some(pass) = self.invalid_pass {
+            return Err(RenderGraphError::PassNotFound(format!("{pass:?}")));
+        }
         for &pass_index in self.pending.keys() {
             let pass = self
                 .graph
@@ -129,6 +134,14 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
         self.renderer
     }
 
+    fn submission_position(&mut self, pass: PassId) -> Option<usize> {
+        let index = self.graph.pass_position(pass);
+        if index.is_none() && self.invalid_pass.is_none() {
+            self.invalid_pass = Some(pass);
+        }
+        index
+    }
+
     /// Submit a draw list to a pass.
     ///
     /// The list moves into frame-owned storage for the frame's lifetime, so
@@ -136,7 +149,9 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
     /// copy instead of deep-cloning per submission. Callers keep building and
     /// uploading through `DrawList`/`execute_draw_calls` unchanged.
     pub fn submit(&mut self, pass_id: PassId, draw_list: Rc<DrawList>) -> &mut Self {
-        let index = pass_id.0 as usize;
+        let Some(index) = self.submission_position(pass_id) else {
+            return self;
+        };
 
         let counts = draw_list
             .draws
@@ -161,7 +176,9 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
 
     /// Submit a UI draw list to a pass.
     pub fn submit_ui(&mut self, pass_id: PassId, ui_draw_list: &UIDrawList) -> &mut Self {
-        let index = pass_id.0 as usize;
+        let Some(index) = self.submission_position(pass_id) else {
+            return self;
+        };
 
         let cmd_count = ui_draw_list.commands.len();
         self.pending
@@ -183,7 +200,9 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
 
     /// Dispatch compute workgroups for a pass.
     pub fn dispatch(&mut self, pass_id: PassId, x: u32, y: u32, z: u32) -> &mut Self {
-        let index = pass_id.0 as usize;
+        let Some(index) = self.submission_position(pass_id) else {
+            return self;
+        };
 
         self.pending.entry(index).or_default().dispatch = Some((x, y, z));
         self
@@ -191,7 +210,9 @@ impl<'a, B: RenderGraphBackend> Frame<'a, B> {
 
     /// Push uniform data for a pass.
     pub fn push_uniform(&mut self, pass_id: PassId, data: &[u8]) -> &mut Self {
-        let index = pass_id.0 as usize;
+        let Some(index) = self.submission_position(pass_id) else {
+            return self;
+        };
 
         self.pending
             .entry(index)

@@ -81,11 +81,13 @@ fn add_dispatch(graph: &mut FrameGraph<NativeRenderer>, name: &str, dispatch: Co
             BufferAccess::indirect_read(resource).with_range(BufferByteRange::new(offset, 12)),
         );
     }
-    graph.add_pass(
-        PassDesc::new(name, PassType::Compute, vec![], vec![])
-            .with_buffer_accesses(accesses)
-            .with_commands([ComputeCommand::Dispatch(dispatch)]),
-    );
+    graph
+        .add_pass(
+            PassDesc::new(name, PassType::Compute, vec![], vec![])
+                .with_buffer_accesses(accesses)
+                .with_commands([ComputeCommand::Dispatch(dispatch)]),
+        )
+        .unwrap();
 }
 
 #[cfg(target_os = "macos")]
@@ -172,44 +174,46 @@ fn test_native_compiled_custom_compute_direct_and_indirect_outputs() {
     let chained = graph.resource_id("chained").unwrap();
     let arguments = graph.resource_id("arguments").unwrap();
     let readback = graph.resource_id("readback").unwrap();
-    graph.add_pass(
-        PassDesc::new("initialize", PassType::Transfer, vec![], vec![])
-            .with_buffer_accesses(
-                [input, direct, indirect, chained, arguments].map(BufferAccess::transfer_write),
-            )
-            .with_commands([
-                ComputeCommand::FillBuffer {
-                    resource: input,
-                    range: BufferByteRange::WHOLE,
-                    value: 7,
-                },
-                ComputeCommand::FillBuffer {
-                    resource: direct,
-                    range: BufferByteRange::WHOLE,
-                    value: 999,
-                },
-                ComputeCommand::FillBuffer {
-                    resource: indirect,
-                    range: BufferByteRange::WHOLE,
-                    value: 999,
-                },
-                ComputeCommand::FillBuffer {
-                    resource: chained,
-                    range: BufferByteRange::WHOLE,
-                    value: 999,
-                },
-                ComputeCommand::FillBuffer {
-                    resource: arguments,
-                    range: BufferByteRange::WHOLE,
-                    value: 1,
-                },
-                ComputeCommand::FillBuffer {
-                    resource: arguments,
-                    range: BufferByteRange::new(0, 4),
-                    value: 4,
-                },
-            ]),
-    );
+    graph
+        .add_pass(
+            PassDesc::new("initialize", PassType::Transfer, vec![], vec![])
+                .with_buffer_accesses(
+                    [input, direct, indirect, chained, arguments].map(BufferAccess::transfer_write),
+                )
+                .with_commands([
+                    ComputeCommand::FillBuffer {
+                        resource: input,
+                        range: BufferByteRange::WHOLE,
+                        value: 7,
+                    },
+                    ComputeCommand::FillBuffer {
+                        resource: direct,
+                        range: BufferByteRange::WHOLE,
+                        value: 999,
+                    },
+                    ComputeCommand::FillBuffer {
+                        resource: indirect,
+                        range: BufferByteRange::WHOLE,
+                        value: 999,
+                    },
+                    ComputeCommand::FillBuffer {
+                        resource: chained,
+                        range: BufferByteRange::WHOLE,
+                        value: 999,
+                    },
+                    ComputeCommand::FillBuffer {
+                        resource: arguments,
+                        range: BufferByteRange::WHOLE,
+                        value: 1,
+                    },
+                    ComputeCommand::FillBuffer {
+                        resource: arguments,
+                        range: BufferByteRange::new(0, 4),
+                        value: 4,
+                    },
+                ]),
+        )
+        .unwrap();
     let direct_command = dispatch(
         input,
         direct,
@@ -226,25 +230,27 @@ fn test_native_compiled_custom_compute_direct_and_indirect_outputs() {
         .into_iter()
         .flat_map(u32::to_le_bytes)
         .collect();
-    graph.add_pass(
-        PassDesc::new(
-            "same pass chained dispatches",
-            PassType::Compute,
-            vec![],
-            vec![],
+    graph
+        .add_pass(
+            PassDesc::new(
+                "same pass chained dispatches",
+                PassType::Compute,
+                vec![],
+                vec![],
+            )
+            .with_buffer_accesses([
+                BufferAccess::storage_read(input),
+                BufferAccess::storage_read_write(direct),
+                BufferAccess::storage_read_write(chained),
+                BufferAccess::uniform_read(params).with_range(BufferByteRange::new(0, 16)),
+                BufferAccess::transfer_write(params).with_range(BufferByteRange::new(0, 16)),
+            ])
+            .with_commands([
+                ComputeCommand::Dispatch(direct_command),
+                ComputeCommand::Dispatch(chained_command),
+            ]),
         )
-        .with_buffer_accesses([
-            BufferAccess::storage_read(input),
-            BufferAccess::storage_read_write(direct),
-            BufferAccess::storage_read_write(chained),
-            BufferAccess::uniform_read(params).with_range(BufferByteRange::new(0, 16)),
-            BufferAccess::transfer_write(params).with_range(BufferByteRange::new(0, 16)),
-        ])
-        .with_commands([
-            ComputeCommand::Dispatch(direct_command),
-            ComputeCommand::Dispatch(chained_command),
-        ]),
-    );
+        .unwrap();
     add_dispatch(
         &mut graph,
         "indirect dispatch",
@@ -258,43 +264,45 @@ fn test_native_compiled_custom_compute_direct_and_indirect_outputs() {
             },
         ),
     );
-    graph.add_pass(
-        PassDesc::new("copy results", PassType::Transfer, vec![], vec![])
-            .with_buffer_accesses([
-                BufferAccess::transfer_read(direct),
-                BufferAccess::transfer_read(indirect),
-                BufferAccess::transfer_read(chained),
-                BufferAccess::transfer_write(readback),
-            ])
-            .with_commands([
-                ComputeCommand::CopyBuffer {
-                    source: direct,
-                    destination: readback,
-                    source_offset: 0,
-                    destination_offset: 0,
-                    size: 256,
-                },
-                ComputeCommand::CopyBuffer {
-                    source: indirect,
-                    destination: readback,
-                    source_offset: 0,
-                    destination_offset: 256,
-                    size: 256,
-                },
-                ComputeCommand::CopyBuffer {
-                    source: chained,
-                    destination: readback,
-                    source_offset: 0,
-                    destination_offset: 512,
-                    size: 256,
-                },
-            ]),
-    );
+    graph
+        .add_pass(
+            PassDesc::new("copy results", PassType::Transfer, vec![], vec![])
+                .with_buffer_accesses([
+                    BufferAccess::transfer_read(direct),
+                    BufferAccess::transfer_read(indirect),
+                    BufferAccess::transfer_read(chained),
+                    BufferAccess::transfer_write(readback),
+                ])
+                .with_commands([
+                    ComputeCommand::CopyBuffer {
+                        source: direct,
+                        destination: readback,
+                        source_offset: 0,
+                        destination_offset: 0,
+                        size: 256,
+                    },
+                    ComputeCommand::CopyBuffer {
+                        source: indirect,
+                        destination: readback,
+                        source_offset: 0,
+                        destination_offset: 256,
+                        size: 256,
+                    },
+                    ComputeCommand::CopyBuffer {
+                        source: chained,
+                        destination: readback,
+                        source_offset: 0,
+                        destination_offset: 512,
+                        size: 256,
+                    },
+                ]),
+        )
+        .unwrap();
     let mut host = PassDesc::new("host visibility", PassType::Transfer, vec![], vec![])
         .with_buffer_accesses([BufferAccess::readback_read(readback)])
         .with_commands([]);
     host.side_effect = true;
-    graph.add_pass(host);
+    graph.add_pass(host).unwrap();
     graph.compile().unwrap();
     graph.initialize_transient_buffers(&renderer).unwrap();
     graph.initialize_compute_pipelines(&mut renderer).unwrap();

@@ -113,11 +113,13 @@ fn dispatch(
         constants: Vec::new(),
         size: ComputeDispatchSize::Direct([1, 1, 1]),
     };
-    graph.add_pass(
-        PassDesc::new(name, PassType::Compute, Vec::new(), Vec::new())
-            .with_buffer_accesses(command.accesses().unwrap())
-            .with_commands([ComputeCommand::Dispatch(command)]),
-    );
+    graph
+        .add_pass(
+            PassDesc::new(name, PassType::Compute, Vec::new(), Vec::new())
+                .with_buffer_accesses(command.accesses().unwrap())
+                .with_commands([ComputeCommand::Dispatch(command)]),
+        )
+        .unwrap();
 }
 
 fn readback_graph() -> FrameGraph<NativeRenderer> {
@@ -146,24 +148,26 @@ fn prepare_copies(
         .map(|&(source, _, _)| BufferAccess::transfer_read(source))
         .collect();
     accesses.push(BufferAccess::transfer_write(readback));
-    graph.add_pass(
-        PassDesc::new(
-            "builtin output copies",
-            PassType::Transfer,
-            Vec::new(),
-            Vec::new(),
+    graph
+        .add_pass(
+            PassDesc::new(
+                "builtin output copies",
+                PassType::Transfer,
+                Vec::new(),
+                Vec::new(),
+            )
+            .with_buffer_accesses(accesses)
+            .with_commands(copies.iter().map(|&(source, destination_offset, size)| {
+                ComputeCommand::CopyBuffer {
+                    source,
+                    destination: readback,
+                    source_offset: 0,
+                    destination_offset,
+                    size,
+                }
+            })),
         )
-        .with_buffer_accesses(accesses)
-        .with_commands(copies.iter().map(|&(source, destination_offset, size)| {
-            ComputeCommand::CopyBuffer {
-                source,
-                destination: readback,
-                source_offset: 0,
-                destination_offset,
-                size,
-            }
-        })),
-    );
+        .unwrap();
     let mut host = PassDesc::new(
         "builtin host visibility",
         PassType::Transfer,
@@ -173,7 +177,7 @@ fn prepare_copies(
     .with_buffer_accesses([BufferAccess::readback_read(readback)])
     .with_commands([]);
     host.side_effect = true;
-    graph.add_pass(host);
+    graph.add_pass(host).unwrap();
     graph.compile().unwrap();
     graph.initialize_transient_buffers(renderer).unwrap();
     graph.initialize_compute_pipelines(renderer).unwrap();

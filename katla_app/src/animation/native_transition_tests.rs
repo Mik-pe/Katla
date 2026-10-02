@@ -166,30 +166,34 @@ fn test_native_agent_fade_reaches_target_after_source_completion() {
         constants: vec![],
         size: ComputeDispatchSize::Direct([1, 1, 1]),
     };
-    graph.add_pass(
-        PassDesc::new("pose", PassType::Compute, vec![], vec![])
-            .with_buffer_accesses(command.accesses().unwrap())
-            .with_commands([ComputeCommand::Dispatch(command)]),
-    );
-    graph.add_pass(
-        PassDesc::new("copy", PassType::Transfer, vec![], vec![])
-            .with_buffer_accesses([
-                BufferAccess::transfer_read(output_id),
-                BufferAccess::transfer_write(readback_id),
-            ])
-            .with_commands([ComputeCommand::CopyBuffer {
-                source: output_id,
-                destination: readback_id,
-                source_offset: 0,
-                destination_offset: 0,
-                size: 64,
-            }]),
-    );
+    graph
+        .add_pass(
+            PassDesc::new("pose", PassType::Compute, vec![], vec![])
+                .with_buffer_accesses(command.accesses().unwrap())
+                .with_commands([ComputeCommand::Dispatch(command)]),
+        )
+        .unwrap();
+    graph
+        .add_pass(
+            PassDesc::new("copy", PassType::Transfer, vec![], vec![])
+                .with_buffer_accesses([
+                    BufferAccess::transfer_read(output_id),
+                    BufferAccess::transfer_write(readback_id),
+                ])
+                .with_commands([ComputeCommand::CopyBuffer {
+                    source: output_id,
+                    destination: readback_id,
+                    source_offset: 0,
+                    destination_offset: 0,
+                    size: 64,
+                }]),
+        )
+        .unwrap();
     let mut host = PassDesc::new("host", PassType::Transfer, vec![], vec![])
         .with_buffer_accesses([BufferAccess::readback_read(readback_id)])
         .with_commands([]);
     host.side_effect = true;
-    graph.add_pass(host);
+    graph.add_pass(host).unwrap();
     graph.initialize_compute_pipelines(&mut renderer).unwrap();
     for (dt, expected_x) in [(0.0, 2.0), (0.5, 7.0), (0.5, 12.0)] {
         world.update(dt);

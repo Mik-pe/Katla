@@ -51,40 +51,48 @@ fn test_native_capture_on_off_preserves_graph_workload_and_submission() {
             range: BufferByteRange::new(0, 4),
             value: 7,
         };
-        graph.add_pass(
-            PassDesc::new("fill", PassType::Transfer, vec![], vec![])
-                .with_buffer_accesses([
-                    BufferAccess::transfer_write(value).with_range(BufferByteRange::new(0, 4))
-                ])
-                .with_commands([fill]),
-        );
+        graph
+            .add_pass(
+                PassDesc::new("fill", PassType::Transfer, vec![], vec![])
+                    .with_buffer_accesses([
+                        BufferAccess::transfer_write(value).with_range(BufferByteRange::new(0, 4))
+                    ])
+                    .with_commands([fill]),
+            )
+            .unwrap();
         let dispatch=ComputeDispatch{pipeline:ComputePipelineDesc{wgsl:"@group(0) @binding(0) var<storage,read_write> value:array<u32>; @compute @workgroup_size(1) fn cs_main(){value[0]+=5u;}".into(),entry:"cs_main".into()},bindings:vec![ComputeBinding{group:0,binding:0,resource:value,range:BufferByteRange::new(0,4)}],constants:vec![],size:ComputeDispatchSize::Direct([1,1,1])};
-        graph.add_pass(
-            PassDesc::new("compute", PassType::Compute, vec![], vec![])
-                .with_buffer_accesses(dispatch.accesses().unwrap())
-                .with_commands([ComputeCommand::Dispatch(dispatch)]),
-        );
-        graph.add_pass(
-            PassDesc::new("copy", PassType::Transfer, vec![], vec![])
-                .with_buffer_accesses([
-                    BufferAccess::transfer_read(value).with_range(BufferByteRange::new(0, 4)),
-                    BufferAccess::transfer_write(result).with_range(BufferByteRange::new(0, 4)),
-                ])
-                .with_commands([ComputeCommand::CopyBuffer {
-                    source: value,
-                    destination: result,
-                    source_offset: 0,
-                    destination_offset: 0,
-                    size: 4,
-                }]),
-        );
-        graph.add_pass(
-            PassDesc::new("host", PassType::Transfer, vec![], vec![])
-                .with_buffer_accesses([
-                    BufferAccess::readback_read(result).with_range(BufferByteRange::new(0, 4))
-                ])
-                .with_side_effect(),
-        );
+        graph
+            .add_pass(
+                PassDesc::new("compute", PassType::Compute, vec![], vec![])
+                    .with_buffer_accesses(dispatch.accesses().unwrap())
+                    .with_commands([ComputeCommand::Dispatch(dispatch)]),
+            )
+            .unwrap();
+        graph
+            .add_pass(
+                PassDesc::new("copy", PassType::Transfer, vec![], vec![])
+                    .with_buffer_accesses([
+                        BufferAccess::transfer_read(value).with_range(BufferByteRange::new(0, 4)),
+                        BufferAccess::transfer_write(result).with_range(BufferByteRange::new(0, 4)),
+                    ])
+                    .with_commands([ComputeCommand::CopyBuffer {
+                        source: value,
+                        destination: result,
+                        source_offset: 0,
+                        destination_offset: 0,
+                        size: 4,
+                    }]),
+            )
+            .unwrap();
+        graph
+            .add_pass(
+                PassDesc::new("host", PassType::Transfer, vec![], vec![])
+                    .with_buffer_accesses([
+                        BufferAccess::readback_read(result).with_range(BufferByteRange::new(0, 4))
+                    ])
+                    .with_side_effect(),
+            )
+            .unwrap();
         let backbuffer = graph.resource_id("backbuffer").unwrap();
         let mut packet =
             test_support::vertices(material, crate::vertex::VertexLayout::new(vec![]), 3);
@@ -95,20 +103,22 @@ fn test_native_capture_on_off_preserves_graph_workload_and_submission() {
             range: BufferByteRange::new(0, 4),
             stages: ShaderStages::FRAGMENT,
         });
-        graph.add_pass(
-            {
-                let mut pass =
-                    PassDesc::new("render", PassType::Graphics, vec![], vec![backbuffer]);
-                pass.kind = Some(PassKind::Fullscreen);
-                pass.color_attachments
-                    .push((backbuffer, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
-                pass
-            }
-            .with_buffer_accesses([BufferAccess::storage_read(value)
-                .with_stage(ResourceAccessStage::FragmentShader)
-                .with_range(BufferByteRange::new(0, 4))])
-            .with_bindings(packet),
-        );
+        graph
+            .add_pass(
+                {
+                    let mut pass =
+                        PassDesc::new("render", PassType::Graphics, vec![], vec![backbuffer]);
+                    pass.kind = Some(PassKind::Fullscreen);
+                    pass.color_attachments
+                        .push((backbuffer, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
+                    pass
+                }
+                .with_buffer_accesses([BufferAccess::storage_read(value)
+                    .with_stage(ResourceAccessStage::FragmentShader)
+                    .with_range(BufferByteRange::new(0, 4))])
+                .with_bindings(packet),
+            )
+            .unwrap();
         graph.compile().unwrap();
         graph.initialize_compute_pipelines(&mut renderer).unwrap();
         graph.set_execution_trace(enabled);

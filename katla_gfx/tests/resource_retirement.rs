@@ -264,15 +264,19 @@ fn test_destroy_material_and_skeleton_retire_native_objects() {
             constants: Vec::new(),
             size: ComputeDispatchSize::Direct([1, 1, 1]),
         };
-        read_graph.add_pass(
-            PassDesc::new("read_joints", PassType::Compute, vec![], vec![])
-                .with_buffer_accesses(dispatch.accesses().unwrap())
-                .with_commands([ComputeCommand::Dispatch(dispatch)]),
-        );
-        read_graph.add_pass(
-            PassDesc::new("host_value", PassType::Transfer, vec![], vec![])
-                .with_buffer_accesses([BufferAccess::readback_read(destination)]),
-        );
+        read_graph
+            .add_pass(
+                PassDesc::new("read_joints", PassType::Compute, vec![], vec![])
+                    .with_buffer_accesses(dispatch.accesses().unwrap())
+                    .with_commands([ComputeCommand::Dispatch(dispatch)]),
+            )
+            .unwrap();
+        read_graph
+            .add_pass(
+                PassDesc::new("host_value", PassType::Transfer, vec![], vec![])
+                    .with_buffer_accesses([BufferAccess::readback_read(destination)]),
+            )
+            .unwrap();
         renderer.render(&token, &mut read_graph, |_| {}).unwrap();
         assert_eq!(
             renderer

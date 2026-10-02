@@ -55,6 +55,10 @@ pub(super) enum WriteTargetRole {
 /// Built once from a [`FrameGraphBuilder`], executed many times per frame.
 /// Generic over the GPU backend (`VulkanRenderer` or `MetalRenderer`).
 pub struct FrameGraph<B: RenderGraphBackend> {
+    graph_identity: u64,
+    pass_ids: Vec<PassId>,
+    pass_positions: Vec<usize>,
+
     /// Pass descriptors in execution order.
     pub(super) passes: Vec<PassDesc>,
 
@@ -139,6 +143,9 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
     /// Create a new empty frame graph.
     pub fn new() -> Self {
         Self {
+            graph_identity: super::handles::next_graph_identity(),
+            pass_ids: Vec::new(),
+            pass_positions: Vec::new(),
             passes: Vec::new(),
             resources: Vec::new(),
             resource_by_name: HashMap::new(),
@@ -166,25 +173,60 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         }
     }
 
-    /// Add a pass to the graph.
-    pub fn add_pass(&mut self, pass: PassDesc) -> PassId {
-        let index = self.passes.len();
-        self.pass_names.insert(pass.name.clone(), index);
-        self.passes.push(pass);
-        self.compiled = false;
-        self.execution_plan = None;
-        PassId(index as u32)
+    /// Append a uniquely named pass and return its stable graph-owned handle.
+    pub fn add_pass(&mut self, pass: PassDesc) -> Result<PassId, RenderGraphError> {
+        self.insert_pass(self.passes.len(), pass)
     }
 
-    /// Insert a pass at a specific index, reindexing all subsequent passes.
-    pub fn insert_pass(&mut self, index: usize, pass: PassDesc) {
-        self.passes.insert(index, pass);
-        self.pass_names.clear();
-        for (i, p) in self.passes.iter().enumerate() {
-            self.pass_names.insert(p.name.clone(), i);
+    /// Insert a uniquely named pass without invalidating existing pass handles.
+    ///
+    /// Invalid positions, empty names and duplicate names leave the graph intact.
+    pub fn insert_pass(
+        &mut self,
+        index: usize,
+        pass: PassDesc,
+    ) -> Result<PassId, RenderGraphError> {
+        if index > self.passes.len() {
+            return Err(RenderGraphError::InvalidConfiguration(format!(
+                "Pass insertion index {index} exceeds pass count {}",
+                self.passes.len()
+            )));
         }
+        if pass.name.trim().is_empty() {
+            return Err(GraphValidationError::EmptyPassName.into());
+        }
+        if self.pass_names.contains_key(&pass.name) {
+            return Err(GraphValidationError::DuplicatePassName(pass.name).into());
+        }
+        let id = PassId {
+            graph: self.graph_identity,
+            slot: self.pass_positions.len(),
+        };
+        if index < self.passes.len() {
+            for position in self
+                .pass_positions
+                .iter_mut()
+                .chain(self.pass_names.values_mut())
+            {
+                if *position >= index {
+                    *position += 1;
+                }
+            }
+        }
+        self.pass_positions.push(index);
+        self.pass_ids.insert(index, id);
+        self.pass_names.insert(pass.name.clone(), index);
+        self.passes.insert(index, pass);
         self.compiled = false;
         self.execution_plan = None;
+        Ok(id)
+    }
+
+    #[inline]
+    pub(crate) fn pass_position(&self, id: PassId) -> Option<usize> {
+        (id.graph == self.graph_identity)
+            .then(|| self.pass_positions.get(id.slot).copied())
+            .flatten()
     }
 
     /// Create or get a ResourceId for a named resource.
@@ -231,9 +273,10 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
 
     /// Return the liveness of a pass in the current compiled plan.
     pub fn is_pass_live(&self, pass_id: PassId) -> Option<bool> {
+        let index = self.pass_position(pass_id)?;
         self.execution_plan
             .as_ref()
-            .and_then(|plan| plan.live_passes.get(pass_id.0 as usize).copied())
+            .and_then(|plan| plan.live_passes.get(index).copied())
     }
 
     pub(crate) fn is_pass_index_live(&self, pass_index: usize) -> bool {
@@ -598,7 +641,7 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
 
     /// Get a pass handle by name.
     pub fn pass_id(&self, name: &str) -> Option<PassId> {
-        self.pass_names.get(name).map(|&idx| PassId(idx as u32))
+        self.pass_names.get(name).map(|&idx| self.pass_ids[idx])
     }
 
     /// Cleanup and destroy all transient textures.

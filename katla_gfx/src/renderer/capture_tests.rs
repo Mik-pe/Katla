@@ -59,40 +59,48 @@ fn test_vulkan_native_capture_on_off_preserves_graph_workload_and_submission() {
             range: BufferByteRange::new(0, 4),
             value: 7,
         };
-        graph.add_pass(
-            PassDesc::new("fill", PassType::Transfer, vec![], vec![])
-                .with_buffer_accesses([
-                    BufferAccess::transfer_write(value).with_range(BufferByteRange::new(0, 4))
-                ])
-                .with_commands([fill]),
-        );
+        graph
+            .add_pass(
+                PassDesc::new("fill", PassType::Transfer, vec![], vec![])
+                    .with_buffer_accesses([
+                        BufferAccess::transfer_write(value).with_range(BufferByteRange::new(0, 4))
+                    ])
+                    .with_commands([fill]),
+            )
+            .unwrap();
         let dispatch=ComputeDispatch{pipeline:ComputePipelineDesc{wgsl:"@group(0) @binding(0) var<storage,read_write> value:array<u32>; @compute @workgroup_size(1) fn cs_main(){value[0]+=5u;}".into(),entry:"cs_main".into()},bindings:vec![ComputeBinding{group:0,binding:0,resource:value,range:BufferByteRange::new(0,4)}],constants:vec![],size:ComputeDispatchSize::Direct([1,1,1])};
-        graph.add_pass(
-            PassDesc::new("compute", PassType::Compute, vec![], vec![])
-                .with_buffer_accesses(dispatch.accesses().unwrap())
-                .with_commands([ComputeCommand::Dispatch(dispatch)]),
-        );
-        graph.add_pass(
-            PassDesc::new("copy", PassType::Transfer, vec![], vec![])
-                .with_buffer_accesses([
-                    BufferAccess::transfer_read(value).with_range(BufferByteRange::new(0, 4)),
-                    BufferAccess::transfer_write(result).with_range(BufferByteRange::new(0, 4)),
-                ])
-                .with_commands([ComputeCommand::CopyBuffer {
-                    source: value,
-                    destination: result,
-                    source_offset: 0,
-                    destination_offset: 0,
-                    size: 4,
-                }]),
-        );
-        graph.add_pass(
-            PassDesc::new("host", PassType::Transfer, vec![], vec![])
-                .with_buffer_accesses([
-                    BufferAccess::readback_read(result).with_range(BufferByteRange::new(0, 4))
-                ])
-                .with_side_effect(),
-        );
+        graph
+            .add_pass(
+                PassDesc::new("compute", PassType::Compute, vec![], vec![])
+                    .with_buffer_accesses(dispatch.accesses().unwrap())
+                    .with_commands([ComputeCommand::Dispatch(dispatch)]),
+            )
+            .unwrap();
+        graph
+            .add_pass(
+                PassDesc::new("copy", PassType::Transfer, vec![], vec![])
+                    .with_buffer_accesses([
+                        BufferAccess::transfer_read(value).with_range(BufferByteRange::new(0, 4)),
+                        BufferAccess::transfer_write(result).with_range(BufferByteRange::new(0, 4)),
+                    ])
+                    .with_commands([ComputeCommand::CopyBuffer {
+                        source: value,
+                        destination: result,
+                        source_offset: 0,
+                        destination_offset: 0,
+                        size: 4,
+                    }]),
+            )
+            .unwrap();
+        graph
+            .add_pass(
+                PassDesc::new("host", PassType::Transfer, vec![], vec![])
+                    .with_buffer_accesses([
+                        BufferAccess::readback_read(result).with_range(BufferByteRange::new(0, 4))
+                    ])
+                    .with_side_effect(),
+            )
+            .unwrap();
         let backbuffer = graph.resource_id("backbuffer").unwrap();
         let mut packet = vertices(material, crate::vertex::VertexLayout::new(vec![]), 3);
         packet.buffers.push(BufferBinding {
@@ -102,20 +110,22 @@ fn test_vulkan_native_capture_on_off_preserves_graph_workload_and_submission() {
             range: BufferByteRange::new(0, 4),
             stages: ShaderStages::FRAGMENT,
         });
-        graph.add_pass(
-            {
-                let mut pass =
-                    PassDesc::new("render", PassType::Graphics, vec![], vec![backbuffer]);
-                pass.kind = Some(PassKind::Fullscreen);
-                pass.color_attachments
-                    .push((backbuffer, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
-                pass
-            }
-            .with_buffer_accesses([BufferAccess::storage_read(value)
-                .with_stage(ResourceAccessStage::FragmentShader)
-                .with_range(BufferByteRange::new(0, 4))])
-            .with_bindings(packet),
-        );
+        graph
+            .add_pass(
+                {
+                    let mut pass =
+                        PassDesc::new("render", PassType::Graphics, vec![], vec![backbuffer]);
+                    pass.kind = Some(PassKind::Fullscreen);
+                    pass.color_attachments
+                        .push((backbuffer, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
+                    pass
+                }
+                .with_buffer_accesses([BufferAccess::storage_read(value)
+                    .with_stage(ResourceAccessStage::FragmentShader)
+                    .with_range(BufferByteRange::new(0, 4))])
+                .with_bindings(packet),
+            )
+            .unwrap();
         graph.compile().unwrap();
         graph.initialize_compute_pipelines(&mut renderer).unwrap();
         graph.set_execution_trace(enabled);
@@ -269,24 +279,26 @@ fn test_headless_resize_retires_sources_and_preserves_queued_readback() {
         .build::<VulkanRenderer>()
         .unwrap();
     let value = graph.import_buffer("value", buffer, desc).unwrap();
-    graph.add_pass(
-        PassDesc::new("fill", PassType::Transfer, vec![], vec![])
-            .with_buffer_accesses([
-                BufferAccess::transfer_write(value).with_range(BufferByteRange::new(0, 4))
-            ])
-            .with_commands([ComputeCommand::FillBuffer {
-                resource: value,
-                range: BufferByteRange::new(0, 4),
-                value: 7,
-            }])
-            .with_side_effect(),
-    );
+    graph
+        .add_pass(
+            PassDesc::new("fill", PassType::Transfer, vec![], vec![])
+                .with_buffer_accesses([
+                    BufferAccess::transfer_write(value).with_range(BufferByteRange::new(0, 4))
+                ])
+                .with_commands([ComputeCommand::FillBuffer {
+                    resource: value,
+                    range: BufferByteRange::new(0, 4),
+                    value: 7,
+                }])
+                .with_side_effect(),
+        )
+        .unwrap();
     let backbuffer = graph.resource_id("backbuffer").unwrap();
     let mut clear = PassDesc::new("clear", PassType::Graphics, vec![], vec![backbuffer]);
     clear
         .color_attachments
         .push((backbuffer, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
-    graph.add_pass(clear);
+    graph.add_pass(clear).unwrap();
     graph.compile().unwrap();
     let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
         panic!("headless acquisition");
@@ -337,31 +349,35 @@ fn submission_graph(
         .build()
         .unwrap();
     let resource = graph.import_buffer("counter", buffer, desc).unwrap();
-    graph.add_pass(
-        PassDesc::new("counter", PassType::Transfer, vec![], vec![])
-            .with_buffer_accesses([
-                BufferAccess::transfer_write(resource).with_range(BufferByteRange::new(0, 4))
-            ])
-            .with_commands([ComputeCommand::FillBuffer {
-                resource,
-                range: BufferByteRange::new(0, 4),
-                value,
-            }])
-            .with_side_effect(),
-    );
-    graph.add_pass(
-        PassDesc::new("host", PassType::Transfer, vec![], vec![])
-            .with_buffer_accesses([
-                BufferAccess::readback_read(resource).with_range(BufferByteRange::new(0, 4))
-            ])
-            .with_side_effect(),
-    );
+    graph
+        .add_pass(
+            PassDesc::new("counter", PassType::Transfer, vec![], vec![])
+                .with_buffer_accesses([
+                    BufferAccess::transfer_write(resource).with_range(BufferByteRange::new(0, 4))
+                ])
+                .with_commands([ComputeCommand::FillBuffer {
+                    resource,
+                    range: BufferByteRange::new(0, 4),
+                    value,
+                }])
+                .with_side_effect(),
+        )
+        .unwrap();
+    graph
+        .add_pass(
+            PassDesc::new("host", PassType::Transfer, vec![], vec![])
+                .with_buffer_accesses([
+                    BufferAccess::readback_read(resource).with_range(BufferByteRange::new(0, 4))
+                ])
+                .with_side_effect(),
+        )
+        .unwrap();
     let backbuffer = graph.resource_id("backbuffer").unwrap();
     let mut clear = PassDesc::new("clear", PassType::Graphics, vec![], vec![backbuffer]);
     clear
         .color_attachments
         .push((backbuffer, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
-    graph.add_pass(clear);
+    graph.add_pass(clear).unwrap();
     graph.compile().unwrap();
     graph
 }
@@ -523,7 +539,7 @@ fn test_completed_buffer_owner_remains_ready_when_frame_fence_is_reused() {
     clear
         .color_attachments
         .push((backbuffer, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
-    graph.add_pass(clear);
+    graph.add_pass(clear).unwrap();
     graph.compile().unwrap();
     for _ in 0..2 {
         let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
@@ -668,13 +684,13 @@ fn test_declared_small_depth_and_hdr_targets_resolve_native_extent_and_format() 
     depth.depth_attachment =
         Some(crate::render_pass::DepthStencilAttachmentOps::reverse_z_default());
     depth.image_accesses = vec![ImageAccess::depth_attachment_write(depth_id)];
-    graph.add_pass(depth);
+    graph.add_pass(depth).unwrap();
     let mut draw = PassDesc::new("hdr-draw", PassType::Graphics, vec![], vec![hdr]);
     draw.color_attachments
         .push((hdr, AttachmentOps::clear(ClearValue::OPAQUE_BLACK)));
     draw.image_accesses = vec![ImageAccess::color_attachment_write(hdr)];
     draw.bindings = vertices(material, crate::VertexLayout::empty(), 3);
-    graph.add_pass(draw);
+    graph.add_pass(draw).unwrap();
     graph.compile().unwrap();
     let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
         panic!("headless acquisition")
@@ -695,6 +711,87 @@ fn test_declared_small_depth_and_hdr_targets_resolve_native_extent_and_format() 
         [0, 0, 0, 0, 0, 60, 0, 60]
     );
     std::fs::remove_file(shader_path).unwrap();
+    graph.cleanup();
+    renderer.destroy();
+    let errors = errors.lock().unwrap();
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[test]
+#[ignore = "requires a Vulkan device"]
+fn test_stable_graph_pass_submission_and_foreign_handle_recovery() {
+    let mut renderer = VulkanRenderer::init_headless(
+        8,
+        8,
+        ValidationMode::Enabled,
+        c"stable graph passes".into(),
+        c"Katla".into(),
+    )
+    .unwrap();
+    assert!(renderer.context.validation_active());
+    let errors = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = errors.clone();
+    renderer
+        .context
+        .set_validation_callback(move |message, level| {
+            if level == crate::ValidationLevel::Error {
+                captured.lock().unwrap().push(message.to_owned());
+            }
+        });
+    let mut other = FrameGraph::<VulkanRenderer>::new();
+    let foreign = other
+        .add_pass(PassDesc::new("foreign", PassType::Graphics, vec![], vec![]))
+        .unwrap();
+    let mut graph = FrameGraphBuilder::new()
+        .add_pass(
+            GeometryPass::new("clear")
+                .without_depth()
+                .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb),
+        )
+        .build::<VulkanRenderer>()
+        .unwrap();
+    let saved = graph.pass_id("clear").unwrap();
+    graph
+        .insert_pass(
+            0,
+            PassDesc::new("before", PassType::Graphics, vec![], vec![]),
+        )
+        .unwrap();
+    let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
+        panic!("headless acquisition");
+    };
+    let error = renderer
+        .render(&frame, &mut graph, |frame| {
+            frame.submit(foreign, std::rc::Rc::new(crate::DrawList::new()));
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("not found"), "{error}");
+    GpuRenderer::abort(&mut renderer, frame).unwrap();
+    let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
+        panic!("headless acquisition");
+    };
+    renderer
+        .render(&frame, &mut graph, |frame| {
+            frame.submit(saved, std::rc::Rc::new(crate::DrawList::new()));
+        })
+        .unwrap();
+    renderer.present(frame).unwrap();
+    renderer.wait_for_device();
+    let source = renderer
+        .graph_texture_source(graph.resource_id("backbuffer").unwrap())
+        .unwrap();
+    let ticket = renderer
+        .queue_texture_readback(source, crate::TextureReadbackRegion::pixel(0, 0))
+        .unwrap();
+    renderer.wait_for_device();
+    assert_eq!(
+        renderer
+            .poll_texture_readback(ticket)
+            .unwrap()
+            .unwrap()
+            .bytes,
+        vec![0, 0, 0, 255]
+    );
     graph.cleanup();
     renderer.destroy();
     let errors = errors.lock().unwrap();

@@ -42,16 +42,18 @@ fn test_native_compute_rejects_range_beyond_renderer_owned_allocation() {
         bindings:vec![ComputeBinding{group:0,binding:0,resource:input,range:BufferByteRange::new(0,200)},ComputeBinding{group:0,binding:1,resource:output,range:BufferByteRange::new(0,4)}],
         constants:Vec::new(),size:ComputeDispatchSize::Direct([1,1,1]),
     };
-    graph.add_pass(
-        PassDesc::new(
-            "invalid live range",
-            PassType::Compute,
-            Vec::new(),
-            Vec::new(),
+    graph
+        .add_pass(
+            PassDesc::new(
+                "invalid live range",
+                PassType::Compute,
+                Vec::new(),
+                Vec::new(),
+            )
+            .with_buffer_accesses(command.accesses().unwrap())
+            .with_commands([ComputeCommand::Dispatch(command)]),
         )
-        .with_buffer_accesses(command.accesses().unwrap())
-        .with_commands([ComputeCommand::Dispatch(command)]),
-    );
+        .unwrap();
     graph.compile().unwrap();
     graph.initialize_transient_buffers(&renderer).unwrap();
     graph.initialize_compute_pipelines(&mut renderer).unwrap();
@@ -94,11 +96,13 @@ fn test_native_unprepared_compute_abort_releases_recording_before_slot_reuse() {
         constants: vec![],
         size: ComputeDispatchSize::Direct([1, 1, 1]),
     };
-    failed.add_pass(
-        PassDesc::new("deliberately unprepared", PassType::Compute, vec![], vec![])
-            .with_commands([ComputeCommand::Dispatch(dispatch)])
-            .with_side_effect(),
-    );
+    failed
+        .add_pass(
+            PassDesc::new("deliberately unprepared", PassType::Compute, vec![], vec![])
+                .with_commands([ComputeCommand::Dispatch(dispatch)])
+                .with_side_effect(),
+        )
+        .unwrap();
     let frame = acquire(&mut renderer);
     let error = renderer.render(&frame, &mut failed, |_| {}).unwrap_err();
     assert!(

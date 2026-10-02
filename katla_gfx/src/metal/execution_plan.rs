@@ -6,7 +6,7 @@
 
 use crate::render_graph::{
     BufferAccess, BufferByteRange, BufferSyncOp, FrameGraph, ImageAccess, ImageSyncOp, PassDesc,
-    PassId, PassKind, PassType, RenderGraphError, ResourceId,
+    PassKind, PassType, RenderGraphError, ResourceId,
 };
 use crate::render_pass::{ClearValue, LoadOp, StoreOp};
 use crate::texture::ImageFormat;
@@ -40,7 +40,6 @@ pub(crate) struct MetalDepthAttachmentOps {
 /// Stable executable identity and resource contract for one compiled pass.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct MetalPassRecord {
-    pub(crate) pass_id: PassId,
     pub(crate) pass_index: usize,
     pub(crate) name: String,
     pub(crate) kind: PassKind,
@@ -67,7 +66,6 @@ impl MetalPassRecord {
         let kind = pass.kind.unwrap_or(PassKind::Geometry);
 
         Ok(Self {
-            pass_id: PassId(pass_index as u32),
             pass_index,
             name: pass.name.clone(),
             kind,
@@ -184,7 +182,7 @@ impl MetalPassRecord {
 
         format!(
             "{}:{}:{:?}:reads=[{}]:writes=[{}]:colors=[{}]:uses_depth={}:depth={}",
-            self.pass_id.0,
+            self.pass_index,
             self.name,
             self.kind,
             reads,
@@ -350,7 +348,6 @@ impl MetalExecutionPlan {
                 .copied()
                 .enumerate()
                 .map(|(pass_index, kind)| MetalPassRecord {
-                    pass_id: PassId(pass_index as u32),
                     pass_index,
                     name: format!("pass_{pass_index}"),
                     kind,
@@ -461,8 +458,8 @@ mod tests {
 
         let plan = compile(&passes, &[0, 1, 2, 3]).unwrap();
         assert_eq!(plan.passes().len(), 4);
-        assert_eq!(plan.passes()[0].pass_id, PassId(0));
-        assert_eq!(plan.passes()[1].pass_id, PassId(1));
+        assert_eq!(plan.passes()[0].pass_index, 0);
+        assert_eq!(plan.passes()[1].pass_index, 1);
         assert_eq!(plan.passes()[2].kind, PassKind::Fullscreen);
         assert_eq!(plan.passes()[3].kind, PassKind::Fullscreen);
     }

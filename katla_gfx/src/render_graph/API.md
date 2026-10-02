@@ -106,8 +106,11 @@ stages and minimum spans. Constants identify their reflected group/binding/stage
 no hidden tonemap, overlay, light or shadow write mutates object storage.
 
 `set_pass_commands(PassId, commands, accesses)` replaces an explicitly authored
-compute/transfer workload and its buffer accesses together. Applications refresh
-pass IDs after inserting passes. Shader/pipeline preparation occurs before encoding
+compute/transfer workload and its buffer accesses together. Applications obtain
+pass handles from their owning graph. Handles survive pass insertion; handles from
+another graph are rejected before mutation or native execution. Appending and
+inserting passes return typed errors for invalid positions or names and leave
+the graph intact on failure. Shader/pipeline preparation occurs before encoding
 and uses the compiled live pass order. Services can explicitly prepare an authored
 compute descriptor before acquiring a frame when its pass becomes live later.
 

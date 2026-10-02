@@ -577,7 +577,7 @@ impl FrameGraphBuilder {
                 pass.compositing_viewports = Some(comp_data.viewports.clone());
             }
 
-            graph.add_pass(pass);
+            graph.add_pass(pass)?;
         }
 
         graph.compile()?;

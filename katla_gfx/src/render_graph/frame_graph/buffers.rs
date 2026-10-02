@@ -248,10 +248,10 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         commands: Vec<crate::render_graph::compute::ComputeCommand>,
         accesses: Vec<crate::render_graph::BufferAccess>,
     ) -> Result<(), RenderGraphError> {
-        let pass = self
-            .passes
-            .get_mut(pass_id.0 as usize)
-            .ok_or_else(|| RenderGraphError::PassNotFound(format!("PassId({})", pass_id.0)))?;
+        let index = self
+            .pass_position(pass_id)
+            .ok_or_else(|| RenderGraphError::PassNotFound(format!("{pass_id:?}")))?;
+        let pass = &mut self.passes[index];
         pass.commands = commands;
         pass.set_buffer_accesses(accesses);
         self.compiled = false;
@@ -265,10 +265,10 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         pass_id: PassId,
         bindings: crate::renderer::frame_bindings::PassBindings,
     ) -> Result<(), RenderGraphError> {
-        let pass = self
-            .passes
-            .get_mut(pass_id.0 as usize)
-            .ok_or_else(|| RenderGraphError::PassNotFound(format!("PassId({})", pass_id.0)))?;
+        let index = self
+            .pass_position(pass_id)
+            .ok_or_else(|| RenderGraphError::PassNotFound(format!("{pass_id:?}")))?;
+        let pass = &mut self.passes[index];
         pass.bindings = bindings;
         self.compiled = false;
         self.execution_plan = None;

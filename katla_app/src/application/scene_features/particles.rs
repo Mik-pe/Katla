@@ -374,14 +374,16 @@ impl ParticleFeatures {
                 vec![],
                 vec![],
             );
-            graph.insert_pass(
-                0,
-                if name == "particle_host_ready" {
-                    pass.with_side_effect()
-                } else {
-                    pass
-                },
-            );
+            graph
+                .insert_pass(
+                    0,
+                    if name == "particle_host_ready" {
+                        pass.with_side_effect()
+                    } else {
+                        pass
+                    },
+                )
+                .map_err(other_error)?;
         }
         self.set_workload(graph, 0, true)?;
         if graph.pass_id("particles").is_some() {

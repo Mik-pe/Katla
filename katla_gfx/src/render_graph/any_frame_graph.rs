@@ -42,7 +42,7 @@ impl AnyFrameGraph {
         }
     }
 
-    pub fn add_pass(&mut self, pass: PassDesc) -> PassId {
+    pub fn add_pass(&mut self, pass: PassDesc) -> Result<PassId, RenderGraphError> {
         match self {
             AnyFrameGraph::Vulkan(fg) => fg.add_pass(pass),
             #[cfg(target_os = "macos")]
@@ -50,7 +50,11 @@ impl AnyFrameGraph {
         }
     }
 
-    pub fn insert_pass(&mut self, index: usize, pass: PassDesc) {
+    pub fn insert_pass(
+        &mut self,
+        index: usize,
+        pass: PassDesc,
+    ) -> Result<PassId, RenderGraphError> {
         match self {
             AnyFrameGraph::Vulkan(fg) => fg.insert_pass(index, pass),
             #[cfg(target_os = "macos")]

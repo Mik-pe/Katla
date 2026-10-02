@@ -403,7 +403,7 @@ fn install_graphics_data(graph: &mut AnyFrameGraph, uniforms: Option<&ShaderFram
             });
         }
         graph
-            .set_pass_bindings(PassId(pass.index as u32), packet)
+            .set_pass_bindings(graph.pass_id(&pass.name).expect("declared pass"), packet)
             .expect("explicit graphics bindings");
     }
 }

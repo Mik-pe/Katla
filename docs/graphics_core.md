@@ -86,6 +86,12 @@ future workloads, such as animation before the first skeleton is loaded, call
 Neither preparation operation inserts work into a frame. Encoding requires a
 prepared pipeline and reports a missing one without compiling on the frame path.
 
+Pass handles are opaque identities owned by one graph. Inserting a pass changes
+execution order without redirecting saved handles. Mutation rejects foreign
+handles, and frame submission validates them before native encoding. Pass
+insertion returns errors for invalid positions and duplicate or empty names
+without changing the graph or its compiled plan.
+
 ## Frame and resource ownership
 
 Acquire a `FrameToken`, select the application's resources for that reusable
