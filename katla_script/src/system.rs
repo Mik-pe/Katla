@@ -168,7 +168,8 @@ pub struct PendingScriptVarEdits(
 /// # Thread Safety
 ///
 /// **Warning:** `ScriptSystem` is NOT thread-safe (`!Send + !Sync`).
-/// The ECS should run this system on a single thread only.
+/// Register it with `World::register_exclusive_system`; the scheduler executes it
+/// on the calling thread and separates it from parallel typed systems.
 pub struct ScriptSystem {
     engine: ScriptEngine,
     event_bus: EventBus,
@@ -759,5 +760,34 @@ impl ScriptSystem {
         if let Some(inspector) = world.get_resource_mut::<ScriptInspectorData>() {
             inspector.entries = entries;
         }
+    }
+}
+
+#[cfg(test)]
+mod scheduler_tests {
+    use super::*;
+    use katla_ecs::SystemExecutionOrder;
+    use std::cell::Cell;
+
+    #[test]
+    fn test_script_exclusive_scheduler_preserves_thread_and_play_gate() {
+        let owner = std::thread::current().id();
+        let calls = Rc::new(Cell::new(0));
+        let captured = Rc::clone(&calls);
+        let scripts = ScriptSystem::new()
+            .unwrap()
+            .with_transform_provider(move |_| {
+                assert_eq!(std::thread::current().id(), owner);
+                captured.set(captured.get() + 1);
+                Vec::new()
+            });
+        let mut world = World::new();
+        world.register_exclusive_system(Box::new(scripts), SystemExecutionOrder::NORMAL);
+        world.update_parallel(0.016);
+        assert_eq!(calls.get(), 0);
+        world.insert_resource(ScriptsActive(true));
+        world.update_parallel(0.016);
+        world.update(0.016);
+        assert_eq!(calls.get(), 2);
     }
 }

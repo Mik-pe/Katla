@@ -42,7 +42,7 @@ impl EntityAllocator {
             EntityId::new(index, slot.generation)
         } else {
             // Allocate a new slot
-            let index = self.slots.len() as u32;
+            let index = u32::try_from(self.slots.len()).expect("entity index space exhausted");
             self.slots.push(EntitySlot::occupied(0));
             EntityId::new(index, 0)
         }
@@ -68,10 +68,12 @@ impl EntityAllocator {
         }
 
         slot.occupied = false;
-        // Increment generation to invalidate stale references
-        // Wrapping add handles generation overflow gracefully
-        slot.generation = slot.generation.wrapping_add(1);
-        self.free_indices.push(id.index());
+        if let Some(generation) = slot.generation.checked_add(1) {
+            slot.generation = generation;
+            self.free_indices.push(id.index());
+        } else {
+            slot.retired = true;
+        }
         self.live_count -= 1;
 
         true
@@ -105,10 +107,22 @@ impl EntityAllocator {
         self.live_count
     }
 
-    /// Clears all entities and resets the allocator.
+    /// Invalidates live IDs while retaining slot generations for safe reuse.
     pub fn clear(&mut self) {
-        self.slots.clear();
         self.free_indices.clear();
+        for (index, slot) in self.slots.iter_mut().enumerate().rev() {
+            if slot.occupied {
+                slot.occupied = false;
+                if let Some(generation) = slot.generation.checked_add(1) {
+                    slot.generation = generation;
+                } else {
+                    slot.retired = true;
+                }
+            }
+            if !slot.retired {
+                self.free_indices.push(index as u32);
+            }
+        }
         self.live_count = 0;
     }
 }
@@ -166,18 +180,21 @@ mod tests {
     }
 
     #[test]
-    fn test_generation_overflow() {
+    fn test_generation_exhaustion_retires_slot() {
         let mut allocator = EntityAllocator::new();
         let id1 = allocator.allocate();
         let index = id1.index();
 
         // Manually set generation to max
         allocator.slots[index as usize].generation = u32::MAX;
-        allocator.deallocate(id1);
-
-        // Generation should wrap to 0
+        let last_id = EntityId::new(index, u32::MAX);
+        assert!(allocator.deallocate(last_id));
         let id2 = allocator.allocate();
-        assert_eq!(id2.generation(), 0);
+        assert_ne!(id2.index(), index);
+        assert!(!allocator.is_valid(id1));
+        assert!(!allocator.is_valid(last_id));
+        allocator.clear();
+        assert_ne!(allocator.allocate().index(), index);
     }
 
     #[test]
@@ -246,7 +263,7 @@ mod tests {
     #[test]
     fn test_allocator_clear_resets_state() {
         let mut allocator = EntityAllocator::new();
-        allocator.allocate();
+        let first = allocator.allocate();
         allocator.allocate();
         allocator.allocate();
 
@@ -255,9 +272,9 @@ mod tests {
         assert_eq!(allocator.live_count(), 0);
         assert_eq!(allocator.iter_live().count(), 0);
 
-        // Should be able to allocate fresh IDs after clear
         let id = allocator.allocate();
         assert_eq!(id.index(), 0);
-        assert_eq!(id.generation(), 0);
+        assert_eq!(id.generation(), 1);
+        assert!(!allocator.is_valid(first));
     }
 }

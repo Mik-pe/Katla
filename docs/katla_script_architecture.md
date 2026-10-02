@@ -599,7 +599,7 @@ This could be split into two systems (ScriptSpawnSystem at EARLY, ScriptUpdateSy
    - CI needs C++ toolchain (usually present on GitHub Actions).
    - Cross-compilation may need additional setup.
 
-4. **Thread safety**: `Lua` is `!Send` and `!Sync`. The ScriptSystem must run on the main thread. This is fine for Katla's single-threaded ECS update model but would need thought if parallel ECS updates are introduced.
+4. **Thread safety**: `Lua` is `!Send` and `!Sync`. The ScriptSystem must run on the main thread. Register ScriptSystem through the exclusive system path: the common ECS scheduler runs it on the calling thread with no overlapping typed workers.
 
 5. **Error handling in scripts**: A script error should not crash the engine. All hook calls must be wrapped in `catch_unwind`-equivalent error handling:
    ```rust

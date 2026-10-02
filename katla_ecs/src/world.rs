@@ -3,10 +3,13 @@ use crate::components::Component;
 use crate::entity::EntityId;
 use crate::entity_allocator::EntityAllocator;
 use crate::events::{ComponentEvent, EntityEvent};
+use crate::params::{ParamAccess, ParamContext, SystemParam};
 use crate::resource::ResourceStorage;
 use crate::scheduler::SystemScheduler;
 use crate::storage::ComponentStorageManager;
-use crate::system::{OrderedSystem, System, SystemExecutionOrder};
+use crate::system::{
+    OrderedSystem, System, SystemExecutionOrder, SystemKind, TypedAdapter, TypedSystem,
+};
 use std::cell::UnsafeCell;
 use std::collections::HashSet;
 
@@ -51,6 +54,11 @@ pub struct World {
     component_events: Vec<ComponentEvent>,
     /// Reusable buffer for query_changed to avoid per-frame allocation
     changed_ids_buffer: HashSet<EntityId>,
+    structural_epoch: u64,
+    next_registration: usize,
+    parallel_work_threshold: usize,
+    execution_active: bool,
+    clear_systems_requested: bool,
 }
 
 impl World {
@@ -65,11 +73,17 @@ impl World {
             entity_events: Vec::new(),
             component_events: Vec::new(),
             changed_ids_buffer: HashSet::new(),
+            structural_epoch: 0,
+            next_registration: 0,
+            parallel_work_threshold: 32768,
+            execution_active: false,
+            clear_systems_requested: false,
         }
     }
 
     /// Creates a new entity and returns its ID.
     pub fn create_entity(&mut self) -> EntityId {
+        self.advance_structural_epoch();
         let id = self.entities.allocate();
         self.entity_events.push(EntityEvent::Spawned(id));
         id
@@ -114,6 +128,7 @@ impl World {
     /// Emits `ComponentEvent::Removed` for each component that was on the entity.
     pub fn destroy_entity(&mut self, id: EntityId) -> bool {
         if self.entities.deallocate(id) {
+            self.advance_structural_epoch();
             let removed_types = self.storage.get_mut().remove_entity(id);
             for type_id in &removed_types {
                 self.component_events
@@ -137,6 +152,7 @@ impl World {
     /// Emits `ComponentEvent::Added` when the component is added.
     pub fn add_component<T: Component + 'static>(&mut self, id: EntityId, component: T) {
         if self.entities.is_valid(id) {
+            self.advance_structural_epoch();
             self.storage.get_mut().add_component(id, component);
             self.component_events
                 .push(ComponentEvent::Added(id, std::any::TypeId::of::<T>()));
@@ -150,7 +166,8 @@ impl World {
     where
         T: Component + 'static,
     {
-        if self.storage.get_mut().remove_component::<T>(id) {
+        if self.entities.is_valid(id) && self.storage.get_mut().remove_component::<T>(id) {
+            self.advance_structural_epoch();
             self.component_events
                 .push(ComponentEvent::Removed(id, std::any::TypeId::of::<T>()));
             true
@@ -238,6 +255,27 @@ impl World {
         self.storage.get_mut().query::<Q>()
     }
 
+    /// Creates a typed query view whose references are lent for each access.
+    /// The exclusive World borrow freezes structure until the view is dropped.
+    pub fn query_typed<D, F>(&mut self) -> crate::typed_query::QueryView<'_, D, F>
+    where
+        D: crate::typed_query::QueryDescriptor,
+        F: crate::query::QueryFilter + 'static,
+    {
+        crate::typed_query::Query::<D, F>::accesses();
+        let mut cache = crate::typed_query::QueryCache::default();
+        // SAFETY: The exclusive World borrow holds every component claim and
+        // prevents structural mutation for the entire returned view's lifetime.
+        unsafe {
+            crate::typed_query::PreparedQuery::<D, F>::prepare(
+                &*self.storage.get(),
+                self.structural_epoch,
+                &mut cache,
+            )
+            .into_view()
+        }
+    }
+
     /// Read-only query for iterating over entities with specific components.
     ///
     /// Unlike [`query`](Self::query), this takes `&self` and only supports
@@ -257,7 +295,7 @@ impl World {
         // patterns that yield shared references (&T, (&T, &U), etc.).
         // Q::fetch only calls get_storage::<T>() which reads through the HashMap
         // without mutation.
-        unsafe { (*self.storage.get()).query::<Q>() }
+        Q::fetch_ref(unsafe { &*self.storage.get() })
     }
 
     /// Read-only parallel query using rayon for concurrent iteration.
@@ -390,160 +428,176 @@ impl World {
         self.storage.get_mut().clear_changed();
     }
 
-    /// Registers a system with the world.
-    ///
-    /// Systems will be executed in order based on their SystemExecutionOrder.
-    /// The system's component access patterns are automatically captured for
-    /// parallel scheduling — override `component_access()` on the system type
-    /// to declare which components it reads or writes.
-    ///
-    pub fn register_system(&mut self, system: Box<dyn System>, order: SystemExecutionOrder) {
-        let access = system.component_access_dyn();
-        let resource_access = system.resource_access_dyn();
-        let mut ordered_system = OrderedSystem::new(system, order);
-        ordered_system.access_patterns = access;
-        ordered_system.resource_access_patterns = resource_access;
-        ordered_system.system.initialize();
-        self.systems.push(ordered_system);
+    /// Registers a caller-thread system with exclusive World access.
+    pub fn register_exclusive_system(
+        &mut self,
+        mut system: Box<dyn System>,
+        order: SystemExecutionOrder,
+    ) {
+        system.initialize();
+        let registration = self.next_registration;
+        self.next_registration += 1;
+        self.systems.push(OrderedSystem {
+            system: SystemKind::Exclusive(system),
+            order,
+            registration,
+            access: ParamAccess::default(),
+        });
         self.sort_systems();
         self.scheduler_cache = None;
     }
 
-    /// Sorts systems by their execution order.
+    /// Registers a typed system after rejecting every incompatible parameter alias.
+    pub fn register_typed_system<S: TypedSystem>(
+        &mut self,
+        system: S,
+        order: SystemExecutionOrder,
+    ) {
+        let mut access = ParamAccess::default();
+        S::Params::access(&mut access);
+        let state = S::Params::init(self);
+        let mut adapter = TypedAdapter { system, state };
+        crate::system::ErasedTypedSystem::initialize(&mut adapter);
+        let registration = self.next_registration;
+        self.next_registration += 1;
+        self.systems.push(OrderedSystem {
+            system: SystemKind::Typed(Box::new(adapter)),
+            order,
+            registration,
+            access,
+        });
+        self.sort_systems();
+        self.scheduler_cache = None;
+    }
+
     fn sort_systems(&mut self) {
-        self.systems.sort_by_key(|a| a.order);
+        self.systems
+            .sort_by_key(|system| (system.order, system.registration));
     }
 
-    /// Updates all systems.
-    ///
-    /// This is the main update loop for the ECS. It should be called once per frame.
-    /// Systems have direct access to component storages for efficient iteration.
-    ///
-    /// # Arguments
-    ///
-    /// * `delta_time` - Time elapsed since the last frame in seconds
+    /// Runs the dependency batches on the caller thread.
+    /// Commands become visible at the same batch boundaries as parallel updates.
     pub fn update(&mut self, delta_time: f32) {
-        // Take systems out to avoid aliasing &mut self.systems with &mut self.
-        let systems = std::mem::take(&mut self.systems);
-
-        // Guard that restores systems on panic so self.systems isn't left empty.
-        struct Guard<'a> {
-            dest: *mut Vec<OrderedSystem>,
-            systems: Vec<OrderedSystem>,
-            restored: bool,
-            _marker: std::marker::PhantomData<&'a mut Vec<OrderedSystem>>,
-        }
-
-        impl Drop for Guard<'_> {
-            fn drop(&mut self) {
-                if !self.restored {
-                    // SAFETY: Guard holds a mutable reference to self.systems.
-                    // We only run this on panic (unwind) to restore systems.
-                    unsafe {
-                        *self.dest = std::mem::take(&mut self.systems);
-                    }
-                }
-            }
-        }
-
-        let mut guard = Guard {
-            dest: &mut self.systems as *mut _,
-            systems,
-            restored: false,
-            _marker: std::marker::PhantomData,
-        };
-
-        for ordered_system in guard.systems.iter_mut() {
-            if !ordered_system.system.is_enabled() {
-                continue;
-            }
-
-            ordered_system.system.update(self, delta_time);
-        }
-
-        // Normal path: take systems out of guard and restore to self.systems
-        self.systems = std::mem::take(&mut guard.systems);
-        guard.restored = true;
-
-        // Flush per-frame events
-        self.entity_events.clear();
-        self.component_events.clear();
-
-        // Reset change detection so mutations in the next frame are tracked fresh
-        self.storage.get_mut().clear_changed();
+        self.execute_systems(delta_time, false);
     }
 
-    /// Updates all systems using parallel execution.
-    ///
-    /// Systems are grouped by their component access patterns — systems that
-    /// access disjoint component types run in parallel via rayon. Systems that
-    /// conflict run sequentially in topological order. The scheduler DAG is
-    /// built once and cached until systems are added or removed.
+    /// Runs independent typed jobs concurrently, with exclusive systems on the caller thread.
     pub fn update_parallel(&mut self, delta_time: f32) {
-        if self.scheduler_cache.is_none() {
-            let access_patterns: Vec<(
-                usize,
-                Vec<crate::system::ComponentAccess>,
-                Vec<crate::system::ResourceAccess>,
-            )> = self
-                .systems
-                .iter()
-                .enumerate()
-                .map(|(i, os)| {
-                    (
-                        i,
-                        os.access_patterns.clone(),
-                        os.resource_access_patterns.clone(),
-                    )
-                })
-                .collect();
-            self.scheduler_cache = match SystemScheduler::build(&access_patterns) {
-                Ok(scheduler) => Some(scheduler),
-                Err(e) => {
-                    eprintln!("Failed to build system scheduler: {e}");
-                    return;
+        self.execute_systems(delta_time, true);
+    }
+
+    /// Sets the minimum estimated batch work before dispatching Rayon jobs.
+    /// The default is 32,768 entity-system pairs, tuned to avoid tiny batch overhead.
+    /// A value of zero always dispatches batches containing multiple enabled systems.
+    pub fn set_parallel_work_threshold(&mut self, threshold: usize) {
+        self.parallel_work_threshold = threshold;
+    }
+
+    /// Returns the structural epoch used to invalidate cached query rows.
+    pub fn structural_epoch(&self) -> u64 {
+        self.structural_epoch
+    }
+
+    fn advance_structural_epoch(&mut self) {
+        self.structural_epoch = self
+            .structural_epoch
+            .checked_add(1)
+            .expect("world structural epoch exhausted");
+    }
+
+    fn execute_systems(&mut self, delta_time: f32, parallel: bool) {
+        let scheduler = self
+            .scheduler_cache
+            .take()
+            .unwrap_or_else(|| SystemScheduler::from_systems(&self.systems));
+        let mut systems = std::mem::take(&mut self.systems);
+        self.execution_active = true;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for group in scheduler.groups() {
+                if group.len() == 1
+                    && let SystemKind::Exclusive(system) = &mut systems[group[0]].system
+                {
+                    if system.is_enabled() {
+                        system.update(self, delta_time);
+                    }
+                    if self.clear_systems_requested {
+                        break;
+                    }
+                    continue;
                 }
-            };
-        }
-
-        let systems = std::mem::take(&mut self.systems);
-
-        struct Guard<'a> {
-            dest: *mut Vec<OrderedSystem>,
-            systems: Vec<OrderedSystem>,
-            restored: bool,
-            _marker: std::marker::PhantomData<&'a mut Vec<OrderedSystem>>,
-        }
-
-        impl Drop for Guard<'_> {
-            fn drop(&mut self) {
-                if !self.restored {
-                    unsafe {
-                        *self.dest = std::mem::take(&mut self.systems);
+                {
+                    // Registries and structure remain frozen until all jobs and
+                    // their typed borrows have been dropped at the end of scope.
+                    let context = ParamContext {
+                        storage: unsafe { &*self.storage.get() },
+                        resources: &self.resources,
+                        epoch: self.structural_epoch,
+                    };
+                    let mut jobs = Vec::with_capacity(group.len());
+                    for (index, ordered) in systems.iter_mut().enumerate() {
+                        if group.contains(&index)
+                            && let SystemKind::Typed(system) = &mut ordered.system
+                            && system.is_enabled()
+                        {
+                            // SAFETY: Scheduler batches exclude conflicting claims;
+                            // registration validated aliases inside each parameter tuple.
+                            jobs.push(unsafe { system.prepare(&context, delta_time) });
+                        }
+                    }
+                    let work = self.entity_count().max(1).saturating_mul(jobs.len());
+                    if parallel && jobs.len() > 1 && work >= self.parallel_work_threshold {
+                        rayon::scope(|scope| {
+                            for job in jobs {
+                                scope.spawn(move |_| job());
+                            }
+                        });
+                    } else {
+                        for job in jobs {
+                            job();
+                        }
+                    }
+                }
+                let mut flush: Vec<_> = group
+                    .iter()
+                    .map(|&index| (systems[index].registration, systems[index].drain_commands()))
+                    .collect();
+                flush.sort_by_key(|(registration, _)| *registration);
+                for (_, commands) in flush {
+                    for command in commands {
+                        command(self);
                     }
                 }
             }
+        }));
+        if result.is_err() {
+            for system in &mut systems {
+                drop(system.drain_commands());
+            }
         }
-
-        let mut guard = Guard {
-            dest: &mut self.systems as *mut _,
-            systems,
-            restored: false,
-            _marker: std::marker::PhantomData,
-        };
-
-        let world_cell = unsafe { self.as_unsafe_world_cell() };
-        self.scheduler_cache
-            .as_ref()
-            .expect("scheduler should be cached")
-            .execute_parallel(&mut guard.systems, world_cell, delta_time);
-
-        self.systems = std::mem::take(&mut guard.systems);
-        guard.restored = true;
-
-        self.entity_events.clear();
-        self.component_events.clear();
-        self.storage.get_mut().clear_changed();
+        self.execution_active = false;
+        let cleared_systems = self.clear_systems_requested;
+        self.clear_systems_requested = false;
+        if cleared_systems {
+            for system in &mut systems {
+                system.shutdown();
+            }
+            systems.clear();
+        }
+        let added_systems = !self.systems.is_empty();
+        systems.append(&mut self.systems);
+        self.systems = systems;
+        self.sort_systems();
+        if !added_systems && !cleared_systems {
+            self.scheduler_cache = Some(scheduler);
+        }
+        match result {
+            Ok(()) => {
+                self.entity_events.clear();
+                self.component_events.clear();
+                self.storage.get_mut().clear_changed();
+            }
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
     }
 
     /// Returns the number of entities in the world.
@@ -558,14 +612,18 @@ impl World {
 
     /// Clears all entities from the world.
     pub fn clear_entities(&mut self) {
+        self.advance_structural_epoch();
         self.entities.clear();
         self.storage.get_mut().clear();
     }
 
     /// Removes all systems from the world.
     pub fn clear_systems(&mut self) {
+        if self.execution_active {
+            self.clear_systems_requested = true;
+        }
         for ordered_system in &mut self.systems {
-            ordered_system.system.shutdown();
+            ordered_system.shutdown();
         }
         self.systems.clear();
         self.scheduler_cache = None;
@@ -616,6 +674,7 @@ impl World {
 
         for entity_id in self.entities.iter_live().collect::<Vec<_>>() {
             if !entities_with_components.contains(&entity_id) {
+                self.advance_structural_epoch();
                 self.entities.deallocate(entity_id);
                 self.entity_events.push(EntityEvent::Destroyed(entity_id));
             }
@@ -679,22 +738,6 @@ impl World {
         self.resources
             .get_mut::<R>()
             .expect("resource was just inserted above")
-    }
-
-    /// Get unsafe cell access to this world.
-    ///
-    /// Used by the parallel scheduler for concurrent system execution.
-    ///
-    /// # Safety
-    /// Caller must ensure that the returned `UnsafeWorldCell` is not used
-    /// beyond the lifetime of the `&mut self` borrow, and that no other
-    /// mutable reference to `World` exists while the cell is in use.
-    pub(crate) unsafe fn as_unsafe_world_cell(
-        &mut self,
-    ) -> crate::unsafe_world_cell::UnsafeWorldCell {
-        // SAFETY: Caller has &mut self, so the pointer is valid and no other
-        // mutable references exist. The returned cell must not outlive this borrow.
-        unsafe { crate::unsafe_world_cell::UnsafeWorldCell::new(self as *mut World) }
     }
 
     /// Validates the internal consistency of the world state.
@@ -773,7 +816,7 @@ impl Drop for World {
     fn drop(&mut self) {
         // Clean up systems when the world is destroyed
         for ordered_system in &mut self.systems {
-            ordered_system.system.shutdown();
+            ordered_system.shutdown();
         }
     }
 }
@@ -806,7 +849,6 @@ impl<'a, Q: crate::query::QueryData> Iterator for QueryChangedIter<'a, Q> {
 mod tests {
     use super::*;
     use crate::components::Component;
-    use crate::system::ComponentAccess;
 
     #[derive(Component, Default)]
     struct TestComponent {
@@ -1069,7 +1111,7 @@ mod tests {
         world.create_entity();
 
         let system = EventCheckerSystem::default();
-        world.register_system(Box::new(system), SystemExecutionOrder::EARLY);
+        world.register_exclusive_system(Box::new(system), SystemExecutionOrder::EARLY);
 
         world.update(0.016);
 
@@ -2004,9 +2046,6 @@ mod tests {
                     a.value = 42;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![ComponentAccess::write::<CompA>()]
-            }
         }
 
         struct WriteB;
@@ -2016,9 +2055,6 @@ mod tests {
                     b.value = 99;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![ComponentAccess::write::<CompB>()]
-            }
         }
 
         // Build sequential world
@@ -2027,21 +2063,20 @@ mod tests {
         world_seq.add_component(e1, CompA::default());
         world_seq.add_component(e1, CompB::default());
 
-        world_seq.register_system(Box::new(WriteA), SystemExecutionOrder::EARLY);
-        world_seq.register_system(Box::new(WriteB), SystemExecutionOrder::NORMAL);
+        world_seq.register_exclusive_system(Box::new(WriteA), SystemExecutionOrder::EARLY);
+        world_seq.register_exclusive_system(Box::new(WriteB), SystemExecutionOrder::NORMAL);
         world_seq.update(0.016);
 
         let seq_a = world_seq.get_component::<CompA>(e1).unwrap().value;
         let seq_b = world_seq.get_component::<CompB>(e1).unwrap().value;
 
-        // Build parallel world — register_system captures access patterns automatically
         let mut world_par = World::new();
         let e2 = world_par.create_entity();
         world_par.add_component(e2, CompA::default());
         world_par.add_component(e2, CompB::default());
 
-        world_par.register_system(Box::new(WriteA), SystemExecutionOrder::EARLY);
-        world_par.register_system(Box::new(WriteB), SystemExecutionOrder::NORMAL);
+        world_par.register_exclusive_system(Box::new(WriteA), SystemExecutionOrder::EARLY);
+        world_par.register_exclusive_system(Box::new(WriteB), SystemExecutionOrder::NORMAL);
         world_par.update_parallel(0.016);
 
         assert_eq!(world_par.get_component::<CompA>(e2).unwrap().value, seq_a);
@@ -2063,9 +2098,6 @@ mod tests {
                     c.value = prev + 1;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![ComponentAccess::write::<Counter>()]
-            }
         }
 
         let mut world = World::new();
@@ -2074,8 +2106,8 @@ mod tests {
 
         // Two systems that both write Counter — they conflict, so scheduler
         // must run them sequentially.
-        world.register_system(Box::new(IncrementSystem), SystemExecutionOrder::EARLY);
-        world.register_system(Box::new(IncrementSystem), SystemExecutionOrder::NORMAL);
+        world.register_exclusive_system(Box::new(IncrementSystem), SystemExecutionOrder::EARLY);
+        world.register_exclusive_system(Box::new(IncrementSystem), SystemExecutionOrder::NORMAL);
 
         world.update_parallel(0.016);
 
@@ -2096,9 +2128,6 @@ mod tests {
                     f.set = true;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![ComponentAccess::write::<Flag>()]
-            }
         }
 
         struct DisabledSystem;
@@ -2115,8 +2144,8 @@ mod tests {
         let e = world.create_entity();
         world.add_component(e, Flag { set: false });
 
-        world.register_system(Box::new(SetFlagSystem), SystemExecutionOrder::EARLY);
-        world.register_system(Box::new(DisabledSystem), SystemExecutionOrder::NORMAL);
+        world.register_exclusive_system(Box::new(SetFlagSystem), SystemExecutionOrder::EARLY);
+        world.register_exclusive_system(Box::new(DisabledSystem), SystemExecutionOrder::NORMAL);
 
         world.update_parallel(0.016);
 
@@ -2142,7 +2171,7 @@ mod tests {
         assert!(!world.entity_events().is_empty());
         assert!(!world.component_events().is_empty());
 
-        world.register_system(Box::new(NoopSystem), SystemExecutionOrder::NORMAL);
+        world.register_exclusive_system(Box::new(NoopSystem), SystemExecutionOrder::NORMAL);
 
         world.update_parallel(0.016);
 
@@ -2181,9 +2210,6 @@ mod tests {
                     a.value += 10;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![ComponentAccess::write::<CompA>()]
-            }
         }
 
         struct WriteB;
@@ -2193,9 +2219,6 @@ mod tests {
                     b.value += 20;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![ComponentAccess::write::<CompB>()]
-            }
         }
 
         let mut world = World::new();
@@ -2204,12 +2227,12 @@ mod tests {
         world.add_component(e, CompB::default());
 
         // First update with only WriteA
-        world.register_system(Box::new(WriteA), SystemExecutionOrder::EARLY);
+        world.register_exclusive_system(Box::new(WriteA), SystemExecutionOrder::EARLY);
         world.update_parallel(0.016);
         assert_eq!(world.get_component::<CompA>(e).unwrap().value, 10);
 
         // Add WriteB after first update — cache must be invalidated
-        world.register_system(Box::new(WriteB), SystemExecutionOrder::NORMAL);
+        world.register_exclusive_system(Box::new(WriteB), SystemExecutionOrder::NORMAL);
         world.update_parallel(0.016);
         assert_eq!(world.get_component::<CompA>(e).unwrap().value, 20);
         assert_eq!(world.get_component::<CompB>(e).unwrap().value, 20);
@@ -2237,12 +2260,6 @@ mod tests {
                     out.value = inp.value * 2;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![
-                    ComponentAccess::read::<Input>(),
-                    ComponentAccess::write::<OutputA>(),
-                ]
-            }
         }
 
         struct ReadInputWriteB;
@@ -2252,12 +2269,6 @@ mod tests {
                     out.value = inp.value * 3;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![
-                    ComponentAccess::read::<Input>(),
-                    ComponentAccess::write::<OutputB>(),
-                ]
-            }
         }
 
         let mut world = World::new();
@@ -2266,8 +2277,8 @@ mod tests {
         world.add_component(e, OutputA::default());
         world.add_component(e, OutputB::default());
 
-        world.register_system(Box::new(ReadInputWriteA), SystemExecutionOrder::EARLY);
-        world.register_system(Box::new(ReadInputWriteB), SystemExecutionOrder::NORMAL);
+        world.register_exclusive_system(Box::new(ReadInputWriteA), SystemExecutionOrder::EARLY);
+        world.register_exclusive_system(Box::new(ReadInputWriteB), SystemExecutionOrder::NORMAL);
 
         world.update_parallel(0.016);
 
@@ -2298,12 +2309,6 @@ mod tests {
                     sink.count += src;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![
-                    ComponentAccess::read::<Source>(),
-                    ComponentAccess::write::<Sink>(),
-                ]
-            }
         }
 
         let mut world = World::new();
@@ -2319,7 +2324,10 @@ mod tests {
 
         // Register 5 systems that all read Source and write Sink
         for _ in 0..5 {
-            world.register_system(Box::new(ReadSourceWriteSink), SystemExecutionOrder::NORMAL);
+            world.register_exclusive_system(
+                Box::new(ReadSourceWriteSink),
+                SystemExecutionOrder::NORMAL,
+            );
         }
 
         world.update_parallel(0.016);
@@ -2352,9 +2360,6 @@ mod tests {
                     l0.value = 10;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![ComponentAccess::write::<Level0>()]
-            }
         }
 
         struct TransformSystem;
@@ -2363,12 +2368,6 @@ mod tests {
                 for (_id, l0, l1) in world.query::<(&Level0, &mut Level1)>() {
                     l1.value = l0.value + 5;
                 }
-            }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![
-                    ComponentAccess::read::<Level0>(),
-                    ComponentAccess::write::<Level1>(),
-                ]
             }
         }
 
@@ -2379,12 +2378,6 @@ mod tests {
                     l2.value = l1.value * 2;
                 }
             }
-            fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-                vec![
-                    ComponentAccess::read::<Level1>(),
-                    ComponentAccess::write::<Level2>(),
-                ]
-            }
         }
 
         let mut world = World::new();
@@ -2393,9 +2386,9 @@ mod tests {
         world.add_component(e, Level1::default());
         world.add_component(e, Level2::default());
 
-        world.register_system(Box::new(InitSystem), SystemExecutionOrder::EARLY);
-        world.register_system(Box::new(TransformSystem), SystemExecutionOrder::NORMAL);
-        world.register_system(Box::new(FinalizeSystem), SystemExecutionOrder::LATE);
+        world.register_exclusive_system(Box::new(InitSystem), SystemExecutionOrder::EARLY);
+        world.register_exclusive_system(Box::new(TransformSystem), SystemExecutionOrder::NORMAL);
+        world.register_exclusive_system(Box::new(FinalizeSystem), SystemExecutionOrder::LATE);
 
         world.update_parallel(0.016);
 

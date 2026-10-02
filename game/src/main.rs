@@ -95,17 +95,14 @@ fn main() {
     // Build with conditional configuration
     let builder = ApplicationBuilder::new()
         // Register systems with proper execution order
-        .with_system(
+        .with_exclusive_system(
             Box::new(TransformHierarchySystem::default()),
             SystemExecutionOrder::EARLY,
         )
-        .with_system(
-            Box::new(AnimationUpdateSystem),
-            SystemExecutionOrder::NORMAL,
-        )
-        .with_system(Box::new(OrbitCameraSystem), SystemExecutionOrder::NORMAL)
-        .with_system(Box::new(RapierPhysicsSystem), SystemExecutionOrder::NORMAL)
-        .with_system(
+        .with_typed_system(AnimationUpdateSystem, SystemExecutionOrder::NORMAL)
+        .with_typed_system(OrbitCameraSystem, SystemExecutionOrder::NORMAL)
+        .with_exclusive_system(Box::new(RapierPhysicsSystem), SystemExecutionOrder::NORMAL)
+        .with_exclusive_system(
             Box::new(
                 ScriptSystem::new()
                     .expect("failed to create script system")

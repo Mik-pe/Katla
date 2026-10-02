@@ -2321,7 +2321,6 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "katla_derive",
- "paste",
  "rayon",
  "serde_json",
 ]

@@ -2,57 +2,30 @@ use crate::animation::components::{
     AnimatedModel, AnimationEvent, AnimationPlayer, MorphTargetWeights,
 };
 use crate::animation::{ChannelPath, SampledValue};
-use katla_ecs::{ComponentAccess, EntityId, System};
+use katla_ecs::{Query, Read, SystemParam, TypedSystem, Write};
 
 pub struct AnimationUpdateSystem;
 
-impl System for AnimationUpdateSystem {
-    fn update(&mut self, world: &mut katla_ecs::World, delta_time: f32) {
-        struct PlayerData {
-            entity: EntityId,
-            clip_duration: Option<f32>,
-            target_clip_duration: Option<f32>,
-            blending: bool,
-        }
+impl TypedSystem for AnimationUpdateSystem {
+    type Params = Query<(Write<AnimationPlayer>, Read<AnimatedModel>)>;
 
-        let players: Vec<PlayerData> = world
-            .query::<(&AnimationPlayer, &AnimatedModel)>()
-            .map(|(entity, player, model)| {
-                let clip_duration = player
-                    .current_clip
-                    .as_ref()
-                    .and_then(|name| model.animations.get(name))
-                    .map(|clip| clip.duration);
-
-                let target_clip_duration = if player.blending {
-                    player
-                        .target_clip
-                        .as_ref()
-                        .and_then(|name| model.animations.get(name))
-                        .map(|clip| clip.duration)
-                } else {
-                    None
-                };
-
-                PlayerData {
-                    entity,
-                    clip_duration,
-                    target_clip_duration,
-                    blending: player.blending,
-                }
-            })
-            .collect();
-
-        for data in players {
-            let Some(player) = world.get_component_mut::<AnimationPlayer>(data.entity) else {
-                continue;
-            };
-
+    fn run(&mut self, mut players: <Self::Params as SystemParam>::Item<'_>, delta_time: f32) {
+        for (_entity, (player, model)) in players.iter_mut() {
+            let clip_duration = player
+                .current_clip
+                .as_ref()
+                .and_then(|name| model.animations.get(name))
+                .map(|clip| clip.duration);
+            let target_clip_duration = player
+                .target_clip
+                .as_ref()
+                .and_then(|name| model.animations.get(name))
+                .map(|clip| clip.duration);
             if !player.playing {
                 continue;
             }
 
-            if let Some(duration) = data.clip_duration {
+            if let Some(duration) = clip_duration {
                 player.duration = duration;
             }
 
@@ -75,8 +48,8 @@ impl System for AnimationUpdateSystem {
                 }
             }
 
-            if data.blending {
-                if let Some(target_duration) = data.target_clip_duration {
+            if player.blending {
+                if let Some(target_duration) = target_clip_duration {
                     player.target_duration = target_duration;
                 }
 
@@ -109,36 +82,19 @@ impl System for AnimationUpdateSystem {
     fn name(&self) -> &str {
         "AnimationUpdateSystem"
     }
-
-    fn component_access() -> Vec<ComponentAccess> {
-        vec![
-            ComponentAccess::read::<AnimatedModel>(),
-            ComponentAccess::write::<AnimationPlayer>(),
-        ]
-    }
-
-    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-        vec![
-            ComponentAccess::read::<AnimatedModel>(),
-            ComponentAccess::write::<AnimationPlayer>(),
-        ]
-    }
 }
 
 pub struct MorphTargetSystem;
 
-impl System for MorphTargetSystem {
-    fn update(&mut self, world: &mut katla_ecs::World, _delta_time: f32) {
-        struct PendingUpdate {
-            entity: katla_ecs::EntityId,
-            weight: f32,
-        }
+impl TypedSystem for MorphTargetSystem {
+    type Params = Query<(
+        Read<AnimationPlayer>,
+        Read<AnimatedModel>,
+        Write<MorphTargetWeights>,
+    )>;
 
-        let mut pending: Vec<PendingUpdate> = Vec::new();
-
-        for (entity, player, model, _morph) in
-            world.query::<(&AnimationPlayer, &AnimatedModel, &MorphTargetWeights)>()
-        {
+    fn run(&mut self, mut players: <Self::Params as SystemParam>::Item<'_>, _delta_time: f32) {
+        for (_entity, (player, model, morph)) in players.iter_mut() {
             if !player.playing {
                 continue;
             }
@@ -147,29 +103,15 @@ impl System for MorphTargetSystem {
                 continue;
             };
 
-            let time = player.time;
-            let sampled_values = model
-                .animations
-                .get(clip_name)
-                .map(|clip| clip.sample(time))
-                .unwrap_or_default();
-
-            for (_node_index, path, value) in sampled_values {
-                if path == ChannelPath::Weights
-                    && let SampledValue::Float(weight) = value
+            let Some(clip) = model.animations.get(clip_name) else {
+                continue;
+            };
+            for channel in &clip.channels {
+                if channel.path == ChannelPath::Weights
+                    && let SampledValue::Float(weight) = channel.sample(player.time)
                 {
-                    pending.push(PendingUpdate { entity, weight });
+                    morph.weights.fill(weight);
                     break;
-                }
-            }
-        }
-
-        for update in pending {
-            if let Some(morph_weights) =
-                world.get_component_mut::<MorphTargetWeights>(update.entity)
-            {
-                for w in morph_weights.weights.iter_mut() {
-                    *w = update.weight;
                 }
             }
         }
@@ -178,20 +120,86 @@ impl System for MorphTargetSystem {
     fn name(&self) -> &str {
         "MorphTargetSystem"
     }
+}
 
-    fn component_access() -> Vec<ComponentAccess> {
-        vec![
-            ComponentAccess::read::<AnimationPlayer>(),
-            ComponentAccess::read::<AnimatedModel>(),
-            ComponentAccess::write::<MorphTargetWeights>(),
-        ]
+#[cfg(test)]
+mod typed_system_tests {
+    use super::*;
+    use crate::animation::{AnimationChannel, AnimationClip, AnimationSampler, Interpolation};
+    use katla_ecs::{SystemExecutionOrder, World};
+    use std::collections::HashMap;
+
+    fn model() -> AnimatedModel {
+        let clip = AnimationClip {
+            name: "weights".into(),
+            duration: 1.0,
+            channels: vec![AnimationChannel {
+                target_node: 0,
+                path: ChannelPath::Weights,
+                sampler: AnimationSampler::new_weights(
+                    vec![0.0, 1.0],
+                    vec![0.0, 1.0],
+                    Interpolation::Linear,
+                ),
+            }],
+        };
+        AnimatedModel {
+            animations: HashMap::from([("weights".into(), clip)]),
+            sequences: HashMap::new(),
+        }
     }
 
-    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-        vec![
-            ComponentAccess::read::<AnimationPlayer>(),
-            ComponentAccess::read::<AnimatedModel>(),
-            ComponentAccess::write::<MorphTargetWeights>(),
-        ]
+    #[test]
+    fn test_typed_animation_and_morph_preserve_order_and_playback() {
+        for parallel in [false, true] {
+            let mut world = World::new();
+            let playing = world.spawn((
+                AnimationPlayer::new("weights").looping(),
+                model(),
+                MorphTargetWeights::new(2),
+            ));
+            let paused = world.spawn((
+                AnimationPlayer::stopped(),
+                model(),
+                MorphTargetWeights::new(2),
+            ));
+            world.register_typed_system(AnimationUpdateSystem, SystemExecutionOrder::NORMAL);
+            world.register_typed_system(MorphTargetSystem, SystemExecutionOrder::NORMAL);
+            for delta_time in [0.25, 1.0] {
+                if parallel {
+                    world.update_parallel(delta_time);
+                } else {
+                    world.update(delta_time);
+                }
+            }
+            let player = world.get_component::<AnimationPlayer>(playing).unwrap();
+            assert_eq!(player.time, 0.25);
+            assert_eq!(player.loop_count, 1);
+            assert_eq!(
+                player.events,
+                vec![AnimationEvent::Looped {
+                    clip_name: "weights".into(),
+                    loop_count: 1
+                }]
+            );
+            assert_eq!(
+                world
+                    .get_component::<MorphTargetWeights>(playing)
+                    .unwrap()
+                    .weights,
+                vec![0.25, 0.25]
+            );
+            assert_eq!(
+                world.get_component::<AnimationPlayer>(paused).unwrap().time,
+                0.0
+            );
+            assert_eq!(
+                world
+                    .get_component::<MorphTargetWeights>(paused)
+                    .unwrap()
+                    .weights,
+                vec![0.0, 0.0]
+            );
+        }
     }
 }

@@ -6,8 +6,9 @@
 use crate::components::Component;
 use crate::entity::EntityId;
 use crate::query::QueryData;
-use crate::sparse_set::SparseSet;
+use crate::sparse_set::{SparseSet, SparseView};
 use std::any::Any;
+use std::cell::UnsafeCell;
 
 /// Storage for components of a specific type.
 ///
@@ -19,6 +20,7 @@ pub struct ComponentStorage<T: Component> {
     /// Per-type dirty entity tracking for O(dirty_entities) change detection.
     /// Populated on insert and get_mut. Cleared by clear_changed().
     dirty: SparseSet<EntityId, ()>,
+    all_changed: bool,
 }
 
 impl<T: Component> ComponentStorage<T> {
@@ -27,6 +29,7 @@ impl<T: Component> ComponentStorage<T> {
         Self {
             storage: SparseSet::new(),
             dirty: SparseSet::new(),
+            all_changed: false,
         }
     }
 
@@ -62,7 +65,9 @@ impl<T: Component> ComponentStorage<T> {
     /// Marks the entity as changed for change detection, even if the
     /// component is not actually modified.
     pub fn get_mut(&mut self, entity_id: EntityId) -> Option<&mut T> {
-        self.dirty.insert(entity_id, ());
+        if self.storage.contains(entity_id) {
+            self.dirty.insert(entity_id, ());
+        }
         self.storage.get_mut(entity_id)
     }
 
@@ -78,6 +83,7 @@ impl<T: Component> ComponentStorage<T> {
 
     /// Returns a mutable iterator over all (EntityId, &mut Component) pairs.
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (EntityId, &mut T)> {
+        self.mark_all_changed();
         self.storage.iter_mut()
     }
 
@@ -88,6 +94,7 @@ impl<T: Component> ComponentStorage<T> {
 
     /// Returns a mutable iterator over just the components.
     pub fn components_mut(&mut self) -> impl Iterator<Item = &mut T> {
+        self.mark_all_changed();
         self.storage.values_mut()
     }
 
@@ -96,9 +103,41 @@ impl<T: Component> ComponentStorage<T> {
         self.storage.dense()
     }
 
-    /// Returns a mutable reference to the internal component storage (for query module).
-    pub(crate) fn components_vec_mut(&mut self) -> &mut Vec<(EntityId, T)> {
-        self.storage.dense_mut()
+    pub(crate) fn mark_changed(&mut self, ids: &[EntityId]) {
+        if ids.len() == self.storage.len() {
+            self.all_changed = true;
+        }
+        if !self.all_changed {
+            for &id in ids {
+                self.dirty.insert(id, ());
+            }
+        }
+    }
+
+    fn mark_all_changed(&mut self) {
+        self.all_changed = true;
+    }
+
+    pub(crate) fn query_view(&self) -> SparseView<'_, EntityId, T> {
+        self.storage.view()
+    }
+
+    pub(crate) fn query_view_mut(&mut self) -> SparseView<'_, EntityId, T> {
+        self.mark_all_changed();
+        self.storage.view_mut()
+    }
+
+    pub(crate) fn selected_indices(&self, ids: &[EntityId]) -> Vec<usize> {
+        self.storage.selected_indices(ids)
+    }
+
+    pub(crate) fn dense_base(&self) -> *const (EntityId, T) {
+        self.storage.dense_base()
+    }
+
+    pub(crate) fn selected_mut_base(&mut self, ids: &[EntityId]) -> *mut (EntityId, T) {
+        self.mark_changed(ids);
+        self.storage.dense_base_mut()
     }
 
     /// Returns an iterator over entity IDs that have this component.
@@ -120,6 +159,7 @@ impl<T: Component> ComponentStorage<T> {
     pub fn clear(&mut self) {
         self.storage.clear();
         self.dirty.clear();
+        self.all_changed = false;
     }
 
     /// Removes all components for entities not in the given set.
@@ -137,6 +177,9 @@ impl<T: Component> Default for ComponentStorage<T> {
 
 /// Trait for type-erased component storage operations.
 pub trait AnyComponentStorage: Any {
+    /// Number of entities in this column.
+    fn component_count(&self) -> usize;
+
     /// Removes a component for the given entity.
     fn remove_entity(&mut self, entity_id: EntityId);
 
@@ -152,6 +195,9 @@ pub trait AnyComponentStorage: Any {
     /// Collects all entity IDs that have a component in this storage.
     fn collect_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>);
 
+    /// Appends entity IDs in dense storage order.
+    fn append_entity_ids(&self, out: &mut Vec<EntityId>);
+
     /// Collects dirty entity IDs (entities modified since last clear_changed).
     fn collect_dirty_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>);
 
@@ -166,6 +212,9 @@ pub trait AnyComponentStorage: Any {
 }
 
 impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
+    fn component_count(&self) -> usize {
+        self.storage.len()
+    }
     fn remove_entity(&mut self, entity_id: EntityId) {
         self.remove(entity_id);
     }
@@ -188,14 +237,21 @@ impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
         }
     }
 
+    fn append_entity_ids(&self, out: &mut Vec<EntityId>) {
+        out.extend(self.storage.keys());
+    }
+
     fn collect_dirty_entity_ids(&self, out: &mut std::collections::HashSet<EntityId>) {
-        for entity_id in self.dirty.keys() {
-            out.insert(entity_id);
+        if self.all_changed {
+            out.extend(self.storage.keys());
+        } else {
+            out.extend(self.dirty.keys());
         }
     }
 
     fn clear_dirty(&mut self) {
         self.dirty.clear();
+        self.all_changed = false;
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -213,7 +269,7 @@ impl<T: Component> AnyComponentStorage for ComponentStorage<T> {
 /// storages in a single collection, indexed by component type ID.
 pub struct ComponentStorageManager {
     /// Maps type IDs to component storages
-    storages: std::collections::HashMap<std::any::TypeId, Box<dyn AnyComponentStorage>>,
+    storages: std::collections::HashMap<std::any::TypeId, Box<UnsafeCell<dyn AnyComponentStorage>>>,
 }
 
 impl ComponentStorageManager {
@@ -230,7 +286,8 @@ impl ComponentStorageManager {
 
         storages
             .entry(type_id)
-            .or_insert_with(|| Box::new(ComponentStorage::<T>::new()))
+            .or_insert_with(|| Box::new(UnsafeCell::new(ComponentStorage::<T>::new())))
+            .get_mut()
             .as_any_mut()
             .downcast_mut::<ComponentStorage<T>>()
             .expect("TypeId lookup ensures correct type, downcast cannot fail")
@@ -240,7 +297,7 @@ impl ComponentStorageManager {
         self.storages
             .get(&std::any::TypeId::of::<T>())
             .map(|storage| {
-                storage
+                unsafe { &*storage.get() }
                     .as_any()
                     .downcast_ref::<ComponentStorage<T>>()
                     .expect("TypeId lookup ensures correct type, downcast cannot fail")
@@ -251,6 +308,7 @@ impl ComponentStorageManager {
         let type_id = std::any::TypeId::of::<T>();
         self.storages.get_mut(&type_id).map(|storage| {
             storage
+                .get_mut()
                 .as_any_mut()
                 .downcast_mut::<ComponentStorage<T>>()
                 .expect("TypeId lookup ensures correct type, downcast cannot fail")
@@ -298,6 +356,7 @@ impl ComponentStorageManager {
     pub fn remove_entity(&mut self, entity_id: EntityId) -> Vec<std::any::TypeId> {
         let mut removed_types = Vec::new();
         for (&type_id, storage) in self.storages.iter_mut() {
+            let storage = storage.get_mut();
             if storage.contains_entity(entity_id) {
                 storage.remove_entity(entity_id);
                 removed_types.push(type_id);
@@ -308,13 +367,13 @@ impl ComponentStorageManager {
 
     pub fn retain_entities(&mut self, valid_entities: &std::collections::HashSet<EntityId>) {
         for storage in self.storages.values_mut() {
-            storage.retain_entities(valid_entities);
+            storage.get_mut().retain_entities(valid_entities);
         }
     }
 
     pub fn clear(&mut self) {
         for storage in self.storages.values_mut() {
-            storage.clear();
+            storage.get_mut().clear();
         }
     }
 
@@ -325,7 +384,7 @@ impl ComponentStorageManager {
     pub(crate) fn entities_with_components(&self) -> std::collections::HashSet<EntityId> {
         let mut ids = std::collections::HashSet::new();
         for storage in self.storages.values() {
-            storage.collect_entity_ids(&mut ids);
+            unsafe { &*storage.get() }.collect_entity_ids(&mut ids);
         }
         ids
     }
@@ -336,7 +395,7 @@ impl ComponentStorageManager {
     /// their components are next mutated via `insert` or `get_mut`.
     pub(crate) fn clear_changed(&mut self) {
         for storage in self.storages.values_mut() {
-            storage.clear_dirty();
+            storage.get_mut().clear_dirty();
         }
     }
 
@@ -350,41 +409,49 @@ impl ComponentStorageManager {
         out.clear();
         for &type_id in type_ids {
             if let Some(storage) = self.storages.get(&type_id) {
-                storage.collect_dirty_entity_ids(out);
+                unsafe { &*storage.get() }.collect_dirty_entity_ids(out);
             }
         }
     }
 
-    /// Returns a raw pointer to `self` for use with the `get_two_storage_mut`
-    /// helper.  This is the single sanctioned place where the
-    /// `as *mut ComponentStorageManager` cast lives outside of tests.
-    #[inline]
-    pub(crate) fn borrow_ptr(&mut self) -> *mut ComponentStorageManager {
-        self as *mut ComponentStorageManager
-    }
-
-    /// Obtains simultaneous mutable references to two distinct component storages
-    /// from a raw pointer.
+    /// Resolves a storage through its stable interior-mutable allocation.
     ///
     /// # Safety
-    ///
-    /// * `ptr` must be a valid, properly-aligned pointer to a `ComponentStorageManager`
-    ///   that outlives lifetime `'a`.
-    /// * Callers **must** ensure `TypeId::of::<T1>() != TypeId::of::<T2>()`.
-    ///   Violating this produces two mutable references to the same storage, which is UB.
-    pub(crate) unsafe fn get_two_storage_mut<'a, T1: Component, T2: Component>(
-        ptr: *mut ComponentStorageManager,
-    ) -> (
-        Option<&'a mut ComponentStorage<T1>>,
-        Option<&'a mut ComponentStorage<T2>>,
-    ) {
-        // SAFETY: Caller guarantees `ptr` is valid for lifetime `'a` and T1 ≠ T2
-        // (disjoint HashMap entries), so the two lookups produce independent references.
-        unsafe {
-            let storage1 = (*ptr).get_storage_mut::<T1>();
-            let storage2 = (*ptr).get_storage_mut::<T2>();
-            (storage1, storage2)
+    /// The caller must own exclusive access to this component type for the
+    /// returned borrow, and prevent structural changes for that duration.
+    pub(crate) unsafe fn storage_mut_unchecked<T: Component>(
+        &self,
+    ) -> Option<*mut ComponentStorage<T>> {
+        self.storages
+            .get(&std::any::TypeId::of::<T>())
+            .map(|storage| {
+                unsafe { &mut *storage.get() }
+                    .as_any_mut()
+                    .downcast_mut::<ComponentStorage<T>>()
+                    .expect("TypeId lookup ensures correct type")
+                    as *mut ComponentStorage<T>
+            })
+    }
+
+    /// Tests component membership without borrowing any other component storage.
+    pub(crate) fn contains_type(&self, type_id: std::any::TypeId, entity: EntityId) -> bool {
+        self.storages
+            .get(&type_id)
+            .is_some_and(|storage| unsafe { &*storage.get() }.contains_entity(entity))
+    }
+
+    pub(crate) fn type_len(&self, type_id: std::any::TypeId) -> usize {
+        self.storages
+            .get(&type_id)
+            .map_or(0, |storage| unsafe { &*storage.get() }.component_count())
+    }
+
+    pub(crate) fn ids_for_type(&self, type_id: std::any::TypeId) -> Vec<EntityId> {
+        let mut ids = Vec::new();
+        if let Some(storage) = self.storages.get(&type_id) {
+            unsafe { &*storage.get() }.append_entity_ids(&mut ids);
         }
+        ids
     }
 
     /// Creates a query for iterating over entities with specific components.
@@ -542,36 +609,5 @@ mod tests {
         let entity = EntityId::test_new(0);
 
         assert!(!manager.remove_component::<TestComponent>(entity));
-    }
-
-    #[test]
-    fn test_get_two_storage_mut() {
-        let mut manager = ComponentStorageManager::new();
-        let entity = EntityId::test_new(0);
-        manager.add_component(entity, TestComponent { value: 42 });
-        manager.add_component(entity, TestComponent2 { value: 1.5 });
-
-        unsafe {
-            let ptr = &mut manager as *mut ComponentStorageManager;
-            let (s1, s2) =
-                ComponentStorageManager::get_two_storage_mut::<TestComponent, TestComponent2>(ptr);
-            assert!(s1.is_some());
-            assert!(s2.is_some());
-            assert_eq!(s1.unwrap().get(entity).unwrap().value, 42);
-            assert_eq!(s2.unwrap().get(entity).unwrap().value, 1.5);
-        }
-    }
-
-    #[test]
-    fn test_get_two_storage_mut_missing_types() {
-        let mut manager = ComponentStorageManager::new();
-
-        unsafe {
-            let ptr = &mut manager as *mut ComponentStorageManager;
-            let (s1, s2) =
-                ComponentStorageManager::get_two_storage_mut::<TestComponent, TestComponent2>(ptr);
-            assert!(s1.is_none());
-            assert!(s2.is_none());
-        }
     }
 }

@@ -12,7 +12,6 @@ Rust 2024 edition. Clippy + rustfmt enforced.
 | katla_gfx | `objc2-metal` | Metal bindings (macOS) |
 | katla_gfx | `naga` | WGSL→SPIR-V/Metal shader compilation at runtime |
 | katla_gfx | `gpu-allocator` (VMA) | GPU memory management |
-| katla_ecs | `paste` | Query macro hygiene |
 | katla_ecs | `rayon` | Parallel system execution |
 | katla_ui | `taffy` | Flexbox layout |
 | katla_ui | `bytemuck` | Pod/Zeroable for GPU data |

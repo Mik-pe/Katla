@@ -79,3 +79,23 @@ GitHub's `ubuntu-24.04` runners preinstall Google's Chrome apt source. Its
 upstream metadata intermittently arrives hash-mismatched, which fails
 `apt-get update` before any build step runs. The Linux graphics job removes
 that source before updating — no Katla job uses Chrome.
+
+## ECS ownership checks
+
+The existing Linux and explicit `macos-26` jobs check, test and lint the ECS with
+all features, including doctests and its CPU-only benchmarks. The macOS job also
+runs application and script library tests for the typed/exclusive migration.
+The separate Ubuntu Miri job uses pinned `nightly-2026-08-04` for query and
+parameter pointer boundaries, filters, allocator generations, stale sparse keys
+and public entity lifecycle tests. No extra macOS generation or runner is introduced.
+
+```bash
+cargo test -p katla_ecs --all-features --locked
+cargo clippy -p katla_ecs --all-targets --all-features --locked -- -D warnings
+cargo +nightly-2026-08-04 miri test -p katla_ecs --lib typed_query::tests --locked
+cargo +nightly-2026-08-04 miri test -p katla_ecs --lib params::tests::test_param --locked
+```
+
+Miri covers CPU reference provenance and lifetimes; native parallel tests cover
+actual worker overlap and ordering. Native GPU/window checks remain part of
+application acceptance and are distinct from these CPU checks.

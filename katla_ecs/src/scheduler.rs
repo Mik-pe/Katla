@@ -1,235 +1,97 @@
-use std::sync::atomic::AtomicUsize;
+use crate::system::{
+    ComponentAccess, OrderedSystem, ResourceAccess, SystemExecutionOrder, SystemKind,
+};
 
-use crate::system::ComponentAccess;
-use crate::system::OrderedSystem;
-use crate::system::ResourceAccess;
-use crate::unsafe_world_cell::UnsafeWorldCell;
-
-#[derive(Copy, Clone)]
-struct SendPtr(*mut OrderedSystem);
-unsafe impl Send for SendPtr {}
-unsafe impl Sync for SendPtr {}
-
-impl SendPtr {
-    fn get(self) -> *mut OrderedSystem {
-        self.0
-    }
-}
-
-/// Node in the system dependency DAG.
-pub(crate) struct SystemNode {
-    /// Index into the system list.
-    index: usize,
-    /// Indices of systems that must complete before this one.
-    dependencies: Vec<usize>,
-    /// Indices of systems that depend on this one.
-    dependents: Vec<usize>,
-    /// Component access pattern for this system.
-    access: Vec<ComponentAccess>,
-    /// Resource access pattern for this system.
-    resource_access: Vec<ResourceAccess>,
-    /// Number of unresolved dependencies (for topological execution).
-    unresolved_deps: AtomicUsize,
-}
-
-/// Builds and manages a dependency DAG of systems based on component access conflicts.
-///
-/// Systems that access disjoint component sets can execute in parallel.
-/// Conflicts (read-write or write-write on the same component type) create
-/// dependency edges, and the resulting DAG is split into execution groups
-/// where systems within a group may run concurrently.
+/// Cached dependency batches. Ordering tiers are absolute barriers.
 pub(crate) struct SystemScheduler {
-    nodes: Vec<SystemNode>,
-    /// Execution order: groups of systems that can run in parallel.
     groups: Vec<Vec<usize>>,
 }
 
-/// Error returned when the system scheduler cannot be built.
 #[derive(Debug)]
 pub(crate) enum SchedulerError {
-    /// The system dependency graph contains a cycle.
     DependencyCycle,
 }
-
 impl std::fmt::Display for SchedulerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SchedulerError::DependencyCycle => {
-                write!(f, "cycle detected in system dependency graph")
-            }
-        }
+        write!(f, "cycle detected in system dependency graph")
     }
 }
-
 impl std::error::Error for SchedulerError {}
 
+type Claims = (
+    usize,
+    Vec<ComponentAccess>,
+    Vec<ResourceAccess>,
+    SystemExecutionOrder,
+    bool,
+);
 impl SystemScheduler {
-    /// Build a DAG from a list of (system_index, access_pattern, resource_access_pattern) triples.
-    ///
-    /// For each pair of systems, a conflict is detected when:
-    /// - Both write the same component type, or
-    /// - One reads and the other writes the same component type.
-    /// - Both write the same resource type, or
-    /// - One reads and the other writes the same resource type.
-    ///
-    /// Two systems that only read the same component or resource do NOT conflict
-    /// and may execute in parallel.
+    pub fn from_systems(systems: &[OrderedSystem]) -> Self {
+        let claims: Vec<_> = systems
+            .iter()
+            .enumerate()
+            .map(|(index, system)| {
+                (
+                    index,
+                    system.access.components.clone(),
+                    system.access.resources.clone(),
+                    system.order,
+                    matches!(system.system, SystemKind::Exclusive(_)),
+                )
+            })
+            .collect();
+        Self::build_claims(&claims).expect("forward-only system dependencies are acyclic")
+    }
+    #[cfg(test)]
     pub fn build(
         systems: &[(usize, Vec<ComponentAccess>, Vec<ResourceAccess>)],
     ) -> Result<Self, SchedulerError> {
-        let nodes: Vec<SystemNode> = systems
+        let claims: Vec<_> = systems
             .iter()
-            .map(|(sys_index, access, resource_access)| SystemNode {
-                index: *sys_index,
-                dependencies: Vec::new(),
-                dependents: Vec::new(),
-                access: access.clone(),
-                resource_access: resource_access.clone(),
-                unresolved_deps: AtomicUsize::new(0),
+            .map(|(index, components, resources)| {
+                (
+                    *index,
+                    components.clone(),
+                    resources.clone(),
+                    SystemExecutionOrder::NORMAL,
+                    false,
+                )
             })
             .collect();
-
-        let mut scheduler = Self {
-            nodes,
-            groups: Vec::new(),
-        };
-
-        scheduler.build_edges();
-        scheduler.compute_groups()?;
-        Ok(scheduler)
+        Self::build_claims(&claims)
     }
-
-    /// Get the execution groups (systems within each group can run in parallel).
-    #[cfg(test)]
-    pub fn groups(&self) -> &[Vec<usize>] {
-        &self.groups
-    }
-
-    /// Execute systems in parallel according to the computed groups.
-    ///
-    /// Systems within a group run in parallel via rayon. Groups run sequentially
-    /// in topological order. Single-system groups run on the current thread.
-    pub fn execute_parallel(
-        &self,
-        systems: &mut [OrderedSystem],
-        world_cell: UnsafeWorldCell,
-        delta_time: f32,
-    ) {
-        for group in &self.groups {
-            if group.len() <= 1 {
-                for &sys_idx in group {
-                    let ordered = &mut systems[sys_idx];
-                    if !ordered.system.is_enabled() {
-                        continue;
-                    }
-                    let world = unsafe { &mut *world_cell.as_ptr() };
-                    ordered.system.update(world, delta_time);
-                }
-                continue;
-            }
-
-            let enabled: Vec<usize> = group
-                .iter()
-                .filter(|&&idx| systems[idx].system.is_enabled())
-                .copied()
-                .collect();
-
-            if enabled.len() <= 1 {
-                for &sys_idx in &enabled {
-                    let world = unsafe { &mut *world_cell.as_ptr() };
-                    systems[sys_idx].system.update(world, delta_time);
-                }
-                continue;
-            }
-
-            let systems_ptr = SendPtr(systems.as_mut_ptr());
-            rayon::scope(|s| {
-                for &sys_idx in &enabled {
-                    let ptr = systems_ptr;
-                    s.spawn(move |_| {
-                        let ordered = unsafe { &mut *ptr.get().add(sys_idx) };
-                        let world = unsafe { &mut *world_cell.as_ptr() };
-                        ordered.system.update(world, delta_time);
-                    });
-                }
-            });
-        }
-    }
-
-    fn build_edges(&mut self) {
-        // Systems are sorted by SystemExecutionOrder before the scheduler is built
-        // (see World::register_system → sort_systems → scheduler_cache = None, then
-        // update_parallel rebuilds from the already-sorted list).  Vector index therefore
-        // reflects execution order: lower index = earlier execution.  For mutual conflicts
-        // the edge direction i→j (later depends on earlier) preserves the intended order.
-        let n = self.nodes.len();
+    fn build_claims(systems: &[Claims]) -> Result<Self, SchedulerError> {
+        let n = systems.len();
+        let mut dependencies = vec![Vec::new(); n];
         for i in 0..n {
             for j in (i + 1)..n {
-                if conflicts(
-                    &self.nodes[i].access,
-                    &self.nodes[j].access,
-                    &self.nodes[i].resource_access,
-                    &self.nodes[j].resource_access,
-                ) {
-                    self.nodes[j].dependencies.push(i);
-                    self.nodes[i].dependents.push(j);
+                let a = &systems[i];
+                let b = &systems[j];
+                if a.3 != b.3 || a.4 || b.4 || conflicts(&a.1, &b.1, &a.2, &b.2) {
+                    dependencies[j].push(i);
                 }
             }
         }
-    }
-
-    fn compute_groups(&mut self) -> Result<(), SchedulerError> {
-        let n = self.nodes.len();
-        if n == 0 {
-            return Ok(());
-        }
-
-        // Initialize unresolved_deps from the dependency counts.
-        for node in &self.nodes {
-            node.unresolved_deps.store(
-                node.dependencies.len(),
-                std::sync::atomic::Ordering::Relaxed,
-            );
-        }
-
+        let mut done = vec![false; n];
         let mut remaining = n;
-        let mut visited = vec![false; n];
-
-        while remaining > 0 {
-            let mut group = Vec::new();
-
-            for (i, node) in self.nodes.iter().enumerate() {
-                if visited[i] {
-                    continue;
-                }
-                if node
-                    .unresolved_deps
-                    .load(std::sync::atomic::Ordering::Relaxed)
-                    == 0
-                {
-                    group.push(i);
-                }
-            }
-
-            if group.is_empty() {
+        let mut groups = Vec::new();
+        while remaining != 0 {
+            let ready: Vec<_> = (0..n)
+                .filter(|&i| !done[i] && dependencies[i].iter().all(|&d| done[d]))
+                .collect();
+            if ready.is_empty() {
                 return Err(SchedulerError::DependencyCycle);
             }
-
-            for &i in &group {
-                visited[i] = true;
-                for &dep in &self.nodes[i].dependents {
-                    self.nodes[dep]
-                        .unresolved_deps
-                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                }
+            for &i in &ready {
+                done[i] = true;
             }
-
-            remaining -= group.len();
-            self.groups
-                .push(group.iter().map(|&i| self.nodes[i].index).collect());
+            remaining -= ready.len();
+            groups.push(ready.into_iter().map(|i| systems[i].0).collect());
         }
-
-        Ok(())
+        Ok(Self { groups })
+    }
+    pub fn groups(&self) -> &[Vec<usize>] {
+        &self.groups
     }
 }
 

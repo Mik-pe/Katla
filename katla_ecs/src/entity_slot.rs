@@ -11,6 +11,7 @@ pub(crate) struct EntitySlot {
     pub generation: u32,
     /// Whether the slot currently contains a live entity.
     pub occupied: bool,
+    pub retired: bool,
 }
 
 impl EntitySlot {
@@ -19,6 +20,7 @@ impl EntitySlot {
         Self {
             generation: 0,
             occupied: false,
+            retired: false,
         }
     }
 
@@ -27,6 +29,7 @@ impl EntitySlot {
         Self {
             generation,
             occupied: true,
+            retired: false,
         }
     }
 }

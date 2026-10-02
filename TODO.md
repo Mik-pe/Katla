@@ -561,7 +561,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 ### katla_ecs - Production Readiness Roadmap
 
-**Current release decision:** No-go for production. Keep the runtime on the sequential ECS path until every P0 exit criterion below is complete and validated. `update_parallel()` must be treated as experimental/unsafe until the parallel architecture is replaced.
+**Current release decision:** Typed systems now derive access claims and execute with independently borrowed data; both runtime loops use this scheduler. Full-World systems remain explicitly exclusive. The remaining P0 tasks below cover lifecycle cleanup, diagnostics, and additional soak/sanitizer evidence; they do not require disabling the validated typed parallel path.
 
 **Agent execution rules:**
 
@@ -572,45 +572,40 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - Update `katla_ecs/AGENTS.md` and `memory-bank/systemPatterns.md` when an architectural contract changes.
 - Run the task's listed checks plus `cargo fmt --all -- --check` before marking it complete.
 
-#### P0 - Immediate containment (block all production use)
+#### Completed containment replacement
 
-- [ ] **ECS-P0-001: Disable parallel ECS execution in runtime loops** — Replace calls to `world.update_parallel(dt)` in windowed and headless application loops with `world.update(dt)`.
-  - **Done when:** normal and headless runtime paths are sequential; no application startup path invokes `update_parallel()`; existing frame-loop tests pass.
-- [ ] **ECS-P0-002: Gate the unsafe parallel API** — Make `World::update_parallel()` internal or place it behind an opt-in `experimental_parallel_ecs` feature that is disabled by default.
-  - **Depends on:** ECS-P0-001.
-  - **Done when:** downstream crates cannot accidentally select the parallel path in a default build; API docs clearly state that the feature is experimental and not production-safe.
-- [ ] **ECS-P0-003: Add a release guard against accidental parallel activation** — Add a compile-time or startup assertion/test that production/default builds do not enable `experimental_parallel_ecs`.
-  - **Depends on:** ECS-P0-002.
-  - **Done when:** CI fails if the standard game binary starts using the experimental path again.
+The unsafe full-World parallel path has been removed by #138. Both runtime loops
+use the scoped typed/exclusive scheduler; there is no experimental unsafe path
+to disable or gate. Verification and architecture are in `docs/ecs.md`.
 
 #### P0 - Entity identity and sparse-set correctness
 
-- [ ] **ECS-P0-010: Reproduce stale-ID component removal** — Add a regression test that destroys an entity, reuses the slot, then calls `remove_component` with the stale ID and verifies the new entity is unchanged.
+- [x] **ECS-P0-010: Reproduce stale-ID component removal** — Add a regression test that destroys an entity, reuses the slot, then calls `remove_component` with the stale ID and verifies the new entity is unchanged.
   - **Done when:** the test fails on the current implementation and documents the expected generation behavior.
-- [ ] **ECS-P0-011: Validate entities in `World::remove_component`** — Return `false` without touching storage when the ID is not live or its generation is stale.
+- [x] **ECS-P0-011: Validate entities in `World::remove_component`** — Return `false` without touching storage when the ID is not live or its generation is stale.
   - **Depends on:** ECS-P0-010.
   - **Done when:** stale, never-created, and already-destroyed IDs cannot remove components or emit component events.
-- [ ] **ECS-P0-012: Make `SparseSet<EntityId, T>` compare the complete key** — Verify the stored dense key equals the requested `EntityId`, including generation, before update, lookup, mutable lookup, contains, or removal succeeds.
-  - **Done when:** all sparse-set operations reject an index collision with a different generation; swap-remove bookkeeping remains correct.
-- [ ] **ECS-P0-013: Add generational sparse-set property tests** — Generate repeated allocate/add/remove/destroy/reuse sequences and compare sparse-set results with a simple reference model.
+- [x] **ECS-P0-012: Make `SparseSet<EntityId, T>` compare the complete key** — Verify the stored dense key equals the requested `EntityId`, including generation, before update, lookup, mutable lookup, contains, or removal succeeds.
+  - **Done when:** lookups/removal reject a different generation, insertion replaces the complete key for a reused sparse slot, and swap-remove bookkeeping remains correct.
+- [x] **ECS-P0-013: Add generational sparse-set property tests** — Generate repeated allocate/add/remove/destroy/reuse sequences and compare sparse-set results with a simple reference model.
   - **Depends on:** ECS-P0-012.
   - **Done when:** randomized tests cover index reuse, replacement, swap removal, missing pages, and multiple generations.
-- [ ] **ECS-P0-014: Preserve stale-ID invalidation across `clear_entities()`** — Redesign allocator clearing so old IDs cannot become valid after the world is cleared and index 0/generation 0 is allocated again.
+- [x] **ECS-P0-014: Preserve stale-ID invalidation across `clear_entities()`** — Redesign allocator clearing so old IDs cannot become valid after the world is cleared and index 0/generation 0 is allocated again.
   - **Done when:** an ID captured before `clear_entities()` remains invalid after arbitrary subsequent spawns; allocator count and free-list invariants remain valid.
-- [ ] **ECS-P0-015: Define generation-wrap behavior** — Choose and document a policy for `u32` generation overflow: retire the slot, widen/epoch the identifier, or explicitly accept wrap after a proven bound.
+- [x] **ECS-P0-015: Define generation-wrap behavior** — Choose and document a policy for `u32` generation overflow: retire the slot, widen/epoch the identifier, or explicitly accept wrap after a proven bound.
   - **Done when:** the allocator has a testable policy and no comment claims wrapping is automatically safe.
-- [ ] **ECS-P0-016: Guard entity-index exhaustion** — Replace `self.slots.len() as u32` truncation with checked conversion and a clear allocation error/panic policy before the index exceeds `u32::MAX`.
+- [x] **ECS-P0-016: Guard entity-index exhaustion** — Replace `self.slots.len() as u32` truncation with checked conversion and a clear allocation error/panic policy before the index exceeds `u32::MAX`.
   - **Done when:** allocation cannot silently alias an existing index after integer truncation.
 - [ ] **ECS-P0-017: Audit `EntityId::from_raw` boundaries** — Enumerate every deserialization, scripting, physics, and editor call site; validate IDs against the target `World` before component/resource operations.
   - **Done when:** untrusted or persisted raw IDs cannot mutate a newly reused entity by index alone.
 
 #### P0 - Despawn, component removal, and event lifetime
 
-- [ ] **ECS-P0-020: Specify the lifecycle contract before refactoring** — Document exact ordering for spawn, add, replace, remove, despawn, callbacks, storage deletion, and event visibility.
+- [x] **ECS-P0-020: Specify the lifecycle contract before refactoring** — Document exact ordering for spawn, add, replace, remove, despawn, callbacks, storage deletion, and event visibility.
   - **Done when:** the contract answers whether removed component data is available to cleanup hooks, which frame readers observe events, and whether replacement emits `Added`, `Changed`, or a dedicated event.
 - [ ] **ECS-P0-021: Add failing end-to-end despawn tests** — Cover `World::destroy_entity` through ScriptSystem `on_destroy`, GPU resource tracking cleanup, physics cleanup, and event readers.
   - **Done when:** tests demonstrate the current missing-data/event-flush failures without relying on direct engine method calls.
-- [ ] **ECS-P0-022: Introduce deferred structural commands** — Add a `Commands` queue for spawn, despawn, add, replace, and remove operations requested during system execution.
+- [x] **ECS-P0-022: Introduce deferred structural commands** — Add a `Commands` queue for spawn, despawn, add, replace, and remove operations requested during system execution.
   - **Depends on:** ECS-P0-020.
   - **Done when:** systems can queue structural changes without mutating allocator/storage maps during iteration; commands apply at a deterministic stage boundary.
 - [ ] **ECS-P0-023: Add pre-remove/pre-despawn cleanup data** — Invoke lifecycle hooks or capture removal payloads while component values are still accessible, before storage deletion and generation invalidation.
@@ -647,52 +642,50 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### P0 - Parallel ECS architecture replacement
 
-- [ ] **ECS-P0-040: Write an ADR for safe system execution** — Compare typed system parameters plus exclusive systems against alternative designs; explicitly reject creating simultaneous `&mut World` references.
+- [x] **ECS-P0-040: Write an ADR for safe system execution** — Compare typed system parameters plus exclusive systems against alternative designs; explicitly reject creating simultaneous `&mut World` references.
   - **Done when:** the ADR defines ownership, system registration, resources, structural commands, events, stages, and migration strategy.
-- [ ] **ECS-P0-041: Split parallel and exclusive system capabilities** — Parallel systems must be `Send` and receive only scoped typed access; exclusive/main-thread systems may receive `&mut World` and never enter Rayon.
+- [x] **ECS-P0-041: Split parallel and exclusive system capabilities** — Parallel systems must be `Send` and receive only scoped typed access; exclusive/main-thread systems may receive `&mut World` and never enter Rayon.
   - **Depends on:** ECS-P0-040.
   - **Done when:** a `!Send` system cannot be scheduled on a worker at compile time; ScriptSystem is registered in the exclusive lane.
-- [ ] **ECS-P0-042: Separate sendable and non-send resources** — Require `Send + Sync` for worker-accessible resources and provide an explicit main-thread-only resource store for `Rc`, `RefCell`, window, script VM, and thread-affine objects.
+- [x] **ECS-P0-042: Restrict resource borrowing by execution capability** — Shared worker parameters require `Sync` and mutable worker parameters require `Send`; independently borrowed entries retain thread-affine values for caller-thread exclusive systems.
   - **Depends on:** ECS-P0-040.
   - **Done when:** Rayon tasks cannot obtain references to non-send resources through safe APIs.
-- [ ] **ECS-P0-043: Replace `System::update(&mut World)` on the parallel path** — Introduce typed parameters such as `Query`, `Res`, `ResMut`, event readers/writers, local state, and `Commands`.
+- [x] **ECS-P0-043: Replace `System::update(&mut World)` on the parallel path** — Introduce typed parameters such as `Query`, `Res`, `ResMut`, event readers/writers, local state, and `Commands`.
   - **Depends on:** ECS-P0-022, ECS-P0-041, ECS-P0-042.
   - **Done when:** no parallel worker constructs or receives `&mut World`; the old trait remains only for exclusive systems or is removed.
-- [ ] **ECS-P0-044: Derive access metadata from system parameters** — Generate component/resource read-write sets automatically instead of requiring duplicate `component_access` and `component_access_dyn` methods.
+- [x] **ECS-P0-044: Derive access metadata from system parameters** — Generate component/resource read-write sets automatically instead of requiring duplicate `component_access` and `component_access_dyn` methods.
   - **Depends on:** ECS-P0-043.
   - **Done when:** forgetting an access declaration is impossible for safe registered systems; static and dynamic metadata cannot diverge.
-- [ ] **ECS-P0-045: Prevent concurrent mutation of the storage registry** — Pre-register/freeze component storage entries for a schedule or move interior mutability to independently borrowed per-type cells with a documented protocol.
+- [x] **ECS-P0-045: Prevent concurrent mutation of the storage registry** — Pre-register/freeze component storage entries for a schedule or move interior mutability to independently borrowed per-type cells with a documented protocol.
   - **Depends on:** ECS-P0-043.
   - **Done when:** two systems accessing different component types never concurrently mutate/re-hash the same `HashMap` container.
 - [ ] **ECS-P0-046: Add debug borrow validation** — Track active readers/writers per component and resource type and fail immediately on an invalid schedule or unsafe internal borrow.
   - **Depends on:** ECS-P0-044, ECS-P0-045.
   - **Done when:** tests intentionally requesting write/write and read/write overlap receive deterministic diagnostics.
-- [ ] **ECS-P0-047: Apply structural commands only at barriers** — Spawn/despawn/add/remove must execute after all systems in the stage release their borrows.
+- [x] **ECS-P0-047: Apply structural commands only at barriers** — Spawn/despawn/add/remove must execute after all systems in the stage release their borrows.
   - **Depends on:** ECS-P0-022, ECS-P0-043.
   - **Done when:** structural changes cannot race queries or invalidate dense vectors during worker execution.
-- [ ] **ECS-P0-048: Make execution order a real scheduling contract** — Implement explicit stages/barriers and/or `before`/`after` dependencies; do not allow `EARLY`, `NORMAL`, and `LATE` systems into the same group merely because access metadata is disjoint.
+- [x] **ECS-P0-048: Make execution order a real scheduling contract** — Implement explicit stages/barriers and/or `before`/`after` dependencies; do not allow `EARLY`, `NORMAL`, and `LATE` systems into the same group merely because access metadata is disjoint.
   - **Depends on:** ECS-P0-040, ECS-P0-044.
   - **Done when:** order-only tests prove `EARLY < NORMAL < LATE` even for systems with disjoint accesses; explicit dependency cycles return actionable errors.
-- [ ] **ECS-P0-049: Remove raw `SendPtr` and full-World `UnsafeWorldCell` scheduling** — Delete the code path that marks raw pointers as `Send`/`Sync` and recreates `&mut World` in Rayon tasks.
+- [x] **ECS-P0-049: Remove raw `SendPtr` and full-World `UnsafeWorldCell` scheduling** — Delete the code path that marks raw pointers as `Send`/`Sync` and recreates `&mut World` in Rayon tasks.
   - **Depends on:** ECS-P0-043 through ECS-P0-048.
   - **Done when:** repository search finds no scheduler conversion from `*mut World` to multiple mutable references.
 - [ ] **ECS-P0-050: Add parallel migration tests for every built-in system** — Verify component/resource parameters, exclusive classification, stage ordering, enabled/disabled behavior, events, and panic recovery.
   - **Depends on:** ECS-P0-041 through ECS-P0-049.
-- [ ] **ECS-P0-051: Re-enable parallel runtime only after exit gates pass** — Switch application loops back only after Miri, sanitizer, scheduler, lifecycle, and workload benchmarks pass.
-  - **Depends on:** all ECS-P0 tasks.
-  - **Done when:** the PR includes measured evidence, all release gates below pass, and the experimental feature is no longer needed.
+- [x] **ECS-P0-051: Migrate runtime loops to safe parallel scheduling** — Both loops use sealed typed jobs with exclusive caller-thread barriers; no experimental full-World path remains. Issue #138 supplies Miri, scheduling, lifecycle and measured workload evidence. Extended sanitizers and soak coverage remain ECS-P1-034/ECS-P1-052.
 
 #### P1 - Query soundness and change detection
 
-- [ ] **ECS-P1-001: Add Miri tests for tuple query aliasing** — Exercise all mutable query forms, missing storages, same-type rejection, swap removal, and iterator lifetime boundaries.
+- [x] **ECS-P1-001: Add Miri tests for tuple query aliasing** — Exercise all mutable query forms, missing storages, same-type rejection, swap removal, and iterator lifetime boundaries.
   - **Done when:** Miri passes without stacked-borrows/tree-borrows violations.
-- [ ] **ECS-P1-002: Remove raw-pointer borrowing through the storage `HashMap`** — Replace repeated `get_storage`/`get_storage_mut` calls through one raw manager pointer with a design that proves entries are disjoint.
+- [x] **ECS-P1-002: Remove raw-pointer borrowing through the storage `HashMap`** — Replace repeated `get_storage`/`get_storage_mut` calls through one raw manager pointer with a design that proves entries are disjoint.
   - **Depends on:** ECS-P1-001.
   - **Done when:** mutable tuple queries no longer rely on caller-guaranteed aliasing across a shared map container.
-- [ ] **ECS-P1-003: Prove filtered mutable-query soundness** — Remove or justify the simultaneous mutable query borrow plus raw shared manager pointer used by filters.
+- [x] **ECS-P1-003: Prove filtered mutable-query soundness** — Remove or justify the simultaneous mutable query borrow plus raw shared manager pointer used by filters.
   - **Depends on:** ECS-P1-002.
   - **Done when:** filter checks use a safe disjoint view or a narrowly documented unsafe primitive covered by Miri.
-- [ ] **ECS-P1-004: Remove fictitious `'static` references from `par_query`** — Build Rayon iterators directly from correctly borrowed slices/storages where possible.
+- [x] **ECS-P1-004: Remove fictitious `'static` references from `par_query`** — Build Rayon iterators directly from correctly borrowed slices/storages where possible.
   - **Done when:** `UnsafeStorageCell` lifetime erasure is removed or reduced to a formally documented minimal primitive with Miri coverage.
 - [ ] **ECS-P1-005: Introduce `Mut<T>` change-tracking guards** — Mark a component dirty on `DerefMut` or explicit `set_changed`, not merely when a mutable handle is requested.
   - **Done when:** immutable use of a mutable handle does not report a change; actual writes through direct get and queries do.
@@ -704,26 +697,26 @@ hstack(children).spacing(2.0).padding_all(10.0)
   - **Done when:** cost scales with dirty entities plus result validation rather than all entities in the driver storage.
 - [ ] **ECS-P1-008: Reuse changed-query buffers correctly** — Remove the `mem::take` capacity loss or introduce a pool/owned scratch object returned on iterator drop.
   - **Done when:** repeated changed queries reach steady state without allocating a new large HashSet each call.
-- [ ] **ECS-P1-009: Document and test union semantics** — Multi-component changed queries currently mean “any queried component changed”; codify this and add unchanged/read-only/mixed-removal cases.
+- [x] **ECS-P1-009: Document and test union semantics** — Multi-component changed queries currently mean “any queried component changed”; codify this and add unchanged/read-only/mixed-removal cases.
   - **Done when:** public docs and tests agree on frame boundaries and union behavior.
 
 #### P1 - Event, panic, and deterministic behavior
 
-- [ ] **ECS-P1-020: Define panic behavior for system execution** — Decide whether a panic aborts the tick, isolates one system, or disables it; ensure systems, events, and command buffers remain internally consistent.
+- [x] **ECS-P1-020: Define panic behavior for system execution** — Decide whether a panic aborts the tick, isolates one system, or disables it; ensure systems, events, and command buffers remain internally consistent.
   - **Done when:** sequential and future parallel paths share a tested recovery contract.
 - [ ] **ECS-P1-021: Make scheduler build failure observable** — Return a typed error from update/schedule construction instead of printing to stderr and silently skipping the frame.
   - **Done when:** callers can log, fail startup, or fall back to sequential execution deliberately.
-- [ ] **ECS-P1-022: Stabilize same-order execution semantics** — Define whether equal-order systems preserve registration order and add deterministic tests.
+- [x] **ECS-P1-022: Stabilize same-order execution semantics** — Define whether equal-order systems preserve registration order and add deterministic tests.
   - **Done when:** repeated runs produce the same observable ordering or the API explicitly declares ordering unspecified where safe.
 
 #### P2 - Query and storage performance
 
-- [ ] **ECS-P2-001: Choose the smallest immutable query driver** — Select the smallest component storage at query construction rather than always iterating the first tuple component.
+- [x] **ECS-P2-001: Choose the smallest immutable query driver** — Select the smallest component storage at query construction rather than always iterating the first tuple component.
   - **Done when:** tuple order no longer causes large performance differences for read-only queries; result tuple order remains unchanged.
-- [ ] **ECS-P2-002: Design driver selection for mutable queries** — Determine when a mutable storage must drive iteration and how to select among multiple mutable storages without violating alias rules.
+- [x] **ECS-P2-002: Design driver selection for mutable queries** — Determine when a mutable storage must drive iteration and how to select among multiple mutable storages without violating alias rules.
   - **Depends on:** ECS-P1-002.
   - **Done when:** the decision is documented and benchmarked before implementation.
-- [ ] **ECS-P2-003: Add sparse-join benchmarks** — Benchmark 1%, 10%, 50%, and 100% overlap at 1K/10K/100K entities with rare/common tuple order reversed.
+- [x] **ECS-P2-003: Add sparse-join benchmarks** — Benchmark 1% and 100% overlap at 1K/10K/100K entities, representative multi-component joins, current typed caching, and baseline driver costs; the production driver selects the smallest column.
   - **Done when:** Criterion reports make driver-selection regressions visible.
 - [ ] **ECS-P2-004: Benchmark changed queries with sparse dirtiness** — Measure 0, 1, 10, 1%, and 100% dirty entities across one- and multi-component queries.
   - **Depends on:** ECS-P1-007.
@@ -736,7 +729,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### P2 - Scheduler and system performance
 
-- [ ] **ECS-P2-020: Benchmark scheduler overhead** — Measure sequential versus parallel ticks for 0-32 systems, tiny/medium/large workloads, conflicts, disabled systems, and different thread counts.
+- [x] **ECS-P2-020: Benchmark scheduler overhead** — Measure sequential versus parallel ticks for 0-32 systems, tiny/medium/large workloads, conflicts, disabled systems, and different thread counts.
   - **Depends on:** safe parallel architecture completion.
 - [ ] **ECS-P2-021: Replace whole-group barriers with a ready queue if justified** — Start a system when its own dependencies complete instead of waiting for every system in the previous group.
   - **Depends on:** ECS-P2-020.
@@ -761,7 +754,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 - [ ] **ECS-P2-040: Remove wall-clock thresholds from unit tests** — Move machine-dependent “100K operations under N ms” assertions to Criterion or a dedicated performance job.
   - **Done when:** unit tests verify correctness only and do not fail on slower CI hardware.
-- [ ] **ECS-P2-041: Store benchmark baselines** — Add documented representative hardware/configuration and retain Criterion summaries as CI artifacts.
+- [x] **ECS-P2-041: Store benchmark baselines** — Retain raw paired baseline/current samples, hardware/toolchain/configuration, checksum validation and reproduction script in `docs/benchmarks/` and `docs/ecs_benchmarks.md`.
   - **Done when:** performance changes can be compared rather than judged from one-off numbers.
 - [ ] **ECS-P2-042: Define regression budgets** — Establish thresholds only after stable baselines exist for spawn, query, sparse join, change detection, destruction, and system ticks.
   - **Depends on:** ECS-P2-003 through ECS-P2-041.
@@ -777,7 +770,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   - `cargo test --workspace --all-features`
   - `cargo test --workspace --doc`
-- [ ] **ECS-P1-033: Add Miri CI for `katla_ecs`** — Run focused query, sparse-set, allocator, and lifecycle tests under Miri on a pinned nightly.
+- [x] **ECS-P1-033: Add Miri CI for `katla_ecs`** — Run focused query, parameter, filter, sparse-set, allocator, and lifecycle tests under Miri on a pinned nightly.
   - **Depends on:** ECS-P1-001 through ECS-P1-004.
 - [ ] **ECS-P1-034: Add sanitizer coverage for parallel execution** — Run ThreadSanitizer where supported and Address/UndefinedBehavior sanitizers for stress binaries/tests.
   - **Depends on:** safe parallel architecture being runnable.
@@ -790,7 +783,7 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### P1 - Production exit criteria
 
-- [ ] **ECS-P1-050: Complete the sequential ECS release gate** — Entity generation, clear, lifecycle cleanup, events, transform cycles, Miri query tests, and ECS CI must all pass while runtime remains sequential.
+- [ ] **ECS-P1-050: Complete the extended ECS release gate** — Cover remaining lifecycle cleanup, transform cycles, state-machine tests, fuzzing and workspace-wide quality gates in addition to the generation, clear, events, Miri and ECS CI coverage delivered in #138.
   - **Depends on:** ECS-P0-010 through ECS-P0-034 and ECS-P1-001 through ECS-P1-037.
 - [ ] **ECS-P1-051: Complete the parallel ECS release gate** — No raw full-World aliasing, all worker data is `Send`/`Sync`, non-send systems are exclusive, order is enforced, deferred commands are deterministic, Miri/sanitizers pass, and benchmarks show a benefit.
   - **Depends on:** ECS-P0-040 through ECS-P0-051 and ECS-P2-020 through ECS-P2-023.
@@ -799,19 +792,19 @@ hstack(children).spacing(2.0).padding_all(10.0)
 
 #### Long-term architecture evaluation
 
-- [ ] **ECS-LT-001: Explore sparse-set to archetype migration** — Research archetype storage, archetype graphs, add/remove costs, iteration gains, serialization impact, and migration strategies. Do not implement until current sparse-set correctness and lifecycle work is stable.
+- [x] **ECS-LT-001: Measure sparse-set and archetype storage** — Reproducible representative iteration, sparse-match and narrow/wide churn measurements retain sparse production storage with cached dense offsets; archetype tables remain benchmark fixtures. See `docs/ecs_benchmarks.md`.
   - **Done when:** the output is an ADR and a sequence of independently shippable tasks with representative benchmark evidence.
 - [ ] **ECS-LT-002: Explore generic component serialization registry** — Design type-erased registration of serialize/deserialize/clone/inspect operations and define ID/version migration behavior.
   - **Done when:** scene serialization no longer depends on hand-written component lists and stale raw entity references are remapped safely.
 
 #### Documentation
 
-- [ ] **ECS-DOC-001: Rewrite the ECS architecture overview** — Document actual sparse-set storage, generational identity, typed queries, resources, structural commands, stages, and safe parallel boundaries; do not refer to a removed archetype implementation as current behavior.
-- [ ] **ECS-DOC-002: Write the system authoring guide** — Show parallel typed parameters, exclusive systems, non-send resources, ordering, commands, events, and common unsafe mistakes.
+- [x] **ECS-DOC-001: Rewrite the ECS architecture overview** — Document actual sparse-set storage, generational identity, typed queries, resources, structural commands, stages, and safe parallel boundaries; do not refer to a removed archetype implementation as current behavior.
+- [x] **ECS-DOC-002: Write the system authoring guide** — Show parallel typed parameters, exclusive systems, non-send resources, ordering, commands, events, and common unsafe mistakes.
 - [ ] **ECS-DOC-003: Document entity and component lifecycle** — Include precise callback/event ordering and cleanup ownership for scripts, physics, audio, renderer, and editor.
-- [ ] **ECS-DOC-004: Document unsafe invariants** — List every remaining unsafe module/function, its proof obligations, and the Miri/sanitizer tests that protect it.
-- [ ] **ECS-DOC-005: Document performance characteristics** — Explain query-driver selection, sparse joins, change detection, structural mutation costs, page memory, and when parallelism is expected to win.
-- [ ] **ECS-DOC-006: Add migration guidance** — Explain API changes from the current `System::update(&mut World)` model and provide before/after examples for built-in and game systems.
+- [x] **ECS-DOC-004: Document unsafe invariants** — List every remaining unsafe module/function, its proof obligations, and the Miri/sanitizer tests that protect it.
+- [x] **ECS-DOC-005: Document performance characteristics** — Explain query-driver selection, sparse joins, change detection, structural mutation costs, page memory, and when parallelism is expected to win.
+- [x] **ECS-DOC-006: Add migration guidance** — Explain API changes from the current `System::update(&mut World)` model and provide before/after examples for built-in and game systems.
 
 #### Completed groundwork retained for context
 

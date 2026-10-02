@@ -1,4 +1,5 @@
 use std::any::{Any, TypeId};
+use std::cell::UnsafeCell;
 
 /// Marker trait for types that can be stored as World resources.
 ///
@@ -28,7 +29,7 @@ impl<T: Any + 'static> Resource for T {}
 /// Container for storing resources of different types.
 #[derive(Default)]
 pub struct ResourceStorage {
-    resources: HashMap<TypeId, Box<dyn Any + 'static>>,
+    resources: HashMap<TypeId, Box<UnsafeCell<Box<dyn Any + 'static>>>>,
 }
 
 use std::collections::HashMap;
@@ -43,7 +44,10 @@ impl ResourceStorage {
     ///
     /// If a resource of this type already exists, it will be replaced.
     pub fn insert<R: Resource>(&mut self, resource: R) {
-        self.resources.insert(TypeId::of::<R>(), Box::new(resource));
+        self.resources.insert(
+            TypeId::of::<R>(),
+            Box::new(UnsafeCell::new(Box::new(resource))),
+        );
     }
 
     /// Get a reference to a resource.
@@ -52,7 +56,7 @@ impl ResourceStorage {
     pub fn get<R: Resource>(&self) -> Option<&R> {
         self.resources
             .get(&TypeId::of::<R>())
-            .and_then(|r| r.downcast_ref::<R>())
+            .and_then(|r| unsafe { (&*r.get()).downcast_ref::<R>() })
     }
 
     /// Get a mutable reference to a resource.
@@ -61,7 +65,23 @@ impl ResourceStorage {
     pub fn get_mut<R: Resource>(&mut self) -> Option<&mut R> {
         self.resources
             .get_mut(&TypeId::of::<R>())
-            .and_then(|r| r.downcast_mut::<R>())
+            .and_then(|r| r.get_mut().downcast_mut::<R>())
+    }
+
+    /// Resolves an independent resource cell while the registry is frozen.
+    ///
+    /// # Safety
+    /// The scheduler must hold an exclusive claim for R until every borrow of the returned
+    /// pointer is dropped. No shared or mutable claim for R may overlap it.
+    pub(crate) unsafe fn prepare_ptr<R: Resource>(&self) -> Option<*mut R> {
+        self.resources.get(&TypeId::of::<R>()).and_then(|cell| {
+            // SAFETY: The caller's exclusive claim covers this resource cell.
+            unsafe {
+                (&mut *cell.get())
+                    .downcast_mut::<R>()
+                    .map(|resource| resource as *mut R)
+            }
+        })
     }
 
     /// Check if a resource exists.
@@ -75,7 +95,7 @@ impl ResourceStorage {
     pub fn remove<R: Resource>(&mut self) -> Option<R> {
         self.resources
             .remove(&TypeId::of::<R>())
-            .and_then(|r| r.downcast::<R>().ok())
+            .and_then(|r| r.into_inner().downcast::<R>().ok())
             .map(|boxed| *boxed)
     }
 }

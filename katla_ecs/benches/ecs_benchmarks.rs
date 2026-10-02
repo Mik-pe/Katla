@@ -2,7 +2,6 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use katla_ecs::{Component, EntityId, World};
 
 #[derive(Component, Default)]
-#[allow(dead_code)]
 struct Position {
     x: f32,
     y: f32,
@@ -10,7 +9,6 @@ struct Position {
 }
 
 #[derive(Component, Default)]
-#[allow(dead_code)]
 struct Velocity {
     dx: f32,
     dy: f32,
@@ -100,7 +98,7 @@ fn bench_query_1_component(c: &mut Criterion) {
             spawn_entities(&mut world, size, false);
             b.iter(|| {
                 for (_id, pos) in world.query::<&Position>() {
-                    black_box(pos.x);
+                    black_box((pos.x, pos.y, pos.z));
                 }
             });
         });
@@ -116,7 +114,7 @@ fn bench_query_2_component(c: &mut Criterion) {
             spawn_2component_entities(&mut world, size);
             b.iter(|| {
                 for (_id, pos, vel) in world.query::<(&Position, &Velocity)>() {
-                    black_box((pos.x, vel.dx));
+                    black_box((pos.x, pos.y, pos.z, vel.dx, vel.dy, vel.dz));
                 }
             });
         });
@@ -134,7 +132,7 @@ fn bench_query_4_component(c: &mut Criterion) {
                 for (_id, pos, vel, hp, _tag) in
                     world.query::<(&Position, &Velocity, &Health, &Tag)>()
                 {
-                    black_box((pos.x, vel.dx, hp.0));
+                    black_box((pos.x, pos.y, pos.z, vel.dx, vel.dy, vel.dz, hp.0));
                 }
             });
         });
@@ -167,7 +165,7 @@ fn bench_get_component(c: &mut Criterion) {
             let target = ids[size / 2];
             b.iter(|| {
                 if let Some(pos) = world.get_component::<Position>(target) {
-                    black_box(pos.x);
+                    black_box((pos.x, pos.y, pos.z));
                 }
             });
         });

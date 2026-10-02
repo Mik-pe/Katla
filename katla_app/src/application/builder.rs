@@ -27,7 +27,7 @@ use std::ffi::CString;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use katla_ecs::{System, SystemExecutionOrder, World};
+use katla_ecs::{System, SystemExecutionOrder, TypedSystem, World};
 use katla_ui::{FontId, ForkAwesome};
 use winit::dpi::LogicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
@@ -212,19 +212,23 @@ impl ApplicationBuilder {
         (theme, gui_state)
     }
 
-    pub fn with_system(mut self, system: Box<dyn System>, order: SystemExecutionOrder) -> Self {
-        self.world.register_system(system, order);
+    /// Add a system whose access is derived from its typed parameters.
+    pub fn with_typed_system<S: TypedSystem>(
+        mut self,
+        system: S,
+        order: SystemExecutionOrder,
+    ) -> Self {
+        self.world.register_typed_system(system, order);
         self
     }
 
-    /// Add multiple systems with their execution orders.
-    ///
-    /// # Arguments
-    /// * `systems` - Vector of (system, order) tuples
-    pub fn with_systems(mut self, systems: Vec<(Box<dyn System>, SystemExecutionOrder)>) -> Self {
-        for (system, order) in systems {
-            self.world.register_system(system, order);
-        }
+    /// Add a system that accesses the full world on the calling thread.
+    pub fn with_exclusive_system(
+        mut self,
+        system: Box<dyn System>,
+        order: SystemExecutionOrder,
+    ) -> Self {
+        self.world.register_exclusive_system(system, order);
         self
     }
 

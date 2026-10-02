@@ -3,12 +3,14 @@ extern crate self as katla_ecs;
 pub mod components;
 pub mod entity;
 pub mod events;
+pub mod params;
 pub mod query;
 pub mod resource;
 pub(crate) mod scheduler;
 pub mod spawn;
 pub(crate) mod storage;
 pub mod system;
+pub mod typed_query;
 pub mod world;
 
 #[cfg(feature = "editor")]
@@ -24,17 +26,20 @@ pub mod scene_tool;
 mod entity_allocator;
 mod entity_slot;
 mod sparse_set;
-pub(crate) mod unsafe_world_cell;
 
 // Re-export commonly used types for convenience
 pub use components::Component;
 pub use entity::EntityId;
 pub use events::{ComponentEvent, EntityEvent};
+pub use params::{
+    CommandQueue, Commands, EventReader, EventWriter, Events, Local, Res, ResMut, SystemParam,
+};
 pub use query::{FilteredQueryIter, QueryFilter, With, Without};
 pub use resource::Resource;
 pub use spawn::Spawnable;
 pub(crate) use storage::ComponentStorageManager;
-pub use system::{ComponentAccess, ResourceAccess, System, SystemExecutionOrder};
+pub use system::{ComponentAccess, ResourceAccess, System, SystemExecutionOrder, TypedSystem};
+pub use typed_query::{Query, QueryDescriptor, QueryView, Read, Write};
 pub use world::World;
 
 #[cfg(feature = "editor")]

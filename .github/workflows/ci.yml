@@ -54,6 +54,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check and test ECS
+        run: |
+          cargo check -p katla_ecs --all-targets --all-features --locked
+          cargo test -p katla_ecs --all-features --locked
+          cargo clippy -p katla_ecs --all-targets --all-features --locked -- -D warnings
+
       - name: Check graphics library
         run: cargo check -p katla_gfx --lib --locked --quiet
 
@@ -99,6 +105,13 @@ jobs:
           xcodebuild -version
           system_profiler SPDisplaysDataType || true
 
+      - name: Check and test ECS and migrated systems
+        run: |
+          cargo check -p katla_ecs --all-targets --all-features --locked
+          cargo test -p katla_ecs --all-features --locked
+          cargo test -p katla_app -p katla_script --lib --locked
+          cargo clippy -p katla_ecs --all-targets --all-features --locked -- -D warnings
+
       - name: Check graphics and application crates
         run: cargo check -p katla_gfx -p katla_app --locked --quiet
 
@@ -122,3 +135,26 @@ jobs:
           path: target/render-graph-diagnostics/
           if-no-files-found: ignore
           retention-days: 7
+
+  ecs-miri:
+    name: ECS pointer and lifetime checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install pinned nightly with Miri
+        run: rustup toolchain install nightly-2026-08-04 --profile minimal --component miri
+
+      - name: Check query ownership
+        run: |
+          cargo +nightly-2026-08-04 miri test -p katla_ecs --lib typed_query::tests --locked
+          cargo +nightly-2026-08-04 miri test -p katla_ecs --lib params::tests::test_param --locked
+          cargo +nightly-2026-08-04 miri test -p katla_ecs --lib query::filter::tests --locked
+          cargo +nightly-2026-08-04 miri test -p katla_ecs --lib entity_allocator::tests --locked
+          cargo +nightly-2026-08-04 miri test -p katla_ecs --lib sparse_set::tests::test_generational_keys_reject_stale_access --locked
+          cargo +nightly-2026-08-04 miri test -p katla_ecs --test entity_lifecycle --locked
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
+          RAYON_NUM_THREADS: "2"

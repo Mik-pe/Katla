@@ -1,6 +1,6 @@
 //! Rapier-based physics system that syncs ECS components with the Rapier simulation.
 
-use katla_ecs::{ComponentAccess, EntityId, System, World};
+use katla_ecs::{EntityId, System, World};
 use katla_math::Vec3;
 use katla_physics::{
     BodyType, ColliderShape, CollisionFilter, Joint, MeshColliderData, PhysicsActive,
@@ -46,33 +46,6 @@ impl System for RapierPhysicsSystem {
 
     fn name(&self) -> &str {
         "RapierPhysicsSystem"
-    }
-
-    fn component_access() -> Vec<ComponentAccess>
-    where
-        Self: Sized,
-    {
-        vec![
-            ComponentAccess::write::<RigidBody>(),
-            ComponentAccess::read::<ColliderShape>(),
-            ComponentAccess::read::<PhysicsMaterial>(),
-            ComponentAccess::read::<CollisionFilter>(),
-            ComponentAccess::write::<TransformComponent>(),
-            ComponentAccess::write::<Joint>(),
-            ComponentAccess::read::<TriggerVolume>(),
-        ]
-    }
-
-    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-        vec![
-            ComponentAccess::write::<RigidBody>(),
-            ComponentAccess::read::<ColliderShape>(),
-            ComponentAccess::read::<PhysicsMaterial>(),
-            ComponentAccess::read::<CollisionFilter>(),
-            ComponentAccess::write::<TransformComponent>(),
-            ComponentAccess::write::<Joint>(),
-            ComponentAccess::read::<TriggerVolume>(),
-        ]
     }
 }
 

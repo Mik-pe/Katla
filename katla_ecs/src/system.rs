@@ -40,141 +40,59 @@ impl ResourceAccess {
     }
 }
 
-/// System trait for the ECS framework.
+/// An exclusive system running on the caller thread with the entire World.
 ///
-/// Systems contain the logic that operates on entities with specific components.
-/// In this architecture, systems work directly with component storages for better
-/// cache locality and performance.
-///
-/// # Parallel Safety
-///
-/// When using [`World::update_parallel`](crate::World::update_parallel), systems
-/// that access components **MUST** override [`component_access()`](System::component_access)
-/// and [`component_access_dyn()`](System::component_access_dyn) to declare their
-/// read/write patterns. A system that forgets to override these methods defaults to
-/// "no declared access" and the scheduler will assume it is safe to run in parallel
-/// with any other system — which can cause data races if the system actually reads
-/// or writes components.
-///
-/// # Examples
-///
-/// ```
-/// use katla_ecs::{System, World};
-///
-/// struct PhysicsSystem;
-///
-/// impl System for PhysicsSystem {
-///     fn update(&mut self, world: &mut World, delta_time: f32) {
-///         // Update physics-related components...
-///     }
-/// }
-/// ```
+/// Use [`TypedSystem`] for systems that may execute concurrently.
 pub trait System {
-    /// Update logic for this system.
-    ///
-    /// Called once per frame with access to the entire world.
-    /// This allows systems to read input state and also access all component storages.
-    ///
-    /// # Arguments
-    ///
-    /// * `world` - Mutable reference to the world
-    /// * `delta_time` - Time elapsed since the last frame in seconds
+    /// Runs with exclusive access to the world.
     fn update(&mut self, world: &mut World, delta_time: f32);
-
-    /// Optional initialization logic.
-    ///
-    /// Called once when the system is registered with the world.
+    /// Runs once at registration.
     fn initialize(&mut self) {}
-
-    /// Optional cleanup logic.
-    ///
-    /// Called when the system is removed or the world is destroyed.
+    /// Runs when removed or the world is destroyed.
     fn shutdown(&mut self) {}
-
-    /// Returns whether this system should be updated.
-    ///
-    /// Can be used to enable/disable systems at runtime.
+    /// Controls whether this system runs this frame.
     fn is_enabled(&self) -> bool {
         true
     }
-
-    /// Returns the name of this system for debugging purposes.
+    /// Returns the diagnostic name.
     fn name(&self) -> &str {
         std::any::type_name::<Self>()
     }
+}
 
-    /// Returns the component access patterns for this system.
-    ///
-    /// Override this to declare which components your system reads or writes.
-    /// Used by the parallel scheduler to detect conflicts and run independent
-    /// systems concurrently.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use katla_ecs::{System, World, ComponentAccess, SystemExecutionOrder};
-    /// use katla_ecs::Component;
-    ///
-    /// #[derive(Component)]
-    /// struct Position { x: f32, y: f32 }
-    ///
-    /// #[derive(Component)]
-    /// struct Velocity { dx: f32, dy: f32 }
-    ///
-    /// struct MovementSystem;
-    ///
-    /// impl System for MovementSystem {
-    ///     fn update(&mut self, world: &mut World, dt: f32) { /* ... */ }
-    ///
-    ///     fn component_access() -> Vec<ComponentAccess>
-    ///     where Self: Sized
-    ///     {
-    ///         vec![
-    ///             ComponentAccess::write::<Position>(),
-    ///             ComponentAccess::read::<Velocity>(),
-    ///         ]
-    ///     }
-    /// }
-    /// ```
-    fn component_access() -> Vec<ComponentAccess>
-    where
-        Self: Sized,
-    {
-        Vec::new()
+/// A system whose access claims are derived from its sealed parameters.
+///
+/// Worker systems cannot contain caller-thread-only state:
+///
+/// ```compile_fail
+/// use std::rc::Rc;
+/// use katla_ecs::TypedSystem;
+/// struct ThreadLocalSystem(Rc<()>);
+/// impl TypedSystem for ThreadLocalSystem {
+///     type Params = ();
+///     fn run(&mut self, _: (), _: f32) {}
+/// }
+/// ```
+pub trait TypedSystem: Send + 'static {
+    /// Query, resource and local parameters prepared for this system.
+    type Params: crate::params::SystemParam;
+    /// Runs with access only to the prepared parameters.
+    fn run(
+        &mut self,
+        params: <Self::Params as crate::params::SystemParam>::Item<'_>,
+        delta_time: f32,
+    );
+    /// Runs once at registration.
+    fn initialize(&mut self) {}
+    /// Runs when removed or the world is destroyed.
+    fn shutdown(&mut self) {}
+    /// Controls whether this system runs this frame.
+    fn is_enabled(&self) -> bool {
+        true
     }
-
-    /// Trait-object-compatible version of [`component_access`](System::component_access).
-    ///
-    /// Returns the access patterns for this system. Concrete types that override
-    /// `component_access()` should also override this to return the same value.
-    ///
-    /// **Warning:** The default returns an empty vec (no declared access). Systems
-    /// that access components MUST override both this method and `component_access()`
-    /// for safe parallel execution — otherwise the scheduler will assume the system
-    /// has no conflicts and may run it concurrently with systems that access the same
-    /// components, causing data races.
-    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-        Vec::new()
-    }
-
-    /// Returns the resource access patterns for this system.
-    ///
-    /// Override this to declare which resources your system reads or writes.
-    /// Used by the parallel scheduler to detect conflicts and run independent
-    /// systems concurrently.
-    fn resource_access() -> Vec<ResourceAccess>
-    where
-        Self: Sized,
-    {
-        Vec::new()
-    }
-
-    /// Trait-object-compatible version of [`resource_access`](System::resource_access).
-    ///
-    /// Returns the resource access patterns for this system. Concrete types that override
-    /// `resource_access()` should also override this to return the same value.
-    fn resource_access_dyn(&self) -> Vec<ResourceAccess> {
-        Vec::new()
+    /// Returns the diagnostic name.
+    fn name(&self) -> &str {
+        std::any::type_name::<Self>()
     }
 }
 
@@ -198,21 +116,74 @@ impl Default for SystemExecutionOrder {
     }
 }
 
-/// A wrapper that associates a System with its execution order.
-pub struct OrderedSystem {
-    pub system: Box<dyn System>,
+pub(crate) type PreparedJob<'a> = Box<dyn FnOnce() + Send + 'a>;
+
+pub(crate) trait ErasedTypedSystem: Send {
+    fn initialize(&mut self);
+    fn shutdown(&mut self);
+    fn is_enabled(&self) -> bool;
+    unsafe fn prepare<'a>(
+        &'a mut self,
+        context: &crate::params::ParamContext<'a>,
+        dt: f32,
+    ) -> PreparedJob<'a>;
+    fn drain_commands(&mut self) -> Vec<crate::params::DeferredCommand>;
+}
+
+pub(crate) struct TypedAdapter<S: TypedSystem> {
+    pub system: S,
+    pub state: <S::Params as crate::params::SystemParam>::State,
+}
+
+impl<S: TypedSystem> ErasedTypedSystem for TypedAdapter<S> {
+    fn initialize(&mut self) {
+        self.system.initialize();
+    }
+    fn shutdown(&mut self) {
+        self.system.shutdown();
+    }
+    fn is_enabled(&self) -> bool {
+        self.system.is_enabled()
+    }
+    unsafe fn prepare<'a>(
+        &'a mut self,
+        context: &crate::params::ParamContext<'a>,
+        dt: f32,
+    ) -> PreparedJob<'a> {
+        use crate::params::SystemParam;
+        // SAFETY: The scheduler validates and holds all parameter access claims.
+        let params = unsafe { S::Params::prepare(context, &mut self.state) };
+        let system = &mut self.system;
+        Box::new(move || system.run(params, dt))
+    }
+    fn drain_commands(&mut self) -> Vec<crate::params::DeferredCommand> {
+        <S::Params as crate::params::SystemParam>::drain_commands(&mut self.state)
+    }
+}
+
+pub(crate) enum SystemKind {
+    Exclusive(Box<dyn System>),
+    Typed(Box<dyn ErasedTypedSystem>),
+}
+
+pub(crate) struct OrderedSystem {
+    pub system: SystemKind,
     pub order: SystemExecutionOrder,
-    pub access_patterns: Vec<ComponentAccess>,
-    pub resource_access_patterns: Vec<ResourceAccess>,
+    pub registration: usize,
+    pub access: crate::params::ParamAccess,
 }
 
 impl OrderedSystem {
-    pub fn new(system: Box<dyn System>, order: SystemExecutionOrder) -> Self {
-        Self {
-            system,
-            order,
-            access_patterns: Vec::new(),
-            resource_access_patterns: Vec::new(),
+    pub fn shutdown(&mut self) {
+        match &mut self.system {
+            SystemKind::Exclusive(s) => s.shutdown(),
+            SystemKind::Typed(s) => s.shutdown(),
+        }
+    }
+    pub fn drain_commands(&mut self) -> Vec<crate::params::DeferredCommand> {
+        match &mut self.system {
+            SystemKind::Exclusive(_) => Vec::new(),
+            SystemKind::Typed(s) => s.drain_commands(),
         }
     }
 }
@@ -282,11 +253,5 @@ mod tests {
             access,
             ComponentAccess::Write(TypeId::of::<TestComponent>())
         );
-    }
-
-    #[test]
-    fn test_default_component_access_is_empty() {
-        let access = <TestSystem as System>::component_access();
-        assert!(access.is_empty());
     }
 }

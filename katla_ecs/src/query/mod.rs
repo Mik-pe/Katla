@@ -41,248 +41,162 @@
 mod macros;
 pub mod filter;
 pub mod par_query;
-
 pub(crate) use filter::assert_filter_query_disjoint;
 pub use filter::{FilteredQueryIter, QueryFilter, With, Without};
 pub use par_query::ParQueryData;
 
-use paste::paste;
-
-use crate::EntityId;
-use crate::components::Component;
-use crate::storage::{ComponentStorage, ComponentStorageManager};
-use std::any::TypeId;
-
-// ── Arity 1 ────────────────────────────────────────────────────────────────
-impl_query_iter_arity1!();
-
-// ── Arity 2 ────────────────────────────────────────────────────────────────
-impl_query_iter_all_ref!(2, T1, T2);
-impl_query_iter_single_mut!(2, T1Mut, [], T1, [T2]);
-impl_query_iter_single_mut!(2, T2Mut, [T1], T2, []);
-impl_query_iter_double_mut!(2, T1T2Mut, [T1, T2], []);
-
-// ── Arity 3 ────────────────────────────────────────────────────────────────
-impl_query_iter_all_ref!(3, T1, T2, T3);
-impl_query_iter_single_mut!(3, T1Mut, [], T1, [T2, T3]);
-impl_query_iter_single_mut!(3, T2Mut, [T1], T2, [T3]);
-impl_query_iter_single_mut!(3, T3Mut, [T1, T2], T3, []);
-
-// ── Arity 4 ────────────────────────────────────────────────────────────────
-impl_query_iter_all_ref!(4, T1, T2, T3, T4);
-impl_query_iter_single_mut!(4, T1Mut, [], T1, [T2, T3, T4]);
-impl_query_iter_single_mut!(4, T2Mut, [T1], T2, [T3, T4]);
-impl_query_iter_single_mut!(4, T3Mut, [T1, T2], T3, [T4]);
-impl_query_iter_single_mut!(4, T4Mut, [T1, T2, T3], T4, []);
-
-// ── Arity 5 ────────────────────────────────────────────────────────────────
-impl_query_iter_all_ref!(5, T1, T2, T3, T4, T5);
-impl_query_iter_single_mut!(5, T1Mut, [], T1, [T2, T3, T4, T5]);
-impl_query_iter_single_mut!(5, T2Mut, [T1], T2, [T3, T4, T5]);
-impl_query_iter_single_mut!(5, T3Mut, [T1, T2], T3, [T4, T5]);
-impl_query_iter_single_mut!(5, T4Mut, [T1, T2, T3], T4, [T5]);
-impl_query_iter_single_mut!(5, T5Mut, [T1, T2, T3, T4], T5, []);
-
-// ── Arity 6 ────────────────────────────────────────────────────────────────
-impl_query_iter_all_ref!(6, T1, T2, T3, T4, T5, T6);
-impl_query_iter_single_mut!(6, T1Mut, [], T1, [T2, T3, T4, T5, T6]);
-impl_query_iter_single_mut!(6, T2Mut, [T1], T2, [T3, T4, T5, T6]);
-impl_query_iter_single_mut!(6, T3Mut, [T1, T2], T3, [T4, T5, T6]);
-impl_query_iter_single_mut!(6, T4Mut, [T1, T2, T3], T4, [T5, T6]);
-impl_query_iter_single_mut!(6, T5Mut, [T1, T2, T3, T4], T5, [T6]);
-impl_query_iter_single_mut!(6, T6Mut, [T1, T2, T3, T4, T5], T6, []);
-
-// ── Arity 7 ────────────────────────────────────────────────────────────────
-impl_query_iter_all_ref!(7, T1, T2, T3, T4, T5, T6, T7);
-impl_query_iter_single_mut!(7, T1Mut, [], T1, [T2, T3, T4, T5, T6, T7]);
-impl_query_iter_single_mut!(7, T2Mut, [T1], T2, [T3, T4, T5, T6, T7]);
-impl_query_iter_single_mut!(7, T3Mut, [T1, T2], T3, [T4, T5, T6, T7]);
-impl_query_iter_single_mut!(7, T4Mut, [T1, T2, T3], T4, [T5, T6, T7]);
-impl_query_iter_single_mut!(7, T5Mut, [T1, T2, T3, T4], T5, [T6, T7]);
-impl_query_iter_single_mut!(7, T6Mut, [T1, T2, T3, T4, T5], T6, [T7]);
-impl_query_iter_single_mut!(7, T7Mut, [T1, T2, T3, T4, T5, T6], T7, []);
-
-// ── Arity 8 ────────────────────────────────────────────────────────────────
-impl_query_iter_all_ref!(8, T1, T2, T3, T4, T5, T6, T7, T8);
-impl_query_iter_single_mut!(8, T1Mut, [], T1, [T2, T3, T4, T5, T6, T7, T8]);
-impl_query_iter_single_mut!(8, T2Mut, [T1], T2, [T3, T4, T5, T6, T7, T8]);
-impl_query_iter_single_mut!(8, T3Mut, [T1, T2], T3, [T4, T5, T6, T7, T8]);
-impl_query_iter_single_mut!(8, T4Mut, [T1, T2, T3], T4, [T5, T6, T7, T8]);
-impl_query_iter_single_mut!(8, T5Mut, [T1, T2, T3, T4], T5, [T6, T7, T8]);
-impl_query_iter_single_mut!(8, T6Mut, [T1, T2, T3, T4, T5], T6, [T7, T8]);
-impl_query_iter_single_mut!(8, T7Mut, [T1, T2, T3, T4, T5, T6], T7, [T8]);
-impl_query_iter_single_mut!(8, T8Mut, [T1, T2, T3, T4, T5, T6, T7], T8, []);
-
-// ── Adding arity 9 is a one-line invocation per permutation: ─────────────
-// impl_query_iter_all_ref!(9, T1, T2, T3, T4, T5, T6, T7, T8, T9);
-// impl_query_iter_single_mut!(9, T1Mut, [], T1, [T2, T3, T4, T5, T6, T7, T8, T9]);
-// impl_query_iter_single_mut!(9, T2Mut, [T1], T2, [T3, T4, T5, T6, T7, T8, T9]);
-// ... etc.
+use crate::sparse_set::KeyCursor;
+use crate::typed_query::{QueryDescriptor, Read, Write};
+use crate::{Component, ComponentStorageManager, EntityId};
+use std::{any::TypeId, marker::PhantomData};
 
 mod sealed {
     pub trait Sealed {}
 }
 
-/// Marker trait for query types that only produce immutable references.
-///
-/// This trait is implemented only for patterns that yield shared references
-/// (`&T`, `(&T, &U)`, etc.), never for patterns containing `&mut T`.
-/// It is used as a bound on [`World::query_ref`](crate::World::query_ref)
-/// to close the soundness hole where `query_ref::<&mut T>()` would create
-/// mutable references from a shared `&World`.
-pub trait ImmutableQuery: sealed::Sealed {}
-
-impl<T: Component + 'static> sealed::Sealed for &T {}
-impl<T: Component + 'static> ImmutableQuery for &T {}
-
-impl<T1: Component + 'static, T2: Component + 'static> sealed::Sealed for (&T1, &T2) {}
-impl<T1: Component + 'static, T2: Component + 'static> ImmutableQuery for (&T1, &T2) {}
-
-impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> sealed::Sealed
-    for (&T1, &T2, &T3)
-{
-}
-impl<T1: Component + 'static, T2: Component + 'static, T3: Component + 'static> ImmutableQuery
-    for (&T1, &T2, &T3)
-{
+/// Sealed query patterns that only yield shared references.
+pub trait ImmutableQuery: QueryData + sealed::Sealed {
+    /// Fetches an immutable query without borrowing the manager mutably.
+    fn fetch_ref(storage: &ComponentStorageManager) -> Self::Iter<'_>;
 }
 
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-> sealed::Sealed for (&T1, &T2, &T3, &T4)
-{
-}
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-> ImmutableQuery for (&T1, &T2, &T3, &T4)
-{
-}
-
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-    T5: Component + 'static,
-> sealed::Sealed for (&T1, &T2, &T3, &T4, &T5)
-{
-}
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-    T5: Component + 'static,
-> ImmutableQuery for (&T1, &T2, &T3, &T4, &T5)
-{
-}
-
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-    T5: Component + 'static,
-    T6: Component + 'static,
-> sealed::Sealed for (&T1, &T2, &T3, &T4, &T5, &T6)
-{
-}
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-    T5: Component + 'static,
-    T6: Component + 'static,
-> ImmutableQuery for (&T1, &T2, &T3, &T4, &T5, &T6)
-{
-}
-
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-    T5: Component + 'static,
-    T6: Component + 'static,
-    T7: Component + 'static,
-> sealed::Sealed for (&T1, &T2, &T3, &T4, &T5, &T6, &T7)
-{
-}
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-    T5: Component + 'static,
-    T6: Component + 'static,
-    T7: Component + 'static,
-> ImmutableQuery for (&T1, &T2, &T3, &T4, &T5, &T6, &T7)
-{
-}
-
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-    T5: Component + 'static,
-    T6: Component + 'static,
-    T7: Component + 'static,
-    T8: Component + 'static,
-> sealed::Sealed for (&T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
-{
-}
-impl<
-    T1: Component + 'static,
-    T2: Component + 'static,
-    T3: Component + 'static,
-    T4: Component + 'static,
-    T5: Component + 'static,
-    T6: Component + 'static,
-    T7: Component + 'static,
-    T8: Component + 'static,
-> ImmutableQuery for (&T1, &T2, &T3, &T4, &T5, &T6, &T7, &T8)
-{
-}
-
-/// Trait for querying components from storage.
-///
-/// This trait is implemented for tuples of component references, allowing ergonomic
-/// iteration over entities with specific component combinations.
-///
-/// # Safety
-///
-/// Implementations use unsafe code to create multiple mutable references from a single
-/// mutable reference to ComponentStorageManager. This is sound because:
-///
-/// 1. Each component type has a unique TypeId mapping to distinct HashMap entries
-/// 2. HashMap entries don't overlap in memory
-/// 3. Runtime checks verify type uniqueness before creating raw pointers
-/// 4. Lifetimes ensure references don't outlive the storage manager
-pub trait QueryData {
-    /// The item type returned by the iterator.
+/// A query pattern expressed as component references, up to arity eight.
+pub trait QueryData: sealed::Sealed {
+    /// The row yielded for an entity.
     type Item<'a>;
-
-    /// The iterator type that yields items.
+    /// Iterator borrowing the component storages.
     type Iter<'a>: Iterator<Item = Self::Item<'a>>;
-
-    /// Fetches the query from the storage manager.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the same component type is requested multiple times in the query.
-    fn fetch(storage: &mut crate::ComponentStorageManager) -> Self::Iter<'_>;
-
-    /// Returns the TypeIds of all component types in this query tuple.
+    /// Borrows the requested component columns.
+    fn fetch(storage: &mut ComponentStorageManager) -> Self::Iter<'_>;
+    /// Component types used by this query.
     fn type_ids_for_changed() -> Vec<TypeId>;
-
-    /// Extracts the EntityId from a query item.
+    /// Entity associated with an iterator row.
     fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId;
 }
+
+/// Internal mapping between reference patterns and typed column descriptors.
+#[doc(hidden)]
+pub trait QueryElement: sealed::Sealed {
+    type Descriptor: QueryDescriptor;
+}
+impl<T: Component> sealed::Sealed for &T {}
+impl<T: Component> sealed::Sealed for &mut T {}
+impl<T: Component> QueryElement for &T {
+    type Descriptor = Read<T>;
+}
+impl<T: Component> QueryElement for &mut T {
+    type Descriptor = Write<T>;
+}
+
+/// Internal projection from prepared columns into flat legacy rows.
+#[doc(hidden)]
+pub trait QueryRows: QueryData {
+    type Descriptor: QueryDescriptor;
+    /// Projects one validated component row.
+    ///
+    /// # Safety
+    /// Addresses must be live for the returned lifetime and exclusively held
+    /// when the reference pattern includes mutable components.
+    unsafe fn row<'a>(
+        id: EntityId,
+        pointers: <Self::Descriptor as QueryDescriptor>::Pointers,
+    ) -> Self::Item<'a>;
+}
+
+/// Lazy join over component columns resolved once at query construction.
+pub struct QueryIter<'a, Q: QueryRows> {
+    columns: <Q::Descriptor as QueryDescriptor>::Columns<'a>,
+    cursor: Option<KeyCursor<'a, EntityId>>,
+    marker: PhantomData<&'a mut ()>,
+}
+impl<'a, Q: QueryRows> Iterator for QueryIter<'a, Q> {
+    type Item = Q::Item<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let id = self.cursor.as_mut()?.next()?;
+            let Some(pointers) = (unsafe { Q::Descriptor::row_pointer(&self.columns, id) }) else {
+                continue;
+            };
+            return Some(unsafe { Q::row(id, pointers) });
+        }
+    }
+}
+
+fn prepare<'a, Q: QueryRows>(storage: &'a ComponentStorageManager) -> QueryIter<'a, Q> {
+    let ids = Q::type_ids_for_changed();
+    for (i, id) in ids.iter().enumerate() {
+        assert!(
+            !ids[..i].contains(id),
+            "Cannot query the same component type twice"
+        );
+    }
+    // SAFETY: Mutable patterns are constructed from an exclusive manager borrow;
+    // shared construction is restricted to sealed immutable patterns. Each
+    // column is split once into immutable sparse metadata and a dense base.
+    let columns = unsafe { Q::Descriptor::columns(storage) };
+    let cursor = Q::Descriptor::cursor(&columns);
+    QueryIter {
+        columns,
+        cursor,
+        marker: PhantomData,
+    }
+}
+
+impl<T: Component> QueryData for &T {
+    type Item<'a> = (EntityId, &'a T);
+    type Iter<'a> = QueryIter<'a, Self>;
+    fn fetch(storage: &mut ComponentStorageManager) -> Self::Iter<'_> {
+        prepare::<Self>(storage)
+    }
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
+}
+impl<T: Component> QueryRows for &T {
+    type Descriptor = Read<T>;
+    unsafe fn row<'a>(
+        id: EntityId,
+        pointers: <Self::Descriptor as QueryDescriptor>::Pointers,
+    ) -> Self::Item<'a> {
+        (id, unsafe { Self::Descriptor::borrow(pointers) })
+    }
+}
+impl<T: Component> ImmutableQuery for &T {
+    fn fetch_ref(storage: &ComponentStorageManager) -> Self::Iter<'_> {
+        prepare::<Self>(storage)
+    }
+}
+impl<T: Component> QueryData for &mut T {
+    type Item<'a> = (EntityId, &'a mut T);
+    type Iter<'a> = QueryIter<'a, Self>;
+    fn fetch(storage: &mut ComponentStorageManager) -> Self::Iter<'_> {
+        prepare::<Self>(storage)
+    }
+    fn type_ids_for_changed() -> Vec<TypeId> {
+        vec![TypeId::of::<T>()]
+    }
+    fn entity_id_from_item(item: &Self::Item<'_>) -> EntityId {
+        item.0
+    }
+}
+impl<T: Component> QueryRows for &mut T {
+    type Descriptor = Write<T>;
+    unsafe fn row<'a>(
+        id: EntityId,
+        pointers: <Self::Descriptor as QueryDescriptor>::Pointers,
+    ) -> Self::Item<'a> {
+        (id, unsafe { Self::Descriptor::borrow(pointers) })
+    }
+}
+
+impl_legacy_tuple!(A:0);
+impl_legacy_tuple!(A:0,B:1);
+impl_legacy_tuple!(A:0,B:1,C:2);
+impl_legacy_tuple!(A:0,B:1,C:2,D:3);
+impl_legacy_tuple!(A:0,B:1,C:2,D:3,E:4);
+impl_legacy_tuple!(A:0,B:1,C:2,D:3,E:4,F:5);
+impl_legacy_tuple!(A:0,B:1,C:2,D:3,E:4,F:5,G:6);
+impl_legacy_tuple!(A:0,B:1,C:2,D:3,E:4,F:5,G:6,H:7);

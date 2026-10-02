@@ -25,6 +25,8 @@ Active design documents and API references:
 | `render_graph_capture.md` | Capturing, diffing, and blessing render-graph diagnostics |
 | `declarative_ui_design.md` | Declarative UI system architecture |
 | `katla_script_architecture.md` | Luau scripting system design |
+| `ecs.md` | ECS ownership, typed systems, commands, lifecycle and migration |
+| `ecs_benchmarks.md` | Reproducible sparse/archetype and scheduling measurements |
 | `physics-engine-adr.md` | ADR: Why Rapier3D was chosen |
 | `character-controller-design.md` | ECS-facing character controller architecture and implementation plan |
 

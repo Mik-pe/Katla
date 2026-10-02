@@ -6,7 +6,7 @@ Architecture and conventions for the Katla codebase. This is the single source o
 
 ```
 katla_gfx    — Vulkan/Metal wrapper, render graph, materials, shaders (WGSL via naga)
-katla_ecs    — Custom ECS: sparse set storage, query system, parallel scheduler
+katla_ecs    — Custom ECS: sparse storage, typed queries/systems, scoped parallel scheduler
 katla_math   — SIMD math: Vec2/3/4, Mat2/3/4, Quat, Transform, AABB, Frustum
 katla_ui     — Declarative retained-mode UI on top of immediate-mode core (Taffy layout)
 katla_app    — Application framework, editor, systems bridging all crates
@@ -120,41 +120,70 @@ Vulkan frame fences are waited without resetting and reset immediately before su
 
 ## ECS Architecture (katla_ecs)
 
-### EntityId
+### Identity and storage
 
-64-bit: `[32-bit generation | 32-bit index]`. Generation detects stale references on slot reuse. Created via `World::create_entity()` or `world.spawn()`.
+Entities use a 32-bit index and 32-bit generation. Clearing retains generations;
+generation exhaustion retires a slot. All sparse-set operations validate the
+complete key. Components remain in per-type paged sparse sets (1024-entry pages)
+inside independently borrowable cells. Archetype comparisons favor contiguous
+joins but show a wide-row structural migration penalty; one canonical sparse
+store serves both random editor access and typed systems. Measurements and the
+storage decision are in docs/ecs_benchmarks.md.
 
-### Storage
+### Queries and change detection
 
-Per-type `ComponentStorage<T>` wrapping a **paged sparse set** (`SparseSet<EntityId, T>`):
-- O(1) insert, lookup, remove
-- Pages of 1024 entries allocated on demand
-- Per-type dirty tracking: `insert()` and `get_mut()` mark dirty, `clear_changed()` resets
+Direct World queries and typed system queries share sealed column descriptors.
+Queries choose the smallest component column for matching and preserve its dense
+order. Typed system state caches matching IDs and dense offsets by structural
+epoch; every batch refreshes allocation bases, so pointer provenance and vector
+reallocation remain safe. Mutable view references borrow the view, and parallel
+chunks visit unique rows without changing shared dirty metadata on workers.
 
-### Query System
+Immutable queries accept shared World access. Filters must be disjoint from
+queried component types and contribute read claims. Mutable access conservatively
+marks typed query matches changed before iteration. Lazy direct mutable queries
+mark whole mutable columns, including unmatched entities; whole-column marking
+uses a constant-time flag. Multi-component changed queries use the union of
+queried component dirty sets. Update completion resets
+change tracking. Query and parameter tuples stop at arity eight.
 
-`world.query::<(&A, &mut B, &C)>()` — iterator over entities with all components. Up to arity 8.
+### Systems and ownership
 
-- `ImmutableQuery` sealed trait — prevents `&mut T` from `&World`
-- Filters: `With<T>`, `Without<T>`, combinable as tuples
-- Change detection: `query_changed::<&A>()` yields only dirty entities
+TypedSystem parameters are the only source of worker access claims: queries,
+shared/mutable resources, optional resources, events, local state and commands.
+Parameter implementations are sealed and registration rejects incompatible
+aliases. Workers receive scoped independently prepared data, never World or
+registry references. Shared resource access requires Sync and mutable transfer
+requires Send; thread-affine values remain available only to exclusive systems.
 
-### Systems
+Full-World System implementations register explicitly as exclusive and run on
+the caller thread. The script VM, hierarchy and physics bridge use this path.
+Both runtime loops use the same scheduler; ordering values are absolute barriers
+and equal-order conflicts preserve registration order. Independent equal-order
+jobs can use Rayon, with a configurable estimated-work cutoff for small batches.
 
-Implement `System` trait. Must override `component_access()` and `resource_access()` for parallel safety. Default "no declared access" is dangerous — parallel scheduler assumes no conflicts.
+Structural commands apply only after all batch borrows end, in registration
+order and FIFO within each system. The next batch sees the new structure. A panic
+joins workers, discards unapplied batch commands, restores registrations and
+propagates; completed mutations and earlier batches are retained. Clearing
+systems during exclusive execution stops the remaining schedule and invokes
+shutdown once at the boundary.
 
-Execution order: First, Early, Normal, Late, Last. Sequential via `world.update(dt)`, parallel via `world.update_parallel(dt)` (rayon).
+### Events and editor features
 
-### Events
+Entity and component lifecycle events preserve the existing per-tick visibility:
+spawn/add/remove/destruction emit events, and successful update clears them.
+Replacement still emits Added. Removed data is unavailable to later consumers;
+external-resource cleanup payloads and post-update event retention are separate
+roadmap work.
 
-`EntityEvent::Spawned/Destroyed` and `ComponentEvent::Added/Removed`. Emitted each frame, drained via `world.entity_events()` / `world.component_events()`.
+Typed event logs use independent reader cursors and explicit retention clearing.
+Monotonic sequences preserve later events after clear, and log identity resets
+readers on replacement. Event writer/read claims enforce batch visibility.
 
-### Editor Features (behind `editor` feature flag)
-
-- `Inspect` trait — runtime field metadata for inspector (auto-generated by `#[derive(Component)]`)
-- `Agent` trait — observe→decide→act loop for AI scene manipulation
-- `SceneTool` — structured operations (spawn, destroy, add/remove component, set field, duplicate, undo groups)
-- `#[inspect(...)]` attributes: `skip`, `color`, `range(min, max)`, `speed(f32)`, `display_name`, `enum`, `struct`, `vec`, `entity_ref`
+The editor feature retains inspection, agent observation and scene tools over
+the same generational component API. Worker ownership is independent of feature
+selection. See docs/ecs.md for lifecycle, migration and unsafe-boundary contracts.
 
 ## UI Architecture (katla_ui)
 

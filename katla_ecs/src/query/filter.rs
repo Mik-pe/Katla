@@ -11,19 +11,34 @@ use crate::entity::EntityId;
 use crate::query::QueryData;
 use crate::storage::ComponentStorageManager;
 
+mod sealed {
+    pub trait Sealed {}
+}
+
 /// Marker type requiring that matched entities have component `T`.
 pub struct With<T: Component>(PhantomData<T>);
 
 /// Marker type requiring that matched entities do NOT have component `T`.
 pub struct Without<T: Component>(PhantomData<T>);
 
-/// Trait for query filter conditions.
+/// Sealed structural query filter conditions.
 ///
 /// Implementations check whether an entity satisfies a filter predicate
 /// against the component storage. The trait is implemented for [`With<T>`],
 /// [`Without<T>`], the unit type `()` (always passes), and tuples of filters
 /// (all must pass).
-pub trait QueryFilter {
+/// Membership depends only on component presence, so matching caches remain
+/// valid until the world's structural epoch changes. The engine owns every
+/// filter implementation and its component access claims.
+///
+/// Custom implementations cannot opt into the sealed filter contract:
+///
+/// ```compile_fail
+/// use katla_ecs::query::filter::sealed::Sealed;
+/// struct CustomFilter;
+/// impl Sealed for CustomFilter {}
+/// ```
+pub trait QueryFilter: sealed::Sealed {
     /// Check whether `entity` satisfies this filter.
     ///
     /// # Safety
@@ -32,6 +47,16 @@ pub trait QueryFilter {
 
     /// Returns the TypeIds of all component types referenced by this filter.
     fn type_ids() -> Vec<TypeId>;
+}
+
+impl<T: Component> sealed::Sealed for With<T> {}
+impl<T: Component> sealed::Sealed for Without<T> {}
+impl sealed::Sealed for () {}
+impl<A: QueryFilter, B: QueryFilter> sealed::Sealed for (A, B) {}
+impl<A: QueryFilter, B: QueryFilter, C: QueryFilter> sealed::Sealed for (A, B, C) {}
+impl<A: QueryFilter, B: QueryFilter, C: QueryFilter, D: QueryFilter> sealed::Sealed
+    for (A, B, C, D)
+{
 }
 
 impl<T: Component + 'static> QueryFilter for With<T> {
@@ -191,6 +216,66 @@ mod tests {
 
     #[derive(Component, Default)]
     struct Static;
+
+    #[test]
+    fn test_typed_filter_cache_tracks_structural_lifecycle() {
+        use crate::{Query, Read, ResMut, SystemExecutionOrder, SystemParam, TypedSystem};
+
+        #[derive(Default)]
+        struct Matches {
+            with: Vec<(EntityId, f32)>,
+            without: Vec<(EntityId, f32)>,
+        }
+        struct Capture;
+        impl TypedSystem for Capture {
+            type Params = (
+                Query<Read<Pos>, With<Static>>,
+                Query<Read<Pos>, Without<Static>>,
+                ResMut<Matches>,
+            );
+            fn run(
+                &mut self,
+                (with, without, mut matches): <Self::Params as SystemParam>::Item<'_>,
+                _: f32,
+            ) {
+                matches.with = with.iter().map(|(id, pos)| (id, pos.x)).collect();
+                matches.without = without.iter().map(|(id, pos)| (id, pos.x)).collect();
+            }
+        }
+
+        let mut world = World::new();
+        let first = world.spawn((Pos { x: 1.0 }, Static));
+        let second = world.spawn((Pos { x: 2.0 },));
+        world.insert_resource(Matches::default());
+        world.register_typed_system(Capture, SystemExecutionOrder::NORMAL);
+        world.update(0.0);
+        let matches = world.get_resource::<Matches>().unwrap();
+        assert_eq!(matches.with, vec![(first, 1.0)]);
+        assert_eq!(matches.without, vec![(second, 2.0)]);
+
+        assert!(world.remove_component::<Static>(first));
+        world.add_component(second, Static);
+        world.update(0.0);
+        let matches = world.get_resource::<Matches>().unwrap();
+        assert_eq!(matches.with, vec![(second, 2.0)]);
+        assert_eq!(matches.without, vec![(first, 1.0)]);
+
+        world.destroy_entity(first);
+        let replacement = world.spawn((Pos { x: 3.0 },));
+        assert_eq!(replacement.index(), first.index());
+        assert_ne!(replacement, first);
+        world.update(0.0);
+        let matches = world.get_resource::<Matches>().unwrap();
+        assert_eq!(matches.with, vec![(second, 2.0)]);
+        assert_eq!(matches.without, vec![(replacement, 3.0)]);
+
+        world.clear_entities();
+        let last = world.spawn((Pos { x: 4.0 }, Static));
+        world.update(0.0);
+        let matches = world.get_resource::<Matches>().unwrap();
+        assert_eq!(matches.with, vec![(last, 4.0)]);
+        assert!(matches.without.is_empty());
+    }
 
     #[test]
     fn test_without_filter() {

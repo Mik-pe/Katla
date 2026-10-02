@@ -6,15 +6,15 @@
 //! waste when entity indices have large gaps.
 
 use std::collections::HashSet;
+use std::marker::PhantomData;
 
 const PAGE_SIZE: usize = 1024;
 
 /// Trait for keys that can be used as indices into the sparse array.
 ///
-/// Each key maps to a unique `usize` index used to look up its position
-/// in the dense array. Implementors must ensure that `sparse_index()` returns
-/// a unique value per distinct key.
-pub(crate) trait SparseKey: Copy {
+/// Keys sharing a sparse index replace one another; lookups also verify equality.
+#[doc(hidden)]
+pub trait SparseKey: Copy + Eq {
     fn sparse_index(&self) -> usize;
 }
 
@@ -87,6 +87,84 @@ where
     pages: Vec<Option<Page>>,
 }
 
+/// Independently borrowed sparse indices and a frozen dense allocation.
+#[doc(hidden)]
+pub struct SparseView<'a, K: SparseKey, V> {
+    pages: &'a [Option<Page>],
+    dense: *mut (K, V),
+    len: usize,
+    borrow: PhantomData<&'a V>,
+}
+
+impl<'a, K: SparseKey, V> SparseView<'a, K, V> {
+    #[inline]
+    pub(crate) fn get_ptr(&self, key: K) -> Option<*mut V> {
+        let (page, offset) = SparseSet::<K, V>::page_coords(key.sparse_index());
+        let index = self.pages.get(page)?.as_ref()?[offset]?;
+        if index >= self.len {
+            return None;
+        }
+        // SAFETY: The view freezes both the sparse indices and dense allocation.
+        // Keys and component values are disjoint fields; no full-row borrow is made.
+        unsafe {
+            let row = self.dense.add(index);
+            if std::ptr::addr_of!((*row).0).read() != key {
+                return None;
+            }
+            Some(std::ptr::addr_of_mut!((*row).1))
+        }
+    }
+
+    #[inline]
+    pub(crate) fn cursor(&self) -> KeyCursor<'a, K> {
+        let key = if self.len == 0 {
+            std::ptr::null()
+        } else {
+            // SAFETY: A nonempty view owns a valid first dense row.
+            unsafe { std::ptr::addr_of!((*self.dense).0).cast::<u8>() }
+        };
+        KeyCursor {
+            key,
+            stride: std::mem::size_of::<(K, V)>(),
+            remaining: self.len,
+            borrow: PhantomData,
+        }
+    }
+}
+
+/// Iterates immutable key fields without borrowing neighboring component values.
+#[doc(hidden)]
+pub struct KeyCursor<'a, K> {
+    key: *const u8,
+    stride: usize,
+    remaining: usize,
+    borrow: PhantomData<&'a K>,
+}
+
+impl<K: SparseKey> Iterator for KeyCursor<'_, K> {
+    type Item = K;
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.remaining, Some(self.remaining))
+    }
+    #[inline]
+    fn next(&mut self) -> Option<K> {
+        if self.remaining == 0 {
+            return None;
+        }
+        // SAFETY: The cursor retains the view's storage lifetime and advances by
+        // the exact dense-row stride, reading only the immutable key field.
+        let key = unsafe { self.key.cast::<K>().read() };
+        self.remaining -= 1;
+        if self.remaining != 0 {
+            // SAFETY: Another dense row remains in the frozen allocation.
+            self.key = unsafe { self.key.add(self.stride) };
+        }
+        Some(key)
+    }
+}
+
+impl<K: SparseKey> ExactSizeIterator for KeyCursor<'_, K> {}
+
 impl<K, V> SparseSet<K, V>
 where
     K: SparseKey,
@@ -96,6 +174,24 @@ where
         Self {
             dense: Vec::new(),
             pages: Vec::new(),
+        }
+    }
+
+    pub(crate) fn view(&self) -> SparseView<'_, K, V> {
+        SparseView {
+            pages: &self.pages,
+            dense: self.dense.as_ptr() as *mut _,
+            len: self.dense.len(),
+            borrow: PhantomData,
+        }
+    }
+
+    pub(crate) fn view_mut(&mut self) -> SparseView<'_, K, V> {
+        SparseView {
+            pages: &self.pages,
+            dense: self.dense.as_mut_ptr(),
+            len: self.dense.len(),
+            borrow: PhantomData,
         }
     }
 
@@ -122,7 +218,7 @@ where
             .and_then(|page| page[offset]);
 
         if let Some(dense_idx) = existing {
-            self.dense[dense_idx].1 = value;
+            self.dense[dense_idx] = (key, value);
         } else {
             let dense_idx = self.dense.len();
             self.dense.push((key, value));
@@ -148,10 +244,13 @@ where
             _ => return false,
         };
 
-        let Some(dense_idx) = page[offset].take() else {
+        let Some(dense_idx) = page[offset] else {
             return false;
         };
-
+        if self.dense[dense_idx].0 != key {
+            return false;
+        }
+        page[offset] = None;
         self.dense.swap_remove(dense_idx);
 
         if let Some((moved_key, _)) = self.dense.get(dense_idx) {
@@ -181,6 +280,7 @@ where
             .and_then(|opt| opt.as_ref())
             .and_then(|page| page[offset])
             .and_then(|dense_idx| self.dense.get(dense_idx))
+            .filter(|(stored_key, _)| *stored_key == key)
             .map(|(_, value)| value)
     }
 
@@ -194,19 +294,38 @@ where
             .get(page_idx)
             .and_then(|opt| opt.as_ref())
             .and_then(|page| page[offset])?;
-        self.dense.get_mut(dense_idx).map(|(_, value)| value)
+        self.dense
+            .get_mut(dense_idx)
+            .filter(|(stored_key, _)| *stored_key == key)
+            .map(|(_, value)| value)
+    }
+
+    pub(crate) fn selected_indices(&self, keys: &[K]) -> Vec<usize> {
+        keys.iter()
+            .map(|&key| {
+                let (page, offset) = Self::page_coords(key.sparse_index());
+                self.pages
+                    .get(page)
+                    .and_then(|page| page.as_ref())
+                    .and_then(|page| page[offset])
+                    .filter(|&index| self.dense[index].0 == key)
+                    .expect("selected query key exists")
+            })
+            .collect()
+    }
+
+    pub(crate) fn dense_base(&self) -> *const (K, V) {
+        self.dense.as_ptr()
+    }
+
+    pub(crate) fn dense_base_mut(&mut self) -> *mut (K, V) {
+        self.dense.as_mut_ptr()
     }
 
     /// Returns true if the key exists in the set.
     #[inline]
     pub fn contains(&self, key: K) -> bool {
-        let idx = key.sparse_index();
-        let (page_idx, offset) = Self::page_coords(idx);
-        self.pages
-            .get(page_idx)
-            .and_then(|opt| opt.as_ref())
-            .map(|page| page[offset].is_some())
-            .unwrap_or(false)
+        self.get(key).is_some()
     }
 
     /// Returns an iterator over all (Key, &Value) pairs.
@@ -232,11 +351,6 @@ where
     /// Returns a reference to the internal dense storage.
     pub fn dense(&self) -> &Vec<(K, V)> {
         &self.dense
-    }
-
-    /// Returns a mutable reference to the internal dense storage.
-    pub fn dense_mut(&mut self) -> &mut Vec<(K, V)> {
-        &mut self.dense
     }
 
     /// Returns an iterator over just the keys.
@@ -289,6 +403,64 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_generational_keys_reject_stale_access() {
+        let mut set = SparseSet::new();
+        let old = crate::EntityId::new(7, 0);
+        let live = crate::EntityId::new(7, 1);
+        set.insert(old, 10);
+        set.insert(live, 20);
+        assert_eq!(set.len(), 1);
+        assert_eq!(set.get(old), None);
+        assert!(set.get_mut(old).is_none());
+        assert!(!set.contains(old));
+        assert!(!set.remove(old));
+        assert_eq!(set.get(live), Some(&20));
+        assert_eq!(set.keys().collect::<Vec<_>>(), vec![live]);
+        assert!(set.remove(live));
+    }
+
+    #[test]
+    fn test_generational_operations_match_reference_model() {
+        use crate::EntityId;
+        use std::collections::HashMap;
+
+        let mut set = SparseSet::new();
+        let mut model = HashMap::new();
+        let mut generations = [0u32; 64];
+        let mut seed = 0x527a_64e1u64;
+        for step in 0..10_000 {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let slot = ((seed >> 32) as usize) % generations.len();
+            let key = EntityId::new(slot as u32, generations[slot]);
+            match seed % 4 {
+                0 => {
+                    set.insert(key, step);
+                    model.insert(slot, (key, step));
+                }
+                1 => {
+                    assert_eq!(set.remove(key), model.remove(&slot).is_some());
+                    generations[slot] += 1;
+                }
+                2 => {
+                    if let Some(value) = set.get_mut(key) {
+                        *value += 1;
+                        model.get_mut(&slot).unwrap().1 += 1;
+                    }
+                }
+                _ => assert_eq!(set.get(key).copied(), model.get(&slot).map(|x| x.1)),
+            }
+            assert_eq!(set.len(), model.len());
+            for (&index, &(live, value)) in &model {
+                assert_eq!(set.get(live), Some(&value));
+                let stale = EntityId::new(index as u32, live.generation().wrapping_sub(1));
+                assert!(set.get(stale).is_none());
+                assert!(set.get_mut(stale).is_none());
+                assert!(!set.remove(stale));
+            }
+        }
+    }
 
     #[test]
     fn test_sparse_set_insert() {

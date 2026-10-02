@@ -1,5 +1,5 @@
 use crate::components::{Parent, TransformComponent, TransformDirty, WorldTransform};
-use katla_ecs::{ComponentAccess, EntityId, System, World};
+use katla_ecs::{EntityId, System, World};
 use katla_math::Transform;
 use log::warn;
 use std::collections::{HashMap, HashSet};
@@ -328,24 +328,6 @@ impl System for TransformHierarchySystem {
 
     fn name(&self) -> &str {
         "TransformHierarchySystem"
-    }
-
-    fn component_access() -> Vec<ComponentAccess> {
-        vec![
-            ComponentAccess::read::<TransformComponent>(),
-            ComponentAccess::read::<Parent>(),
-            ComponentAccess::read::<TransformDirty>(),
-            ComponentAccess::write::<WorldTransform>(),
-        ]
-    }
-
-    fn component_access_dyn(&self) -> Vec<ComponentAccess> {
-        vec![
-            ComponentAccess::read::<TransformComponent>(),
-            ComponentAccess::read::<Parent>(),
-            ComponentAccess::read::<TransformDirty>(),
-            ComponentAccess::write::<WorldTransform>(),
-        ]
     }
 }
 

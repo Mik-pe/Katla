@@ -2,6 +2,8 @@
 
 ## Completed Recently
 
+- **Issue #138: typed, safe parallel ECS (2026-10-02)** — sealed parameters derive access claims and prepare independently borrowed data; workers never receive World or a registry. Commands apply FIFO in registration order at batch boundaries. Typed queries cache membership and dense offsets, while sealed structural filters invalidate on insertion/removal, dense relocation, entity recycling, and clear/respawn. Four camera/animation systems are typed; scripts, physics and hierarchy remain explicitly exclusive. Generations preserve stale-ID rejection and exhausted slots retire. One sparse store remains after source-hashed sparse/archetype benchmarks. Fresh local validation: 237 all-feature ECS unit tests, integration tests and doctests, strict ECS all-target/application/script Clippy, 43 focused Miri tests, and the pre-graphics-migration workspace suite (2,079 passed, 11 ignored). The existing 13-scenario Metal contract suite and 100-frame headless/windowed runs passed under native API validation; the baseline scene capture was reviewed. Benchmarks were refreshed after filter sealing; concurrent graphics compilation caused visible timing spread, so no causal speedup is claimed. Linux/macOS ECS and pinned Miri checks are in CI. Remaining lifecycle cleanup and extended sanitizer/soak work are distinct roadmap tasks.
+
 - **Issue #56: native Metal attachment authority (2026-09-29)** — live compiled records resolve graph color/depth resources for the active frame slot before encoding. Built-in helpers only draw into the supplied encoder; renderer target fallbacks, geometry/fullscreen look-ahead, and frame semantic flags are removed. The editor declares scene depth and shadow atlas resources, independent depth/stencil operations, viewport tonemapping, and UI canvas clearing. Per-pass fullscreen uniforms and sampled inputs support repeated passes. Native execution traces compare resolved targets and actual descriptor operations with the compiled contract. GPU regressions verify clear/load preservation, different geometry/fullscreen destinations, depth/stencil descriptors, active frame slots, UI-only and empty graphs, culling, and rejection before encoding. Local validation: 635 graphics library tests passed (9 ignored), 13 Metal contract scenarios passed under API validation, and the editor rendered 130 validated frames with a reviewed screenshot. Arbitrary imported native textures, compute migration, and Vulkan implicit scene depth remain separate work.
 
 - **Issues #31/#33: typed buffer execution stages and image hazard realization (2026-09-29, `753a30a5`)** — buffers distinguish vertex/index input, indirect commands, shader stages, transfer, and host readback. Builder validation and recompilation reject incompatible usage/stage pairs with a typed error. Vulkan lowers uniform and host reads to their dedicated access masks and preserves same-layout image memory hazards and cross-stage ordering. Regression tests reproduced the invalid vertex declaration and dropped storage write-to-read barrier before the fixes. Both issues remain open for their larger migration/boundary work.
@@ -911,10 +913,7 @@
 
 ## In Progress
 
-- **Finish #56** by carrying graph-declared attachments, load/store/clear state, viewport/scissor, resource bindings, and generic executable payloads into backend execution records.
-- Resolve Metal targets from graph resource handles instead of backend-owned editor fields.
-- Remove temporary shadow/depth side-effect roots after those outputs become graph-owned.
-- Complete custom graphics and backend-neutral compute execution contracts.
+- Continue the remaining buffer migrations and backend execution boundaries in #31/#33, and native allocation diagnostics in #37.
 
 ## Verified Baseline
 
@@ -924,6 +923,15 @@
 - `katla_app` library validation: 251 passed, 2 ignored.
 
 ## Known Follow-Up Work
+
+### Optional MCP feature validation (2026-10-01)
+
+The supported default application build passes. Enabling every application
+feature exposes an existing double mutable borrow in the editor's MCP polling;
+strict all-feature linting also reports the existing unused tool router field.
+Neither source changed in #138. ECS validation covers every ECS feature, while
+application CI covers the supported default feature set. Repairing optional
+MCP integration remains separate work.
 
 ### Metal headless band-collapse ROOT-CAUSED & FIXED (2026-08-26)
 
@@ -983,7 +991,7 @@ collaborator WIP area — coordinate before touching fixtures.
 - Transient resource lifetime analysis and aliasing (#35).
 - Real Metal frames in flight and synchronization cleanup (#36).
 - Further deterministic graph diagnostics and capture tooling (#37).
-- Complete graph-owned attachment execution and generic handlers before closing #56.
+- Backend-neutral custom graphics/compute handlers remain separate from completed #56 attachment authority.
 
 ## Architecture Direction
 
