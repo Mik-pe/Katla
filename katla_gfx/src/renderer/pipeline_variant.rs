@@ -4,7 +4,8 @@
 //! render-target configuration identify exactly one compiled pipeline. The
 //! same material can therefore serve multiple render-target configurations:
 //! each configuration resolves to its own [`PipelineVariantKey`], and the
-//! backend caches one native pipeline per key on the material.
+//! material retains its own variant handles. Native pipelines can be shared
+//! across materials with identical expanded shader sources and render state.
 //!
 //! Both backends derive the same key for the same inputs, so variant
 //! identity is logical and backend-neutral; only the cached pipeline object
@@ -27,7 +28,8 @@ const FALLBACK_COLOR_FORMAT: ImageFormat = ImageFormat::B8G8R8A8Srgb;
 /// blend/cull/depth/wireframe state, specialization constants, backend
 /// extension options, the resolved color attachment format, the derived
 /// depth/stencil format, and the sample count. Two keys are equal exactly
-/// when the compiled pipelines are interchangeable.
+/// when the inputs are equal. Native reuse also requires equal expanded shader
+/// contents, so editing a shader cannot reuse a pipeline from an older source.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PipelineVariantKey {
     /// Compilation inputs with `color_format` resolved to a concrete format
@@ -38,6 +40,24 @@ pub struct PipelineVariantKey {
     depth_format: Option<ImageFormat>,
     /// Sample count of the target configuration (currently always 1).
     samples: u32,
+}
+
+/// Exact native compilation identity, independent of material and file ownership.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct GraphicsCompilationKey {
+    variant: PipelineVariantKey,
+    source: String,
+}
+
+impl GraphicsCompilationKey {
+    pub(crate) fn new(key: &PipelineVariantKey, source: &str) -> Self {
+        let mut variant = key.clone();
+        variant.descriptor.shader_path.clear();
+        Self {
+            variant,
+            source: source.into(),
+        }
+    }
 }
 
 impl PipelineVariantKey {

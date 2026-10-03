@@ -91,6 +91,7 @@ pub(crate) struct MetalContext {
     pub(crate) surface: MetalSurface,
     pub(crate) pipeline_archive:
         Option<std::sync::Arc<super::pipeline_archive::MetalPipelineArchive>>,
+    graphics_cache: std::sync::Arc<std::sync::Mutex<super::material_api::MetalGraphicsCache>>,
 }
 
 impl MetalContext {
@@ -133,6 +134,7 @@ impl MetalContext {
             command_queue,
             surface,
             pipeline_archive,
+            graphics_cache: Default::default(),
         })
     }
 
@@ -147,6 +149,7 @@ impl MetalContext {
             command_queue,
             surface: MetalSurface::headless(),
             pipeline_archive,
+            graphics_cache: Default::default(),
         })
     }
 
@@ -161,6 +164,7 @@ impl MetalContext {
             command_queue,
             surface,
             pipeline_archive,
+            graphics_cache: Default::default(),
         })
     }
 
@@ -391,6 +395,7 @@ impl MetalContext {
     pub(crate) fn pipeline_compiler(&self) -> Result<MetalPipelineCompiler, RendererError> {
         Ok(MetalPipelineCompiler {
             device: self.device.clone(),
+            graphics_cache: self.graphics_cache.clone(),
             archive: self.pipeline_archive.clone().ok_or_else(|| {
                 RendererError::InitializationFailed(
                     "Metal pipeline compiler service unavailable".into(),
@@ -470,6 +475,8 @@ fn portable_stencil_op(
 pub(crate) struct MetalPipelineCompiler {
     pub(crate) device: Retained<ProtocolObject<dyn MTLDevice>>,
     archive: std::sync::Arc<super::pipeline_archive::MetalPipelineArchive>,
+    pub(crate) graphics_cache:
+        std::sync::Arc<std::sync::Mutex<super::material_api::MetalGraphicsCache>>,
 }
 // SAFETY: Metal permits concurrent MTLDevice use. The archive synchronizes its
 // mutable state; pipeline descriptors are created and owned by the receiving worker.

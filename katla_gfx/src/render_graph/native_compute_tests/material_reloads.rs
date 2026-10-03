@@ -137,6 +137,158 @@ fn pixel(
 }
 
 #[test]
+fn test_native_identical_materials_share_pipelines() {
+    let mut renderer = renderer();
+    let errors = capture_validation_errors(&renderer);
+    let path = std::env::temp_dir().join(format!(
+        "katla-native-pipeline-reuse-{}.wgsl",
+        crate::renderer::texture_readback::fresh_readback_id()
+    ));
+    std::fs::write(
+        &path,
+        MAIN.replace(
+            "#include \"shared.wgsl\"",
+            "const COLOR=vec4f(1.,0.,0.,1.);",
+        ),
+    )
+    .unwrap();
+    let cold_started = std::time::Instant::now();
+    let first = renderer.compile_material(&descriptor(&path)).unwrap();
+    let cold_us = cold_started.elapsed().as_micros();
+    let warm_started = std::time::Instant::now();
+    let mut materials: Vec<_> = (0..31)
+        .map(|_| renderer.compile_material(&descriptor(&path)).unwrap())
+        .collect();
+    let warm_us = warm_started.elapsed().as_micros();
+    materials.push(first);
+    let unique: std::collections::BTreeSet<_> = materials
+        .iter()
+        .flat_map(|&material| native_variants(&renderer, material))
+        .collect();
+    let initial = native_variants(&renderer, first);
+    #[cfg(not(target_os = "macos"))]
+    let weak_pipeline = {
+        let material = renderer.asset_registry.get_material(first).unwrap();
+        let variant = material.variants.values().next().unwrap();
+        let crate::renderer::registry::AnyPipeline::Graphics(pipeline) = renderer
+            .asset_registry
+            .get_pipeline(variant.pipeline)
+            .unwrap()
+        else {
+            panic!("graphics pipeline expected")
+        };
+        std::rc::Rc::downgrade(pipeline)
+    };
+    #[cfg(target_os = "macos")]
+    let weak_pipeline = std::sync::Arc::downgrade(
+        renderer
+            .materials
+            .get(first)
+            .unwrap()
+            .variants
+            .values()
+            .next()
+            .unwrap(),
+    );
+    assert_eq!(unique.len(), initial.len());
+    assert!(
+        materials
+            .iter()
+            .all(|&material| native_variants(&renderer, material) == initial)
+    );
+    let red_texture = renderer.create_texture_solid([255, 0, 0, 255]).unwrap();
+    let green_texture = renderer.create_texture_solid([0, 255, 0, 255]).unwrap();
+    let red_bindings = crate::MaterialTextures {
+        albedo: red_texture,
+        ..Default::default()
+    };
+    let green_bindings = crate::MaterialTextures {
+        albedo: green_texture,
+        ..Default::default()
+    };
+    renderer.set_material_textures(first, red_bindings);
+    renderer.set_material_textures(materials[0], green_bindings);
+    #[cfg(not(target_os = "macos"))]
+    let bindings = |material| {
+        renderer
+            .asset_registry
+            .get_material(material)
+            .unwrap()
+            .textures
+    };
+    #[cfg(target_os = "macos")]
+    let bindings = |material| renderer.materials.get(material).unwrap().textures;
+    assert_eq!(bindings(first).albedo, red_texture);
+    assert_eq!(bindings(materials[0]).albedo, green_texture);
+
+    let mut graph = FrameGraphBuilder::new()
+        .add_pass(
+            GeometryPass::new("material")
+                .without_depth()
+                .write_color("backbuffer", ImageFormat::B8G8R8A8Srgb),
+        )
+        .export_resource("backbuffer")
+        .build::<NativeRenderer>()
+        .unwrap();
+    let queued_red = draw(&mut renderer, &mut graph, materials[0], 0);
+    renderer.destroy_material(first);
+    assert_eq!(pixel(&mut renderer, queued_red), [0, 0, 255, 255]);
+    assert_eq!(native_variants(&renderer, materials[0]), initial);
+
+    let changed_state = descriptor(&path).with_blend(crate::BlendMode::AlphaBlend);
+    let blended = renderer.compile_material(&changed_state).unwrap();
+    assert!(
+        native_variants(&renderer, blended)
+            .iter()
+            .all(|pipeline| !initial.contains(pipeline))
+    );
+    std::fs::write(
+        &path,
+        MAIN.replace(
+            "#include \"shared.wgsl\"",
+            "const COLOR=vec4f(0.,1.,0.,1.);",
+        ),
+    )
+    .unwrap();
+    let reload_started = std::time::Instant::now();
+    assert_eq!(renderer.recompile_materials_for_shader(&path), 32);
+    finish_reload(&mut renderer);
+    let reload_us = reload_started.elapsed().as_micros();
+    let replacement = native_variants(&renderer, materials[0]);
+    assert!(
+        replacement
+            .iter()
+            .all(|pipeline| !initial.contains(pipeline))
+    );
+    assert!(
+        materials[..31]
+            .iter()
+            .all(|&material| native_variants(&renderer, material) == replacement)
+    );
+    let queued_green = draw(&mut renderer, &mut graph, materials[0], 0);
+    for material in materials[..31].iter().chain(std::iter::once(&blended)) {
+        renderer.destroy_material(*material);
+    }
+    assert_eq!(pixel(&mut renderer, queued_green), [0, 255, 0, 255]);
+    println!(
+        "MATERIAL_PIPELINE_REUSE materials=32 unique_pipelines={} cold_us={cold_us} warm_31_us={warm_us} reload_32_us={reload_us}",
+        unique.len()
+    );
+    graph.cleanup();
+    renderer.destroy();
+    assert!(
+        weak_pipeline.upgrade().is_none(),
+        "cache must not own retired native pipelines"
+    );
+    std::fs::remove_file(path).unwrap();
+    assert!(
+        errors.lock().unwrap().is_empty(),
+        "{:?}",
+        errors.lock().unwrap()
+    );
+}
+
+#[test]
 fn test_native_material_reload_keeps_last_good_variants_and_canonical_dependencies() {
     let mut renderer = renderer();
     let errors = capture_validation_errors(&renderer);
@@ -241,6 +393,8 @@ fn test_native_material_reload_replaces_ui_instanced_pipeline_atomically() {
         PipelineDescriptor::ui(path.to_string_lossy()).with_color_format(ImageFormat::B8G8R8A8Srgb);
     let material = renderer.compile_material(&descriptor).unwrap();
     let initial = native_variants(&renderer, material);
+    let twin = renderer.compile_material(&descriptor).unwrap();
+    assert_eq!(native_variants(&renderer, twin), initial);
     assert!(
         initial.len() >= 2,
         "plain and instanced UI pipelines must exist"
@@ -250,7 +404,7 @@ fn test_native_material_reload_replaces_ui_instanced_pipeline_atomically() {
         original.replace("fn vs_instanced(", "fn vs_missing("),
     )
     .unwrap();
-    assert_eq!(renderer.recompile_materials_for_shader(&path), 1);
+    assert_eq!(renderer.recompile_materials_for_shader(&path), 2);
     finish_reload(&mut renderer);
     assert_eq!(
         native_variants(&renderer, material),
@@ -258,14 +412,13 @@ fn test_native_material_reload_replaces_ui_instanced_pipeline_atomically() {
         "failure preparing instanced entry must retain all old variants"
     );
     std::fs::write(&path, &original).unwrap();
-    assert_eq!(renderer.recompile_materials_for_shader(&path), 1);
+    assert_eq!(renderer.recompile_materials_for_shader(&path), 2);
     finish_reload(&mut renderer);
     let replacement = native_variants(&renderer, material);
     assert_eq!(replacement.len(), initial.len());
-    assert!(
-        replacement
-            .iter()
-            .all(|pipeline| !initial.contains(pipeline))
+    assert_eq!(
+        replacement, initial,
+        "restoring identical source reuses the retained last-good pipelines"
     );
     renderer.destroy();
     std::fs::remove_file(path).unwrap();

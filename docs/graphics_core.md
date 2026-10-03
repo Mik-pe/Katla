@@ -14,6 +14,11 @@ separate viewport builders or feature-specific pipeline initialization enums.
 Failed initial material compilation publishes no material handle. Vulkan also
 releases unpublished pipeline variants and newly created descriptor layouts;
 Metal retains temporary pipeline objects locally until successful publication.
+Materials keep independent handles, texture sets and reload dependencies. Native
+graphics pipelines share immutable state when their resolved descriptors and
+expanded shader contents match. File paths do not affect native reuse; dependency
+tracking still uses each material's canonical source paths. Weak cache entries do
+not retain native pipelines after material and submission owners release them.
 Graphics passes carry `PassBindings`: reflected buffers, images, samplers and immutable inline
 bytes, plus explicit drawing phases. A phase selects mesh-layout pipelines,
 submitted objects, generated vertices or a declared indirect buffer. Pipeline

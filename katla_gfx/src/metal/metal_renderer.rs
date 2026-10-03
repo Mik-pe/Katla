@@ -161,7 +161,7 @@ pub(crate) struct MetalMaterial {
     pub(crate) interface: crate::renderer::graphics_interface::GraphicsInterface,
     pub(crate) variants: std::collections::HashMap<
         crate::renderer::pipeline_variant::PipelineVariantKey,
-        super::pipeline::MetalGraphicsPipeline,
+        std::sync::Arc<super::pipeline::MetalGraphicsPipeline>,
     >,
     pub(crate) textures: crate::renderer::registry::MaterialTextures,
     pub(crate) pending_reload:
@@ -173,7 +173,7 @@ pub(crate) struct MetalMaterialReplacement {
     pub(crate) interface: crate::renderer::graphics_interface::GraphicsInterface,
     pub(crate) variants: std::collections::HashMap<
         crate::renderer::pipeline_variant::PipelineVariantKey,
-        super::pipeline::MetalGraphicsPipeline,
+        std::sync::Arc<super::pipeline::MetalGraphicsPipeline>,
     >,
 }
 

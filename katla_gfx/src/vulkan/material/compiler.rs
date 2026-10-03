@@ -7,7 +7,41 @@ use crate::vulkan::bindless_texture::BindlessTextureManager;
 use crate::vulkan::context::VulkanContext;
 use crate::vulkan::material::shadermodule::ShaderCache;
 use ash::vk;
-use std::{cell::RefCell, path::Path, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    path::Path,
+    rc::{Rc, Weak},
+};
+
+use super::builder::Pipeline;
+use crate::renderer::graphics_interface::GraphicsInterface;
+use crate::renderer::pipeline_variant::GraphicsCompilationKey;
+
+struct CachedGraphicsVariant {
+    pipeline: Weak<Pipeline>,
+    instanced: Option<Weak<Pipeline>>,
+    interface: GraphicsInterface,
+}
+
+struct PreparedGraphicsVariant {
+    pipeline: Rc<Pipeline>,
+    instanced: Option<Rc<Pipeline>>,
+    interface: GraphicsInterface,
+}
+
+impl CachedGraphicsVariant {
+    fn upgrade(&self) -> Option<PreparedGraphicsVariant> {
+        Some(PreparedGraphicsVariant {
+            pipeline: self.pipeline.upgrade()?,
+            instanced: match &self.instanced {
+                Some(pipeline) => Some(pipeline.upgrade()?),
+                None => None,
+            },
+            interface: self.interface.clone(),
+        })
+    }
+}
 
 /// Error types for material compilation.
 #[derive(Debug)]
@@ -50,6 +84,7 @@ pub(crate) struct MaterialCompiler {
     pub(crate) shader_cache: Rc<RefCell<ShaderCache>>,
     context: Rc<VulkanContext>,
     bindless_descriptor_layout: vk::DescriptorSetLayout,
+    graphics_cache: HashMap<GraphicsCompilationKey, CachedGraphicsVariant>,
 }
 
 impl MaterialCompiler {
@@ -63,6 +98,7 @@ impl MaterialCompiler {
             shader_cache: Rc::new(RefCell::new(ShaderCache::new(context.device.clone()))),
             context,
             bindless_descriptor_layout,
+            graphics_cache: HashMap::new(),
         }
     }
 
@@ -146,6 +182,17 @@ impl MaterialCompiler {
         let descriptor = key.descriptor().clone();
         let vertex_binding = self.validate_layout(&descriptor.vertex)?;
 
+        let compilation_key = GraphicsCompilationKey::new(key, &source.code);
+        if let Some(prepared) = self
+            .graphics_cache
+            .get(&compilation_key)
+            .and_then(CachedGraphicsVariant::upgrade)
+        {
+            return self.publish_variant(registry, material_handle, key, source, prepared);
+        }
+        self.graphics_cache
+            .retain(|_, cached| cached.pipeline.strong_count() != 0);
+
         let (vertex_entry, fragment_entry) = match &descriptor.stages {
             crate::renderer::pipeline_descriptor::PipelineStages::Graphics {
                 vertex_entry,
@@ -221,9 +268,41 @@ impl MaterialCompiler {
         if let Some(pipeline) = &mut instanced_pipeline {
             pipeline.retain_descriptor_layouts(layouts);
         }
-        let pipeline_handle = registry.register_pipeline(pipeline);
-        let instanced_pipeline =
-            instanced_pipeline.map(|pipeline| registry.register_pipeline(pipeline));
+        let pipeline = Rc::new(pipeline);
+        let instanced_pipeline = instanced_pipeline.map(Rc::new);
+        self.graphics_cache.insert(
+            compilation_key,
+            CachedGraphicsVariant {
+                pipeline: Rc::downgrade(&pipeline),
+                instanced: instanced_pipeline.as_ref().map(Rc::downgrade),
+                interface: interface.clone(),
+            },
+        );
+        self.publish_variant(
+            registry,
+            material_handle,
+            key,
+            source,
+            PreparedGraphicsVariant {
+                pipeline,
+                instanced: instanced_pipeline,
+                interface,
+            },
+        )
+    }
+
+    fn publish_variant(
+        &self,
+        registry: &mut crate::renderer::registry::AssetRegistry,
+        material_handle: crate::handle::MaterialHandle,
+        key: &crate::renderer::pipeline_variant::PipelineVariantKey,
+        source: &crate::renderer::shader_source::ShaderSource,
+        prepared: PreparedGraphicsVariant,
+    ) -> Result<crate::renderer::registry::MaterialVariant, MaterialError> {
+        let pipeline_handle = registry.register_pipeline(prepared.pipeline);
+        let instanced_pipeline = prepared
+            .instanced
+            .map(|pipeline| registry.register_pipeline(pipeline));
 
         let variant = crate::renderer::registry::MaterialVariant {
             pipeline: pipeline_handle,
@@ -235,11 +314,13 @@ impl MaterialCompiler {
             if let Some(handle) = instanced_pipeline {
                 registry.remove_pipeline(handle);
             }
-            return Err(fail("material handle not found".to_string()));
+            return Err(MaterialError::PipelineCreation(
+                "material handle not found".into(),
+            ));
         }
 
         if let Some(material) = registry.get_material_mut(material_handle) {
-            material.interface = Some(interface);
+            material.interface = Some(prepared.interface);
             material.dependencies = source.dependencies.clone();
         }
 
@@ -583,6 +664,7 @@ impl MaterialCompiler {
 
     /// Release cached shader modules while the device is still alive.
     pub(crate) fn destroy(&mut self) {
+        self.graphics_cache.clear();
         self.shader_cache.borrow_mut().clear();
     }
 }

@@ -135,6 +135,17 @@ reverses winding for reflected node matrices.
 
 ## Shader reload
 
+Materials own independently editable texture sets and variant handles. Vulkan and
+Metal reuse immutable native pipelines across materials with identical expanded
+source, selected entry points, vertex layout, attachments and render state.
+Source equality is exact, so an include edit invalidates reuse even when its path
+is unchanged. Restoring unchanged source can reuse retained last-good pipelines.
+Canonical reload dependencies remain per material. Weak cache ownership permits
+retirement when the final material and submitted work release a pipeline; Vulkan
+descriptor layouts share that lifetime. Metal serializes cache lookup/build across
+reload workers to avoid duplicate creation. Failed preparation publishes no new
+material state. See the [measured reuse study](../../../docs/material-pipeline-study/README.md).
+
 `recompile_materials_for_shader` matches canonical source and transitive include
 paths. Equal filenames in separate directories are distinct; shared includes
 reload only their dependents. Both backends use one include resolver, suppress

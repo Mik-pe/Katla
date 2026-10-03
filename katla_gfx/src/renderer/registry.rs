@@ -21,9 +21,9 @@ use std::collections::HashMap;
 /// Both types have compatible vk::Pipeline and vk::PipelineLayout handles.
 pub enum AnyPipeline {
     /// Graphics pipeline for rendering geometry.
-    Graphics(Pipeline),
+    Graphics(std::rc::Rc<Pipeline>),
     /// Compute pipeline for GPGPU operations (particle simulation, etc.).
-    Compute(ComputePipeline),
+    Compute(Box<ComputePipeline>),
 }
 
 impl AnyPipeline {
@@ -490,13 +490,14 @@ impl AssetRegistry {
     }
 
     /// Register a graphics pipeline and return a handle.
-    pub(crate) fn register_pipeline(&mut self, pipeline: Pipeline) -> PipelineHandle {
+    pub(crate) fn register_pipeline(&mut self, pipeline: std::rc::Rc<Pipeline>) -> PipelineHandle {
         self.pipelines.insert(AnyPipeline::Graphics(pipeline))
     }
 
     /// Register a compute pipeline and return a handle.
     pub fn register_compute_pipeline(&mut self, pipeline: ComputePipeline) -> PipelineHandle {
-        self.pipelines.insert(AnyPipeline::Compute(pipeline))
+        self.pipelines
+            .insert(AnyPipeline::Compute(Box::new(pipeline)))
     }
 
     /// Register a mesh and return a handle.

@@ -9,6 +9,12 @@ use crate::texture::ImageFormat;
 use super::metal_renderer::{MetalMaterial, MetalMaterialReplacement, MetalRenderer};
 use super::shader;
 
+/// Weak ownership lets material removal and submission completion retire native state.
+pub(crate) type MetalGraphicsCache = std::collections::HashMap<
+    crate::renderer::pipeline_variant::GraphicsCompilationKey,
+    std::sync::Weak<super::pipeline::MetalGraphicsPipeline>,
+>;
+
 impl MetalRenderer {
     pub(crate) fn compile_material_impl(
         &mut self,
@@ -85,7 +91,7 @@ impl MetalRenderer {
 
         if let Some(instanced) = instanced {
             for ui in &mut self.ui_renderers {
-                ui.set_instanced_pipeline(instanced.clone());
+                ui.set_instanced_pipeline(instanced.as_ref().clone());
             }
         }
 
@@ -102,7 +108,19 @@ impl MetalRenderer {
         descriptor: &PipelineDescriptor,
         key: &PipelineVariantKey,
         wgsl_source: &str,
-    ) -> Result<super::pipeline::MetalGraphicsPipeline, RendererError> {
+    ) -> Result<std::sync::Arc<super::pipeline::MetalGraphicsPipeline>, RendererError> {
+        let compilation_key =
+            crate::renderer::pipeline_variant::GraphicsCompilationKey::new(key, wgsl_source);
+        let mut cache = context.graphics_cache.lock().map_err(|_| {
+            RendererError::InvalidOperation("Graphics pipeline cache lock poisoned".into())
+        })?;
+        if let Some(pipeline) = cache
+            .get(&compilation_key)
+            .and_then(std::sync::Weak::upgrade)
+        {
+            return Ok(pipeline);
+        }
+        cache.retain(|_, pipeline| pipeline.strong_count() != 0);
         use crate::pipeline::CullMode;
         use crate::renderer::pipeline_descriptor::{BlendMode, PipelineStages};
         let PipelineStages::Graphics {
@@ -146,29 +164,35 @@ impl MetalRenderer {
         } else {
             vertex_descriptor(&descriptor.vertex)
         };
-        context.create_graphics_pipeline(crate::metal::context::GraphicsPipelineConfig {
-            vertex_function,
-            fragment_function: fragment_function
-                .map(|function| &**function as &ProtocolObject<dyn objc2_metal::MTLFunction>),
-            color_formats: &colors,
-            depth_format: key.depth_format().map(super::format::to_mtl_pixel_format),
-            depth_write_enabled: descriptor.depth.write,
-            depth_compare: descriptor.depth.compare,
-            cull_mode: match descriptor.cull {
-                CullMode::None => objc2_metal::MTLCullMode::None,
-                CullMode::Front => objc2_metal::MTLCullMode::Front,
-                CullMode::Back => objc2_metal::MTLCullMode::Back,
-                CullMode::FrontAndBack => {
-                    return Err(RendererError::UnsupportedFeature(
-                        "Metal does not support front-and-back culling".into(),
-                    ));
-                }
+        let pipeline = std::sync::Arc::new(context.create_graphics_pipeline(
+            crate::metal::context::GraphicsPipelineConfig {
+                vertex_function,
+                fragment_function:
+                    fragment_function.map(|function| {
+                        &**function as &ProtocolObject<dyn objc2_metal::MTLFunction>
+                    }),
+                color_formats: &colors,
+                depth_format: key.depth_format().map(super::format::to_mtl_pixel_format),
+                depth_write_enabled: descriptor.depth.write,
+                depth_compare: descriptor.depth.compare,
+                cull_mode: match descriptor.cull {
+                    CullMode::None => objc2_metal::MTLCullMode::None,
+                    CullMode::Front => objc2_metal::MTLCullMode::Front,
+                    CullMode::Back => objc2_metal::MTLCullMode::Back,
+                    CullMode::FrontAndBack => {
+                        return Err(RendererError::UnsupportedFeature(
+                            "Metal does not support front-and-back culling".into(),
+                        ));
+                    }
+                },
+                front_face: objc2_metal::MTLWinding::Clockwise,
+                vertex_descriptor: &layout,
+                alpha_blended: descriptor.blend == BlendMode::AlphaBlend,
+                portable: Some(key.descriptor()),
             },
-            front_face: objc2_metal::MTLWinding::Clockwise,
-            vertex_descriptor: &layout,
-            alpha_blended: descriptor.blend == BlendMode::AlphaBlend,
-            portable: Some(key.descriptor()),
-        })
+        )?);
+        cache.insert(compilation_key, std::sync::Arc::downgrade(&pipeline));
+        Ok(pipeline)
     }
 
     /// Verify startup warmup completed before acquiring or encoding a frame.
@@ -209,7 +233,7 @@ impl MetalRenderer {
                     if material.descriptor.is_ui_layout() {
                         use crate::renderer::pipeline_descriptor::PipelineStages;
                         if let Some((_, instanced)) = variants.iter().find(|(key, _)| matches!(&key.descriptor().stages, PipelineStages::Graphics { vertex_entry, .. } if vertex_entry == "vs_instanced")) {
-                            for ui in &mut self.ui_renderers { ui.set_instanced_pipeline(instanced.clone()); }
+                            for ui in &mut self.ui_renderers { ui.set_instanced_pipeline(instanced.as_ref().clone()); }
                         }
                     }
                     material.interface = replacement.interface;
@@ -247,13 +271,16 @@ impl MetalRenderer {
             RendererError::InvalidOperation(format!("Material handle {material:?} not found"))
         })?;
         let key = PipelineVariantKey::resolve(&mat.descriptor, requested_format);
-        mat.variants.get(&key).cloned().ok_or_else(|| {
-            RendererError::InvalidOperation(format!(
-                "Material {material:?} has no pipeline variant for color {:?} / depth {:?}",
-                key.color_format(),
-                key.depth_format()
-            ))
-        })
+        mat.variants
+            .get(&key)
+            .map(|pipeline| pipeline.as_ref().clone())
+            .ok_or_else(|| {
+                RendererError::InvalidOperation(format!(
+                    "Material {material:?} has no pipeline variant for color {:?} / depth {:?}",
+                    key.color_format(),
+                    key.depth_format()
+                ))
+            })
     }
 
     pub(crate) fn set_material_textures_impl(
