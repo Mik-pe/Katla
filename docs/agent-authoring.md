@@ -153,3 +153,8 @@ replaces the current document and clears its history.
 material preflight, committed pixel changes, undo and scene save/reload in a
 disposable editor (requires ImageMagick). Its output describes native engine behavior; it is not a
 semantic evaluation of an external model.
+
+The [material agent study](material-agent-study/README.md) records an independent
+LLM's actual MCP discovery, factor edits, native image checks, invalid-batch
+recovery, undo and persistence. It includes the full transcript and observed
+limits; it does not establish preferences for all models.
