@@ -87,6 +87,12 @@ Vec2/Vec3 are scalar; Vec4/Mat4/Quat use SSE on x86/x86_64. Hot operations are
 inline. Spawned colors are sRGB and convert to linear before rendering. The
 [type exports](../katla_math/src/lib.rs) define the current math inventory.
 
+The [progressive Odin port](../odin/README.md) keeps the same ownership boundaries
+under `odin/`. Its [math contract](math_odin.md) uses one quaternion/matrix/TRS
+rotation convention, omits Euler APIs and retains exact matrices for hierarchy
+shear. These intentional differences apply to Odin; Rust math continues to serve
+the existing engine.
+
 ## Component inspection
 
 The component derive macro emits Inspect implementations for editor builds.

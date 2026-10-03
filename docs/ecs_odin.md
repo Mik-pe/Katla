@@ -1,5 +1,9 @@
 # Katla ECS in Odin
 
+The shared [Odin tree](../odin/README.md) now also contains the independent
+[math port](math_odin.md) and a runnable `odin/examples/movement` consumer that
+composes math components with typed ECS systems.
+
 The Odin port lives in `odin/ecs`, with the optional reflection/scene/agent layer
 in `odin/editor`. It is a standalone CPU library. Katla's Rust application,
 renderers, scripting and physics still use `katla_ecs`; this experiment does not
