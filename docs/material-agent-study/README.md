@@ -81,3 +81,12 @@ The report preserves friction and distinguishes state evidence from observed
 appearance. Precise asset schemas, neutral definitions, requested-source receipts
 and decoded/GPU labels were improved afterward; those improvements are covered
 by implementation checks rather than a repeated participant run.
+
+The [reusable-material follow-up](assets/observations.md) reused the surface/
+coverage participant against `f1e82612` with fixed shaders. Its 42 calls and nine
+inspected frames exercise capture of effective imported images, independent
+copies, file revisions that preserve live instances, deliberate application,
+validation/recovery, full-material undo/redo and fresh-ID persistence. Four full
+material receipts match exactly after reload and the final native frame is
+byte-identical. The report retains portability/origin and batch-versus-copy
+friction; this is one contextual episode.

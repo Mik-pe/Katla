@@ -1,0 +1,184 @@
+{
+  "name": "Agent study / Amber helmet surface",
+  "sampling": {
+    "albedo": {
+      "sampler": {
+        "address_u": "repeat",
+        "address_v": "repeat",
+        "address_w": "repeat",
+        "anisotropy": 1,
+        "comparison": null,
+        "mag_filter": "linear",
+        "min_filter": "linear",
+        "mip_filter": "linear"
+      },
+      "uv": {
+        "offset": [
+          0.1,
+          0
+        ],
+        "rotation": 0.2,
+        "scale": [
+          1.5,
+          1.5
+        ],
+        "tex_coord": 0
+      }
+    },
+    "emission": {
+      "sampler": {
+        "address_u": "repeat",
+        "address_v": "repeat",
+        "address_w": "repeat",
+        "anisotropy": 1,
+        "comparison": null,
+        "mag_filter": "linear",
+        "min_filter": "linear",
+        "mip_filter": "linear"
+      },
+      "uv": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ],
+        "tex_coord": 0
+      }
+    },
+    "metallic_roughness": {
+      "sampler": {
+        "address_u": "repeat",
+        "address_v": "repeat",
+        "address_w": "repeat",
+        "anisotropy": 1,
+        "comparison": null,
+        "mag_filter": "linear",
+        "min_filter": "linear",
+        "mip_filter": "linear"
+      },
+      "uv": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ],
+        "tex_coord": 0
+      }
+    },
+    "normal": {
+      "sampler": {
+        "address_u": "repeat",
+        "address_v": "repeat",
+        "address_w": "repeat",
+        "anisotropy": 1,
+        "comparison": null,
+        "mag_filter": "linear",
+        "min_filter": "linear",
+        "mip_filter": "linear"
+      },
+      "uv": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ],
+        "tex_coord": 0
+      }
+    },
+    "occlusion": {
+      "sampler": {
+        "address_u": "repeat",
+        "address_v": "repeat",
+        "address_w": "repeat",
+        "anisotropy": 1,
+        "comparison": null,
+        "mag_filter": "linear",
+        "min_filter": "linear",
+        "mip_filter": "linear"
+      },
+      "uv": {
+        "offset": [
+          0.0,
+          0.0
+        ],
+        "rotation": 0.0,
+        "scale": [
+          1.0,
+          1.0
+        ],
+        "tex_coord": 0
+      }
+    }
+  },
+  "textures": {
+    "albedo": {
+      "asset": {
+        "Resource": "models/DamagedHelmet.glb"
+      },
+      "image_index": 0,
+      "kind": "gltf_image"
+    },
+    "emission": {
+      "asset": {
+        "Resource": "models/DamagedHelmet.glb"
+      },
+      "image_index": 2,
+      "kind": "gltf_image"
+    },
+    "metallic_roughness": {
+      "asset": {
+        "Resource": "models/DamagedHelmet.glb"
+      },
+      "image_index": 1,
+      "kind": "gltf_image"
+    },
+    "normal": {
+      "asset": {
+        "Resource": "models/DamagedHelmet.glb"
+      },
+      "image_index": 4,
+      "kind": "gltf_image"
+    },
+    "occlusion": {
+      "asset": {
+        "Resource": "models/DamagedHelmet.glb"
+      },
+      "image_index": 3,
+      "kind": "gltf_image"
+    }
+  },
+  "values": {
+    "alpha_cutoff": 0.5,
+    "alpha_mode": "opaque",
+    "ao": 1.0,
+    "base_color": [
+      1,
+      0.45,
+      0.15,
+      1
+    ],
+    "double_sided": false,
+    "emissive_factor": [
+      3,
+      0.2,
+      0.03
+    ],
+    "metallic": 0.6,
+    "normal_scale": 0.5,
+    "occlusion_strength": 0.7,
+    "roughness": 0.65
+  },
+  "version": 1
+}
