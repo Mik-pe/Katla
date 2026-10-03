@@ -439,6 +439,60 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
             }
         }
     }
+    let mut unavailable_uv_asset: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixture.0.join("mesh.gltf")).unwrap()).unwrap();
+    for primitive in unavailable_uv_asset["meshes"][0]["primitives"]
+        .as_array_mut()
+        .unwrap()
+    {
+        primitive["attributes"]
+            .as_object_mut()
+            .unwrap()
+            .remove("TEXCOORD_1");
+    }
+    for material in unavailable_uv_asset["materials"].as_array_mut().unwrap() {
+        material["pbrMetallicRoughness"]["baseColorTexture"]["extensions"]
+            .as_object_mut()
+            .unwrap()
+            .remove("KHR_texture_transform");
+        material["normalTexture"]["extensions"]
+            .as_object_mut()
+            .unwrap()
+            .remove("KHR_texture_transform");
+    }
+    let unavailable_path = fixture.0.join("uv0_only.gltf");
+    std::fs::write(
+        &unavailable_path,
+        serde_json::to_vec(&unavailable_uv_asset).unwrap(),
+    )
+    .unwrap();
+    let mut invalid_sampling_scene = scene.clone();
+    for entity in &mut invalid_sampling_scene.entities {
+        match &mut entity.source {
+            EntitySource::GltfPrimitive { path, .. } | EntitySource::GltfGroup { path } => {
+                *path = crate::scene::AssetRef::File(unavailable_path.clone())
+            }
+            _ => {}
+        }
+        if let Some(drawable) = &mut entity.drawable {
+            let mut sampling = crate::rendering::MaterialSampling::default();
+            sampling.normal.uv.tex_coord = 1;
+            drawable.sampling = Some(sampling);
+        }
+    }
+    let before_invalid_uv = SceneManager::save_scene(&mut app).unwrap();
+    assert!(
+        SceneManager::load_scene(&mut app, invalid_sampling_scene)
+            .unwrap_err()
+            .to_string()
+            .contains("normal texture requires missing TEXCOORD_1")
+    );
+    assert_eq!(
+        SceneManager::save_scene(&mut app).unwrap().entities,
+        before_invalid_uv.entities
+    );
+    assert_eq!(app.gpu_resource_tracker.mesh_count(), 2);
+    assert_eq!(app.gpu_resource_tracker.texture_count(), 3);
     if let EntitySource::GltfPrimitive {
         primitive_index, ..
     } = &mut scene

@@ -205,6 +205,7 @@ pub(super) fn decode(
         ),
         material,
         tangent_uv: generate_tangents.then_some(tangent_uv),
+        uv_sets: [uv.is_some(), uv1.is_some()],
         vertices,
         indices,
         bounds: AABB::from_min_max(min, max),

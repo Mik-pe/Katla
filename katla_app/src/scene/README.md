@@ -96,6 +96,14 @@ the referenced model. Group mesh colliders retain combined rest-pose geometry in
 of rendering; skinned children inherit the controller's animation player unless
 they have an explicit player of their own.
 
+The optional drawable `sampling` field stores independent UV transforms and
+sampler descriptors for all five image roles. Capture writes current settings;
+omission retains imported settings. Selection is limited to UV0/UV1, transforms
+must be finite, comparison samplers are unavailable for material images, and
+anisotropy above one requires linear min/mag filtering. A referenced image cannot
+select a coordinate set missing from its mesh: staging rejects the scene and
+retires staged allocations while preserving the active scene.
+
 The loader checks each built-in referenced file before allocating replacements.
 Mesh recipes compile during preflight unless an identical recipe is already active.
 Model decoding and GPU preparation happen during staging and can still fail.

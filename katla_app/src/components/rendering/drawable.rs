@@ -23,6 +23,8 @@ pub struct DrawableComponent {
     pub emission: TextureHandle,
     /// Surface multipliers and coverage policy owned by this drawable.
     pub surface: crate::rendering::MaterialSurface,
+    pub(crate) uv_sets: [bool; 2],
+    pub(crate) texture_roles: [bool; 5],
     /// Per-role sampling properties, independent of image ownership.
     pub sampling: crate::rendering::MaterialSampling,
     /// Original generated tangent coordinates; authored tangent bases remain unchanged.
@@ -32,6 +34,27 @@ pub struct DrawableComponent {
 }
 
 impl DrawableComponent {
+    pub(crate) fn validate_sampling(
+        &self,
+        sampling: crate::rendering::MaterialSampling,
+    ) -> Result<(), String> {
+        sampling.validate().map_err(str::to_owned)?;
+        for ((role, has_texture), value) in katla_agent::material_sampling::TextureRole::ALL
+            .into_iter()
+            .zip(self.texture_roles)
+            .zip(sampling.roles())
+        {
+            if has_texture && !self.uv_sets[value.uv.tex_coord as usize] {
+                return Err(format!(
+                    "{} texture requires missing TEXCOORD_{}",
+                    role.name(),
+                    value.uv.tex_coord
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Create with asset handles for the new rendering system
     pub fn with_handles(mesh_handle: MeshHandle, material_handle: MaterialHandle) -> Self {
         DrawableComponent {
@@ -45,6 +68,8 @@ impl DrawableComponent {
             emission: TextureHandle::NONE,
             surface: Default::default(),
             sampling: Default::default(),
+            uv_sets: [true; 2],
+            texture_roles: [false; 5],
             tangent_uv: None,
             bounds: None,
         }
@@ -67,6 +92,8 @@ impl DrawableComponent {
             emission: TextureHandle::NONE,
             surface: Default::default(),
             sampling: Default::default(),
+            uv_sets: [true; 2],
+            texture_roles: [false; 5],
             tangent_uv: None,
             bounds: None,
         }
@@ -92,6 +119,8 @@ impl DrawableComponent {
             emission: TextureHandle::NONE,
             surface: Default::default(),
             sampling: Default::default(),
+            uv_sets: [true; 2],
+            texture_roles: [false; 5],
             tangent_uv: None,
             bounds: None,
         }

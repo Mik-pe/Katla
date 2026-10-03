@@ -148,7 +148,7 @@ preserve transparent compositing order.
 
 The app owns `MaterialSampling` independently of `MaterialSurface`. Scene capture
 persists both; omitting sampling preserves the imported source settings, including
-when an older scene supplies surface factors. The 208-byte `SurfaceParameters` row
+when an older scene supplies surface factors. Agent inspection exposes image provenance, mesh UV availability and native fallback status; `set_sampling` patches one role atomically with undo and persistence. Scene staging rejects overrides selecting coordinates missing from a referenced image's mesh. The 208-byte `SurfaceParameters` row
 contains five 32-byte coordinate transforms after its three existing vec4 fields.
 If an authored normal UV differs from the coordinates used to generate tangents,
 fragment derivatives reconstruct its frame; degenerate UVs retain the finite mesh

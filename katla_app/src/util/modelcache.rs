@@ -34,6 +34,8 @@ pub struct GltfPrimitive {
     pub name: String,
     /// This primitive's assigned or implicit glTF surface.
     pub material: GltfMaterialInfo,
+    /// UV accessors actually present in the imported primitive.
+    pub uv_sets: [bool; 2],
     /// Coordinate basis used to generate tangents; None retains authored tangents.
     pub tangent_uv: Option<crate::rendering::UvTransform>,
     /// Geometry and skin attributes belonging exclusively to this primitive.

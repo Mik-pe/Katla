@@ -57,11 +57,11 @@ impl Snapshot {
     }
 }
 
-pub(crate) struct MaterialCommand {
+pub(crate) struct FactorCommand {
     edits: Vec<(EntityId, Snapshot, Snapshot)>,
 }
 
-impl MaterialCommand {
+impl FactorCommand {
     fn apply(&self, world: &mut World, redo: bool) -> Result<(), SceneToolError> {
         for (entity, _, _) in &self.edits {
             if !world.entity_exists(*entity) {
@@ -83,7 +83,7 @@ impl MaterialCommand {
     }
 }
 
-impl SceneCommand for MaterialCommand {
+impl SceneCommand for FactorCommand {
     fn execute(&mut self, world: &mut World) -> Result<(), SceneToolError> {
         self.apply(world, true)
     }
@@ -98,7 +98,61 @@ impl SceneCommand for MaterialCommand {
     }
 }
 
-fn entity(world: &World, id: &str) -> Result<EntityId, String> {
+pub(crate) enum MaterialCommand {
+    Factors(FactorCommand),
+    Sampling(super::material_sampling::SamplingCommand),
+}
+impl MaterialCommand {
+    fn same_scope(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::Factors(_), Self::Factors(_)) | (Self::Sampling(_), Self::Sampling(_))
+        )
+    }
+    fn merge(&mut self, latest: Self) -> Option<Self> {
+        match (self, latest) {
+            (Self::Factors(old), Self::Factors(latest)) => {
+                for (edit, latest) in old.edits.iter_mut().zip(latest.edits) {
+                    edit.2 = latest.2;
+                }
+                None
+            }
+            (Self::Sampling(old), Self::Sampling(latest)) => {
+                old.merge(latest);
+                None
+            }
+            (_, latest) => Some(latest),
+        }
+    }
+}
+impl SceneCommand for MaterialCommand {
+    fn execute(&mut self, world: &mut World) -> Result<(), SceneToolError> {
+        match self {
+            Self::Factors(command) => command.execute(world),
+            Self::Sampling(command) => command.execute(world),
+        }
+    }
+    fn undo(&mut self, world: &mut World) -> Result<(), SceneToolError> {
+        match self {
+            Self::Factors(command) => command.undo(world),
+            Self::Sampling(command) => command.undo(world),
+        }
+    }
+    fn description(&self) -> String {
+        match self {
+            Self::Factors(command) => command.description(),
+            Self::Sampling(command) => command.description(),
+        }
+    }
+    fn affected_entities(&self) -> Vec<EntityId> {
+        match self {
+            Self::Factors(command) => command.affected_entities(),
+            Self::Sampling(command) => command.affected_entities(),
+        }
+    }
+}
+
+pub(super) fn entity(world: &World, id: &str) -> Result<EntityId, String> {
     let raw = id
         .parse::<u64>()
         .map_err(|_| "Expected a decimal generational entity_id string")?;
@@ -112,7 +166,7 @@ fn entity(world: &World, id: &str) -> Result<EntityId, String> {
     Ok(entity)
 }
 
-fn drawable(world: &World, id: EntityId) -> Result<&DrawableComponent, String> {
+pub(super) fn drawable(world: &World, id: EntityId) -> Result<&DrawableComponent, String> {
     world
         .get_component::<DrawableComponent>(id)
         .ok_or_else(|| format!("Entity {id} has no rendered material; choose a mesh object"))
@@ -120,15 +174,22 @@ fn drawable(world: &World, id: EntityId) -> Result<&DrawableComponent, String> {
 
 /// Apply a material operation with complete preflight and the existing editor history.
 pub(super) fn execute(app: &mut Application, op: MaterialOp, agent: bool) -> Result<Value, String> {
-    if matches!(op, MaterialOp::Set { .. })
+    if matches!(op, MaterialOp::Set { .. } | MaterialOp::SetSampling { .. })
         && app.play_mode != crate::application::game_state::PlayMode::Editing
     {
         return Err("Stop play mode before editing a material".into());
     }
     finish_drag(app);
-    let (result, command) = apply(&mut app.world, op)?;
+    let inspected = match &op {
+        MaterialOp::Inspect { entity_id } => Some(entity(&app.world, entity_id)?),
+        _ => None,
+    };
+    let (mut result, command) = apply(&mut app.world, op)?;
+    if let Some(entity) = inspected {
+        result["provenance"] = super::material_provenance::inspect(app, entity)?;
+    }
     if let Some(command) = command {
-        let mut undo = UndoGroup::new("Edit surface material");
+        let mut undo = UndoGroup::new(command.description());
         undo.commands.push(Box::new(command));
         if agent {
             app.editor.agent_undo_stack.push(undo);
@@ -149,17 +210,16 @@ pub(in crate::application) fn edit_live(
     }
     let (_, command) = apply(&mut app.world, op)?;
     if let Some(command) = command {
-        let same_target = app
-            .editor
-            .material_drag
-            .as_ref()
-            .is_some_and(|old| old.affected_entities() == command.affected_entities());
+        let same_target = app.editor.material_drag.as_ref().is_some_and(|old| {
+            old.same_scope(&command) && old.affected_entities() == command.affected_entities()
+        });
         if !same_target {
             finish_drag(app);
         }
         if let Some(old) = &mut app.editor.material_drag {
-            for (edit, latest) in old.edits.iter_mut().zip(command.edits) {
-                edit.2 = latest.2;
+            if let Some(command) = old.merge(command) {
+                finish_drag(app);
+                app.editor.material_drag = Some(command);
             }
         } else {
             app.editor.material_drag = Some(command);
@@ -170,7 +230,7 @@ pub(in crate::application) fn edit_live(
 
 pub(in crate::application) fn finish_drag(app: &mut Application) {
     if let Some(command) = app.editor.material_drag.take() {
-        let mut undo = UndoGroup::new("Edit surface material");
+        let mut undo = UndoGroup::new(command.description());
         undo.commands.push(Box::new(command));
         app.editor.push_undo(undo);
     }
@@ -178,6 +238,15 @@ pub(in crate::application) fn finish_drag(app: &mut Application) {
 
 fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCommand>), String> {
     match op {
+        MaterialOp::SetSampling {
+            entity_ids,
+            role,
+            patch,
+        } => {
+            let (result, command) =
+                super::material_sampling::apply(world, entity_ids, role, patch)?;
+            Ok((result, Some(MaterialCommand::Sampling(command))))
+        }
         MaterialOp::Presets => Ok((
             json!({"presets":MaterialPreset::ALL.map(|p| json!({"preset":p,"label":p.label(),"values":p.values()})), "base_color_space":"srgb","emissive_color_space":"linear", "scope":"Per-object multipliers; textures and mesh geometry are preserved.", "capabilities":capabilities()}),
             None,
@@ -185,7 +254,7 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
         MaterialOp::Inspect { entity_id } => {
             let id = entity(world, &entity_id)?;
             Ok((
-                json!({"entity_id":entity_id,"values":values(drawable(world,id)?),"base_color_space":"srgb","emissive_color_space":"linear","capabilities":capabilities()}),
+                json!({"entity_id":entity_id,"sampling":super::material_sampling::inspect(drawable(world,id)?),"uv_sets":drawable(world,id)?.uv_sets,"rotation_unit":"radians","values":values(drawable(world,id)?),"base_color_space":"srgb","emissive_color_space":"linear","capabilities":capabilities()}),
                 None,
             ))
         }
@@ -288,12 +357,12 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
                     },
                 ));
             }
-            let mut command = MaterialCommand { edits };
+            let mut command = FactorCommand { edits };
             command.execute(world).map_err(|e| e.to_string())?;
             let results: Vec<_> = command.edits.iter().map(|(id,before,_)| Ok(json!({"entity_id":id.id().to_string(),"before":before.values(),"values":values(drawable(world,*id)?)}))).collect::<Result<_,String>>()?;
             Ok((
                 json!({"materials":results,"base_color_space":"srgb","emissive_color_space":"linear","capabilities":capabilities()}),
-                Some(command),
+                Some(MaterialCommand::Factors(command)),
             ))
         }
     }
@@ -315,6 +384,11 @@ fn capabilities() -> Value {
         "normal_scale_editable":true,
         "occlusion_strength_editable":true,
         "textures_editable":false,
+        "sampling_editable":true,
+        "sampling_roles":["albedo","normal","metallic_roughness","occlusion","emission"],
+        "rotation_unit":"radians",
+        "anisotropy_limit_policy":"requested value is clamped to the device maximum",
+        "sampling_persistence":"scene drawable sampling; omission preserves imported settings",
         "presets":"isotropic metallic/roughness factors; no texture or directional brushing",
         "maximum_batch_size":256,
         "batch_atomic":true

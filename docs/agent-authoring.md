@@ -93,6 +93,41 @@ exact linear color, including an originally absent tint.
 Base color multiplies the existing texture. Alpha edits the tint factor; it
 does not switch the object's pipeline to transparent rendering. Texture replacement is outside this per-object factor editor.
 
+## Inspect and edit texture sampling
+
+`material inspect` reports the five named roles (`albedo`, `normal`,
+`metallic_roughness`, `occlusion`, `emission`), their UV transforms and sampler
+settings, and `uv_sets` availability for the mesh. `provenance.imported_textures`
+identifies each imported image by portable asset reference and image index,
+dimensions, mip count, decoded format, source color space and fallback status.
+Sampling returns linear values to the shader; color images decode sRGB, while
+normal/MR/occlusion images are linear data. The tangent-basis receipt distinguishes
+provided tangents, original MikkTSpace coordinates and reconstruction after a
+normal-coordinate edit. Procedural materials report no imported images.
+
+```json
+{"action":"set_sampling", "entity_ids":["4294967302"], "role":"albedo",
+ "patch":{"scale":[2.0,2.0], "offset":[0.25,0.0], "wrap_u":"repeat",
+          "minification":"linear_mipmap_linear", "magnification":"linear"}}
+```
+
+Patches preserve omitted properties, other roles, image bindings and PBR factors.
+Scale applies before rotation, then offset; rotation is in **radians**. UV0 and
+UV1 are selectable only when available on every target. Negative scale mirrors
+an axis; zero scale is legal. Minification accepts `nearest`, `linear`,
+`nearest_mipmap_nearest`, `linear_mipmap_nearest`, `nearest_mipmap_linear` and
+`linear_mipmap_linear`. Without a mip suffix it uses level zero. Magnification
+accepts `nearest` or `linear`; wrapping accepts `repeat`, `clamp_to_edge` or
+`mirrored_repeat`. Anisotropy is 1–16, requires linear min/mag filters above one,
+and is clamped to the native device maximum. Every numeric value must be finite.
+
+The batch preflights all targets and sampling policies before changing any
+object. One successful call is one agent undo step; failure changes none of the
+targets. Scene saving persists sampling separately from surface factors.
+Omitting scene sampling retains the imported glTF settings; unavailable
+coordinates required by a referenced image reject scene staging atomically.
+Image replacement and standalone reusable material assets remain unavailable.
+
 ## Build rooms with usable dimensions
 
 Katla uses meters, Y up, box centers for positions, and degrees for spawn-tool

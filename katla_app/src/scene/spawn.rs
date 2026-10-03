@@ -179,6 +179,7 @@ pub(super) fn spawn_entity(
                 drawable.roughness = drawable_desc.roughness;
                 drawable.ao = drawable_desc.ao;
                 if let Some(sampling) = drawable_desc.sampling {
+                    drawable.validate_sampling(sampling)?;
                     drawable.sampling = sampling;
                 }
                 if let Some(surface) = drawable_desc.surface {

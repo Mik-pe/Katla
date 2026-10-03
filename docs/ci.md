@@ -225,7 +225,8 @@ strength, alpha coverage/compositing across color/depth/shadow/picking, mirrored
 faces, integer/HDR image fidelity, filtered mip regeneration, weak image sharing,
 independent per-role UV transforms and imported samplers, generated/authored/
 changed normal-coordinate bases, transformed alpha coverage,
-second-skin selection, scene round-trip/rollback and
+second-skin selection, scene round-trip/rollback (including unavailable UV
+selection in persisted sampling overrides) and
 resource retirement. The complete PBR lighting fixture executes both actual
 scene shaders and checks 120 HDR pixels against a double-precision reference:
 identity/nonuniform/mirrored frames, CPU baking/live model/skin/combined transforms,

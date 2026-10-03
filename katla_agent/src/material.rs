@@ -151,6 +151,12 @@ impl MaterialPreset {
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MaterialOp {
+    /// Patch one texture role’s UV transform and sampler as one undoable batch.
+    SetSampling {
+        entity_ids: Vec<String>,
+        role: crate::material_sampling::TextureRole,
+        patch: crate::material_sampling::SamplingPatch,
+    },
     /// List named presets and their PBR factors.
     Presets,
     /// Read material factors on one object.
@@ -194,7 +200,7 @@ impl MaterialOp {
         let properties = serde_json::Map::from_iter([
             (
                 "action".into(),
-                json!({"type":"string","enum":["presets","inspect","set"]}),
+                json!({"type":"string","enum":["presets","inspect","set","set_sampling"]}),
             ),
             (
                 "entity_id".into(),
@@ -249,7 +255,14 @@ impl MaterialOp {
                 json!({"type":"number","minimum":0,"maximum":1,"description":"Occlusion texture influence on ambient light; 0 ignores the texture"}),
             ),
         ]);
+        let mut properties = properties;
+        properties.insert("role".into(), json!({"type":"string","enum":["albedo","normal","metallic_roughness","occlusion","emission"]}));
+        properties.insert(
+            "patch".into(),
+            crate::material_sampling::SamplingPatch::tool_schema(),
+        );
         let branches: Vec<_> = [
+            ("set_sampling",vec!["action","entity_ids","role","patch"],vec!["action","entity_ids","role","patch"]),
             ("presets", vec!["action"], vec!["action"]),
             ("inspect", vec!["action", "entity_id"], vec!["action", "entity_id"]),
             ("set", vec!["action", "entity_ids", "preset", "base_color", "metallic", "roughness", "ao", "emissive_factor", "normal_scale", "occlusion_strength", "alpha_mode", "alpha_cutoff", "double_sided"], vec!["action", "entity_ids"]),

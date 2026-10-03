@@ -265,6 +265,14 @@ impl Application {
             drawable = drawable.with_bounds(primitive.bounds);
         }
         drawable.emission = upload.emission;
+        drawable.uv_sets = primitive.uv_sets;
+        drawable.texture_roles = [
+            primitive.material.base_color_texture.is_some(),
+            primitive.material.normal_texture.is_some(),
+            primitive.material.metallic_roughness_texture.is_some(),
+            primitive.material.occlusion_texture.is_some(),
+            primitive.material.emission_texture.is_some(),
+        ];
         drawable.sampling = primitive.material.sampling();
         drawable.tangent_uv = primitive.tangent_uv;
         drawable.surface = crate::rendering::MaterialSurface {
