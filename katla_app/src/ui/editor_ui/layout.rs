@@ -128,10 +128,13 @@ impl EditorUI {
             .env_mut()
             .set(super::declarative::scene_dialog::SceneDialogData {
                 dialog: self.scene_dialog.clone(),
+                screen_size,
             });
 
         // Toolbar
         self.view_tree.env_mut().set(ToolbarDrawCtx {
+            screen_width: screen_size.x(),
+            font_scale: params.preferences.font_scale,
             show_grid: params.preferences.show_grid,
             show_stats: params.preferences.show_stats,
             show_physics_debug: params.preferences.show_physics_debug,
@@ -255,6 +258,7 @@ impl EditorUI {
         connection_preferences.external_chat.socket = self.co_creator.host_socket.clone();
         connection_preferences.external_chat.thread_id = self.co_creator.host_thread.clone();
         self.view_tree.env_mut().set(PreferencesDrawCtx {
+            screen_size,
             is_open: self.preferences_panel.is_visible(),
             category: self.preferences_category,
             preferences: connection_preferences,

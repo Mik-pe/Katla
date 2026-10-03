@@ -262,10 +262,12 @@ impl Build for InspectorView {
                     .color(icon_color)
                     .boxed(),
                 text("No entity selected")
+                    .wrap((draw_ctx.bounds.width() - 48.0).max(1.0))
                     .color(draw_ctx.theme.text_secondary)
                     .font_size(FontSize::Medium)
                     .boxed(),
                 text("Select an entity to inspect it.")
+                    .wrap((draw_ctx.bounds.width() - 48.0).max(1.0))
                     .color(draw_ctx.theme.text_muted)
                     .font_size(FontSize::Small)
                     .boxed(),

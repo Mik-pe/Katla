@@ -42,11 +42,13 @@ pub fn text(content: impl Into<String>) -> widgets::text::Text {
         color: None,
         font_size: None,
         wrap_width: None,
+        max_width: None,
     }
 }
 
 pub fn button(label: impl Into<String>) -> widgets::button::Button {
     widgets::button::Button {
+        width: None,
         label: label.into(),
         fill_color: None,
         border_color: None,

@@ -1,8 +1,8 @@
 //! Editor file selection and protection for unsaved scene changes.
 
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, StateId, Widget, WidgetBox, button, empty, hstack, modal, text,
-    textfield, vstack,
+    Alignment, Build, BuildContext, StateId, Widget, WidgetBox, button, empty, hstack, modal,
+    scroll, text, textfield, vstack,
 };
 use std::path::PathBuf;
 
@@ -18,6 +18,7 @@ pub(crate) enum SceneDialog {
 #[derive(Clone)]
 pub(crate) struct SceneDialogData {
     pub(crate) dialog: Option<SceneDialog>,
+    pub(crate) screen_size: katla_math::Vec2,
 }
 
 #[derive(Clone)]
@@ -32,12 +33,20 @@ pub(crate) enum SceneDialogAction {
 pub(crate) struct SceneDialogView;
 impl Build for SceneDialogView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
+        let screen_size = ctx
+            .env::<SceneDialogData>()
+            .map(|data| data.screen_size)
+            .unwrap_or(katla_math::Vec2::new(800.0, 600.0));
+        let width = 560.0f32.min((screen_size.x() - 16.0).max(1.0));
+        let height = 240.0f32.min((screen_size.y() - 16.0).max(1.0));
+        let content_width = (width - 32.0).max(1.0);
         let dialog = ctx
             .env::<SceneDialogData>()
             .and_then(|data| data.dialog.clone());
         let previous = ctx.state(None::<SceneDialog>);
         let path = ctx.state(String::new());
         let open = ctx.state(false);
+        let scroll_id = ctx.state(0.0f32);
         if ctx.get_state::<Option<SceneDialog>>(previous).flatten() != dialog {
             let value = match &dialog {
                 Some(SceneDialog::Open(value) | SceneDialog::SaveAs(value)) => value.clone(),
@@ -67,8 +76,13 @@ impl Build for SceneDialogView {
                         "Open Scene"
                     },
                     vstack([
-                        text("Enter the path to a .katla scene file.").boxed(),
-                        textfield("Scene file path", path).on_submit(submit).boxed(),
+                        text("Enter the path to a .katla scene file.")
+                            .wrap(content_width)
+                            .boxed(),
+                        textfield("Scene file path", path)
+                            .flex_width(content_width)
+                            .on_submit(submit)
+                            .boxed(),
                         hstack([
                             cancel,
                             button(if saving { "Save" } else { "Open" })
@@ -87,7 +101,9 @@ impl Build for SceneDialogView {
             SceneDialog::Unsaved => (
                 "Unsaved Changes",
                 vstack([
-                    text("Save your changes before continuing?").boxed(),
+                    text("Save your changes before continuing?")
+                        .wrap(content_width)
+                        .boxed(),
                     hstack([
                         cancel,
                         button("Discard Changes")
@@ -110,7 +126,9 @@ impl Build for SceneDialogView {
             SceneDialog::Overwrite(path) => (
                 "Replace Scene File?",
                 vstack([
-                    text(format!("{} already exists.", path.display())).boxed(),
+                    text(format!("{} already exists.", path.display()))
+                        .wrap(content_width)
+                        .boxed(),
                     hstack([
                         cancel,
                         button("Replace")
@@ -130,7 +148,7 @@ impl Build for SceneDialogView {
             SceneDialog::Error(message) => (
                 "Scene Operation Failed",
                 vstack([
-                    text(message).boxed(),
+                    text(message).wrap(content_width).boxed(),
                     button("OK")
                         .on_click(ctx.on_click(|actions| actions.emit(SceneDialogAction::Cancel)))
                         .boxed(),
@@ -140,10 +158,21 @@ impl Build for SceneDialogView {
                 .boxed(),
             ),
         };
-        modal(560.0, 240.0, open, body)
-            .title(title)
-            .on_close(ctx.on_click(|actions| actions.emit(SceneDialogAction::Cancel)))
-            .boxed()
+        modal(
+            width,
+            height,
+            open,
+            scroll(
+                vstack([body]).flex_width(width).flex_shrink(0.0).boxed(),
+                scroll_id,
+            )
+            .flex_width(width)
+            .flex_height((height - katla_ui::tokens::MODAL_TITLE_HEIGHT).max(1.0))
+            .boxed(),
+        )
+        .title(title)
+        .on_close(ctx.on_click(|actions| actions.emit(SceneDialogAction::Cancel)))
+        .boxed()
     }
 }
 
@@ -152,6 +181,44 @@ mod tests {
     use super::*;
     use katla_math::Vec2;
     use katla_ui::{KeyCode, UiContext, declarative::ViewTree};
+
+    #[test]
+    fn test_scene_dialog_fits_narrow_window_and_stretches_path_field() {
+        for width in [320.0, 560.0, 800.0] {
+            let size = Vec2::new(width, 450.0);
+            for dialog in [
+                SceneDialog::Open("/long/path/to/a/scene.katla".into()),
+                SceneDialog::SaveAs("/long/path/to/a/scene.katla".into()),
+                SceneDialog::Unsaved,
+                SceneDialog::Overwrite(PathBuf::from("/long/path/to/a/scene.katla")),
+                SceneDialog::Error("A scene operation failed with a long explanation.".into()),
+            ] {
+                let mut tree = ViewTree::default();
+                let mut ui = UiContext::new();
+                tree.env_mut().set(SceneDialogData {
+                    dialog: Some(dialog),
+                    screen_size: size,
+                });
+                ui.begin(size, 1.0);
+                tree.frame(&mut ui, &SceneDialogView, size);
+                for (id, node) in tree.iter_nodes() {
+                    let bounds = tree.resolved_bounds()[&id];
+                    assert!(
+                        bounds.min.x() >= 0.0 && bounds.max.x() <= width + 0.5,
+                        "{bounds:?}"
+                    );
+                    if node
+                        .widget
+                        .as_any()
+                        .is::<katla_ui::declarative::widgets::textfield::TextField>()
+                    {
+                        assert!(bounds.width() >= width.min(560.0) - 48.0, "{bounds:?}");
+                    }
+                }
+                ui.end();
+            }
+        }
+    }
 
     #[test]
     fn test_scene_dialog_escape_emits_cancel_after_dialog_replacement() {
@@ -165,6 +232,7 @@ mod tests {
         ] {
             tree.env_mut().set(SceneDialogData {
                 dialog: Some(dialog),
+                screen_size: size,
             });
             ui.begin(size, 1.0);
             tree.frame(&mut ui, &SceneDialogView, size);

@@ -1,10 +1,10 @@
 use std::boxed::Box;
 
 use katla_audio::{LevelsSnapshot, linear_to_db};
-use katla_math::Rect2D;
+use katla_math::{Rect2D, Vec2};
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, Widget, WidgetBox, empty, hstack, labeled_slider, text, vstack,
-    vu_meter,
+    Alignment, Build, BuildContext, Widget, WidgetBox, empty, grid, hstack, labeled_slider,
+    panel_body, scroll, text, vstack, vu_meter,
 };
 
 use crate::Preferences;
@@ -36,38 +36,28 @@ impl Build for MixerView {
         let sfx_id = ctx.state(0.0f32);
         let music_id = ctx.state(0.0f32);
         let ambient_id = ctx.state(0.0f32);
+        let scroll_id = ctx.state(0.0f32);
+        let baseline_id = ctx.state(None::<[f32; 4]>);
 
         let draw_ctx = ctx.env::<MixerDrawCtx>().cloned();
         let Some(draw_ctx) = draw_ctx else {
             return empty().boxed();
         };
 
-        // Sync preference values into state when the mixer becomes active.
-        // get_or_create initialized these to 0.0; overwrite with actual prefs.
-        let pref_master = draw_ctx.preferences.audio.master_volume;
-        let pref_sfx = draw_ctx.preferences.audio.sfx_volume;
-        let pref_music = draw_ctx.preferences.audio.music_volume;
-        let pref_ambient = draw_ctx.preferences.audio.ambient_volume;
-        if (ctx.get_state::<f32>(master_id).unwrap_or(0.0) - pref_master).abs() > 1e-4
-            && ctx.get_state::<f32>(master_id).unwrap_or(-1.0).abs() < 1e-6
-        {
-            ctx.set_state(master_id, pref_master);
+        let preferences = [
+            draw_ctx.preferences.audio.master_volume,
+            draw_ctx.preferences.audio.sfx_volume,
+            draw_ctx.preferences.audio.music_volume,
+            draw_ctx.preferences.audio.ambient_volume,
+        ];
+        let ids = [master_id, sfx_id, music_id, ambient_id];
+        if ctx.get_state(baseline_id) != Some(Some(preferences)) {
+            for (id, value) in ids.into_iter().zip(preferences) {
+                ctx.set_state(id, value);
+            }
         }
-        if (ctx.get_state::<f32>(sfx_id).unwrap_or(0.0) - pref_sfx).abs() > 1e-4
-            && ctx.get_state::<f32>(sfx_id).unwrap_or(-1.0).abs() < 1e-6
-        {
-            ctx.set_state(sfx_id, pref_sfx);
-        }
-        if (ctx.get_state::<f32>(music_id).unwrap_or(0.0) - pref_music).abs() > 1e-4
-            && ctx.get_state::<f32>(music_id).unwrap_or(-1.0).abs() < 1e-6
-        {
-            ctx.set_state(music_id, pref_music);
-        }
-        if (ctx.get_state::<f32>(ambient_id).unwrap_or(0.0) - pref_ambient).abs() > 1e-4
-            && ctx.get_state::<f32>(ambient_id).unwrap_or(-1.0).abs() < 1e-6
-        {
-            ctx.set_state(ambient_id, pref_ambient);
-        }
+        ctx.set_state(baseline_id, Some(preferences));
+        let [pref_master, pref_sfx, pref_music, pref_ambient] = preferences;
 
         let theme = &draw_ctx.theme;
         let levels = &draw_ctx.levels;
@@ -81,68 +71,66 @@ impl Build for MixerView {
         .color(theme.text_secondary)
         .boxed();
 
-        let master_db_peak = clamp_db(linear_to_db(levels.master.peak));
-        let master_db_rms = clamp_db(linear_to_db(levels.master.rms));
-        let current_master: f32 = ctx.get_state(master_id).unwrap();
-        if (current_master - draw_ctx.preferences.audio.master_volume).abs() > 1e-4 {
-            ctx.emit(PreferencesAction::SetMasterVolume(current_master));
-        }
-        let master_fader = labeled_slider("Master", master_id, 0.0..=1.0).show_value(true);
-        let master_meter = vu_meter(master_db_peak, master_db_rms);
-
-        let sfx_db_peak = clamp_db(linear_to_db(levels.sfx.peak));
-        let sfx_db_rms = clamp_db(linear_to_db(levels.sfx.rms));
-        let current_sfx: f32 = ctx.get_state(sfx_id).unwrap();
-        if (current_sfx - draw_ctx.preferences.audio.sfx_volume).abs() > 1e-4 {
-            ctx.emit(PreferencesAction::SetSfxVolume(current_sfx));
-        }
-        let sfx_fader = labeled_slider("SFX", sfx_id, 0.0..=1.0).show_value(true);
-        let sfx_meter = vu_meter(sfx_db_peak, sfx_db_rms);
-
-        let music_db_peak = clamp_db(linear_to_db(levels.music.peak));
-        let music_db_rms = clamp_db(linear_to_db(levels.music.rms));
-        let current_music: f32 = ctx.get_state(music_id).unwrap();
-        if (current_music - draw_ctx.preferences.audio.music_volume).abs() > 1e-4 {
-            ctx.emit(PreferencesAction::SetMusicVolume(current_music));
-        }
-        let music_fader = labeled_slider("Music", music_id, 0.0..=1.0).show_value(true);
-        let music_meter = vu_meter(music_db_peak, music_db_rms);
-
-        let ambient_db_peak = clamp_db(linear_to_db(levels.ambient.peak));
-        let ambient_db_rms = clamp_db(linear_to_db(levels.ambient.rms));
-        let current_ambient: f32 = ctx.get_state(ambient_id).unwrap();
-        if (current_ambient - draw_ctx.preferences.audio.ambient_volume).abs() > 1e-4 {
-            ctx.emit(PreferencesAction::SetAmbientVolume(current_ambient));
-        }
-        let ambient_fader = labeled_slider("Ambient", ambient_id, 0.0..=1.0).show_value(true);
-        let ambient_meter = vu_meter(ambient_db_peak, ambient_db_rms);
-
-        let bus_row = hstack([
-            vstack([master_fader.boxed(), master_meter.boxed()])
-                .spacing(2.0)
-                .align(Alignment::Center)
+        let columns = (((draw_ctx.bounds.width() - 24.0 + 12.0) / 260.0) as usize).clamp(1, 4);
+        let cell_width = ((draw_ctx.bounds.width() - 24.0 - 12.0 * (columns - 1) as f32)
+            / columns as f32)
+            .max(1.0);
+        let strips = [
+            ("Master", master_id, &levels.master, pref_master),
+            ("Sound effects", sfx_id, &levels.sfx, pref_sfx),
+            ("Music", music_id, &levels.music, pref_music),
+            ("Ambient", ambient_id, &levels.ambient, pref_ambient),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (label, id, level, preference))| {
+            let current = ctx.get_state::<f32>(id).unwrap_or(preference);
+            if (current - preference).abs() > 1e-4 {
+                ctx.emit(match index {
+                    0 => PreferencesAction::SetMasterVolume(current),
+                    1 => PreferencesAction::SetSfxVolume(current),
+                    2 => PreferencesAction::SetMusicVolume(current),
+                    _ => PreferencesAction::SetAmbientVolume(current),
+                });
+            }
+            hstack([
+                vstack([
+                    text(label).color(theme.text_secondary).boxed(),
+                    labeled_slider("", id, 0.0..=1.0)
+                        .label_width(0.0)
+                        .show_value(true)
+                        .precision(0)
+                        .value_display(100.0, "%")
+                        .boxed(),
+                ])
+                .spacing(12.0)
+                .flex_grow(1.0)
                 .boxed(),
-            vstack([sfx_fader.boxed(), sfx_meter.boxed()])
-                .spacing(2.0)
-                .align(Alignment::Center)
+                vu_meter(
+                    clamp_db(linear_to_db(level.peak)),
+                    clamp_db(linear_to_db(level.rms)),
+                )
                 .boxed(),
-            vstack([music_fader.boxed(), music_meter.boxed()])
-                .spacing(2.0)
-                .align(Alignment::Center)
-                .boxed(),
-            vstack([ambient_fader.boxed(), ambient_meter.boxed()])
-                .spacing(2.0)
-                .align(Alignment::Center)
+            ])
+            .spacing(16.0)
+            .padding_all(12.0)
+            .align(Alignment::Middle)
+            .flex_width(cell_width)
+            .boxed()
+        })
+        .collect::<Vec<_>>();
+
+        let content = vstack([
+            voice_status,
+            grid(columns, Vec2::new(cell_width, 144.0), strips)
+                .grid_spacing(12.0)
                 .boxed(),
         ])
-        .spacing(16.0)
+        .spacing(12.0)
         .padding_all(12.0)
-        .align(Alignment::Center);
-
-        vstack([voice_status, bus_row.boxed()])
-            .spacing(4.0)
-            .padding_all(8.0)
-            .align(Alignment::Leading)
+        .flex_shrink(0.0)
+        .boxed();
+        panel_body(scroll(content, scroll_id).flex_grow(1.0).boxed())
             .flex_width(draw_ctx.bounds.width())
             .flex_height(draw_ctx.bounds.height())
             .boxed()

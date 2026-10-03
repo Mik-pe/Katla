@@ -55,7 +55,7 @@ pub(crate) struct ConsoleView;
 impl Build for ConsoleView {
     fn build(&self, ctx: &mut BuildContext) -> Box<dyn Widget> {
         use katla_ui::declarative::{
-            button, empty, hstack, panel_body, scroll, text, textfield, vstack,
+            button, empty, grid, hstack, panel_body, scroll, text, textfield, vstack,
         };
 
         let draw_ctx = ctx.env::<ConsoleDrawCtx>().cloned();
@@ -85,7 +85,7 @@ impl Build for ConsoleView {
             // Active filters: filled; inactive filters: quiet but legible.
             let toggle = button(*label)
                 .fill(if is_active {
-                    draw_ctx.theme.selection
+                    draw_ctx.theme.background_light
                 } else {
                     Color::TRANSPARENT
                 })
@@ -111,24 +111,48 @@ impl Build for ConsoleView {
             }))
             .boxed();
 
-        let toolbar = hstack([
-            hstack(filter_toggles)
-                .spacing(4.0)
-                .align(Alignment::Middle)
+        let toolbar_content = if draw_ctx.bounds.width() < 620.0 {
+            let columns = (((draw_ctx.bounds.width() - 16.0) / 72.0) as usize).clamp(1, 5);
+            let cell_width = ((draw_ctx.bounds.width() - 16.0 - 4.0 * (columns - 1) as f32)
+                / columns as f32)
+                .max(1.0);
+            vstack([
+                grid(
+                    columns,
+                    katla_math::Vec2::new(cell_width, katla_ui::tokens::CONTROL_HEIGHT),
+                    filter_toggles,
+                )
+                .grid_spacing(4.0)
                 .boxed(),
-            search_field,
-            clear_button,
-        ])
-        .spacing(8.0)
-        .padding(Padding {
-            top: 4.0,
-            right: 8.0,
-            bottom: 4.0,
-            left: 8.0,
-        })
-        .align(Alignment::Middle)
-        .flex_shrink(0.0)
-        .boxed();
+                hstack([search_field, clear_button])
+                    .spacing(8.0)
+                    .align(Alignment::Middle)
+                    .boxed(),
+            ])
+            .spacing(8.0)
+            .boxed()
+        } else {
+            hstack([
+                hstack(filter_toggles)
+                    .spacing(4.0)
+                    .align(Alignment::Middle)
+                    .boxed(),
+                search_field,
+                clear_button,
+            ])
+            .spacing(8.0)
+            .align(Alignment::Middle)
+            .boxed()
+        };
+        let toolbar = vstack([toolbar_content])
+            .padding(Padding {
+                top: 4.0,
+                right: 8.0,
+                bottom: 4.0,
+                left: 8.0,
+            })
+            .flex_shrink(0.0)
+            .boxed();
 
         let search_lower = search_filter.to_lowercase();
         let level_index = |level: log::Level| -> usize {
@@ -163,6 +187,7 @@ impl Build for ConsoleView {
                         .font_size(FontSize::XSmall)
                         .boxed();
                     let message = text(&entry.message)
+                        .wrap((draw_ctx.bounds.width() - 48.0).max(1.0))
                         .color(draw_ctx.theme.text_primary)
                         .boxed();
                     entries.push(
@@ -174,6 +199,7 @@ impl Build for ConsoleView {
                                 bottom: 2.0,
                                 left: 8.0,
                             })
+                            .flex_shrink(0.0)
                             .boxed(),
                     );
                 }
@@ -186,7 +212,7 @@ impl Build for ConsoleView {
                 .color(draw_ctx.theme.text_muted)
                 .boxed()
         } else {
-            vstack(log_entries).boxed()
+            vstack(log_entries).flex_shrink(0.0).boxed()
         };
 
         let content = vstack([

@@ -492,27 +492,12 @@ impl EditorUI {
         }
     }
 
-    /// Check if a screen-space point falls within any visible floating panel.
-    fn is_click_on_floating_panel(&self, pos: Vec2) -> bool {
+    /// Whether a modal or floating panel owns pointer input at this position.
+    pub(crate) fn captures_pointer_at(&self, pos: Vec2) -> bool {
         let screen = self.last_screen_size;
 
-        // Preferences is a centered modal (not draggable).
-        if self.preferences_panel.is_visible() {
-            let modal_min = Vec2::new(
-                (screen.x() - declarative::preferences::PREFERENCES_WIDTH) * 0.5,
-                (screen.y() - declarative::preferences::PREFERENCES_HEIGHT) * 0.5,
-            );
-            if Rect2D::from_origin_size(
-                modal_min,
-                Vec2::new(
-                    declarative::preferences::PREFERENCES_WIDTH,
-                    declarative::preferences::PREFERENCES_HEIGHT,
-                ),
-            )
-            .contains(pos)
-            {
-                return true;
-            }
+        if self.scene_dialog.is_some() || self.preferences_panel.is_visible() {
+            return true;
         }
 
         if let Some(bounds) = self
@@ -544,7 +529,7 @@ impl EditorUI {
             return;
         }
 
-        if self.is_click_on_floating_panel(mouse_pos) {
+        if self.captures_pointer_at(mouse_pos) {
             return;
         }
 

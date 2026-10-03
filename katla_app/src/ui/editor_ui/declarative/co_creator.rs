@@ -55,15 +55,22 @@ impl Build for CoCreatorView {
         };
 
         let panel_id: StateId = ctx.state(DraggablePanelState::default());
+        let requested_open_id = ctx.state(false);
+        let scroll_id: StateId = ctx.state(0.0f32);
+        let pin_id = ctx.state(true);
+        let input_id: StateId = ctx.state(String::new());
+        let epoch_id = ctx.state(draw_ctx.input_epoch);
         let mut panel_state: DraggablePanelState = ctx.get_state(panel_id).unwrap_or_default();
 
-        if draw_ctx.is_open && !panel_state.visibility.is_visible() {
-            panel_state.visibility = DraggablePanelVisibility::JustOpened;
-            ctx.set_state(panel_id, panel_state);
-        } else if !draw_ctx.is_open && panel_state.visibility.is_visible() {
-            panel_state.visibility = DraggablePanelVisibility::Hidden;
+        if ctx.get_state(requested_open_id) != Some(draw_ctx.is_open) {
+            panel_state.visibility = if draw_ctx.is_open {
+                DraggablePanelVisibility::JustOpened
+            } else {
+                DraggablePanelVisibility::Hidden
+            };
             ctx.set_state(panel_id, panel_state);
         }
+        ctx.set_state(requested_open_id, draw_ctx.is_open);
 
         let current_panel: DraggablePanelState = ctx.get_state(panel_id).unwrap_or_default();
         ctx.emit(CoCreatorPanelSync {
@@ -131,8 +138,6 @@ impl Build for CoCreatorView {
             );
         }
 
-        let scroll_id: StateId = ctx.state(0.0f32);
-        let pin_id = ctx.state(true);
         let msg_area = scroll(
             vstack(msg_children)
                 .spacing(4.0)
@@ -146,8 +151,6 @@ impl Build for CoCreatorView {
         .flex_width(392.0);
 
         // Input area
-        let input_id: StateId = ctx.state(String::new());
-        let epoch_id = ctx.state(draw_ctx.input_epoch);
         if ctx.get_state::<u64>(epoch_id) != Some(draw_ctx.input_epoch) {
             ctx.set_state(input_id, String::new());
             ctx.set_state(epoch_id, draw_ctx.input_epoch);

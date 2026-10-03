@@ -37,8 +37,8 @@ impl Widget for Toggle {
         let text_size = measure(&self.label, None, None);
         Style {
             size: Size {
-                width: Dimension::Length(text_size.x() + 28.0),
-                height: Dimension::Length(text_size.y() + 8.0),
+                width: Dimension::Auto,
+                height: Dimension::Length((text_size.y() + 8.0).max(crate::tokens::CONTROL_HEIGHT)),
             },
             ..Style::default()
         }
@@ -70,38 +70,39 @@ impl Widget for Toggle {
     ) {
         let checked: bool = state.get(self.value_id).unwrap_or(false);
 
-        let bg_color = if checked {
-            ctx.style().check_mark_color
-        } else {
-            ctx.style().button_normal
-        };
-        let bg_color = animation.apply_to_color(bg_color);
-        let radius = animation.apply_to_corner_radius(ctx.style().button_rounding);
-        ctx.draw_rounded_rect(bounds, bg_color, radius);
-
+        let switch = Rect2D::from_center_size(
+            Vec2::new(bounds.max.x() - 18.0, bounds.center().y()),
+            Vec2::new(36.0, 20.0),
+        );
+        ctx.draw_rounded_rect(
+            switch,
+            animation.apply_to_color(if checked {
+                ctx.style().check_mark_color
+            } else {
+                ctx.style().slider_track
+            }),
+            10.0,
+        );
         if info.interaction.is_focused(info.view_id) {
-            ctx.draw_rounded_selection_border(bounds, ctx.style().check_mark_color, 2.0, radius);
+            ctx.draw_rounded_selection_border(bounds, ctx.style().focus_ring_color, 2.0, 4.0);
         }
-
-        let indicator_size = bounds.height() * 0.5;
-        let indicator_center = if checked {
-            Vec2::new(bounds.max.x() - indicator_size, bounds.center().y())
-        } else {
-            Vec2::new(bounds.min.x() + indicator_size, bounds.center().y())
-        };
         ctx.draw_circle(
-            indicator_center,
-            indicator_size * 0.5,
+            Vec2::new(
+                if checked {
+                    switch.max.x() - 10.0
+                } else {
+                    switch.min.x() + 10.0
+                },
+                switch.center().y(),
+            ),
+            7.0,
             animation.apply_to_color(ctx.style().text_color),
         );
 
         if !self.label.is_empty() {
             let font_size = ctx.style().font_size;
             let text_size = ctx.measure_text(&self.label, font_size);
-            let text_pos = Vec2::new(
-                bounds.min.x() + ctx.style().item_inner_spacing,
-                bounds.center().y() - text_size.y() * 0.5,
-            );
+            let text_pos = Vec2::new(bounds.min.x(), bounds.center().y() - text_size.y() * 0.5);
             ctx.draw_text(
                 &self.label,
                 text_pos,

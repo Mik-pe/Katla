@@ -17,6 +17,8 @@ pub struct Text {
     pub font_size: Option<FontSize>,
     /// Fixed wrapping width in logical pixels; explicit newlines are preserved.
     pub wrap_width: Option<f32>,
+    /// Maximum logical width for a single line with an ellipsis.
+    pub max_width: Option<f32>,
 }
 
 impl Widget for Text {
@@ -40,7 +42,9 @@ impl Widget for Text {
         let size = measure(&self.content, self.font_size, self.wrap_width);
         Style {
             size: Size {
-                width: Dimension::Length(size.x()),
+                width: Dimension::Length(
+                    self.max_width.map_or(size.x(), |width| size.x().min(width)),
+                ),
                 height: Dimension::Length(size.y()),
             },
             ..Style::default()
@@ -71,8 +75,24 @@ impl Widget for Text {
             .font_size
             .map(|fs| ctx.scaled_font_size(fs))
             .unwrap_or(ctx.style().font_size);
+        let mut content = std::borrow::Cow::Borrowed(self.content.as_str());
+        if let Some(width) = self.max_width
+            && ctx.measure_text(&content, size).x() > width
+        {
+            let mut shortened = self.content.clone();
+            while !shortened.is_empty()
+                && ctx.measure_text(&format!("{shortened}…"), size).x() > width
+            {
+                shortened.pop();
+            }
+            shortened.push('…');
+            content = std::borrow::Cow::Owned(shortened);
+            if bounds.contains(ctx.mouse_pos()) {
+                ctx.defer_tooltip(&self.content);
+            }
+        }
         ctx.draw_text_with_width(
-            &self.content,
+            &content,
             bounds.min,
             animation.apply_to_color(text_color),
             size,
@@ -86,6 +106,12 @@ impl Widget for Text {
 }
 
 impl Text {
+    /// Keep one line within a logical width, showing an ellipsis on overflow.
+    pub fn truncate(mut self, width: f32) -> Self {
+        self.max_width = Some(width.max(1.0));
+        self
+    }
+
     /// Wrap words and long tokens at a fixed width using the active font metrics.
     pub fn wrap(mut self, width: f32) -> Self {
         self.wrap_width = Some(width.max(1.0));
@@ -157,12 +183,14 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         };
         let b = Text {
             content: "world".into(),
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         };
         assert_eq!(b.diff_against(&a), DiffAction::Update);
     }
@@ -174,6 +202,7 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         };
         // Use a different widget type (Button) to test Replace
         let other = crate::declarative::constructors::button("other");
@@ -190,6 +219,7 @@ mod tests {
             color: Some(Color::WHITE),
             font_size: Some(FontSize::Medium),
             wrap_width: None,
+            max_width: None,
         };
         let bounds = Rect2D::new(
             katla_math::Vec2::new(0.0, 0.0),

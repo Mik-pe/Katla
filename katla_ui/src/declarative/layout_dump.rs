@@ -608,6 +608,7 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         };
         let info = identify_widget(&widget);
         assert_eq!(info.type_name, "Text");
@@ -617,6 +618,7 @@ mod tests {
     #[test]
     fn test_identify_widget_button() {
         let widget = super::super::widgets::button::Button {
+            width: None,
             label: "Click".into(),
             fill_color: None,
             border_color: None,

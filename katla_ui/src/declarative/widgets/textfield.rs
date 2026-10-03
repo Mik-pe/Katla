@@ -41,6 +41,10 @@ impl Widget for TextField {
     fn layout_style(&self, measure: MeasureFn<'_>) -> Style {
         let text_size = measure(&self.placeholder, None, None);
         let mut style = Style {
+            min_size: Size {
+                width: Dimension::Length(0.0),
+                height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
+            },
             size: Size {
                 width: Dimension::Length(text_size.x() + 16.0),
                 height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
@@ -136,11 +140,22 @@ impl Widget for TextField {
         let padding = 4.0;
         let font_size = ctx.style().font_size;
         let text_size = ctx.measure_text(&text, font_size);
+        let text_width = (bounds.width() - padding * 2.0).max(0.0);
+        let focused = info.interaction.is_focused(info.view_id);
+        let offset = if focused {
+            (text_size.x() - text_width).max(0.0)
+        } else {
+            0.0
+        };
         let text_pos = Vec2::new(
-            bounds.min.x() + padding,
+            bounds.min.x() + padding - offset,
             bounds.center().y() - text_size.y() * 0.5,
         );
 
+        ctx.push_clip(Rect2D::new(
+            Vec2::new(bounds.min.x() + padding, bounds.min.y()),
+            Vec2::new(bounds.max.x() - padding, bounds.max.y()),
+        ));
         if text.is_empty() {
             ctx.draw_text(
                 &self.placeholder,
@@ -151,6 +166,16 @@ impl Widget for TextField {
         } else {
             ctx.draw_text(&text, text_pos, ctx.style().input_text, font_size);
         }
+        if focused {
+            ctx.draw_rect(
+                Rect2D::from_origin_size(
+                    Vec2::new(text_pos.x() + text_size.x(), text_pos.y()),
+                    Vec2::new(1.0, font_size),
+                ),
+                ctx.style().input_cursor,
+            );
+        }
+        ctx.pop_clip();
     }
 
     fn focusable(&self) -> bool {

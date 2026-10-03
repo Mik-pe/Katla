@@ -3,10 +3,10 @@
 use crate::ui::editor_ui::{ColorScheme, types::EditorAction};
 use katla_agent::material::{MaterialOp, MaterialPreset, MaterialValues};
 use katla_ecs::EntityId;
-use katla_math::Color;
+use katla_math::{Color, Vec2};
 use katla_ui::declarative::{
-    BuildContext, StateId, Widget, WidgetBox, button, empty, hstack, icon, labeled_slider, section,
-    text, vstack,
+    Alignment, BuildContext, StateId, Widget, WidgetBox, button, empty, grid, hstack, icon,
+    labeled_slider, section, text, vstack,
 };
 use katla_ui::{FontSize, ForkAwesome};
 
@@ -80,58 +80,57 @@ impl MaterialControls {
         let c = values.base_color;
         let mut content = vec![
             hstack([
-                hstack([
-                    icon(ForkAwesome::SQUARE)
-                        .color(Color::new(c[0], c[1], c[2], 1.0))
-                        .icon_size(FontSize::Large)
-                        .boxed(),
-                    text(format!(
-                        "#{:02X}{:02X}{:02X}",
-                        (c[0] * 255.0).round() as u8,
-                        (c[1] * 255.0).round() as u8,
-                        (c[2] * 255.0).round() as u8
-                    ))
-                    .color(theme.text_primary)
+                icon(ForkAwesome::SQUARE)
+                    .color(Color::new(c[0], c[1], c[2], 1.0))
+                    .icon_size(FontSize::Large)
                     .boxed(),
-                ])
-                .spacing(4.0)
-                .boxed(),
-                vstack([
-                    text("Surface material").color(theme.text_primary).boxed(),
-                    text("Live on this object")
-                        .color(theme.text_muted)
-                        .font_size(FontSize::Small)
-                        .boxed(),
-                ])
-                .spacing(2.0)
+                text(format!(
+                    "#{:02X}{:02X}{:02X}",
+                    (c[0] * 255.0).round() as u8,
+                    (c[1] * 255.0).round() as u8,
+                    (c[2] * 255.0).round() as u8
+                ))
+                .color(theme.text_primary)
                 .boxed(),
             ])
-            .spacing(10.0)
+            .spacing(4.0)
+            .align(Alignment::Middle)
             .boxed(),
         ];
-        for presets in MaterialPreset::ALL.chunks(2) {
-            let buttons = presets
-                .iter()
-                .copied()
-                .map(|preset| {
-                    button(preset.label())
-                        .fill(theme.panel_bg)
-                        .border(Color::TRANSPARENT)
-                        .on_click(ctx.on_click(move |actions| {
-                            actions.emit(EditorAction::MaterialPreset(MaterialOp::Set {
-                                entity_ids: vec![entity.id().to_string()],
-                                preset: Some(preset),
-                                base_color: None,
-                                metallic: None,
-                                roughness: None,
-                                ao: None,
-                            }));
-                        }))
-                        .boxed()
-                })
-                .collect::<Vec<_>>();
-            content.push(hstack(buttons).spacing(6.0).boxed());
-        }
+        let columns = if width < 220.0 { 1 } else { 2 };
+        let cell_width = ((width - 24.0 - 6.0 * (columns - 1) as f32) / columns as f32).max(1.0);
+        let presets = MaterialPreset::ALL
+            .iter()
+            .copied()
+            .map(|preset| {
+                vstack([button(preset.label())
+                    .flex_width(cell_width)
+                    .fill(theme.panel_bg)
+                    .border(Color::TRANSPARENT)
+                    .on_click(ctx.on_click(move |actions| {
+                        actions.emit(EditorAction::MaterialPreset(MaterialOp::Set {
+                            entity_ids: vec![entity.id().to_string()],
+                            preset: Some(preset),
+                            base_color: None,
+                            metallic: None,
+                            roughness: None,
+                            ao: None,
+                        }));
+                    }))
+                    .boxed()])
+                .flex_width(cell_width)
+                .boxed()
+            })
+            .collect::<Vec<_>>();
+        content.push(
+            grid(
+                columns,
+                Vec2::new(cell_width, katla_ui::tokens::CONTROL_HEIGHT),
+                presets,
+            )
+            .grid_spacing(6.0)
+            .boxed(),
+        );
         for (index, label) in [
             "Red",
             "Green",
@@ -144,19 +143,28 @@ impl MaterialControls {
         .iter()
         .enumerate()
         {
-            content.push(
-                labeled_slider(*label, self.channels[index], 0.0..=1.0)
-                    .label_width(76.0)
-                    .show_value(true)
-                    .precision(2)
-                    .boxed(),
-            );
+            let slider = labeled_slider(
+                if width < 220.0 { "" } else { label },
+                self.channels[index],
+                0.0..=1.0,
+            )
+            .label_width(if width < 220.0 { 0.0 } else { 76.0 })
+            .show_value(true)
+            .precision(2)
+            .boxed();
+            content.push(if width < 220.0 {
+                vstack([text(*label).color(theme.text_secondary).boxed(), slider])
+                    .spacing(2.0)
+                    .boxed()
+            } else {
+                slider
+            });
         }
         content.push(
             text("Presets are PBR tints. Model textures stay attached.")
                 .color(theme.text_muted)
                 .font_size(FontSize::Small)
-                .wrap((width - 24.0).max(120.0))
+                .wrap((width - 24.0).max(1.0))
                 .boxed(),
         );
         let child = if ctx.get_state::<bool>(self.expanded).unwrap_or_default() {

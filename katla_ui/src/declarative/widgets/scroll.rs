@@ -55,6 +55,7 @@ impl Widget for ScrollView {
 
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let mut style = Style {
+            flex_direction: taffy::FlexDirection::Column,
             overflow: taffy::Point {
                 x: taffy::Overflow::Scroll,
                 y: taffy::Overflow::Scroll,

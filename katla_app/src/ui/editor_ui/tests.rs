@@ -26,6 +26,7 @@ fn preferences_env(
     theme: &ColorScheme,
 ) {
     view_tree.env_mut().set(PreferencesDrawCtx {
+        screen_size: Vec2::new(800.0, 600.0),
         is_open: true,
         category: 0,
         preferences: preferences.clone(),
@@ -354,6 +355,8 @@ fn test_editor_overlay_produces_dockspace_in_zstack() {
     view_tree
         .env_mut()
         .set(crate::ui::editor_ui::declarative::ToolbarDrawCtx {
+            screen_width: 1920.0,
+            font_scale: 1.0,
             show_grid: true,
             show_stats: false,
             show_physics_debug: false,
@@ -549,4 +552,323 @@ fn default_test_dock_tree() -> DockTree<u64> {
         ratio: 0.25,
         children: [Box::new(left), Box::new(right)],
     })
+}
+
+#[test]
+fn test_preferences_fit_small_window_and_all_categories() {
+    use katla_ui::declarative::widgets::{labeled_slider::LabeledSlider, modal::Modal};
+    for category in 0..4 {
+        let screen = Vec2::new(560.0, 450.0);
+        let mut ui = UiContext::new();
+        ui.begin(screen, 1.0);
+        let mut tree = ViewTree::default();
+        tree.env_mut().set(PreferencesDrawCtx {
+            screen_size: screen,
+            is_open: true,
+            category,
+            preferences: Preferences::default(),
+            editor_settings: EditorSettings::default(),
+            theme: ColorScheme::default(),
+            theme_key: "dark".into(),
+        });
+        tree.frame(&mut ui, &declarative::preferences::PreferencesView, screen);
+        for (id, node) in tree.iter_nodes() {
+            let bounds = tree.resolved_bounds()[&id];
+            assert!(
+                bounds.min.x() >= 0.0 && bounds.max.x() <= screen.x() + 0.5,
+                "category {category} overflows horizontally: {bounds:?}"
+            );
+            if node.widget.as_any().is::<Modal>() {
+                assert!(bounds.min.y() >= 0.0 && bounds.max.y() <= screen.y() + 0.5);
+            }
+            if let Some(slider) = node.widget.as_any().downcast_ref::<LabeledSlider>() {
+                assert!(
+                    slider.track_bounds(bounds).width() >= 60.0,
+                    "category {category} leaves no useful slider track: {bounds:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_mixer_keeps_sliders_in_each_strip_at_different_widths() {
+    use katla_ui::declarative::widgets::labeled_slider::LabeledSlider;
+    for width in [240.0, 560.0, 1280.0] {
+        let screen = Vec2::new(width, 180.0);
+        let mut ui = UiContext::new();
+        ui.begin(screen, 1.0);
+        let mut tree = ViewTree::default();
+        tree.env_mut().set(declarative::mixer::MixerDrawCtx {
+            bounds: Rect2D::from_origin_size(Vec2::ZERO, screen),
+            levels: katla_audio::LevelsSnapshot::default(),
+            active_voices: 0,
+            peak_voices: 0,
+            preferences: Preferences::default(),
+            theme: ColorScheme::default(),
+        });
+        tree.frame(&mut ui, &declarative::mixer::MixerView, screen);
+        let sliders = tree
+            .iter_nodes()
+            .filter_map(|(id, node)| {
+                node.widget
+                    .as_any()
+                    .is::<LabeledSlider>()
+                    .then_some(tree.resolved_bounds()[&id])
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(sliders.len(), 4);
+        for bounds in &sliders {
+            assert!(bounds.min.x() >= 12.0 && bounds.max.x() <= width - 12.0);
+            assert!(
+                bounds.width() >= 120.0 && bounds.height() <= 40.0,
+                "{bounds:?}"
+            );
+        }
+        for (index, bounds) in sliders.iter().enumerate() {
+            for other in &sliders[index + 1..] {
+                assert!(
+                    bounds.max.x() <= other.min.x()
+                        || other.max.x() <= bounds.min.x()
+                        || bounds.max.y() <= other.min.y()
+                        || other.max.y() <= bounds.min.y(),
+                    "slider rows overlap: {bounds:?}, {other:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_floating_panels_keep_state_when_opening_and_changing_emitter_shape() {
+    use crate::ui::particle_inspector::{EmitterConfigView, ParticleInspectorData};
+    use declarative::{co_creator::CoCreatorDrawCtx, particle_inspector::ParticleInspectorDrawCtx};
+    let screen = Vec2::new(1280.0, 720.0);
+    let mut ui = UiContext::new();
+    let mut tree = ViewTree::default();
+    let preferences = Preferences {
+        show_grid: true,
+        ..Preferences::default()
+    };
+    let entity = katla_ecs::EntityId::from_raw(1);
+    for (assistant_open, particle_open, prefs_open, shape) in [
+        (false, false, false, "Point"),
+        (false, false, true, "Point"),
+        (false, true, false, "Line"),
+        (true, true, false, "Box"),
+        (false, true, true, "Sphere"),
+        (true, false, false, "Point"),
+        (true, true, true, "Point"),
+    ] {
+        preferences_env(
+            &mut tree,
+            &preferences,
+            &EditorSettings::default(),
+            &ColorScheme::default(),
+        );
+        let mut prefs = tree.env_mut().get::<PreferencesDrawCtx>().unwrap().clone();
+        prefs.is_open = prefs_open;
+        prefs.category = 1;
+        tree.env_mut().set(prefs);
+        tree.env_mut().set(CoCreatorDrawCtx {
+            messages: vec![],
+            processing: false,
+            host_name: None,
+            input_epoch: 0,
+            status_message: "Disconnected".into(),
+            user_msg_color: Color::WHITE,
+            assistant_msg_color: Color::WHITE,
+            system_msg_color: Color::WHITE,
+            text_muted: Color::WHITE,
+            agent_undo_count: 0,
+            is_open: assistant_open,
+        });
+        tree.env_mut().set(ParticleInspectorDrawCtx {
+            is_open: particle_open,
+            theme: ColorScheme::default(),
+            data: ParticleInspectorData {
+                emitter_entities: vec![entity],
+                selected_emitter_entity: Some(entity),
+                stats: Some(crate::ui::ParticleStats::default()),
+                selected_emitter_config: Some(EmitterConfigView {
+                    active: true,
+                    shape_name: shape,
+                    shape_params: [2.0; 3],
+                    emit_rate: 10.0,
+                    base_lifetime: 1.0,
+                    lifetime_variation: 0.2,
+                    velocity_magnitude: 1.0,
+                    velocity_cone_angle: 0.0,
+                    base_scale: 1.0,
+                    scale_variation: 0.0,
+                    color: [1.0; 4],
+                    color_variation: 0.0,
+                    color_end: [1.0; 4],
+                    scale_end: 1.0,
+                    gravity: -9.8,
+                    turbulence_strength: 0.0,
+                    turbulence_frequency: 1.0,
+                }),
+            },
+        });
+        ui.begin(screen, 1.0);
+        tree.frame(&mut ui, &EditorOverlayView, screen);
+        if particle_open {
+            let sliders = tree
+                .iter_nodes()
+                .filter_map(|(id, node)| {
+                    node.widget
+                        .as_any()
+                        .is::<katla_ui::declarative::widgets::labeled_slider::LabeledSlider>()
+                        .then_some(tree.resolved_bounds()[&id])
+                })
+                .collect::<Vec<_>>();
+            for bounds in sliders {
+                assert!(bounds.height() >= 20.0, "compressed slider: {bounds:?}");
+            }
+        }
+        assert!(
+            tree.actions_mut()
+                .drain::<crate::ui::ParticleInspectorAction>()
+                .is_empty(),
+            "opening a panel or changing shape must not edit emitter values"
+        );
+        assert!(
+            tree.actions_mut().drain::<PreferencesAction>().is_empty(),
+            "opening panels must not mutate preferences"
+        );
+        ui.end();
+    }
+
+    tree.actions_mut()
+        .drain::<declarative::CoCreatorPanelSync>();
+    tree.actions_mut()
+        .drain::<declarative::ParticleInspectorPanelSync>();
+    let panel_ids = tree
+        .iter_nodes()
+        .filter_map(|(_, node)| {
+            node.widget
+                .as_any()
+                .downcast_ref::<katla_ui::declarative::widgets::draggable_panel::DraggablePanel>()
+                .map(|panel| panel.state_id)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(panel_ids.len(), 2);
+    for id in panel_ids {
+        tree.state_arena_mut()
+            .set(id, DraggablePanelState::default());
+    }
+    ui.begin(screen, 1.0);
+    tree.frame(&mut ui, &EditorOverlayView, screen);
+    assert!(
+        tree.actions_mut()
+            .drain::<declarative::CoCreatorPanelSync>()
+            .iter()
+            .all(|sync| !sync.visibility.is_visible())
+    );
+    assert!(
+        tree.actions_mut()
+            .drain::<declarative::ParticleInspectorPanelSync>()
+            .iter()
+            .all(|sync| !sync.visibility.is_visible())
+    );
+    assert!(matches!(
+        tree.actions_mut()
+            .drain::<crate::ui::ParticleInspectorAction>()
+            .as_slice(),
+        [crate::ui::ParticleInspectorAction::Close]
+    ));
+    ui.end();
+}
+
+#[test]
+fn test_audio_controls_follow_preferences_and_allow_muting() {
+    use katla_ui::declarative::widgets::labeled_slider::LabeledSlider;
+    let screen = Vec2::new(560.0, 450.0);
+    for mixer in [false, true] {
+        let mut ui = UiContext::new();
+        let mut tree = ViewTree::default();
+        let mut preferences = Preferences::default();
+        let view: &dyn katla_ui::declarative::Build = if mixer {
+            &declarative::mixer::MixerView
+        } else {
+            &declarative::preferences::PreferencesView
+        };
+        let set_env = |tree: &mut ViewTree, preferences: &Preferences| {
+            if mixer {
+                tree.env_mut().set(declarative::MixerDrawCtx {
+                    bounds: Rect2D::from_origin_size(Vec2::ZERO, screen),
+                    levels: katla_audio::LevelsSnapshot::default(),
+                    active_voices: 0,
+                    peak_voices: 0,
+                    preferences: preferences.clone(),
+                    theme: ColorScheme::default(),
+                });
+            } else {
+                tree.env_mut().set(PreferencesDrawCtx {
+                    screen_size: screen,
+                    is_open: true,
+                    category: 2,
+                    preferences: preferences.clone(),
+                    editor_settings: EditorSettings::default(),
+                    theme: ColorScheme::default(),
+                    theme_key: "dark".into(),
+                });
+            }
+        };
+        set_env(&mut tree, &preferences);
+        ui.begin(screen, 1.0);
+        tree.frame(&mut ui, view, screen);
+        ui.end();
+        let master_id = tree
+            .iter_nodes()
+            .find_map(|(_, node)| {
+                node.widget
+                    .as_any()
+                    .downcast_ref::<LabeledSlider>()
+                    .map(|slider| slider.value_id)
+            })
+            .unwrap();
+        tree.state_arena_mut().set(master_id, 0.0f32);
+        ui.begin(screen, 1.0);
+        tree.frame(&mut ui, view, screen);
+        ui.end();
+        assert!(
+            matches!(tree.actions_mut().drain::<PreferencesAction>().as_slice(),
+            [PreferencesAction::SetMasterVolume(volume)] if *volume == 0.0)
+        );
+        for volume in [0.0, 0.35, 1.0] {
+            preferences.audio.master_volume = volume;
+            set_env(&mut tree, &preferences);
+            ui.begin(screen, 1.0);
+            tree.frame(&mut ui, view, screen);
+            ui.end();
+            assert_eq!(tree.state_arena().get::<f32>(master_id), Some(volume));
+            assert!(tree.actions_mut().drain::<PreferencesAction>().is_empty());
+        }
+    }
+}
+
+#[test]
+fn test_modal_pointer_capture_blocks_viewport_and_scrim_clicks() {
+    let mut editor = EditorUI::new();
+    editor.last_screen_size = Vec2::new(800.0, 600.0);
+    editor.last_viewport_bounds = Rect2D::from_origin_size(Vec2::ZERO, editor.last_screen_size);
+    editor.focused_panel = FocusedPanel::Hierarchy;
+    for preferences in [false, true] {
+        editor.scene_dialog =
+            (!preferences).then_some(declarative::scene_dialog::SceneDialog::Unsaved);
+        editor.preferences_panel.visibility = if preferences {
+            katla_ui::declarative::DraggablePanelVisibility::Visible
+        } else {
+            katla_ui::declarative::DraggablePanelVisibility::Hidden
+        };
+        for position in [Vec2::new(400.0, 300.0), Vec2::new(10.0, 100.0)] {
+            assert!(editor.captures_pointer_at(position));
+            editor.update_focused_panel_from_click(position);
+            assert_eq!(editor.focused_panel, FocusedPanel::Hierarchy);
+        }
+    }
+    editor.preferences_panel.close();
+    assert!(!editor.captures_pointer_at(Vec2::new(400.0, 300.0)));
 }

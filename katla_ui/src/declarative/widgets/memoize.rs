@@ -129,12 +129,14 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         let m2 = Memoize::new(data, |_| widgets::text::Text {
             content: "inner".into(),
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         assert!(
             !m2.should_rebuild(&m1),
@@ -152,12 +154,14 @@ mod tests {
                 color: None,
                 font_size: None,
                 wrap_width: None,
+                max_width: None,
             });
         let m2 = Memoize::new(data2, |_| widgets::text::Text {
             content: "inner".into(),
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         assert!(
             m2.should_rebuild(&m1),
@@ -173,12 +177,14 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         let m2 = Memoize::new(data, |_| widgets::text::Text {
             content: "x".into(),
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         assert_eq!(m2.diff_against(&m1), DiffAction::Update);
     }
@@ -192,12 +198,14 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         let m2 = Memoize::new(d2, |_| widgets::text::Text {
             content: "y".into(),
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         assert_eq!(m2.diff_against(&m1), DiffAction::RecurseChildren);
     }
@@ -210,12 +218,14 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         let other = widgets::text::Text {
             content: "hello".into(),
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         };
         assert_eq!(m.diff_against(&other), DiffAction::Replace);
     }
@@ -229,6 +239,7 @@ mod tests {
                 color: None,
                 font_size: None,
                 wrap_width: None,
+                max_width: None,
             });
         let children = m.take_children();
         assert!(
@@ -246,6 +257,7 @@ mod tests {
                 color: None,
                 font_size: None,
                 wrap_width: None,
+                max_width: None,
             });
         assert!(
             m1.as_any()
@@ -280,6 +292,7 @@ mod tests {
                 color: None,
                 font_size: None,
                 wrap_width: None,
+                max_width: None,
             }
         };
 
@@ -304,12 +317,14 @@ mod tests {
                 color: None,
                 font_size: None,
                 wrap_width: None,
+                max_width: None,
             });
         let m4 = Memoize::new(d2, |d| widgets::text::Text {
             content: d.first().cloned().unwrap_or_default(),
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
 
         let start = Instant::now();

@@ -563,6 +563,7 @@ mod tests {
     fn test_widget_downcast_button() {
         use crate::declarative::widgets::button::Button;
         let w: Box<dyn Widget> = Box::new(Button {
+            width: None,
             label: "Click".into(),
             fill_color: None,
             border_color: None,
@@ -590,6 +591,7 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         assert!(
             w.as_any().downcast_ref::<Text>().is_some(),
@@ -654,6 +656,7 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         // Box<dyn Widget> delegates as_any to inner
         assert!(
@@ -670,6 +673,7 @@ mod tests {
             color: None,
             font_size: None,
             wrap_width: None,
+            max_width: None,
         });
         {
             let text_ref = w.as_any_mut().downcast_mut::<Text>().unwrap();

@@ -47,6 +47,7 @@ const THEME_NAMES: [(&str, &str); 15] = [
 
 #[derive(Clone)]
 pub(crate) struct PreferencesDrawCtx {
+    pub screen_size: katla_math::Vec2,
     pub is_open: bool,
     pub category: usize,
     pub preferences: Preferences,
@@ -99,18 +100,19 @@ impl Build for PreferencesView {
             draw_ctx.preferences.audio.ambient_volume,
             PreferencesAction::SetAmbientVolume,
         );
-        sync_toggle(ctx, draw_ctx.preferences.show_grid, |_| {
+        let grid_toggle_id = sync_toggle(ctx, draw_ctx.preferences.show_grid, |_| {
             PreferencesAction::ToggleGrid
         });
-        sync_toggle(ctx, draw_ctx.preferences.show_stats, |_| {
+        let stats_toggle_id = sync_toggle(ctx, draw_ctx.preferences.show_stats, |_| {
             PreferencesAction::ToggleStats
         });
-        sync_toggle(
+        let snap_id = sync_toggle(
             ctx,
             draw_ctx.editor_settings.snap_to_grid,
             PreferencesAction::SetSnapToGrid,
         );
 
+        let content_scroll_id: StateId = ctx.state(0.0f32);
         let socket_id = ctx.state(draw_ctx.preferences.external_chat.socket.clone());
         let thread_id = ctx.state(draw_ctx.preferences.external_chat.thread_id.clone());
 
@@ -128,12 +130,15 @@ impl Build for PreferencesView {
             return empty().boxed();
         }
 
-        let content_scroll_id: StateId = ctx.state(0.0f32);
-
         let category = category_from_index(ctx, draw_ctx.category);
         let content = match category {
             PreferencesTab::Appearance => build_appearance(ctx, &draw_ctx),
-            PreferencesTab::Viewport => build_viewport(ctx, &draw_ctx, camera_speed_id),
+            PreferencesTab::Viewport => build_viewport(
+                ctx,
+                &draw_ctx,
+                camera_speed_id,
+                [grid_toggle_id, stats_toggle_id, snap_id],
+            ),
             PreferencesTab::Audio => {
                 build_audio(ctx, &draw_ctx, master_id, sfx_id, music_id, ambient_id)
             }
@@ -142,23 +147,28 @@ impl Build for PreferencesView {
 
         let sidebar = build_sidebar(ctx, &draw_ctx.theme, category);
 
-        let body_height = PREFERENCES_HEIGHT - katla_ui::tokens::MODAL_TITLE_HEIGHT;
+        let width = PREFERENCES_WIDTH.min((draw_ctx.screen_size.x() - 16.0).max(1.0));
+        let height = PREFERENCES_HEIGHT.min((draw_ctx.screen_size.y() - 16.0).max(1.0));
+        let body_height = height - katla_ui::tokens::MODAL_TITLE_HEIGHT;
         let body = hstack([
             sidebar,
             hstack([katla_ui::declarative::separator_vertical().boxed()])
                 .flex_height(body_height)
                 .boxed(),
-            scroll(content_padding(content), content_scroll_id)
-                .flex_grow(1.0)
-                .flex_height(body_height)
-                .boxed(),
+            scroll(
+                content_padding(content, content_width(&draw_ctx)),
+                content_scroll_id,
+            )
+            .flex_grow(1.0)
+            .flex_height(body_height)
+            .boxed(),
         ])
         .spacing(0.0)
         .flex_height(body_height)
-        .flex_width(PREFERENCES_WIDTH)
+        .flex_width(width)
         .boxed();
 
-        modal(PREFERENCES_WIDTH, PREFERENCES_HEIGHT, open_id, body)
+        modal(width, height, open_id, body)
             .title("Preferences")
             .on_close(ctx.on_click(|actions| {
                 actions.emit(PreferencesPanelSync { open: false });
@@ -183,10 +193,14 @@ where
     F: Fn(f32) -> PreferencesAction,
 {
     let id: StateId = ctx.state(initial);
+    let baseline_id = ctx.state(initial);
     let current: f32 = ctx.get_state(id).unwrap_or(initial);
-    if (current - initial).abs() > 1e-4 {
+    if ctx.get_state(baseline_id) != Some(initial) {
+        ctx.set_state(id, initial);
+    } else if (current - initial).abs() > 1e-4 {
         ctx.emit(action(current));
     }
+    ctx.set_state(baseline_id, initial);
     id
 }
 
@@ -197,10 +211,14 @@ where
     F: Fn(bool) -> PreferencesAction,
 {
     let id: StateId = ctx.state(initial);
+    let baseline_id = ctx.state(initial);
     let current: bool = ctx.get_state(id).unwrap_or(initial);
-    if current != initial {
+    if ctx.get_state(baseline_id) != Some(initial) {
+        ctx.set_state(id, initial);
+    } else if current != initial {
         ctx.emit(action(current));
     }
+    ctx.set_state(baseline_id, initial);
     id
 }
 
@@ -225,7 +243,7 @@ fn setting_row(label: &str, theme: &ColorScheme, control: Box<dyn Widget>) -> Bo
             .boxed()])
         .flex_width(LABEL_WIDTH)
         .boxed(),
-        control,
+        vstack([control]).flex_grow(1.0).boxed(),
     ])
     .spacing(8.0)
     .align(Alignment::Middle)
@@ -271,8 +289,12 @@ fn segmented(
 }
 
 /// Content wrapper: consistent padding and vertical rhythm for every category.
-fn content_padding(child: Box<dyn Widget>) -> Box<dyn Widget> {
-    vstack([child])
+fn content_width(draw_ctx: &PreferencesDrawCtx) -> f32 {
+    (PREFERENCES_WIDTH.min(draw_ctx.screen_size.x() - 16.0) - SIDEBAR_WIDTH - 1.0 - 32.0).max(1.0)
+}
+
+fn content_padding(child: Box<dyn Widget>, width: f32) -> Box<dyn Widget> {
+    vstack([vstack([child]).flex_width(width).boxed()])
         .spacing(0.0)
         .padding(Padding {
             top: 16.0,
@@ -384,6 +406,13 @@ fn build_appearance(ctx: &mut BuildContext, draw_ctx: &PreferencesDrawCtx) -> Bo
     // ── Interface theme ──
     children.push(section_title("Interface theme", theme));
 
+    let columns = if content_width(draw_ctx) < 340.0 * draw_ctx.preferences.font_scale {
+        1
+    } else {
+        2
+    };
+    let cell_width = (content_width(draw_ctx) - 4.0 * (columns - 1) as f32) / columns as f32;
+
     // Compact two-column list: one restrained swatch + name per theme.
     // The whole cell is the click target; the current theme carries the
     // accent row and a check mark so it reads in under a second.
@@ -395,6 +424,7 @@ fn build_appearance(ctx: &mut BuildContext, draw_ctx: &PreferencesDrawCtx) -> Bo
         let mut row_children: Vec<Box<dyn Widget>> = vec![
             theme_swatch(scheme).boxed(),
             hstack([text(display_name)
+                .wrap((cell_width - 84.0).max(1.0))
                 .color(if is_selected {
                     theme.text_primary
                 } else {
@@ -427,9 +457,9 @@ fn build_appearance(ctx: &mut BuildContext, draw_ctx: &PreferencesDrawCtx) -> Bo
 
     children.push(
         grid(
-            2,
+            columns,
             katla_math::Vec2::new(
-                190.0,
+                cell_width,
                 katla_ui::tokens::CONTROL_HEIGHT + katla_ui::tokens::SPACING_4,
             ),
             cells,
@@ -444,6 +474,7 @@ fn build_appearance(ctx: &mut BuildContext, draw_ctx: &PreferencesDrawCtx) -> Bo
     children.push(section_title("Interface scale", theme));
     children.push(
         text("Sizes apply immediately and are saved for next launch.")
+            .wrap(content_width(draw_ctx))
             .color(theme.text_muted)
             .font_size(FontSize::Small)
             .boxed(),
@@ -478,14 +509,14 @@ fn build_viewport(
     ctx: &mut BuildContext,
     draw_ctx: &PreferencesDrawCtx,
     camera_speed_id: StateId,
+    toggles: [StateId; 3],
 ) -> Box<dyn Widget> {
     let theme = &draw_ctx.theme;
     let mut children: Vec<Box<dyn Widget>> = Vec::new();
 
     children.push(section_title("Display", theme));
-    let grid_toggle_id = ctx.state(draw_ctx.preferences.show_grid);
+    let [grid_toggle_id, stats_toggle_id, snap_id] = toggles;
     children.push(toggle("Show Grid", grid_toggle_id).boxed());
-    let stats_toggle_id = ctx.state(draw_ctx.preferences.show_stats);
     children.push(toggle("Show Stats Panel", stats_toggle_id).boxed());
 
     children.push(section_divider(theme));
@@ -498,18 +529,14 @@ fn build_viewport(
         ("5".to_string(), 5.0),
         ("10".to_string(), 10.0),
     ];
-    children.push(setting_row(
-        "Grid size",
+    children.push(text("Grid size").color(theme.text_secondary).boxed());
+    children.push(segmented(
+        ctx,
         theme,
-        segmented(
-            ctx,
-            theme,
-            &sizes,
-            draw_ctx.editor_settings.grid_size,
-            PreferencesAction::SetGridSize,
-        ),
+        &sizes,
+        draw_ctx.editor_settings.grid_size,
+        PreferencesAction::SetGridSize,
     ));
-    let snap_id = ctx.state(draw_ctx.editor_settings.snap_to_grid);
     children.push(toggle("Snap to Grid", snap_id).boxed());
 
     children.push(section_divider(theme));
@@ -519,6 +546,7 @@ fn build_viewport(
         "Fly speed",
         theme,
         labeled_slider("", camera_speed_id, 5.0..=200.0)
+            .label_width(0.0)
             .show_value(true)
             .precision(0)
             .boxed(),
@@ -574,14 +602,14 @@ fn build_connection(
     let thread = ctx.get_state::<String>(thread_id).unwrap_or_default();
     vstack([
         section_title("Scene assistant connection", &draw_ctx.theme),
-        text("Attach to an existing Codex conversation. Your questions include the current view.").wrap(350.0).color(draw_ctx.theme.text_muted).font_size(FontSize::Small).boxed(),
+        text("Attach to an existing Codex conversation. Your questions include the current view.").wrap(content_width(draw_ctx)).color(draw_ctx.theme.text_muted).font_size(FontSize::Small).boxed(),
         text("Private host socket").font_size(FontSize::Small).boxed(),
-        textfield("/absolute/path/to/control.sock", socket_id).boxed(),
+        textfield("/absolute/path/to/control.sock", socket_id).flex_width(content_width(draw_ctx)).boxed(),
         text("Conversation ID").font_size(FontSize::Small).boxed(),
-        textfield("Existing conversation ID", thread_id).boxed(),
+        textfield("Existing conversation ID", thread_id).flex_width(content_width(draw_ctx)).boxed(),
         button("Save and connect").on_click(ctx.on_click(move |actions| {
             actions.emit(super::co_creator::CoCreatorConnectAction {socket: socket.clone(), thread_id: thread.clone()});
         })).boxed(),
-        text("The host must expose a private control socket. Sign-in, models and approvals are handled in Codex.").wrap(350.0).color(draw_ctx.theme.text_muted).font_size(FontSize::Small).boxed(),
+        text("The host must expose a private control socket. Sign-in, models and approvals are handled in Codex.").wrap(content_width(draw_ctx)).color(draw_ctx.theme.text_muted).font_size(FontSize::Small).boxed(),
     ]).spacing(8.0).align(Alignment::Leading).boxed()
 }

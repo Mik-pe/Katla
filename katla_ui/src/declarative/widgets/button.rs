@@ -14,6 +14,8 @@ use super::super::widget::{DrawInfo, InputContext, InputResult, MeasureFn, Widge
 
 pub struct Button {
     pub label: String,
+    /// Optional logical width for equally sized button groups.
+    pub width: Option<f32>,
     pub fill_color: Option<Color>,
     pub border_color: Option<Color>,
     pub tooltip: Option<String>,
@@ -42,7 +44,7 @@ impl Widget for Button {
         let h_padding = 16.0;
         Style {
             size: Size {
-                width: Dimension::Length(text_size.x() + h_padding),
+                width: Dimension::Length(self.width.unwrap_or(text_size.x() + h_padding)),
                 height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
             },
             ..Style::default()
@@ -124,6 +126,11 @@ impl Widget for Button {
 }
 
 impl Button {
+    /// Set a fixed logical width.
+    pub fn flex_width(mut self, width: f32) -> Self {
+        self.width = Some(width);
+        self
+    }
     pub fn fill(mut self, color: impl Into<katla_math::Color>) -> Self {
         self.fill_color = Some(color.into());
         self
@@ -155,6 +162,7 @@ mod tests {
         let mut callbacks = CallbackTable::new();
         let cb = callbacks.push(|_actions| {});
         let button = Button {
+            width: None,
             label: "click".into(),
             fill_color: None,
             border_color: None,
@@ -187,6 +195,7 @@ mod tests {
     #[test]
     fn test_button_diff() {
         let a = Button {
+            width: None,
             label: "ok".into(),
             fill_color: None,
             border_color: None,
@@ -194,6 +203,7 @@ mod tests {
             on_click: None,
         };
         let b = Button {
+            width: None,
             label: "cancel".into(),
             fill_color: None,
             border_color: None,
@@ -211,6 +221,7 @@ mod tests {
         let mut callbacks = CallbackTable::new();
         let cb = callbacks.push(|_actions| {});
         let with_cb = Button {
+            width: None,
             label: "click".into(),
             fill_color: None,
             border_color: None,
@@ -220,6 +231,7 @@ mod tests {
         assert!(with_cb.focusable());
 
         let without_cb = Button {
+            width: None,
             label: "label".into(),
             fill_color: None,
             border_color: None,

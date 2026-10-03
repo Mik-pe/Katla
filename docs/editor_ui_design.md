@@ -73,6 +73,19 @@ chosen identity uses Roboto, orange actions and cyan selection. Reference detail
 include 4pt spacing increments, 6px field gaps, 12px panel padding and 6–10px corner
 radii. Borders should be subtle rather than form a grid around every control.
 
+## Responsive panel layout
+
+Preferences stays within the window with an 8px margin and scrolls its content.
+Theme choices reflow to one column when width or interface scale requires it.
+Material presets share equal cell widths and become one column in a narrow
+inspector; channel labels move above sliders there. Mixer channel strips reflow
+and scroll within their dock panel. The scene title truncates with a tooltip,
+and hides when menus leave insufficient space.
+Console messages wrap within the dock and its toolbar reflows in narrow panels.
+Asset breadcrumbs occupy a separate row and compact long paths. Scene dialogs
+fit within the window, with full-width path entry and scrollable long messages.
+Text fields clip their content and reveal the trailing input while focused.
+
 ## Editor interaction contract
 
 The title displays the loaded scene name and an asterisk for unsaved authored
@@ -82,6 +95,8 @@ path and prompts when the scene is untitled. Save As asks before replacing an
 existing file. New, Open and window close offer Save, Discard Changes and Cancel
 when the document has edits. Errors appear in a modal and keep the current scene.
 File operations require stopping play mode before changing the editor document.
+Visible modals capture pointer input across both the dialog and its scrim;
+clicks and wheel input cannot select objects or move the camera behind them.
 
 Shortcuts use Command on macOS and Control elsewhere: S saves, Shift+S saves as,
 O opens, N creates a scene, Z undoes, Shift+Z or Y redoes, and comma opens

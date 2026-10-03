@@ -508,16 +508,13 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
 
             if tab_index < leaf.tabs.len() {
                 let source_tab = leaf.tabs[tab_index].clone();
-                let delta = ctx.input.mouse_delta;
-                let delta_sq = delta.x() * delta.x() + delta.y() * delta.y();
-
                 ctx.actions.emit(DockAction::TabActivated {
                     path: leaf.path.clone(),
                     tab: source_tab.clone(),
                 });
 
                 drag_state.dragging = true;
-                drag_state.drag_started = delta_sq > TAB_DRAG_THRESHOLD * TAB_DRAG_THRESHOLD;
+                drag_state.drag_started = false;
                 drag_state.source_is_splitter = false;
                 drag_state.source_path = leaf.path.clone();
                 drag_state.source_tab = source_tab;
@@ -1018,32 +1015,70 @@ mod tests {
     }
 
     #[test]
-    fn test_dockspace_tab_drag_initiates() {
+    fn test_dockspace_click_after_pointer_move_does_not_redock() {
         let (mut arena, dock_id, drag_id) = setup_dock_tree();
         let ds = make_dock_space(dock_id, drag_id);
         let mut input = crate::input::UiInputState::default();
-        input.set_mouse_pos(Vec2::new(80.0, 14.0));
+        let position = Vec2::new(80.0, 14.0);
+        input.set_mouse_pos(position);
         input.set_mouse_button(mouse_button::LEFT, true);
-        input.mouse_delta = Vec2::new(5.0, 0.0);
+        input.mouse_delta = Vec2::new(500.0, 300.0);
         let mut callbacks = crate::declarative::build::CallbackTable::new();
         let mut actions = crate::declarative::actions::ActionStream::new();
-        let view_id = make_view_id(1);
-        let mut ctx = InputContext {
-            input: &input,
-            mouse_pos: Vec2::new(80.0, 14.0),
-            callbacks: &mut callbacks,
-            actions: &mut actions,
-            view_id,
-            active_id: None,
-            focused_id: None,
-        };
         let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
-        let result = ds.handle_input(&mut ctx, &mut arena, bounds, &[]);
-        assert_eq!(result, InputResult::Consumed);
-        let drag: DockDragState<u32> = arena.get(drag_id).unwrap();
-        assert!(drag.dragging);
-        assert!(drag.drag_started);
-        assert_eq!(drag.source_tab, 1u32);
+        for held in [true, true, false] {
+            input.set_mouse_button(mouse_button::LEFT, held);
+            let mut ctx = InputContext {
+                input: &input,
+                mouse_pos: position,
+                callbacks: &mut callbacks,
+                actions: &mut actions,
+                view_id: make_view_id(1),
+                active_id: None,
+                focused_id: None,
+            };
+            ds.handle_input(&mut ctx, &mut arena, bounds, &[]);
+            input.clear_frame_state();
+        }
+        let emitted = actions.drain::<DockAction<u32>>();
+        assert_eq!(
+            emitted.len(),
+            1,
+            "click must only activate the tab: {emitted:?}"
+        );
+        assert!(matches!(
+            emitted[0],
+            DockAction::TabActivated { tab: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn test_dockspace_tab_drag_starts_after_press_threshold() {
+        let (mut arena, dock_id, drag_id) = setup_dock_tree();
+        let ds = make_dock_space(dock_id, drag_id);
+        let mut input = crate::input::UiInputState::default();
+        input.set_mouse_button(mouse_button::LEFT, true);
+        let mut callbacks = crate::declarative::build::CallbackTable::new();
+        let mut actions = crate::declarative::actions::ActionStream::new();
+        let bounds = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
+        for (x, expected) in [(80.0, false), (81.0, false), (100.0, true)] {
+            let position = Vec2::new(x, 14.0);
+            let mut ctx = InputContext {
+                input: &input,
+                mouse_pos: position,
+                callbacks: &mut callbacks,
+                actions: &mut actions,
+                view_id: make_view_id(1),
+                active_id: None,
+                focused_id: None,
+            };
+            ds.handle_input(&mut ctx, &mut arena, bounds, &[]);
+            let drag: DockDragState<u32> = arena.get(drag_id).unwrap();
+            assert!(drag.dragging);
+            assert_eq!(drag.drag_started, expected);
+            assert_eq!(drag.source_tab, 1);
+            input.clear_frame_state();
+        }
     }
 
     #[test]

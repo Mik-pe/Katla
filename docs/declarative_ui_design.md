@@ -18,6 +18,15 @@ drags, including when the pointer leaves the row. Label and numeric value space
 do not change the value range; the numeric column reserves space for the range
 endpoints so the track does not move as the value changes.
 
+Labeled sliders stretch to their container width; their label/value columns stay
+inside that row. Toggles reserve a separate switch at the trailing edge. Text
+can use `truncate(width)` for a single line with a measured ellipsis and a hover
+tooltip containing the full content. Button groups use `flex_width(width)` for
+consistent cell sizing.
+
+Scroll views lay content out vertically. Long control stacks keep their natural
+height with `flex_shrink(0.0)` so scrolling never compresses controls into overlaps.
+
 Open menu dropdowns draw on the popup layer and receive clicks before dock tabs
 or fields beneath them. Closing a menu does not send that click to the scene.
 
@@ -27,7 +36,14 @@ Building inactive tabs retains state slots; leaving them unmounted prevents stal
 environment drawing and input. DockSpace alone owns tabs/splitters through the
 global-input pass without blocking panel hit testing. The editor applies dock
 actions after ViewTree::frame(); splitter ratios use local split bounds and moves
-retain the exact dragged tab identity.
+retain the exact dragged tab identity. Tab clicks ignore pointer motion before
+the press; docking starts only after movement from the press position. Floating
+panels reserve all positional state hooks while hidden, including particle
+controls for every emitter shape.
+Floating panels synchronize visibility on changes to the app's open request;
+closing a panel through its widget must remain closed while that request catches up.
+Preference and mixer controls reconcile changes to their app-provided values
+before emitting local edits, so changing volume elsewhere cannot undo a mute.
 
 The scene dialog is mounted after dock panels and reserves its state hooks even
 when closed. Path-entry callbacks emit a StateId; after `ViewTree::frame` the app

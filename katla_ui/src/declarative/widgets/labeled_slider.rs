@@ -56,8 +56,12 @@ impl Widget for LabeledSlider {
         let text_size = measure(&self.label, None, None);
         Style {
             size: Size {
-                width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
+                width: Dimension::Auto,
                 height: Dimension::Length((text_size.y() + 12.0).max(24.0)),
+            },
+            min_size: Size {
+                width: Dimension::Length(0.0),
+                height: Dimension::Auto,
             },
             ..Style::default()
         }

@@ -85,8 +85,13 @@ impl Build for AssetBrowserView {
             .unwrap_or_else(|| draw_ctx.search_filter.clone());
         let search_lower = search_filter.to_lowercase();
 
+        let compact_path =
+            draw_ctx.path_segments.len() as f32 * 130.0 > draw_ctx.bounds.width() - 32.0;
         let mut breadcrumb_items: Vec<Box<dyn Widget>> = Vec::new();
         for (i, segment) in draw_ctx.path_segments.iter().enumerate() {
+            if compact_path && i > 0 && i + 1 < draw_ctx.path_segments.len() {
+                continue;
+            }
             if i > 0 {
                 breadcrumb_items.push(
                     text(" / ")
@@ -100,6 +105,11 @@ impl Build for AssetBrowserView {
             if is_last {
                 breadcrumb_items.push(
                     text(segment)
+                        .truncate(if compact_path {
+                            (draw_ctx.bounds.width() - 176.0).max(1.0)
+                        } else {
+                            130.0
+                        })
                         .color(draw_ctx.theme.text_primary)
                         .font_size(FontSize::Small)
                         .boxed(),
@@ -107,7 +117,9 @@ impl Build for AssetBrowserView {
             } else {
                 let segment_index = i;
                 breadcrumb_items.push(
-                    button(segment)
+                    button(truncate_name(segment, 10))
+                        .tooltip(segment)
+                        .flex_width(100.0)
                         .fill(katla_math::Color::TRANSPARENT)
                         .border(katla_math::Color::TRANSPARENT)
                         .on_click(ctx.on_click(move |actions| {
@@ -151,7 +163,6 @@ impl Build for AssetBrowserView {
             ])
             .spacing(2.0)
             .boxed(),
-            hstack(breadcrumb_items).spacing(2.0).boxed(),
             textfield("Search assets...", search_id)
                 .flex_grow(1.0)
                 .boxed(),
@@ -177,7 +188,7 @@ impl Build for AssetBrowserView {
         let cell_size = Vec2::new(item_size + 16.0, item_size + 32.0);
         let col_count = if draw_ctx.bounds.width() > 0.0 {
             // Content insets 8 px on each side (see the content vstack).
-            ((draw_ctx.bounds.width() - 16.0) / (item_size + 16.0)).max(1.0) as usize
+            ((draw_ctx.bounds.width() - 16.0 + 8.0) / (cell_size.x() + 8.0)).max(1.0) as usize
         } else {
             8
         };
@@ -249,6 +260,11 @@ impl Build for AssetBrowserView {
 
         let content = vstack([
             toolbar,
+            hstack(breadcrumb_items)
+                .spacing(2.0)
+                .padding_all(8.0)
+                .flex_shrink(0.0)
+                .boxed(),
             separator_horizontal().boxed(),
             scroll(grid_content, scroll_id).flex_grow(1.0).boxed(),
         ])

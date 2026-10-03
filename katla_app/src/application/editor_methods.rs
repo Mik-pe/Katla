@@ -19,6 +19,7 @@ impl Application {
         let ui_claimed = self.ui_context.hover_z_index() > katla_ui::z_index::DEFAULT
             || self.ui_context.prev_hover_z_index() > katla_ui::z_index::DEFAULT;
         if ui_claimed
+            || self.editor.editor_ui.captures_pointer_at(mouse_pos)
             || !self
                 .editor
                 .editor_ui

@@ -3,9 +3,9 @@ use std::boxed::Box;
 use katla_ecs::EntityId;
 use katla_ui::FontSize;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget,
-    WidgetBox, draggable_panel, empty, hstack, labeled_slider, property_row, radio, scroll, text,
-    toggle, vstack,
+    Build, BuildContext, DraggablePanelState, DraggablePanelVisibility, StateId, Widget, WidgetBox,
+    draggable_panel, empty, hstack, labeled_slider, property_row, radio, scroll, text, toggle,
+    vstack,
 };
 
 use crate::ui::particle_inspector::EmitterField;
@@ -36,20 +36,110 @@ impl Build for ParticleInspectorView {
         };
 
         let panel_id: StateId = ctx.state(DraggablePanelState::default());
+        let requested_open_id = ctx.state(false);
         let scroll_id: StateId = ctx.state(0.0f32);
-        let mut panel_state: DraggablePanelState = ctx.get_state(panel_id).unwrap();
+        let data = &draw_ctx.data;
+        let selected_idx = data
+            .selected_emitter_entity
+            .and_then(|e| data.emitter_entities.iter().position(|&id| id == e))
+            .unwrap_or(usize::MAX);
+        let emitter_sel_id = ctx.state(selected_idx);
+        let shape_names = ["Point", "Line", "Circle", "Sphere", "Box"];
+        let shape_idx = data
+            .selected_emitter_config
+            .as_ref()
+            .and_then(|config| {
+                shape_names
+                    .iter()
+                    .position(|&name| name == config.shape_name)
+            })
+            .unwrap_or(0);
+        let shape_sel_id = ctx.state(shape_idx);
+        let active_id = ctx.state(
+            data.selected_emitter_config
+                .as_ref()
+                .is_some_and(|c| c.active),
+        );
+        let reset_id = ctx.state(false);
+        let baseline_id = ctx.state((data.selected_emitter_entity, shape_idx));
+        let baseline = ctx.get_state(baseline_id);
+        let values = [
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.shape_params[0]),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.shape_params[1]),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.shape_params[2]),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.emit_rate),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.base_lifetime),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.lifetime_variation),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.velocity_magnitude),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.velocity_cone_angle),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.base_scale),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.scale_variation),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.color_variation),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.scale_end),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.gravity),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.turbulence_strength),
+            data.selected_emitter_config
+                .as_ref()
+                .map_or(0.0, |config| config.turbulence_frequency),
+        ];
+        let value_ids = values.map(|value| ctx.state(value));
+        if baseline != Some((data.selected_emitter_entity, shape_idx)) {
+            ctx.set_state(emitter_sel_id, selected_idx);
+            for (id, value) in value_ids.into_iter().zip(values) {
+                ctx.set_state(id, value);
+            }
+            ctx.set_state(shape_sel_id, shape_idx);
+            ctx.set_state(
+                active_id,
+                data.selected_emitter_config
+                    .as_ref()
+                    .is_some_and(|c| c.active),
+            );
+        }
+        ctx.set_state(baseline_id, (data.selected_emitter_entity, shape_idx));
 
-        // Sync open state from app
-        if draw_ctx.is_open && !panel_state.visibility.is_visible() {
-            panel_state.visibility = DraggablePanelVisibility::JustOpened;
-            ctx.set_state(panel_id, panel_state);
-        } else if !draw_ctx.is_open && panel_state.visibility.is_visible() {
-            panel_state.visibility = DraggablePanelVisibility::Hidden;
+        let mut panel_state: DraggablePanelState = ctx.get_state(panel_id).unwrap_or_default();
+
+        if ctx.get_state(requested_open_id) != Some(draw_ctx.is_open) {
+            panel_state.visibility = if draw_ctx.is_open {
+                DraggablePanelVisibility::JustOpened
+            } else {
+                DraggablePanelVisibility::Hidden
+            };
             ctx.set_state(panel_id, panel_state);
         }
+        ctx.set_state(requested_open_id, draw_ctx.is_open);
 
         // Always emit panel sync
-        let current_panel: DraggablePanelState = ctx.get_state(panel_id).unwrap();
+        let current_panel: DraggablePanelState = ctx.get_state(panel_id).unwrap_or_default();
         ctx.emit(ParticleInspectorPanelSync {
             position: current_panel.position,
             visibility: current_panel.visibility,
@@ -65,7 +155,6 @@ impl Build for ParticleInspectorView {
         }
 
         let theme = &draw_ctx.theme;
-        let data = &draw_ctx.data;
         let mut children: Vec<Box<dyn Widget>> = Vec::new();
 
         // Emitter label
@@ -85,12 +174,7 @@ impl Build for ParticleInspectorView {
                     .boxed(),
             );
         } else {
-            let selected_idx = data
-                .selected_emitter_entity
-                .and_then(|e| data.emitter_entities.iter().position(|&id| id == e))
-                .unwrap_or(0);
-            let emitter_sel_id: StateId = ctx.state(selected_idx);
-            let current_sel: usize = ctx.get_state(emitter_sel_id).unwrap();
+            let current_sel: usize = ctx.get_state(emitter_sel_id).unwrap_or(selected_idx);
 
             // Detect emitter selection change
             if current_sel != selected_idx && current_sel < data.emitter_entities.len() {
@@ -113,13 +197,7 @@ impl Build for ParticleInspectorView {
 
                 // Shape section — RadioButton group
                 config_children.push(heading("Emitter Shape", theme));
-                let shape_names = ["Point", "Line", "Circle", "Sphere", "Box"];
-                let shape_idx = shape_names
-                    .iter()
-                    .position(|&s| s == config.shape_name)
-                    .unwrap_or(0);
-                let shape_sel_id: StateId = ctx.state(shape_idx);
-                let current_shape: usize = ctx.get_state(shape_sel_id).unwrap();
+                let current_shape: usize = ctx.get_state(shape_sel_id).unwrap_or(shape_idx);
 
                 if current_shape != shape_idx {
                     let field = match current_shape {
@@ -145,6 +223,7 @@ impl Build for ParticleInspectorView {
                     "Line" => {
                         config_children.push(scalar_slider(
                             ctx,
+                            value_ids[0],
                             "Length",
                             config.shape_params[0],
                             0.1..=50.0,
@@ -156,6 +235,7 @@ impl Build for ParticleInspectorView {
                     "Circle" => {
                         config_children.push(scalar_slider(
                             ctx,
+                            value_ids[0],
                             "Radius",
                             config.shape_params[0],
                             0.1..=50.0,
@@ -167,6 +247,7 @@ impl Build for ParticleInspectorView {
                     "Sphere" => {
                         config_children.push(scalar_slider(
                             ctx,
+                            value_ids[0],
                             "Radius",
                             config.shape_params[0],
                             0.1..=50.0,
@@ -177,6 +258,7 @@ impl Build for ParticleInspectorView {
                     "Box" => {
                         config_children.push(scalar_slider(
                             ctx,
+                            value_ids[0],
                             "Width",
                             config.shape_params[0],
                             0.1..=50.0,
@@ -185,6 +267,7 @@ impl Build for ParticleInspectorView {
                         ));
                         config_children.push(scalar_slider(
                             ctx,
+                            value_ids[1],
                             "Height",
                             config.shape_params[1],
                             0.1..=50.0,
@@ -193,6 +276,7 @@ impl Build for ParticleInspectorView {
                         ));
                         config_children.push(scalar_slider(
                             ctx,
+                            value_ids[2],
                             "Depth",
                             config.shape_params[2],
                             0.1..=50.0,
@@ -207,6 +291,7 @@ impl Build for ParticleInspectorView {
                 config_children.push(heading("Emission", theme));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[3],
                     "Emit Rate",
                     config.emit_rate,
                     0.0..=1000.0,
@@ -215,6 +300,7 @@ impl Build for ParticleInspectorView {
                 ));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[4],
                     "Base Lifetime",
                     config.base_lifetime,
                     0.1..=30.0,
@@ -223,6 +309,7 @@ impl Build for ParticleInspectorView {
                 ));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[5],
                     "Lifetime Var",
                     config.lifetime_variation,
                     0.0..=1.0,
@@ -234,6 +321,7 @@ impl Build for ParticleInspectorView {
                 config_children.push(heading("Velocity", theme));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[6],
                     "Magnitude",
                     config.velocity_magnitude,
                     0.0..=50.0,
@@ -242,6 +330,7 @@ impl Build for ParticleInspectorView {
                 ));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[7],
                     "Cone Angle",
                     config.velocity_cone_angle,
                     0.0..=std::f32::consts::FRAC_PI_2,
@@ -253,6 +342,7 @@ impl Build for ParticleInspectorView {
                 config_children.push(heading("Scale", theme));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[8],
                     "Base Scale",
                     config.base_scale,
                     0.01..=5.0,
@@ -261,6 +351,7 @@ impl Build for ParticleInspectorView {
                 ));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[9],
                     "Scale Var",
                     config.scale_variation,
                     0.0..=1.0,
@@ -282,6 +373,7 @@ impl Build for ParticleInspectorView {
                 );
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[10],
                     "Color Var",
                     config.color_variation,
                     0.0..=1.0,
@@ -306,6 +398,7 @@ impl Build for ParticleInspectorView {
                 config_children.push(heading("Size Over Lifetime", theme));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[11],
                     "Scale End",
                     config.scale_end,
                     0.0..=3.0,
@@ -317,6 +410,7 @@ impl Build for ParticleInspectorView {
                 config_children.push(heading("Forces", theme));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[12],
                     "Gravity",
                     config.gravity,
                     -30.0..=30.0,
@@ -325,6 +419,7 @@ impl Build for ParticleInspectorView {
                 ));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[13],
                     "Turb Str",
                     config.turbulence_strength,
                     0.0..=10.0,
@@ -333,6 +428,7 @@ impl Build for ParticleInspectorView {
                 ));
                 config_children.push(scalar_slider(
                     ctx,
+                    value_ids[14],
                     "Turb Freq",
                     config.turbulence_frequency,
                     0.1..=20.0,
@@ -348,8 +444,7 @@ impl Build for ParticleInspectorView {
                 // Controls — Toggle buttons
                 config_children.push(heading("Controls", theme));
 
-                let active_id: StateId = ctx.state(config.active);
-                let active_val: bool = ctx.get_state(active_id).unwrap();
+                let active_val: bool = ctx.get_state(active_id).unwrap_or(config.active);
                 if active_val != config.active {
                     ctx.emit(ParticleInspectorAction::ToggleEmitter);
                     ctx.set_state(active_id, config.active);
@@ -358,8 +453,7 @@ impl Build for ParticleInspectorView {
                     toggle(if config.active { "Disable" } else { "Enable" }, active_id).boxed(),
                 );
 
-                let reset_id: StateId = ctx.state(false);
-                let reset_val: bool = ctx.get_state(reset_id).unwrap();
+                let reset_val: bool = ctx.get_state(reset_id).unwrap_or(false);
                 if reset_val {
                     ctx.emit(ParticleInspectorAction::ResetSystem);
                     ctx.set_state(reset_id, false);
@@ -385,7 +479,7 @@ impl Build for ParticleInspectorView {
                 vstack(children)
                     .spacing(4.0)
                     .padding_all(8.0)
-                    .align(Alignment::Leading)
+                    .flex_shrink(0.0)
                     .boxed(),
                 scroll_id,
             )
@@ -405,14 +499,14 @@ fn heading(label: &str, theme: &ColorScheme) -> Box<dyn Widget> {
 
 fn scalar_slider(
     ctx: &mut BuildContext,
+    value_id: StateId,
     label: &str,
     config_value: f32,
     range: std::ops::RangeInclusive<f32>,
     entity: EntityId,
     field: fn(f32) -> EmitterField,
 ) -> Box<dyn Widget> {
-    let value_id: StateId = ctx.state(config_value);
-    let current: f32 = ctx.get_state(value_id).unwrap();
+    let current: f32 = ctx.get_state(value_id).unwrap_or(config_value);
     if (current - config_value).abs() > 1e-4 {
         ctx.emit(ParticleInspectorAction::SetEmitterField(
             entity,

@@ -455,6 +455,9 @@ impl Application {
     ) {
         if let ElementState::Pressed = state {
             let mouse_pos = self.ui_context.input().mouse_pos;
+            if self.editor.editor_ui.captures_pointer_at(mouse_pos) {
+                return;
+            }
             self.editor
                 .editor_ui
                 .update_focused_panel_from_click(mouse_pos);

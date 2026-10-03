@@ -12,6 +12,8 @@ use crate::ui::editor_ui::types::SpawnableModel;
 /// Environment data injected before each frame.
 #[derive(Clone)]
 pub(crate) struct ToolbarDrawCtx {
+    pub screen_width: f32,
+    pub font_scale: f32,
     pub show_grid: bool,
     pub show_stats: bool,
     pub show_physics_debug: bool,
@@ -207,6 +209,10 @@ fn build_create_menu(ctx: &mut BuildContext) -> Vec<katla_ui::declarative::MenuE
 }
 
 fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
+    let available = draw_ctx.screen_width - 2.0 * (230.0 * draw_ctx.font_scale + 12.0);
+    if available < 100.0 {
+        return katla_ui::declarative::empty().boxed();
+    }
     let title = if draw_ctx.is_playing && !draw_ctx.is_paused {
         "Katla Engine — Playing"
     } else if draw_ctx.is_paused {
@@ -220,6 +226,7 @@ fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
         draw_ctx.text_muted
     };
     text(format!("{} — {title}", draw_ctx.scene_title))
+        .truncate(available)
         .color(title_color)
         .font_size(FontSize::Medium)
         .boxed()
