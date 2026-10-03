@@ -3,6 +3,7 @@
 mod animation;
 mod material_reloads;
 mod materials;
+mod samplers;
 #[cfg(target_os = "macos")]
 use crate::backend::resource::GpuBuffer;
 use crate::particles::types::EmitterConfig;

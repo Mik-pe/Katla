@@ -9,9 +9,7 @@ use crate::backend::command::{GpuRenderEncoder, IndexType, ShaderStages};
 use crate::error::RendererError;
 use crate::handle::MaterialHandle;
 use crate::render_graph::{FrameGraph, PassExecutionData};
-use crate::renderer::frame_bindings::{
-    ConstantBinding, PassBindings, PassDraw, PassDrawPhase, PassPipeline, SamplingMode,
-};
+use crate::renderer::frame_bindings::{PassBindings, PassDraw, PassDrawPhase, PassPipeline};
 
 #[derive(Clone, Copy)]
 pub(super) struct GraphicsFrame<'a> {
@@ -25,6 +23,7 @@ pub(super) fn phases(record: &MetalPassRecord) -> Vec<PassDrawPhase> {
         return record.bindings.phases.clone();
     }
     vec![PassDrawPhase {
+        samplers: Vec::new(),
         pipelines: record.bindings.pipelines.clone(),
         constants: Vec::new(),
         draw: PassDraw::Submissions,
@@ -72,6 +71,13 @@ impl MetalRenderer {
             .bindings
             .samplers
             .iter()
+            .chain(
+                record
+                    .bindings
+                    .phases
+                    .iter()
+                    .flat_map(|phase| &phase.samplers),
+            )
             .map(|binding| binding.sampling)
         {
             if self
@@ -81,22 +87,8 @@ impl MetalRenderer {
             {
                 continue;
             }
-            let desc = objc2_metal::MTLSamplerDescriptor::new();
-            let filter = if mode == SamplingMode::Nearest {
-                objc2_metal::MTLSamplerMinMagFilter::Nearest
-            } else {
-                objc2_metal::MTLSamplerMinMagFilter::Linear
-            };
-            desc.setMinFilter(filter);
-            desc.setMagFilter(filter);
-            desc.setMipFilter(objc2_metal::MTLSamplerMipFilter::NotMipmapped);
-            desc.setSAddressMode(objc2_metal::MTLSamplerAddressMode::ClampToEdge);
-            desc.setTAddressMode(objc2_metal::MTLSamplerAddressMode::ClampToEdge);
-            if mode == SamplingMode::DepthComparison {
-                desc.setCompareFunction(objc2_metal::MTLCompareFunction::LessEqual);
-            }
             self.packet_samplers
-                .push((mode, self.context.create_sampler_with_descriptor(&desc)?));
+                .push((mode, self.context.create_sampler(mode)?));
         }
         Ok(())
     }
@@ -270,7 +262,7 @@ impl MetalRenderer {
                             encoder,
                             &pipeline,
                             &record.bindings,
-                            &phase.constants,
+                            Some(&phase),
                             frame,
                             Some(draw),
                         )?;
@@ -327,7 +319,7 @@ impl MetalRenderer {
                         encoder,
                         &pipeline,
                         &record.bindings,
-                        &phase.constants,
+                        Some(&phase),
                         frame,
                         None,
                     )?;
@@ -358,10 +350,12 @@ impl MetalRenderer {
         encoder: &mut MetalRenderEncoder,
         pipeline: &MetalGraphicsPipeline,
         packet: &PassBindings,
-        phase_constants: &[ConstantBinding],
+        phase: Option<&PassDrawPhase>,
         frame: GraphicsFrame<'_>,
         draw: Option<&crate::renderer::types::DrawCall>,
     ) -> Result<(), RendererError> {
+        let phase_constants = phase.map_or(&[][..], |phase| phase.constants.as_slice());
+        let phase_samplers = phase.map_or(&[][..], |phase| phase.samplers.as_slice());
         let GraphicsFrame { graph, slot, .. } = frame;
         if let Some(objects) = self.current_object_storage_buffer() {
             for (index, stages) in table_slots(
@@ -463,7 +457,7 @@ impl MetalRenderer {
                 encoder.observe_graph_resource(binding.resource.0);
             }
         }
-        for binding in &packet.samplers {
+        for binding in packet.samplers_for_phase(phase_samplers) {
             let sampler = self
                 .packet_samplers
                 .iter()
@@ -484,7 +478,7 @@ impl MetalRenderer {
                 encoder.bind_native_sampler(&sampler.inner, index, stages);
             }
         }
-        for binding in packet.constants.iter().chain(phase_constants) {
+        for binding in packet.constants_for_phase(phase_constants) {
             for (index, stages) in table_slots(
                 pipeline,
                 binding.group,

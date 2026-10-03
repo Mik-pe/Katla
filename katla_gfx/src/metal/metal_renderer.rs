@@ -232,10 +232,7 @@ pub struct MetalRenderer {
     skeleton_buffer_handles: std::collections::HashMap<(usize, SkeletonHandle), BufferHandle>,
     pub(crate) ui_renderers: [MetalUIRenderer; FRAMES_IN_FLIGHT],
     pub(crate) shared_sampler: Option<super::sampler::MetalSamplerState>,
-    pub(crate) packet_samplers: Vec<(
-        crate::renderer::frame_bindings::SamplingMode,
-        super::sampler::MetalSamplerState,
-    )>,
+    pub(crate) packet_samplers: Vec<(crate::SamplerDescriptor, super::sampler::MetalSamplerState)>,
     pub(crate) capabilities: crate::renderer::types::GpuCapabilities,
     pub(crate) timestamp_queries: Option<super::timestamp_queries::MetalTimestampQueries>,
 }
@@ -430,7 +427,11 @@ impl MetalRenderer {
         }
 
         // Create shared sampler for texture sampling
-        renderer.shared_sampler = Some(renderer.context.create_sampler()?);
+        renderer.shared_sampler =
+            Some(renderer.context.create_sampler(crate::SamplerDescriptor {
+                anisotropy: 16,
+                ..crate::SamplerDescriptor::linear_repeat()
+            })?);
 
         renderer.timestamp_queries = Some(super::timestamp_queries::MetalTimestampQueries::new()?);
         if renderer.timestamp_queries.is_some() {

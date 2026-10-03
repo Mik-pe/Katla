@@ -300,31 +300,48 @@ impl MetalContext {
         Ok((metal_texture, view))
     }
 
-    pub(crate) fn create_sampler(&self) -> Result<MetalSamplerState, RendererError> {
+    pub(crate) fn create_sampler(
+        &self,
+        descriptor: crate::SamplerDescriptor,
+    ) -> Result<MetalSamplerState, RendererError> {
+        use crate::{AddressMode, FilterMode, MipFilter};
+        descriptor
+            .validate()
+            .map_err(|reason| RendererError::InvalidDescriptor {
+                resource: "sampler".into(),
+                reason: reason.into(),
+            })?;
+        let filter = |mode| match mode {
+            FilterMode::Nearest => objc2_metal::MTLSamplerMinMagFilter::Nearest,
+            FilterMode::Linear => objc2_metal::MTLSamplerMinMagFilter::Linear,
+        };
+        let address = |mode| match mode {
+            AddressMode::Repeat => objc2_metal::MTLSamplerAddressMode::Repeat,
+            AddressMode::ClampToEdge => objc2_metal::MTLSamplerAddressMode::ClampToEdge,
+            AddressMode::MirroredRepeat => objc2_metal::MTLSamplerAddressMode::MirrorRepeat,
+        };
         let desc = objc2_metal::MTLSamplerDescriptor::new();
         desc.setSupportArgumentBuffers(true);
-        desc.setMinFilter(objc2_metal::MTLSamplerMinMagFilter::Linear);
-        desc.setMagFilter(objc2_metal::MTLSamplerMinMagFilter::Linear);
-        desc.setMipFilter(objc2_metal::MTLSamplerMipFilter::Linear);
-        desc.setSAddressMode(objc2_metal::MTLSamplerAddressMode::Repeat);
-        desc.setTAddressMode(objc2_metal::MTLSamplerAddressMode::Repeat);
+        desc.setMinFilter(filter(descriptor.min_filter));
+        desc.setMagFilter(filter(descriptor.mag_filter));
+        desc.setMipFilter(match descriptor.mip_filter {
+            MipFilter::None => objc2_metal::MTLSamplerMipFilter::NotMipmapped,
+            MipFilter::Nearest => objc2_metal::MTLSamplerMipFilter::Nearest,
+            MipFilter::Linear => objc2_metal::MTLSamplerMipFilter::Linear,
+        });
+        desc.setSAddressMode(address(descriptor.address_u));
+        desc.setTAddressMode(address(descriptor.address_v));
+        desc.setRAddressMode(address(descriptor.address_w));
+        desc.setMaxAnisotropy(usize::from(descriptor.anisotropy));
+        if descriptor.mip_filter == MipFilter::None {
+            desc.setLodMaxClamp(0.0);
+        }
+        if let Some(comparison) = descriptor.comparison {
+            desc.setCompareFunction(super::format::to_mtl_compare_func(comparison));
+        }
         let sampler = self
             .device
             .newSamplerStateWithDescriptor(&desc)
-            .ok_or_else(|| {
-                RendererError::InvalidOperation("Failed to create Metal sampler".into())
-            })?;
-        Ok(MetalSamplerState { inner: sampler })
-    }
-
-    pub(crate) fn create_sampler_with_descriptor(
-        &self,
-        desc: &objc2_metal::MTLSamplerDescriptor,
-    ) -> Result<MetalSamplerState, RendererError> {
-        desc.setSupportArgumentBuffers(true);
-        let sampler = self
-            .device
-            .newSamplerStateWithDescriptor(desc)
             .ok_or_else(|| {
                 RendererError::InvalidOperation("Failed to create Metal sampler".into())
             })?;
@@ -753,7 +770,7 @@ mod tests {
     #[test]
     fn test_metal_sampler_creation() {
         let ctx = MetalContext::init_headless().unwrap();
-        let sampler = ctx.create_sampler();
+        let sampler = ctx.create_sampler(crate::SamplerDescriptor::linear_repeat());
         assert!(
             sampler.is_ok(),
             "Failed to create sampler: {:?}",

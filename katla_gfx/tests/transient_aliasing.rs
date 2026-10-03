@@ -123,6 +123,7 @@ fn build_aliased_graph(renderer: &mut VulkanRenderer) -> FrameGraph<VulkanRender
                     stages: ShaderStages::FRAGMENT,
                 }],
                 phases: vec![PassDrawPhase {
+                    samplers: Vec::new(),
                     draw: PassDraw::Vertices {
                         count: 3,
                         instances: 1,

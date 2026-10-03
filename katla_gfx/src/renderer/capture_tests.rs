@@ -244,6 +244,7 @@ fn vertices(
     use crate::renderer::frame_bindings::*;
     PassBindings {
         phases: vec![PassDrawPhase {
+            samplers: Vec::new(),
             pipelines: vec![PassPipeline {
                 material,
                 vertex_layout,

@@ -25,6 +25,7 @@ impl Frame<'_, VulkanRenderer> {
             ));
         }
         let default_phase = PassDrawPhase {
+            samplers: Vec::new(),
             pipelines: pass.bindings.pipelines.clone(),
             constants: Vec::new(),
             viewport: None,
@@ -85,12 +86,8 @@ impl Frame<'_, VulkanRenderer> {
                 viewport.height(),
             )]);
             packet.constants.clone_from(&pass.bindings.constants);
-            for constant in &phase.constants {
-                packet.constants.retain(|existing| {
-                    (existing.group, existing.binding) != (constant.group, constant.binding)
-                });
-                packet.constants.push(constant.clone());
-            }
+            packet.samplers.clone_from(&pass.bindings.samplers);
+            packet.override_phase(phase);
             match &phase.draw {
                 PassDraw::Submissions | PassDraw::ObjectIndices(_) => self.execute_draw_list(
                     cmd,

@@ -105,6 +105,7 @@ fn test_native_graphics_phase_encoding_allocations_grow_linearly() {
         let packet = PassBindings {
             phases: (0..phase_count)
                 .map(|_| PassDrawPhase {
+                    samplers: Vec::new(),
                     pipelines: vec![PassPipeline {
                         material,
                         vertex_layout: VertexLayout::empty(),

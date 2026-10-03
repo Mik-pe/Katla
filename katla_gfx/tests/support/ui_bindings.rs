@@ -1,12 +1,12 @@
 //! Explicit sampling policy for the canonical UI shader fixture.
-use katla_gfx::{PassBindings, SamplerBinding, SamplingMode, ShaderStages};
+use katla_gfx::{PassBindings, SamplerBinding, SamplerDescriptor, ShaderStages};
 pub fn bindings() -> PassBindings {
     PassBindings {
         samplers: vec![SamplerBinding {
             group: 0,
             binding: 1,
             stages: ShaderStages::FRAGMENT,
-            sampling: SamplingMode::Linear,
+            sampling: SamplerDescriptor::linear_clamp(),
         }],
         ..Default::default()
     }

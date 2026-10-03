@@ -34,6 +34,7 @@ pub(super) fn fullscreen_descriptor(format: ImageFormat) -> PipelineDescriptor {
 pub(super) fn vertices(material: MaterialHandle, layout: VertexLayout, count: u32) -> PassBindings {
     PassBindings {
         phases: vec![PassDrawPhase {
+            samplers: Vec::new(),
             pipelines: vec![PassPipeline {
                 material,
                 vertex_layout: layout,

@@ -252,7 +252,9 @@ fn test_storage_mode_sampling_probe() {
         let cs = compiled.module.entry_points.get("cs_main").unwrap();
         let pipeline = ctx.create_compute_pipeline(cs, [1, 1, 1]).unwrap();
         let out_buf = ctx.create_buffer(16, true).unwrap();
-        let sampler = ctx.create_sampler().unwrap();
+        let sampler = ctx
+            .create_sampler(crate::SamplerDescriptor::linear_repeat())
+            .unwrap();
 
         let mut cmd2 = ctx.create_command_buffer();
         cmd2.begin();
@@ -397,7 +399,9 @@ fn test_bindless_argument_buffer_storage_probe() {
         target_desc.usage = TextureUsage::COLOR_ATTACHMENT;
         let (target, target_view) = ctx.create_texture_shared(&target_desc).unwrap();
 
-        let sampler = ctx.create_sampler().unwrap();
+        let sampler = ctx
+            .create_sampler(crate::SamplerDescriptor::linear_repeat())
+            .unwrap();
 
         let mut cmd2 = ctx.create_command_buffer();
         cmd2.begin();

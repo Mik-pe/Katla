@@ -96,6 +96,7 @@ fn test_native_graphics_descriptor_pools_reuse_slots_after_submit_abort_and_resi
         for draw in 0..300 {
             let is_left = draw < 150;
             packet.phases.push(PassDrawPhase {
+                samplers: Vec::new(),
                 pipelines: vec![PassPipeline {
                     material,
                     vertex_layout: VertexLayout::empty(),
@@ -291,7 +292,7 @@ fn test_native_graphics_descriptor_snapshots_preserve_distinct_ui_passes() {
                         group: 0,
                         binding: 1,
                         stages: ShaderStages::FRAGMENT,
-                        sampling: crate::SamplingMode::Linear,
+                        sampling: crate::SamplerDescriptor::linear_clamp(),
                     }],
                     ..Default::default()
                 },

@@ -103,7 +103,10 @@ impl BindlessTextureManager {
     /// A new BindlessTextureManager, or an error if creation fails
     pub fn new(context: &Rc<VulkanContext>, fallback: Rc<Texture>) -> Result<Self, RendererError> {
         // Create shared sampler with reasonable defaults
-        let shared_sampler = context.create_sampler_repeat_anisotropic()?;
+        let shared_sampler = context.create_sampler(crate::SamplerDescriptor {
+            anisotropy: 16,
+            ..crate::SamplerDescriptor::linear_repeat()
+        })?;
 
         // Create descriptor set layout
         // Binding 0: texture_2d array (SAMPLED_IMAGE, count = MAX_BINDLESS_TEXTURES)

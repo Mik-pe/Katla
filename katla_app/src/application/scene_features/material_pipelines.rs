@@ -168,6 +168,7 @@ impl MaterialPipelines {
                 });
             }
             phases.push(PassDrawPhase {
+                samplers: Vec::new(),
                 pipelines: variants,
                 constants: Vec::new(),
                 draw: PassDraw::ObjectIndices(selected),
@@ -176,6 +177,7 @@ impl MaterialPipelines {
         }
         if phases.is_empty() {
             phases.push(PassDrawPhase {
+                samplers: Vec::new(),
                 pipelines: Vec::new(),
                 constants: Vec::new(),
                 draw: PassDraw::ObjectIndices(Vec::new()),

@@ -98,6 +98,7 @@ fn draw(
                     bytes: [1.0f32; 4].into_iter().flat_map(f32::to_ne_bytes).collect(),
                 }],
                 phases: vec![PassDrawPhase {
+                    samplers: Vec::new(),
                     pipelines: vec![PassPipeline {
                         material,
                         vertex_layout: VertexLayout::empty(),

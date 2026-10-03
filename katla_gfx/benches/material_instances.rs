@@ -176,6 +176,7 @@ fn main() {
                 phases: materials
                     .iter()
                     .map(|&material| PassDrawPhase {
+                        samplers: Vec::new(),
                         pipelines: vec![PassPipeline {
                             material,
                             vertex_layout: VertexLayout::empty(),

@@ -133,6 +133,9 @@ impl Texture {
     pub(crate) fn format(&self) -> ImageFormat {
         self.descriptor.format
     }
+    pub(crate) fn mip_levels(&self) -> u32 {
+        self.descriptor.mip_levels
+    }
     /// Native view spanning all allocated mip levels.
     pub fn image_view(&self) -> &VkImageView {
         &self.image_view

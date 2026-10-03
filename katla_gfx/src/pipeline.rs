@@ -29,7 +29,8 @@
 // Katla-native Pipeline State Enums
 
 /// Compare operation for depth/stencil testing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CompareOp {
     /// Never passes.
     Never,

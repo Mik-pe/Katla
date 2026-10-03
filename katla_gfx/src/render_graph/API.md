@@ -109,6 +109,20 @@ shader-generated vertices or a declared indirect command. Optional viewports hav
 finite coordinates and positive extents. Stable object-storage indices survive
 layout-selected material overrides.
 
+`SamplerBinding::sampling` supplies an immutable `SamplerDescriptor`, independent
+of the image. It selects min/mag filters, mip filtering, U/V/W address modes,
+optional depth comparison and anisotropy (`1..=16`, with linear spatial filters
+required above one). Vulkan clamps anisotropy to the device limit. `MipFilter::None`
+restricts sampling to level zero; nearest/linear mip filtering can use the complete
+image view. An image binding's selected mip range defines the shader's level zero.
+Native sampler objects are cached by descriptor value for the renderer lifetime.
+
+Each phase's `samplers` and `constants` replace or add slots by `(group, binding)`.
+The replacement includes its shader stages. Overrides last for that phase only;
+the next phase starts from the pass's base bindings. Empty stages, invalid sampler
+policies, empty constants and overlapping slots in the effective phase packet are
+rejected before replacement or native encoding.
+
 `PassDesc::with_bindings` and `set_pass_bindings(PassId, packet)` preserve the explicit
 access contract. Replacement packets validate before mutation and reuse the
 compiled execution plan. A rejected replacement leaves the previous packet and plan intact.

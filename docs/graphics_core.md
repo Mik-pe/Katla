@@ -23,6 +23,11 @@ Graphics passes carry `PassBindings`: reflected buffers, images, samplers and im
 bytes, plus explicit drawing phases. A phase selects mesh-layout pipelines,
 submitted objects, generated vertices or a declared indirect buffer. Pipeline
 descriptors specify depth, stencil, blending, color writes and depth bias.
+Sampler descriptors define filtering, mip selection, wrapping, comparison and
+anisotropy independently of image uploads. Both backends cache native samplers by
+descriptor value. Drawing phases can override sampler and constant slots; each
+phase starts from the pass's base packet. Explicit image bindings can select an
+imported image's mip range, whose first included level becomes shader level zero.
 
 ## Minimal application
 

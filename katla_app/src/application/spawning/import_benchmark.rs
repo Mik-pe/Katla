@@ -157,6 +157,7 @@ fn test_native_full_material_asset_import_measurements() {
                         bytes: bytemuck::cast_slice(&params).to_vec(),
                     }],
                     phases: vec![PassDrawPhase {
+                        samplers: Vec::new(),
                         pipelines: vec![PassPipeline {
                             vertex_layout: VertexLayout::empty(),
                             material,

@@ -267,6 +267,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
                             },
                         ],
                         phases: vec![PassDrawPhase {
+                            samplers: Vec::new(),
                             pipelines,
                             constants: vec![],
                             draw: PassDraw::Submissions,

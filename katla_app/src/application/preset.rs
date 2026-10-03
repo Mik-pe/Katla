@@ -6,7 +6,7 @@ use katla_gfx::render_graph::{
 };
 use katla_gfx::{
     AttachmentOps, ClearValue, GpuRenderer, ImageFormat, LoadOp, PassBindings, PipelineDescriptor,
-    SamplerBinding, SamplingMode, ShaderStages,
+    SamplerBinding, SamplerDescriptor, ShaderStages,
 };
 
 use super::frame_graph_config::{
@@ -228,7 +228,7 @@ impl KatlaEditorFrameGraphPreset {
                         group: 0,
                         binding: 1,
                         stages: ShaderStages::FRAGMENT,
-                        sampling: SamplingMode::Linear,
+                        sampling: SamplerDescriptor::linear_clamp(),
                     }],
                     ..Default::default()
                 },

@@ -206,6 +206,15 @@ preview controls and capture/save/reload; commands are in [prefabs](prefabs.md#v
 
 ## Material imports and neutral textures
 
+The graphics library suite includes strict native sampler probes with small
+shaders. They verify min/mag filtering, mip selection/interpolation, repeat/clamp/
+mirrored coordinates, anisotropy, full and selected imported mip views, and all
+eight depth comparisons with below/equal/above references. Multiple viewports
+within one pass verify phase sampler overrides and restoration of the base policy.
+They run in Linux's graphics library tier and Metal's capability-gated native tier;
+they do not compile the full scene PBR shader. Physical Vulkan acceptance passes;
+physical Metal evidence remains outstanding.
+
 Linux runs the portable `gltf_` and `util::modelcache` application tests; macOS's portable application
 suite includes them too. The existing Metal 4 capability-gated document step
 also runs the native `material_tests` fixtures, including static/skinned

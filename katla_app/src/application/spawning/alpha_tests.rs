@@ -516,6 +516,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
                             stages: ShaderStages::FRAGMENT,
                         }],
                         phases: vec![PassDrawPhase {
+                            samplers: Vec::new(),
                             pipelines: vec![PassPipeline {
                                 vertex_layout: VertexLayout::empty(),
                                 material: visualize,

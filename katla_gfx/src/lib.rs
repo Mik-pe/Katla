@@ -309,12 +309,13 @@ pub use backend::command::ShaderStages;
 pub use renderer::features::RendererFeature;
 pub use renderer::frame_bindings::{
     BufferBinding, ConstantBinding, ImageBinding, PassBindings, PassDraw, PassDrawPhase,
-    PassPipeline, SamplerBinding, SamplingMode,
+    PassPipeline, SamplerBinding,
 };
 pub use renderer::frame_scope::{FrameAcquisition, FrameToken, PresentOutcome, SurfaceStatus};
 pub use renderer::gpu_renderer::GpuRenderer;
 pub use renderer::pipeline_descriptor::{BlendMode, DepthState, PipelineDescriptor};
 pub use renderer::pipeline_variant::PipelineVariantKey;
+pub use renderer::sampler::{AddressMode, FilterMode, MipFilter, SamplerDescriptor};
 pub use renderer::texture_readback::{
     GraphTextureSource, TextureReadbackData, TextureReadbackRegion, TextureReadbackTicket,
 };

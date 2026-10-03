@@ -1,11 +1,12 @@
 //! Application-authored graphics pipelines and per-pass shader data.
 
+use katla_gfx::SamplerDescriptor;
 use katla_gfx::ShaderStages;
 use katla_gfx::render_graph::{ImageSubresourceRange, PassId};
 use katla_gfx::renderer::PipelineStages;
 use katla_gfx::renderer::frame_bindings::{
     ConstantBinding, ImageBinding, PassBindings, PassDraw, PassDrawPhase, PassPipeline,
-    SamplerBinding, SamplingMode,
+    SamplerBinding,
 };
 use katla_gfx::renderer::pipeline_descriptor::{
     ColorWriteMask, DepthBias, StencilFaceState, StencilOperation, StencilState,
@@ -414,6 +415,7 @@ impl SceneGraphics {
                     .material_pipelines
                     .auxiliary_phases(renderer, pipelines, &ordinary, surfaces, coverage)?;
                 phases.push(PassDrawPhase {
+                    samplers: Vec::new(),
                     pipelines: vec![PassPipeline {
                         vertex_layout: VertexLayout::pbr(),
                         material: billboard_material,
@@ -465,7 +467,9 @@ impl SceneGraphics {
                     group: 4,
                     binding: 2,
                     stages: ShaderStages::FRAGMENT,
-                    sampling: SamplingMode::DepthComparison,
+                    sampling: SamplerDescriptor::depth_comparison(
+                        katla_gfx::CompareOp::LessOrEqual,
+                    ),
                 });
             }
             graph.set_pass_bindings(pass, packet)?;
@@ -475,6 +479,7 @@ impl SceneGraphics {
             params[0] = 0.004 * 1080.0 / scene_size.height.max(1) as f32;
             params[4..].copy_from_slice(&[1.0, 0.55, 0.0, 1.0]);
             let mut phases = vec![PassDrawPhase {
+                samplers: Vec::new(),
                 pipelines: self.stencil_mark.clone(),
                 constants: Vec::new(),
                 draw: PassDraw::ObjectIndices(selected.clone()),
@@ -482,6 +487,7 @@ impl SceneGraphics {
             }];
             if !self.occlusion_mark.is_empty() {
                 phases.push(PassDrawPhase {
+                    samplers: Vec::new(),
                     pipelines: self.occlusion_mark.clone(),
                     constants: Vec::new(),
                     draw: PassDraw::ObjectIndices(selected.clone()),
@@ -489,6 +495,7 @@ impl SceneGraphics {
                 });
             }
             phases.push(PassDrawPhase {
+                samplers: Vec::new(),
                 pipelines: self.outline.clone(),
                 constants: vec![
                     constant(
@@ -521,6 +528,7 @@ impl SceneGraphics {
                 pass,
                 PassBindings {
                     phases: vec![PassDrawPhase {
+                        samplers: Vec::new(),
                         pipelines: self.stencil_indicator.clone(),
                         constants: Vec::new(),
                         draw: PassDraw::ObjectIndices(selected),
@@ -536,6 +544,7 @@ impl SceneGraphics {
             packet.buffers.extend(particles.graphics_bindings()?);
             let indirect = particles.indirect_resource()?;
             packet.phases.push(PassDrawPhase {
+                samplers: Vec::new(),
                 pipelines: vec![PassPipeline {
                     vertex_layout: VertexLayout::position(),
                     material: self.particle,
@@ -615,6 +624,7 @@ fn set_fullscreen(
                 bytemuck::bytes_of(uniforms),
             )],
             phases: vec![PassDrawPhase {
+                samplers: Vec::new(),
                 pipelines: vec![PassPipeline {
                     vertex_layout: VertexLayout::empty(),
                     material,

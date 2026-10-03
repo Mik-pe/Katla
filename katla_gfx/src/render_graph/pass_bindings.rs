@@ -108,7 +108,47 @@ pub(crate) fn validate(
                 }
             }
         }
+        let validate_inline = |samplers: &[crate::SamplerBinding],
+                               constants: &[crate::ConstantBinding]| {
+            let mut inline_slots = slots.clone();
+            for (group, binding, stages) in bindings
+                .samplers_for_phase(samplers)
+                .map(|value| (value.group, value.binding, value.stages))
+                .chain(
+                    bindings
+                        .constants_for_phase(constants)
+                        .map(|value| (value.group, value.binding, value.stages)),
+                )
+            {
+                if stages.is_empty() {
+                    return Err(invalid("Inline binding has no shader stages".into()));
+                }
+                for (stage, active) in [
+                    (ResourceAccessStage::VertexShader, stages.vertex),
+                    (ResourceAccessStage::FragmentShader, stages.fragment),
+                    (ResourceAccessStage::ComputeShader, stages.compute),
+                ] {
+                    if active && !inline_slots.insert((stage as u8, group, binding)) {
+                        return Err(invalid(format!("Duplicate shader slot {group}:{binding}")));
+                    }
+                }
+            }
+            for binding in bindings.samplers_for_phase(samplers) {
+                binding
+                    .sampling
+                    .validate()
+                    .map_err(|reason| invalid(reason.into()))?;
+            }
+            for binding in bindings.constants_for_phase(constants) {
+                if binding.bytes.is_empty() {
+                    return Err(invalid("Constant binding has no bytes".into()));
+                }
+            }
+            Ok(())
+        };
+        validate_inline(&[], &[])?;
         for phase in &bindings.phases {
+            validate_inline(&phase.samplers, &phase.constants)?;
             if let Some(viewport) = phase.viewport
                 && (!viewport
                     .min
@@ -245,6 +285,7 @@ mod tests {
             )])
             .with_bindings(PassBindings {
                 phases: vec![PassDrawPhase {
+                    samplers: Vec::new(),
                     pipelines: vec![],
                     constants: vec![],
                     draw: PassDraw::Indirect {
@@ -262,6 +303,7 @@ mod tests {
     #[test]
     fn test_graph_draw_phase_rejects_nonfinite_and_empty_viewports() {
         let phase = |viewport| PassDrawPhase {
+            samplers: Vec::new(),
             pipelines: vec![],
             constants: vec![],
             draw: PassDraw::Vertices {
@@ -285,5 +327,67 @@ mod tests {
             pass.bindings.phases[0] = phase(viewport);
             assert!(validate(&pass, &pass.bindings).is_err());
         }
+    }
+
+    #[test]
+    fn test_phase_sampler_overrides_validate_slots_stages_and_filter_policy() {
+        use crate::{ConstantBinding, FilterMode, SamplerBinding, SamplerDescriptor};
+        let sampler = SamplerBinding {
+            group: 5,
+            binding: 0,
+            stages: ShaderStages::FRAGMENT,
+            sampling: SamplerDescriptor::linear_repeat(),
+        };
+        let mut pass = PassDesc::new("sampling", PassType::Graphics, vec![], vec![]).with_bindings(
+            PassBindings {
+                samplers: vec![sampler.clone()],
+                phases: vec![PassDrawPhase {
+                    samplers: vec![SamplerBinding {
+                        sampling: SamplerDescriptor::nearest_clamp(),
+                        ..sampler.clone()
+                    }],
+                    constants: vec![],
+                    pipelines: vec![],
+                    draw: PassDraw::Vertices {
+                        count: 3,
+                        instances: 1,
+                    },
+                    viewport: None,
+                }],
+                ..Default::default()
+            },
+        );
+        validate(&pass, &pass.bindings).unwrap();
+        let replacement = pass.bindings.phases[0].samplers[0].clone();
+        pass.bindings.phases[0].samplers.push(replacement.clone());
+        assert!(validate(&pass, &pass.bindings).is_err());
+        pass.bindings.phases[0].samplers.pop();
+        pass.bindings.phases[0].samplers[0].stages = ShaderStages::default();
+        assert!(validate(&pass, &pass.bindings).is_err());
+        pass.bindings.phases[0].samplers[0] = replacement.clone();
+        for anisotropy in [0, 17] {
+            pass.bindings.phases[0].samplers[0].sampling.anisotropy = anisotropy;
+            assert!(validate(&pass, &pass.bindings).is_err());
+        }
+        pass.bindings.phases[0].samplers[0].sampling.anisotropy = 16;
+        assert!(validate(&pass, &pass.bindings).is_err());
+        pass.bindings.phases[0].samplers[0].sampling.min_filter = FilterMode::Linear;
+        pass.bindings.phases[0].samplers[0].sampling.mag_filter = FilterMode::Linear;
+        validate(&pass, &pass.bindings).unwrap();
+        pass.bindings.phases[0].constants.push(ConstantBinding {
+            group: 5,
+            binding: 0,
+            stages: ShaderStages::FRAGMENT,
+            bytes: vec![0; 16],
+        });
+        assert!(validate(&pass, &pass.bindings).is_err());
+        pass.bindings.phases[0].constants[0].binding = 1;
+        validate(&pass, &pass.bindings).unwrap();
+        let serialized =
+            serde_json::to_string(&pass.bindings.phases[0].samplers[0].sampling).unwrap();
+        assert_eq!(
+            serde_json::from_str::<SamplerDescriptor>(&serialized).unwrap(),
+            pass.bindings.phases[0].samplers[0].sampling
+        );
     }
 }

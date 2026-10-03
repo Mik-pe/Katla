@@ -436,7 +436,7 @@ impl MetalRenderer {
             .ok_or_else(|| RendererError::InvalidOperation("UI pass has no material".into()))?;
         let pipeline = self.material_pipeline(material, record.color_attachments[0].format)?;
         encoder.bind_graphics_pipeline(&pipeline);
-        self.bind_packet(encoder, &pipeline, &record.bindings, &[], frame, None)?;
+        self.bind_packet(encoder, &pipeline, &record.bindings, None, frame, None)?;
         if let Some(vertex_buffer) = self.ui_renderers[frame.slot].vertex_buffer() {
             encoder.bind_vertex_buffer(vertex_buffer, 0, 10);
         }

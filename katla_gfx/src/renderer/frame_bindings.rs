@@ -1,10 +1,10 @@
 //! Explicit resource and pipeline inputs for a graph pass.
 
-use crate::Rect;
 use crate::backend::command::ShaderStages;
 use crate::handle::MaterialHandle;
 use crate::render_graph::{BufferByteRange, ImageSubresourceRange, ResourceId};
 use crate::vertex::VertexLayout;
+use crate::{Rect, SamplerDescriptor};
 
 /// A graphics pipeline selected by the submitted mesh's declared layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,15 +21,6 @@ pub struct BufferBinding {
     pub resource: ResourceId,
     pub range: BufferByteRange,
     pub stages: ShaderStages,
-}
-
-/// Sampling policy for an explicitly bound graph image.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SamplingMode {
-    Linear,
-    Nearest,
-    /// Comparison sampling uses the pipeline's depth comparison convention.
-    DepthComparison,
 }
 
 /// A graph image bound to a reflected shader slot.
@@ -56,6 +47,47 @@ pub struct PassBindings {
 }
 
 impl PassBindings {
+    pub(crate) fn samplers_for_phase<'a>(
+        &'a self,
+        overrides: &'a [SamplerBinding],
+    ) -> impl Iterator<Item = &'a SamplerBinding> {
+        self.samplers
+            .iter()
+            .filter(move |base| {
+                !overrides
+                    .iter()
+                    .any(|binding| (binding.group, binding.binding) == (base.group, base.binding))
+            })
+            .chain(overrides)
+    }
+
+    pub(crate) fn constants_for_phase<'a>(
+        &'a self,
+        overrides: &'a [ConstantBinding],
+    ) -> impl Iterator<Item = &'a ConstantBinding> {
+        self.constants
+            .iter()
+            .filter(move |base| {
+                !overrides
+                    .iter()
+                    .any(|binding| (binding.group, binding.binding) == (base.group, base.binding))
+            })
+            .chain(overrides)
+    }
+
+    pub(crate) fn override_phase(&mut self, phase: &PassDrawPhase) {
+        for sampler in &phase.samplers {
+            self.samplers
+                .retain(|base| (base.group, base.binding) != (sampler.group, sampler.binding));
+            self.samplers.push(sampler.clone());
+        }
+        for constant in &phase.constants {
+            self.constants
+                .retain(|base| (base.group, base.binding) != (constant.group, constant.binding));
+            self.constants.push(constant.clone());
+        }
+    }
+
     pub(crate) fn contains_binding(&self, group: u32, binding: u32) -> bool {
         self.buffers
             .iter()
@@ -91,7 +123,10 @@ pub enum PassDraw {
 /// One ordinary drawing phase, independent of editor or scene semantics.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PassDrawPhase {
+    /// Replacements or additions to this pass's sampler slots for this phase.
+    pub samplers: Vec<SamplerBinding>,
     pub pipelines: Vec<PassPipeline>,
+    /// Replacements or additions to this pass's constant slots for this phase.
     pub constants: Vec<ConstantBinding>,
     pub draw: PassDraw,
     /// Target-local viewport; absence uses the declared attachment extent.
@@ -113,5 +148,5 @@ pub struct SamplerBinding {
     pub group: u32,
     pub binding: u32,
     pub stages: ShaderStages,
-    pub sampling: SamplingMode,
+    pub sampling: SamplerDescriptor,
 }

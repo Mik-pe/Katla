@@ -293,8 +293,7 @@ impl GraphicsInterface {
                     binding: binding.binding,
                     stages: binding.stages,
                     kind: GraphicsBindingKind::Sampler {
-                        comparison: binding.sampling
-                            == super::frame_bindings::SamplingMode::DepthComparison,
+                        comparison: binding.sampling.comparison.is_some(),
                     },
                     array: false,
                 },

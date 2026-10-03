@@ -314,7 +314,7 @@ fn test_two_fullscreen_passes_sample_their_own_inputs_and_render_to_distinct_tar
                 group: 0,
                 binding: 1,
                 stages: crate::backend::command::ShaderStages::FRAGMENT,
-                sampling: crate::renderer::frame_bindings::SamplingMode::Nearest,
+                sampling: crate::SamplerDescriptor::nearest_clamp(),
             });
         graph
             .set_pass_bindings(graph.pass_id(pass).unwrap(), packet)
@@ -650,7 +650,7 @@ fn test_native_two_ui_passes_preserve_distinct_uploaded_vertex_colors() {
                         group: 0,
                         binding: 1,
                         stages: crate::backend::command::ShaderStages::FRAGMENT,
-                        sampling: crate::renderer::frame_bindings::SamplingMode::Linear,
+                        sampling: crate::SamplerDescriptor::linear_clamp(),
                     }],
                     ..Default::default()
                 },

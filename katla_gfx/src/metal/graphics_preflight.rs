@@ -363,12 +363,7 @@ impl MetalRenderer {
                     }
                     let mut packet = record.bindings.clone();
                     packet.phases.clear();
-                    for binding in &phase.constants {
-                        packet.constants.retain(|base| {
-                            base.group != binding.group || base.binding != binding.binding
-                        });
-                        packet.constants.push(binding.clone());
-                    }
+                    packet.override_phase(&phase);
                     material
                         .interface
                         .validate_buffer_accesses(&packet, &record.buffer_accesses)

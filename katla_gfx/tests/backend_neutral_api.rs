@@ -110,6 +110,7 @@ fn test_representative_frame_compiles_and_renders_portably() {
                 bytes: color.into_iter().flat_map(f32::to_ne_bytes).collect(),
             }],
             phases: vec![PassDrawPhase {
+                samplers: Vec::new(),
                 pipelines: vec![PassPipeline {
                     vertex_layout: VertexLayout::empty(),
                     material,

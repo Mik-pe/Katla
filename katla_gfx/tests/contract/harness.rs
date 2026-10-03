@@ -344,10 +344,11 @@ pub fn build_pbr_graph(
 
 /// Supply shader data without installing renderer-owned scene subsystems.
 fn install_graphics_data(graph: &mut AnyFrameGraph, uniforms: Option<&ShaderFrameData>) {
+    use katla_gfx::SamplerDescriptor;
     use katla_gfx::ShaderStages;
     use katla_gfx::render_graph::{ImageSubresourceRange, RenderGraphDiagnosticPassType};
     use katla_gfx::renderer::frame_bindings::{
-        ConstantBinding, ImageBinding, PassBindings, SamplerBinding, SamplingMode,
+        ConstantBinding, ImageBinding, PassBindings, SamplerBinding,
     };
     let passes = graph.diagnostics().expect("graph contract").passes;
     for pass in passes
@@ -368,7 +369,7 @@ fn install_graphics_data(graph: &mut AnyFrameGraph, uniforms: Option<&ShaderFram
                 group: 0,
                 binding: 1,
                 stages: ShaderStages::FRAGMENT,
-                sampling: SamplingMode::Linear,
+                sampling: SamplerDescriptor::linear_clamp(),
             });
         }
         if let Some(shadow) = graph.resource_id("shadow_atlas")
@@ -399,7 +400,7 @@ fn install_graphics_data(graph: &mut AnyFrameGraph, uniforms: Option<&ShaderFram
                 group: 4,
                 binding: 2,
                 stages: ShaderStages::FRAGMENT,
-                sampling: SamplingMode::DepthComparison,
+                sampling: SamplerDescriptor::depth_comparison(katla_gfx::CompareOp::LessOrEqual),
             });
         }
         graph

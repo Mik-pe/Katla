@@ -1,9 +1,10 @@
+use crate::SamplerDescriptor;
 use ash::vk;
 
 use super::Frame;
 use crate::render_graph::RenderGraphError;
 use crate::renderer::VulkanRenderer;
-use crate::renderer::frame_bindings::{PassBindings, SamplingMode};
+use crate::renderer::frame_bindings::PassBindings;
 use crate::renderer::graphics_interface::GraphicsBindingKind;
 use crate::vulkan::commandbuffer::CommandBuffer;
 
@@ -321,28 +322,17 @@ impl Frame<'_, VulkanRenderer> {
 
     pub(super) fn graphics_sampler(
         &mut self,
-        sampling: SamplingMode,
+        sampling: SamplerDescriptor,
     ) -> Result<vk::Sampler, RenderGraphError> {
         if let Some(&sampler) = self.renderer.graphics_samplers.get(&sampling) {
             return Ok(sampler);
         }
-        let filter = if sampling == SamplingMode::Nearest {
-            vk::Filter::NEAREST
-        } else {
-            vk::Filter::LINEAR
-        };
-        let info = vk::SamplerCreateInfo::default()
-            .min_filter(filter)
-            .mag_filter(filter)
-            .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
-            .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
-            .compare_enable(sampling == SamplingMode::DepthComparison)
-            .compare_op(vk::CompareOp::LESS_OR_EQUAL);
-        let sampler = unsafe { self.renderer.context.device.create_sampler(&info, None) }.map_err(
-            |error| RenderGraphError::BackendError(format!("Graphics sampler: {error}")),
-        )?;
+        let sampler = self
+            .renderer
+            .context
+            .create_sampler(sampling)
+            .map_err(|error| RenderGraphError::BackendError(format!("Graphics sampler: {error}")))?
+            .vk();
         self.renderer.graphics_samplers.insert(sampling, sampler);
         Ok(sampler)
     }
@@ -352,17 +342,22 @@ impl Frame<'_, VulkanRenderer> {
     ) -> Result<vk::ImageView, RenderGraphError> {
         use crate::render_graph::ImageAspects;
         let slot = self.current_frame();
-        let (image, format) =
+        let (image, format, mips) =
             if let Some(texture) = self.graph.transient_texture_by_id(binding.resource, slot) {
-                (texture.image, texture.format)
+                (texture.image, texture.format, 1)
             } else if let Some(texture) = self.imported_texture(binding.resource) {
-                (texture.image().vk(), texture.format().into())
+                (
+                    texture.image().vk(),
+                    texture.format().into(),
+                    texture.mip_levels(),
+                )
             } else if self.graph.resource_id(crate::render_graph::BACKBUFFER_NAME)
                 == Some(binding.resource)
             {
                 (
                     self.renderer.frame_context.swapchain_images[self.image_index as usize].vk(),
                     vk::Format::B8G8R8A8_SRGB,
+                    1,
                 )
             } else {
                 return Err(RenderGraphError::ResourceNotFound(
@@ -380,13 +375,33 @@ impl Frame<'_, VulkanRenderer> {
             }
         }
         let range = binding.range;
-        if range.base_mip_level != 0
+        let allowed = match format {
+            vk::Format::D32_SFLOAT => ImageAspects::DEPTH,
+            vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT => {
+                ImageAspects::DEPTH_STENCIL
+            }
+            _ => ImageAspects::COLOR,
+        };
+        if range.is_empty()
+            || !allowed.contains(range.aspects)
+            || range.aspects == ImageAspects::STENCIL
+        {
+            return Err(RenderGraphError::InvalidConfiguration(
+                "Graphics image aspect is unsupported for its native format".into(),
+            ));
+        }
+        if range.base_mip_level >= mips
             || range.base_array_layer != 0
-            || (range.mip_level_count != 1 && range.mip_level_count != u32::MAX)
             || (range.array_layer_count != 1 && range.array_layer_count != u32::MAX)
         {
             return Err(RenderGraphError::InvalidConfiguration(
-                "Graphics image range exceeds its single mip/layer allocation".into(),
+                "Graphics image subresource starts outside its native allocation".into(),
+            ));
+        }
+        let count = range.mip_level_count.min(mips - range.base_mip_level);
+        if range.mip_level_count != u32::MAX && count != range.mip_level_count {
+            return Err(RenderGraphError::InvalidConfiguration(
+                "Graphics image subresource exceeds its native allocation".into(),
             ));
         }
         let info = vk::ImageViewCreateInfo::default()
@@ -395,8 +410,8 @@ impl Frame<'_, VulkanRenderer> {
             .view_type(vk::ImageViewType::TYPE_2D)
             .subresource_range(vk::ImageSubresourceRange {
                 aspect_mask: aspects,
-                base_mip_level: 0,
-                level_count: 1,
+                base_mip_level: range.base_mip_level,
+                level_count: count,
                 base_array_layer: 0,
                 layer_count: 1,
             });

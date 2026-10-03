@@ -11,6 +11,7 @@ pub mod graphics_interface;
 pub mod pipeline_descriptor;
 pub mod pipeline_variant;
 pub mod retirement;
+pub(crate) mod sampler;
 pub mod texture_readback;
 mod vulkan_core;
 
@@ -106,8 +107,7 @@ pub struct VulkanRenderer {
     pub(crate) texture_readbacks:
         std::collections::HashMap<u64, graph_readback::VulkanTextureReadback>,
     pub(crate) frame_resources: Vec<crate::vulkan::frame_resources::FrameResources>,
-    pub(crate) graphics_samplers:
-        std::collections::HashMap<super::renderer::frame_bindings::SamplingMode, vk::Sampler>,
+    pub(crate) graphics_samplers: std::collections::HashMap<crate::SamplerDescriptor, vk::Sampler>,
     pub(crate) pending_graph_buffers: std::collections::HashSet<u64>,
     pub(crate) graph_buffer_consumers: std::collections::HashMap<u64, Option<vk::Fence>>,
     pub(crate) graph_compute_pipelines: std::collections::HashMap<

@@ -32,7 +32,7 @@ impl Frame<'_, VulkanRenderer> {
                 )
             })?
             .sampling;
-        if sampling == crate::renderer::frame_bindings::SamplingMode::DepthComparison {
+        if sampling.comparison.is_some() {
             return Err(RenderGraphError::InvalidConfiguration(
                 "UI sampler must not compare depth".into(),
             ));
