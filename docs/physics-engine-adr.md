@@ -124,6 +124,9 @@ remain explicitly authored. See [prefabs](prefabs.md).
 PhysicsActive gates simulation and defaults false outside play mode.
 CollisionFilter uses reciprocal layer/mask bitfields. Mesh colliders refer to
 MeshHandle; the app supplies MeshColliderData before constructing colliders.
+Editor collider removal also removes its collision filter, physics material
+and trigger volume in one undo command. Undo restores the exact shape and
+authored settings; native bodies are recreated rather than restoring handles.
 When creating native bodies, the app initializes their linear velocity from the
 RigidBody component. Scene serialization retains gravity scale, CCD and velocity
 while recreating native handles. Scene v3 joints use persistent document keys;

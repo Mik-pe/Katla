@@ -281,6 +281,42 @@ impl InteractionTestRunner {
     }
 
     #[cfg(feature = "editor")]
+    fn scroll_inspector_widget(app: &mut Application, label: &str, kind: &str) {
+        use katla_ui::declarative::widgets::{button::Button, section::Section, text::Text};
+        let tree = app.editor.editor_ui.view_tree();
+        let y = tree.iter_nodes().find_map(|(id, node)| {
+            let matches = if kind == "button" {
+                node.widget
+                    .as_any()
+                    .downcast_ref::<Button>()
+                    .is_some_and(|widget| widget.label == label)
+            } else if kind == "section" {
+                node.widget
+                    .as_any()
+                    .downcast_ref::<Section>()
+                    .is_some_and(|widget| widget.title == label)
+            } else {
+                node.widget
+                    .as_any()
+                    .downcast_ref::<Text>()
+                    .is_some_and(|widget| widget.content == label)
+            };
+            matches
+                .then(|| {
+                    tree.resolved_bounds()
+                        .get(&id)
+                        .map(|bounds| bounds.center().y())
+                })
+                .flatten()
+        });
+        if let Some(y) = y {
+            let input = app.ui_context.input_mut();
+            input.set_mouse_pos(Vec2::new(1140., 280.));
+            input.scroll_delta = Vec2::new(0., (280. - y) / 30.);
+        }
+    }
+
+    #[cfg(feature = "editor")]
     fn drag_material(app: &mut Application, value: f32, outside_row: bool) {
         use katla_ui::declarative::widgets::labeled_slider::LabeledSlider;
         let tree = app.editor.editor_ui.view_tree();
@@ -474,6 +510,29 @@ impl InteractionTestRunner {
                 Self::click_widget(app, "button", "+ Add Component", false);
                 self.state = State::ReleaseAddComponent;
             }
+            State::PressAddComponent if frame == 126 => {
+                Self::scroll_inspector_widget(app, "+ Add Component", "button");
+            }
+            State::PressAddComponent if frame == 124 => {
+                if let Some(entity) = app.editor.editor_ui.selected_entity
+                    && app
+                        .world
+                        .get_component::<katla_physics::ColliderShape>(entity)
+                        .is_some()
+                {
+                    let op = katla_ecs::scene_tool::SceneOp::RemoveComponent {
+                        entity,
+                        component: "ColliderShape".into(),
+                    };
+                    if let Err(error) = super::editor::component_commands::execute(
+                        op,
+                        &mut app.world,
+                        &app.editor.component_registry,
+                    ) {
+                        self.record("component_fixture_setup", false, error.to_string());
+                    }
+                }
+            }
             State::ReleaseAddComponent if frame == 129 => {
                 Self::ui_release(app);
                 self.state = State::ShotAddOpen;
@@ -482,6 +541,9 @@ impl InteractionTestRunner {
                 Self::click_widget(app, "text", "Collider", false);
                 self.state = State::ReleaseAddRow;
             }
+            State::PressAddRow if frame == 133 => {
+                Self::scroll_inspector_widget(app, "Collider", "text");
+            }
             State::ReleaseAddRow if frame == 136 => {
                 Self::ui_release(app);
                 self.state = State::CheckAddComponent;
@@ -489,6 +551,9 @@ impl InteractionTestRunner {
             State::PressRemoveComponent if frame == 143 => {
                 Self::click_widget(app, "section", "Collider", true);
                 self.state = State::ReleaseRemoveComponent;
+            }
+            State::PressRemoveComponent if frame == 141 => {
+                Self::scroll_inspector_widget(app, "Collider", "section");
             }
             State::ReleaseRemoveComponent if frame == 144 => {
                 Self::ui_release(app);
@@ -674,7 +739,7 @@ impl InteractionTestRunner {
                     Self::selected_has_component::<katla_physics::ColliderShape>(app);
                 self.record(
                     "add_component_click_adds_collider",
-                    has_collider,
+                    has_collider && app.editor.undo_stack.len() == self.material_history_before + 3,
                     format!(
                         "ColliderShape on selected entity after pick: {}",
                         has_collider
@@ -689,7 +754,8 @@ impl InteractionTestRunner {
                     Self::selected_has_component::<katla_physics::ColliderShape>(app);
                 self.record(
                     "remove_component_click_removes_collider",
-                    !has_collider,
+                    !has_collider
+                        && app.editor.undo_stack.len() == self.material_history_before + 4,
                     format!(
                         "ColliderShape on selected entity after remove: {}",
                         has_collider

@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub(crate) mod behavior;
+pub(super) mod component_commands;
 pub mod component_registry;
 pub(crate) mod document;
 #[cfg(feature = "mcp")]
@@ -1119,8 +1120,11 @@ pub fn process_editor_actions(app: &mut Application) {
             }
             EditorAction::RemoveComponent { entity, component } => {
                 let op = katla_ecs::scene_tool::SceneOp::RemoveComponent { entity, component };
-                match SceneToolExecutor::execute(op, &mut app.world, &app.editor.component_registry)
-                {
+                match component_commands::execute(
+                    op,
+                    &mut app.world,
+                    &app.editor.component_registry,
+                ) {
                     Ok((result, undo_group)) => {
                         if result.success {
                             info!("{}", result.message);

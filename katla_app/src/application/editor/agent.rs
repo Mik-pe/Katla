@@ -1,6 +1,6 @@
 use katla_agent::ToolCall;
 use katla_ecs::EntityId;
-use katla_ecs::scene_tool::{ResourceOp, SceneOp, SceneToolExecutor};
+use katla_ecs::scene_tool::{ResourceOp, SceneOp};
 use katla_gfx::primitives;
 
 fn build_hierarchy_json(app: &super::super::Application) -> serde_json::Value {
@@ -299,7 +299,7 @@ pub(super) fn execute_scene_op(
     } else {
         &app.editor.component_registry
     };
-    match SceneToolExecutor::execute(op, &mut app.world, registry) {
+    match super::component_commands::execute(op, &mut app.world, registry) {
         Ok((result, undo_group)) => {
             if !undo_group.commands.is_empty() {
                 app.editor.agent_undo_stack.push(undo_group);
@@ -1176,6 +1176,7 @@ fn generate_scene(description: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use katla_ecs::scene_tool::SceneToolExecutor;
 
     #[test]
     fn test_material_discovery_query_preserves_name_and_spatial_filters() {
