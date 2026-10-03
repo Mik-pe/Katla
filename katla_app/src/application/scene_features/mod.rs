@@ -10,7 +10,7 @@ pub(crate) use graphics::{GraphicsFrame, SceneGraphics};
 use lights::LightFeatures;
 use particles::ParticleFeatures;
 
-use katla_gfx::{GpuRenderer, MaterialTextures, TextureDescriptor, TextureHandle};
+use katla_gfx::{GpuRenderer, MaterialTextures, TextureDescriptor};
 
 use crate::{AppResult, Renderer};
 
@@ -19,9 +19,7 @@ pub(crate) struct SceneFeatures {
     pub(crate) lights: LightFeatures,
     pub(crate) particles: ParticleFeatures,
     pub(crate) graphics: SceneGraphics,
-    white_texture: TextureHandle,
-    normal_texture: TextureHandle,
-    metallic_roughness_texture: TextureHandle,
+    textures: MaterialTextures,
 }
 
 impl SceneFeatures {
@@ -30,37 +28,41 @@ impl SceneFeatures {
         resources: &crate::resources::ResourceManager,
         bindings: &super::frame_graph_config::FrameGraphBindings,
     ) -> AppResult<Self> {
-        let normal_texture = renderer.create_texture(
-            &TextureDescriptor::rgba8_unorm(1, 1).with_label("scene flat normal"),
-            &[128, 128, 255, 255],
-        )?;
-        let metallic_roughness_texture = match renderer.create_texture(
-            &TextureDescriptor::rgba8_unorm(1, 1).with_label("scene metallic roughness"),
-            &[255, 128, 0, 255],
-        ) {
-            Ok(handle) => handle,
-            Err(error) => {
-                renderer.destroy_texture(normal_texture);
-                return Err(error.into());
-            }
-        };
+        let textures = create_material_textures(renderer)?;
         Ok(Self {
             animation: AnimationFeatures::new(renderer, resources)?,
             lights: LightFeatures::new(renderer, resources)?,
             particles: ParticleFeatures::new(renderer, resources)?,
             graphics: SceneGraphics::new(renderer, resources, bindings)?,
-            white_texture: renderer.default_texture(),
-            normal_texture,
-            metallic_roughness_texture,
+            textures,
         })
     }
 
     pub(crate) fn material_textures(&self) -> MaterialTextures {
-        MaterialTextures {
-            albedo: self.white_texture,
-            normal: self.normal_texture,
-            metallic_roughness: self.metallic_roughness_texture,
-            occlusion: self.white_texture,
-        }
+        self.textures
     }
+}
+
+/// Neutral textures preserve all per-object material multipliers.
+pub(crate) fn create_material_textures(renderer: &mut Renderer) -> AppResult<MaterialTextures> {
+    let normal_texture = renderer.create_texture(
+        &TextureDescriptor::rgba8_unorm(1, 1).with_label("scene flat normal"),
+        &[128, 128, 255, 255],
+    )?;
+    let metallic_roughness_texture = match renderer.create_texture(
+        &TextureDescriptor::rgba8_unorm(1, 1).with_label("scene metallic roughness"),
+        &[255, 255, 255, 255],
+    ) {
+        Ok(handle) => handle,
+        Err(error) => {
+            renderer.destroy_texture(normal_texture);
+            return Err(error.into());
+        }
+    };
+    Ok(MaterialTextures {
+        albedo: renderer.default_texture(),
+        normal: normal_texture,
+        metallic_roughness: metallic_roughness_texture,
+        occlusion: renderer.default_texture(),
+    })
 }

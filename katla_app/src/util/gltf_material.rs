@@ -13,7 +13,7 @@ use gltf::Material;
 ///
 /// Contains texture indices (pointing to the GLTF images array)
 /// and material factors for PBR rendering.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct GltfMaterialInfo {
     /// Base color factor (RGBA multiplier).
     pub base_color_factor: [f32; 4],
@@ -44,7 +44,42 @@ pub struct GltfMaterialInfo {
     pub emission_texture: Option<usize>,
 }
 
+impl Default for GltfMaterialInfo {
+    fn default() -> Self {
+        Self {
+            base_color_factor: [1.0; 4],
+            metallic_factor: 1.0,
+            roughness_factor: 1.0,
+            emission_factor: [0.0; 3],
+            base_color_texture: None,
+            normal_texture: None,
+            metallic_roughness_texture: None,
+            occlusion_texture: None,
+            emission_texture: None,
+        }
+    }
+}
+
 impl GltfMaterialInfo {
+    /// Material of the first primitive in the scene's depth-first traversal.
+    ///
+    /// The current model loader flattens geometry into one drawable. Unused
+    /// entries in the document's material array must not affect that drawable.
+    pub(crate) fn from_document(document: &gltf::Document) -> Self {
+        fn first_material(node: gltf::Node<'_>) -> Option<Material<'_>> {
+            node.mesh()
+                .and_then(|mesh| mesh.primitives().next().map(|p| p.material()))
+                .or_else(|| node.children().find_map(first_material))
+        }
+
+        document
+            .default_scene()
+            .or_else(|| document.scenes().next())
+            .and_then(|scene| scene.nodes().find_map(first_material))
+            .map(|material| Self::from_gltf(&material))
+            .unwrap_or_default()
+    }
+
     /// Parse material info from a GLTF material.
     ///
     /// Extracts all PBR-relevant information from the GLTF material,
@@ -99,6 +134,7 @@ impl GltfMaterialInfo {
             || self.normal_texture.is_some()
             || self.metallic_roughness_texture.is_some()
             || self.occlusion_texture.is_some()
+            || self.emission_texture.is_some()
     }
 
     /// Check if this material has "enhanced" PBR textures beyond just albedo.
@@ -149,6 +185,66 @@ impl GltfMaterialInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_default_matches_gltf_implicit_material() {
+        let document = gltf::Gltf::from_slice(br#"{"asset":{"version":"2.0"},"materials":[{}]}"#)
+            .unwrap()
+            .document;
+        let material = GltfMaterialInfo::from_gltf(&document.materials().next().unwrap());
+        let default = GltfMaterialInfo::default();
+        assert_eq!(default.base_color_factor, material.base_color_factor);
+        assert_eq!(default.metallic_factor, material.metallic_factor);
+        assert_eq!(default.roughness_factor, material.roughness_factor);
+        assert_eq!(default.emission_factor, material.emission_factor);
+    }
+
+    #[test]
+    fn test_primary_material_uses_selected_scene_primitive() {
+        let document = gltf::Gltf::from_slice_without_validation(
+            br#"{
+            "asset":{"version":"2.0"}, "scene":1,
+            "scenes":[{"nodes":[0]},{"nodes":[1]}],
+            "nodes":[{"mesh":0},{"children":[2]},{"mesh":1}],
+            "meshes":[{"primitives":[{"attributes":{},"material":0}]},
+                       {"primitives":[{"attributes":{},"material":1}]}],
+            "materials":[{}, {"pbrMetallicRoughness":{
+                "baseColorFactor":[0.2,0.4,0.6,0.8],"metallicFactor":0.7,"roughnessFactor":0.3}}]
+        }"#,
+        )
+        .unwrap()
+        .document;
+        let material = GltfMaterialInfo::from_document(&document);
+        assert_eq!(material.base_color_factor, [0.2, 0.4, 0.6, 0.8]);
+        assert_eq!(material.metallic_factor, 0.7);
+        assert_eq!(material.roughness_factor, 0.3);
+    }
+
+    #[test]
+    fn test_implicit_primitive_material_ignores_unreferenced_materials() {
+        let document = gltf::Gltf::from_slice_without_validation(
+            br#"{
+            "asset":{"version":"2.0"},"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],
+            "meshes":[{"primitives":[{"attributes":{}}]}],
+            "materials":[{"pbrMetallicRoughness":{"metallicFactor":0.0}}]
+        }"#,
+        )
+        .unwrap()
+        .document;
+        let material = GltfMaterialInfo::from_document(&document);
+        assert_eq!(material.metallic_factor, 1.0);
+        assert_eq!(material.base_color_factor, [1.0; 4]);
+    }
+
+    #[test]
+    fn test_emission_only_material_has_textures() {
+        let material = GltfMaterialInfo {
+            emission_texture: Some(0),
+            ..Default::default()
+        };
+        assert!(material.has_textures());
+        assert!(material.has_enhanced_pbr());
+    }
 
     #[test]
     fn test_summary_no_textures() {

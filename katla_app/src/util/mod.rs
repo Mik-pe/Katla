@@ -5,6 +5,7 @@ pub mod asset_watcher;
 pub mod background_loader;
 pub mod cache;
 pub mod config;
+pub(crate) mod gltf_image;
 pub mod gltf_material;
 pub mod gltf_parser;
 pub mod modelcache;

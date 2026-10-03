@@ -484,7 +484,19 @@ impl super::Application {
         // 6. Spawn entity with emission texture index
         let entity = self.world.spawn((
             TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
-            DrawableComponent::with_handles(mesh_handle, material_handle),
+            DrawableComponent::with_handles_and_material(
+                mesh_handle,
+                material_handle,
+                Some(katla_math::Color::new(
+                    model.material.base_color_factor[0],
+                    model.material.base_color_factor[1],
+                    model.material.base_color_factor[2],
+                    model.material.base_color_factor[3],
+                )),
+                model.material.metallic_factor,
+                model.material.roughness_factor,
+                1.0,
+            ),
         ));
 
         self.world.add_component(
@@ -658,52 +670,34 @@ impl super::Application {
         let mut emission = katla_gfx::TextureHandle::NONE;
         let mut handles = Vec::new();
 
-        let material_info = model.materials.first();
-
-        if let Some(mat) = material_info {
-            if let Some(tex_idx) = mat.base_color_texture
-                && let Some(image) = model.images.get(tex_idx)
-            {
-                let handle = self.upload_gltf_image(image, true);
-                textures.albedo = handle;
-                handles.push(handle);
-                debug!("Uploaded albedo texture {} -> {:?}", tex_idx, handle);
-            }
-
-            if let Some(tex_idx) = mat.normal_texture
-                && let Some(image) = model.images.get(tex_idx)
-            {
-                let handle = self.upload_gltf_image(image, false);
-                textures.normal = handle;
-                handles.push(handle);
-                debug!("Uploaded normal texture {} -> {:?}", tex_idx, handle);
-            }
-
-            if let Some(tex_idx) = mat.metallic_roughness_texture
-                && let Some(image) = model.images.get(tex_idx)
-            {
-                let handle = self.upload_gltf_image(image, false);
-                textures.metallic_roughness = handle;
-                handles.push(handle);
-                debug!("Uploaded MR texture {} -> {:?}", tex_idx, handle);
-            }
-
-            if let Some(tex_idx) = mat.occlusion_texture
-                && let Some(image) = model.images.get(tex_idx)
-            {
-                let handle = self.upload_gltf_image(image, false);
-                textures.occlusion = handle;
-                handles.push(handle);
-                debug!("Uploaded AO texture {} -> {:?}", tex_idx, handle);
-            }
-
-            if let Some(tex_idx) = mat.emission_texture
-                && let Some(image) = model.images.get(tex_idx)
-            {
-                let handle = self.upload_gltf_image(image, false);
-                emission = handle;
-                handles.push(handle);
-                debug!("Uploaded emissive texture {} -> {:?}", tex_idx, handle);
+        let mat = &model.material;
+        for (image_index, srgb, role) in [
+            (mat.base_color_texture, true, &mut textures.albedo),
+            (mat.normal_texture, false, &mut textures.normal),
+            (
+                mat.metallic_roughness_texture,
+                false,
+                &mut textures.metallic_roughness,
+            ),
+            (mat.occlusion_texture, false, &mut textures.occlusion),
+            (mat.emission_texture, true, &mut emission),
+        ] {
+            let Some(image_index) = image_index else {
+                continue;
+            };
+            let Some(image) = model.images.get(image_index) else {
+                log::warn!("GLTF image {image_index} is missing; retaining material fallback");
+                continue;
+            };
+            match self.upload_gltf_image(image, srgb) {
+                Ok(handle) => {
+                    *role = handle;
+                    handles.push(handle);
+                    debug!("Uploaded GLTF image {image_index} -> {handle:?} (srgb={srgb})");
+                }
+                Err(error) => log::warn!(
+                    "GLTF image {image_index} upload failed: {error}; retaining material fallback"
+                ),
             }
         }
 
@@ -714,54 +708,21 @@ impl super::Application {
         }
     }
 
-    /// Upload a single GLTF image to the GPU.
+    /// Upload a single GLTF image, preserving the caller's role fallback on error.
     fn upload_gltf_image(
         &mut self,
         image: &gltf::image::Data,
         srgb: bool,
-    ) -> katla_gfx::TextureHandle {
-        let pixels = if image.format == gltf::image::Format::R8G8B8 {
-            let mut rgba = Vec::with_capacity(image.pixels.len() / 3 * 4);
-            for chunk in image.pixels.chunks(3) {
-                rgba.extend_from_slice(&[chunk[0], chunk[1], chunk[2], 255]);
-            }
-            rgba
+    ) -> Result<katla_gfx::TextureHandle, String> {
+        let pixels = crate::util::gltf_image::rgba8_pixels(image)?;
+        let descriptor = if srgb {
+            katla_gfx::TextureDescriptor::rgba8_srgb(image.width, image.height)
         } else {
-            image.pixels.clone()
+            katla_gfx::TextureDescriptor::rgba8_unorm(image.width, image.height)
         };
-
-        if srgb {
-            let desc = katla_gfx::TextureDescriptor::rgba8_srgb(image.width, image.height);
-            match self.renderer.create_texture(&desc, &pixels) {
-                Ok(handle) => handle,
-                Err(error) => {
-                    // Explicit asset-layer fallback: a missing GLTF texture
-                    // renders with the default texture instead of failing the
-                    // whole model import. The failure is logged, not silent.
-                    log::warn!(
-                        "GLTF texture upload failed ({}x{}, srgb): {}; using default texture",
-                        image.width,
-                        image.height,
-                        error
-                    );
-                    self.renderer.default_texture()
-                }
-            }
-        } else {
-            let desc = katla_gfx::TextureDescriptor::rgba8_unorm(image.width, image.height);
-            match self.renderer.create_texture(&desc, &pixels) {
-                Ok(handle) => handle,
-                Err(error) => {
-                    log::warn!(
-                        "GLTF texture upload failed ({}x{}, linear): {}; using default texture",
-                        image.width,
-                        image.height,
-                        error
-                    );
-                    self.renderer.default_texture()
-                }
-            }
-        }
+        self.renderer
+            .create_texture(&descriptor, &pixels)
+            .map_err(|e| e.to_string())
     }
 
     /// Convert index data from bytes to u32 based on stride.
@@ -824,3 +785,6 @@ pub(crate) fn local_bounds_for_source(source: &EntitySource) -> katla_math::AABB
         _ => AABB::from_min_max(Vec3::new(-0.5, -0.5, -0.5), Vec3::new(0.5, 0.5, 0.5)),
     }
 }
+
+#[cfg(test)]
+mod material_tests;

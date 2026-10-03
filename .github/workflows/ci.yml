@@ -89,6 +89,7 @@ jobs:
       - name: Verify scene format and document lifecycle on Vulkan
         run: |
           cargo test -p katla_app --lib --all-features --locked scene
+          cargo test -p katla_app --lib --all-features --locked gltf_
           cargo test -p katla_app --lib document_tests --all-features --locked -- --ignored --test-threads=1
           cargo test -p katla_app --lib --all-features --locked mesh_asset
           cargo test -p katla_app --lib --all-features --locked prefab
@@ -203,6 +204,7 @@ jobs:
         run: |
           cargo test -p katla_app --lib document_tests --all-features --locked -- --ignored --test-threads=1
           cargo test -p katla_app --lib prefab::native_tests --all-features --locked -- --ignored --test-threads=1
+          cargo test -p katla_app --lib material_tests --all-features --locked -- --ignored --test-threads=1
         env:
           MTL_DEBUG_LAYER: "1"
           METAL_DEVICE_WRAPPER_TYPE: "1"

@@ -203,3 +203,25 @@ toolbar Play/Stop in addition to material/component edits. Linux and capability-
 `scripts/validate_prefabs.py` acceptance flow uses real MCP and committed viewport
 readbacks to verify script attachment, particles, trigger visitor remapping,
 preview controls and capture/save/reload; commands are in [prefabs](prefabs.md#verification).
+
+## Material imports and neutral textures
+
+Linux runs the portable `gltf_` application tests; macOS's portable application
+suite includes them too. The existing Metal 4 capability-gated document step
+also runs the native `material_tests` fixture with API validation enabled.
+Physical Vulkan acceptance runs the same fixture locally. It compiles the scene
+PBR shader, so it is not added to the lavapipe tier whose PBR compiler limitation
+is documented in the [contract suite](contract-suite.md).
+
+```bash
+cargo test -p katla_app --lib gltf_ --all-features --locked
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 cargo test -p katla_app --lib material_tests --all-features --locked -- --ignored --test-threads=1
+```
+
+The fixture checks real imported drawable factors and samples uploaded neutral
+normal/MR textures and shared color/data images through a native shader, then
+asserts readback values. See the [material contract](../katla_gfx/src/material/API.md)
+for current import and surface-feature limits. Its Vulkan PBR compilation disables
+Khronos validation because of the known Intel compiler crash; passing this fixture
+does not establish validation-layer acceptance or native Metal acceptance on a
+machine without a Metal 4 device.

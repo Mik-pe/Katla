@@ -20,8 +20,8 @@ pub struct GLTFModel {
     pub document: Document,
     pub buffers: Vec<BufferData>,
     pub images: Vec<ImageData>,
-    /// Parsed material info for each material in the GLTF file.
-    pub materials: Vec<GltfMaterialInfo>,
+    /// Material used by the first primitive of the flattened scene geometry.
+    pub material: GltfMaterialInfo,
     pub vertex_data: Vec<VertexPBR>,
     pub skinned_vertex_data: Vec<VertexPBRSkinned>,
     /// SOA vertex attributes for non-skinned meshes (separate per-attribute byte arrays).
@@ -536,21 +536,14 @@ impl GLTFModel {
     {
         let (document, buffers, images) = gltf::import(path)?;
 
-        let materials: Vec<GltfMaterialInfo> = document
-            .materials()
-            .map(|m| GltfMaterialInfo::from_gltf(&m))
-            .collect();
-
-        debug!("Parsed {} materials from GLTF", materials.len());
-        for (i, mat) in materials.iter().enumerate() {
-            debug!("  Material {}: {}", i, mat.summary());
-        }
+        let material = GltfMaterialInfo::from_document(&document);
+        debug!("Parsed primary GLTF material: {}", material.summary());
 
         let mut model = Self {
             document,
             buffers,
             images,
-            materials,
+            material,
             vertex_data: vec![],
             skinned_vertex_data: vec![],
             vertex_attributes: HashMap::new(),

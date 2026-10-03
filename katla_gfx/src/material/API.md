@@ -1,264 +1,136 @@
-# Material API Guide
+# Materials and surface parameters
 
-This guide explains how to create and use materials in Katla's graphics engine.
+`GpuRenderer::compile_material(&PipelineDescriptor)` creates a generational
+`MaterialHandle` on either Vulkan or Metal. The graphics core owns pipeline
+state and resource bindings; the application owns PBR semantics, imported assets,
+neutral textures and editable surface values. WGSL is canonical, translated to
+SPIR-V or MSL. See [graphics ownership](../../../docs/graphics_core.md).
 
-## Overview
-
-Materials define how 3D objects are rendered. Each material consists of:
-- **Shader** - WGSL code compiled to SPIR-V
-- **Pipeline** - Vulkan graphics pipeline with rasterization state
-- **Descriptor Sets** - Bound resources (uniforms, textures, etc.)
-
-## Quick Start
+## Create and share a material
 
 ```rust
-use katla_gfx::{VulkanRenderer, MaterialOptions, VertexType};
-use katla_gfx::texture::ImageFormat;
+use katla_gfx::{GpuRenderer, ImageFormat, PipelineDescriptor};
 
-// Create a PBR material with default settings
-let material = renderer.compile_material(
-    "shaders/pbr.wgsl",
-    MaterialOptions {
-        vertex_type: VertexType::Pbr,
-        color_format: ImageFormat::B8G8R8A8Srgb,
-        ..Default::default()
-    },
-)?;
+let descriptor = PipelineDescriptor::pbr(resources.shader_path("model_pbr.wgsl")
+    .to_string_lossy().into_owned())
+    .with_color_format(ImageFormat::R16G16B16A16Sfloat);
+let material = renderer.compile_material(&descriptor)?;
 ```
 
-## Material Options
+Use `pbr`, `skinned`, `ui`, `simple` or `depth_only` for the corresponding vertex
+layout and initial state. Generated geometry uses `VertexLayout::empty()`.
+Custom entry points use `with_graphics_entries`. Depth, stencil, culling,
+blending and attachment state belong to the descriptor; shaders and explicit
+pass bindings must match it. See the
+[graph API](../render_graph/API.md) for binding packets and drawing phases.
 
-### VertexType
-
-Determines which vertex format the material expects:
-
-| VertexType | Description | Use Case |
-|------------|-------------|----------|
-| `Pbr` | Standard PBR vertex (position, normal, tangent, UV) | Most 3D models |
-| `Ui` | 2D UI vertex (position, UV) | UI elements |
-| `Skinned` | Skinned mesh vertex (includes joint indices/weights) | Animated characters |
-| `Simple` | Minimal vertex (position only) | Debug visualization, particles |
-
-### Color Format
-
-| Format | Use Case |
-|--------|----------|
-| `B8G8R8A8Srgb` | LDR rendering to swapchain (default) |
-| `R16G16B16A16Sfloat` | HDR intermediate render targets |
-
-### Blend & Render States
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `alpha_blended` | `false` | Enable alpha blending for transparent objects |
-| `double_sided` | `false` | Disable backface culling |
-| `wireframe` | `false` | Render in wireframe mode |
-
-## Common Patterns
-
-### PBR Opaque Material
-
-```rust
-let material = renderer.compile_material(
-    "shaders/pbr.wgsl",
-    MaterialOptions {
-        vertex_type: VertexType::Pbr,
-        ..Default::default()
-    },
-)?;
-```
-
-### PBR Transparent Material
-
-```rust
-let material = renderer.compile_material(
-    "shaders/pbr.wgsl",
-    MaterialOptions {
-        vertex_type: VertexType::Pbr,
-        alpha_blended: true,
-        ..Default::default()
-    },
-)?;
-```
-
-### UI Material
-
-```rust
-let material = renderer.compile_material(
-    "shaders/ui.wgsl",
-    MaterialOptions {
-        vertex_type: VertexType::Ui,
-        alpha_blended: true,
-        ..Default::default()
-    },
-)?;
-```
-
-### Skinned Character Material
-
-```rust
-let material = renderer.compile_material(
-    "shaders/skinned.wgsl",
-    MaterialOptions {
-        vertex_type: VertexType::Skinned,
-        ..Default::default()
-    },
-)?;
-```
-
-### HDR Material (for Tonemap Pass)
-
-```rust
-let hdr_material = renderer.compile_material(
-    "shaders/model.wgsl",
-    MaterialOptions {
-        vertex_type: VertexType::Pbr,
-        color_format: ImageFormat::R16G16B16A16Sfloat,
-        ..Default::default()
-    },
-)?;
-```
-
-### Double-Sided Material (foliage, fences)
-
-```rust
-let material = renderer.compile_material(
-    "shaders/pbr.wgsl",
-    MaterialOptions {
-        vertex_type: VertexType::Pbr,
-        double_sided: true,
-        ..Default::default()
-    },
-)?;
-```
-
-## Using Materials with Draw Calls
+Compilation creates an independently owned handle each time. Share that handle
+across meshes when shader, render state and texture bindings are the same.
+Per-object color, metallic, roughness and AO belong to `DrawCall` instances:
 
 ```rust
 use katla_gfx::DrawCall;
 
-// Create a draw call with the material
-let draw_call = DrawCall::new(mesh_handle, material_handle)
-    .with_transform(model_matrix)
-    .with_color([1.0, 0.0, 0.0, 1.0])  // red tint
-    .with_pbr(0.0, 0.5, 1.0);         // metallic: 0, roughness: 0.5, ao: 1.0
+let draw = DrawCall::new(mesh, material)
+    .with_color([0.8, 0.2, 0.1, 1.0]) // linear RGBA
+    .with_pbr(0.75, 0.25, 1.0);
 ```
 
-## Descriptor Set Layout
+Scene pipelines target the graph's HDR attachment, not the swapchain. Concrete
+formats compile immediately on Vulkan. `ImageFormat::Auto` defers Vulkan
+pipeline compilation until the pass format is known. Metal prepares supported
+color variants during material creation; frame encoding requires an existing
+variant and does not compile. Cached variants are scoped to the material.
+Invalid initial compilation publishes no handle. Destroy handles through
+`GpuRenderer::destroy_material`; submitted work retains the native resources
+until retirement.
 
-Materials use Katla's standard 3-set descriptor layout:
-
-```wgsl
-// Set 0: Per-frame and per-object data (storage buffers)
-@group(0) @binding(0) var<storage, read> frame_data: FrameUniforms;
-@group(0) @binding(1) var<storage, read> objects: array<ObjectUniforms>;
-
-// Set 1: Bindless textures
-@group(1) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 4096>;
-@group(1) @binding(1) var shared_sampler: sampler;
-
-// Set 2: Skeletal animation (only for skinned meshes)
-@group(2) @binding(0) var<storage, read> joint_matrices: array<mat4x4f>;
-```
-
-### Accessing Per-Object Data
-
-In your shader, use `@builtin(instance_index)` to index into the objects array:
-
-```wgsl
-struct ObjectUniforms {
-    model: mat4x4f,
-    base_color: vec4f,
-    material_params: vec4f,  // x=metallic, y=roughness, z=ao, w=emission_idx
-    texture_indices: vec4<u32>, // x=albedo, y=normal, z=metallic_roughness, w=ao
-};
-
-@group(0) @binding(1) var<storage, read> objects: array<ObjectUniforms>;
-
-@vertex
-fn vs_main(@builtin(instance_index) instance_idx: u32, ...) -> ... {
-    let object = objects[instance_idx];
-    let model_matrix = object.model;
-    let base_color = object.base_color;
-    // ...
-}
-```
-
-## Texture Binding
-
-Textures are bound via the bindless texture system. The application sets texture indices via `ObjectUniforms.texture_indices`:
+## Texture roles and color space
 
 ```rust
-draw_call.with_texture_indices([albedo_idx, normal_idx, mr_idx, ao_idx]);
+use katla_gfx::MaterialTextures;
+
+renderer.set_material_textures(material, MaterialTextures {
+    albedo,
+    normal,
+    metallic_roughness,
+    occlusion,
+});
 ```
 
-In the shader:
+Handles retain generation checks. Backends resolve them to bindless slots only
+when preparing draws. `TextureHandle::NONE` and stale handles resolve to slot
+zero, the core's generic white fallback. This protects against sampling a
+recycled slot; it does not supply PBR-specific defaults. The scene service binds
+an explicit flat normal and neutral metallic/roughness texture.
 
-```wgsl
-@group(1) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 4096>;
-@group(1) @binding(1) var shared_sampler: sampler;
+| Role | Transfer function | Scene fallback | Shader use |
+| --- | --- | --- | --- |
+| Albedo | sRGB RGB, linear alpha | White | RGB × linear base color; alpha × base alpha |
+| Normal | Linear | `(128,128,255,255)` in RGBA8 | Tangent-space normal |
+| Metallic/roughness | Linear | White | B × metallic; G × roughness |
+| Occlusion | Linear | White | R × per-object AO |
+| Emission | sRGB RGB | No emission | Add sampled RGB to linear HDR lighting |
 
-@fragment
-fn fs_main(...) -> ... {
-    let object = objects[instance_idx];
-    let albedo_idx = object.texture_indices.x;
-    let albedo = textureSample(bindless_textures[albedo_idx], shared_sampler, uv);
-    // ...
-}
+Neutral MR channels are both one. Object defaults are metallic `0`, roughness
+`0.5`, AO `1`; the texture must preserve those values. Bindless slots are GPU
+addresses, never persistent asset identities. Emission is currently a separate
+`DrawCall::with_emission(TextureHandle)` binding with no color/intensity factor.
+
+## glTF import contract and limits
+
+The current application loader flattens a selected glTF scene into one drawable.
+It uses the material assigned to the first primitive in depth-first node order,
+from the default scene or first scene. Unreferenced document materials do not
+select the drawable's appearance. A primitive with no material uses glTF defaults:
+white base color, metallic `1`, roughness `1`, emission factor zero.
+
+Base color factors are already linear and are copied without sRGB conversion.
+Metallic and roughness factors initialize the drawable. Albedo and emissive
+textures upload as sRGB; normal, MR and occlusion upload as linear UNORM. A single
+image used for color and data roles receives separate uploads. Grayscale images
+expand to RGB, grayscale-alpha retains alpha, and 16-bit integer channels
+quantize to RGBA8. Malformed and floating-point images fail explicitly and log
+an optional-texture fallback; failed uploads retain the role's existing fallback
+and add no handle to resource tracking.
+
+This is not full glTF material support. Additional primitives currently share
+the first material. Alpha modes/cutoffs, double-sided shading, UV sets and
+transforms, per-texture samplers, normal scale, occlusion strength, emissive
+factors and material extensions need dedicated support. Scene serialization
+preserves editable base color and PBR factors; texture assignment and standalone
+material assets are not yet editable/persisted. Unresolved work and acceptance
+criteria live in [TODO](../../../TODO.md#material-correctness).
+
+## Shader reload
+
+`recompile_materials_for_shader` keeps material handle identity, but its return
+value counts affected materials, not completed successful compilations. Vulkan
+invalidates variants and rebuilds at their next use. Metal queues background
+replacements, retaining the previous pipelines if compilation fails. Atomic,
+last-good reload behavior across backends and include dependencies remain open
+work. Compile shaders and create materials during asset preparation to avoid
+Vulkan frame-path compilation stalls.
+
+## Verification
+
+Portable parsing and image regressions:
+
+```bash
+cargo test -p katla_app --lib gltf_ --locked
 ```
 
-## Deferred Materials (Auto Format)
+Native import/default texture regression, on the platform backend:
 
-For materials that need to work with multiple formats (e.g., shared between HDR and LDR passes), use `ImageFormat::Auto`:
-
-```rust
-// Note: This is primarily for internal use by the frame graph system
-let material = renderer.compile_material(
-    "shaders/shared.wgsl",
-    MaterialOptions {
-        vertex_type: VertexType::Pbr,
-        color_format: ImageFormat::Auto,  // Compiled on first use
-        ..Default::default()
-    },
-)?;
+```bash
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 cargo test -p katla_app --lib material_tests --locked -- --ignored --test-threads=1
 ```
 
-The frame graph will compile the material for the correct format when the pass is first executed.
-
-## Error Handling
-
-Material compilation can fail for several reasons:
-
-```rust
-use katla_gfx::RendererError;
-
-match renderer.compile_material("shaders/pbr.wgsl", options) {
-    Ok(handle) => { /* use handle */ }
-    Err(RendererError::InitializationFailed(msg)) => {
-        eprintln!("Material compilation failed: {}", msg);
-    }
-    Err(e) => {
-        eprintln!("Unexpected error: {:?}", e);
-    }
-}
-```
-
-Common failure modes:
-- Shader file not found
-- WGSL compilation errors
-- Pipeline creation failures
-- Invalid vertex type for the shader
-
-## Performance Notes
-
-1. **Materials are cached** - Creating the same material twice returns the same handle
-2. **Compile at startup** - Create all materials during initialization, not during gameplay
-3. **Share materials** - Multiple meshes can use the same material
-4. **Format matters** - HDR materials have different pipelines than LDR
-
-## See Also
-
-- [`VulkanRenderer::compile_material()`](../renderer/struct.VulkanRenderer.html#method.compile_material)
-- [`MaterialOptions`](../vulkan/material/compiler/struct.MaterialOptions.html)
-- [`VertexType`](../vulkan/material/compiler/enum.VertexType.html)
-- [`DrawCall`](../renderer/types/struct.DrawCall.html)
+The native fixture spawns a real glTF asset and checks exact linear drawable
+factors. GPU sampling/readback verifies neutral MR channels preserve those
+factors, normal defaults are flat, and shared color/data images decode
+according to their respective transfer functions. It also checks that malformed
+optional images publish no tracked texture. Vulkan PBR compilation in this
+fixture disables the validation layer because of the documented Intel compiler
+crash; Metal runs with the validation environment above. Physical Metal
+acceptance requires a Metal 4 device.

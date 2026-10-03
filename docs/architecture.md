@@ -69,7 +69,9 @@ Mesh compilation, caching, persistence and AI authoring remain app-owned. See
 [mesh and prefab contracts](prefabs.md).
 
 GLTF assets provide meshes, PBR materials, skins and animation clips. Background
-loading and material templates are application services.
+loading and surface parameters are application services. Material compilation,
+texture defaults, import limits and verification follow the
+[material contract](../katla_gfx/src/material/API.md).
 ResourceManager::discover() locates resources/; use its path helpers. Persistent
 scene format v3 uses stable document-local entity keys, explicit resource roots
 and versioned game component codecs. Parsing and validation precede staged scene
