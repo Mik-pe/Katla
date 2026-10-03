@@ -39,6 +39,13 @@ order instead of selecting buffers from a skeleton handle. Descriptor validation
 rejects duplicate locations and locations beyond 30 before native creation,
 matching Metal's [31 vertex attribute entries](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf).
 
+Scene material composition assigns five independent samplers at group 5 and
+app-owned UV transform rows at group 0, binding 2. Color and coverage passes use
+the same albedo sampling. The app groups consecutive geometry objects by sampler
+policy so phases preserve sorted blend order; image uploads remain shareable across
+these policies. See the [material contract](../katla_gfx/src/material/API.md) for
+import, tangent generation and persistence rules.
+
 ## Minimal application
 
 An empty application graph selects `GraphOnly` and installs no scene or editor

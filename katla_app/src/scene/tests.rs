@@ -37,6 +37,7 @@ fn test_scene_with_entities_round_trip() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.16, 0.17, 0.20, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -74,6 +75,7 @@ fn test_scene_with_entities_round_trip() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.2, 0.5, 1.0, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -198,6 +200,7 @@ fn test_point_light_descriptor_round_trip() {
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([1.0, 0.6, 0.2, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -488,6 +491,7 @@ fn test_scene_serialized_output_is_human_readable() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([1.0, 0.0, 0.0, 1.0]),
             metallic: 0.5,
             roughness: 0.3,
@@ -550,6 +554,7 @@ fn test_full_default_scene_like_serialization() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.16, 0.17, 0.20, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -595,6 +600,7 @@ fn test_full_default_scene_like_serialization() {
                 },
                 drawable: Some(DrawableDescriptor {
                     surface: None,
+                    sampling: None,
                     color: Some([0.4, 0.6, 1.0, 1.0]),
                     metallic,
                     roughness,
@@ -636,6 +642,7 @@ fn test_full_default_scene_like_serialization() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([1.0, 0.47, 0.31, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -713,6 +720,7 @@ fn test_full_default_scene_like_serialization() {
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([1.0, 0.6, 0.2, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -1407,6 +1415,7 @@ fn test_primitive_round_trip() {
             },
             drawable: Some(DrawableDescriptor {
                 surface: None,
+                sampling: None,
                 color: Some([0.8, 0.2, 0.1, 1.0]),
                 metallic: 0.7,
                 roughness: 0.3,
@@ -1446,6 +1455,7 @@ fn test_primitive_round_trip() {
             },
             drawable: Some(DrawableDescriptor {
                 surface: None,
+                sampling: None,
                 color: Some([0.1, 0.5, 0.9, 1.0]),
                 metallic: 0.1,
                 roughness: 0.9,
@@ -1484,6 +1494,7 @@ fn test_primitive_round_trip() {
             },
             drawable: Some(DrawableDescriptor {
                 surface: None,
+                sampling: None,
                 color: Some([0.5, 0.5, 0.5, 1.0]),
                 metallic: 0.0,
                 roughness: 1.0,
@@ -1523,6 +1534,7 @@ fn test_primitive_round_trip() {
             },
             drawable: Some(DrawableDescriptor {
                 surface: None,
+                sampling: None,
                 color: Some([0.9, 0.7, 0.2, 1.0]),
                 metallic: 0.5,
                 roughness: 0.4,
@@ -1563,6 +1575,7 @@ fn test_primitive_round_trip() {
             },
             drawable: Some(DrawableDescriptor {
                 surface: None,
+                sampling: None,
                 color: Some([0.3, 0.9, 0.4, 1.0]),
                 metallic: 0.3,
                 roughness: 0.6,
@@ -1705,6 +1718,7 @@ fn test_point_light_round_trip() {
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([1.0, 0.6, 0.2, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -2352,6 +2366,7 @@ fn test_velocity_round_trip() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.2, 0.4, 0.8, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -2513,6 +2528,7 @@ fn test_load_spawn_integration() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.8, 0.2, 0.1, 1.0]),
             metallic: 0.5,
             roughness: 0.3,
@@ -2556,6 +2572,7 @@ fn test_load_spawn_integration() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.1, 0.5, 0.9, 1.0]),
             metallic: 0.0,
             roughness: 0.8,
@@ -2595,6 +2612,7 @@ fn test_load_spawn_integration() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.5, 0.5, 0.5, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -2635,6 +2653,7 @@ fn test_load_spawn_integration() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.9, 0.7, 0.2, 1.0]),
             metallic: 0.5,
             roughness: 0.4,
@@ -2676,6 +2695,7 @@ fn test_load_spawn_integration() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.3, 0.9, 0.4, 1.0]),
             metallic: 0.3,
             roughness: 0.6,
@@ -2814,6 +2834,7 @@ fn test_load_spawn_integration() {
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([1.0, 0.6, 0.2, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -3057,6 +3078,7 @@ fn test_transform_persistence() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.8, 0.2, 0.1, 1.0]),
             metallic: 0.5,
             roughness: 0.3,
@@ -3435,6 +3457,7 @@ fn test_full_editor_workflow() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.8, 0.2, 0.1, 1.0]),
             metallic: 0.5,
             roughness: 0.3,
@@ -3472,6 +3495,7 @@ fn test_full_editor_workflow() {
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([1.0, 0.9, 0.8, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -3517,6 +3541,7 @@ fn test_full_editor_workflow() {
         },
         drawable: Some(DrawableDescriptor {
             surface: None,
+            sampling: None,
             color: Some([0.1, 0.5, 0.9, 1.0]),
             metallic: 0.0,
             roughness: 0.8,

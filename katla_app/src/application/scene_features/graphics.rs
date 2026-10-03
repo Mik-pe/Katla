@@ -32,6 +32,7 @@ pub(crate) struct GraphicsFrame<'a> {
     pub(crate) billboards: Vec<u32>,
     pub(crate) frame_slot: usize,
     pub(crate) scene_size: Size2D,
+    pub(crate) samplers: &'a [[katla_gfx::SamplerDescriptor; 5]],
     pub(crate) surfaces: &'a [crate::rendering::SurfaceParameters],
 }
 
@@ -327,7 +328,12 @@ impl SceneGraphics {
             frame_slot,
             scene_size,
             surfaces,
+            samplers,
         } = frame;
+        let rows = || crate::rendering::frame_context::SurfaceRows {
+            parameters: surfaces,
+            samplers,
+        };
         let frame_binding = constant(
             0,
             0,
@@ -375,7 +381,7 @@ impl SceneGraphics {
                     renderer,
                     &self.shadow,
                     &ordinary,
-                    surfaces,
+                    rows(),
                     CoveragePass::Shadow {
                         reverse_winding: !self.flip_y,
                     },
@@ -411,9 +417,13 @@ impl SceneGraphics {
             ),
         ] {
             if let Some(pass) = pass {
-                let mut phases = self
-                    .material_pipelines
-                    .auxiliary_phases(renderer, pipelines, &ordinary, surfaces, coverage)?;
+                let mut phases = self.material_pipelines.auxiliary_phases(
+                    renderer,
+                    pipelines,
+                    &ordinary,
+                    rows(),
+                    coverage,
+                )?;
                 phases.push(PassDrawPhase {
                     samplers: Vec::new(),
                     pipelines: vec![PassPipeline {
@@ -438,7 +448,17 @@ impl SceneGraphics {
             }
         }
         if let Some(pass) = ids.geometry {
-            let mut packet = PassBindings::default();
+            let mut packet = PassBindings {
+                phases: super::material_pipelines::geometry_phases(&ordinary, samplers),
+                ..Default::default()
+            };
+            packet.phases.push(PassDrawPhase {
+                samplers: Vec::new(),
+                pipelines: Vec::new(),
+                constants: Vec::new(),
+                draw: PassDraw::ObjectIndices(billboards.clone()),
+                viewport: None,
+            });
             packet.constants.push(frame_binding.clone());
             packet.constants.push(constant(
                 0,

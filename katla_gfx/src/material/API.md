@@ -103,8 +103,9 @@ Group mesh colliders combine model geometry independently of surface drawing.
 Accessor iterators preserve offsets, strides, sparse data and normalized skin
 weights. Triangle strips/fans convert to triangle lists; other topologies reject
 import. Missing normals use flat triangle normals. Missing tangents with UVs use
-MikkTSpace and split vertices at corner seams; supplied skinned tangents survive
-import. Static positions preserve exact node matrices, including shear, and baked
+MikkTSpace with the transformed normal texture coordinates and split vertices at
+corner seams. Missing normals also discard supplied tangents as required by glTF;
+otherwise authored tangents survive import. Static positions preserve exact node matrices, including shear, and baked
 negative determinants reverse triangle winding as well as tangent handedness.
 
 Base color factors are already linear and are copied without sRGB conversion.
@@ -134,9 +135,26 @@ scene reconstruction. Sampler/UV choices do not change image identity. Malformed
 optional images log a fallback, retain the role's existing default and add no
 tracked handle.
 
-UV sets and transforms, per-texture samplers and material extensions still need
-dedicated support. Scene serialization
-preserves editable base color, PBR factors and surface multipliers; texture assignment and standalone
+Every texture role retains its image reference, UV set and sampler independently.
+UV0/UV1 are supported; referenced missing or higher sets reject import with role
+context. `KHR_texture_transform` applies scale, rotation in radians and translation,
+including its UV-set override, on all five roles. Negative/zero scales are legal.
+All six glTF minification modes, magnification and S/T address modes are preserved;
+omitted filtering chooses linear mip interpolation and repeat with anisotropy one.
+Material samplers occupy group 5, bindings 0..4 (albedo, normal, MR, AO, emission).
+Depth, shadow and picking use the same transformed albedo coordinates and sampler.
+Geometry phases group only consecutive objects with matching sampler policies to
+preserve transparent compositing order.
+
+The app owns `MaterialSampling` independently of `MaterialSurface`. Scene capture
+persists both; omitting sampling preserves the imported source settings, including
+when an older scene supplies surface factors. The 208-byte `SurfaceParameters` row
+contains five 32-byte coordinate transforms after its three existing vec4 fields.
+If an authored normal UV differs from the coordinates used to generate tangents,
+fragment derivatives reconstruct its frame; degenerate UVs retain the finite mesh
+basis. Authored glTF tangents retain their supplied basis under UV transformation.
+Other glTF material extensions require dedicated support. Scene serialization
+preserves editable base color, PBR factors, surface multipliers and sampling; texture assignment and standalone
 material assets are not yet editable/persisted. Unresolved work and acceptance
 criteria live in [TODO](../../../TODO.md#material-correctness).
 

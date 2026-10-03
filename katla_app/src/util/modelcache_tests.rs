@@ -258,6 +258,7 @@ fn test_skinned_primitive_keeps_tangents_and_its_nodes_skin() {
     data.extend_from_slice(bytemuck::cast_slice(&[[0u16, 0, 0, 0]; 3]));
     data.extend_from_slice(bytemuck::cast_slice(&[[2.0f32, 0.0, 0.0, 0.0]; 3]));
     data.extend_from_slice(bytemuck::cast_slice(&[[0.0f32, 1.0, 0.0, -1.0]; 3]));
+    data.extend_from_slice(bytemuck::cast_slice(&[[0.0f32, 0.0, 1.0]; 3]));
     document["nodes"] =
         serde_json::json!([{"mesh":0},{"mesh":1,"skin":1,"translation":[4,5,6]}, {}, {}]);
     document["scenes"][1]["nodes"] = serde_json::json!([1, 2, 3]);
@@ -266,16 +267,19 @@ fn test_skinned_primitive_keeps_tangents_and_its_nodes_skin() {
         serde_json::json!({"buffer":0,"byteOffset":36,"byteLength":24}),
         serde_json::json!({"buffer":0,"byteOffset":60,"byteLength":48}),
         serde_json::json!({"buffer":0,"byteOffset":108,"byteLength":48}),
+        serde_json::json!({"buffer":0,"byteOffset":156,"byteLength":36}),
     ]);
     document["accessors"].as_array_mut().unwrap().extend([
         serde_json::json!({"bufferView":1,"componentType":5123,"count":3,"type":"VEC4"}),
         serde_json::json!({"bufferView":2,"componentType":5126,"count":3,"type":"VEC4"}),
         serde_json::json!({"bufferView":3,"componentType":5126,"count":3,"type":"VEC4"}),
+        serde_json::json!({"bufferView":4,"componentType":5126,"count":3,"type":"VEC3"}),
     ]);
     for primitive in document["meshes"][1]["primitives"].as_array_mut().unwrap() {
         primitive["attributes"]["JOINTS_0"] = serde_json::json!(1);
         primitive["attributes"]["WEIGHTS_0"] = serde_json::json!(2);
         primitive["attributes"]["TANGENT"] = serde_json::json!(3);
+        primitive["attributes"]["NORMAL"] = serde_json::json!(4);
     }
     let model = decode(document, data).unwrap();
     assert_eq!(model.primitives[0].skin_index, Some(1));
@@ -359,4 +363,81 @@ fn test_static_material_frame_stays_finite_for_singular_transform() {
     );
     assert_eq!(vertex.normal, [0.0, 1.0, 0.0]);
     assert_eq!(vertex.tangent, [0.0, 0.0, 1.0, 1.0]);
+}
+
+#[test]
+fn test_normal_texture_generates_tangents_from_its_transformed_secondary_uvs() {
+    let mut document = triangle_document();
+    let mut bytes = triangle_bytes();
+    for (set, values) in [
+        (0, [[0f32, 0.], [1., 0.], [0., 1.]]),
+        (1, [[0f32, 0.], [0., 1.], [1., 0.]]),
+    ] {
+        let offset = bytes.len();
+        bytes.extend_from_slice(bytemuck::cast_slice(&values));
+        let view = document["bufferViews"].as_array().unwrap().len();
+        let accessor = document["accessors"].as_array().unwrap().len();
+        document["bufferViews"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"buffer":0,"byteOffset":offset,"byteLength":24}));
+        document["accessors"].as_array_mut().unwrap().push(
+            serde_json::json!({"bufferView":view,"componentType":5126,"count":3,"type":"VEC2"}),
+        );
+        document["meshes"][1]["primitives"][0]["attributes"][format!("TEXCOORD_{set}")] =
+            serde_json::json!(accessor);
+    }
+    document["images"] = serde_json::json!([{"uri":"normal.png"}]);
+    document["textures"] = serde_json::json!([{"source":0}]);
+    document["materials"][1]["normalTexture"] = serde_json::json!({"index":0,"extensions":{"KHR_texture_transform":{"texCoord":1,"scale":[-1,1]}}});
+    let model = decode(document.clone(), bytes.clone()).unwrap();
+    assert_eq!(model.primitives[0].tangent_uv.unwrap().tex_coord, 1);
+    let GltfVertices::Static(vertices) = &model.primitives[0].vertices else {
+        panic!("static");
+    };
+    for vertex in vertices {
+        assert_eq!(vertex.tangent, [0., -1., 0., 1.]);
+    }
+    document["meshes"][1]["primitives"][0]["attributes"]
+        .as_object_mut()
+        .unwrap()
+        .remove("TEXCOORD_1");
+    assert!(
+        decode(document.clone(), bytes.clone())
+            .err()
+            .unwrap()
+            .contains("normal texture requires missing TEXCOORD_1")
+    );
+    document["materials"][1]["normalTexture"]["extensions"]["KHR_texture_transform"]["texCoord"] =
+        serde_json::json!(2);
+    assert!(
+        decode(document, bytes)
+            .err()
+            .unwrap()
+            .contains("Only TEXCOORD_0 and TEXCOORD_1")
+    );
+}
+
+#[test]
+fn test_missing_normals_ignore_authored_tangents() {
+    let mut document = triangle_document();
+    let mut bytes = triangle_bytes();
+    bytes.extend_from_slice(bytemuck::cast_slice(&[[0f32, 1., 0., -1.]; 3]));
+    document["bufferViews"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"buffer":0,"byteOffset":36,"byteLength":48}));
+    document["accessors"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"bufferView":1,"componentType":5126,"count":3,"type":"VEC4"}));
+    document["meshes"][1]["primitives"][0]["attributes"]["TANGENT"] = serde_json::json!(1);
+    let model = decode(document, bytes).unwrap();
+    let GltfVertices::Static(vertices) = &model.primitives[0].vertices else {
+        panic!("static");
+    };
+    for vertex in vertices {
+        assert_eq!(vertex.normal, [0., 0., 1.]);
+        assert_eq!(vertex.tangent, [1., 0., 0., 1.]);
+    }
 }

@@ -223,6 +223,8 @@ also runs the native `material_tests` fixtures, including static/skinned
 per-primitive surfaces, textureless/textured emission, scaled normals, occlusion
 strength, alpha coverage/compositing across color/depth/shadow/picking, mirrored
 faces, integer/HDR image fidelity, filtered mip regeneration, weak image sharing,
+independent per-role UV transforms and imported samplers, generated/authored/
+changed normal-coordinate bases, transformed alpha coverage,
 second-skin selection, scene round-trip/rollback and
 resource retirement. The primitive probes use API validation. The full PBR
 compile fixture disables Vulkan validation on the affected Intel driver; Metal

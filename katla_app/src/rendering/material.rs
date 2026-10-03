@@ -63,11 +63,15 @@ pub(crate) struct SurfaceParameters {
     pub(crate) emissive: [f32; 4],
     pub(crate) normal_occlusion: [f32; 4],
     pub(crate) coverage: [f32; 4],
+    pub(crate) coordinates: [super::material_sampling::TextureCoordinates; 5],
 }
 
 impl From<MaterialSurface> for SurfaceParameters {
     fn from(surface: MaterialSurface) -> Self {
         Self {
+            coordinates: super::MaterialSampling::default()
+                .roles()
+                .map(|role| role.uv.into()),
             emissive: [
                 surface.emissive_factor[0],
                 surface.emissive_factor[1],
@@ -90,6 +94,16 @@ impl From<MaterialSurface> for SurfaceParameters {
 }
 
 impl SurfaceParameters {
+    pub(crate) fn with_sampling(
+        mut self,
+        sampling: super::MaterialSampling,
+        tangent_uv: Option<super::UvTransform>,
+    ) -> Self {
+        self.coordinates = sampling.roles().map(|role| role.uv.into());
+        self.normal_occlusion[2] = f32::from(tangent_uv.is_some_and(|uv| uv != sampling.normal.uv));
+        self
+    }
+
     pub(crate) fn transparent(self) -> bool {
         self.coverage[1] > 1.5
     }

@@ -22,7 +22,11 @@ fn test_native_full_material_asset_import_measurements() {
         1,
         "this paired benchmark uses one fully textured glTF primitive"
     );
-    let image_index = decoded.primitives[0].material.base_color_texture.unwrap();
+    let image_index = decoded.primitives[0]
+        .material
+        .base_color_texture
+        .unwrap()
+        .image_index;
     let image = &decoded.images[image_index];
     let channels = match image.format {
         gltf::image::Format::R8G8B8 => 3,

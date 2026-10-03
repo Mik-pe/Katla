@@ -148,7 +148,9 @@ impl Application {
 
             draw = draw
                 .with_emission(drawable.emission)
-                .with_surface(drawable.surface);
+                .with_surface(drawable.surface)
+                .with_sampling(drawable.sampling)
+                .with_tangent_uv(drawable.tangent_uv);
 
             #[cfg(feature = "editor")]
             {
@@ -452,7 +454,10 @@ impl Application {
             delta_time,
             &frame_uniforms,
             &draw_list,
-            &submission.surfaces,
+            crate::rendering::frame_context::SurfaceRows {
+                parameters: &submission.surfaces,
+                samplers: &submission.samplers,
+            },
         ) {
             log::error!("Scene GPU preparation failed: {error}");
             let _ = self.renderer.abort(frame_token);
@@ -1096,7 +1101,10 @@ impl Application {
             delta_time,
             &frame_uniforms,
             &draw_list,
-            &submission.surfaces,
+            crate::rendering::frame_context::SurfaceRows {
+                parameters: &submission.surfaces,
+                samplers: &submission.samplers,
+            },
         ) {
             log::error!("Scene GPU preparation failed: {error}");
             let _ = self.renderer.abort(frame_token);

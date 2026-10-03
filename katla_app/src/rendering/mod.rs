@@ -22,3 +22,6 @@ pub use frame_context::{FrameContext, FrameSubmission};
 
 #[cfg(feature = "editor")]
 pub use crate::billboard_icons::rasterize_icon as rasterize_billboard_icon;
+
+mod material_sampling;
+pub use material_sampling::{MaterialSampling, TextureSampling, UvTransform};

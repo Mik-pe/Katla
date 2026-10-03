@@ -435,9 +435,10 @@ impl super::Application {
             (mat.occlusion_texture, false, &mut textures.occlusion),
             (mat.emission_texture, true, &mut emission),
         ] {
-            let Some(image_index) = image_index else {
+            let Some(info) = image_index else {
                 continue;
             };
+            let image_index = info.image_index;
             let Some(image) = images.get(image_index) else {
                 log::warn!("GLTF image {image_index} is missing; retaining material fallback");
                 continue;

@@ -525,7 +525,7 @@ impl Application {
         dt: f32,
         uniforms: &crate::rendering::FrameUniforms,
         draws: &katla_gfx::renderer::DrawList,
-        surfaces: &[crate::rendering::SurfaceParameters],
+        rows: crate::rendering::frame_context::SurfaceRows<'_>,
     ) -> crate::AppResult<()> {
         let Some(features) = &mut self.scene_features else {
             return Ok(());
@@ -604,7 +604,8 @@ impl Application {
         }
         let mut ordinary = Vec::new();
         let mut billboards = Vec::new();
-        let mut surface_data = surfaces.to_vec();
+        let mut surface_data = rows.parameters.to_vec();
+        let mut samplers = rows.samplers.to_vec();
         for draw in draws.iter() {
             let target = if draw.is_billboard {
                 &mut billboards
@@ -619,6 +620,10 @@ impl Application {
                 crate::rendering::SurfaceParameters::default(),
             );
         }
+        samplers.resize(
+            surface_data.len(),
+            crate::rendering::MaterialSampling::default().samplers(),
+        );
         features.graphics.prepare_frame(
             &mut self.renderer,
             &mut self.frame_graph,
@@ -634,6 +639,7 @@ impl Application {
                 frame_slot: token.slot(),
                 scene_size,
                 surfaces: &surface_data,
+                samplers: &samplers,
             },
         )?;
         features

@@ -1,6 +1,7 @@
 //! Application-owned raster-state variants for authored scene surfaces.
 
 use crate::{AppResult, Renderer, rendering::SurfaceParameters};
+use katla_gfx::ShaderStages;
 use katla_gfx::{BlendMode, CullMode, GpuRenderer, MaterialHandle};
 use std::collections::HashMap;
 
@@ -108,7 +109,7 @@ impl MaterialPipelines {
         renderer: &mut Renderer,
         pipelines: &[katla_gfx::renderer::frame_bindings::PassPipeline],
         indices: &[u32],
-        surfaces: &[SurfaceParameters],
+        rows: crate::rendering::frame_context::SurfaceRows<'_>,
         policy: CoveragePass,
     ) -> AppResult<Vec<katla_gfx::renderer::frame_bindings::PassDrawPhase>> {
         use katla_gfx::renderer::frame_bindings::{PassDraw, PassDrawPhase, PassPipeline};
@@ -120,23 +121,33 @@ impl MaterialPipelines {
             }
         );
         let mut phases = Vec::new();
-        for cull in [
-            katla_gfx::CullMode::Back,
-            katla_gfx::CullMode::Front,
-            katla_gfx::CullMode::None,
-        ] {
-            let selected: Vec<_> = indices
-                .iter()
-                .copied()
-                .filter(|&index| {
-                    surfaces.get(index as usize).is_some_and(|surface| {
-                        surface.cull_mode() == cull && (include_blend || !surface.transparent())
-                    })
-                })
-                .collect();
-            if selected.is_empty() {
+        let mut groups: Vec<(CullMode, katla_gfx::SamplerDescriptor, Vec<u32>)> = Vec::new();
+        let mut group_indices = HashMap::new();
+        for &index in indices {
+            let Some(surface) = rows.parameters.get(index as usize) else {
+                continue;
+            };
+            if !include_blend && surface.transparent() {
                 continue;
             }
+            let cull = surface.cull_mode();
+            let sampler = rows
+                .samplers
+                .get(index as usize)
+                .map_or(katla_gfx::SamplerDescriptor::linear_repeat(), |samplers| {
+                    samplers[0]
+                });
+            let key = (cull, sampler);
+            if let Some(&group) = group_indices.get(&key) {
+                let (_, _, selected): &mut (CullMode, katla_gfx::SamplerDescriptor, Vec<u32>) =
+                    &mut groups[group];
+                selected.push(index);
+            } else {
+                group_indices.insert(key, groups.len());
+                groups.push((cull, sampler, vec![index]));
+            }
+        }
+        for (cull, sampler, selected) in groups {
             let mut variants = Vec::new();
             for pipeline in pipelines {
                 let descriptor =
@@ -168,7 +179,12 @@ impl MaterialPipelines {
                 });
             }
             phases.push(PassDrawPhase {
-                samplers: Vec::new(),
+                samplers: vec![katla_gfx::renderer::frame_bindings::SamplerBinding {
+                    group: 5,
+                    binding: 0,
+                    sampling: sampler,
+                    stages: ShaderStages::FRAGMENT,
+                }],
                 pipelines: variants,
                 constants: Vec::new(),
                 draw: PassDraw::ObjectIndices(selected),
@@ -185,5 +201,76 @@ impl MaterialPipelines {
             });
         }
         Ok(phases)
+    }
+}
+
+/// Group only consecutive sorted objects so transparent compositing order is preserved.
+pub(crate) fn geometry_phases(
+    indices: &[u32],
+    samplers: &[[katla_gfx::SamplerDescriptor; 5]],
+) -> Vec<katla_gfx::renderer::frame_bindings::PassDrawPhase> {
+    use katla_gfx::renderer::frame_bindings::{PassDraw, PassDrawPhase, SamplerBinding};
+    let mut groups: Vec<([katla_gfx::SamplerDescriptor; 5], Vec<u32>)> = Vec::new();
+    for &index in indices {
+        let policy = samplers
+            .get(index as usize)
+            .copied()
+            .unwrap_or_else(|| crate::rendering::MaterialSampling::default().samplers());
+        if let Some((previous, selected)) = groups.last_mut()
+            && *previous == policy
+        {
+            selected.push(index);
+        } else {
+            groups.push((policy, vec![index]));
+        }
+    }
+    if groups.is_empty() {
+        groups.push((
+            crate::rendering::MaterialSampling::default().samplers(),
+            Vec::new(),
+        ));
+    }
+    groups
+        .into_iter()
+        .map(|(policy, selected)| PassDrawPhase {
+            samplers: policy
+                .into_iter()
+                .enumerate()
+                .map(|(binding, sampling)| SamplerBinding {
+                    group: 5,
+                    binding: binding as u32,
+                    sampling,
+                    stages: ShaderStages::FRAGMENT,
+                })
+                .collect(),
+            pipelines: Vec::new(),
+            constants: Vec::new(),
+            draw: PassDraw::ObjectIndices(selected),
+            viewport: None,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_sampler_phases_preserve_nonconsecutive_sorted_object_order() {
+        use katla_gfx::{PassDraw, SamplerDescriptor};
+        let a = [SamplerDescriptor::linear_repeat(); 5];
+        let b = [SamplerDescriptor::nearest_clamp(); 5];
+        let phases = geometry_phases(&[4, 3, 1, 2], &[a, b, a, b, a]);
+        let slots: Vec<_> = phases
+            .iter()
+            .map(|phase| match &phase.draw {
+                PassDraw::ObjectIndices(indices) => indices.clone(),
+                _ => panic!("object phase"),
+            })
+            .collect();
+        assert_eq!(slots, [vec![4], vec![3, 1], vec![2]]);
+        assert_eq!(phases[1].samplers[4].sampling, b[4]);
+        assert!(
+            matches!(&geometry_phases(&[], &[])[0].draw, PassDraw::ObjectIndices(indices) if indices.is_empty())
+        );
     }
 }

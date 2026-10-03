@@ -23,6 +23,10 @@ pub struct DrawableComponent {
     pub emission: TextureHandle,
     /// Surface multipliers and coverage policy owned by this drawable.
     pub surface: crate::rendering::MaterialSurface,
+    /// Per-role sampling properties, independent of image ownership.
+    pub sampling: crate::rendering::MaterialSampling,
+    /// Original generated tangent coordinates; authored tangent bases remain unchanged.
+    pub(crate) tangent_uv: Option<crate::rendering::UvTransform>,
     /// Local-space bounding box for frustum culling
     pub bounds: Option<AABB>,
 }
@@ -40,6 +44,8 @@ impl DrawableComponent {
             ao: 1.0,
             emission: TextureHandle::NONE,
             surface: Default::default(),
+            sampling: Default::default(),
+            tangent_uv: None,
             bounds: None,
         }
     }
@@ -60,6 +66,8 @@ impl DrawableComponent {
             ao: 1.0,
             emission: TextureHandle::NONE,
             surface: Default::default(),
+            sampling: Default::default(),
+            tangent_uv: None,
             bounds: None,
         }
     }
@@ -83,6 +91,8 @@ impl DrawableComponent {
             ao,
             emission: TextureHandle::NONE,
             surface: Default::default(),
+            sampling: Default::default(),
+            tangent_uv: None,
             bounds: None,
         }
     }

@@ -37,20 +37,21 @@ fn native_alpha(skinned: bool) {
 @group(0) @binding(1) var<storage,read> objects: array<ObjectUniforms>;
 @group(0) @binding(2) var<storage,read> surfaces: array<SurfaceParameters>;
 @group(0) @binding(3) var<uniform> probe: vec4u;
-struct Input { @location(0) position: vec3f, @location(3) uv: vec2f, }
-struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(1) @interpolate(flat) slot: u32, }
+@group(5) @binding(0) var albedo_sampler: sampler;
+struct Input { @location(0) position: vec3f, @location(3) uv: vec2f, @location(6) uv1: vec2f, }
+struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(2) uv1: vec2f, @location(1) @interpolate(flat) slot: u32, }
 @vertex fn vs_main(input: Input, @builtin(instance_index) slot: u32) -> Output {
- var out: Output; out.position = frame_data.proj * frame_data.view * objects[slot].model * vec4f(input.position,1); out.uv=input.uv; out.slot=slot; return out;
+ var out: Output; out.position = frame_data.proj * frame_data.view * objects[slot].model * vec4f(input.position,1); out.uv=input.uv; out.uv1=input.uv1; out.slot=slot; return out;
 }
 @fragment fn fs_main(input: Output, @builtin(front_facing) front: bool) -> @location(0) vec4f {
- let obj = objects[input.slot]; let surface=surfaces[input.slot]; let texel=sample_texture(obj.texture_indices.x, input.uv);
+ let obj = objects[input.slot]; let surface=surfaces[input.slot]; let texel=textureSample(bindless_textures[obj.texture_indices.x],albedo_sampler,material_uv(surface,0u,input.uv,input.uv1));
  let alpha=surface_alpha(texel.a * obj.base_color.a, surface);
  if (probe.x == 1u && obj.base_color.r > 0.5) { return vec4f(surface_face_normal(vec3f(0,0,1),front,surface)*0.5+0.5,alpha); }
  return vec4f(obj.base_color.rgb * texel.rgb,alpha);
 }
 "#);
     if skinned {
-        source=source.replace("@location(3) uv: vec2f, }", "@location(3) uv: vec2f, @location(4) joints: vec4u, @location(5) weights: vec4f, }")
+        source=source.replace("@location(6) uv1: vec2f, }", "@location(6) uv1: vec2f, @location(4) joints: vec4u, @location(5) weights: vec4f, }")
             .replace("@vertex fn vs_main", "@group(2) @binding(0) var<storage,read> joints: array<mat4x4f>; @vertex fn vs_main")
             .replace("objects[slot].model * vec4f(input.position,1)", "objects[slot].model * (joints[input.joints.x]*input.weights.x+joints[input.joints.y]*input.weights.y+joints[input.joints.z]*input.weights.z+joints[input.joints.w]*input.weights.w) * vec4f(input.position,1)");
     }
@@ -332,7 +333,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
     }
     let mut variants =
         crate::application::scene_features::material_pipelines::MaterialPipelines::default();
-    for case in 0..11 {
+    for case in 0..13 {
         let mut context = FrameContext::new();
         let mut transform = identity;
         transform[14] = -0.9;
@@ -347,7 +348,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
             transform[0] = -1.;
         }
         let mode = match case {
-            1 | 2 | 8 | 10 => AlphaMode::Mask,
+            1 | 2 | 8 | 10 | 11 | 12 => AlphaMode::Mask,
             3 | 9 => AlphaMode::Blend,
             _ => AlphaMode::Opaque,
         };
@@ -358,7 +359,11 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
                 } else {
                     mesh
                 },
-                if case <= 2 { masked } else { color },
+                if case <= 2 || case >= 11 {
+                    masked
+                } else {
+                    color
+                },
             )
             .with_transform(transform)
             .with_skeleton(skeleton)
@@ -368,7 +373,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
                 0.,
                 if case == 2 {
                     0.4
-                } else if case == 1 || case == 8 {
+                } else if case == 1 || case == 8 || case >= 11 {
                     1.0
                 } else if case == 3 || case == 10 {
                     0.5
@@ -376,6 +381,34 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
                     0.
                 },
             ])
+            .with_sampling(crate::rendering::MaterialSampling {
+                albedo: crate::rendering::TextureSampling {
+                    uv: if case == 11 {
+                        crate::rendering::UvTransform {
+                            tex_coord: 1,
+                            scale: [-1., 1.],
+                            offset: [1., 0.],
+                            ..Default::default()
+                        }
+                    } else if case == 12 {
+                        crate::rendering::UvTransform {
+                            offset: [0.5, 0.],
+                            ..Default::default()
+                        }
+                    } else {
+                        Default::default()
+                    },
+                    sampler: if case == 12 {
+                        katla_gfx::SamplerDescriptor {
+                            address_u: katla_gfx::AddressMode::Repeat,
+                            ..katla_gfx::SamplerDescriptor::nearest_clamp()
+                        }
+                    } else {
+                        katla_gfx::SamplerDescriptor::nearest_clamp()
+                    },
+                },
+                ..Default::default()
+            })
             .with_surface(MaterialSurface {
                 alpha_mode: mode,
                 double_sided: case == 6 || case == 7,
@@ -457,7 +490,10 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
                         material,
                     }],
                     &indices,
-                    &submission.surfaces,
+                    crate::rendering::frame_context::SurfaceRows {
+                        parameters: &submission.surfaces,
+                        samplers: &submission.samplers,
+                    },
                     policy,
                 )
                 .unwrap();
@@ -494,6 +530,10 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
                 .unwrap();
         }
         let mut bindings = PassBindings {
+            phases: crate::application::scene_features::material_pipelines::geometry_phases(
+                &all,
+                &submission.samplers,
+            ),
             constants,
             ..Default::default()
         };
@@ -561,7 +601,10 @@ struct Output { @builtin(position) position: vec4f, @location(0) uv: vec2f, @loc
         app.renderer.present(frame).unwrap();
         for (x, left) in [(1, true), (6, false)] {
             let pixel = read(&mut app, &graph, "color", x);
-            let holes = case == 2 || (case == 1 && left) || matches!(case, 5 | 8 | 9);
+            let holes = case == 2
+                || (case == 1 && left)
+                || (case >= 11 && !left)
+                || matches!(case, 5 | 8 | 9);
             let expected = if holes {
                 [0, 255, 0, 255]
             } else if case == 3 {

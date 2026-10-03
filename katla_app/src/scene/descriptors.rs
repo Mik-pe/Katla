@@ -28,6 +28,9 @@ impl TransformDescriptor {
 pub struct DrawableDescriptor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<crate::rendering::MaterialSurface>,
+    /// Omission preserves the mesh source’s imported sampling settings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sampling: Option<crate::rendering::MaterialSampling>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[f32; 4]>,
     pub metallic: f32,

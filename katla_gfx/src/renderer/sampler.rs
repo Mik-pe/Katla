@@ -98,7 +98,8 @@ impl SamplerDescriptor {
         }
     }
 
-    pub(crate) fn validate(self) -> Result<(), &'static str> {
+    /// Reject unsupported anisotropy and incompatible filtering policies.
+    pub fn validate(self) -> Result<(), &'static str> {
         if !(1..=16).contains(&self.anisotropy) {
             return Err("Sampler anisotropy must be in 1..=16");
         }

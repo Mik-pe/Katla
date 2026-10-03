@@ -24,12 +24,27 @@ struct Object { model: mat4x4f, color: vec4f, params: vec4f, textures: vec4u }
 @group(0) @binding(2) var<storage,read> surfaces: array<SurfaceParameters>;
 @group(0) @binding(3) var<uniform> mode: vec4u;
 @group(1) @binding(0) var textures: binding_array<texture_2d<f32>,4096>;
-struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(flat) object: u32 }
-@vertex fn vs_main(@location(0) position: vec3f, @builtin(instance_index) object: u32) -> Output {
-    var result: Output; result.position = objects[object].model * vec4f(position,1); result.position.y = -result.position.y; result.object = object; return result;
+@group(5) @binding(0) var role0_sampler: sampler;
+@group(5) @binding(1) var role1_sampler: sampler;
+@group(5) @binding(2) var role2_sampler: sampler;
+@group(5) @binding(3) var role3_sampler: sampler;
+@group(5) @binding(4) var role4_sampler: sampler;
+struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(flat) object: u32, @location(1) uv0: vec2f, @location(2) uv1: vec2f }
+@vertex fn vs_main(@location(0) position: vec3f, @location(3) uv0: vec2f, @location(6) uv1: vec2f, @builtin(instance_index) object: u32) -> Output {
+    var result: Output; result.position = objects[object].model * vec4f(position,1); result.position.y = -result.position.y; result.object = object; result.uv0=uv0; result.uv1=uv1; return result;
 }
 @fragment fn fs_main(input: Output) -> @location(0) vec4f {
     let object = objects[input.object];
+    let surface = surfaces[input.object];
+    let basis = material_tangent_basis(input.position.xyz,
+        material_uv(surface,1u,input.position.xy,input.position.xy),
+        vec3f(0,0,1),vec3f(1,0,0),vec3f(0,1,0),surface.normal_occlusion.z > 0.5);
+    if (mode.x >= 7u) { return vec4f(basis[0]*0.5+0.5,1); }
+    if (mode.x == 2u) { return textureSample(textures[object.textures.x],role0_sampler,material_uv(surface,0u,input.uv0,input.uv1)); }
+    if (mode.x == 3u) { return textureSample(textures[object.textures.y],role1_sampler,material_uv(surface,1u,input.uv0,input.uv1)); }
+    if (mode.x == 4u) { return textureSample(textures[object.textures.z],role2_sampler,material_uv(surface,2u,input.uv0,input.uv1)); }
+    if (mode.x == 5u) { return textureSample(textures[object.textures.w],role3_sampler,material_uv(surface,3u,input.uv0,input.uv1)); }
+    if (mode.x == 6u) { return textureSample(textures[u32(object.params.w)],role4_sampler,material_uv(surface,4u,input.uv0,input.uv1)); }
     let texel = textureLoad(textures[object.textures.x], vec2i(0),0);
     if (mode.x == 1u) {
         let surface = surfaces[input.object];
@@ -45,8 +60,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
         "{}\n{shader}",
         include_str!("../../../../resources/shaders/common/material_surface.wgsl")
     );
-    let skin_shader = shader.replace("@vertex fn vs_main(@location(0) position: vec3f, @builtin(instance_index) object: u32)",
-        "@group(2) @binding(0) var<storage,read> joints: array<mat4x4f>; @vertex fn vs_main(@location(0) position: vec3f, @location(4) joint_ids: vec4u, @location(5) weights: vec4f, @builtin(instance_index) object: u32)")
+    let skin_shader = shader.replace("@vertex fn vs_main(@location(0) position: vec3f, @location(3) uv0: vec2f, @location(6) uv1: vec2f, @builtin(instance_index) object: u32)",
+        "@group(2) @binding(0) var<storage,read> joints: array<mat4x4f>; @vertex fn vs_main(@location(0) position: vec3f, @location(3) uv0: vec2f, @location(6) uv1: vec2f, @location(4) joint_ids: vec4u, @location(5) weights: vec4f, @builtin(instance_index) object: u32)")
         .replace("objects[object].model * vec4f(position,1)","objects[object].model * (joints[joint_ids.x]*weights.x + joints[joint_ids.y]*weights.y + joints[joint_ids.z]*weights.z + joints[joint_ids.w]*weights.w) * vec4f(position,1)");
     for name in ["model_pbr.wgsl", "model_pbr_skinned.wgsl"] {
         std::fs::write(
@@ -72,7 +87,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
         ("left.png", [128u8, 255, 255, 255]),
         ("right.png", [255, 128, 255, 255]),
     ] {
-        image::save_buffer(fixture.0.join(name), &pixel, 1, 1, image::ColorType::Rgba8).unwrap();
+        let pixels = [pixel, [0, 0, 255, 255], [255, 0, 0, 255], [0, 255, 0, 255]].concat();
+        image::save_buffer(fixture.0.join(name), &pixels, 2, 2, image::ColorType::Rgba8).unwrap();
     }
     std::fs::write(fixture.0.join("mesh.gltf"),r#"{
         "asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0,"name":"Two surfaces"}],
@@ -125,6 +141,44 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
         )
         .unwrap();
     }
+    let mut document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixture.0.join("mesh.gltf")).unwrap()).unwrap();
+    let mut bytes = std::fs::read(fixture.0.join("mesh.bin")).unwrap();
+    for (set, value) in [(0, [0.25f32, 0.25]), (1, [0.75, 0.75])] {
+        let offset = bytes.len();
+        bytes.extend_from_slice(bytemuck::cast_slice(&[value; 3]));
+        let view = document["bufferViews"].as_array().unwrap().len();
+        let accessor = document["accessors"].as_array().unwrap().len();
+        document["bufferViews"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"buffer":0,"byteOffset":offset,"byteLength":24}));
+        document["accessors"].as_array_mut().unwrap().push(
+            serde_json::json!({"bufferView":view,"componentType":5126,"count":3,"type":"VEC2"}),
+        );
+        for primitive in document["meshes"][0]["primitives"].as_array_mut().unwrap() {
+            primitive["attributes"][format!("TEXCOORD_{set}")] = serde_json::json!(accessor);
+        }
+    }
+    document["buffers"][0]["byteLength"] = serde_json::json!(bytes.len());
+    document["extensionsUsed"] = serde_json::json!(["KHR_texture_transform"]);
+    document["samplers"] = serde_json::json!([{"minFilter":9728,"magFilter":9728,"wrapS":10497,"wrapT":10497},{"minFilter":9728,"magFilter":9728,"wrapS":33071,"wrapT":33071}]);
+    document["textures"][0]["sampler"] = serde_json::json!(0);
+    document["textures"][1]["sampler"] = serde_json::json!(1);
+    for material in document["materials"].as_array_mut().unwrap() {
+        material["pbrMetallicRoughness"]["baseColorTexture"]["extensions"] =
+            serde_json::json!({"KHR_texture_transform":{"texCoord":1,"offset":[0.5,-0.5]}});
+        material["pbrMetallicRoughness"]["metallicRoughnessTexture"] =
+            serde_json::json!({"index":0});
+        material["normalTexture"]["extensions"] = serde_json::json!({"KHR_texture_transform":{"texCoord":1,"scale":[-1,1],"offset":[1,0]}});
+        material["occlusionTexture"]["extensions"] = serde_json::json!({"KHR_texture_transform":{"rotation":std::f32::consts::FRAC_PI_2,"offset":[1,0]}});
+    }
+    std::fs::write(fixture.0.join("mesh.bin"), bytes).unwrap();
+    std::fs::write(
+        fixture.0.join("mesh.gltf"),
+        serde_json::to_vec(&document).unwrap(),
+    )
+    .unwrap();
     let mut app = ApplicationBuilder::new()
         .validation_layer(true)
         .with_frame_graph(|renderer, _| Ok(ApplicationFrameGraph::new(empty_frame_graph(renderer))))
@@ -224,7 +278,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
                     .all(|(_, drawable)| !original_materials.contains(&drawable.material_handle))
             );
         }
-        for mode in 0u32..2 {
+        for mode in 0u32..11 {
             let mut context = crate::rendering::FrameContext::new();
             let mut pipelines = Vec::new();
             for (_, drawable) in app.world.query_ref::<&DrawableComponent>() {
@@ -237,6 +291,24 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
                     },
                     material: drawable.material_handle,
                 });
+                let mut sampling = drawable.sampling;
+                if mode >= 7 {
+                    sampling.normal.uv = match mode {
+                        8 => crate::rendering::UvTransform {
+                            rotation: std::f32::consts::FRAC_PI_2,
+                            ..Default::default()
+                        },
+                        9 => crate::rendering::UvTransform {
+                            scale: [-1., 1.],
+                            ..Default::default()
+                        },
+                        10 => crate::rendering::UvTransform {
+                            scale: [0.; 2],
+                            ..Default::default()
+                        },
+                        _ => Default::default(),
+                    };
+                }
                 context
                     .draw(drawable.mesh_handle, drawable.material_handle)
                     .with_skeleton(drawable.skeleton_handle)
@@ -244,10 +316,21 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
                     .with_pbr(drawable.metallic, drawable.roughness, drawable.ao)
                     .with_emission(drawable.emission)
                     .with_surface(drawable.surface)
+                    .with_sampling(sampling)
+                    .with_tangent_uv(if mode == 7 { None } else { drawable.tangent_uv })
                     .submit();
             }
             let submission = context.take_submission();
             let list = submission.draw_list;
+            let indices: Vec<_> = list.iter().map(|draw| draw.base_object_slot()).collect();
+            let mut phases =
+                crate::application::scene_features::material_pipelines::geometry_phases(
+                    &indices,
+                    &submission.samplers,
+                );
+            for phase in &mut phases {
+                phase.pipelines = pipelines.clone();
+            }
             graph
                 .set_pass_bindings(
                     pass,
@@ -266,13 +349,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
                                 bytes: bytemuck::cast_slice(&[mode, 0, 0, 0]).to_vec(),
                             },
                         ],
-                        phases: vec![PassDrawPhase {
-                            samplers: Vec::new(),
-                            pipelines,
-                            constants: vec![],
-                            draw: PassDraw::Submissions,
-                            viewport: None,
-                        }],
+                        phases,
                         ..Default::default()
                     },
                 )
@@ -320,7 +397,19 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
                 .renderer
                 .graph_texture_source(graph.resource_id("result").unwrap())
                 .unwrap();
-            let expected = if mode == 0 {
+            let expected = if mode >= 2 {
+                let values = match mode {
+                    2 => [[55, 255, 255, 255], [0, 0, 255, 255]],
+                    3 => [[255, 0, 0, 255]; 2],
+                    4 => [[128, 255, 255, 255]; 2],
+                    5 => [[0, 0, 255, 255]; 2],
+                    6 => [[255, 255, 255, 255], [255, 55, 255, 255]],
+                    8 => [[128, 0, 128, 255]; 2],
+                    9 => [[0, 128, 128, 255]; 2],
+                    _ => [[255, 128, 128, 255]; 2],
+                };
+                [([4, 4], values[0]), ([12, 4], values[1])]
+            } else if mode == 0 {
                 [([4, 4], [44u8, 51, 191, 64]), ([12, 4], [26, 50, 51, 204])]
             } else {
                 [([4, 4], [51, 128, 223, 102]), ([12, 4], [153, 242, 160, 6])]
@@ -378,6 +467,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
     );
     desc.drawable = Some(crate::scene::DrawableDescriptor {
         surface: None,
+        sampling: None,
         color: None,
         metallic: 0.33,
         roughness: 0.66,

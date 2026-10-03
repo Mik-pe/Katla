@@ -113,8 +113,16 @@ fn test_native_material_defaults_import_factors_and_texture_color_spaces() {
         height: 1,
     };
     let mut model = crate::util::GLTFModel::new(fixture.0.join("mesh.gltf")).unwrap();
-    model.primitives[0].material.emission_texture = Some(0);
-    model.primitives[0].material.normal_texture = Some(0);
+    model.primitives[0].material.emission_texture =
+        Some(crate::util::gltf_material::GltfTextureInfo {
+            image_index: 0,
+            sampling: Default::default(),
+        });
+    model.primitives[0].material.normal_texture =
+        Some(crate::util::gltf_material::GltfTextureInfo {
+            image_index: 0,
+            sampling: Default::default(),
+        });
     model.images.push(image);
     let upload = app.upload_gltf_textures(
         &fixture.0.join("mesh.gltf"),

@@ -32,7 +32,11 @@ pub(super) fn decode(
     let mut indices = triangulate(primitive.mode(), &source_indices)?;
     u32::try_from(indices.len()).map_err(|_| "Triangle index count exceeds u32")?;
     let normals: Option<Vec<_>> = reader.read_normals().map(Iterator::collect);
-    let tangents: Option<Vec<_>> = reader.read_tangents().map(Iterator::collect);
+    let tangents: Option<Vec<_>> = if normals.is_some() {
+        reader.read_tangents().map(Iterator::collect)
+    } else {
+        None
+    };
     let uv: Option<Vec<_>> = reader
         .read_tex_coords(0)
         .map(|values| values.into_f32().collect());
@@ -52,6 +56,30 @@ pub(super) fn decode(
     if let Some(values) = &uv {
         check_attribute("TEXCOORD_0", values, count)?;
     }
+    let material = GltfMaterialInfo::from_gltf(&primitive.material())?;
+    for (role, texture) in [
+        ("albedo", material.base_color_texture),
+        ("normal", material.normal_texture),
+        ("metallic_roughness", material.metallic_roughness_texture),
+        ("occlusion", material.occlusion_texture),
+        ("emission", material.emission_texture),
+    ] {
+        if let Some(texture) = texture {
+            let set = texture.sampling.uv.tex_coord;
+            if (set == 0 && uv.is_none()) || (set == 1 && uv1.is_none()) {
+                return Err(format!("{role} texture requires missing TEXCOORD_{set}"));
+            }
+        }
+    }
+    let tangent_uv = material
+        .normal_texture
+        .map_or_else(Default::default, |info| info.sampling.uv);
+    let generate_tangents = tangents.is_none()
+        && if tangent_uv.tex_coord == 0 {
+            uv.is_some()
+        } else {
+            uv1.is_some()
+        };
     let skin_index = node.skin().map(|skin| skin.index());
     let joints: Option<Vec<_>> = reader
         .read_joints(0)
@@ -84,7 +112,7 @@ pub(super) fn decode(
             return Err("Skin weights must be nonnegative with a positive sum".into());
         }
     }
-    let expand = normals.is_none() || (tangents.is_none() && uv.is_some());
+    let expand = normals.is_none() || generate_tangents;
     let source_vertices: Vec<usize> = if expand {
         indices.iter().map(|index| *index as usize).collect()
     } else {
@@ -124,8 +152,8 @@ pub(super) fn decode(
             }
         }
     }
-    if tangents.is_none() && uv.is_some() {
-        bevy_mikktspace::generate_tangents(&mut TangentGeometry(&mut vertices))
+    if generate_tangents {
+        bevy_mikktspace::generate_tangents(&mut TangentGeometry(&mut vertices, tangent_uv))
             .map_err(|error| format!("Tangent generation failed: {error}"))?;
     }
     let vertices = if skin_index.is_some() {
@@ -175,7 +203,8 @@ pub(super) fn decode(
             "{} / primitive {primitive_index}",
             node.name().unwrap_or("Mesh")
         ),
-        material: GltfMaterialInfo::from_gltf(&primitive.material()),
+        material,
+        tangent_uv: generate_tangents.then_some(tangent_uv),
         vertices,
         indices,
         bounds: AABB::from_min_max(min, max),
@@ -250,7 +279,7 @@ fn fallback_tangent(normal: Vec3) -> [f32; 4] {
     [tangent.x(), tangent.y(), tangent.z(), 1.0]
 }
 
-struct TangentGeometry<'a>(&'a mut [VertexPBR]);
+struct TangentGeometry<'a>(&'a mut [VertexPBR], crate::rendering::UvTransform);
 
 impl bevy_mikktspace::Geometry for TangentGeometry<'_> {
     fn num_faces(&self) -> usize {
@@ -266,7 +295,12 @@ impl bevy_mikktspace::Geometry for TangentGeometry<'_> {
         self.0[face * 3 + vertex].normal
     }
     fn tex_coord(&self, face: usize, vertex: usize) -> [f32; 2] {
-        self.0[face * 3 + vertex].tex_coord0
+        let vertex = &self.0[face * 3 + vertex];
+        self.1.transform(if self.1.tex_coord == 0 {
+            vertex.tex_coord0
+        } else {
+            vertex.tex_coord1
+        })
     }
     fn set_tangent(
         &mut self,

@@ -43,13 +43,19 @@ use katla_gfx::{
     renderer::{DrawCall, DrawList, InstanceData},
 };
 
-use super::{FrameUniforms, MaterialSurface, SurfaceParameters};
+use super::{FrameUniforms, MaterialSampling, MaterialSurface, SurfaceParameters, UvTransform};
+
+pub(crate) struct SurfaceRows<'a> {
+    pub(crate) parameters: &'a [SurfaceParameters],
+    pub(crate) samplers: &'a [[katla_gfx::SamplerDescriptor; 5]],
+}
 
 /// Geometry and surface values indexed by the draw list's assigned object slots.
 pub struct FrameSubmission {
     /// Core geometry commands retain their slots across filtering and sorting.
     pub draw_list: DrawList,
     pub(crate) surfaces: Vec<SurfaceParameters>,
+    pub(crate) samplers: Vec<[katla_gfx::SamplerDescriptor; 5]>,
 }
 
 /// Per-frame context for submitting draws with automatic instance allocation.
@@ -64,6 +70,7 @@ pub struct FrameContext {
     /// Always set via set_camera() or set_frame_uniforms() before rendering
     frame_uniforms: FrameUniforms,
     surfaces: Vec<SurfaceParameters>,
+    samplers: Vec<[katla_gfx::SamplerDescriptor; 5]>,
 }
 
 impl Default for FrameContext {
@@ -81,6 +88,7 @@ impl FrameContext {
             draw_list: DrawList::new(),
             frame_uniforms: FrameUniforms::default(),
             surfaces: vec![SurfaceParameters::default()],
+            samplers: vec![MaterialSampling::default().samplers()],
         }
     }
 
@@ -144,6 +152,8 @@ impl FrameContext {
             ao: None,
             emission: None,
             surface: MaterialSurface::default(),
+            sampling: MaterialSampling::default(),
+            tangent_uv: None,
             instances: Vec::new(),
         }
     }
@@ -174,6 +184,8 @@ impl FrameContext {
             ao: None,
             emission: None,
             surface: MaterialSurface::default(),
+            sampling: MaterialSampling::default(),
+            tangent_uv: None,
             instances,
         }
     }
@@ -187,6 +199,10 @@ impl FrameContext {
         FrameSubmission {
             draw_list: std::mem::take(&mut self.draw_list),
             surfaces: std::mem::replace(&mut self.surfaces, vec![SurfaceParameters::default()]),
+            samplers: std::mem::replace(
+                &mut self.samplers,
+                vec![MaterialSampling::default().samplers()],
+            ),
         }
     }
 
@@ -194,8 +210,15 @@ impl FrameContext {
     pub fn draw_list(&self) -> &DrawList {
         &self.draw_list
     }
-    fn push_draw(&mut self, draw: DrawCall, surface: MaterialSurface) -> u32 {
+    fn push_draw(
+        &mut self,
+        draw: DrawCall,
+        surface: MaterialSurface,
+        sampling: MaterialSampling,
+        tangent_uv: Option<UvTransform>,
+    ) -> u32 {
         let mut parameters: SurfaceParameters = surface.into();
+        parameters = parameters.with_sampling(sampling, tangent_uv);
         parameters.coverage[3] = f32::from(super::material::mirrored_transform(
             &draw.instances[0].model_matrix,
         ));
@@ -204,6 +227,9 @@ impl FrameContext {
         let end = slot as usize + count;
         self.surfaces.resize(end, SurfaceParameters::default());
         self.surfaces[slot as usize..end].fill(parameters);
+        self.samplers
+            .resize(end, MaterialSampling::default().samplers());
+        self.samplers[slot as usize..end].fill(sampling.samplers());
         slot
     }
 }
@@ -234,11 +260,23 @@ pub struct DrawBuilder<'a> {
     /// Emission texture handle
     emission: Option<TextureHandle>,
     surface: MaterialSurface,
+    sampling: MaterialSampling,
+    tangent_uv: Option<UvTransform>,
     /// Instance data for instanced rendering
     instances: Vec<InstanceData>,
 }
 
 impl<'a> DrawBuilder<'a> {
+    /// Select independent texture coordinates and sampling policies.
+    pub fn with_sampling(mut self, sampling: MaterialSampling) -> Self {
+        self.sampling = sampling;
+        self
+    }
+    pub(crate) fn with_tangent_uv(mut self, tangent_uv: Option<UvTransform>) -> Self {
+        self.tangent_uv = tangent_uv;
+        self
+    }
+
     /// Set the drawable's linear emission and sampled normal/occlusion multipliers.
     pub fn with_surface(mut self, surface: MaterialSurface) -> Self {
         self.surface = surface;
@@ -356,7 +394,9 @@ impl<'a> DrawBuilder<'a> {
             draw = draw.with_skeleton(skeleton);
         }
         if !split {
-            return self.frame.push_draw(draw, self.surface);
+            return self
+                .frame
+                .push_draw(draw, self.surface, self.sampling, self.tangent_uv);
         }
         let base_slot = self.frame.surfaces.len() as u32;
         for instance in draw.instances {
@@ -365,7 +405,8 @@ impl<'a> DrawBuilder<'a> {
                 .with_skeleton(draw.skeleton);
             separated.transparent = draw.transparent;
             separated.instances[0] = instance;
-            self.frame.push_draw(separated, self.surface);
+            self.frame
+                .push_draw(separated, self.surface, self.sampling, self.tangent_uv);
         }
         base_slot
     }

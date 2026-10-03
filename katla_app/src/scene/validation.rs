@@ -349,6 +349,13 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
         f.unit("drawable.metallic", d.metallic);
         f.unit("drawable.roughness", d.roughness);
         f.unit("drawable.ao", d.ao);
+        if let Some(sampling) = d.sampling {
+            f.require(
+                "drawable.sampling",
+                sampling.validate().is_ok(),
+                "sampling requires UV sets 0 or 1, finite transforms and valid color samplers",
+            );
+        }
         if let Some(surface) = d.surface {
             f.require("drawable.surface", surface.validate().is_ok(), "surface properties must be finite; emission nonnegative and occlusion strength within 0..1");
         }

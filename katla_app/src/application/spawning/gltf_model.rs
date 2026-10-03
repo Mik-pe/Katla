@@ -265,6 +265,8 @@ impl Application {
             drawable = drawable.with_bounds(primitive.bounds);
         }
         drawable.emission = upload.emission;
+        drawable.sampling = primitive.material.sampling();
+        drawable.tangent_uv = primitive.tangent_uv;
         drawable.surface = crate::rendering::MaterialSurface {
             emissive_factor: factors.emission_factor,
             normal_scale: factors.normal_scale,

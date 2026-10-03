@@ -92,11 +92,18 @@ fn accumulate_point_lights(
 
 const MAX_JOINTS: u32 = 256u;
 
+@group(5) @binding(0) var albedo_sampler: sampler;
+@group(5) @binding(1) var normal_sampler: sampler;
+@group(5) @binding(2) var mr_sampler: sampler;
+@group(5) @binding(3) var ao_sampler: sampler;
+@group(5) @binding(4) var emission_sampler: sampler;
+
 struct VertexInput {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
     @location(2) vert_tangent: vec4f,  // w component = handedness
     @location(3) vert_texcoord0: vec2f,
+    @location(6) vert_texcoord1: vec2f,
     @location(4) joint_indices: vec4u,
     @location(5) joint_weights: vec4f,
 }
@@ -105,6 +112,7 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4f,
     @location(0) world_pos: vec3f,
     @location(1) tex_coords: vec2f,
+    @location(6) tex_coords1: vec2f,
     @location(2) world_normal: vec3f,
     @location(3) world_tangent: vec3f,
     @location(4) world_bitangent: vec3f,
@@ -141,6 +149,7 @@ fn vs_main(
     out.clip_position = frame_data.proj * frame_data.view * world_pos;
 
     out.tex_coords = in.vert_texcoord0;
+    out.tex_coords1 = in.vert_texcoord1;
 
     let surface_frame = transformed_tangent_frame(
         mat3x3f(obj.model[0].xyz, obj.model[1].xyz, obj.model[2].xyz) *
@@ -167,26 +176,23 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @loca
     let ao_idx = obj.texture_indices.w;
     let emission_idx = u32(obj.material_params.w);
 
-    let albedo_sample = sample_texture(albedo_idx, in.tex_coords);
+    let normal_uv = material_uv(surface, 1u, in.tex_coords, in.tex_coords1);
+    let TBN = material_tangent_basis(in.world_pos, normal_uv, in.world_normal, in.world_tangent, in.world_bitangent, surface.normal_occlusion.z > 0.5);
+    let albedo_sample = textureSample(bindless_textures[albedo_idx], albedo_sampler, material_uv(surface, 0u, in.tex_coords, in.tex_coords1));
     let albedo = albedo_sample.rgb * obj.base_color.rgb;
     let alpha = surface_alpha(albedo_sample.a * obj.base_color.a, surface);
 
-    let normal_sample = sample_texture(normal_idx, in.tex_coords);
+    let normal_sample = textureSample(bindless_textures[normal_idx], normal_sampler, normal_uv);
 
     let tangent_normal = surface_tangent_normal(normal_sample.xyz, surface.normal_occlusion.x);
 
-    let T = normalize(in.world_tangent);
-    let B = normalize(in.world_bitangent);
-    let N = normalize(in.world_normal);
-    let TBN = mat3x3f(T, B, N);
-
     let final_normal = surface_face_normal(normalize(TBN * tangent_normal), front_facing, surface);
 
-    let mr_sample = sample_texture(mr_idx, in.tex_coords);
+    let mr_sample = textureSample(bindless_textures[mr_idx], mr_sampler, material_uv(surface, 2u, in.tex_coords, in.tex_coords1));
     let roughness = max(mr_sample.g * obj.material_params.y, 0.04);
     let metallic = mr_sample.b * obj.material_params.x;
 
-    let ao_sample = sample_texture(ao_idx, in.tex_coords);
+    let ao_sample = textureSample(bindless_textures[ao_idx], ao_sampler, material_uv(surface, 3u, in.tex_coords, in.tex_coords1));
     let ao = surface_occlusion(ao_sample.r, surface.normal_occlusion.y, obj.material_params.z);
 
     let V = normalize(frame_data.camera_position.xyz - in.world_pos);
@@ -212,7 +218,7 @@ fn fs_main(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @loca
 
     let ambient = vec3f(0.15) * albedo * ao;
 
-    let emission = surface_emission(sample_texture(emission_idx, in.tex_coords).rgb, surface.emissive.rgb);
+    let emission = surface_emission(textureSample(bindless_textures[emission_idx], emission_sampler, material_uv(surface, 4u, in.tex_coords, in.tex_coords1)).rgb, surface.emissive.rgb);
 
     let color = ambient + Lo + emission;
 
