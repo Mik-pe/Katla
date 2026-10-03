@@ -301,6 +301,13 @@ impl MetalRenderer {
             .get(material)
             .map(|mat| mat.textures)
             .unwrap_or_default();
+        self.resolve_texture_slots_impl(textures)
+    }
+
+    pub(crate) fn resolve_texture_slots_impl(
+        &self,
+        textures: crate::renderer::registry::MaterialTextures,
+    ) -> [u32; 4] {
         [
             self.get_bindless_slot_impl(textures.albedo).unwrap_or(0),
             self.get_bindless_slot_impl(textures.normal).unwrap_or(0),

@@ -1,6 +1,7 @@
 //! Native output and queued-slot checks for application-owned compute buffers.
 
 mod animation;
+mod draw_textures;
 mod material_reloads;
 mod materials;
 mod samplers;

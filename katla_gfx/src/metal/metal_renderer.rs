@@ -529,7 +529,9 @@ impl MetalRenderer {
     pub(crate) fn execute_draw_calls(&mut self, draw_list: &DrawList) -> Result<(), RendererError> {
         self.ensure_uniform_buffers()?;
 
-        let object_buf = self.current_object_storage_buffer().unwrap();
+        let object_buf = self.current_object_storage_buffer().ok_or_else(|| {
+            RendererError::InvalidOperation("Prepared object storage buffer is unavailable".into())
+        })?;
         let buf_size = object_buf.size() as usize;
         validate_object_buffer_capacity(draw_list, buf_size)?;
         let ptr = object_buf.map();
@@ -541,7 +543,10 @@ impl MetalRenderer {
             let emission_slot = self.resolve_emission_texture_slot_impl(draw.emission) as f32;
             let material_params = draw.material_params(emission_slot);
 
-            let tex_indices: [u32; 4] = self.resolve_material_texture_slots_impl(draw.material);
+            let tex_indices = draw.textures.map_or_else(
+                || self.resolve_material_texture_slots_impl(draw.material),
+                |textures| self.resolve_texture_slots_impl(textures),
+            );
 
             for (i, instance) in draw
                 .instances

@@ -58,6 +58,13 @@ renderer.set_material_textures(material, MaterialTextures {
 });
 ```
 
+`DrawCall::with_textures(MaterialTextures { ... })` overrides the four bindings
+for that draw and all its instances while leaving the material unchanged.
+`FrameContext` exposes the same operation through `DrawBuilder`. Omission uses
+the material's bindings. Emission remains a separate draw texture handle.
+Prepared object rows retain their resolved slots across sorting, pass selection
+and frame-slot reuse. Submitted native bindings retain retired image allocations.
+
 Handles retain generation checks. Backends resolve them to bindless slots only
 when preparing draws. `TextureHandle::NONE` and stale handles resolve to slot
 zero, the core's generic white fallback. This protects against sampling a

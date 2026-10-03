@@ -39,7 +39,7 @@
 //! ```
 
 use katla_gfx::{
-    MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle,
+    MaterialHandle, MaterialTextures, MeshHandle, SkeletonHandle, TextureHandle,
     renderer::{DrawCall, DrawList, InstanceData},
 };
 
@@ -150,6 +150,7 @@ impl FrameContext {
             metallic: None,
             roughness: None,
             ao: None,
+            textures: None,
             emission: None,
             surface: MaterialSurface::default(),
             sampling: MaterialSampling::default(),
@@ -182,6 +183,7 @@ impl FrameContext {
             metallic: None,
             roughness: None,
             ao: None,
+            textures: None,
             emission: None,
             surface: MaterialSurface::default(),
             sampling: MaterialSampling::default(),
@@ -259,6 +261,7 @@ pub struct DrawBuilder<'a> {
     ao: Option<f32>,
     /// Emission texture handle
     emission: Option<TextureHandle>,
+    textures: Option<MaterialTextures>,
     surface: MaterialSurface,
     sampling: MaterialSampling,
     tangent_uv: Option<UvTransform>,
@@ -304,6 +307,12 @@ impl<'a> DrawBuilder<'a> {
         self.metallic = Some(metallic);
         self.roughness = Some(roughness);
         self.ao = Some(ao);
+        self
+    }
+
+    /// Override images for this draw while preserving its shared material.
+    pub fn with_textures(mut self, textures: MaterialTextures) -> Self {
+        self.textures = Some(textures);
         self
     }
 
@@ -389,6 +398,7 @@ impl<'a> DrawBuilder<'a> {
             });
         let mut draw = DrawCall::instanced(self.mesh, self.material, instances)
             .with_emission(self.emission.unwrap_or(TextureHandle::NONE));
+        draw.textures = self.textures;
         draw.transparent = self.surface.alpha_mode == super::AlphaMode::Blend;
         if let Some(skeleton) = self.skeleton {
             draw = draw.with_skeleton(skeleton);
@@ -403,6 +413,7 @@ impl<'a> DrawBuilder<'a> {
             let mut separated = DrawCall::new(draw.mesh, draw.material)
                 .with_emission(draw.emission)
                 .with_skeleton(draw.skeleton);
+            separated.textures = draw.textures;
             separated.transparent = draw.transparent;
             separated.instances[0] = instance;
             self.frame
@@ -425,12 +436,17 @@ mod tests {
         second.model_matrix[14] = -1.75;
         let mut third = InstanceData::default();
         third.model_matrix[14] = -1.5;
+        let textures = MaterialTextures {
+            albedo: TextureHandle::from_raw(77, 2),
+            ..Default::default()
+        };
         let base = context
             .draw_instanced(
                 MeshHandle::NONE,
                 MaterialHandle::NONE,
                 vec![first.clone(), second.clone(), third],
             )
+            .with_textures(textures)
             .with_surface(MaterialSurface {
                 alpha_mode: super::super::AlphaMode::Blend,
                 ..Default::default()
@@ -458,6 +474,20 @@ mod tests {
         assert_eq!(
             submission.surfaces[(opaque + 1) as usize].cull_mode(),
             katla_gfx::CullMode::Back
+        );
+        assert!(
+            submission
+                .draw_list
+                .iter()
+                .filter(|draw| draw.transparent)
+                .all(|draw| draw.textures == Some(textures))
+        );
+        assert!(
+            submission
+                .draw_list
+                .iter()
+                .filter(|draw| !draw.transparent)
+                .all(|draw| draw.textures.is_none())
         );
         assert_eq!(submission.surfaces.len(), 6);
     }

@@ -131,7 +131,10 @@ impl VulkanRenderer {
             // here, right before the upload. Emission resolves to 0 for
             // NONE/stale handles, keeping the shader's no-emission sentinel.
             let emission_idx = self.resolve_emission_texture_slot(draw_call.emission) as f32;
-            let texture_indices = self.resolve_material_texture_slots(draw_call.material);
+            let texture_indices = draw_call.textures.map_or_else(
+                || self.resolve_material_texture_slots(draw_call.material),
+                |textures| self.resolve_texture_slots(textures),
+            );
 
             for (i, instance) in draw_call
                 .instances

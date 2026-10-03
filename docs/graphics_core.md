@@ -19,6 +19,10 @@ graphics pipelines share immutable state when their resolved descriptors and
 expanded shader contents match. File paths do not affect native reuse; dependency
 tracking still uses each material's canonical source paths. Weak cache entries do
 not retain native pipelines after material and submission owners release them.
+`DrawCall::with_textures` selects draw-local image bindings without mutating the
+shared material. Omission inherits the material's images; object preparation
+resolves either set through generation-checked handles. App `DrawBuilder` keeps
+these bindings when splitting transparent or mixed-handedness instances.
 Graphics passes carry `PassBindings`: reflected buffers, images, samplers and immutable inline
 bytes, plus explicit drawing phases. A phase selects mesh-layout pipelines,
 submitted objects, generated vertices or a declared indirect buffer. Pipeline

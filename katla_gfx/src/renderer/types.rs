@@ -8,6 +8,7 @@ use std::rc::Rc;
 use smallvec::{SmallVec, smallvec};
 
 use crate::handle::{MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle};
+use crate::renderer::registry::MaterialTextures;
 use crate::vertex::VertexUI;
 use crate::vertex::VertexUIInstance;
 
@@ -92,6 +93,8 @@ pub struct DrawCall {
     pub mesh: MeshHandle,
     /// Material/shader to use.
     pub material: MaterialHandle,
+    /// Optional draw-local image bindings; omission uses the material bindings.
+    pub textures: Option<MaterialTextures>,
     /// Base object storage slot (Set 0, Binding 1) assigned by `DrawList::push`.
     /// Covers slots `base_object_slot() .. base_object_slot() + instance_count()`.
     pub(crate) instance_index: u32,
@@ -118,6 +121,7 @@ impl DrawCall {
             mesh,
             material,
             instance_index: 0, // Will be set by FrameContext
+            textures: None,
             emission: TextureHandle::NONE,
             transparent: false,
             sort_key: None,
@@ -140,6 +144,7 @@ impl DrawCall {
             mesh,
             material,
             instance_index: 0, // Will be set by FrameContext
+            textures: None,
             emission: TextureHandle::NONE,
             transparent: false,
             sort_key: None,
@@ -198,6 +203,12 @@ impl DrawCall {
     /// Set ambient occlusion factor on the first instance (0.0 = occluded, 1.0 = no occlusion).
     pub fn with_ao(mut self, ao: f32) -> Self {
         self.with_first_instance_mut(|inst| inst.ao = ao);
+        self
+    }
+
+    /// Override image bindings for this draw without changing its material.
+    pub fn with_textures(mut self, textures: MaterialTextures) -> Self {
+        self.textures = Some(textures);
         self
     }
 

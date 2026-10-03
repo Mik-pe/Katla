@@ -214,6 +214,11 @@ within one pass verify phase sampler overrides and restoration of the base polic
 They run in Linux's graphics library tier and Metal's capability-gated native tier;
 they do not compile the full scene PBR shader. Physical Vulkan acceptance passes;
 physical Metal evidence remains outstanding.
+A draw-local image fixture submits distinct image sets using one material,
+including multiple instances and inherited bindings. It checks four native color
+channels in separate viewports, unchanged material state, retirement after an
+accepted submission, stale-handle fallback despite slot recycling, and reuse
+across more frames than the backend's ownership slot count.
 The same tier checks independent UV0/UV1 values in static and skinned vertex
 readbacks, including joint/weight locations and the submitted mesh buffer order.
 

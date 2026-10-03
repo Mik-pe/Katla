@@ -104,8 +104,8 @@ impl VulkanRenderer {
 
     /// Resolve a material's typed texture bindings to bindless slots.
     ///
-    /// This is the only place material texture handles become shader-visible
-    /// numbers. `NONE` and stale handles resolve to the role's default
+    /// Object preparation uses the same resolution for material and draw-local
+    /// bindings. `NONE` and stale handles resolve to the role's default
     /// texture slot, so a dead handle can never sample whatever texture now
     /// occupies a recycled slot. Public for validation against the prepared
     /// binding table (tests and diagnostics).
@@ -115,6 +115,10 @@ impl VulkanRenderer {
             .get_material(material)
             .map(|m| m.textures)
             .unwrap_or_default();
+        self.resolve_texture_slots(textures)
+    }
+
+    pub(crate) fn resolve_texture_slots(&self, textures: MaterialTextures) -> [u32; 4] {
         [
             self.resolve_texture_slot(textures.albedo, 0),
             self.resolve_texture_slot(textures.normal, 0),
