@@ -174,3 +174,10 @@ them before loading. Rendering, bounds, lights, audio, particles and physics use
 the same resolver, including newly instantiated prefabs before the next ECS tick.
 `TransformOptimization` avoids rewriting unchanged cached poses; it does not make
 hierarchy traversal O(D). Incremental topology and dirty-root work remain in TODO.
+
+## Odin port experiment
+
+The standalone CPU port and compilation comparison live in `odin/ecs` and
+`odin/editor`. See [Odin ECS](ecs_odin.md) for API mapping, dependency replacements,
+ownership differences and reproducible measurements. The Rust engine continues
+to use this crate.

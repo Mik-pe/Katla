@@ -1,0 +1,1398 @@
+{
+  "captured_at": "2026-10-03T20:09:30.221595+00:00",
+  "base_commit": "a44fb83e8d49e595f36c4bccd871d25746728096",
+  "hardware": "Apple M5",
+  "logical_cpus": 10,
+  "memory_bytes": 25769803776,
+  "os": "macOS-27.0-arm64-arm-64bit-Mach-O",
+  "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: aarch64-apple-darwin\nrelease: 1.99.0\nLLVM version: 23.1.1",
+  "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+  "odin": "/opt/homebrew/bin/odin version dev-2026-09:a2fb372b7",
+  "odin_root": "/opt/homebrew/Cellar/odin/2026-09/libexec/",
+  "compiler_binaries": {
+    "cargo": "/Users/mikpe/.cargo/bin/cargo",
+    "rustc": "/Users/mikpe/.cargo/bin/rustc",
+    "odin": "/opt/homebrew/bin/odin"
+  },
+  "samples": 5,
+  "sources": {
+    "benchmarks/ecs_compile/rust/Cargo.lock": "cfcf9f7fe8c09097f9ef50317dc05f38cf9fa1f69a98b718d766128364709b5f",
+    "benchmarks/ecs_compile/rust/Cargo.toml": "225f6cc49ca6774d4ddc28921a9fa3e127e943d346480572b7c4b306f5959c5d",
+    "benchmarks/ecs_compile/rust/src/main.rs": "2387f01a3639da8ad0adf921c2d297eb508c17ebda978bd94b7f288487168079",
+    "katla_derive/Cargo.toml": "094f6261daa234885aab26a5c923fb76694ce252dd6e257786118fd2a24f5db8",
+    "katla_derive/src/lib.rs": "18250029afd555a927f4abb0e95426b705ab90fc3432352dd6cafb2867aefd5e",
+    "katla_ecs/Cargo.toml": "ee7f0890f4a27d045a0815090059cdeb85e1bfe46ddb44f32e1e17d4a3fcab78",
+    "katla_ecs/src/agent/harness.rs": "4673460b42fec744e8fdb89f659973ebb8122e665e037fb41b0a99b9eecbd041",
+    "katla_ecs/src/agent/mod.rs": "f555b3f9129509ba85570e14a6268c9b02da43d2c236eed85648a90b07a96895",
+    "katla_ecs/src/agent/observation.rs": "1f1ffce15adca3db504a867aa20fb82c8a125f9ec3116341c3daee0c18b795bb",
+    "katla_ecs/src/agent/session.rs": "4c4feba9ef78e3f866f0f9c949eb80f2d0bbd58c754cd328860f9694d2eeb4f3",
+    "katla_ecs/src/agent/tests.rs": "2c56c7cc3d4878d80888facb86905bf0bf22f74198819f4df40dc5c29e505e9a",
+    "katla_ecs/src/components.rs": "563014f59bc3dc181ec7a66bf96c353467289b6897b34966e2f24a324cc44c32",
+    "katla_ecs/src/entity.rs": "796aab007e1d246e0336634322f390747841707577da4fa449dd7486c61d0479",
+    "katla_ecs/src/entity_allocator.rs": "cd5542e8b56a6a6897b59d3e1dc2b1af26c9470bb86749daae64a04da274e0be",
+    "katla_ecs/src/entity_slot.rs": "e62eb37f54a1cb86e0eddb7d692273baed4a30098527338c94f3a7aa4d9488a7",
+    "katla_ecs/src/events.rs": "a02de0cb7e769e60eff7c3614aaf5c5f060a3c2f2c51d06a95baee8fbef50819",
+    "katla_ecs/src/inspect.rs": "f553ccc5468ba6f7128f380d5468cec8ed0accf65a4005cbbecb00077143b9d2",
+    "katla_ecs/src/lib.rs": "b1a13f72c1ceb145a077d6482509bf1be60bd853314b7029e5ebcbdac7b68f28",
+    "katla_ecs/src/params/commands.rs": "9912ad81ac7ac4d15e20bf630d97394cb26edac1887a42618eee123e6c2b1e15",
+    "katla_ecs/src/params/events.rs": "8b3a95a2eb8685b56a766a63200258601925fd18c4579336f4c143e9e3e6909b",
+    "katla_ecs/src/params/local.rs": "03b65ec7a7ad3971281ec37a5c50343933707dd9291b641d3b4deeae050cb467",
+    "katla_ecs/src/params/resources.rs": "2d79ea30e53ddfafa6b354e7aa82f400f83236e89ccb3241897624b1524b6b64",
+    "katla_ecs/src/params/tests.rs": "2a7384374511a5bc76017be02da2a27b2116735a390d186d1dedffb8aadf8003",
+    "katla_ecs/src/params.rs": "c1c97bc39ac68d71462fe6fd6afb002f36e082aac7f18f6dd8268d3722ed0a16",
+    "katla_ecs/src/query/filter.rs": "94317b3e4b631a476848bb7af454d5e2b6577a3df7a3cbd0f3035334b90c47bc",
+    "katla_ecs/src/query/macros.rs": "fe67806bf2077dded12db9eb08f5dd5f6caf32f5b314982a53f427ff26b5fe18",
+    "katla_ecs/src/query/mod.rs": "f6d6cd74b814aeb577b22d2e7244e91aff4948c04848ffe27ea722230efea735",
+    "katla_ecs/src/query/par_query.rs": "0a0a01c47aa2437e742d9c04fea3c90c6bb76288be130777760ca8550938a462",
+    "katla_ecs/src/resource.rs": "5765ffedf38428518d00cf9aa388f7d7e1e931e2cdd46f70189c0aa8e5daabb7",
+    "katla_ecs/src/scene_tool/command.rs": "9710a405d4f068eff668fd00509af2271119df0afb3daafb1492467ee9e2f5b8",
+    "katla_ecs/src/scene_tool/executor.rs": "3b028c8a4f012b592d974654f6a18203aba066faeedd0f8eb432537f2269df0c",
+    "katla_ecs/src/scene_tool/mod.rs": "aefcb7985440c7f83785f75f8f77ca254543d4bfb3664e6d7776d7fc431177db",
+    "katla_ecs/src/scene_tool/registry.rs": "25749ee37a8980750bce03f0ae56d7628e5e125ea636a8cb6f44d3d88512ae1b",
+    "katla_ecs/src/scene_tool/tests.rs": "4aa552967576d407c3e81a32af3e91ef1c999ca77eed61a680f3f9a9c9794be3",
+    "katla_ecs/src/scheduler/tests/components.rs": "b16e476df9b78212e64aeb673b9580e2103aa83620a29aab8ed299d915294867",
+    "katla_ecs/src/scheduler/tests/mod.rs": "bf2ac5e9c1b502d1b3bee08105d8d55b07acc8580c4aa5d25233eb1ae2df1a31",
+    "katla_ecs/src/scheduler/tests/resources.rs": "0df96ffc6bb0e11c8be2d1e7d998c30b2bba496e21afcd76f3ca4577e0b05e7a",
+    "katla_ecs/src/scheduler.rs": "6f5adaf1150df612c99cc57291ee11adbdf7a65a2980fcb79e7a9b04d7dd055b",
+    "katla_ecs/src/sparse_set/tests.rs": "889bf0dc20eda2821dd8f34033e5ea3c7db4d856356a3b1b1cb9f3460141a200",
+    "katla_ecs/src/sparse_set.rs": "8e33f231c9fa63132b1ceef33c7d639cef657001083ed7ec51b25244b94502e8",
+    "katla_ecs/src/spawn.rs": "bd4f463ce353e2d4939c8059c35f2985ef9286b84749c7c07ade59bd13ed9232",
+    "katla_ecs/src/storage.rs": "fddba52f59575a72b5e545600bdecee255f1cb5d9b7452914d3f4b1239a785f7",
+    "katla_ecs/src/system.rs": "3bef0e95aaac83aa13f1d4cae095bf18a603febd3ab7a06643764d3d050c79d8",
+    "katla_ecs/src/typed_query.rs": "59d11eb0535bdc280b0a2442886057e795e5ad93a88931a1a7af9418f3259a73",
+    "katla_ecs/src/world/queries.rs": "859276b49a9b19ab8c525c92067abdaae985fcd4600f965af265437e053f821a",
+    "katla_ecs/src/world/resources.rs": "dde4f8e1a38f0d0a6651d4143776cf8cba01e3a8073d839568b892f858d448e3",
+    "katla_ecs/src/world/systems.rs": "3fecc46147a8458da597b59ed664ff55cdc2efbb95791917c083243013426bb1",
+    "katla_ecs/src/world/tests/changes.rs": "0c10ca6d2e35f6f29c786998cc758863fca3b7dfdb460173b5ba76212fdc28cd",
+    "katla_ecs/src/world/tests/entities.rs": "8209bf0c7e6d559a1d5776b90011dc735459f1d52a64e0dc7fb6abd538c9f07d",
+    "katla_ecs/src/world/tests/events.rs": "bbfe109aea00703d5d1b5a6fa324ce7b50f95a6156d46b3e147c201d8ade9327",
+    "katla_ecs/src/world/tests/mod.rs": "ae0805268da42a6bc25bd8e0150b6c405b68fc457a534c3b9c41c370e7acfb6e",
+    "katla_ecs/src/world/tests/parallel_queries.rs": "ded6dc34eb5932191b9e7e2f3e11183f6c87e733148a11b18181a7a127780828",
+    "katla_ecs/src/world/tests/queries.rs": "fe84c742a0a0e524db374fc8cda97d9d20576b84e6adbf74be413a9200c5c46b",
+    "katla_ecs/src/world/tests/systems.rs": "d2113329813f3d18f861367a95f39f4439c668a4dfa594fada1fc66ba4b022cb",
+    "katla_ecs/src/world/tests/tracking.rs": "5450a04d9692eb051741aa073fd912ee2586cdeb84b4c93ab1721d6b35cc6841",
+    "katla_ecs/src/world/tests/validation.rs": "aa9febf56bf357a9b11bc8120876475e27a34a856a3dd259d0e535b59432ed4b",
+    "katla_ecs/src/world/validation.rs": "f3265fe557ee4909b3b198f1590c0120cdf5cdb37b56df1989fb4af1918335ea",
+    "katla_ecs/src/world.rs": "fd5c7ca4575b7b28a89a801d0a46c5c38faca4e2438b2d2cd0b58faf0fb87e14",
+    "odin/compile_workload/main.odin": "9720b319b79626ebfa83215514da50884766e028cf8382cb2bfd4e44def87934",
+    "odin/ecs/commands.odin": "3dea58782e3ed993f838152fbbd44556e2e14b14b6e0815ce43cca65f8a8f539",
+    "odin/ecs/ecs_test.odin": "7b83bdba9a7881805105a55de349b927d09b2dfc787e2283671583e87e9ef6a5",
+    "odin/ecs/entity.odin": "e14446ae8db0e8866da15efc603ac9362906fae38feaefd8a9b59d70134a2da0",
+    "odin/ecs/params.odin": "d061c7874ca85740e1252c348168f17ad26c0b21e5a0495936a76f9a546fba74",
+    "odin/ecs/query.odin": "da19b12bc848d796fe0189519e8207204366c1e5c954e80b0df76ab316a7dcbc",
+    "odin/ecs/resources.odin": "6d24140f947c39358f7fb48d0e98c247491a3b8944ede1867fc8e9d8368b1624",
+    "odin/ecs/storage.odin": "0eb5bc05911f8e5245b65afda83d6536bcbe90fca84ff463c2281d0108e8a96b",
+    "odin/ecs/systems.odin": "b70d9acfa980e8ed4c2a02287ebed0005ad6bc1fc22e8498e5c0ee51db9ef8e5",
+    "odin/ecs/world.odin": "89c86a25e7e79c4e2505ca5bdb75d05e1b1c071c3e74933c5a57ba9525004c14",
+    "odin/editor/agent.odin": "91a063ae7bc2f84e7cc995a1ad5361bfc169514beba52932ec528e8bca002d43",
+    "odin/editor/editor.odin": "7a3800583e1b312ecf8b1290e4bfbcbbca32a619d0523f38a703acd178e61d5e",
+    "odin/editor/editor_test.odin": "9d7ba55a842422df78fab1dbf96217080ff3faec8ca9adeec0ec2d5a90b449fe",
+    "odin/editor_workload/main.odin": "1cea94aaa52190eb95d1f7414747445ce7624ff847c04bb12e1896285ab59af2",
+    "odin/workload/workload.odin": "610578219f290aca2a2c1d0bbf419e7c55b7781bd09b80cc54730b5180a92a57",
+    "scripts/measure_ecs_compile.py": "c7335abd5a5d2f2b2de7eb7b2315f862b6e3439ebffed14213c3cdae8a4af9d6"
+  },
+  "method": {
+    "ordering": "paired sequential builds, alternate Rust/Odin first per sample; no simultaneous builds",
+    "clean": "remove variant-owned compiler output; dependency source and OS caches stay warm; offline Rust",
+    "dependencies_warm": "retain third-party Rust artifacts and katla_derive, remove ECS and consumer artifacts; Odin rebuilds the entire program",
+    "library_edit": "alternate default parallel work threshold 32768/32769; sequential output unchanged",
+    "application_edit": "alternate STEP 1.0/2.0; complete matched consumer package rebuilt",
+    "no_change": "unchanged source and previous outputs; Cargo freshness versus Odin whole-program rebuild",
+    "check_clean": "cargo check versus odin check, clean artifacts, dev profile only, no link",
+    "dev": "Rust opt-level 1, debug 1, incremental; Odin -debug -o:minimal",
+    "release": "Rust opt-level 3, thin LTO, one codegen unit, no incremental; Odin -o:speed, default whole-module backend",
+    "excluded": "downloads, compiler installation, tests, graphics, engine build and runtime timing",
+    "cache_wrappers": "real Cargo/rustc paths; RUSTC_WRAPPER and workspace wrapper cleared; isolated CARGO_TARGET_DIR",
+    "limitations": "same observable workload, different implementations and language safety guarantees; no affinity, frequency or filesystem-cache controls"
+  },
+  "commands": [
+    {
+      "feature": "core",
+      "profile": "dev",
+      "rust": [
+        "/Users/mikpe/.cargo/bin/cargo",
+        "build",
+        "--manifest-path",
+        "/var/folders/0x/shpdrf8j3j3f0d8qn479_lr40000gn/T/katla-ecs-compile-ob5nn2aq/core-dev/benchmarks/ecs_compile/rust/Cargo.toml",
+        "--locked",
+        "--offline"
+      ],
+      "odin": [
+        "/opt/homebrew/bin/odin",
+        "build",
+        "odin/compile_workload",
+        "-out:/var/folders/0x/shpdrf8j3j3f0d8qn479_lr40000gn/T/katla-ecs-compile-ob5nn2aq/core-dev/target-odin",
+        "-debug",
+        "-o:minimal"
+      ]
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "rust": [
+        "/Users/mikpe/.cargo/bin/cargo",
+        "build",
+        "--manifest-path",
+        "/var/folders/0x/shpdrf8j3j3f0d8qn479_lr40000gn/T/katla-ecs-compile-ob5nn2aq/core-release/benchmarks/ecs_compile/rust/Cargo.toml",
+        "--locked",
+        "--offline",
+        "--release"
+      ],
+      "odin": [
+        "/opt/homebrew/bin/odin",
+        "build",
+        "odin/compile_workload",
+        "-out:/var/folders/0x/shpdrf8j3j3f0d8qn479_lr40000gn/T/katla-ecs-compile-ob5nn2aq/core-release/target-odin",
+        "-o:speed"
+      ]
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "rust": [
+        "/Users/mikpe/.cargo/bin/cargo",
+        "build",
+        "--manifest-path",
+        "/var/folders/0x/shpdrf8j3j3f0d8qn479_lr40000gn/T/katla-ecs-compile-ob5nn2aq/editor-dev/benchmarks/ecs_compile/rust/Cargo.toml",
+        "--locked",
+        "--offline",
+        "--features",
+        "editor"
+      ],
+      "odin": [
+        "/opt/homebrew/bin/odin",
+        "build",
+        "odin/editor_workload",
+        "-out:/var/folders/0x/shpdrf8j3j3f0d8qn479_lr40000gn/T/katla-ecs-compile-ob5nn2aq/editor-dev/target-odin",
+        "-debug",
+        "-o:minimal"
+      ]
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "rust": [
+        "/Users/mikpe/.cargo/bin/cargo",
+        "build",
+        "--manifest-path",
+        "/var/folders/0x/shpdrf8j3j3f0d8qn479_lr40000gn/T/katla-ecs-compile-ob5nn2aq/editor-release/benchmarks/ecs_compile/rust/Cargo.toml",
+        "--locked",
+        "--offline",
+        "--features",
+        "editor",
+        "--release"
+      ],
+      "odin": [
+        "/opt/homebrew/bin/odin",
+        "build",
+        "odin/editor_workload",
+        "-out:/var/folders/0x/shpdrf8j3j3f0d8qn479_lr40000gn/T/katla-ecs-compile-ob5nn2aq/editor-release/target-odin",
+        "-o:speed"
+      ]
+    }
+  ],
+  "checksums": [
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 0,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 1,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 2,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 3,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 4,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 0,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 1,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 2,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 3,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 4,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 0,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 1,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 2,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 3,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 4,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 0,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 1,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 2,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 3,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 4,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 0,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 1,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 2,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 3,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 4,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 0,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 1,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 2,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 3,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 4,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 0,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 1,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 2,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 3,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 4,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 0,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 1,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 2,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 3,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 4,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 0,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 1,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 2,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 3,
+      "step": 1,
+      "value": "18407939"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 4,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 0,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 1,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 2,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 3,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 4,
+      "step": 2,
+      "value": "18419059"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 0,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 1,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 2,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 3,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "clean",
+      "sample": 4,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 0,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 1,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 2,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 3,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "sample": 4,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 0,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 1,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 2,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 3,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "sample": 4,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 0,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 1,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 2,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 3,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "sample": 4,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 0,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 1,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 2,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 3,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "no_change",
+      "sample": 4,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 0,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 1,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 2,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 3,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "clean",
+      "sample": 4,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 0,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 1,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 2,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 3,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "sample": 4,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 0,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 1,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 2,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 3,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "library_edit",
+      "sample": 4,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 0,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 1,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 2,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 3,
+      "step": 1,
+      "value": "18407964"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "application_edit",
+      "sample": 4,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 0,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 1,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 2,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 3,
+      "step": 2,
+      "value": "18419084"
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "no_change",
+      "sample": 4,
+      "step": 2,
+      "value": "18419084"
+    }
+  ],
+  "summary": [
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "clean",
+      "rust": {
+        "median_seconds": 2.699639917,
+        "min_seconds": 2.637701333,
+        "max_seconds": 3.036606667,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.325729,
+        "min_seconds": 0.3203785,
+        "max_seconds": 0.334784666,
+        "samples": 5
+      },
+      "rust_over_odin": 8.287993752475217
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "rust": {
+        "median_seconds": 1.018204875,
+        "min_seconds": 0.99048925,
+        "max_seconds": 1.026718083,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.326288708,
+        "min_seconds": 0.324848666,
+        "max_seconds": 0.351459375,
+        "samples": 5
+      },
+      "rust_over_odin": 3.1205642427564486
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "rust": {
+        "median_seconds": 0.487094041,
+        "min_seconds": 0.474404167,
+        "max_seconds": 0.492304792,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.346186041,
+        "min_seconds": 0.325071416,
+        "max_seconds": 0.354235291,
+        "samples": 5
+      },
+      "rust_over_odin": 1.407029698808682
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "rust": {
+        "median_seconds": 0.281504125,
+        "min_seconds": 0.280105833,
+        "max_seconds": 0.293300375,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.335768625,
+        "min_seconds": 0.329377375,
+        "max_seconds": 0.353079833,
+        "samples": 5
+      },
+      "rust_over_odin": 0.8383872227489987
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "no_change",
+      "rust": {
+        "median_seconds": 0.134603792,
+        "min_seconds": 0.133723625,
+        "max_seconds": 0.148691459,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.335098709,
+        "min_seconds": 0.326147125,
+        "max_seconds": 0.344088542,
+        "samples": 5
+      },
+      "rust_over_odin": 0.4016840064877719
+    },
+    {
+      "feature": "core",
+      "profile": "dev",
+      "scenario": "check_clean",
+      "rust": {
+        "median_seconds": 2.240235042,
+        "min_seconds": 1.9472335,
+        "max_seconds": 2.377632958,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.065254709,
+        "min_seconds": 0.0608345,
+        "max_seconds": 0.066469708,
+        "samples": 5
+      },
+      "rust_over_odin": 34.33062649930751
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "clean",
+      "rust": {
+        "median_seconds": 4.850359583,
+        "min_seconds": 4.238118583,
+        "max_seconds": 4.967863334,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 1.6336915,
+        "min_seconds": 1.596695334,
+        "max_seconds": 1.707461,
+        "samples": 5
+      },
+      "rust_over_odin": 2.9689568581338643
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "rust": {
+        "median_seconds": 2.557895666,
+        "min_seconds": 2.49610875,
+        "max_seconds": 2.626813791,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 1.411684375,
+        "min_seconds": 1.384533083,
+        "max_seconds": 1.427266583,
+        "samples": 5
+      },
+      "rust_over_odin": 1.8119458650238298
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "library_edit",
+      "rust": {
+        "median_seconds": 2.547118917,
+        "min_seconds": 2.481878375,
+        "max_seconds": 2.649546584,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 1.426764875,
+        "min_seconds": 1.414118292,
+        "max_seconds": 1.576650917,
+        "samples": 5
+      },
+      "rust_over_odin": 1.7852408351446136
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "application_edit",
+      "rust": {
+        "median_seconds": 2.039586625,
+        "min_seconds": 1.962699875,
+        "max_seconds": 2.462240083,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 1.413758417,
+        "min_seconds": 1.388115709,
+        "max_seconds": 1.495632666,
+        "samples": 5
+      },
+      "rust_over_odin": 1.4426698369923836
+    },
+    {
+      "feature": "core",
+      "profile": "release",
+      "scenario": "no_change",
+      "rust": {
+        "median_seconds": 0.136516209,
+        "min_seconds": 0.135860708,
+        "max_seconds": 0.139223833,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 1.401321708,
+        "min_seconds": 1.386803875,
+        "max_seconds": 1.436780958,
+        "samples": 5
+      },
+      "rust_over_odin": 0.09741960623363154
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "clean",
+      "rust": {
+        "median_seconds": 3.528286833,
+        "min_seconds": 3.472208208,
+        "max_seconds": 3.543967959,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.406757667,
+        "min_seconds": 0.396537,
+        "max_seconds": 0.413206334,
+        "samples": 5
+      },
+      "rust_over_odin": 8.674174131793317
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "dependencies_warm",
+      "rust": {
+        "median_seconds": 1.365068625,
+        "min_seconds": 1.340713458,
+        "max_seconds": 1.396999292,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.392023167,
+        "min_seconds": 0.383862208,
+        "max_seconds": 0.402696625,
+        "samples": 5
+      },
+      "rust_over_odin": 3.4821121298680797
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "library_edit",
+      "rust": {
+        "median_seconds": 0.822835834,
+        "min_seconds": 0.637592167,
+        "max_seconds": 0.996116,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.552131042,
+        "min_seconds": 0.476877334,
+        "max_seconds": 0.600234708,
+        "samples": 5
+      },
+      "rust_over_odin": 1.4902908393257848
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "application_edit",
+      "rust": {
+        "median_seconds": 0.491198,
+        "min_seconds": 0.429602083,
+        "max_seconds": 0.720906875,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.500679458,
+        "min_seconds": 0.4356515,
+        "max_seconds": 0.567981917,
+        "samples": 5
+      },
+      "rust_over_odin": 0.981062818039561
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "no_change",
+      "rust": {
+        "median_seconds": 0.19091925,
+        "min_seconds": 0.184243,
+        "max_seconds": 0.202362291,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.485989959,
+        "min_seconds": 0.465200833,
+        "max_seconds": 0.523663916,
+        "samples": 5
+      },
+      "rust_over_odin": 0.39284607935696053
+    },
+    {
+      "feature": "editor",
+      "profile": "dev",
+      "scenario": "check_clean",
+      "rust": {
+        "median_seconds": 2.86695475,
+        "min_seconds": 2.81032875,
+        "max_seconds": 3.188061625,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 0.076821208,
+        "min_seconds": 0.071427792,
+        "max_seconds": 0.077931792,
+        "samples": 5
+      },
+      "rust_over_odin": 37.31983425722751
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "clean",
+      "rust": {
+        "median_seconds": 6.925285625,
+        "min_seconds": 5.841454292,
+        "max_seconds": 7.127940625,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 2.383781875,
+        "min_seconds": 2.288673042,
+        "max_seconds": 2.557280709,
+        "samples": 5
+      },
+      "rust_over_odin": 2.9051674977602553
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "dependencies_warm",
+      "rust": {
+        "median_seconds": 3.030127875,
+        "min_seconds": 3.0031425,
+        "max_seconds": 3.547027917,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 2.114464708,
+        "min_seconds": 2.073726833,
+        "max_seconds": 2.28903625,
+        "samples": 5
+      },
+      "rust_over_odin": 1.4330472689071716
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "library_edit",
+      "rust": {
+        "median_seconds": 3.036439334,
+        "min_seconds": 3.009768417,
+        "max_seconds": 3.084927584,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 2.060451,
+        "min_seconds": 2.04972675,
+        "max_seconds": 2.098153417,
+        "samples": 5
+      },
+      "rust_over_odin": 1.473677041579732
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "application_edit",
+      "rust": {
+        "median_seconds": 2.020669292,
+        "min_seconds": 2.00242975,
+        "max_seconds": 2.109581209,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 2.068902333,
+        "min_seconds": 2.054625042,
+        "max_seconds": 2.098518625,
+        "samples": 5
+      },
+      "rust_over_odin": 0.9766866515491527
+    },
+    {
+      "feature": "editor",
+      "profile": "release",
+      "scenario": "no_change",
+      "rust": {
+        "median_seconds": 0.138837542,
+        "min_seconds": 0.136497292,
+        "max_seconds": 0.141879792,
+        "samples": 5
+      },
+      "odin": {
+        "median_seconds": 2.085822833,
+        "min_seconds": 2.060882125,
+        "max_seconds": 2.462513208,
+        "samples": 5
+      },
+      "rust_over_odin": 0.06656248066875008
+    }
+  ],
+  "csv_sha256": "9cf4053aa197a7a1a208821b96338e86e00f91b9e9d0befda13e0fcc9fc1be0a",
+  "completed_at": "2026-10-03T20:15:24.779445+00:00",
+  "capture_script_sha256": "e046d98744a0dc6ca04fd420a960cb653f8e55d4e6edf48c8c18063f6ad20cb1",
+  "receipt_format_note": "CSV line endings normalized from CRLF to LF after capture; timing values and compiled sources unchanged. The current harness differs only by specifying LF in its CSV writer."
+}

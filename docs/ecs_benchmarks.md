@@ -219,3 +219,12 @@ Cached matching, generations, structural filters, lifecycle events, change
 tracking and editor access remain on one production implementation. These
 observations support retaining sparse storage; they do not establish a blanket
 engine speedup or an idle-host thread-scaling curve.
+
+## Rust and Odin compilation
+
+The separate [Odin port report](ecs_odin.md#validation-and-compilation-measurements)
+compares complete ECS consumer build/typecheck times, with and without editor
+functionality. It does not time ECS runtime throughput or the full engine build.
+Raw compiler samples and source/toolchain receipts are in
+[ecs-odin-compile.csv](benchmarks/ecs-odin-compile.csv) and
+[ecs-odin-compile.json](benchmarks/ecs-odin-compile.json).
