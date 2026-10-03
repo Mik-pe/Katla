@@ -273,6 +273,8 @@ pub(super) fn asset_context(
 pub(crate) fn entity_assets(entity: &EntityDescriptor) -> Vec<(&'static str, &AssetRef)> {
     let mut assets = Vec::new();
     if let EntitySource::GltfModel { path }
+    | EntitySource::GltfGroup { path }
+    | EntitySource::GltfPrimitive { path, .. }
     | EntitySource::StlModel { path }
     | EntitySource::MeshAsset { path } = &entity.source
     {
@@ -291,6 +293,8 @@ pub(crate) fn entity_assets_mut(
 ) -> Vec<(&'static str, &mut AssetRef)> {
     let mut assets = Vec::new();
     if let EntitySource::GltfModel { path }
+    | EntitySource::GltfGroup { path }
+    | EntitySource::GltfPrimitive { path, .. }
     | EntitySource::StlModel { path }
     | EntitySource::MeshAsset { path } = &mut entity.source
     {
@@ -430,8 +434,25 @@ pub(crate) fn stage_scene(
         }
         app.scene_components
             .restore(&mut app.world, scene, &references)?;
+        entities = app
+            .world
+            .entity_ids()
+            .filter(|entity| !previous_entities.contains(entity))
+            .collect();
+        let mut next = scene.next_entity_id;
+        for entity in &entities {
+            if app.world.get_component::<SceneIdentity>(*entity).is_none() {
+                let id = super::SceneEntityId(next);
+                next = next
+                    .checked_add(1)
+                    .ok_or_else(|| SceneError::Capture("Scene identity space exhausted".into()))?;
+                app.world.add_component(*entity, SceneIdentity { id });
+            }
+        }
+        let mut expanded = scene.clone();
+        expanded.next_entity_id = next;
         // Encoding can fail in game codecs. Prepare the baseline before retiring anything.
-        let baseline = capture_entities(app, &entities, scene.clone(), context)?;
+        let baseline = capture_entities(app, &entities, expanded, context)?;
         Ok(PreparedScene { entities, baseline })
     })();
     let prepared = match staged {

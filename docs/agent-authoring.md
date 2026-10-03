@@ -35,6 +35,12 @@ to the resource root, independent of the editor's working directory. Absolute
 paths and parent traversal are rejected. An empty search query lists assets. `assets` paths are resource-relative for
 `spawn_model` and script attachment. `project_paths` include the resource-root
 directory and are ready for the project-relative `prefab` tool.
+Model spawn receipts include `root_entity_id`, all created `entities` and
+`material_entity_ids`. Multi-primitive models have a transform/animation
+controller and separate material-editable children. Apply material patches to
+those drawable IDs; the controller is not material-editable. Each child preserves
+its own material and textures across save/load. A controller's playback drives
+skinned children unless they have explicit playback overrides.
 Use `list_resources`/`read_resource` for project files such as scene documents.
 
 ## Edit surfaces without touching GPU handles

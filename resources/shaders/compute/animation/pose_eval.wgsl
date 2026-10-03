@@ -286,10 +286,13 @@ struct JointPose {
 }
 
 fn evaluate_joint(clip_idx: u32, time: f32, joint_offset: u32, joint_index: u32) -> JointPose {
-    let clip = clip_headers[clip_idx];
-    let eval_time = clamp(time, 0.0, max(clip.duration, 0.0));
     let joint = joints[joint_offset + joint_index];
     var pose = JointPose(joint.rest_translation, joint.rest_rotation, joint.rest_scale);
+    if (clip_idx == 0xffffffffu) {
+        return pose;
+    }
+    let clip = clip_headers[clip_idx];
+    let eval_time = clamp(time, 0.0, max(clip.duration, 0.0));
 
     for (var c = 0u; c < clip.channel_count; c = c + 1u) {
         let channel = channel_infos[clip.channel_offset + c];
@@ -317,10 +320,10 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     }
     let skeleton = params[gid];
     let do_blend = (skeleton.flags & FLAG_BLENDING) != 0u;
-    if (skeleton.clip_index >= arrayLength(&clip_headers)) {
+    if (skeleton.clip_index != 0xffffffffu && skeleton.clip_index >= arrayLength(&clip_headers)) {
         return;
     }
-    if (do_blend && skeleton.target_clip_index >= arrayLength(&clip_headers)) {
+    if (do_blend && skeleton.target_clip_index != 0xffffffffu && skeleton.target_clip_index >= arrayLength(&clip_headers)) {
         return;
     }
 

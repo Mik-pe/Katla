@@ -75,6 +75,18 @@ in-memory scene and supports `Resource` and `File` references.
 recipe geometry. Prefab instances save as expanded scene subtrees with these mesh
 references. See [mesh/prefab authoring](../../../docs/prefabs.md).
 
+`GltfModel(path: ...)` imports every primitive in the selected scene. A single
+primitive becomes one drawable; multiple primitives become a model controller
+and child drawables. Capture saves a `GltfGroup(path: ...)` controller and explicit
+`GltfPrimitive(path: ..., node_index: ..., primitive_index: ...)` children.
+Reload preserves each primitive's material overrides and textures without
+reimporting duplicate children. The indices identify nodes and primitives in the
+asset; changing that asset's structure can invalidate the reference and rejects
+staging. Whole-model drawable overrides apply to all imported primitives before
+capture. Group mesh colliders retain combined rest-pose geometry independently
+of rendering; skinned children inherit the controller's animation player unless
+they have an explicit player of their own.
+
 The loader checks each built-in referenced file before allocating replacements.
 Mesh recipes compile during preflight unless an identical recipe is already active.
 Model decoding and GPU preparation happen during staging and can still fail.

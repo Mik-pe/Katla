@@ -115,6 +115,16 @@ pub(super) fn spawn_entity(
             EntitySource::GltfModel { path } => app
                 .spawn_gltf_model(context.resolve(path)?, pos, None)
                 .map_err(|e| format!("{e}"))?,
+            EntitySource::GltfGroup { path } => app
+                .spawn_gltf_group(context.resolve(path)?, pos)
+                .map_err(|error| error.to_string())?,
+            EntitySource::GltfPrimitive {
+                path,
+                node_index,
+                primitive_index,
+            } => app
+                .spawn_gltf_primitive(context.resolve(path)?, *node_index, *primitive_index, pos)
+                .map_err(|error| error.to_string())?,
             EntitySource::StlModel { path } => app
                 .spawn_stl_model(context.resolve(path)?, pos)
                 .map_err(|e| format!("{e}"))?,
@@ -150,16 +160,30 @@ pub(super) fn spawn_entity(
         transform.transform.scale = katla_math::Vec3::new(sx, sy, sz);
     }
 
-    // Apply drawable material overrides
-    if let Some(ref drawable_desc) = desc.drawable
-        && let Some(drawable) = app.world.get_component_mut::<DrawableComponent>(entity_id)
-    {
-        drawable.metallic = drawable_desc.metallic;
-        drawable.roughness = drawable_desc.roughness;
-        drawable.ao = drawable_desc.ao;
-        if let Some(c) = drawable_desc.color {
-            let srgb = katla_math::Color::new(c[0], c[1], c[2], c[3]);
-            drawable.color = Some(srgb.to_linear());
+    if let Some(drawable_desc) = &desc.drawable {
+        let targets = if app
+            .world
+            .get_component::<DrawableComponent>(entity_id)
+            .is_some()
+        {
+            vec![entity_id]
+        } else {
+            app.world
+                .get_component::<crate::components::Children>(entity_id)
+                .map(|children| children.children.clone())
+                .unwrap_or_default()
+        };
+        for target in targets {
+            if let Some(drawable) = app.world.get_component_mut::<DrawableComponent>(target) {
+                drawable.metallic = drawable_desc.metallic;
+                drawable.roughness = drawable_desc.roughness;
+                drawable.ao = drawable_desc.ao;
+                if let Some(color) = drawable_desc.color {
+                    drawable.color = Some(
+                        katla_math::Color::new(color[0], color[1], color[2], color[3]).to_linear(),
+                    );
+                }
+            }
         }
     }
 
@@ -296,6 +320,25 @@ pub(super) fn spawn_entity(
 
     // Apply collider shape
     if let Some(ref cs_desc) = desc.collider_shape {
+        let mesh = if matches!(
+            cs_desc,
+            ColliderShapeDescriptor::Trimesh | ColliderShapeDescriptor::ConvexHull
+        ) {
+            if let Some(drawable) = app.world.get_component::<DrawableComponent>(entity_id) {
+                Some(drawable.mesh_handle)
+            } else if let EntitySource::GltfModel { path } | EntitySource::GltfGroup { path } =
+                &desc.source
+            {
+                Some(
+                    app.prepare_gltf_group_collider(entity_id, &context.resolve(path)?)
+                        .map_err(|error| error.to_string())?,
+                )
+            } else {
+                return Err("Mesh collider requires retained model geometry".into());
+            }
+        } else {
+            None
+        };
         let shape = match cs_desc {
             ColliderShapeDescriptor::Sphere(radius) => {
                 ColliderShape::Sphere(SphereShape::new(*radius))
@@ -308,16 +351,10 @@ pub(super) fn spawn_entity(
                 radius,
             } => ColliderShape::Capsule(CapsuleShape::new(*half_height, *radius)),
             ColliderShapeDescriptor::Trimesh => ColliderShape::Trimesh(
-                app.world
-                    .get_component::<DrawableComponent>(entity_id)
-                    .ok_or("Mesh collider requires a drawable")?
-                    .mesh_handle,
+                mesh.ok_or("Mesh collider requires retained model geometry")?,
             ),
             ColliderShapeDescriptor::ConvexHull => ColliderShape::ConvexHull(
-                app.world
-                    .get_component::<DrawableComponent>(entity_id)
-                    .ok_or("Convex collider requires a drawable")?
-                    .mesh_handle,
+                mesh.ok_or("Convex collider requires retained model geometry")?,
             ),
             ColliderShapeDescriptor::Heightfield {
                 rows,
@@ -350,7 +387,9 @@ pub(super) fn spawn_entity(
     }
 
     // Attach EntitySource for future serialization
-    app.world.add_component(entity_id, desc.source.clone());
+    if !matches!(desc.source, EntitySource::GltfModel { .. }) {
+        app.world.add_component(entity_id, desc.source.clone());
+    }
 
     app.world
         .add_component(entity_id, SceneIdentity { id: desc.id });

@@ -249,11 +249,16 @@ fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDra
 }
 
 /// GPU handles associated with a spawned entity, used for cleanup on undo/redo.
+pub(crate) struct DrawableCleanup {
+    mesh_handle: katla_gfx::MeshHandle,
+    material_handle: katla_gfx::MaterialHandle,
+    skeleton_handle: katla_gfx::SkeletonHandle,
+}
+
 pub(crate) struct GpuCleanupData {
-    pub(crate) mesh_handle: katla_gfx::MeshHandle,
-    pub(crate) material_handle: katla_gfx::MaterialHandle,
-    pub(crate) skeleton_handle: katla_gfx::SkeletonHandle,
+    drawable: Option<DrawableCleanup>,
     pub(crate) textures: Vec<katla_gfx::TextureHandle>,
+    pub(crate) collision_mesh: Option<katla_gfx::MeshHandle>,
 }
 
 /// Command that reverses a spawn by destroying the entity.
@@ -1759,13 +1764,21 @@ pub fn collect_children_recursive(
 
 /// Record GPU handles for a spawned entity so they can be released on undo.
 pub fn record_entity_gpu_handles(app: &mut Application, entity: EntityId) {
-    if let Some(drawable) = app.world.get_component::<DrawableComponent>(entity) {
+    let drawable = app.world.get_component::<DrawableComponent>(entity);
+    let collision_mesh = app
+        .world
+        .get_component::<crate::application::spawning::CollisionMesh>(entity)
+        .map(|mesh| mesh.handle);
+    if drawable.is_some() || collision_mesh.is_some() {
         app.editor.entity_gpu_handles.insert(
             entity,
             GpuCleanupData {
-                mesh_handle: drawable.mesh_handle,
-                material_handle: drawable.material_handle,
-                skeleton_handle: drawable.skeleton_handle,
+                drawable: drawable.map(|drawable| DrawableCleanup {
+                    mesh_handle: drawable.mesh_handle,
+                    material_handle: drawable.material_handle,
+                    skeleton_handle: drawable.skeleton_handle,
+                }),
+                collision_mesh,
                 textures: app
                     .world
                     .get_component::<crate::application::spawning::ModelTextures>(entity)
@@ -1792,15 +1805,25 @@ pub fn process_gpu_cleanup_for_destroyed_entities(app: &mut Application) {
 
     for entity in destroyed_entities {
         if let Some(cleanup) = app.editor.entity_gpu_handles.remove(&entity) {
-            let mut to_destroy = app.gpu_resource_tracker.release_drawable(
-                cleanup.mesh_handle,
-                cleanup.material_handle,
-                cleanup.skeleton_handle,
-            );
+            let mut to_destroy = cleanup
+                .drawable
+                .map(|drawable| {
+                    app.gpu_resource_tracker.release_drawable(
+                        drawable.mesh_handle,
+                        drawable.material_handle,
+                        drawable.skeleton_handle,
+                    )
+                })
+                .unwrap_or_default();
             for texture in cleanup.textures {
                 if app.gpu_resource_tracker.release_texture(texture) {
                     to_destroy.textures.push(texture);
                 }
+            }
+            if let Some(mesh) = cleanup.collision_mesh
+                && app.gpu_resource_tracker.release_mesh(mesh)
+            {
+                to_destroy.meshes.push(mesh);
             }
             crate::scene::serialization::destroy_resources(app, to_destroy);
         }

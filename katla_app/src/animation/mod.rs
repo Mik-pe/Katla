@@ -75,6 +75,7 @@ impl AnimationManager {
     /// * `world` - The ECS world
     /// * `entity` - The entity to add components to (usually the model entity)
     /// * `model` - The GLTF model containing animations and skins
+    /// * `skin_index` - The primitive node's skin, or None for a model controller
     /// * `default_animation` - Optional name of animation to play by default
     ///
     /// # Returns
@@ -83,16 +84,12 @@ impl AnimationManager {
         world: &mut World,
         entity: katla_ecs::EntityId,
         model: &crate::util::GLTFModel,
+        skin_index: Option<usize>,
         default_animation: Option<&str>,
     ) -> bool {
         let document = &model.document;
 
-        // Check if model has animations
         let animations: Vec<_> = document.animations().collect();
-        if animations.is_empty() {
-            log::debug!("Model has no animations, skipping animation setup");
-            return false;
-        }
 
         // Load animations into AnimatedModel component
         let parser = AttributeParser::new(&model.buffers);
@@ -116,8 +113,7 @@ impl AnimationManager {
         world.add_component(entity, animated_model);
 
         // Load skins into Skin component
-        let skins: Vec<_> = document.skins().collect();
-        if let Some(gltf_skin) = skins.first() {
+        if let Some(gltf_skin) = skin_index.and_then(|index| document.skins().nth(index)) {
             let joints: Vec<usize> = gltf_skin.joints().map(|node| node.index()).collect();
             let inverse_bind_matrices = if let Some(accessor) = gltf_skin.inverse_bind_matrices() {
                 gltf_loader::parse_mat4_from_accessor(&model.buffers, accessor)
@@ -150,6 +146,6 @@ impl AnimationManager {
             );
         }
 
-        true
+        !animations.is_empty()
     }
 }

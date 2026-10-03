@@ -8,6 +8,7 @@ pub mod config;
 pub(crate) mod gltf_image;
 pub mod gltf_material;
 pub mod gltf_parser;
+pub(crate) mod gltf_primitive;
 pub mod modelcache;
 pub mod stl_parser;
 pub mod timer;

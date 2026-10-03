@@ -17,6 +17,7 @@ struct AnimationCase<'a> {
     times: &'a [f32],
     values: &'a [f32],
     rest_pose: bool,
+    clip_index: u32,
 }
 
 fn translation_case(interpolation: u32, values: &[f32]) -> AnimationCase<'_> {
@@ -26,6 +27,7 @@ fn translation_case(interpolation: u32, values: &[f32]) -> AnimationCase<'_> {
         times: &[0.0, 1.0],
         values,
         rest_pose: false,
+        clip_index: 0,
     }
 }
 
@@ -49,6 +51,18 @@ fn test_native_graph_animation_without_channels_preserves_rest_pose() {
     animation_output(
         AnimationCase {
             rest_pose: true,
+            ..translation_case(0, &LINEAR_VALUES)
+        },
+        [0.25, 0.5, 0.75],
+        |_| translation([2.0, 3.0, 4.0]),
+    );
+}
+
+#[test]
+fn test_native_graph_animation_without_selected_clip_uses_rest_pose() {
+    animation_output(
+        AnimationCase {
+            clip_index: u32::MAX,
             ..translation_case(0, &LINEAR_VALUES)
         },
         [0.25, 0.5, 0.75],
@@ -219,7 +233,7 @@ fn animation_output(
         },
         sample_times,
         |time| SkeletonAnimParams {
-            clip_index: 0,
+            clip_index: case.clip_index,
             target_clip_index: 0,
             current_time: time,
             target_time: 0.0,

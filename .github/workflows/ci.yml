@@ -90,6 +90,7 @@ jobs:
         run: |
           cargo test -p katla_app --lib --all-features --locked scene
           cargo test -p katla_app --lib --all-features --locked gltf_
+          cargo test -p katla_app --lib --all-features --locked util::modelcache
           cargo test -p katla_app --lib document_tests --all-features --locked -- --ignored --test-threads=1
           cargo test -p katla_app --lib --all-features --locked mesh_asset
           cargo test -p katla_app --lib --all-features --locked prefab

@@ -123,13 +123,13 @@ pub(crate) fn build_skeleton_params(
         .current_clip
         .as_ref()
         .and_then(|name| clip_name_to_index.get(name).copied())
-        .unwrap_or(0);
+        .unwrap_or(u32::MAX);
 
     let target_clip_index = player
         .target_clip
         .as_ref()
         .and_then(|name| clip_name_to_index.get(name).copied())
-        .unwrap_or(0);
+        .unwrap_or(u32::MAX);
 
     let mut flags: u32 = 0;
     if player.playing {
@@ -385,7 +385,7 @@ mod tests {
         let params = build_skeleton_params(&player, &clip_map, 0, 8);
 
         assert_eq!(params.clip_index, 0);
-        assert_eq!(params.target_clip_index, 0); // no target
+        assert_eq!(params.target_clip_index, u32::MAX);
         assert_eq!(params.current_time, 0.0);
         assert_eq!(params.joint_offset, 0);
         assert_eq!(params.joint_count, 8);

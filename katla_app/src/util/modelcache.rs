@@ -1,58 +1,60 @@
-use std::collections::HashMap;
-use std::path::Path;
-
-use gltf::Document;
-use gltf::buffer::Data as BufferData;
-use gltf::image::Data as ImageData;
-use katla_gfx::AttributeType;
-use katla_math::{Mat4, Quat, Sphere, Vec3};
-use log::{debug, warn};
+//! Selected-scene glTF geometry with independent primitive and material identity.
 
 use crate::util::gltf_material::GltfMaterialInfo;
-use crate::util::gltf_parser::{
-    AttributeParser, ParsedAttributes, build_skinned_vertex_data, build_vertex_data,
-    generate_smooth_normals,
-};
+use gltf::{Document, buffer::Data as BufferData, image::Data as ImageData};
 use katla_gfx::{VertexPBR, VertexPBRSkinned};
+use katla_math::{AABB, Mat4, Vec3};
+use std::{collections::HashMap, path::Path};
 
+/// Vertex data for one glTF primitive, with its skin attributes kept together.
 #[derive(Clone)]
-pub struct GLTFModel {
-    pub document: Document,
-    pub buffers: Vec<BufferData>,
-    pub images: Vec<ImageData>,
-    /// Material used by the first primitive of the flattened scene geometry.
-    pub material: GltfMaterialInfo,
-    pub vertex_data: Vec<VertexPBR>,
-    pub skinned_vertex_data: Vec<VertexPBRSkinned>,
-    /// SOA vertex attributes for non-skinned meshes (separate per-attribute byte arrays).
-    pub vertex_attributes: HashMap<AttributeType, Vec<u8>>,
-    /// SOA vertex attributes for skinned meshes (separate per-attribute byte arrays).
-    pub skinned_vertex_attributes: HashMap<AttributeType, Vec<u8>>,
-    pub has_skinning: bool,
-    pub index_data: Vec<u8>,
-    pub index_stride: u8,
-    pub bounds: Sphere,
-    /// Root node transform from GLTF (combined transform of first scene's root nodes)
-    pub root_transform: Mat4,
+pub enum GltfVertices {
+    Static(Vec<VertexPBR>),
+    Skinned(Vec<VertexPBRSkinned>),
 }
 
-/// Extract common PBR vertex attributes (position, normal, tangent, tex_coord0)
-/// from pre-collected per-attribute byte buffers into a SOA map.
-fn deinterleave_pbr_attributes(
-    positions: &[u8],
-    normals: &[u8],
-    tangents: &[u8],
-    tex_coords: &[u8],
-) -> HashMap<AttributeType, Vec<u8>> {
-    let mut map = HashMap::new();
-    if positions.is_empty() {
-        return map;
+impl GltfVertices {
+    /// Positions in model space for static geometry or mesh space for skinned geometry.
+    pub fn positions(&self) -> Vec<[f32; 3]> {
+        match self {
+            Self::Static(vertices) => vertices.iter().map(|v| v.position).collect(),
+            Self::Skinned(vertices) => vertices.iter().map(|v| v.position).collect(),
+        }
     }
-    map.insert(AttributeType::Position, positions.to_vec());
-    map.insert(AttributeType::Normal, normals.to_vec());
-    map.insert(AttributeType::Tangent, tangents.to_vec());
-    map.insert(AttributeType::TexCoord0, tex_coords.to_vec());
-    map
+}
+
+/// One selected-scene node's primitive, retaining its own indices, surface and skin.
+#[derive(Clone)]
+pub struct GltfPrimitive {
+    /// Document node identity within the selected scene.
+    pub node_index: usize,
+    /// Index within this node's mesh primitive list.
+    pub primitive_index: usize,
+    /// Editor label derived from the node and primitive identity.
+    pub name: String,
+    /// This primitive's assigned or implicit glTF surface.
+    pub material: GltfMaterialInfo,
+    /// Geometry and skin attributes belonging exclusively to this primitive.
+    pub vertices: GltfVertices,
+    /// Triangle-list indices into this primitive's vertex array.
+    pub indices: Vec<u32>,
+    /// Static baked bounds or the skinned mesh's undeformed bounds.
+    pub bounds: AABB,
+    /// Skin selected by the primitive's node.
+    pub skin_index: Option<usize>,
+}
+
+/// Decoded glTF resources and the selected scene's independently renderable primitives.
+#[derive(Clone)]
+pub struct GLTFModel {
+    /// Original document for animation and asset identity.
+    pub document: Document,
+    /// Decoded accessor buffers.
+    pub buffers: Vec<BufferData>,
+    /// Decoded images referenced by texture roles.
+    pub images: Vec<ImageData>,
+    /// Selected-scene primitives in depth-first node order.
+    pub primitives: Vec<GltfPrimitive>,
 }
 
 /// Build world transforms for all nodes in topological order (BFS).
@@ -98,12 +100,8 @@ pub fn build_world_transforms(nodes: &[gltf::Node]) -> HashMap<usize, Mat4> {
             None => continue,
         };
 
-        let transform = node.transform();
-        let (t, r, s) = transform.decomposed();
-        let translation = Vec3::new(t[0], t[1], t[2]);
-        let rotation = Quat::new(r[0], r[1], r[2], r[3]);
-        let scale = Vec3::new(s[0], s[1], s[2]);
-        let local_matrix = Mat4::from_trs(translation, rotation, scale);
+        let columns = node.transform().matrix();
+        let local_matrix = Mat4(columns.map(katla_math::Vec4::from));
 
         let world_matrix = if let Some(Some(parent_index)) = parent_map.get(&node_index) {
             if let Some(parent_transform) = world_transforms.get(parent_index) {
@@ -127,16 +125,9 @@ pub fn build_world_transforms(nodes: &[gltf::Node]) -> HashMap<usize, Mat4> {
     world_transforms
 }
 
-fn collect_all_nodes<'a>(node: &gltf::Node<'a>, nodes: &mut Vec<gltf::Node<'a>>) {
-    nodes.push(node.clone());
-    for child in node.children() {
-        collect_all_nodes(&child, nodes);
-    }
-}
-
 impl GLTFModel {
     /// Bake affine positions and inverse-transpose surface frames into static geometry.
-    fn transform_vertex_data(vertices: &mut [VertexPBR], world_transform: &Mat4) {
+    pub(crate) fn transform_vertex_data(vertices: &mut [VertexPBR], world_transform: &Mat4) {
         use katla_math::{Mat3, Vec4};
 
         let transform = Mat3::from(*world_transform);
@@ -188,830 +179,88 @@ impl GLTFModel {
         }
     }
 
-    fn deinterleave_pbr(vertices: &[VertexPBR]) -> HashMap<AttributeType, Vec<u8>> {
-        deinterleave_pbr_attributes(
-            bytemuck::cast_slice(&vertices.iter().map(|v| v.position).collect::<Vec<_>>()),
-            bytemuck::cast_slice(&vertices.iter().map(|v| v.normal).collect::<Vec<_>>()),
-            bytemuck::cast_slice(&vertices.iter().map(|v| v.tangent).collect::<Vec<_>>()),
-            bytemuck::cast_slice(&vertices.iter().map(|v| v.tex_coord0).collect::<Vec<_>>()),
-        )
+    /// Import the default scene, or the first scene when no default is specified.
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, Box<dyn std::error::Error>> {
+        let (document, buffers, images) = gltf::import(path)?;
+        Self::from_parts(document, buffers, images).map_err(Into::into)
     }
 
-    fn deinterleave_pbr_skinned(vertices: &[VertexPBRSkinned]) -> HashMap<AttributeType, Vec<u8>> {
-        let mut map = deinterleave_pbr_attributes(
-            bytemuck::cast_slice(&vertices.iter().map(|v| v.position).collect::<Vec<_>>()),
-            bytemuck::cast_slice(&vertices.iter().map(|v| v.normal).collect::<Vec<_>>()),
-            bytemuck::cast_slice(&vertices.iter().map(|v| v.tangent).collect::<Vec<_>>()),
-            bytemuck::cast_slice(&vertices.iter().map(|v| v.tex_coord0).collect::<Vec<_>>()),
-        );
-        if vertices.is_empty() {
-            return map;
-        }
-        let mut joint_indices = Vec::with_capacity(vertices.len() * 8);
-        let mut joint_weights = Vec::with_capacity(vertices.len() * 16);
-        for v in vertices {
-            joint_indices.extend_from_slice(bytemuck::bytes_of(&v.joint_indices));
-            joint_weights.extend_from_slice(bytemuck::bytes_of(&v.joint_weights));
-        }
-        map.insert(AttributeType::JointIndices, joint_indices);
-        map.insert(AttributeType::JointWeights, joint_weights);
-        map
-    }
-
-    /// Parse a single GLTF node into vertex and index data.
-    fn parse_node(&self, node: &gltf::Node) -> (Vec<VertexPBR>, Vec<u8>, u8, Sphere) {
-        let parser = AttributeParser::new(&self.buffers);
-
-        if let Some(mesh) = node.mesh() {
-            debug!(
-                "  Mesh '{}' has {} primitives",
-                mesh.name().unwrap_or("unnamed"),
-                mesh.primitives().count()
-            );
-
-            let mut all_vertex_data = Vec::new();
-            let mut all_index_data = Vec::new();
-            let mut index_stride = 0u8;
-            let mut combined_sphere = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0);
-            let mut vertex_offset: u32 = 0;
-
-            for (prim_idx, primitive) in mesh.primitives().enumerate() {
-                debug!(
-                    "    Primitive {}: has_indices={}",
-                    prim_idx,
-                    primitive.indices().is_some()
-                );
-                let mut positions = vec![];
-                let mut normals = vec![];
-                let mut tangents = vec![];
-                let mut tex_coords = vec![];
-
-                for (semantic, accessor) in primitive.attributes() {
-                    match semantic {
-                        gltf::mesh::Semantic::Positions => {
-                            positions = parser.parse_positions(accessor);
-                            debug!("    Parsed {} positions", positions.len());
-                        }
-                        gltf::mesh::Semantic::Normals => {
-                            normals = parser.parse_normals(accessor);
-                            debug!("    Parsed {} normals", normals.len());
-                        }
-                        gltf::mesh::Semantic::Tangents => {
-                            tangents = parser.parse_tangents(accessor);
-                            debug!("    Parsed {} tangents", tangents.len());
-                        }
-                        gltf::mesh::Semantic::TexCoords(0) => {
-                            tex_coords = parser.parse_tex_coords(accessor);
-                            debug!("    Parsed {} tex_coords", tex_coords.len());
-                        }
-                        _ => {
-                            continue;
-                        }
-                    }
+    pub(crate) fn from_parts(
+        document: Document,
+        buffers: Vec<BufferData>,
+        images: Vec<ImageData>,
+    ) -> Result<Self, String> {
+        let mut nodes = Vec::new();
+        if let Some(scene) = document
+            .default_scene()
+            .or_else(|| document.scenes().next())
+        {
+            let mut pending: Vec<_> = scene.nodes().collect();
+            pending.reverse();
+            let mut visited = std::collections::HashSet::new();
+            while let Some(node) = pending.pop() {
+                if !visited.insert(node.index()) {
+                    return Err(format!(
+                        "Selected scene repeats node {}; cycles and shared parents are unsupported",
+                        node.index()
+                    ));
                 }
-
-                let prim_vertex_count = positions.len();
-
-                if normals.is_empty() && !positions.is_empty() {
-                    warn!(
-                        "Mesh '{}' primitive {} has no normals, generating smooth normals from geometry",
-                        mesh.name().unwrap_or("unnamed"),
-                        prim_idx
+                let mut children: Vec<_> = node.children().collect();
+                children.reverse();
+                pending.extend(children);
+                nodes.push(node);
+            }
+        }
+        let transforms = build_world_transforms(&nodes);
+        let mut primitives = Vec::new();
+        for node in nodes {
+            if let Some(skin) = node.skin() {
+                if skin
+                    .joints()
+                    .any(|joint| !transforms.contains_key(&joint.index()))
+                {
+                    return Err(format!(
+                        "Node {} skin refers to a joint outside the selected scene",
+                        node.index()
+                    ));
+                }
+                if skin
+                    .reader(|buffer| buffers.get(buffer.index()).map(|data| &data.0[..]))
+                    .read_inverse_bind_matrices()
+                    .is_some_and(|values| values.count() != skin.joints().count())
+                {
+                    return Err(format!(
+                        "Node {} inverse bind matrix count differs from its skin",
+                        node.index()
+                    ));
+                }
+            }
+            if let Some(mesh) = node.mesh() {
+                for (primitive_index, primitive) in mesh.primitives().enumerate() {
+                    primitives.push(
+                        super::gltf_primitive::decode(
+                            &buffers,
+                            &node,
+                            primitive_index,
+                            &primitive,
+                            transforms[&node.index()],
+                        )
+                        .map_err(|error| {
+                            format!("node {} primitive {primitive_index}: {error}", node.index())
+                        })?,
                     );
                 }
-
-                let (vertex_data, sphere) = build_vertex_data(
-                    positions.clone(),
-                    normals.clone(),
-                    tangents.clone(),
-                    tex_coords.clone(),
-                );
-
-                if let Some(indices) = primitive.indices()
-                    && let Some((indices_data, stride)) = parser.parse_indices(indices)
-                {
-                    let adjusted = Self::adjust_indices(&indices_data, stride, vertex_offset);
-                    all_index_data.extend(adjusted);
-                    index_stride = stride;
-                }
-
-                if sphere.radius > combined_sphere.radius {
-                    combined_sphere = sphere;
-                }
-                all_vertex_data.extend(vertex_data);
-                vertex_offset += prim_vertex_count as u32;
-            }
-
-            (
-                all_vertex_data,
-                all_index_data,
-                index_stride,
-                combined_sphere,
-            )
-        } else {
-            (
-                vec![],
-                vec![],
-                0,
-                Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
-            )
-        }
-    }
-
-    /// Parse a single GLTF node into skinned vertex data.
-    fn parse_node_skinned(
-        &self,
-        node: &gltf::Node,
-    ) -> (Vec<VertexPBRSkinned>, Vec<u8>, u8, Sphere, bool) {
-        let parser = AttributeParser::new(&self.buffers);
-
-        if let Some(mesh) = node.mesh() {
-            let mut all_vertex_data = Vec::new();
-            let mut all_index_data = Vec::new();
-            let mut index_stride = 0u8;
-            let mut combined_sphere = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0);
-            let mut vertex_offset: u32 = 0;
-            let mut any_skinning = false;
-
-            for primitive in mesh.primitives() {
-                let mut positions = vec![];
-                let mut normals = vec![];
-                let mut tex_coords = vec![];
-                let mut joint_indices = vec![];
-                let mut joint_weights = vec![];
-
-                for (semantic, accessor) in primitive.attributes() {
-                    match semantic {
-                        gltf::mesh::Semantic::Positions => {
-                            positions = parser.parse_positions(accessor);
-                        }
-                        gltf::mesh::Semantic::Normals => {
-                            normals = parser.parse_normals(accessor);
-                        }
-                        gltf::mesh::Semantic::TexCoords(0) => {
-                            tex_coords = parser.parse_tex_coords(accessor);
-                        }
-                        gltf::mesh::Semantic::Joints(0) => {
-                            joint_indices = parser.parse_joint_indices(accessor);
-                            debug!("    Parsed {} joint indices", joint_indices.len());
-                        }
-                        gltf::mesh::Semantic::Weights(0) => {
-                            joint_weights = parser.parse_joint_weights(accessor);
-                            debug!("    Parsed {} joint weights", joint_weights.len());
-                        }
-                        _ => {}
-                    }
-                }
-
-                let prim_vertex_count = positions.len();
-
-                if normals.is_empty() {
-                    let dummy_indices = vec![];
-                    normals = generate_smooth_normals(&positions, &dummy_indices, 0);
-                }
-
-                let has_skinning = !joint_indices.is_empty() && !joint_weights.is_empty();
-                any_skinning = any_skinning || has_skinning;
-                let (vertex_data, sphere) = build_skinned_vertex_data(
-                    positions,
-                    normals,
-                    tex_coords,
-                    joint_indices,
-                    joint_weights,
-                );
-
-                if let Some(indices) = primitive.indices()
-                    && let Some((indices_data, stride)) = parser.parse_indices(indices)
-                {
-                    let adjusted = Self::adjust_indices(&indices_data, stride, vertex_offset);
-                    all_index_data.extend(adjusted);
-                    index_stride = stride;
-                }
-
-                if sphere.radius > combined_sphere.radius {
-                    combined_sphere = sphere;
-                }
-                all_vertex_data.extend(vertex_data);
-                vertex_offset += prim_vertex_count as u32;
-            }
-
-            (
-                all_vertex_data,
-                all_index_data,
-                index_stride,
-                combined_sphere,
-                any_skinning,
-            )
-        } else {
-            (
-                vec![],
-                vec![],
-                0,
-                Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
-                false,
-            )
-        }
-    }
-
-    fn parse_gltf(&mut self) {
-        let mut all_nodes = vec![];
-        let mut root_transform = Mat4::identity();
-
-        if let Some(scene) = self
-            .document
-            .default_scene()
-            .or_else(|| self.document.scenes().next())
-        {
-            for node in scene.nodes() {
-                let transform = node.transform();
-                let (t, r, s) = transform.decomposed();
-                let translation = Vec3::new(t[0], t[1], t[2]);
-                let rotation = Quat::new(r[0], r[1], r[2], r[3]);
-                let scale = Vec3::new(s[0], s[1], s[2]);
-                root_transform *= Mat4::from_trs(translation, rotation, scale);
-
-                collect_all_nodes(&node, &mut all_nodes);
             }
         }
-        self.root_transform = root_transform;
-
-        let world_transforms = build_world_transforms(&all_nodes);
-
-        // Track vertex offset for index adjustment when combining nodes
-        let mut vertex_offset: u32 = 0;
-        let mut skinned_vertex_offset: u32 = 0;
-
-        for node in &all_nodes {
-            let (mut vertex_data, index_data, index_stride, _sphere) = self.parse_node(node);
-            let (skinned_data, skinned_index_data, skinned_index_stride, _, has_skinning) =
-                self.parse_node_skinned(node);
-
-            let (final_index_data, final_index_stride) = if has_skinning {
-                (skinned_index_data, skinned_index_stride)
-            } else {
-                (index_data, index_stride)
-            };
-
-            let vertex_count = vertex_data.len();
-            let skinned_vertex_count = skinned_data.len();
-
-            // Apply world transform to non-skinned vertices
-            if !has_skinning
-                && !vertex_data.is_empty()
-                && let Some(world_transform) = world_transforms.get(&node.index())
-            {
-                Self::transform_vertex_data(&mut vertex_data, world_transform);
-            }
-
-            let soa_attributes = Self::deinterleave_pbr(&vertex_data);
-            let skinned_soa_attributes = Self::deinterleave_pbr_skinned(&skinned_data);
-
-            let offset = if has_skinning {
-                skinned_vertex_offset
-            } else {
-                vertex_offset
-            };
-            let adjusted_index_data =
-                Self::adjust_indices(&final_index_data, final_index_stride, offset);
-
-            self.vertex_data.extend(vertex_data);
-            self.skinned_vertex_data.extend(skinned_data);
-
-            for (attr_type, data) in soa_attributes {
-                self.vertex_attributes
-                    .entry(attr_type)
-                    .or_default()
-                    .extend_from_slice(&data);
-            }
-            for (attr_type, data) in skinned_soa_attributes {
-                self.skinned_vertex_attributes
-                    .entry(attr_type)
-                    .or_default()
-                    .extend_from_slice(&data);
-            }
-
-            if has_skinning {
-                self.has_skinning = true;
-            }
-            self.index_data.extend(adjusted_index_data);
-            if final_index_stride > 0 {
-                self.index_stride = final_index_stride;
-            }
-
-            vertex_offset += vertex_count as u32;
-            skinned_vertex_offset += skinned_vertex_count as u32;
-        }
-
-        if !self.vertex_data.is_empty() {
-            let mut min_pos = Vec3::new(f32::INFINITY, f32::INFINITY, f32::INFINITY);
-            let mut max_pos = Vec3::new(f32::NEG_INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-
-            for vertex in &self.vertex_data {
-                let pos = vertex.position;
-                min_pos = Vec3::new(
-                    min_pos.x().min(pos[0]),
-                    min_pos.y().min(pos[1]),
-                    min_pos.z().min(pos[2]),
-                );
-                max_pos = Vec3::new(
-                    max_pos.x().max(pos[0]),
-                    max_pos.y().max(pos[1]),
-                    max_pos.z().max(pos[2]),
-                );
-            }
-
-            let center = Vec3::new(
-                (min_pos.x() + max_pos.x()) * 0.5,
-                (min_pos.y() + max_pos.y()) * 0.5,
-                (min_pos.z() + max_pos.z()) * 0.5,
-            );
-
-            let radius = ((max_pos.x() - min_pos.x()).powi(2)
-                + (max_pos.y() - min_pos.y()).powi(2)
-                + (max_pos.z() - min_pos.z()).powi(2))
-            .sqrt()
-                * 0.5;
-
-            self.bounds = Sphere::new(center, radius);
-        }
-
-        // For non-skinned meshes, transforms are baked into vertices.
-        // Reset root_transform to identity to prevent double transformation
-        // when the entity's TransformComponent is applied at runtime.
-        // Skinned meshes still need root_transform for runtime transformation
-        // since their vertices are transformed by joint matrices.
-        if !self.has_skinning {
-            self.root_transform = Mat4::identity();
-        }
-    }
-
-    pub fn new<P>(path: P) -> Result<Self, Box<dyn std::error::Error>>
-    where
-        P: AsRef<Path>,
-    {
-        let (document, buffers, images) = gltf::import(path)?;
-
-        let material = GltfMaterialInfo::from_document(&document);
-        debug!("Parsed primary GLTF material: {}", material.summary());
-
-        let mut model = Self {
+        Ok(Self {
             document,
             buffers,
             images,
-            material,
-            vertex_data: vec![],
-            skinned_vertex_data: vec![],
-            vertex_attributes: HashMap::new(),
-            skinned_vertex_attributes: HashMap::new(),
-            has_skinning: false,
-            index_data: vec![],
-            index_stride: 0,
-            bounds: Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.0),
-            root_transform: Mat4::identity(),
-        };
-        model.parse_gltf();
-        Ok(model)
-    }
-
-    /// Get PBR vertex data (borrowed slice).
-    pub fn vertpbr(&self) -> &[VertexPBR] {
-        &self.vertex_data
-    }
-
-    /// Get PBR vertex data (owned copy).
-    pub fn vertpbr_owned(&self) -> Vec<VertexPBR> {
-        self.vertex_data.clone()
-    }
-
-    /// Get skinned vertex data (borrowed slice).
-    pub fn vertskinned(&self) -> &[VertexPBRSkinned] {
-        &self.skinned_vertex_data
-    }
-
-    /// Get skinned vertex data (owned copy).
-    pub fn vertskinned_owned(&self) -> Vec<VertexPBRSkinned> {
-        self.skinned_vertex_data.clone()
-    }
-
-    /// Get index data (borrowed slice).
-    pub fn indices(&self) -> &[u8] {
-        &self.index_data
-    }
-
-    /// Get index data (owned copy).
-    pub fn index_data(&self) -> Vec<u8> {
-        self.index_data.clone()
-    }
-
-    /// Get SoA (Structure of Arrays) vertex attributes.
-    ///
-    /// This method parses the first primitive of the first mesh node
-    /// into separate attribute arrays for flexible rendering.
-    ///
-    /// Returns None if the model has no mesh or no primitives.
-    pub fn parsed_attributes(&self) -> Option<ParsedAttributes> {
-        for node in self.document.nodes() {
-            if let Some(mesh) = node.mesh()
-                && let Some(primitive) = mesh.primitives().next()
-            {
-                let parser = AttributeParser::new(&self.buffers);
-                return Some(ParsedAttributes::from_gltf(&primitive, &parser));
-            }
-        }
-        None
-    }
-
-    /// Adjust indices by adding an offset when combining multiple nodes.
-    ///
-    /// Each node's indices are relative to its own vertices. When combining
-    /// nodes into a single mesh, indices must be offset by the accumulated
-    /// vertex count from previous nodes.
-    fn adjust_indices(index_data: &[u8], index_stride: u8, offset: u32) -> Vec<u8> {
-        if index_data.is_empty() || index_stride == 0 || offset == 0 {
-            return index_data.to_vec();
-        }
-
-        match index_stride {
-            2 => {
-                let mut result = Vec::with_capacity(index_data.len());
-                for chunk in index_data.chunks(2) {
-                    let index = u16::from_le_bytes([chunk[0], chunk[1]]);
-                    let adjusted = index as u32 + offset;
-                    if adjusted > u16::MAX as u32 {
-                        warn!(
-                            "Index overflow when adjusting indices: {} + {} = {}",
-                            index, offset, adjusted
-                        );
-                    }
-                    let adjusted_u16 = adjusted as u16;
-                    result.extend_from_slice(&adjusted_u16.to_le_bytes());
-                }
-                result
-            }
-            4 => {
-                let mut result = Vec::with_capacity(index_data.len());
-                for chunk in index_data.chunks(4) {
-                    let index = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                    let adjusted = index + offset;
-                    result.extend_from_slice(&adjusted.to_le_bytes());
-                }
-                result
-            }
-            1 => {
-                let mut result = Vec::with_capacity(index_data.len());
-                for &byte in index_data {
-                    let adjusted = byte as u32 + offset;
-                    if adjusted > u8::MAX as u32 {
-                        warn!(
-                            "Index overflow when adjusting 8-bit indices: {} + {} = {}",
-                            byte, offset, adjusted
-                        );
-                    }
-                    result.push(adjusted as u8);
-                }
-                result
-            }
-            _ => index_data.to_vec(),
-        }
+            primitives,
+        })
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests require actual GLTF files to run.
-    // They serve as integration tests for the parser.
-
-    #[test]
-    fn test_static_material_frame_bakes_nonuniform_and_mirrored_transforms() {
-        for mirror in [1.0, -1.0] {
-            let mut vertex = VertexPBR {
-                position: [1.0, 2.0, 3.0],
-                normal: [
-                    0.0,
-                    std::f32::consts::FRAC_1_SQRT_2,
-                    std::f32::consts::FRAC_1_SQRT_2,
-                ],
-                tangent: [1.0, 0.0, 0.0, 1.0],
-                tex_coord0: [0.0; 2],
-            };
-            GLTFModel::transform_vertex_data(
-                std::slice::from_mut(&mut vertex),
-                &Mat4::from_trs(
-                    Vec3::new(4.0, 5.0, 6.0),
-                    Quat::identity(),
-                    Vec3::new(2.0 * mirror, 1.0, 0.5),
-                ),
-            );
-            assert_eq!(vertex.position, [4.0 + 2.0 * mirror, 7.0, 7.5]);
-            for (actual, expected) in
-                vertex
-                    .normal
-                    .into_iter()
-                    .zip([0.0, 1.0 / 5.0f32.sqrt(), 2.0 / 5.0f32.sqrt()])
-            {
-                assert!(
-                    (actual - expected).abs() < 1e-6,
-                    "normal must use inverse transpose: {:?}",
-                    vertex.normal
-                );
-            }
-            assert_eq!(vertex.tangent, [mirror, 0.0, 0.0, mirror]);
-        }
-    }
-
-    #[test]
-    fn test_static_material_frame_stays_finite_for_singular_transform() {
-        let mut vertex = VertexPBR {
-            position: [0.0; 3],
-            normal: [0.0; 3],
-            tangent: [0.0, 0.0, 0.0, 1.0],
-            tex_coord0: [0.0; 2],
-        };
-        GLTFModel::transform_vertex_data(
-            std::slice::from_mut(&mut vertex),
-            &Mat4::from_trs(Vec3::ZERO, Quat::identity(), Vec3::ZERO),
-        );
-        assert_eq!(vertex.normal, [0.0, 1.0, 0.0]);
-        assert_eq!(vertex.tangent, [0.0, 0.0, 1.0, 1.0]);
-    }
-
-    #[test]
-    fn test_parse_fox_gltf() {
-        // Resources are at workspace root, not crate root
-        let mut model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_path.pop(); // Go up from katla_app to workspace root
-        model_path.push("resources");
-        model_path.push("models");
-        model_path.push("Fox.glb");
-        debug!("Looking for model at: {}", model_path.display());
-        let model = GLTFModel::new(&model_path).expect("Failed to load Fox.glb");
-        debug!(
-            "Parsed {} vertices, {} indices",
-            model.vertex_data.len(),
-            model.index_data.len()
-        );
-        debug!(
-            "Bounds: center={:?}, radius={}",
-            model.bounds.center, model.bounds.radius
-        );
-
-        // Just verify we can parse the model, even if bounds are zero
-        assert!(!model.vertex_data.is_empty(), "Should have vertex data");
-        // Fox.glb may not have index data or may have zero bounds
-        // The important thing is that we can parse it without crashing
-    }
-
-    #[test]
-    fn test_parse_box_gltf() {
-        // Resources are at workspace root, not crate root
-        let mut model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_path.pop(); // Go up from katla_app to workspace root
-        model_path.push("resources");
-        model_path.push("models");
-        model_path.push("Box.glb");
-        debug!("Looking for model at: {}", model_path.display());
-        let model = GLTFModel::new(&model_path).expect("Failed to load Box.glb");
-        assert!(!model.vertex_data.is_empty());
-        assert!(!model.index_data.is_empty());
-        assert!(model.bounds.radius > 0.0);
-    }
-
-    #[test]
-    fn test_empty_vertex_data() {
-        let positions: Vec<[f32; 3]> = vec![];
-        let normals: Vec<[f32; 3]> = vec![];
-        let tangents: Vec<[f32; 4]> = vec![];
-        let tex_coords: Vec<[f32; 2]> = vec![];
-
-        let (vertices, sphere) = build_vertex_data(positions, normals, tangents, tex_coords);
-        assert!(vertices.is_empty());
-        assert_eq!(sphere.radius, 0.0);
-    }
-
-    /// Build world transforms for all nodes in topological order (BFS).
-    /// Returns a map: node_index -> world_transform
-    fn build_node_world_transforms(document: &Document) -> std::collections::HashMap<usize, Mat4> {
-        let nodes: Vec<_> = document.nodes().collect();
-        build_world_transforms(&nodes)
-    }
-
-    #[test]
-    fn test_multi_node_gltf_transforms_vertices() {
-        // This test verifies that multi-node GLTF models properly transform
-        // vertex positions by their node's world transform.
-        //
-        // The Lantern model has 3 mesh nodes with different transforms:
-        // - LanternPole_Body at world position [3.82, 13.016, 0]
-        // - LanternPole_Chain at world position [9.58, 21.04, 0]
-        // - LanternPole_Lantern at world position [9.58, 18.01, 0]
-        //
-        // If transforms aren't applied, ALL vertices will be near origin (local space).
-        // With proper transform application, vertices should span the expected range.
-
-        let mut model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_path.pop();
-        model_path.push("resources");
-        model_path.push("models");
-        model_path.push("Lantern.glb");
-
-        if !model_path.exists() {
-            eprintln!("Skipping test - Lantern.glb not found at {:?}", model_path);
-            return;
-        }
-
-        let model = GLTFModel::new(&model_path).expect("Failed to load Lantern.glb");
-
-        let world_transforms = build_node_world_transforms(&model.document);
-
-        let lantern_node = model
-            .document
-            .nodes()
-            .find(|n| n.name() == Some("LanternPole_Lantern"));
-        let lantern_node = match lantern_node {
-            Some(n) => n,
-            None => {
-                eprintln!("Skipping test - LanternPole_Lantern node not found");
-                return;
-            }
-        };
-
-        let world_transform = world_transforms
-            .get(&lantern_node.index())
-            .cloned()
-            .unwrap_or_else(Mat4::identity);
-
-        let world_translation = Vec3::new(
-            world_transform[3].x(),
-            world_transform[3].y(),
-            world_transform[3].z(),
-        );
-
-        println!(
-            "LanternPole_Lantern world translation: {:?}",
-            world_translation
-        );
-
-        // The lantern should be at approximately y=18 in world space
-        // If transforms aren't applied, vertices will be near y=0
-        assert!(
-            world_translation.y() > 15.0,
-            "Lantern world Y position should be > 15, got {}",
-            world_translation.y()
-        );
-
-        // Now check the actual vertex data
-        // If the bug exists, vertex Y positions will be near 0 (local space)
-        // If fixed, vertex Y positions should be around 18 (world space)
-
-        let min_y = model
-            .vertex_data
-            .iter()
-            .map(|v| v.position[1])
-            .fold(f32::INFINITY, |a, b| a.min(b));
-        let max_y = model
-            .vertex_data
-            .iter()
-            .map(|v| v.position[1])
-            .fold(f32::NEG_INFINITY, |a, b| a.max(b));
-
-        println!("Vertex Y range: min={}, max={}", min_y, max_y);
-
-        // The model has mesh nodes at Y positions ~13, ~18, and ~21
-        // If transforms ARE applied correctly, max_y should be > 20
-        // If transforms ARE NOT applied, max_y will be near 0 (local space)
-        //
-        // THIS TEST SHOULD FAIL with the current buggy implementation
-        assert!(
-            max_y > 15.0,
-            "Vertex max Y should be > 15 if transforms are applied correctly, got {}. \
-             This indicates node transforms are NOT being applied to vertices!",
-            max_y
-        );
-
-        // Verify root_transform is identity for non-skinned meshes
-        // (transforms are baked into vertices, so root_transform shouldn't be applied again)
-        println!("root_transform: {:?}", model.root_transform);
-        println!("has_skinning: {}", model.has_skinning);
-
-        assert!(!model.has_skinning, "This test assumes non-skinned model");
-
-        let is_identity = (model.root_transform[0].x() - 1.0).abs() < 0.001
-            && model.root_transform[0].y().abs() < 0.001
-            && model.root_transform[0].z().abs() < 0.001
-            && model.root_transform[1].x().abs() < 0.001
-            && (model.root_transform[1].y() - 1.0).abs() < 0.001
-            && model.root_transform[1].z().abs() < 0.001
-            && model.root_transform[2].x().abs() < 0.001
-            && model.root_transform[2].y().abs() < 0.001
-            && (model.root_transform[2].z() - 1.0).abs() < 0.001
-            && model.root_transform[3].x().abs() < 0.001
-            && model.root_transform[3].y().abs() < 0.001
-            && model.root_transform[3].z().abs() < 0.001
-            && (model.root_transform[3].w() - 1.0).abs() < 0.001;
-
-        assert!(
-            is_identity,
-            "root_transform should be identity for non-skinned meshes (transforms are baked into vertices)"
-        );
-    }
-
-    #[test]
-    fn test_lantern_node_hierarchy_transforms() {
-        // This test verifies that multi-node GLTF models properly apply
-        // node transforms to vertices. The Lantern model has a hierarchy:
-        // - Root (lamppost)
-        //   - Child node (lantern) with offset transform
-        //
-        // The lantern should appear at the correct position relative to the lamppost.
-
-        let mut model_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_path.pop();
-        model_path.push("resources");
-        model_path.push("models");
-        model_path.push("Lantern.glb");
-
-        if !model_path.exists() {
-            eprintln!("Skipping test - Lantern.glb not found at {:?}", model_path);
-            return;
-        }
-
-        let model = GLTFModel::new(&model_path).expect("Failed to load Lantern.glb");
-
-        let world_transforms = build_node_world_transforms(&model.document);
-
-        let mut all_nodes = vec![];
-        if let Some(scene) = model
-            .document
-            .default_scene()
-            .or_else(|| model.document.scenes().next())
-        {
-            for node in scene.nodes() {
-                collect_all_nodes(&node, &mut all_nodes);
-            }
-        }
-
-        // Debug: print node hierarchy
-        println!("\n=== Lantern.glb Node Hierarchy ===");
-        for node in &all_nodes {
-            let transform = node.transform();
-            let (t, _r, _s) = transform.decomposed();
-            let world = world_transforms
-                .get(&node.index())
-                .cloned()
-                .unwrap_or_else(Mat4::identity);
-            println!(
-                "Node {} '{}' - local: t={:?}, has_mesh={}",
-                node.index(),
-                node.name().unwrap_or("unnamed"),
-                t,
-                node.mesh().is_some()
-            );
-            println!("  World transform:\n{:?}", world);
-        }
-
-        let mesh_nodes: Vec<_> = all_nodes.iter().filter(|n| n.mesh().is_some()).collect();
-        println!("\n=== Nodes with meshes: {} ===", mesh_nodes.len());
-
-        for node in &mesh_nodes {
-            let world = world_transforms
-                .get(&node.index())
-                .cloned()
-                .unwrap_or_else(Mat4::identity);
-            println!(
-                "Node {} '{}' world transform:\n{:?}",
-                node.index(),
-                node.name().unwrap_or("unnamed"),
-                world
-            );
-        }
-
-        if mesh_nodes.len() > 1 {
-            let translations: Vec<Vec3> = mesh_nodes
-                .iter()
-                .filter_map(|n| {
-                    let world = world_transforms.get(&n.index())?;
-                    Some(Vec3::new(world[3].x(), world[3].y(), world[3].z()))
-                })
-                .collect();
-
-            println!("\n=== Mesh node world positions ===");
-            for (i, t) in translations.iter().enumerate() {
-                println!("Node {}: {:?}", i, t);
-            }
-
-            // If all translations are the same but nodes have different local transforms,
-            // that indicates a bug in transform accumulation
-            let _unique_translations: std::collections::HashSet<_> = translations
-                .iter()
-                .map(|t| (t.x().to_bits(), t.y().to_bits(), t.z().to_bits()))
-                .collect();
-
-            // We expect different positions for different mesh nodes in a hierarchy
-            // This test will FAIL if the current implementation doesn't apply node transforms
-            // assert!(unique_translations.len() > 1,
-            //     "Multiple mesh nodes should have different world positions after transform");
-        }
-    }
-}
+#[path = "modelcache_tests.rs"]
+mod tests;

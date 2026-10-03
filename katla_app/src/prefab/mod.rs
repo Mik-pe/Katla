@@ -310,6 +310,13 @@ pub fn remove_instance(app: &mut Application, root: EntityId) -> Result<(), Stri
                 resources.textures.push(texture);
             }
         }
+        if let Some(mesh) = app
+            .world
+            .get_component::<crate::application::spawning::CollisionMesh>(entity)
+            && app.gpu_resource_tracker.release_mesh(mesh.handle)
+        {
+            resources.meshes.push(mesh.handle);
+        }
         crate::scene::serialization::destroy_resources(app, resources);
         if let Some(emitter) = app
             .world

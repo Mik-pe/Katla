@@ -61,17 +61,11 @@ impl GpuAnimationSystem {
     /// Build a hash fingerprint of the animated entity set and their clip data.
     /// Covers entity identity, clip names, joint counts, and channel counts.
     fn compute_fingerprint(
-        entities: &[(
-            katla_ecs::EntityId,
-            &AnimatedModel,
-            &Skin,
-            &Skeleton,
-            &AnimationPlayer,
-        )],
+        entities: &[(katla_ecs::EntityId, &AnimatedModel, &Skin, &Skeleton)],
     ) -> u64 {
         use std::collections::hash_map::DefaultHasher;
         let mut hasher = DefaultHasher::new();
-        for (entity, model, skin, skeleton, _player) in entities {
+        for (entity, model, skin, skeleton) in entities {
             entity.hash(&mut hasher);
             for name in model.animations.keys() {
                 name.hash(&mut hasher);
@@ -92,7 +86,7 @@ impl GpuAnimationSystem {
         buffers: &mut dyn AnimationBufferUploader,
     ) -> Result<(), RendererError> {
         let entities: Vec<_> = world
-            .query::<(&AnimatedModel, &Skin, &Skeleton, &AnimationPlayer)>()
+            .query_ref::<(&AnimatedModel, &Skin, &Skeleton)>()
             .collect();
 
         if entities.is_empty() {
@@ -121,7 +115,7 @@ impl GpuAnimationSystem {
 
         let mut new_entity_clip_map = HashMap::new();
 
-        for (entity, animated_model, skin, skeleton, _player) in &entities {
+        for (entity, animated_model, skin, skeleton) in &entities {
             let data = prepare_gpu_anim_data(animated_model, skin, skeleton);
             let entity_joint_offset = total_joints as u32;
             let entity_joint_count = data.joint_count as u32;
@@ -164,7 +158,7 @@ impl GpuAnimationSystem {
         }
 
         self.entity_clip_map = new_entity_clip_map;
-        self.entity_order = entities.iter().map(|(e, _, _, _, _)| *e).collect();
+        self.entity_order = entities.iter().map(|(e, _, _, _)| *e).collect();
         self.gpu_data = Some(GpuAnimData {
             clip_headers: all_clip_headers,
             channel_infos: all_channel_infos,
@@ -226,10 +220,8 @@ impl GpuAnimationSystem {
                 Some(l) => l,
                 None => continue,
             };
-            let player = match world.get_component::<AnimationPlayer>(*entity) {
-                Some(p) => p,
-                None => continue,
-            };
+            let stopped = AnimationPlayer::stopped();
+            let player = inherited_player(world, *entity).unwrap_or(&stopped);
 
             let param = build_skeleton_params(
                 player,
@@ -263,5 +255,55 @@ impl GpuAnimationSystem {
     /// Iterate all tracked entities in registration order.
     pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.entity_order.iter().copied()
+    }
+}
+
+/// The nearest explicit player controls an imported primitive; no player means rest pose.
+fn inherited_player(world: &World, mut entity: EntityId) -> Option<&AnimationPlayer> {
+    let mut remaining = world.entity_count();
+    while remaining > 0 {
+        if let Some(player) = world.get_component::<AnimationPlayer>(entity) {
+            return Some(player);
+        }
+        entity = world
+            .get_component::<crate::components::Parent>(entity)?
+            .parent;
+        remaining -= 1;
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_primitive_inherits_playback_and_can_override_its_controller() {
+        let mut world = World::new();
+        let root = world.spawn((AnimationPlayer::new("Walk"),));
+        let child = world.spawn((crate::components::Parent::new(root),));
+        assert_eq!(
+            inherited_player(&world, child)
+                .unwrap()
+                .current_clip
+                .as_deref(),
+            Some("Walk")
+        );
+        world.add_component(child, AnimationPlayer::new("Run"));
+        assert_eq!(
+            inherited_player(&world, child)
+                .unwrap()
+                .current_clip
+                .as_deref(),
+            Some("Run")
+        );
+        world.remove_component::<AnimationPlayer>(child);
+        world.remove_component::<AnimationPlayer>(root);
+        assert!(inherited_player(&world, child).is_none());
+        world.add_component(root, crate::components::Parent::new(child));
+        assert!(
+            inherited_player(&world, child).is_none(),
+            "Bad live hierarchy must terminate"
+        );
     }
 }

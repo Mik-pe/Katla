@@ -206,9 +206,13 @@ preview controls and capture/save/reload; commands are in [prefabs](prefabs.md#v
 
 ## Material imports and neutral textures
 
-Linux runs the portable `gltf_` application tests; macOS's portable application
+Linux runs the portable `gltf_` and `util::modelcache` application tests; macOS's portable application
 suite includes them too. The existing Metal 4 capability-gated document step
-also runs the native `material_tests` fixture with API validation enabled.
+also runs the native `material_tests` fixtures, including static/skinned
+per-primitive surfaces, second-skin selection, scene round-trip/rollback and
+resource retirement. The primitive probes use API validation. The full PBR
+compile fixture disables Vulkan validation on the affected Intel driver; Metal
+requires its debug environment.
 Physical Vulkan acceptance runs the same fixture locally. It compiles the scene
 PBR shader, so it is not added to the lavapipe tier whose PBR compiler limitation
 is documented in the [contract suite](contract-suite.md).

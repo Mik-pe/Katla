@@ -277,7 +277,7 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "spawn_model".to_string(),
-            description: "Spawn a GLTF model using a resource-relative path returned by search_assets.".to_string(),
+            description: "Spawn a glTF scene using a resource-relative path from search_assets. Returns root_entity_id, all created entities and material_entity_ids; multi-primitive materials are editable child entities, and animation on the root controls skinned children.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {

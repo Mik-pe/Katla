@@ -63,6 +63,18 @@ impl GpuResourceTracker {
         }
     }
 
+    pub(crate) fn track_mesh(&mut self, mesh: MeshHandle) {
+        *self.mesh_refs.entry(mesh).or_insert(0) += 1;
+    }
+
+    pub(crate) fn track_material(&mut self, material: MaterialHandle) {
+        *self.material_refs.entry(material).or_insert(0) += 1;
+    }
+
+    pub(crate) fn release_mesh(&mut self, mesh: MeshHandle) -> bool {
+        Self::release_ref(&mut self.mesh_refs, mesh)
+    }
+
     /// Track a skeleton added to an already tracked drawable.
     pub(crate) fn track_skeleton(&mut self, skeleton: SkeletonHandle) {
         if !skeleton.is_none() {

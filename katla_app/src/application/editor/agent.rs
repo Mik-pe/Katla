@@ -649,10 +649,26 @@ fn execute_spawn_model(app: &mut super::super::Application, tool_call: &ToolCall
     let path = app.resources.root.join(path);
     match app.spawn_gltf_model(&path, position, default_animation) {
         Ok(entity) => {
+            let mut entities = vec![entity];
+            crate::application::editor::collect_children_recursive(app, entity, &mut entities);
+            for &spawned in &entities {
+                crate::application::editor::record_entity_gpu_handles(app, spawned);
+            }
+            let material_entities: Vec<_> = entities
+                .iter()
+                .filter(|&&spawned| {
+                    app.world
+                        .get_component::<crate::components::DrawableComponent>(spawned)
+                        .is_some()
+                })
+                .map(|id| id.id().to_string())
+                .collect();
             let json = serde_json::json!({
                 "success": true,
                 "message": format!("Model '{}' spawned as entity {}", args.path, entity),
-                "entities": [entity.to_string()],
+                "entities": entities.iter().map(|id| id.id().to_string()).collect::<Vec<_>>(),
+                "root_entity_id": entity.id().to_string(),
+                "material_entity_ids": material_entities,
             });
             serde_json::to_string(&json)
                 .unwrap_or_else(|_| format!("Model '{}' spawned successfully", args.path))

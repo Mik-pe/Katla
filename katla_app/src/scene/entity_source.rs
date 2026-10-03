@@ -38,6 +38,16 @@ pub enum EntitySource {
     GltfModel {
         path: AssetRef,
     },
+    /// Imported model controller; its independently authored primitives are children.
+    GltfGroup {
+        path: AssetRef,
+    },
+    /// Exactly one selected-scene node primitive, with its original material and skin.
+    GltfPrimitive {
+        path: AssetRef,
+        node_index: usize,
+        primitive_index: usize,
+    },
     StlModel {
         path: AssetRef,
     },
@@ -73,7 +83,9 @@ impl EntitySource {
             Self::Plane { .. } => "Plane".to_string(),
             Self::Cylinder { .. } => "Cylinder".to_string(),
             Self::Torus { .. } => "Torus".to_string(),
-            Self::GltfModel { path } => path
+            Self::GltfModel { path }
+            | Self::GltfGroup { path }
+            | Self::GltfPrimitive { path, .. } => path
                 .path()
                 .file_stem()
                 .and_then(|s| s.to_str())

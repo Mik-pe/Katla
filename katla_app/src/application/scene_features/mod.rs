@@ -5,7 +5,7 @@ mod graphics;
 mod lights;
 mod particles;
 
-use animation::AnimationFeatures;
+pub(crate) use animation::AnimationFeatures;
 pub(crate) use graphics::{GraphicsFrame, SceneGraphics};
 use lights::LightFeatures;
 use particles::ParticleFeatures;

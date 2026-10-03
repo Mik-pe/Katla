@@ -892,7 +892,7 @@ impl KatlaMcpServer {
 
     #[rmcp::tool(
         name = "spawn_model",
-        description = "Spawn a GLTF model using a resource-relative path returned by search_assets"
+        description = "Spawn a glTF scene using a resource-relative path from search_assets. Returns root_entity_id, all created entities and material_entity_ids; multi-primitive materials are editable child entities, and animation on the root controls skinned children"
     )]
     async fn spawn_model(
         &self,

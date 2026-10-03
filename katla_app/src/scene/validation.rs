@@ -328,6 +328,8 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
             );
         }
         EntitySource::GltfModel { path }
+        | EntitySource::GltfGroup { path }
+        | EntitySource::GltfPrimitive { path, .. }
         | EntitySource::StlModel { path }
         | EntitySource::MeshAsset { path } => f.asset("source.path", path),
     }
@@ -338,6 +340,7 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
                 || matches!(
                     entity.source,
                     EntitySource::GltfModel { .. }
+                        | EntitySource::GltfPrimitive { .. }
                         | EntitySource::StlModel { .. }
                         | EntitySource::MeshAsset { .. }
                 ),
@@ -448,6 +451,8 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
                 matches!(
                     entity.source,
                     EntitySource::GltfModel { .. }
+                        | EntitySource::GltfGroup { .. }
+                        | EntitySource::GltfPrimitive { .. }
                         | EntitySource::StlModel { .. }
                         | EntitySource::MeshAsset { .. }
                 ),

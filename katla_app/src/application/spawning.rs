@@ -1,7 +1,18 @@
+//! Entity spawning and owned model resource preparation.
+
+mod gltf_model;
+
 #[derive(katla_ecs::Component)]
 pub(crate) struct ModelTextures {
     #[inspect(skip)]
     pub(crate) handles: Vec<katla_gfx::TextureHandle>,
+}
+
+/// Geometry retained independently of a rendered surface for model-group colliders.
+#[derive(katla_ecs::Component)]
+pub(crate) struct CollisionMesh {
+    #[inspect(skip)]
+    pub(crate) handle: katla_gfx::MeshHandle,
 }
 
 use katla_gfx::GpuRenderer;
@@ -336,271 +347,6 @@ impl super::Application {
         )
     }
 
-    /// Spawn a GLTF model from file. Handles both static and skinned meshes.
-    ///
-    /// # Arguments
-    /// * `path` - Path to the GLTF file
-    /// * `position` - World position to spawn at
-    /// * `default_animation` - Optional animation name to play automatically
-    ///
-    /// # Returns
-    /// The entity ID of the spawned model.
-    ///
-    /// # Errors
-    /// Returns `AppError::ShaderCompileFailed` if the PBR shader fails to compile.
-    /// Returns `AppError::SkeletonCreateFailed` if GPU skeleton creation fails for skinned models.
-    pub fn spawn_gltf_model(
-        &mut self,
-        path: impl AsRef<std::path::Path>,
-        position: [f32; 3],
-        default_animation: Option<&str>,
-    ) -> crate::error::AppResult<katla_ecs::EntityId> {
-        use crate::components::{DrawableComponent, TransformComponent};
-        use crate::error::AppError;
-        use katla_math::Vec3;
-
-        // 1. Load model from cache
-        let path_buf = std::fs::canonicalize(path.as_ref())?;
-        let path_display = path.as_ref().to_string_lossy().to_string();
-        let model = self.gltf_cache.read(path_buf.clone())?;
-
-        // 2. Convert indices to u32 (generate sequential indices for non-indexed geometry)
-        let vertex_count = if model.has_skinning {
-            model.skinned_vertex_data.len()
-        } else {
-            model.vertex_data.len()
-        };
-        let indices = Self::convert_indices_to_u32_with_vertex_count(
-            &model.index_data,
-            model.index_stride,
-            vertex_count,
-        );
-
-        debug!(
-            "Model '{}' index conversion: {} bytes input (stride {}), {} indices output, {} vertices",
-            path.as_ref().display(),
-            model.index_data.len(),
-            model.index_stride,
-            indices.len(),
-            vertex_count
-        );
-
-        let mesh_handle = if model.has_skinning {
-            self.renderer
-                .create_mesh(
-                    &model.skinned_vertex_data,
-                    &indices,
-                    katla_gfx::PrimitiveTopology::TriangleList,
-                )
-                .map_err(|e| crate::error::AppError::Graphics { source: e })?
-        } else {
-            self.renderer
-                .create_mesh(
-                    &model.vertex_data,
-                    &indices,
-                    katla_gfx::PrimitiveTopology::TriangleList,
-                )
-                .map_err(|e| crate::error::AppError::Graphics { source: e })?
-        };
-
-        let positions: Vec<[f32; 3]> = if model.has_skinning {
-            model
-                .skinned_vertex_data
-                .iter()
-                .map(|v| v.position)
-                .collect()
-        } else {
-            model.vertex_data.iter().map(|v| v.position).collect()
-        };
-        let triangles: Vec<[u32; 3]> = indices
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .map(|c| [c[0], c[1], c[2]])
-            .collect();
-        self.geometry_cache.insert(
-            mesh_handle,
-            crate::geometry_cache::MeshGeometryData {
-                positions: positions.clone(),
-                triangles: triangles.clone(),
-            },
-        );
-        if let Some(cache) = self
-            .world
-            .get_resource_mut::<crate::geometry_cache::GeometryCache>()
-        {
-            cache.insert(
-                mesh_handle,
-                crate::geometry_cache::MeshGeometryData {
-                    positions,
-                    triangles,
-                },
-            );
-        }
-
-        // 4. Create material (skinned or regular)
-        let shader_path = if model.has_skinning {
-            self.resources.shader_path("model_pbr_skinned.wgsl")
-        } else {
-            self.resources.shader_path("model_pbr.wgsl")
-        };
-        let shader_str = shader_path.to_string_lossy();
-        let descriptor = if model.has_skinning {
-            katla_gfx::PipelineDescriptor::skinned(shader_str.into_owned())
-        } else {
-            katla_gfx::PipelineDescriptor::pbr(shader_str.into_owned())
-        }
-        .with_color_format(katla_gfx::ImageFormat::R16G16B16A16Sfloat);
-        let material_handle = match self.renderer.compile_material(&descriptor) {
-            Ok(material) => material,
-            Err(error) => {
-                crate::scene::serialization::destroy_resources(
-                    self,
-                    crate::gpu_resource_tracker::GpuResourcesToDestroy {
-                        meshes: vec![mesh_handle],
-                        ..Default::default()
-                    },
-                );
-                return Err(AppError::ShaderCompileFailed {
-                    path: path_display.clone(),
-                    reason: error.to_string(),
-                });
-            }
-        };
-
-        // 5. Upload textures and set texture indices
-        let texture_upload = self.upload_gltf_textures(&model);
-
-        // Track texture handles for GPU cleanup on scene load/entity destruction
-        for handle in &texture_upload.handles {
-            self.gpu_resource_tracker.track_texture(*handle);
-        }
-
-        // Bind the four PBR roles by handle; the backend resolves them to
-        // its binding table at upload/encode time.
-        self.renderer
-            .set_material_textures(material_handle, texture_upload.textures);
-
-        // 6. Spawn entity with emission texture index
-        let entity = self.world.spawn((
-            TransformComponent::from_position(Vec3::new(position[0], position[1], position[2])),
-            DrawableComponent::with_handles_and_material(
-                mesh_handle,
-                material_handle,
-                Some(katla_math::Color::new(
-                    model.material.base_color_factor[0],
-                    model.material.base_color_factor[1],
-                    model.material.base_color_factor[2],
-                    model.material.base_color_factor[3],
-                )),
-                model.material.metallic_factor,
-                model.material.roughness_factor,
-                1.0,
-            ),
-        ));
-
-        self.world.add_component(
-            entity,
-            ModelTextures {
-                handles: texture_upload.handles.clone(),
-            },
-        );
-        self.world.add_component(
-            entity,
-            EntitySource::GltfModel {
-                path: crate::scene::AssetRef::File(path_buf),
-            },
-        );
-        self.world.add_component(
-            entity,
-            crate::components::NameComponent::new(
-                std::path::Path::new(path.as_ref())
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("Model"),
-            ),
-        );
-
-        // Set emission texture handle on drawable component
-        if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
-            drawable.emission = texture_upload.emission;
-
-            if !texture_upload.emission.is_none() {
-                info!(
-                    "Model '{}' has emission texture {:?}",
-                    path.as_ref().display(),
-                    texture_upload.emission
-                );
-            }
-        }
-
-        self.gpu_resource_tracker.track_drawable(
-            mesh_handle,
-            material_handle,
-            katla_gfx::SkeletonHandle::NONE,
-        );
-
-        // 7. If skinned, set up animation
-        if model.has_skinning {
-            // Get joint count from skin
-            let joint_count = model
-                .document
-                .skins()
-                .next()
-                .map(|s| s.joints().count())
-                .unwrap_or(0);
-
-            if joint_count > 0 {
-                // Create GPU skeleton
-                let skeleton_handle = match self.renderer.create_skeleton(joint_count) {
-                    Ok(handle) => handle,
-                    Err(error) => {
-                        self.world.destroy_entity(entity);
-                        let mut resources = self.gpu_resource_tracker.release_drawable(
-                            mesh_handle,
-                            material_handle,
-                            katla_gfx::SkeletonHandle::NONE,
-                        );
-                        for handle in texture_upload.handles {
-                            if self.gpu_resource_tracker.release_texture(handle) {
-                                resources.textures.push(handle);
-                            }
-                        }
-                        crate::scene::serialization::destroy_resources(self, resources);
-                        return Err(AppError::SkeletonCreateFailed {
-                            path: path_display.clone(),
-                            reason: error.to_string(),
-                        });
-                    }
-                };
-                self.gpu_resource_tracker.track_skeleton(skeleton_handle);
-
-                // Add skeleton handle to drawable
-                if let Some(drawable) = self.world.get_component_mut::<DrawableComponent>(entity) {
-                    drawable.skeleton_handle = skeleton_handle;
-                }
-
-                // Set up CPU animation components
-                crate::animation::AnimationManager::setup_animated_model(
-                    &mut self.world,
-                    entity,
-                    &model,
-                    default_animation,
-                );
-
-                info!(
-                    "Spawned animated model '{}' with {} joints",
-                    path.as_ref().display(),
-                    joint_count
-                );
-            }
-        } else {
-            info!("Spawned static model '{}'", path.as_ref().display());
-        }
-
-        Ok(entity)
-    }
-
     /// Spawn an STL model from file.
     ///
     /// STL files contain only triangle geometry. They are spawned with the default PBR
@@ -662,7 +408,11 @@ impl super::Application {
     /// Material roles go through [`katla_gfx::MaterialTextures`]; the
     /// emission texture is returned separately because it rides on the
     /// draw call, not on material state.
-    fn upload_gltf_textures(&mut self, model: &crate::util::GLTFModel) -> GltfTextureUpload {
+    fn upload_gltf_textures(
+        &mut self,
+        images: &[gltf::image::Data],
+        mat: &crate::util::gltf_material::GltfMaterialInfo,
+    ) -> GltfTextureUpload {
         let mut textures = self.scene_features.as_ref().map_or_else(
             katla_gfx::MaterialTextures::default,
             super::scene_features::SceneFeatures::material_textures,
@@ -670,7 +420,6 @@ impl super::Application {
         let mut emission = katla_gfx::TextureHandle::NONE;
         let mut handles = Vec::new();
 
-        let mat = &model.material;
         for (image_index, srgb, role) in [
             (mat.base_color_texture, true, &mut textures.albedo),
             (mat.normal_texture, false, &mut textures.normal),
@@ -685,7 +434,7 @@ impl super::Application {
             let Some(image_index) = image_index else {
                 continue;
             };
-            let Some(image) = model.images.get(image_index) else {
+            let Some(image) = images.get(image_index) else {
                 log::warn!("GLTF image {image_index} is missing; retaining material fallback");
                 continue;
             };
@@ -723,34 +472,6 @@ impl super::Application {
         self.renderer
             .create_texture(&descriptor, &pixels)
             .map_err(|e| e.to_string())
-    }
-
-    /// Convert index data from bytes to u32 based on stride.
-    ///
-    /// For non-indexed geometry (empty index_data), generates sequential indices
-    /// [0, 1, 2, ... vertex_count-1] for the given vertex count.
-    pub(crate) fn convert_indices_to_u32_with_vertex_count(
-        index_data: &[u8],
-        index_stride: u8,
-        vertex_count: usize,
-    ) -> Vec<u32> {
-        if index_data.is_empty() || index_stride == 0 {
-            // Generate sequential indices for non-indexed geometry
-            return (0..vertex_count as u32).collect();
-        }
-
-        match index_stride {
-            1 => index_data.iter().map(|&b| b as u32).collect(),
-            2 => index_data
-                .chunks(2)
-                .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]) as u32)
-                .collect(),
-            4 => index_data
-                .chunks(4)
-                .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-                .collect(),
-            _ => Vec::new(),
-        }
     }
 }
 

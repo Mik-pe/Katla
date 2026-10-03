@@ -17,7 +17,7 @@ impl super::Application {
     /// For non-color data (normals, roughness), use `load_texture_unorm`.
     ///
     /// Returns a [`TextureHandle`] that can be used as a bindless texture index
-    /// via [`VulkanRenderer::get_texture_bindless_index`].
+    /// via [`GpuRenderer::get_bindless_slot`].
     pub fn load_texture(
         &mut self,
         path: impl AsRef<std::path::Path>,
@@ -88,9 +88,10 @@ impl super::Application {
         Ok(handle)
     }
 
-    /// Load a GLTF/GLB mesh from disk and upload vertex/index data to the GPU.
+    /// Upload one selected-scene node primitive from a glTF/GLB asset.
     ///
-    /// Returns a [`MeshHandle`] for the loaded geometry. The handle can be used
+    /// Node and primitive indices must exist in the selected scene. Returns a
+    /// [`katla_gfx::MeshHandle`] for that primitive's geometry. The handle can be used
     /// with [`Spawner::spawn_primitive`](crate::spawner::Spawner::spawn_primitive)
     /// or [`DrawableComponent::with_handles`](katla_app::components::rendering::DrawableComponent::with_handles)
     /// to create renderable entities.
@@ -101,6 +102,8 @@ impl super::Application {
     pub fn load_mesh(
         &mut self,
         path: impl AsRef<std::path::Path>,
+        node_index: usize,
+        primitive_index: usize,
     ) -> AppResult<katla_gfx::MeshHandle> {
         let path_ref = path.as_ref();
         let path_buf = path_ref.to_path_buf();
@@ -109,45 +112,42 @@ impl super::Application {
             reason: format!("{}", e),
         })?;
 
-        let vertex_count = if model.has_skinning {
-            model.skinned_vertex_data.len()
-        } else {
-            model.vertex_data.len()
-        };
+        let primitive = model
+            .primitives
+            .iter()
+            .find(|primitive| {
+                primitive.node_index == node_index && primitive.primitive_index == primitive_index
+            })
+            .ok_or_else(|| AppError::ModelLoadFailed {
+                path: path_ref.to_string_lossy().into_owned(),
+                reason: format!(
+                    "Selected scene has no node {node_index} primitive {primitive_index}"
+                ),
+            })?;
+        let mesh_handle = self.upload_gltf_primitive_mesh(primitive)?;
+        Ok(mesh_handle)
+    }
 
-        let indices = Self::convert_indices_to_u32_with_vertex_count(
-            &model.index_data,
-            model.index_stride,
-            vertex_count,
-        );
-
-        let mesh_handle = if model.has_skinning {
-            self.renderer
-                .create_mesh(
-                    &model.skinned_vertex_data,
-                    &indices,
-                    katla_gfx::PrimitiveTopology::TriangleList,
-                )
-                .map_err(|e| AppError::Graphics { source: e })?
-        } else {
-            self.renderer
-                .create_mesh(
-                    &model.vertex_data,
-                    &indices,
-                    katla_gfx::PrimitiveTopology::TriangleList,
-                )
-                .map_err(|e| AppError::Graphics { source: e })?
-        };
-
-        let positions: Vec<[f32; 3]> = if model.has_skinning {
-            model
-                .skinned_vertex_data
-                .iter()
-                .map(|v| v.position)
-                .collect()
-        } else {
-            model.vertex_data.iter().map(|v| v.position).collect()
-        };
+    pub(crate) fn upload_gltf_primitive_mesh(
+        &mut self,
+        primitive: &crate::util::GltfPrimitive,
+    ) -> AppResult<katla_gfx::MeshHandle> {
+        use crate::util::GltfVertices;
+        let indices = &primitive.indices;
+        let mesh_handle = match &primitive.vertices {
+            GltfVertices::Static(vertices) => self.renderer.create_mesh(
+                vertices,
+                indices,
+                katla_gfx::PrimitiveTopology::TriangleList,
+            ),
+            GltfVertices::Skinned(vertices) => self.renderer.create_mesh(
+                vertices,
+                indices,
+                katla_gfx::PrimitiveTopology::TriangleList,
+            ),
+        }
+        .map_err(|source| AppError::Graphics { source })?;
+        let positions = primitive.vertices.positions();
         let triangles: Vec<[u32; 3]> = indices
             .as_chunks::<3>()
             .0
@@ -173,15 +173,6 @@ impl super::Application {
                 },
             );
         }
-
-        info!(
-            "Loaded mesh '{}' ({} vertices, {} indices, skinned={}) -> handle {}",
-            path_ref.display(),
-            vertex_count,
-            indices.len(),
-            model.has_skinning,
-            mesh_handle.index()
-        );
 
         Ok(mesh_handle)
     }

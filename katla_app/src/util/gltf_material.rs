@@ -61,25 +61,6 @@ impl Default for GltfMaterialInfo {
 }
 
 impl GltfMaterialInfo {
-    /// Material of the first primitive in the scene's depth-first traversal.
-    ///
-    /// The current model loader flattens geometry into one drawable. Unused
-    /// entries in the document's material array must not affect that drawable.
-    pub(crate) fn from_document(document: &gltf::Document) -> Self {
-        fn first_material(node: gltf::Node<'_>) -> Option<Material<'_>> {
-            node.mesh()
-                .and_then(|mesh| mesh.primitives().next().map(|p| p.material()))
-                .or_else(|| node.children().find_map(first_material))
-        }
-
-        document
-            .default_scene()
-            .or_else(|| document.scenes().next())
-            .and_then(|scene| scene.nodes().find_map(first_material))
-            .map(|material| Self::from_gltf(&material))
-            .unwrap_or_default()
-    }
-
     /// Parse material info from a GLTF material.
     ///
     /// Extracts all PBR-relevant information from the GLTF material,
@@ -197,43 +178,6 @@ mod tests {
         assert_eq!(default.metallic_factor, material.metallic_factor);
         assert_eq!(default.roughness_factor, material.roughness_factor);
         assert_eq!(default.emission_factor, material.emission_factor);
-    }
-
-    #[test]
-    fn test_primary_material_uses_selected_scene_primitive() {
-        let document = gltf::Gltf::from_slice_without_validation(
-            br#"{
-            "asset":{"version":"2.0"}, "scene":1,
-            "scenes":[{"nodes":[0]},{"nodes":[1]}],
-            "nodes":[{"mesh":0},{"children":[2]},{"mesh":1}],
-            "meshes":[{"primitives":[{"attributes":{},"material":0}]},
-                       {"primitives":[{"attributes":{},"material":1}]}],
-            "materials":[{}, {"pbrMetallicRoughness":{
-                "baseColorFactor":[0.2,0.4,0.6,0.8],"metallicFactor":0.7,"roughnessFactor":0.3}}]
-        }"#,
-        )
-        .unwrap()
-        .document;
-        let material = GltfMaterialInfo::from_document(&document);
-        assert_eq!(material.base_color_factor, [0.2, 0.4, 0.6, 0.8]);
-        assert_eq!(material.metallic_factor, 0.7);
-        assert_eq!(material.roughness_factor, 0.3);
-    }
-
-    #[test]
-    fn test_implicit_primitive_material_ignores_unreferenced_materials() {
-        let document = gltf::Gltf::from_slice_without_validation(
-            br#"{
-            "asset":{"version":"2.0"},"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],
-            "meshes":[{"primitives":[{"attributes":{}}]}],
-            "materials":[{"pbrMetallicRoughness":{"metallicFactor":0.0}}]
-        }"#,
-        )
-        .unwrap()
-        .document;
-        let material = GltfMaterialInfo::from_document(&document);
-        assert_eq!(material.metallic_factor, 1.0);
-        assert_eq!(material.base_color_factor, [1.0; 4]);
     }
 
     #[test]

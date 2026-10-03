@@ -30,7 +30,12 @@ struct Fixture(std::path::PathBuf);
 
 impl Fixture {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!("katla-material-{}", std::process::id()));
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "katla-material-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         std::fs::create_dir_all(&path).unwrap();
         std::fs::write(path.join("probe.wgsl"), SHADER).unwrap();
         let positions: [f32; 9] = [-1.0, -1.0, 0.0, 1.0, -1.0, 0.0, 0.0, 1.0, 0.0];
@@ -52,6 +57,9 @@ impl Fixture {
         Self(path)
     }
 }
+
+#[path = "primitive_tests.rs"]
+mod primitive_tests;
 
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -96,10 +104,10 @@ fn test_native_material_defaults_import_factors_and_texture_color_spaces() {
         height: 1,
     };
     let mut model = crate::util::GLTFModel::new(fixture.0.join("mesh.gltf")).unwrap();
-    model.material.emission_texture = Some(0);
-    model.material.normal_texture = Some(0);
+    model.primitives[0].material.emission_texture = Some(0);
+    model.primitives[0].material.normal_texture = Some(0);
     model.images.push(image);
-    let upload = app.upload_gltf_textures(&model);
+    let upload = app.upload_gltf_textures(&model.images, &model.primitives[0].material);
     assert_eq!(upload.handles.len(), 2);
     let color_texture = upload.emission;
     let data_texture = upload.textures.normal;
@@ -229,7 +237,7 @@ fn test_native_material_defaults_import_factors_and_texture_color_spaces() {
         width: 1,
         height: 1,
     };
-    let upload = app.upload_gltf_textures(&model);
+    let upload = app.upload_gltf_textures(&model.images, &model.primitives[0].material);
     assert!(upload.textures.normal.is_none());
     assert!(upload.handles.is_empty());
     graph.cleanup();

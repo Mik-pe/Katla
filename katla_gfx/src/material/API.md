@@ -79,11 +79,26 @@ addresses, never persistent asset identities. Emission is currently a separate
 
 ## glTF import contract and limits
 
-The current application loader flattens a selected glTF scene into one drawable.
-It uses the material assigned to the first primitive in depth-first node order,
-from the default scene or first scene. Unreferenced document materials do not
-select the drawable's appearance. A primitive with no material uses glTF defaults:
-white base color, metallic `1`, roughness `1`, emission factor zero.
+The application imports the default scene, or the first scene if no default is
+specified. Each selected node primitive retains its own material, skin and u32
+triangle indices. Unreferenced document materials do not affect appearance.
+A primitive with no material uses glTF defaults: white base color, metallic `1`,
+roughness `1`, emission factor zero.
+
+A single primitive spawns one drawable. Multiple primitives spawn a model
+controller and independent child drawables, each with editable factors and owned
+textures/material state. Scene capture expands whole-model sources into explicit
+`GltfGroup`/`GltfPrimitive` origins, so reload reconstructs each surface once.
+Children inherit the nearest animation player, with per-child overrides. Each
+primitive uses its node's skin; unselected playback evaluates the rest pose.
+Group mesh colliders combine model geometry independently of surface drawing.
+
+Accessor iterators preserve offsets, strides, sparse data and normalized skin
+weights. Triangle strips/fans convert to triangle lists; other topologies reject
+import. Missing normals use flat triangle normals. Missing tangents with UVs use
+MikkTSpace and split vertices at corner seams; supplied skinned tangents survive
+import. Static positions preserve exact node matrices, including shear, and baked
+negative determinants reverse triangle winding as well as tangent handedness.
 
 Base color factors are already linear and are copied without sRGB conversion.
 Metallic and roughness factors initialize the drawable. Albedo and emissive
@@ -94,8 +109,7 @@ quantize to RGBA8. Malformed and floating-point images fail explicitly and log
 an optional-texture fallback; failed uploads retain the role's existing fallback
 and add no handle to resource tracking.
 
-This is not full glTF material support. Additional primitives currently share
-the first material. Alpha modes/cutoffs, double-sided shading, UV sets and
+This is not full glTF material support. Alpha modes/cutoffs, double-sided shading, UV sets and
 transforms, per-texture samplers, normal scale, occlusion strength, emissive
 factors and material extensions need dedicated support. Scene serialization
 preserves editable base color and PBR factors; texture assignment and standalone
@@ -116,7 +130,8 @@ Negative determinants reverse tangent handedness. Skinned frames use the
 combined model and blended joint transform. Static glTF baking follows the same
 contract. Singular transforms produce a finite fallback frame; they do not
 define a physically meaningful surface. Transforming the tangent frame does not
-change triangle winding or culling state.
+change runtime triangle winding or culling state. Static import baking separately
+reverses winding for reflected node matrices.
 
 ## Shader reload
 
@@ -173,3 +188,13 @@ syntax failure, shared-include edits, duplicate filenames, binding-interface
 replacement, submitted work across replacement, and atomic plain/instanced UI
 preparation. The platform selects its native renderer; Metal requires the debug
 environment and Metal 4 hardware described above.
+
+Native per-primitive acceptance runs with:
+`cargo test -p katla_app --lib material_tests --all-features -- --ignored --nocapture --test-threads=1`.
+The static/skinned fixtures read independent texture/color/metallic/roughness
+pixels before and after scene reload, select the node's second skin through the
+real GPU pose/copy/draw path, reject missing primitive identities atomically,
+expand whole-model material overrides, preserve group colliders and retire all
+owned resources. These probes complement the shared BRDF arithmetic checks;
+they are not full-scene visual quality benchmarks. Physical Metal acceptance
+requires its native hardware and debug environment.
