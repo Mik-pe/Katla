@@ -314,7 +314,11 @@ fn test_headless_resize_retires_sources_and_preserves_queued_readback() {
     let ticket = renderer
         .queue_texture_readback(source, crate::TextureReadbackRegion::pixel(8, 8))
         .unwrap();
+    let next_slot = renderer.current_frame();
+    let submitted_frames = renderer.swap_data.frame_counter();
     renderer.resize(32, 24).unwrap();
+    assert_eq!(renderer.current_frame(), next_slot);
+    assert_eq!(renderer.swap_data.frame_counter(), submitted_frames);
     assert_eq!(renderer.swapchain_extent(), crate::Size2D::new(32, 24));
     assert!(renderer.graph_texture_source(backbuffer).is_none());
     assert!(
@@ -334,10 +338,30 @@ fn test_headless_resize_retires_sources_and_preserves_queued_readback() {
     let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
         panic!("resized headless acquisition");
     };
+    assert_eq!(frame.slot(), next_slot);
     renderer
         .write_buffer(&frame, buffer, 0, &9u32.to_ne_bytes())
         .unwrap();
     renderer.abort(frame).unwrap();
+    let FrameAcquisition::Ready(frame) = renderer.acquire_frame().unwrap() else {
+        panic!("resized headless acquisition after abort");
+    };
+    assert_eq!(frame.slot(), next_slot);
+    renderer.render(&frame, &mut graph, |_| {}).unwrap();
+    renderer.present(frame).unwrap();
+    let source = renderer.graph_texture_source(backbuffer).unwrap();
+    let ticket = renderer
+        .queue_texture_readback(source, crate::TextureReadbackRegion::pixel(30, 22))
+        .unwrap();
+    renderer.wait_for_device();
+    assert_eq!(
+        renderer
+            .poll_texture_readback(ticket)
+            .unwrap()
+            .unwrap()
+            .bytes,
+        [0, 0, 0, 255]
+    );
     renderer.destroy();
 }
 

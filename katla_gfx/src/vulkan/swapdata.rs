@@ -20,6 +20,7 @@ impl SwapData {
         device: &Device,
         swapchain_images: &[vk::Image],
         frames_in_flight: usize,
+        frame_counter: u64,
     ) -> Result<Self, RendererError> {
         let num_swapchain_images = swapchain_images.len();
 
@@ -57,11 +58,11 @@ impl SwapData {
             })
             .collect::<Result<_, _>>()?;
 
-        let frame = 0;
+        let frame = (frame_counter % frames_in_flight as u64) as usize;
         Ok(Self {
             frames_in_flight,
             frame,
-            frame_counter: 0,
+            frame_counter,
             in_flight_fences,
             submitted: vec![false; frames_in_flight],
             image_available_semaphores,

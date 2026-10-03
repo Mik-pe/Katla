@@ -159,6 +159,8 @@ identity: resource handles always validate index and generation.
 Vulkan headless rendering owns two offscreen targets. Windowed resize uses
 physical pixel dimensions clamped to surface limits and replaces synchronization
 objects with the swapchain. Release the surface before native window teardown.
+Output recreation preserves the next reusable frame slot and monotonic submitted
+frame count, so app-owned frame resources continue from their committed source.
 Frame fences reset immediately before submission. Each slot waits only for a
 successfully accepted submission, so rejection leaves an unsubmitted fence
 reusable without allocating a replacement. Windowed aborts and rejected

@@ -246,6 +246,7 @@ impl VulkanRenderer {
                 .map(|img| img.vk())
                 .collect::<Vec<_>>(),
             FRAMES_IN_FLIGHT,
+            0,
         )?;
 
         let mut texture_manager = TextureManager::new(context.clone())?;
@@ -481,12 +482,11 @@ impl VulkanRenderer {
                 .map(|image| image.vk())
                 .collect::<Vec<_>>(),
             FRAMES_IN_FLIGHT,
+            self.swap_data.frame_counter(),
         )?;
         self.swap_data.destroy(&self.context.device);
         self.swap_data = swap_data;
         self.acquired_surface_image = None;
-        // The new SwapData restarts its frame counter; the device idle wait
-        // above completed every old submission, so retirements can free now.
         self.drain_retirements_all();
 
         let new_extent = self.frame_context.extent;

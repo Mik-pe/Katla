@@ -11,6 +11,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] Execute generic compute, transfer and graphics commands on both backends without hidden feature dispatch.
 - [x] Retain exact committed graph exports and queued readback ownership across resize and slot reuse.
 - [x] Capture compiled synchronization, physical allocations and actual native encoder/binding/residency/feedback traces without changing execution.
+- [x] Preserve Vulkan frame-slot progression across output recreation so particle rollover never aliases its committed source. Verified native resize/readback regression and repeated windowed maximize/restore on Intel Iris Plus (ICL GT2).
 
 ## Audio System
 
