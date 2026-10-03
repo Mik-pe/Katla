@@ -79,41 +79,66 @@ impl VertexAttributeFormat {
 /// Describes the layout of vertex attributes in a buffer.
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct VertexLayout {
-    formats: Vec<VertexAttributeFormat>,
+    attributes: Vec<VertexAttribute>,
+}
+
+/// One vertex field's shader location and storage format.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct VertexAttribute {
+    /// Shader input location in `0..=30`, shared by Vulkan and Metal layouts.
+    pub location: u32,
+    /// Format of this field in the uploaded vertex bytes.
+    pub format: VertexAttributeFormat,
 }
 
 impl VertexLayout {
     /// Create a vertex layout from attribute formats.
     pub fn new(formats: Vec<VertexAttributeFormat>) -> Self {
-        Self { formats }
+        Self::from_attributes(
+            formats
+                .into_iter()
+                .enumerate()
+                .map(|(index, format)| VertexAttribute {
+                    location: index as u32,
+                    format,
+                })
+                .collect(),
+        )
+    }
+
+    /// Create a layout whose field order is independent of shader location order.
+    pub fn from_attributes(attributes: Vec<VertexAttribute>) -> Self {
+        Self { attributes }
     }
 
     /// Empty vertex layout (for fullscreen passes).
     pub fn empty() -> Self {
         Self {
-            formats: Vec::new(),
+            attributes: Vec::new(),
         }
     }
 
-    /// Standard PBR vertex layout: position, normal, tangent, uv.
+    /// PBR fields with independent primary and secondary texture coordinates.
     pub fn pbr() -> Self {
-        Self::new(vec![
-            VertexAttributeFormat::Float3, // position
-            VertexAttributeFormat::Float3, // normal
-            VertexAttributeFormat::Float4, // tangent
-            VertexAttributeFormat::Float2, // uv
+        Self::for_attributes(&[
+            AttributeType::Position,
+            AttributeType::Normal,
+            AttributeType::Tangent,
+            AttributeType::TexCoord0,
+            AttributeType::TexCoord1,
         ])
     }
 
-    /// Skinned PBR vertex layout with joint indices and weights.
+    /// PBR fields with joint indices, weights and both texture coordinate sets.
     pub fn pbr_skinned() -> Self {
-        Self::new(vec![
-            VertexAttributeFormat::Float3,  // position
-            VertexAttributeFormat::Float3,  // normal
-            VertexAttributeFormat::Float4,  // tangent
-            VertexAttributeFormat::Float2,  // uv
-            VertexAttributeFormat::UShort4, // joint indices
-            VertexAttributeFormat::Float4,  // joint weights
+        Self::for_attributes(&[
+            AttributeType::Position,
+            AttributeType::Normal,
+            AttributeType::Tangent,
+            AttributeType::TexCoord0,
+            AttributeType::JointIndices,
+            AttributeType::JointWeights,
+            AttributeType::TexCoord1,
         ])
     }
 
@@ -171,43 +196,64 @@ impl VertexLayout {
     pub fn for_attributes(attributes: &[AttributeType]) -> Self {
         let mut sorted = attributes.to_vec();
         sorted.sort_by_key(attribute_canonical_order);
-        Self::new(
+        Self::from_attributes(
             sorted
                 .iter()
-                .map(|attribute| match attribute {
-                    AttributeType::Position => VertexAttributeFormat::Float3,
-                    AttributeType::Normal => VertexAttributeFormat::Float3,
-                    AttributeType::Tangent => VertexAttributeFormat::Float4,
-                    AttributeType::TexCoord0 | AttributeType::TexCoord1 => {
-                        VertexAttributeFormat::Float2
-                    }
-                    AttributeType::Color0 => VertexAttributeFormat::Float4,
-                    AttributeType::JointIndices => VertexAttributeFormat::UShort4,
-                    AttributeType::JointWeights => VertexAttributeFormat::Float4,
-                    AttributeType::TextureIndex => VertexAttributeFormat::UInt,
+                .map(|attribute| VertexAttribute {
+                    location: attribute_canonical_order(attribute),
+                    format: match attribute {
+                        AttributeType::Position => VertexAttributeFormat::Float3,
+                        AttributeType::Normal => VertexAttributeFormat::Float3,
+                        AttributeType::Tangent => VertexAttributeFormat::Float4,
+                        AttributeType::TexCoord0 | AttributeType::TexCoord1 => {
+                            VertexAttributeFormat::Float2
+                        }
+                        AttributeType::Color0 => VertexAttributeFormat::Float4,
+                        AttributeType::JointIndices => VertexAttributeFormat::UShort4,
+                        AttributeType::JointWeights => VertexAttributeFormat::Float4,
+                        AttributeType::TextureIndex => VertexAttributeFormat::UInt,
+                    },
                 })
                 .collect(),
         )
     }
 
-    /// Get the attribute formats.
-    pub fn formats(&self) -> &[VertexAttributeFormat] {
-        &self.formats
+    /// Fields in interleaved storage order or canonical SoA binding order.
+    pub fn attributes(&self) -> &[VertexAttribute] {
+        &self.attributes
     }
 
     /// Get the number of attributes.
     pub fn len(&self) -> usize {
-        self.formats.len()
+        self.attributes.len()
     }
 
     /// Check if layout is empty.
     pub fn is_empty(&self) -> bool {
-        self.formats.is_empty()
+        self.attributes.is_empty()
     }
 
     /// Calculate the stride in bytes.
     pub fn stride(&self) -> usize {
-        self.formats.iter().map(|f| f.size_bytes()).sum()
+        self.attributes
+            .iter()
+            .map(|attribute| attribute.format.size_bytes())
+            .sum()
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), &'static str> {
+        for (index, attribute) in self.attributes.iter().enumerate() {
+            if attribute.location >= 31 {
+                return Err("Vertex shader locations must be in 0..=30");
+            }
+            if self.attributes[..index]
+                .iter()
+                .any(|previous| previous.location == attribute.location)
+            {
+                return Err("Vertex shader locations must be unique");
+            }
+        }
+        Ok(())
     }
 }
 
@@ -253,10 +299,10 @@ impl From<&VertexLayout> for crate::vulkan::vertexbinding::VertexBinding {
     fn from(layout: &VertexLayout) -> Self {
         use crate::vulkan::vertexbinding::VertexFormat;
         Self {
-            formats: layout
-                .formats()
+            attributes: layout
+                .attributes()
                 .iter()
-                .map(|f| VertexFormat::from(*f))
+                .map(|attribute| (attribute.location, VertexFormat::from(attribute.format)))
                 .collect(),
         }
     }
@@ -272,7 +318,7 @@ pub trait Vertex: bytemuck::Pod + bytemuck::Zeroable {
     /// Returns the vertex layout describing this vertex's attributes.
     fn layout() -> VertexLayout;
 
-    /// Semantic attribute for each entry of [`VertexLayout::formats`], in
+    /// Semantic attribute for each entry of [`VertexLayout::attributes`], in
     /// the same order. This is the trusted mapping mesh upload uses instead
     /// of guessing layouts from byte shapes: every `Vertex` implementation
     /// declares what its bytes mean, and upload validates the declaration
@@ -292,7 +338,8 @@ pub trait Vertex: bytemuck::Pod + bytemuck::Zeroable {
 /// - `normal`: 12 bytes (3 x f32)
 /// - `tangent`: 16 bytes (4 x f32, w = handedness sign)
 /// - `tex_coord0`: 8 bytes (2 x f32)
-/// - Total: 48 bytes
+/// - `tex_coord1`: 8 bytes (2 x f32)
+/// - Total: 56 bytes
 ///
 /// # Example
 ///
@@ -304,6 +351,7 @@ pub trait Vertex: bytemuck::Pod + bytemuck::Zeroable {
 ///     normal: [0.0, 1.0, 0.0],
 ///     tangent: [1.0, 0.0, 0.0, 1.0],
 ///     tex_coord0: [0.5, 0.5],
+///     tex_coord1: [0.0, 0.0],
 /// };
 /// ```
 #[repr(C)]
@@ -318,6 +366,8 @@ pub struct VertexPBR {
     pub tangent: [f32; 4],
     /// Primary texture coordinates (UV0).
     pub tex_coord0: [f32; 2],
+    /// Secondary texture coordinates (UV1), at shader location six.
+    pub tex_coord1: [f32; 2],
 }
 
 impl VertexPBR {
@@ -334,6 +384,7 @@ impl VertexPBR {
             normal,
             tangent,
             tex_coord0,
+            tex_coord1: tex_coord0,
         }
     }
 
@@ -345,6 +396,7 @@ impl VertexPBR {
             normal: [0.0, 1.0, 0.0],
             tangent: [1.0, 0.0, 0.0, 1.0],
             tex_coord0: [0.0, 0.0],
+            tex_coord1: [0.0, 0.0],
         }
     }
 }
@@ -362,6 +414,7 @@ impl Vertex for VertexPBR {
             AttributeType::Normal,
             AttributeType::Tangent,
             AttributeType::TexCoord0,
+            AttributeType::TexCoord1,
         ]
     }
 }
@@ -375,7 +428,8 @@ impl Vertex for VertexPBR {
 /// - Base PBR attributes: 48 bytes
 /// - `joint_indices`: 8 bytes (4 x u16)
 /// - `joint_weights`: 16 bytes (4 x f32)
-/// - Total: 72 bytes
+/// - `tex_coord1`: 8 bytes (2 x f32)
+/// - Total: 80 bytes
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct VertexPBRSkinned {
@@ -392,6 +446,8 @@ pub struct VertexPBRSkinned {
     pub joint_indices: [u16; 4],
     /// Joint weights (must sum to 1.0).
     pub joint_weights: [f32; 4],
+    /// Secondary texture coordinates (UV1), at shader location six.
+    pub tex_coord1: [f32; 2],
 }
 
 impl VertexPBRSkinned {
@@ -410,6 +466,7 @@ impl VertexPBRSkinned {
             normal,
             tangent,
             tex_coord0,
+            tex_coord1: tex_coord0,
             joint_indices,
             joint_weights,
         }
@@ -427,6 +484,7 @@ impl VertexPBRSkinned {
             normal: base.normal,
             tangent: base.tangent,
             tex_coord0: base.tex_coord0,
+            tex_coord1: base.tex_coord1,
             joint_indices,
             joint_weights,
         }
@@ -448,6 +506,7 @@ impl Vertex for VertexPBRSkinned {
             AttributeType::TexCoord0,
             AttributeType::JointIndices,
             AttributeType::JointWeights,
+            AttributeType::TexCoord1,
         ]
     }
 }
@@ -714,14 +773,22 @@ pub const UNIT_QUAD_VERTICES: [VertexUIQuad; 4] = [
 mod tests {
     use super::*;
 
+    fn formats(layout: &VertexLayout) -> Vec<VertexAttributeFormat> {
+        layout
+            .attributes()
+            .iter()
+            .map(|attribute| attribute.format)
+            .collect()
+    }
+
     #[test]
     fn test_vertex_pbr_size() {
-        assert_eq!(std::mem::size_of::<VertexPBR>(), 48);
+        assert_eq!(std::mem::size_of::<VertexPBR>(), 56);
     }
 
     #[test]
     fn test_vertex_pbr_skinned_size() {
-        assert_eq!(std::mem::size_of::<VertexPBRSkinned>(), 72);
+        assert_eq!(std::mem::size_of::<VertexPBRSkinned>(), 80);
     }
 
     #[test]
@@ -752,15 +819,15 @@ mod tests {
     #[test]
     fn test_vertex_pbr_layout() {
         let layout = VertexPBR::layout();
-        assert_eq!(layout.len(), 4);
-        assert_eq!(layout.stride(), 48);
+        assert_eq!(layout.len(), 5);
+        assert_eq!(layout.stride(), 56);
     }
 
     #[test]
     fn test_vertex_pbr_skinned_layout() {
         let layout = VertexPBRSkinned::layout();
-        assert_eq!(layout.len(), 6);
-        assert_eq!(layout.stride(), 72);
+        assert_eq!(layout.len(), 7);
+        assert_eq!(layout.stride(), 80);
     }
 
     #[test]
@@ -782,7 +849,7 @@ mod tests {
         let layout = VertexUI::layout();
         assert_eq!(layout.len(), 4);
         assert_eq!(
-            layout.formats(),
+            formats(&layout),
             &[
                 VertexAttributeFormat::Float2,     // position
                 VertexAttributeFormat::Float2,     // uv
@@ -860,7 +927,7 @@ mod tests {
             [0.5, 0.5],
         );
         let bytes: &[u8] = bytemuck::bytes_of(&vertex);
-        assert_eq!(bytes.len(), 48);
+        assert_eq!(bytes.len(), 56);
     }
 
     //=========================================================================
@@ -909,7 +976,7 @@ mod tests {
             assert!(layout.is_empty());
             assert_eq!(layout.len(), 0);
             assert_eq!(layout.stride(), 0);
-            assert_eq!(layout.formats(), &[]);
+            assert_eq!(formats(&layout), &[]);
         }
 
         #[test]
@@ -926,25 +993,26 @@ mod tests {
         #[test]
         fn test_pbr_layout() {
             let layout = VertexLayout::pbr();
-            assert_eq!(layout.len(), 4);
+            assert_eq!(layout.len(), 5);
             assert_eq!(
-                layout.formats(),
+                formats(&layout),
                 &[
                     VertexAttributeFormat::Float3, // position
                     VertexAttributeFormat::Float3, // normal
                     VertexAttributeFormat::Float4, // tangent
-                    VertexAttributeFormat::Float2, // uv
+                    VertexAttributeFormat::Float2, // uv0
+                    VertexAttributeFormat::Float2, // uv1
                 ]
             );
-            assert_eq!(layout.stride(), 48); // 12 + 12 + 16 + 8
+            assert_eq!(layout.stride(), 56); // 12 + 12 + 16 + 8
         }
 
         #[test]
         fn test_pbr_skinned_layout() {
             let layout = VertexLayout::pbr_skinned();
-            assert_eq!(layout.len(), 6);
+            assert_eq!(layout.len(), 7);
             assert_eq!(
-                layout.formats(),
+                formats(&layout),
                 &[
                     VertexAttributeFormat::Float3,  // position
                     VertexAttributeFormat::Float3,  // normal
@@ -952,16 +1020,17 @@ mod tests {
                     VertexAttributeFormat::Float2,  // uv
                     VertexAttributeFormat::UShort4, // joint indices
                     VertexAttributeFormat::Float4,  // joint weights
+                    VertexAttributeFormat::Float2,  // uv1
                 ]
             );
-            assert_eq!(layout.stride(), 72); // 12 + 12 + 16 + 8 + 8 + 16
+            assert_eq!(layout.stride(), 80); // 12 + 12 + 16 + 8 + 8 + 16
         }
 
         #[test]
         fn test_position_layout() {
             let layout = VertexLayout::position();
             assert_eq!(layout.len(), 1);
-            assert_eq!(layout.formats(), &[VertexAttributeFormat::Float3]);
+            assert_eq!(formats(&layout), &[VertexAttributeFormat::Float3]);
             assert_eq!(layout.stride(), 12);
         }
 
@@ -970,7 +1039,7 @@ mod tests {
             let layout = VertexLayout::position_normal();
             assert_eq!(layout.len(), 2);
             assert_eq!(
-                layout.formats(),
+                formats(&layout),
                 &[VertexAttributeFormat::Float3, VertexAttributeFormat::Float3]
             );
             assert_eq!(layout.stride(), 24);
@@ -981,7 +1050,7 @@ mod tests {
             let layout = VertexLayout::position_normal_uv();
             assert_eq!(layout.len(), 3);
             assert_eq!(
-                layout.formats(),
+                formats(&layout),
                 &[
                     VertexAttributeFormat::Float3,
                     VertexAttributeFormat::Float3,
@@ -996,7 +1065,7 @@ mod tests {
             let layout = VertexLayout::position_color();
             assert_eq!(layout.len(), 2);
             assert_eq!(
-                layout.formats(),
+                formats(&layout),
                 &[VertexAttributeFormat::Float3, VertexAttributeFormat::Float4]
             );
             assert_eq!(layout.stride(), 28);
@@ -1078,7 +1147,7 @@ mod tests {
         fn test_layout_to_binding_empty() {
             let layout = VertexLayout::empty();
             let binding = crate::vulkan::vertexbinding::VertexBinding::from(&layout);
-            assert!(binding.formats.is_empty());
+            assert!(binding.attributes.is_empty());
         }
 
         #[test]
@@ -1086,11 +1155,11 @@ mod tests {
             let layout = VertexLayout::pbr();
             let binding = crate::vulkan::vertexbinding::VertexBinding::from(&layout);
 
-            assert_eq!(binding.formats.len(), 4);
-            assert_eq!(binding.formats[0], VertexFormat::RGB32f); // position
-            assert_eq!(binding.formats[1], VertexFormat::RGB32f); // normal
-            assert_eq!(binding.formats[2], VertexFormat::RGBA32f); // tangent
-            assert_eq!(binding.formats[3], VertexFormat::RG32f); // uv
+            assert_eq!(binding.attributes.len(), 5);
+            assert_eq!(binding.attributes[0].1, VertexFormat::RGB32f); // position
+            assert_eq!(binding.attributes[1].1, VertexFormat::RGB32f); // normal
+            assert_eq!(binding.attributes[2].1, VertexFormat::RGBA32f); // tangent
+            assert_eq!(binding.attributes[3].1, VertexFormat::RG32f); // uv
         }
 
         #[test]
@@ -1098,13 +1167,13 @@ mod tests {
             let layout = VertexLayout::pbr_skinned();
             let binding = crate::vulkan::vertexbinding::VertexBinding::from(&layout);
 
-            assert_eq!(binding.formats.len(), 6);
-            assert_eq!(binding.formats[0], VertexFormat::RGB32f); // position
-            assert_eq!(binding.formats[1], VertexFormat::RGB32f); // normal
-            assert_eq!(binding.formats[2], VertexFormat::RGBA32f); // tangent
-            assert_eq!(binding.formats[3], VertexFormat::RG32f); // uv
-            assert_eq!(binding.formats[4], VertexFormat::RGBA16u); // joint indices
-            assert_eq!(binding.formats[5], VertexFormat::RGBA32f); // joint weights
+            assert_eq!(binding.attributes.len(), 7);
+            assert_eq!(binding.attributes[0].1, VertexFormat::RGB32f); // position
+            assert_eq!(binding.attributes[1].1, VertexFormat::RGB32f); // normal
+            assert_eq!(binding.attributes[2].1, VertexFormat::RGBA32f); // tangent
+            assert_eq!(binding.attributes[3].1, VertexFormat::RG32f); // uv
+            assert_eq!(binding.attributes[4].1, VertexFormat::RGBA16u); // joint indices
+            assert_eq!(binding.attributes[5].1, VertexFormat::RGBA32f); // joint weights
         }
 
         #[test]
@@ -1113,7 +1182,11 @@ mod tests {
             let binding = crate::vulkan::vertexbinding::VertexBinding::from(&layout);
 
             let layout_stride = layout.stride() as u32;
-            let binding_stride: u32 = binding.formats.iter().map(|f| f.get_offset()).sum();
+            let binding_stride: u32 = binding
+                .attributes
+                .iter()
+                .map(|(_, format)| format.get_offset())
+                .sum();
 
             assert_eq!(layout_stride, binding_stride);
         }
@@ -1124,7 +1197,11 @@ mod tests {
             let binding = crate::vulkan::vertexbinding::VertexBinding::from(&layout);
 
             let layout_stride = layout.stride() as u32;
-            let binding_stride: u32 = binding.formats.iter().map(|f| f.get_offset()).sum();
+            let binding_stride: u32 = binding
+                .attributes
+                .iter()
+                .map(|(_, format)| format.get_offset())
+                .sum();
 
             assert_eq!(layout_stride, binding_stride);
         }

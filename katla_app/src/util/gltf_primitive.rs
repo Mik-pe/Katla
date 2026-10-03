@@ -36,6 +36,12 @@ pub(super) fn decode(
     let uv: Option<Vec<_>> = reader
         .read_tex_coords(0)
         .map(|values| values.into_f32().collect());
+    let uv1: Option<Vec<_>> = reader
+        .read_tex_coords(1)
+        .map(|values| values.into_f32().collect());
+    if let Some(values) = &uv1 {
+        check_attribute("TEXCOORD_1", values, count)?;
+    }
     check_attribute("POSITION", &positions, count)?;
     if let Some(values) = &normals {
         check_attribute("NORMAL", values, count)?;
@@ -97,6 +103,7 @@ pub(super) fn decode(
                     .as_ref()
                     .map_or_else(|| fallback_tangent(normal), |values| values[index]),
                 tex_coord0: uv.as_ref().map_or([0.0; 2], |values| values[index]),
+                tex_coord1: uv1.as_ref().map_or([0.0; 2], |values| values[index]),
             }
         })
         .collect();
@@ -135,6 +142,7 @@ pub(super) fn decode(
                         normal: vertex.normal,
                         tangent: vertex.tangent,
                         tex_coord0: vertex.tex_coord0,
+                        tex_coord1: vertex.tex_coord1,
                         joint_indices: joints[index],
                         joint_weights: weights[index].map(|weight| weight / sum),
                     }

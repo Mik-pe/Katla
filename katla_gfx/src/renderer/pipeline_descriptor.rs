@@ -484,6 +484,12 @@ impl PipelineDescriptor {
     /// [`validate_shader_source`](PipelineDescriptor::validate_shader_source);
     /// backends run both before touching native APIs.
     pub fn validate(&self) -> Result<(), RendererError> {
+        self.vertex
+            .validate()
+            .map_err(|reason| RendererError::InvalidDescriptor {
+                resource: "material".into(),
+                reason: reason.into(),
+            })?;
         if self.shader_path.is_empty() {
             return Err(RendererError::InvalidDescriptor {
                 resource: "material".to_string(),

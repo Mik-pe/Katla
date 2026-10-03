@@ -29,6 +29,7 @@ fn vertex(position: [f32; 3], normal: [f32; 3], uv: [f32; 2]) -> VertexPBR {
         normal,
         tangent: [1.0, 0.0, 0.0, 1.0],
         tex_coord0: uv,
+        tex_coord1: uv,
     }
 }
 

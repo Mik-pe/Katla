@@ -3,7 +3,6 @@ use crate::render_graph::frame::Frame;
 use crate::renderer::VulkanRenderer;
 use crate::renderer::types::PreparedDraws;
 use crate::vulkan::commandbuffer::CommandBuffer;
-use crate::vulkan::vertex_attribute::AttributeType;
 use ash::vk;
 
 impl Frame<'_, VulkanRenderer> {
@@ -91,64 +90,28 @@ impl Frame<'_, VulkanRenderer> {
                 draw_call.skeleton,
                 accesses,
             )?;
-            let is_skinned = !draw_call.skeleton.is_none();
-
             let mesh = self
                 .renderer
                 .asset_registry
                 .get_mesh(draw_call.mesh)
                 .ok_or(RenderGraphError::InvalidMeshHandle(draw_call.mesh))?;
 
-            let pos_buf = mesh
-                .get_attribute_buffer(AttributeType::Position)
-                .map(|vb| vb.object())
-                .unwrap_or(vk::Buffer::null());
-            let norm_buf = mesh
-                .get_attribute_buffer(AttributeType::Normal)
-                .map(|vb| vb.object())
-                .unwrap_or(vk::Buffer::null());
-            let tang_buf = mesh
-                .get_attribute_buffer(AttributeType::Tangent)
-                .map(|vb| vb.object())
-                .unwrap_or(vk::Buffer::null());
-            let uv_buf = mesh
-                .get_attribute_buffer(AttributeType::TexCoord0)
-                .map(|vb| vb.object())
-                .unwrap_or(vk::Buffer::null());
-
-            if is_skinned {
-                let joints_buf = mesh
-                    .get_attribute_buffer(AttributeType::JointIndices)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                let weights_buf = mesh
-                    .get_attribute_buffer(AttributeType::JointWeights)
-                    .map(|vb| vb.object())
-                    .unwrap_or(vk::Buffer::null());
-                cmd.bind_vertex_buffers_at_locations(&[
-                    (0, pos_buf),
-                    (1, norm_buf),
-                    (2, tang_buf),
-                    (3, uv_buf),
-                    (4, joints_buf),
-                    (5, weights_buf),
-                ]);
-            } else {
-                cmd.bind_vertex_buffers_at_locations(&[
-                    (0, pos_buf),
-                    (1, norm_buf),
-                    (2, tang_buf),
-                    (3, uv_buf),
-                    (4, vk::Buffer::null()),
-                    (5, vk::Buffer::null()),
-                ]);
-            }
-
             // An empty dynamic mesh draws nothing: skip instead of encoding a
             // zero-count indexed draw without a bound index buffer.
             if mesh.index_count == 0 {
                 continue;
             }
+            let mut buffers = smallvec::SmallVec::<[(u32, vk::Buffer); 8]>::new();
+            for (binding, attribute) in mesh.attributes.iter().enumerate() {
+                let buffer = mesh.get_attribute_buffer(*attribute).ok_or_else(|| {
+                    crate::render_graph::RenderGraphError::InvalidConfiguration(format!(
+                        "Mesh vertex attribute {attribute:?} is missing"
+                    ))
+                })?;
+                buffers.push((binding as u32, buffer.object()));
+            }
+            cmd.bind_vertex_buffers_at_locations(&buffers);
+
             if let Some(ib) = &mesh.index_buffer {
                 cmd.bind_index_buffer(ib.object(), 0, mesh.index_format.into());
             }

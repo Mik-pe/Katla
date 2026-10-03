@@ -401,8 +401,13 @@ fn vertex_descriptor(
     use crate::vertex::VertexAttributeFormat::*;
     let native = objc2_metal::MTLVertexDescriptor::new();
     let mut offset = 0;
-    for (index, format) in layout.formats().iter().enumerate() {
-        let attribute = unsafe { native.attributes().objectAtIndexedSubscript(index) };
+    for field in layout.attributes() {
+        let format = field.format;
+        let attribute = unsafe {
+            native
+                .attributes()
+                .objectAtIndexedSubscript(field.location as usize)
+        };
         attribute.setFormat(match format {
             Float => objc2_metal::MTLVertexFormat::Float,
             Float2 => objc2_metal::MTLVertexFormat::Float2,

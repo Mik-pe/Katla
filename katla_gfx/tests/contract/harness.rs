@@ -571,18 +571,21 @@ pub fn clip_triangle() -> Vec<VertexPBR> {
             normal: [0.0, 0.0, 1.0],
             tangent: [1.0, 0.0, 0.0, 1.0],
             tex_coord0: [0.0, 0.0],
+            tex_coord1: [0.0, 0.0],
         },
         VertexPBR {
             position: [0.5, -0.5, 0.5],
             normal: [0.0, 0.0, 1.0],
             tangent: [1.0, 0.0, 0.0, 1.0],
             tex_coord0: [1.0, 0.0],
+            tex_coord1: [1.0, 0.0],
         },
         VertexPBR {
             position: [0.0, 0.5, 0.5],
             normal: [0.0, 0.0, 1.0],
             tangent: [1.0, 0.0, 0.0, 1.0],
             tex_coord0: [0.5, 1.0],
+            tex_coord1: [0.5, 1.0],
         },
     ]
 }

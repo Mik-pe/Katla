@@ -264,9 +264,9 @@ pub use texture::{
 
 // Vertex types (public module for discoverability and extensibility)
 pub use vertex::{
-    UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES, Vertex, VertexAttributeFormat, VertexLayout, VertexPBR,
-    VertexPBRSkinned, VertexPosition, VertexPositionColor, VertexPositionNormal,
-    VertexPositionNormalUV, VertexUI, VertexUIInstance, VertexUIQuad,
+    UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES, Vertex, VertexAttribute, VertexAttributeFormat,
+    VertexLayout, VertexPBR, VertexPBRSkinned, VertexPosition, VertexPositionColor,
+    VertexPositionNormal, VertexPositionNormalUV, VertexUI, VertexUIInstance, VertexUIQuad,
 };
 
 // SOA vertex attribute types (shared enum definition)

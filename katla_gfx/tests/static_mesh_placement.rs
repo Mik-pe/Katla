@@ -74,6 +74,7 @@ fn vertex(position: [f32; 3]) -> VertexPBR {
         normal: [0.0, 0.0, 1.0],
         tangent: [1.0, 0.0, 0.0, 1.0],
         tex_coord0: [0.0, 0.0],
+        tex_coord1: [0.0, 0.0],
     }
 }
 

@@ -29,6 +29,16 @@ descriptor value. Drawing phases can override sampler and constant slots; each
 phase starts from the pass's base packet. Explicit image bindings can select an
 imported image's mip range, whose first included level becomes shader level zero.
 
+Vertex layout fields carry their shader location and storage format together.
+Storage/buffer order is independent of shader location: static PBR uses locations
+`0,1,2,3,6`, while skinned PBR retains joints/weights at `4,5` and UV1 at `6`.
+`VertexPBR` occupies 56 bytes and `VertexPBRSkinned` 80 bytes. Their convenience
+constructors initialize UV1 from UV0; glTF decoding preserves independent UV1
+accessors and validates counts/finite values. SoA uploads bind fields in descriptor
+order instead of selecting buffers from a skeleton handle. Descriptor validation
+rejects duplicate locations and locations beyond 30 before native creation,
+matching Metal's [31 vertex attribute entries](https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf).
+
 ## Minimal application
 
 An empty application graph selects `GraphOnly` and installs no scene or editor

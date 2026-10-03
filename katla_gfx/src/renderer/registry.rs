@@ -75,7 +75,7 @@ pub struct MeshAsset {
     /// neutral descriptor into native vertex state; pipeline compatibility
     /// (issue #100) keys off it.
     pub layout: crate::vertex::VertexLayout,
-    /// Attribute semantics aligned 1:1 with `layout.formats()` by position.
+    /// Attribute semantics aligned 1:1 with `layout.attributes()` by position.
     /// Dynamic updates slice interleaved blobs through this mapping.
     pub attributes: Vec<AttributeType>,
     /// Primitive topology. Only `TriangleList` is encodable today; anything
@@ -217,6 +217,12 @@ impl MeshDescriptor {
     /// vertex count at upload time, where the index data is available.
     pub fn validate(&self, vertex_stride: usize) -> Result<(), crate::error::RendererError> {
         use crate::error::RendererError;
+        self.layout
+            .validate()
+            .map_err(|reason| RendererError::InvalidDescriptor {
+                resource: "mesh".into(),
+                reason: reason.into(),
+            })?;
         if self.vertex_count == 0 {
             return Err(RendererError::InvalidDescriptor {
                 resource: "mesh".to_string(),
@@ -273,7 +279,8 @@ impl MeshDescriptor {
                 reason: "mesh has no Position attribute; draw paths require one".to_string(),
             });
         }
-        for (kind, format) in self.attributes.iter().zip(self.layout.formats().iter()) {
+        for (kind, field) in self.attributes.iter().zip(self.layout.attributes().iter()) {
+            let format = field.format;
             let expected = self.vertex_count as usize * format.size_bytes();
             let actual = attributes.get(kind).map(Vec::len).unwrap_or(0);
             if actual != expected {

@@ -56,12 +56,15 @@ impl VertexFormat {
 }
 #[derive(Clone, Debug, Hash)]
 pub struct VertexBinding {
-    pub formats: Vec<VertexFormat>,
+    pub attributes: Vec<(u32, VertexFormat)>,
 }
 
 impl VertexBinding {
     fn get_stride(&self) -> u32 {
-        self.formats.iter().map(|f| f.get_offset()).sum()
+        self.attributes
+            .iter()
+            .map(|(_, format)| format.get_offset())
+            .sum()
     }
 
     pub fn get_binding_desc(&self, binding: u32) -> vk::VertexInputBindingDescription {
@@ -73,17 +76,15 @@ impl VertexBinding {
 
     pub fn get_attribute_desc(&self, binding: u32) -> Vec<vk::VertexInputAttributeDescription> {
         let mut current_offset = 0;
-        let mut location = 0;
-        self.formats
+        self.attributes
             .iter()
-            .map(|format| {
+            .map(|(location, format)| {
                 let out = vk::VertexInputAttributeDescription::default()
                     .binding(binding)
-                    .location(location)
+                    .location(*location)
                     .format(format.get_vk_format())
                     .offset(current_offset);
                 current_offset += format.get_offset();
-                location += 1;
                 out
             })
             .collect()
@@ -97,18 +98,18 @@ impl VertexBinding {
     ) {
         let mut bindings = Vec::new();
         let mut attributes = Vec::new();
-        for (location, format) in self.formats.iter().enumerate() {
+        for (index, (location, format)) in self.attributes.iter().enumerate() {
             let stride = format.get_offset();
             bindings.push(
                 vk::VertexInputBindingDescription::default()
-                    .binding(location as u32)
+                    .binding(index as u32)
                     .stride(stride)
                     .input_rate(vk::VertexInputRate::VERTEX),
             );
             attributes.push(
                 vk::VertexInputAttributeDescription::default()
-                    .binding(location as u32)
-                    .location(location as u32)
+                    .binding(index as u32)
+                    .location(*location)
                     .format(format.get_vk_format())
                     .offset(0),
             );

@@ -700,7 +700,8 @@ fn split_attribute_bytes(
     }
     let mut map = HashMap::new();
     let mut offset = 0usize;
-    for (format, attribute) in layout.formats().iter().zip(attributes.iter()) {
+    for (field, attribute) in layout.attributes().iter().zip(attributes.iter()) {
+        let format = field.format;
         let size = format.size_bytes();
         if offset + size > stride {
             return Err(RendererError::InvalidDescriptor {

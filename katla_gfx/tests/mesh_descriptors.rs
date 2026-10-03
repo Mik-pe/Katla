@@ -30,9 +30,9 @@ fn check_vertex_type<V: Vertex>(expected_stride: usize, expected_attrs: &[Attrib
 #[test]
 fn test_all_vertex_types_agree_on_stride_and_semantics() {
     use AttributeType::*;
-    check_vertex_type::<VertexPBR>(48, &[Position, Normal, Tangent, TexCoord0]);
+    check_vertex_type::<VertexPBR>(56, &[Position, Normal, Tangent, TexCoord0, TexCoord1]);
     check_vertex_type::<VertexPBRSkinned>(
-        72,
+        80,
         &[
             Position,
             Normal,
@@ -40,6 +40,7 @@ fn test_all_vertex_types_agree_on_stride_and_semantics() {
             TexCoord0,
             JointIndices,
             JointWeights,
+            TexCoord1,
         ],
     );
     check_vertex_type::<VertexPosition>(12, &[Position]);
@@ -137,7 +138,47 @@ fn test_for_attributes_derives_canonical_layout() {
         AttributeType::Position,
         AttributeType::Normal,
     ]);
-    assert_eq!(layout, VertexLayout::position_normal_uv());
+    assert_eq!(layout.stride(), 32);
+    assert_eq!(
+        layout
+            .attributes()
+            .iter()
+            .map(|field| field.location)
+            .collect::<Vec<_>>(),
+        [0, 1, 3]
+    );
+}
+
+#[test]
+fn test_duplicate_and_out_of_range_shader_locations_fail_descriptor_validation() {
+    use katla_gfx::{PipelineDescriptor, VertexAttribute, VertexAttributeFormat};
+    for location in [0, 31, u32::MAX] {
+        let layout = VertexLayout::from_attributes(vec![
+            VertexAttribute {
+                location: 0,
+                format: VertexAttributeFormat::Float3,
+            },
+            VertexAttribute {
+                location,
+                format: VertexAttributeFormat::Float2,
+            },
+        ]);
+        assert!(
+            PipelineDescriptor::simple("probe.wgsl")
+                .with_vertex_layout(layout.clone())
+                .validate()
+                .is_err()
+        );
+        let mut descriptor = MeshDescriptor::from_types::<VertexPBR, u32>(
+            PrimitiveTopology::TriangleList,
+            MeshUsage::Static,
+            3,
+            3,
+        );
+        descriptor.layout = layout;
+        descriptor.attributes = vec![AttributeType::Position, AttributeType::TexCoord1];
+        assert!(descriptor.validate(20).is_err());
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -219,6 +219,39 @@ fn test_generated_tangents_follow_uvs_and_flat_normals() {
 }
 
 #[test]
+fn test_secondary_uvs_preserve_normalized_values_and_reject_short_accessors() {
+    let mut document = triangle_document();
+    let mut data = triangle_bytes();
+    data.extend_from_slice(bytemuck::cast_slice(&[
+        [0u16, 65535],
+        [65535, 32768],
+        [32768, 0],
+    ]));
+    document["buffers"][0]["byteLength"] = serde_json::json!(data.len());
+    document["bufferViews"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"buffer":0,"byteOffset":36,"byteLength":12}));
+    document["accessors"].as_array_mut().unwrap().push(serde_json::json!({"bufferView":1,"componentType":5123,"count":3,"type":"VEC2","normalized":true}));
+    document["meshes"][1]["primitives"][0]["attributes"]["TEXCOORD_1"] = serde_json::json!(1);
+    let model = decode(document.clone(), data.clone()).unwrap();
+    let GltfVertices::Static(vertices) = &model.primitives[0].vertices else {
+        panic!("static");
+    };
+    assert_eq!(vertices[0].tex_coord0, [0.; 2]);
+    assert_eq!(vertices[0].tex_coord1, [0., 1.]);
+    assert_eq!(vertices[1].tex_coord1, [1., 32768. / 65535.]);
+    assert_eq!(vertices[2].tex_coord1, [32768. / 65535., 0.]);
+    document["accessors"][1]["count"] = serde_json::json!(2);
+    assert!(
+        decode(document, data)
+            .err()
+            .unwrap()
+            .contains("TEXCOORD_1 count")
+    );
+}
+
+#[test]
 fn test_skinned_primitive_keeps_tangents_and_its_nodes_skin() {
     let mut document = triangle_document();
     let mut data = triangle_bytes();
@@ -284,6 +317,7 @@ fn test_static_material_frame_bakes_nonuniform_and_mirrored_transforms() {
             ],
             tangent: [1.0, 0.0, 0.0, 1.0],
             tex_coord0: [0.0; 2],
+            tex_coord1: [0.0; 2],
         };
         GLTFModel::transform_vertex_data(
             std::slice::from_mut(&mut vertex),
@@ -317,6 +351,7 @@ fn test_static_material_frame_stays_finite_for_singular_transform() {
         normal: [0.0; 3],
         tangent: [0.0, 0.0, 0.0, 1.0],
         tex_coord0: [0.0; 2],
+        tex_coord1: [0.0; 2],
     };
     GLTFModel::transform_vertex_data(
         std::slice::from_mut(&mut vertex),
