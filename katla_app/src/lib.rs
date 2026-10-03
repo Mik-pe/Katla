@@ -14,6 +14,7 @@ pub mod gpu_resource_tracker;
 #[cfg(feature = "editor")]
 pub mod gui_state;
 pub mod input;
+pub mod material_asset;
 /// Portable per-role image choices for material authoring.
 pub mod material_images;
 pub mod preferences;

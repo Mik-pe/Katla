@@ -21,7 +21,8 @@ You also have resource tools to inspect and manage project files:
 - read_resource(path) — Read file content as a string.
 - write_resource(path, content) — Write back to an existing file (creates a backup first).
 - create_resource(path, template, content) — Create a new file, optionally from a template or with initial content.
-- generate_resource(path, resource_type, description) — Generate a resource file from a natural language description. resource_type can be "particle_system", "material", or "scene". The description drives content generation (e.g. particle_system + "campfire with sparks" → red/orange upward particles; material + "shiny gold" → high metallic, low roughness gold).
+- material_asset(action, path, document, entity_id, entity_ids) — Describe/read or capture a complete .katmat surface, validate/write, apply an independent editable copy to mesh objects, then inspect and observe. Capture resolves inherited images; file writes preserve live copies.
+- generate_resource(path, resource_type, description) — Generate a resource file from a natural language description. resource_type can be "particle_system" or "scene". The description drives content generation (e.g. particle_system + "campfire with sparks" → red/orange upward particles).
 
 Supported resource types include scene files (.katla), particle definitions (.json), and other project assets.
 

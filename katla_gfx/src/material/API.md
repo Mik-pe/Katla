@@ -305,3 +305,9 @@ blend layers, alpha accumulation, unchanged scene depth, nearest picking, shadow
 holes, reversed normals and mirrored culling. Vulkan validation errors fail the
 fixture. Metal runs the same fixture with its required debug environment when
 native hardware is available.
+
+Portable `.katmat` definitions and complete-material history belong to
+`katla_app`; GPU core materials remain pipeline handles with generic images.
+Authoring capture resolves inherited image choices, and apply copies factors,
+sampling and images without replacing mesh or pipeline identity. File writes
+leave live copies unchanged. [Authoring workflow](../../../docs/agent-authoring.md#reusable-surfaces).

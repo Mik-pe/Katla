@@ -272,3 +272,11 @@ The deliberate regeneration utility writes the shipped v3 example scenes. Native
 regressions check component values, entity remapping, rollback, shader failure,
 asset origin, Save As and editor document behavior. Rendering changes also require
 native GPU validation; builds and screenshots alone are insufficient evidence.
+
+Reusable `.katmat` assets are app-owned complete PBR surfaces (version 1). They
+persist factors, sampling and explicit image sources without runtime handles.
+Capture resolves inherited imported maps and neutral fallbacks, rebasing roots
+against the material file. Apply creates independent editable copies with one
+full-material undo step; scenes persist those copies through drawable fields.
+Definitions do not create a live reference or change when the source file is
+rewritten. See [agent authoring](../../../docs/agent-authoring.md#reusable-surfaces).

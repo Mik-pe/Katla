@@ -21,6 +21,11 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
             parameters: crate::prefab::PrefabOp::tool_schema(),
         },
         ToolDefinition {
+            name: "material_asset".into(),
+            description: "Create reusable .katmat surfaces: describe supplies a complete example; capture resolves effective images from a live entity; read/validate/write edits definitions; apply copies complete factors, sampling and images to 1..256 mesh entity_ids atomically with undo. Project-relative paths; image Scene roots use the material file directory. Writes preserve live copies; reapply reads revisions. Verify material inspect and editor_view.".into(),
+            parameters: crate::material_asset::MaterialAssetOp::tool_schema(),
+        },
+        ToolDefinition {
             name: "material".into(),
             description: "Discover presets and supported limits, inspect image provenance/UVs/samplers, set_sampling on one role, or patch base_color (sRGB RGB and linear alpha), metallic, roughness and ao in 0..1 on entity_ids as one undoable batch. Alpha does not switch render mode. Presets provide isotropic factors without textures or directional brushing. Explicit fields override presets. query_entities material_editable flags identify targets. set_sampling takes role and patch (UV rotation is radians), preserves images and omitted fields, and persists through scene reload. set_texture assigns file/glTF images or neutral/inherit choices per role atomically; sampling and factors remain unchanged. IDs are decimal strings; verify native output with editor_view.".into(),
             parameters: crate::material::MaterialOp::tool_schema(),
@@ -310,12 +315,12 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
                     },
                     "resource_type": {
                         "type": "string",
-                        "enum": ["particle_system", "material", "scene"],
+                        "enum": ["particle_system", "scene"],
                         "description": "Type of resource to generate"
                     },
                     "description": {
                         "type": "string",
-                        "description": "Natural language description of what to generate (e.g. 'a campfire with sparks', 'metallic blue material', 'empty night scene')"
+                        "description": "Natural language description of what to generate (e.g. 'a campfire with sparks', 'empty night scene')"
                     }
                 },
                 "required": ["path", "resource_type", "description"]

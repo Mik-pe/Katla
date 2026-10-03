@@ -139,27 +139,8 @@ fn extension(file: &Path) -> Result<&str, String> {
 }
 
 fn project_file(app: &Application, relative: &str) -> Result<PathBuf, String> {
-    AssetRef::Scene(relative.into()).validate()?;
-    let root = app
-        .resources
-        .root
-        .parent()
-        .ok_or("Resource root has no project directory")?
-        .canonicalize()
-        .map_err(|error| error.to_string())?;
-    let file = root.join(relative);
+    let file = crate::util::asset_io::project_file(&app.resources.root, relative)?;
     extension(&file)?;
-    let mut ancestor = file.as_path();
-    while !ancestor.exists() {
-        ancestor = ancestor.parent().ok_or("No existing asset directory")?;
-    }
-    if !ancestor
-        .canonicalize()
-        .map_err(|error| error.to_string())?
-        .starts_with(&root)
-    {
-        return Err("Asset path escapes the project through a symbolic link".into());
-    }
     Ok(file)
 }
 

@@ -93,6 +93,33 @@ exact linear color, including an originally absent tint.
 Base color multiplies the existing texture. Alpha edits the tint factor; it
 does not switch the object's pipeline to transparent rendering. Use `set_texture` for image replacement; `set` only changes factors.
 
+### Reusable surfaces
+
+Use `material_asset describe` for a complete JSON example or `capture` with one
+mesh `entity_id` and a project-relative `.katmat` path. Capture writes effective
+factors, all five image choices, and independent UV/sampler policies. Imported
+images become explicit glTF-image references; missing/fallback images become
+neutral. Reusable definitions reject `inherit`, so applying to a different mesh
+does not silently substitute its original maps. Omitted `textures` means five
+neutral roles; a provided object must specify every role.
+
+`read` returns JSON. Edit it, then `validate` and `write` with `path` and
+`document`. Validation decodes images and checks formats/limits without GPU
+uploads. Writes publish atomically and preserve existing live copies. Image
+Resource roots use the resource directory; Scene roots use the **material file's
+directory**; File references remain intentionally absolute. Capture prefers
+portable Resource/Scene references where possible. Keep referenced images/glTF
+files with the material when moving an asset bundle.
+
+`apply` takes `path` and 1..256 distinct mesh `entity_ids`. It preflights every
+target's required UV sets before replacing complete factors, sampling and image
+choices as one undoable batch. Geometry, transforms and pipelines stay owned by
+their original objects. Copies remain independently editable and share immutable
+image generations; file writes do not change them. Reapply to read a revision,
+inspect through `material`, observe through `editor_view`, and save the scene to
+persist the copied surface. Search resource materials using extension `katmat`;
+`project_paths` can be passed directly to `material_asset`.
+
 ## Inspect and edit texture sampling
 
 `material inspect` reports the five named roles (`albedo`, `normal`,

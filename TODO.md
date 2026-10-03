@@ -273,9 +273,9 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Design material editor layout — texture slots (albedo, normal, metallic, roughness, emission), numeric sliders, live preview
 - [ ] Add texture slot widgets — drag-and-drop from asset browser, thumbnail preview, clear button
 - [x] Add per-object PBR factor controls — sRGB RGBA, metallic, roughness and occlusion, shared presets and validated agent batch edits
-- [ ] Add emission color/intensity controls and texture assignment
+- [x] Add emission color/intensity controls and texture assignment — linear HDR emission, independent normal/AO factors and atomic file/glTF/neutral/inherit image edits with scoped history
 - [x] Add live material preview — apply PBR factors to the selected entity, group pointer gestures for undo/redo and persist factors in the scene
-- [ ] Add material serialization — save edited material back to .mat file
+- [x] Add material serialization — complete portable `.katmat` capture/read/validate/write and atomic batch apply; copies remain independently editable and persist in scenes
 
 #### Terrain editor
 - [ ] Design terrain component — `TerrainComponent` with heightmap, layer count, grid resolution

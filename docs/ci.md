@@ -232,7 +232,8 @@ independent per-role UV transforms and imported samplers, generated/authored/
 changed normal-coordinate bases, transformed alpha coverage,
 image assignment through actual draw collection (role color spaces, file revisions,
 scoped undo/redo, invalid-batch recovery, nested Save As references, reconstruction
-and last-owner retirement), second-skin selection, scene round-trip/rollback (including unavailable UV
+and last-owner retirement; complete `.katmat` capture, moved image bundles,
+independent copies, immutable file revisions, atomic apply and full-material history), second-skin selection, scene round-trip/rollback (including unavailable UV
 selection in persisted sampling overrides) and
 resource retirement. The complete PBR lighting fixture executes both actual
 scene shaders and checks 120 HDR pixels against a double-precision reference:

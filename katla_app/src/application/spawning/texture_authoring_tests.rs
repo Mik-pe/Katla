@@ -298,6 +298,160 @@ struct Out {@builtin(position) position:vec4f,@location(0) @interpolate(flat) sl
         render(&mut app, &mut graph, first, 0),
         [0.21586, 0.05127, 1., 128. / 255.],
     );
+    // Export and move a complete surface, then apply a revision with scoped full-state history.
+    let original_root = app.resources.root.clone();
+    app.resources.root = fixture.0.join("resources");
+    std::fs::create_dir_all(&app.resources.root).unwrap();
+    use katla_agent::material_asset::MaterialAssetOp;
+    let asset_op = |app: &mut Application, op| {
+        crate::application::editor::material_asset::execute(app, op, true)
+    };
+    let captured = asset_op(
+        &mut app,
+        MaterialAssetOp::Capture {
+            path: "surface.katmat".into(),
+            entity_id: first.id().to_string(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        captured["document"]["textures"]["albedo"]["asset"],
+        json!({"Scene":"map.png"})
+    );
+    assert_eq!(
+        captured["document"]["textures"]["emission"]["asset"],
+        json!({"Scene":"mesh.gltf"})
+    );
+    assert!(
+        captured["document"]["textures"]
+            .as_object()
+            .unwrap()
+            .values()
+            .all(|source| source["kind"] != "inherit")
+    );
+    let moved = fixture.0.join("moved");
+    std::fs::create_dir_all(moved.join("resources")).unwrap();
+    for name in ["surface.katmat", "map.png", "mesh.gltf", "mesh.bin"] {
+        std::fs::copy(fixture.0.join(name), moved.join(name)).unwrap();
+    }
+    app.resources.root = moved.join("resources");
+    let second = app
+        .world
+        .query_ref::<&NameComponent>()
+        .find(|(_, name)| name.name == "Second")
+        .unwrap()
+        .0;
+    let before = |app: &Application, id| {
+        let d = app.world.get_component::<DrawableComponent>(id).unwrap();
+        (
+            material::values(d),
+            d.sampling,
+            d.texture_bindings.assignments(),
+            d.material_handle,
+            d.mesh_handle,
+        )
+    };
+    let old_first = before(&app, first);
+    let old_second = before(&app, second);
+    let mut document = asset_op(
+        &mut app,
+        MaterialAssetOp::Read {
+            path: "surface.katmat".into(),
+        },
+    )
+    .unwrap();
+    document["values"]["roughness"] = json!(0.6);
+    document["values"]["metallic"] = json!(0.8);
+    document["values"]["emissive_factor"] = json!([3., 2., 1.]);
+    document["sampling"]["albedo"]["uv"]["scale"] = json!([3., 2.]);
+    image::save_buffer(
+        moved.join("map.png"),
+        &[0u8, 255, 0, 255].repeat(4),
+        2,
+        2,
+        image::ColorType::Rgba8,
+    )
+    .unwrap();
+    asset_op(
+        &mut app,
+        MaterialAssetOp::Write {
+            path: "surface.katmat".into(),
+            document: document.clone(),
+        },
+    )
+    .unwrap();
+    assert_eq!(before(&app, first), old_first);
+    assert_eq!(before(&app, second), old_second);
+    let published = std::fs::read(moved.join("surface.katmat")).unwrap();
+    let mut invalid = document.clone();
+    invalid["textures"]["emission"]["image_index"] = json!(99);
+    assert!(
+        asset_op(
+            &mut app,
+            MaterialAssetOp::Write {
+                path: "surface.katmat".into(),
+                document: invalid
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(
+        std::fs::read(moved.join("surface.katmat")).unwrap(),
+        published
+    );
+    let no_mesh = app.world.spawn((NameComponent::new("No mesh"),));
+    assert!(
+        asset_op(
+            &mut app,
+            MaterialAssetOp::Apply {
+                path: "surface.katmat".into(),
+                entity_ids: vec![first.id().to_string(), no_mesh.id().to_string()]
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(before(&app, first), old_first);
+    asset_op(
+        &mut app,
+        MaterialAssetOp::Apply {
+            path: "surface.katmat".into(),
+            entity_ids: vec![first.id().to_string(), second.id().to_string()],
+        },
+    )
+    .unwrap();
+    for id in [first, second] {
+        assert_pixel(render(&mut app, &mut graph, id, 0), [0., 1., 0., 1.]);
+        assert_pixel(render(&mut app, &mut graph, id, 1), [0., 1., 0., 1.]);
+        assert_pixel(render(&mut app, &mut graph, id, 4), [0., 1., 0., 1.]);
+        let current = before(&app, id);
+        assert_eq!(current.0.roughness, 0.6);
+        assert_eq!(current.0.emissive_factor, [3., 2., 1.]);
+        assert_eq!(current.1.albedo.uv.scale, [3., 2.]);
+        let original = if id == first { &old_first } else { &old_second };
+        assert_eq!((current.3, current.4), (original.3, original.4));
+    }
+    let mut undo = app.editor.agent_undo_stack.pop().unwrap();
+    undo.undo_all(&mut app.world).unwrap();
+    assert_eq!(before(&app, first), old_first);
+    assert_eq!(before(&app, second), old_second);
+    assert_pixel(
+        render(&mut app, &mut graph, first, 0),
+        [0.21586, 0.05127, 1., 128. / 255.],
+    );
+    assert!(
+        asset_op(
+            &mut app,
+            MaterialAssetOp::Read {
+                path: "../surface.katmat".into()
+            }
+        )
+        .is_err()
+    );
+    undo.redo_all(&mut app.world).unwrap();
+    assert_pixel(render(&mut app, &mut graph, second, 0), [0., 1., 0., 1.]);
+    undo.undo_all(&mut app.world).unwrap();
+    app.editor.agent_redo_stack.push(undo);
+    app.resources.root = original_root;
     let mut empty = saved;
     empty.entities.clear();
     SceneManager::load_scene(&mut app, empty).unwrap();

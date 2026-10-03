@@ -54,7 +54,7 @@ pub fn search_assets(root: &Path, request: &AssetSearch) -> Result<serde_json::V
         .map(|path| format!("{prefix}/{path}"))
         .collect();
     Ok(
-        serde_json::json!({"assets":matches,"project_paths":project_paths,"total":total,"truncated":total>limit,"root":root,"path_contract":"Paths are relative to the discovered resources root; pass assets to spawn_model/behavior set_script, project_paths to prefab read/instantiate."}),
+        serde_json::json!({"assets":matches,"project_paths":project_paths,"total":total,"truncated":total>limit,"root":root,"path_contract":"Paths are relative to the discovered resources root; pass assets to spawn_model/behavior set_script, project_paths to prefab read/instantiate or material_asset read/apply."}),
     )
 }
 

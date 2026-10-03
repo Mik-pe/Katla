@@ -10,6 +10,7 @@ pub mod behavior;
 pub mod context;
 pub mod events;
 pub mod material;
+pub mod material_asset;
 pub mod material_sampling;
 pub mod prefab;
 pub mod tools;

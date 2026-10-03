@@ -43,6 +43,7 @@ impl PendingMcpRequest {
 pub enum McpOpKind {
     SearchAssets(crate::tools::search::AssetSearch),
     Material(crate::material::MaterialOp),
+    MaterialAsset(crate::material_asset::MaterialAssetOp),
     Prefab(crate::prefab::PrefabOp),
     Behavior(crate::behavior::BehaviorOp),
     Simulation(crate::behavior::SimulationOp),
@@ -87,6 +88,7 @@ pub enum EditorViewOp {
 pub enum McpOp {
     SearchAssets(crate::tools::search::AssetSearch),
     Material(crate::material::MaterialOp),
+    MaterialAsset(crate::material_asset::MaterialAssetOp),
     Prefab(crate::prefab::PrefabOp),
     Behavior(crate::behavior::BehaviorOp),
     Simulation(crate::behavior::SimulationOp),
@@ -168,6 +170,7 @@ impl McpOp {
         match self {
             Self::SearchAssets(op) => McpOpKind::SearchAssets(op),
             Self::Material(op) => McpOpKind::Material(op),
+            Self::MaterialAsset(op) => McpOpKind::MaterialAsset(op),
             Self::Prefab(op) => McpOpKind::Prefab(op),
             Self::Behavior(op) => McpOpKind::Behavior(op),
             Self::Simulation(op) => McpOpKind::Simulation(op),
@@ -550,6 +553,24 @@ impl JsonSchema for MaterialParams {
     }
 }
 
+#[derive(Deserialize)]
+struct MaterialAssetParams {
+    #[serde(flatten)]
+    op: crate::material_asset::MaterialAssetOp,
+}
+impl JsonSchema for MaterialAssetParams {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "MaterialAssetParams".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        crate::material_asset::MaterialAssetOp::tool_schema()
+            .as_object()
+            .cloned()
+            .unwrap_or_default()
+            .into()
+    }
+}
+
 #[derive(Deserialize, JsonSchema)]
 struct AnimationParams {
     #[serde(flatten)]
@@ -613,6 +634,26 @@ impl KatlaMcpServer {
         Parameters(op): Parameters<crate::tools::search::AssetSearch>,
     ) -> Json<McpToolResult> {
         self.forward_op(McpOp::SearchAssets(op)).await
+    }
+
+    #[rmcp::tool(
+        name = "material_asset",
+        description = "Author reusable .katmat PBR materials. describe supplies a complete JSON example and units; capture exports an object's effective factors, sampling and images, resolving inherited bindings. read/validate/write edits definitions without mutating live copies. apply replaces complete surfaces on 1..256 mesh entity_ids atomically as one undoable edit. Paths are project-relative; image Scene roots use the material file's directory. Applied objects remain independently editable. Verify with material inspect and editor_view; reapply to read a file revision."
+    )]
+    async fn material_asset(
+        &self,
+        Parameters(params): Parameters<MaterialAssetParams>,
+    ) -> rmcp::model::CallToolResult {
+        let result = self.forward_op(McpOp::MaterialAsset(params.op)).await.0;
+        if result.success {
+            rmcp::model::CallToolResult::structured(
+                serde_json::json!({"success":true,"message":result.message,"data":result.data}),
+            )
+        } else {
+            rmcp::model::CallToolResult::structured_error(
+                serde_json::json!({"success":false,"message":result.message}),
+            )
+        }
     }
 
     #[rmcp::tool(
@@ -975,7 +1016,7 @@ impl ServerHandler for KatlaMcpServer {
             .enable_tools()
             .build();
         info
-            .with_instructions("Katla scene authoring: first editor_view observe and query_entities to understand the scene. Search assets with search_assets (model extensions glb/gltf); use returned paths with spawn_model. Spawn named primitives, group them with set_parent, and inspect material presets before applying PBR factors to entity_ids. Y is up, units are meters, rotations are degrees. IDs are decimal generational strings. For reusable assets, prefab describe/read/validate/write builds .katmesh/.katprefab, instantiate returns named nodes; search_assets project_paths are prefab tool paths. behavior describe/set_script/set_particles connects validated Luau and particle descriptors. trigger rules link animations, particle bursts/toggles and script events. simulation play/pause/stop controls preview; stop restores authored state and replaces IDs, so query again before capture/save. Observe after edits, editor_view undo reverses agent edits, save_scene persists authored changes.")
+            .with_instructions("Katla scene authoring: first editor_view observe and query_entities to understand the scene. Search assets with search_assets (model extensions glb/gltf); use returned paths with spawn_model. Spawn named primitives, group them with set_parent, and inspect material presets before applying PBR factors to entity_ids. Y is up, units are meters, rotations are degrees. IDs are decimal generational strings. For reusable surfaces, material_asset describe/capture/read/validate/write authors .katmat files, apply copies complete surfaces to mesh objects, then material inspect verifies state. For reusable assets, prefab describe/read/validate/write builds .katmesh/.katprefab, instantiate returns named nodes; search_assets project_paths are prefab tool paths. behavior describe/set_script/set_particles connects validated Luau and particle descriptors. trigger rules link animations, particle bursts/toggles and script events. simulation play/pause/stop controls preview; stop restores authored state and replaces IDs, so query again before capture/save. Observe after edits, editor_view undo reverses agent edits, save_scene persists authored changes.")
             .with_server_info(Implementation::new("katla-mcp", "0.1.0"))
     }
 }
@@ -1098,6 +1139,7 @@ mod tests {
             "trigger",
             "prefab",
             "material",
+            "material_asset",
             "search_assets",
             "behavior",
             "simulation",

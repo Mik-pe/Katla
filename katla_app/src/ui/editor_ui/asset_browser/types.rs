@@ -12,7 +12,7 @@ pub enum AssetType {
     Model,
     /// Editable mesh recipes and reusable scene subtrees.
     Prefab,
-    /// Material definitions (.toml)
+    /// Reusable surface definitions (.katmat)
     Material,
     /// Shader source (.wgsl)
     Shader,
@@ -86,7 +86,7 @@ impl AssetType {
         match path.extension().and_then(|e| e.to_str()) {
             Some("glb") | Some("gltf") | Some("stl") => Self::Model,
             Some("katmesh") | Some("katprefab") => Self::Prefab,
-            Some("toml") => Self::Material,
+            Some("katmat") => Self::Material,
             Some("wgsl") => Self::Shader,
             Some("luau") | Some("lua") => Self::Script,
             Some("png") | Some("jpg") | Some("jpeg") => Self::Image,

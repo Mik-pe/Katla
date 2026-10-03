@@ -192,6 +192,15 @@ pub(super) fn execute_tool_call(
             Err(error) => format!("Error: {error}"),
         };
     }
+    if tool_call.name == "material_asset" {
+        return match serde_json::from_value(tool_call.arguments.clone())
+            .map_err(|error| error.to_string())
+            .and_then(|op| super::material_asset::execute(app, op, true))
+        {
+            Ok(result) => result.to_string(),
+            Err(error) => format!("Error: {error}"),
+        };
+    }
     if tool_call.name == "material" {
         return match serde_json::from_value(tool_call.arguments.clone())
             .map_err(|e| e.to_string())
@@ -926,12 +935,6 @@ fn generate_template_content(template: &str) -> String {
             "entities": []
         })
         .to_string(),
-        "material" => serde_json::json!({
-            "version": 1,
-            "shader": "pbr",
-            "properties": {}
-        })
-        .to_string(),
         "particle_system" => serde_json::json!({
             "version": 1,
             "emitter": {
@@ -987,7 +990,6 @@ fn execute_generate_resource(
 fn generate_resource_content(resource_type: &str, description: &str) -> String {
     match resource_type {
         "particle_system" => generate_particle_system(description),
-        "material" => generate_material(description),
         "scene" => generate_scene(description),
         _ => serde_json::json!({
             "version": 1,
@@ -1142,68 +1144,6 @@ fn generate_particle_system(description: &str) -> String {
             "color_end": color_end,
             "size_start": size_start,
             "size_end": size_end,
-        }
-    })
-    .to_string()
-}
-
-fn generate_material(description: &str) -> String {
-    let desc = description.to_lowercase();
-
-    let (base_color, metallic, roughness, emissive) =
-        if desc.contains("gold") || desc.contains("brass") {
-            ([1.0, 0.84, 0.0], 0.9, 0.2, [0.0, 0.0, 0.0])
-        } else if desc.contains("metal") || desc.contains("steel") || desc.contains("iron") {
-            ([0.7, 0.7, 0.75], 1.0, 0.3, [0.0, 0.0, 0.0])
-        } else if desc.contains("chrome") || desc.contains("mirror") {
-            ([0.9, 0.9, 0.9], 1.0, 0.05, [0.0, 0.0, 0.0])
-        } else if desc.contains("rubber") || desc.contains("plastic") {
-            ([0.3, 0.3, 0.3], 0.0, 0.9, [0.0, 0.0, 0.0])
-        } else if desc.contains("wood") {
-            ([0.6, 0.4, 0.2], 0.0, 0.8, [0.0, 0.0, 0.0])
-        } else if desc.contains("glass") || desc.contains("crystal") {
-            ([0.9, 0.95, 1.0], 0.1, 0.1, [0.1, 0.1, 0.15])
-        } else if desc.contains("neon")
-            || desc.contains("glow")
-            || desc.contains("emissive")
-            || desc.contains("luminous")
-        {
-            (
-                [0.2, 0.2, 0.2],
-                0.0,
-                0.5,
-                if desc.contains("red") {
-                    [2.0, 0.0, 0.0]
-                } else if desc.contains("green") {
-                    [0.0, 2.0, 0.0]
-                } else if desc.contains("blue") {
-                    [0.0, 0.0, 2.0]
-                } else if desc.contains("pink") || desc.contains("magenta") {
-                    [2.0, 0.0, 1.0]
-                } else {
-                    [0.0, 2.0, 1.0]
-                },
-            )
-        } else if desc.contains("red") {
-            ([0.8, 0.1, 0.1], 0.0, 0.5, [0.0, 0.0, 0.0])
-        } else if desc.contains("blue") {
-            ([0.1, 0.2, 0.8], 0.0, 0.5, [0.0, 0.0, 0.0])
-        } else if desc.contains("green") {
-            ([0.1, 0.6, 0.1], 0.0, 0.5, [0.0, 0.0, 0.0])
-        } else if desc.contains("stone") || desc.contains("concrete") || desc.contains("rock") {
-            ([0.5, 0.5, 0.5], 0.0, 0.95, [0.0, 0.0, 0.0])
-        } else {
-            ([0.8, 0.8, 0.8], 0.0, 0.5, [0.0, 0.0, 0.0])
-        };
-
-    serde_json::json!({
-        "version": 1,
-        "shader": "pbr",
-        "properties": {
-            "base_color": base_color,
-            "metallic": metallic,
-            "roughness": roughness,
-            "emissive": emissive,
         }
     })
     .to_string()

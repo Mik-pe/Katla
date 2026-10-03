@@ -15,7 +15,7 @@ pub(crate) fn values(drawable: &DrawableComponent) -> MaterialValues {
 }
 
 #[derive(Clone, Copy)]
-struct Snapshot {
+pub(super) struct Snapshot {
     color: Option<Color>,
     metallic: f32,
     roughness: f32,
@@ -24,7 +24,7 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn values(self) -> MaterialValues {
+    pub(super) fn values(self) -> MaterialValues {
         let c = self.color.unwrap_or(Color::WHITE).to_srgb();
         MaterialValues {
             base_color: [c.r, c.g, c.b, c.a],
@@ -39,7 +39,24 @@ impl Snapshot {
             double_sided: self.surface.double_sided,
         }
     }
-    fn read(d: &DrawableComponent) -> Self {
+    pub(super) fn from_values(v: MaterialValues) -> Self {
+        let c = v.base_color;
+        Self {
+            color: Some(Color::new(c[0], c[1], c[2], c[3]).to_linear()),
+            metallic: v.metallic,
+            roughness: v.roughness,
+            ao: v.ao,
+            surface: crate::rendering::MaterialSurface {
+                emissive_factor: v.emissive_factor,
+                normal_scale: v.normal_scale,
+                occlusion_strength: v.occlusion_strength,
+                alpha_mode: v.alpha_mode,
+                alpha_cutoff: v.alpha_cutoff,
+                double_sided: v.double_sided,
+            },
+        }
+    }
+    pub(super) fn read(d: &DrawableComponent) -> Self {
         Self {
             color: d.color,
             metallic: d.metallic,
@@ -48,7 +65,7 @@ impl Snapshot {
             surface: d.surface,
         }
     }
-    fn apply(self, d: &mut DrawableComponent) {
+    pub(super) fn apply(self, d: &mut DrawableComponent) {
         d.color = self.color;
         d.metallic = self.metallic;
         d.roughness = self.roughness;
@@ -368,17 +385,7 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
                     before,
                     Snapshot {
                         color,
-                        metallic: v.metallic,
-                        roughness: v.roughness,
-                        ao: v.ao,
-                        surface: crate::rendering::MaterialSurface {
-                            emissive_factor: v.emissive_factor,
-                            normal_scale: v.normal_scale,
-                            occlusion_strength: v.occlusion_strength,
-                            alpha_mode: v.alpha_mode,
-                            alpha_cutoff: v.alpha_cutoff,
-                            double_sided: v.double_sided,
-                        },
+                        ..Snapshot::from_values(v)
                     },
                 ));
             }

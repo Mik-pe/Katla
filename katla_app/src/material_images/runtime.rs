@@ -38,6 +38,14 @@ impl MaterialImages {
     }
 }
 
+struct DecodedImage {
+    source: TextureSource,
+    descriptor: katla_gfx::TextureDescriptor,
+    pixels: Vec<u8>,
+    #[cfg(feature = "editor")]
+    metadata: ImageMetadata,
+}
+
 impl crate::application::Application {
     pub(crate) fn prepare_material_image(
         &mut self,
@@ -46,22 +54,82 @@ impl crate::application::Application {
         context: &SceneAssetContext,
     ) -> Result<Option<TextureBinding>, String> {
         use sha2::{Digest, Sha256};
-        let asset = match source.asset() {
-            Some(asset) => asset,
-            None => {
-                return Ok(match source {
-                    TextureSource::Inherit => None,
-                    _ => Some(TextureBinding {
-                        source,
-                        image: None,
-                        #[cfg(feature = "editor")]
-                        metadata: None,
-                    }),
-                });
-            }
+        if source.asset().is_none() {
+            return Ok(match source {
+                TextureSource::Inherit => None,
+                _ => Some(TextureBinding {
+                    source,
+                    image: None,
+                    #[cfg(feature = "editor")]
+                    metadata: None,
+                }),
+            });
+        }
+        let DecodedImage {
+            source,
+            descriptor,
+            pixels,
+            #[cfg(feature = "editor")]
+            metadata,
+        } = self.decode_material_image(source, role, context)?;
+        let key = ImageKey {
+            digest: Sha256::digest(&pixels).into(),
+            width: descriptor.width,
+            height: descriptor.height,
+            format: descriptor.format,
         };
-        let path =
-            std::fs::canonicalize(context.resolve(asset)?).map_err(|error| error.to_string())?;
+        let lease = if let Some(lease) = self
+            .material_images
+            .images
+            .get(&key)
+            .and_then(Weak::upgrade)
+            .filter(|lease| self.renderer.get_bindless_slot(lease.handle).is_some())
+        {
+            lease
+        } else {
+            let handle = self
+                .renderer
+                .create_texture(&descriptor, &pixels)
+                .map_err(|error| error.to_string())?;
+            let lease = Arc::new(ImageLease {
+                handle,
+                retire: self.material_images.retire.clone(),
+            });
+            self.material_images
+                .images
+                .insert(key, Arc::downgrade(&lease));
+            lease
+        };
+        Ok(Some(TextureBinding {
+            source,
+            image: Some(lease),
+            #[cfg(feature = "editor")]
+            metadata: Some(metadata),
+        }))
+    }
+    #[cfg(feature = "editor")]
+    pub(crate) fn validate_material_image(
+        &mut self,
+        source: &TextureSource,
+        role: TextureRole,
+        context: &SceneAssetContext,
+    ) -> Result<(), String> {
+        if source.asset().is_some() {
+            self.decode_material_image(source.clone(), role, context)?;
+        }
+        Ok(())
+    }
+
+    fn decode_material_image(
+        &mut self,
+        source: TextureSource,
+        role: TextureRole,
+        context: &SceneAssetContext,
+    ) -> Result<DecodedImage, String> {
+        let path = std::fs::canonicalize(
+            context.resolve(source.asset().ok_or("Image source requires an asset")?)?,
+        )
+        .map_err(|error| error.to_string())?;
         let model = if matches!(source, TextureSource::GltfImage { .. }) {
             Some(
                 self.gltf_cache
@@ -93,52 +161,26 @@ impl crate::application::Application {
             gltf::image::Format::R32G32B32FLOAT | gltf::image::Format::R32G32B32A32FLOAT
         );
         let (descriptor, pixels) = crate::util::gltf_image::texture_upload(&image, srgb)?;
-        let key = ImageKey {
-            digest: Sha256::digest(&pixels).into(),
-            width: image.width,
-            height: image.height,
-            format: descriptor.format,
-        };
-        let lease = if let Some(lease) = self
-            .material_images
-            .images
-            .get(&key)
-            .and_then(Weak::upgrade)
-            .filter(|lease| self.renderer.get_bindless_slot(lease.handle).is_some())
-        {
-            lease
-        } else {
-            let handle = self
-                .renderer
-                .create_texture(&descriptor, &pixels)
-                .map_err(|error| error.to_string())?;
-            let lease = Arc::new(ImageLease {
-                handle,
-                retire: self.material_images.retire.clone(),
-            });
-            self.material_images
-                .images
-                .insert(key, Arc::downgrade(&lease));
-            lease
-        };
         let mut source = source;
         if let Some(asset) = source.asset_mut() {
             *asset = AssetRef::File(path);
         }
-        Ok(Some(TextureBinding {
+        Ok(DecodedImage {
             source,
-            image: Some(lease),
             #[cfg(feature = "editor")]
-            metadata: Some(ImageMetadata {
+            metadata: ImageMetadata {
                 width: image.width,
                 height: image.height,
                 mip_levels: descriptor.mip_levels,
                 gpu_format: format!("{:?}", descriptor.format),
                 decoded_format: format!("{:?}", image.format),
                 source_color_space: if srgb && !floating { "srgb" } else { "linear" },
-            }),
-        }))
+            },
+            descriptor,
+            pixels,
+        })
     }
+
     pub(crate) fn prepare_material_assignments(
         &mut self,
         target: katla_ecs::EntityId,

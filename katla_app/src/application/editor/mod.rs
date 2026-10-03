@@ -7,6 +7,7 @@ pub(crate) mod document;
 #[cfg(feature = "mcp")]
 pub(crate) mod external_chat;
 pub(crate) mod material;
+pub(crate) mod material_asset;
 mod material_provenance;
 mod material_sampling;
 mod material_textures;

@@ -65,7 +65,9 @@ Private Metal texture publication uses [staged uploads](metal_texture_uploads.md
 
 Static `.katmesh` recipes compile named parts into shared geometry; `.katprefab`
 templates expand into editable scene subtrees with fresh entity references.
-Mesh compilation, caching, persistence and AI authoring remain app-owned. See
+Complete `.katmat` surfaces capture effective image choices, factors and sampling;
+applying creates independent editable copies with shared immutable images.
+Material, mesh and prefab persistence and AI authoring remain app-owned. See
 [mesh and prefab contracts](prefabs.md).
 
 GLTF assets provide meshes, PBR materials, skins and animation clips. Background

@@ -49,6 +49,9 @@ pub(crate) fn poll(app: &mut crate::application::Application) {
             McpOpKind::SearchAssets(op) => McpResponse {
                 result: katla_agent::tools::search::search_assets(&app.resources.root, &op),
             },
+            McpOpKind::MaterialAsset(op) => McpResponse {
+                result: super::material_asset::execute(app, op, true),
+            },
             McpOpKind::Material(op) => McpResponse {
                 result: super::material::execute(app, op, true),
             },
