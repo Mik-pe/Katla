@@ -46,9 +46,10 @@ impl SceneFeatures {
 
 /// Neutral textures preserve all per-object material multipliers.
 pub(crate) fn create_material_textures(renderer: &mut Renderer) -> AppResult<MaterialTextures> {
+    let flat_normal = [0.5f32, 0.5, 1.0, 1.0].map(|value| half::f16::from_f32(value).to_bits());
     let normal_texture = renderer.create_texture(
-        &TextureDescriptor::rgba8_unorm(1, 1).with_label("scene flat normal"),
-        &[128, 128, 255, 255],
+        &TextureDescriptor::rgba16_float(1, 1).with_label("scene flat normal"),
+        bytemuck::cast_slice(&flat_normal),
     )?;
     let metallic_roughness_texture = match renderer.create_texture(
         &TextureDescriptor::rgba8_unorm(1, 1).with_label("scene metallic roughness"),

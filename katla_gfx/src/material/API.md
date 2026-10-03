@@ -67,7 +67,7 @@ an explicit flat normal and neutral metallic/roughness texture.
 | Role | Transfer function | Scene fallback | Shader use |
 | --- | --- | --- | --- |
 | Albedo | sRGB RGB, linear alpha | White | RGB × linear base color; alpha × base alpha |
-| Normal | Linear | `(128,128,255,255)` in RGBA8 | Decode, scale X/Y, normalize tangent-space normal |
+| Normal | Linear | Exact `(0.5,0.5,1,1)` in RGBA16F | Decode, scale X/Y, normalize tangent-space normal |
 | Metallic/roughness | Linear | White | B × metallic; G × roughness |
 | Occlusion | Linear | White | `mix(1, R, strength)` × per-object AO, applied to ambient light |
 | Emission | sRGB RGB | White × zero factor | Sampled linear RGB × linear emissive factor, added to HDR lighting |
@@ -233,6 +233,18 @@ acceptance requires a Metal 4 device.
 `cargo test -p katla_gfx --lib render_graph::native_compute_tests::materials -- --nocapture`
 executes the actual shared shader helpers and compares GPU readback with
 independent scalar BRDF results and affine static/skinned frame references.
+The application `material_tests::lighting_tests` fixture additionally executes
+both complete scene shaders, with HDR readback compared against an independent
+double-precision lighting reference. Its 120 cases combine identity/nonuniform/
+mirrored matrices with CPU baking, model transforms, joint transforms and their
+composition. They cover roughness, metallicity, two distinct point lights,
+directional shadow visibility, ambient occlusion, signed normal scale and HDR
+emission. Missing normal maps use exact RGBA16F neutral values; scale zero and one
+must produce bit-identical readbacks. The absolute-plus-relative tolerance accounts
+for half-float output precision. Full-scene Vulkan compilation/execution disables
+validation on the affected Intel driver; these pixels establish numeric rendering
+acceptance, not validation-layer acceptance. Physical Metal execution remains
+outstanding. See the [numeric acceptance evidence](../../../docs/material-lighting-validation/README.md).
 Shader-interface validation covers both complete scene shaders. CPU baking
 regressions run with `cargo test -p katla_app --lib test_static_material_frame`.
 

@@ -226,8 +226,13 @@ faces, integer/HDR image fidelity, filtered mip regeneration, weak image sharing
 independent per-role UV transforms and imported samplers, generated/authored/
 changed normal-coordinate bases, transformed alpha coverage,
 second-skin selection, scene round-trip/rollback and
-resource retirement. The primitive probes use API validation. The full PBR
-compile fixture disables Vulkan validation on the affected Intel driver; Metal
+resource retirement. The complete PBR lighting fixture executes both actual
+scene shaders and checks 120 HDR pixels against a double-precision reference:
+identity/nonuniform/mirrored frames, CPU baking/live model/skin/combined transforms,
+roughness, metallicity, multiple lights, occlusion, shadow visibility, scaled normals
+and HDR emission. Its flat-normal regression requires bit-identical pixels for
+normal scale zero and one when no normal map is assigned. The primitive probes use
+API validation. Full PBR compilation/execution fixtures disable Vulkan validation on the affected Intel driver; Metal
 requires its debug environment.
 Physical Vulkan acceptance runs the same fixture locally. It compiles the scene
 PBR shader, so it is not added to the lavapipe tier whose PBR compiler limitation

@@ -61,6 +61,9 @@ impl Fixture {
 #[path = "alpha_tests.rs"]
 mod alpha_tests;
 
+#[path = "lighting_tests.rs"]
+mod lighting_tests;
+
 #[path = "image_tests.rs"]
 mod image_tests;
 
