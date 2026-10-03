@@ -102,6 +102,22 @@ preserves editable base color and PBR factors; texture assignment and standalone
 material assets are not yet editable/persisted. Unresolved work and acceptance
 criteria live in [TODO](../../../TODO.md#material-correctness).
 
+## Surface lighting and transforms
+
+Roughness is perceptual roughness throughout import, authoring and object data.
+The shared GGX shader clamps it to `0.04..1`, uses `alpha = roughness²` and
+`alpha² = roughness⁴`, and evaluates height-correlated Smith visibility.
+Directional and point lights each evaluate their own Fresnel and diffuse energy
+partition. The direct-light BRDF returns zero below either surface hemisphere.
+
+Static and skinned shaders transform normals with the affine inverse transpose,
+transform tangents forward, then orthogonalize and normalize the surface frame.
+Negative determinants reverse tangent handedness. Skinned frames use the
+combined model and blended joint transform. Static glTF baking follows the same
+contract. Singular transforms produce a finite fallback frame; they do not
+define a physically meaningful surface. Transforming the tangent frame does not
+change triangle winding or culling state.
+
 ## Shader reload
 
 `recompile_materials_for_shader` keeps material handle identity, but its return
@@ -134,3 +150,9 @@ optional images publish no tracked texture. Vulkan PBR compilation in this
 fixture disables the validation layer because of the documented Intel compiler
 crash; Metal runs with the validation environment above. Physical Metal
 acceptance requires a Metal 4 device.
+
+`cargo test -p katla_gfx --lib render_graph::native_compute_tests::materials -- --nocapture`
+executes the actual shared shader helpers and compares GPU readback with
+independent scalar BRDF results and affine static/skinned frame references.
+Shader-interface validation covers both complete scene shaders. CPU baking
+regressions run with `cargo test -p katla_app --lib test_static_material_frame`.

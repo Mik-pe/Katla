@@ -15,6 +15,7 @@
 #include <lighting_types.wgsl>
 #include <bindless.wgsl>
 #include <pbr.wgsl>
+#include <tangent_frame.wgsl>
 
 // Set 0: Uniforms (storage buffers)
 @group(0) @binding(0)
@@ -40,8 +41,8 @@ var<storage, read> tile_light_counts: array<u32>;
 fn accumulate_point_lights(
     clip_position: vec4f,
     world_pos: vec3f,
-    N: vec3f, V: vec3f, F0: vec3f,
-    roughness_sq: f32, kD: vec3f, diffuse: vec3f,
+    N: vec3f, V: vec3f, albedo: vec3f,
+    metallic: f32, roughness: f32,
 ) -> vec3f {
     let tiles_x = frame_data.tiles.x;
     let tiles_y = frame_data.tiles.y;
@@ -77,7 +78,7 @@ fn accumulate_point_lights(
             let atten = attenuation * attenuation;
 
             let radiance_pt = light.color * light.intensity * atten;
-            Lo_point += pbr_direct_light(N, V, L_pt, F0, roughness_sq, kD, diffuse, radiance_pt);
+            Lo_point += pbr_direct_light(N, V, L_pt, albedo, metallic, roughness, radiance_pt);
         }
     }
 
@@ -136,29 +137,14 @@ fn vs_main(
 
     out.tex_coords = in.vert_texcoord0;
 
-    let skin_matrix_3x3 = mat3x3f(
-        skin_matrix[0].xyz,
-        skin_matrix[1].xyz,
-        skin_matrix[2].xyz,
+    let surface_frame = transformed_tangent_frame(
+        mat3x3f(obj.model[0].xyz, obj.model[1].xyz, obj.model[2].xyz) *
+        mat3x3f(skin_matrix[0].xyz, skin_matrix[1].xyz, skin_matrix[2].xyz),
+        in.normal, in.vert_tangent,
     );
-
-    let normal_matrix = mat3x3f(
-        obj.model[0].xyz,
-        obj.model[1].xyz,
-        obj.model[2].xyz,
-    );
-
-    let skinned_normal = skin_matrix_3x3 * in.normal;
-    let skinned_tangent = skin_matrix_3x3 * in.vert_tangent.xyz;
-
-    let N = normalize(normal_matrix * skinned_normal);
-    out.world_normal = N;
-
-    let T = normalize(normal_matrix * skinned_tangent);
-    out.world_tangent = normalize(T - dot(T, N) * N);
-
-    let handedness = in.vert_tangent.w;
-    out.world_bitangent = normalize(cross(N, out.world_tangent) * handedness);
+    out.world_normal = surface_frame.normal;
+    out.world_tangent = surface_frame.tangent;
+    out.world_bitangent = surface_frame.bitangent;
 
     out.instance_idx = instance_idx;
 
@@ -200,26 +186,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     let V = normalize(frame_data.camera_position.xyz - in.world_pos);
 
-    let F0 = mix(vec3f(0.04), albedo, metallic);
-
-    let roughness_sq = roughness * roughness;
-
     // Directional light (sun)
     let L_sun = normalize(frame_data.light_direction.xyz);
     let radiance_sun = frame_data.light_color.rgb * frame_data.light_intensity.x;
 
-    let F_sun = fresnel_schlick(max(dot(normalize(V + L_sun), V), 0.0), F0);
-    let kS = F_sun;
-    let kD = (1.0 - kS) * (1.0 - metallic);
-    let diffuse = kD * albedo / PI;
-
-    let Lo_sun = pbr_direct_light(final_normal, V, L_sun, F0, roughness_sq, kD, diffuse, radiance_sun);
+    let Lo_sun = pbr_direct_light(final_normal, V, L_sun, albedo, metallic, roughness, radiance_sun);
 
     // Point lights (Forward+ tile culling)
     let Lo_point = accumulate_point_lights(
         in.clip_position, in.world_pos,
-        final_normal, V, F0,
-        roughness_sq, kD, diffuse,
+        final_normal, V, albedo,
+        metallic, roughness,
     );
 
     let Lo = Lo_sun + Lo_point;

@@ -135,41 +135,56 @@ fn collect_all_nodes<'a>(node: &gltf::Node<'a>, nodes: &mut Vec<gltf::Node<'a>>)
 }
 
 impl GLTFModel {
-    /// Transform vertex positions and normals by a world transform matrix.
-    ///
-    /// Positions are transformed by the full matrix.
-    /// Normals are transformed by the upper-left 3x3 (rotation/scale only, no translation).
+    /// Bake affine positions and inverse-transpose surface frames into static geometry.
     fn transform_vertex_data(vertices: &mut [VertexPBR], world_transform: &Mat4) {
-        // For normals, we need the inverse-transpose of the upper 3x3 for correct
-        // handling of non-uniform scaling. However, for simplicity and performance,
-        // we use the upper 3x3 directly which works correctly for uniform scaling
-        // and rotations. Non-uniform scaling may produce slightly incorrect normals.
-        use katla_math::Vec4;
+        use katla_math::{Mat3, Vec4};
 
-        for vertex in vertices.iter_mut() {
-            let pos = vertex.position;
-            let pos_vec = Vec4::new(pos[0], pos[1], pos[2], 1.0);
-            let transformed_pos = *world_transform * pos_vec;
-            vertex.position = [
-                transformed_pos.x(),
-                transformed_pos.y(),
-                transformed_pos.z(),
-            ];
-
-            let normal = vertex.normal;
-            let normal_vec = Vec4::new(normal[0], normal[1], normal[2], 0.0);
-            let transformed_normal = *world_transform * normal_vec;
-            let len = (transformed_normal.x() * transformed_normal.x()
-                + transformed_normal.y() * transformed_normal.y()
-                + transformed_normal.z() * transformed_normal.z())
-            .sqrt();
-            if len > 0.0 {
-                vertex.normal = [
-                    transformed_normal.x() / len,
-                    transformed_normal.y() / len,
-                    transformed_normal.z() / len,
-                ];
+        let transform = Mat3::from(*world_transform);
+        let cofactors = Mat3::from_columns(
+            transform[1].cross(transform[2]),
+            transform[2].cross(transform[0]),
+            transform[0].cross(transform[1]),
+        );
+        let orientation = if transform[0].dot(cofactors[0]) < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        let normalized_or = |value: Vec3, fallback: Vec3| {
+            let magnitude_sq = value.dot(value);
+            if magnitude_sq > 1e-12 {
+                value / magnitude_sq.sqrt()
+            } else {
+                fallback
             }
+        };
+        for vertex in vertices {
+            let position = vertex.position;
+            let world = *world_transform * Vec4::new(position[0], position[1], position[2], 1.0);
+            vertex.position = [world.x(), world.y(), world.z()];
+            let normal = Vec3::new(vertex.normal[0], vertex.normal[1], vertex.normal[2]);
+            let normal = normalized_or(
+                cofactors * normal * orientation,
+                normalized_or(transform * normal, Vec3::Y_AXIS),
+            );
+            let tangent =
+                transform * Vec3::new(vertex.tangent[0], vertex.tangent[1], vertex.tangent[2]);
+            let axis = if normal.x().abs() > 0.9 {
+                Vec3::Z_AXIS
+            } else {
+                Vec3::X_AXIS
+            };
+            let tangent = normalized_or(
+                tangent - normal * normal.dot(tangent),
+                axis.cross(normal).normalize(),
+            );
+            vertex.normal = normal.to_array();
+            vertex.tangent = [
+                tangent.x(),
+                tangent.y(),
+                tangent.z(),
+                vertex.tangent[3] * orientation,
+            ];
         }
     }
 
@@ -667,6 +682,60 @@ mod tests {
 
     // Note: These tests require actual GLTF files to run.
     // They serve as integration tests for the parser.
+
+    #[test]
+    fn test_static_material_frame_bakes_nonuniform_and_mirrored_transforms() {
+        for mirror in [1.0, -1.0] {
+            let mut vertex = VertexPBR {
+                position: [1.0, 2.0, 3.0],
+                normal: [
+                    0.0,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                ],
+                tangent: [1.0, 0.0, 0.0, 1.0],
+                tex_coord0: [0.0; 2],
+            };
+            GLTFModel::transform_vertex_data(
+                std::slice::from_mut(&mut vertex),
+                &Mat4::from_trs(
+                    Vec3::new(4.0, 5.0, 6.0),
+                    Quat::identity(),
+                    Vec3::new(2.0 * mirror, 1.0, 0.5),
+                ),
+            );
+            assert_eq!(vertex.position, [4.0 + 2.0 * mirror, 7.0, 7.5]);
+            for (actual, expected) in
+                vertex
+                    .normal
+                    .into_iter()
+                    .zip([0.0, 1.0 / 5.0f32.sqrt(), 2.0 / 5.0f32.sqrt()])
+            {
+                assert!(
+                    (actual - expected).abs() < 1e-6,
+                    "normal must use inverse transpose: {:?}",
+                    vertex.normal
+                );
+            }
+            assert_eq!(vertex.tangent, [mirror, 0.0, 0.0, mirror]);
+        }
+    }
+
+    #[test]
+    fn test_static_material_frame_stays_finite_for_singular_transform() {
+        let mut vertex = VertexPBR {
+            position: [0.0; 3],
+            normal: [0.0; 3],
+            tangent: [0.0, 0.0, 0.0, 1.0],
+            tex_coord0: [0.0; 2],
+        };
+        GLTFModel::transform_vertex_data(
+            std::slice::from_mut(&mut vertex),
+            &Mat4::from_trs(Vec3::ZERO, Quat::identity(), Vec3::ZERO),
+        );
+        assert_eq!(vertex.normal, [0.0, 1.0, 0.0]);
+        assert_eq!(vertex.tangent, [0.0, 0.0, 1.0, 1.0]);
+    }
 
     #[test]
     fn test_parse_fox_gltf() {

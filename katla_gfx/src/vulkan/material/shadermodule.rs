@@ -285,3 +285,28 @@ impl std::fmt::Display for ShaderError {
 }
 
 impl std::error::Error for ShaderError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_static_and_skinned_pbr_shader_interfaces_validate() {
+        for shader in ["model_pbr.wgsl", "model_pbr_skinned.wgsl"] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../resources/shaders")
+                .join(shader);
+            let source = resolved_source(&path).unwrap();
+            let interface = crate::renderer::graphics_interface::GraphicsInterface::reflect(
+                &source,
+                &crate::renderer::pipeline_descriptor::PipelineStages::Graphics {
+                    vertex_entry: "vs_main".into(),
+                    fragment_entry: Some("fs_main".into()),
+                },
+            )
+            .unwrap_or_else(|error| panic!("{shader}: {error}"));
+            assert_eq!(interface.color_outputs, vec![0]);
+            assert!(interface.bindings.iter().any(|slot| slot.group == 3));
+        }
+    }
+}
