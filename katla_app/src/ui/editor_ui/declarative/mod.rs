@@ -35,3 +35,6 @@ pub(super) use toolbar::{ToolbarAction, ToolbarDrawCtx};
 pub(super) use viewport_grid::ViewportGridDrawCtx;
 
 mod material;
+pub(crate) mod material_textures;
+
+pub(crate) mod material_drag;

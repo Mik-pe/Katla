@@ -46,6 +46,10 @@ Use `list_resources`/`read_resource` for project files such as scene documents.
 ## Edit surfaces without touching GPU handles
 
 The `material` tool and Inspector → Material edit the same per-object PBR factors.
+Inspector → Texture images and sampling uses the same validated role image and
+sampling edits. Its Save material/Apply material buttons use `material_asset`
+capture/apply; image drags, discrete edits and continuous gestures share editor
+undo semantics. Agent history remains separately available through `agent_undo`.
 They preserve model textures, mesh geometry and GPU material handles. Presets
 are flat PBR tints, rather than scanned wood, concrete or fabric textures.
 

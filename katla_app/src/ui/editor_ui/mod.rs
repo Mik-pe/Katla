@@ -39,6 +39,7 @@ use crate::{
 use asset_browser::AssetBrowserState;
 pub(crate) use co_creator::CoCreatorState;
 
+pub(crate) use asset_browser::AssetType;
 pub use asset_browser::ThumbnailState;
 pub use types::*;
 
@@ -107,6 +108,7 @@ pub struct EditorUI {
     pub theme: ColorScheme,
     /// Asset browser panel state.
     pub asset_browser: AssetBrowserState,
+    pub(crate) material_image_drag: declarative::material_drag::MaterialDrag,
     /// Currently focused panel (receives keyboard input).
     pub focused_panel: FocusedPanel,
     /// Viewport grid state (layout and viewport assignments).
@@ -186,6 +188,7 @@ impl EditorUI {
             last_screen_size: Vec2::new(800.0, 600.0),
             theme: ColorScheme::by_name("rcp").unwrap_or_default(),
             asset_browser: AssetBrowserState::new(),
+            material_image_drag: Default::default(),
             focused_panel: FocusedPanel::Viewport,
             viewport_grid_state: ViewportGridState::new(),
             viewport_texture_ids: [None, None, None, None],
@@ -241,6 +244,10 @@ impl EditorUI {
         let mut editor = Self::new();
         editor.theme = theme;
         editor
+    }
+
+    pub(crate) fn view_tree_mut(&mut self) -> &mut ViewTree {
+        &mut self.view_tree
     }
 
     /// Set the editor theme.

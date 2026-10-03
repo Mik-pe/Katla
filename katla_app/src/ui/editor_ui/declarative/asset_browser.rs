@@ -38,6 +38,7 @@ pub(crate) struct AssetBrowserDrawCtx {
 /// Render data for a single asset entry.
 #[derive(Clone)]
 pub(crate) struct AssetRenderData {
+    pub path: PathBuf,
     pub name: String,
     pub asset_type: AssetType,
     pub thumbnail_state: ThumbnailState,
@@ -232,14 +233,30 @@ impl Build for AssetBrowserView {
             .align(katla_ui::declarative::Alignment::Center);
 
             let click_index = i;
-            grid_children.push(
-                selectable(cell.boxed())
-                    .selected(is_selected)
-                    .on_click(ctx.on_click(move |actions| {
-                        actions.emit(AssetBrowserAction::AssetClicked(click_index));
-                    }))
+            let callback = ctx.on_click(move |actions| {
+                actions.emit(AssetBrowserAction::AssetClicked(click_index))
+            });
+            if asset.asset_type == AssetType::Image {
+                grid_children.push(
+                    super::material_drag::ImageDragWidget::new(
+                        super::material_drag::DragRole::Source(asset.path.clone()),
+                        ctx.env::<super::material_drag::MaterialDrag>()
+                            .cloned()
+                            .unwrap_or_default(),
+                        cell.boxed(),
+                        callback,
+                        is_selected,
+                    )
                     .boxed(),
-            );
+                );
+            } else {
+                grid_children.push(
+                    selectable(cell.boxed())
+                        .selected(is_selected)
+                        .on_click(callback)
+                        .boxed(),
+                );
+            }
         }
 
         let grid_content = if grid_children.is_empty() {
@@ -402,6 +419,9 @@ fn activate_asset(
                 state.navigate_to(&asset.path, thumbnail_texture_handles);
             }
         }
+        AssetType::Material => state
+            .pending_actions
+            .push(AssetAction::ApplyMaterial(asset.path)),
         AssetType::Prefab => state
             .pending_actions
             .push(AssetAction::InstantiatePrefab(asset.path)),
@@ -426,6 +446,9 @@ pub(crate) fn process_asset_actions(
 
     for action in state.take_actions() {
         match action {
+            AssetAction::ApplyMaterial(path) => {
+                pending_actions.push(EditorAction::ApplyMaterialAsset(path))
+            }
             AssetAction::InstantiatePrefab(path) => {
                 pending_actions.push(EditorAction::InstantiatePrefab(path))
             }

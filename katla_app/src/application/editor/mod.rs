@@ -1000,9 +1000,131 @@ pub fn process_editor_actions(app: &mut Application) {
                     log::warn!("Material edit failed: {error}");
                 }
             }
+            EditorAction::UseBrowserMaterialImage { entity, role } => {
+                let source = app
+                    .editor
+                    .editor_ui
+                    .asset_browser
+                    .selected_index
+                    .and_then(|index| app.editor.editor_ui.asset_browser.assets.get(index))
+                    .filter(|asset| asset.asset_type == crate::ui::editor_ui::AssetType::Image)
+                    .map(|asset| crate::material_images::TextureSource::File {
+                        asset: crate::scene::AssetRef::File(asset.path.clone()),
+                    });
+                let result = source
+                    .ok_or_else(|| "Select an image in the asset browser first".to_owned())
+                    .and_then(|source| {
+                        serde_json::to_value(source).map_err(|error| error.to_string())
+                    })
+                    .and_then(|source| {
+                        material::execute(
+                            app,
+                            katla_agent::material::MaterialOp::SetTexture {
+                                entity_ids: vec![entity.id().to_string()],
+                                role,
+                                source,
+                            },
+                            false,
+                        )
+                    });
+                if let Err(error) = result {
+                    app.show_scene_error(error);
+                }
+            }
+            EditorAction::AssignMaterialImage {
+                entity,
+                role,
+                path,
+                root,
+                gltf,
+                index,
+            } => {
+                let asset = match root {
+                    1 => crate::scene::AssetRef::Scene(path),
+                    2 => crate::scene::AssetRef::File(path.into()),
+                    _ => crate::scene::AssetRef::Resource(path),
+                };
+                let source = if gltf {
+                    index
+                        .parse::<usize>()
+                        .map(
+                            |image_index| crate::material_images::TextureSource::GltfImage {
+                                asset,
+                                image_index,
+                            },
+                        )
+                        .map_err(|_| "glTF image index must be a nonnegative integer".to_owned())
+                } else {
+                    Ok(crate::material_images::TextureSource::File { asset })
+                };
+                let result = source
+                    .and_then(|source| {
+                        serde_json::to_value(source).map_err(|error| error.to_string())
+                    })
+                    .and_then(|source| {
+                        material::execute(
+                            app,
+                            katla_agent::material::MaterialOp::SetTexture {
+                                entity_ids: vec![entity.id().to_string()],
+                                role,
+                                source,
+                            },
+                            false,
+                        )
+                    });
+                if let Err(error) = result {
+                    app.show_scene_error(error);
+                }
+            }
+            EditorAction::MaterialAsset { entity, path, save } => {
+                let op = if save {
+                    katla_agent::material_asset::MaterialAssetOp::Capture {
+                        path,
+                        entity_id: entity.id().to_string(),
+                    }
+                } else {
+                    katla_agent::material_asset::MaterialAssetOp::Apply {
+                        path,
+                        entity_ids: vec![entity.id().to_string()],
+                    }
+                };
+                if let Err(error) = material_asset::execute(app, op, false) {
+                    app.show_scene_error(error);
+                }
+            }
+            EditorAction::ApplyMaterialAsset(path) => {
+                let result = app
+                    .editor
+                    .editor_ui
+                    .selected_entity
+                    .ok_or_else(|| "Select a mesh object before applying a material".to_owned())
+                    .and_then(|entity| {
+                        let root = app
+                            .resources
+                            .root
+                            .parent()
+                            .ok_or("Resource root has no project directory")?;
+                        let relative = path
+                            .strip_prefix(root)
+                            .map_err(|_| "Material is outside this project")?
+                            .to_string_lossy()
+                            .replace('\\', "/");
+                        material_asset::execute(
+                            app,
+                            katla_agent::material_asset::MaterialAssetOp::Apply {
+                                path: relative,
+                                entity_ids: vec![entity.id().to_string()],
+                            },
+                            false,
+                        )
+                    });
+                if let Err(error) = result {
+                    app.show_scene_error(error);
+                }
+            }
             EditorAction::MaterialPreset(op) => {
                 if let Err(error) = material::execute(app, op, false) {
-                    log::warn!("Material preset failed: {error}");
+                    app.show_scene_error(error);
                 }
             }
             EditorAction::SelectEntity(entity_id) => {
@@ -1751,7 +1873,52 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
         entity.material = app
             .world
             .get_component::<DrawableComponent>(entity.id)
-            .map(material::values);
+            .map(|d| {
+                use crate::ui::editor_ui::MaterialInspectorInfo;
+                use katla_gfx::GpuRenderer;
+                let neutral = app
+                    .scene_features
+                    .as_ref()
+                    .map(super::scene_features::SceneFeatures::material_textures)
+                    .unwrap_or_default();
+                let original = app
+                    .renderer
+                    .material_textures(d.material_handle)
+                    .unwrap_or_default();
+                let images = d
+                    .texture_bindings
+                    .textures(original, neutral)
+                    .unwrap_or(original);
+                let emission = d.texture_bindings.emission(d.emission, neutral.albedo);
+                let handles = [
+                    images.albedo,
+                    images.normal,
+                    images.metallic_roughness,
+                    images.occlusion,
+                    if emission.is_none() {
+                        neutral.albedo
+                    } else {
+                        emission
+                    },
+                ];
+                MaterialInspectorInfo {
+                    values: material::values(d),
+                    sampling: d.sampling,
+                    uv_sets: d.uv_sets,
+                    sources: std::array::from_fn(|i| {
+                        d.texture_bindings.0[i]
+                            .as_ref()
+                            .map_or(crate::material_images::TextureSource::Inherit, |binding| {
+                                binding.source.clone()
+                            })
+                    }),
+                    previews: handles.map(|handle| {
+                        app.renderer
+                            .get_bindless_slot(handle)
+                            .map(|slot| katla_ui::TextureId::new((1u64 << 63) | slot as u64))
+                    }),
+                }
+            });
     }
     result
 }

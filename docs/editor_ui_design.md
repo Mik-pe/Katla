@@ -120,8 +120,25 @@ tool. These per-object multipliers preserve model textures and pipeline handles
 and persist in the scene document. See [agent authoring](agent-authoring.md) for
 color semantics, search and room recipes.
 
+Texture images and sampling form a separate collapsible section. Five effective
+image previews select albedo, normal, metallic/roughness, occlusion or emission.
+Drag an image from the asset browser onto a role, or use Browser image or an
+explicit Resource/Scene/File source. Neutral clears just that image; Original
+restores its imported binding. Image edits preserve factors and sampling.
+The selected role exposes available UV sets, offset, rotation in radians,
+scale, independent min/mag/mip filtering, wrap U/V and anisotropy. Missing UV
+sets are disabled. Each slider gesture remains one scoped undo step.
+Source choices and asset buttons stack in narrow panels. Save material captures
+the effective surface to a project `.katmat`; Apply material copies the entire
+surface as one undo step. Double-clicking a `.katmat` in the browser applies it
+to the selected mesh. Invalid edits show the existing error dialog.
+
 `cargo run -- --interaction-test /tmp/katla-interactions` drives real UI
 hit testing and native viewport picking. The walkthrough clicks presets, drags
 material sliders outside their rows, uses Edit menu undo/redo, and collapses the
-material section to add and remove a component. It writes screenshots and a
+material section to add and remove a component. It then drags an image onto a
+role, restores neutral/original images, edits filtering and UVs after scrolling,
+and saves/applies a reusable material. It writes screenshots and a
 `receipt.json`, and exits with an error for failed or incomplete checks.
+The [native material inspector evidence](material-inspector-study/README.md)
+records the accepted walkthrough and its validation scope.

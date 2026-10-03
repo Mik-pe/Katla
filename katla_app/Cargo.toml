@@ -11,6 +11,7 @@ mcp = ["editor", "katla_agent/mcp-server", "dep:base64"]
 
 [dependencies]
 sha2 = { workspace = true }
+taffy = "0.7"
 katla_math = { workspace = true }
 katla_gfx = { workspace = true }
 katla_ecs = { workspace = true }

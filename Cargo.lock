@@ -2345,6 +2345,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "skrifa",
+ "taffy",
  "toml",
  "vello_cpu",
  "winit",

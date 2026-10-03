@@ -130,13 +130,21 @@ impl Build for InspectorView {
         // above (lives entirely in view state, no env round-trip needed).
         let filter_id: StateId = ctx.state(String::new());
         let material_controls = super::material::MaterialControls::reserve(ctx);
+        let texture_controls = super::material_textures::TextureControls::reserve(ctx);
         let selected = draw_ctx
             .entities
             .iter()
             .find(|e| draw_ctx.selected_entity == Some(e.id));
         let material_section = material_controls.build(
             ctx,
-            selected.and_then(|e| e.material.map(|m| (e.id, m))),
+            selected.and_then(|e| e.material.as_ref().map(|m| (e.id, m.values))),
+            &draw_ctx.theme,
+            draw_ctx.bounds.width(),
+        );
+
+        let texture_section = texture_controls.build(
+            ctx,
+            selected.and_then(|e| e.material.as_ref().map(|m| (e.id, m))),
             &draw_ctx.theme,
             draw_ctx.bounds.width(),
         );
@@ -167,6 +175,9 @@ impl Build for InspectorView {
 
             if let Some(material) = material_section {
                 sections.push(material);
+            }
+            if let Some(textures) = texture_section {
+                sections.push(textures);
             }
 
             for (index, type_name) in SECTION_TYPES.iter().enumerate() {

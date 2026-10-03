@@ -146,7 +146,22 @@ pub struct EntityInfo {
     /// Physics material data (if entity has PhysicsMaterial)
     pub physics_material: Option<PhysicsMaterialInfo>,
     /// Editable surface material factors in sRGB authoring space.
-    pub material: Option<katla_agent::material::MaterialValues>,
+    pub material: Option<MaterialInspectorInfo>,
+}
+
+/// Current surface data for inspector controls; preview IDs live for this frame.
+#[derive(Clone, Debug)]
+pub struct MaterialInspectorInfo {
+    /// Editable authoring factors.
+    pub values: katla_agent::material::MaterialValues,
+    /// Independent coordinates and filtering.
+    pub sampling: crate::rendering::MaterialSampling,
+    /// Authored choices; inherit keeps the original imported role.
+    pub sources: [crate::material_images::TextureSource; 5],
+    /// UV sets actually available on this mesh.
+    pub uv_sets: [bool; 2],
+    /// Current effective role previews.
+    pub previews: [Option<katla_ui::TextureId>; 5],
 }
 
 /// Point light inspector data.
@@ -314,6 +329,28 @@ pub enum Panel {
 pub enum EditorAction {
     /// Preview a material edit and group a pointer gesture into one undo.
     EditMaterial(katla_agent::material::MaterialOp),
+    /// Assign a selected browser image to one material role.
+    UseBrowserMaterialImage {
+        entity: EntityId,
+        role: katla_agent::material_sampling::TextureRole,
+    },
+    /// Assign an explicit image path after reading current text-field state.
+    AssignMaterialImage {
+        entity: EntityId,
+        role: katla_agent::material_sampling::TextureRole,
+        path: String,
+        root: usize,
+        gltf: bool,
+        index: String,
+    },
+    /// Capture or apply a complete material definition.
+    MaterialAsset {
+        entity: EntityId,
+        path: String,
+        save: bool,
+    },
+    /// Apply a material selected in the asset browser.
+    ApplyMaterialAsset(std::path::PathBuf),
     /// Apply a material preset as one undoable edit.
     MaterialPreset(katla_agent::material::MaterialOp),
     /// Spawn a new model at the given position.

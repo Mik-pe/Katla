@@ -64,6 +64,8 @@ pub enum AssetAction {
     ModelPreviewRequested(PathBuf),
     /// Instantiate a mesh recipe or prefab in the active scene.
     InstantiatePrefab(PathBuf),
+    /// Apply a complete surface to the selected mesh.
+    ApplyMaterial(PathBuf),
     /// Copy path to clipboard
     CopyPath(PathBuf),
     /// Show in Explorer/Finder

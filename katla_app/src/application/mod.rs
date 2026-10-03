@@ -31,6 +31,8 @@ mod gizmo;
 mod headless;
 mod init;
 pub(crate) mod interaction_test;
+#[cfg(feature = "editor")]
+mod material_ui_acceptance;
 #[cfg(not(feature = "editor"))]
 mod no_editor_methods;
 mod picking;

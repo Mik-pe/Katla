@@ -199,7 +199,11 @@ rollback, resource retirement and scaled mesh collider reconstruction. See
 [the prefab contract](prefabs.md#verification) for commands and rendering evidence.
 
 The extended native interaction walkthrough checks prefab asset double-click and
-toolbar Play/Stop in addition to material/component edits. Linux and capability-gated `macos-26` also build the editor and run the disposable
+toolbar Play/Stop in addition to material/component edits. Its material inspector
+checks image drag/drop, neutral/original restoration, browser image assignment,
+scrolled filtering and UV dragging, and `.katmat` capture/apply with scoped
+history. The default run requires 270 frames and fails on incomplete checks.
+Linux and capability-gated `macos-26` also build the editor and run the disposable
 `scripts/validate_prefabs.py` acceptance flow uses real MCP and committed viewport
 readbacks to verify script attachment, particles, trigger visitor remapping,
 preview controls and capture/save/reload; commands are in [prefabs](prefabs.md#verification).

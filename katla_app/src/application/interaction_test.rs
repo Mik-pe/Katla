@@ -95,6 +95,7 @@ enum State {
     ReleaseRemoveComponent,
     CheckRemoveComponent,
     PrefabWalkthrough,
+    TextureWalkthrough,
     Done,
 }
 
@@ -112,6 +113,8 @@ pub struct InteractionTestRunner {
     checks: Vec<Check>,
     #[cfg(feature = "editor")]
     material_history_before: usize,
+    #[cfg(feature = "editor")]
+    material_ui: super::material_ui_acceptance::MaterialUiAcceptance,
 }
 
 impl InteractionTestRunner {
@@ -134,6 +137,8 @@ impl InteractionTestRunner {
             checks: Vec::new(),
             #[cfg(feature = "editor")]
             material_history_before: 0,
+            #[cfg(feature = "editor")]
+            material_ui: Default::default(),
         }
     }
 
@@ -559,6 +564,11 @@ impl InteractionTestRunner {
                 Self::ui_release(app);
                 self.state = State::CheckRemoveComponent;
             }
+            State::TextureWalkthrough => {
+                if let Err(error) = self.material_ui.begin(app, frame, &self.output_dir) {
+                    self.record("material_ui_fixture_setup", false, error);
+                }
+            }
             State::PrefabWalkthrough => match frame {
                 150 => Self::ui_press(app, (72.0, 540.0)),
                 151 | 155 | 157 | 161 | 163 | 169 | 175 => Self::ui_release(app),
@@ -805,11 +815,23 @@ impl InteractionTestRunner {
                         && roots == 1,
                     format!("mode={:?}, roots={roots}", app.play_mode),
                 );
-                self.state = State::Done;
+                self.state = State::TextureWalkthrough;
                 self.screenshots_taken += 1;
                 Some(self.screenshot_path("20_prefab_stopped"))
             }
-            State::Done if frame >= 179 => {
+            State::TextureWalkthrough => {
+                if frame == 262 {
+                    self.state = State::Done;
+                }
+                if let Some((name, passed, detail, image)) = self.material_ui.end(app, frame) {
+                    self.record(name, passed, detail);
+                    self.screenshots_taken += 1;
+                    Some(self.screenshot_path(image))
+                } else {
+                    None
+                }
+            }
+            State::Done if frame >= 263 => {
                 let passed = self.checks.iter().filter(|c| c.passed).count();
                 info!(
                     "Interaction test summary: {}/{} checks passed",

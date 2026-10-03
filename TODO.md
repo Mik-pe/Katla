@@ -270,8 +270,8 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Wire timeline to AnimationPlayer — preview animations in viewport while scrubbing
 
 #### Material editor
-- [ ] Design material editor layout — texture slots (albedo, normal, metallic, roughness, emission), numeric sliders, live preview
-- [ ] Add texture slot widgets — drag-and-drop from asset browser, thumbnail preview, clear button
+- [x] Design material editor layout — independent role previews, numeric factors, UV/filter/wrap controls, live viewport preview and reusable `.katmat` save/apply
+- [x] Add texture slot widgets — drag-and-drop from asset browser, effective image thumbnails, neutral/original controls and explicit portable sources
 - [x] Add per-object PBR factor controls — sRGB RGBA, metallic, roughness and occlusion, shared presets and validated agent batch edits
 - [x] Add emission color/intensity controls and texture assignment — linear HDR emission, independent normal/AO factors and atomic file/glTF/neutral/inherit image edits with scoped history
 - [x] Add live material preview — apply PBR factors to the selected entity, group pointer gestures for undo/redo and persist factors in the scene

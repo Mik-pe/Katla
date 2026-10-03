@@ -107,6 +107,9 @@ impl EditorUI {
         }
 
         // ── Set ALL env contexts ──
+        self.view_tree
+            .env_mut()
+            .set(self.material_image_drag.clone());
         // DockTree (for DockSpace widget to read from Environment for initial value)
         self.view_tree.env_mut().set(self.dock_tree.clone());
 
@@ -211,6 +214,7 @@ impl EditorUI {
                                 .iter()
                                 .map(|a| AssetRenderData {
                                     name: a.name.clone(),
+                                    path: a.path.clone(),
                                     asset_type: a.asset_type,
                                     thumbnail_state: a.thumbnail_state.clone(),
                                 })
@@ -313,9 +317,55 @@ impl EditorUI {
         // ── Process DockActions from DockSpace widget ──
         self.process_dock_actions();
 
+        if ui.input().mouse_released[katla_ui::input::mouse_button::LEFT]
+            || self.scene_dialog.is_some()
+        {
+            self.material_image_drag.0.borrow_mut().take();
+        }
         // ── Process declarative actions ──
         self.pending_actions
             .extend(self.view_tree.actions_mut().drain::<EditorAction>());
+        for action in self
+            .view_tree
+            .actions_mut()
+            .drain::<super::declarative::material_textures::TextureRoleAction>()
+        {
+            self.view_tree
+                .state_arena_mut()
+                .set(action.state, action.index);
+        }
+        for action in self
+            .view_tree
+            .actions_mut()
+            .drain::<super::declarative::material_textures::MaterialTextureAction>()
+        {
+            use super::declarative::material_textures::MaterialTextureAction;
+            let arena = self.view_tree.state_arena();
+            self.pending_actions.push(match action {
+                MaterialTextureAction::Assign {
+                    entity,
+                    role,
+                    path,
+                    root,
+                    kind,
+                    index,
+                } => EditorAction::AssignMaterialImage {
+                    entity,
+                    role,
+                    path: arena.get::<String>(path).unwrap_or_default(),
+                    root: arena.get::<usize>(root).unwrap_or_default(),
+                    gltf: arena.get::<usize>(kind) == Some(1),
+                    index: arena.get::<String>(index).unwrap_or_default(),
+                },
+                MaterialTextureAction::Asset { entity, path, save } => {
+                    EditorAction::MaterialAsset {
+                        entity,
+                        path: arena.get::<String>(path).unwrap_or_default(),
+                        save,
+                    }
+                }
+            });
+        }
         let dialog_actions: Vec<super::declarative::scene_dialog::SceneDialogAction> =
             self.view_tree.actions_mut().drain();
         for action in dialog_actions {

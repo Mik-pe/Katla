@@ -311,3 +311,8 @@ Portable `.katmat` definitions and complete-material history belong to
 Authoring capture resolves inherited image choices, and apply copies factors,
 sampling and images without replacing mesh or pipeline identity. File writes
 leave live copies unchanged. [Authoring workflow](../../../docs/agent-authoring.md#reusable-surfaces).
+The app's inspector exposes effective image previews, drag assignment and
+independent role sampling through the same validated authoring operations.
+Preview IDs borrow live app bindings for the current UI frame. They do not
+create UI-owned GPU resources or mutate shared core material state. See
+[native inspector acceptance](../../../docs/material-inspector-study/README.md).
