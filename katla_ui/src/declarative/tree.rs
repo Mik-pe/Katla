@@ -247,7 +247,11 @@ impl ViewTree {
         self.tick_animations(ui.time);
 
         self.resolve_positions();
+        let revision = self.state.revision();
         self.apply_post_layout();
+        if self.state.revision() != revision {
+            self.resolve_positions();
+        }
 
         let (chain, traps) = focus::collect_focus_chain(self, &self.state);
         self.focus.set_focus_chain(chain, traps);
@@ -274,7 +278,9 @@ impl ViewTree {
         };
         if let Some(dir) = direction {
             let chain_ids = self.focus.focus_chain_ids();
-            let _ = self.gamepad.navigate(dir, &chain_ids, &self.bounds_map);
+            let _ = self
+                .gamepad
+                .navigate(dir, &chain_ids, &self.resolved_bounds);
             self.focus.set_focused(self.gamepad.focused());
         } else {
             self.gamepad.set_focused(self.focus.focused());
@@ -282,6 +288,7 @@ impl ViewTree {
 
         let mut callbacks = std::mem::take(&mut self.callbacks);
         let resolved = std::mem::take(&mut self.resolved_bounds);
+        let revision = self.state.revision();
         let input_result = input::process_input(self, &ui.input, &mut callbacks, &resolved);
         let input_consumed = input_result.input_consumed;
         self.interaction.hovered_id = input_result.hovered_id;
@@ -296,6 +303,9 @@ impl ViewTree {
         self.interaction.focused_id = self.focus.focused();
         self.callbacks = callbacks;
         self.resolved_bounds = resolved;
+        if self.state.revision() != revision {
+            self.resolve_positions();
+        }
 
         self.update_draggable_bounds();
         self.update_dock_child_bounds();
@@ -457,8 +467,8 @@ impl ViewTree {
             .unwrap_or_default();
         self.resolved_bounds.insert(root_id, root_bounds);
 
-        let mut translations: HashMap<ViewId, Vec2> = HashMap::new();
-        translations.insert(root_id, Vec2::new(0.0, 0.0));
+        let mut translations: HashMap<ViewId, (Vec2, f32)> = HashMap::new();
+        translations.insert(root_id, (Vec2::ZERO, 0.0));
 
         let nodes = &self.nodes;
         let state = &self.state;
@@ -468,8 +478,17 @@ impl ViewTree {
             let Some(&parent_id) = parent_map.get(&node_id) else {
                 continue;
             };
-            let accumulated_translation = translations.get(&parent_id).copied().unwrap_or_default();
-            let parent_bounds = resolved.get(&parent_id).copied().unwrap_or_default();
+            let (accumulated_translation, parent_scroll) =
+                translations.get(&parent_id).copied().unwrap_or_default();
+            let scroll = parent_scroll
+                + nodes
+                    .get(parent_id)
+                    .map_or(0., |parent| parent.widget.scroll_offset(state));
+            let parent_bounds = resolved
+                .get(&parent_id)
+                .copied()
+                .unwrap_or_default()
+                .translate(Vec2::new(0., parent_scroll));
 
             let Some(node) = nodes.get(node_id) else {
                 continue;
@@ -486,8 +505,8 @@ impl ViewTree {
             );
             bounds = bounds.translate(delta);
 
-            resolved.insert(node_id, bounds);
-            translations.insert(node_id, accumulated_translation + delta);
+            resolved.insert(node_id, bounds.translate(Vec2::new(0., -scroll)));
+            translations.insert(node_id, (accumulated_translation + delta, scroll));
         }
     }
 
@@ -650,12 +669,11 @@ impl ViewTree {
         node.widget
             .draw(ui, &self.state, bounds, &anim_state, &children, &draw_info);
 
-        let scroll_offset = node.widget.scroll_offset(&self.state);
         let skip_children = !node.widget.should_draw_children(&self.state);
 
         if !skip_children {
             for &child_id in &children {
-                self.draw_child_recursive(child_id, ui, scroll_offset);
+                self.draw_recursive(child_id, ui);
             }
         }
 
@@ -684,103 +702,6 @@ impl ViewTree {
             .draw_after_children(ui, &self.state, bounds, &children, &content_bounds);
 
         if needs_clip {
-            ui.pop_clip();
-        }
-    }
-
-    fn draw_child_recursive(
-        &self,
-        child_id: ViewId,
-        ui: &mut UiContext,
-        parent_scroll_offset: f32,
-    ) {
-        let Some(child_node) = self.nodes.get(child_id) else {
-            return;
-        };
-        let anim_state = child_node.animation_state;
-
-        let child_bounds = self
-            .resolved_bounds
-            .get(&child_id)
-            .copied()
-            .unwrap_or_default();
-
-        let draw_bounds = if parent_scroll_offset != 0.0 {
-            child_bounds.translate(Vec2::new(0.0, -parent_scroll_offset))
-        } else {
-            child_bounds
-        };
-
-        let scroll_delta = draw_bounds.min - child_bounds.min;
-        let grandchildren: Vec<ViewId> = child_node.children.clone();
-        let grandchildren_bounds: Vec<Rect2D> = grandchildren
-            .iter()
-            .filter_map(|&id| self.resolved_bounds.get(&id).copied())
-            .map(|b| b.translate(scroll_delta))
-            .collect();
-
-        let child_needs_clip = child_node.widget.needs_clip_children();
-        if child_needs_clip {
-            ui.push_clip(draw_bounds);
-        }
-
-        let draw_interaction = super::widget::DrawInteraction {
-            hovered_id: self.interaction.hovered_id,
-            active_id: self.interaction.active_id,
-            focused_id: self.interaction.focused_id,
-        };
-        let draw_info = super::widget::DrawInfo {
-            interaction: &draw_interaction,
-            view_id: child_id,
-            children_bounds: &grandchildren_bounds,
-        };
-
-        child_node.widget.draw(
-            ui,
-            &self.state,
-            draw_bounds,
-            &anim_state,
-            &grandchildren,
-            &draw_info,
-        );
-
-        let child_scroll = child_node.widget.scroll_offset(&self.state);
-        let skip_children = !child_node.widget.should_draw_children(&self.state);
-
-        if !skip_children {
-            for &grandchild_id in &grandchildren {
-                let total_scroll = parent_scroll_offset + child_scroll;
-                self.draw_child_recursive(grandchild_id, ui, total_scroll);
-            }
-        }
-
-        let content_bounds: Vec<Rect2D> = grandchildren
-            .iter()
-            .filter_map(|&id| {
-                let b = self.resolved_bounds.get(&id).copied()?;
-                Some(
-                    self.content_sizes
-                        .get(&id)
-                        .map(|&c| {
-                            Rect2D::new(
-                                b.min,
-                                b.min + Vec2::new(c.x().max(b.width()), c.y().max(b.height())),
-                            )
-                        })
-                        .unwrap_or(b),
-                )
-            })
-            .collect();
-
-        child_node.widget.draw_after_children(
-            ui,
-            &self.state,
-            draw_bounds,
-            &grandchildren,
-            &content_bounds,
-        );
-
-        if child_needs_clip {
             ui.pop_clip();
         }
     }
@@ -2091,3 +2012,7 @@ mod tests {
         accepts_widget(&text("test"));
     }
 }
+
+#[cfg(test)]
+#[path = "scroll_coordinate_tests.rs"]
+mod scroll_coordinate_tests;

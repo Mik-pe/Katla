@@ -26,6 +26,12 @@ consistent cell sizing.
 
 Scroll views lay content out vertically. Long control stacks keep their natural
 height with `flex_shrink(0.0)` so scrolling never compresses controls into overlaps.
+`ViewTree::resolved_bounds` includes every ancestor scroll offset. Drawing,
+hit testing, hover, drag tracking and directional navigation use this same
+geometry; drawing must not apply the scroll offset again. Bounds are refreshed
+when post-layout clamping or input changes state. Idle frames resolve once.
+Nested scroll containers retain their own visible clip bounds while their
+descendants accumulate the offsets.
 
 Open menu dropdowns draw on the popup layer and receive clicks before dock tabs
 or fields beneath them. Closing a menu does not send that click to the scene.

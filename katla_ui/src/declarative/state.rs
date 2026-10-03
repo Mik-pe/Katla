@@ -25,6 +25,7 @@ impl StateId {
 pub struct StateArena {
     cells: HashMap<StateId, StateCell>,
     slot_counters: HashMap<ViewId, u32>,
+    revision: u64,
 }
 
 struct StateCell {
@@ -81,12 +82,17 @@ impl StateArena {
         if changed {
             cell.value = Box::new(value);
             cell.dirty = true;
+            self.revision = self.revision.wrapping_add(1);
         }
         changed
     }
 
     pub fn is_dirty(&self) -> bool {
         self.cells.values().any(|c| c.dirty)
+    }
+
+    pub(crate) fn revision(&self) -> u64 {
+        self.revision
     }
 
     pub fn clear_dirty(&mut self) {
