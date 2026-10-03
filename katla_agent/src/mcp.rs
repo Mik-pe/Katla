@@ -617,7 +617,7 @@ impl KatlaMcpServer {
 
     #[rmcp::tool(
         name = "material",
-        description = "Discover presets and supported limits, inspect image provenance/UVs/samplers, set_sampling on one role, or set PBR factors on 1..256 mesh objects as one undoable batch. Use action presets first. base_color uses sRGB RGB and linear alpha in 0..1; alpha does not switch render mode. Presets provide isotropic factors without textures or directional brushing. Partial patches preserve other factors; preset supplies defaults, explicit factors override it. set_sampling takes role and patch, with UV rotation in radians. It preserves images and omitted fields and persists through scene reload. Texture assignment is unavailable. Use query_entities material_editable flags to choose targets and editor_view to verify native results."
+        description = "Discover presets and supported limits, inspect image provenance/UVs/samplers, set_sampling on one role, or set PBR factors on 1..256 mesh objects as one undoable batch. Use action presets first. base_color uses sRGB RGB and linear alpha in 0..1; alpha does not switch render mode. Presets provide isotropic factors without textures or directional brushing. Partial patches preserve other factors; preset supplies defaults, explicit factors override it. set_sampling takes role and patch, with UV rotation in radians. It preserves images and omitted fields and persists through scene reload. set_texture assigns file/glTF images or neutral/inherit choices per role atomically; sampling and factors remain unchanged. Use query_entities material_editable flags to choose targets and editor_view to verify native results."
     )]
     async fn material(
         &self,
@@ -990,7 +990,7 @@ mod animation_tests {
         let schema = serde_json::to_value(schemars::schema_for!(MaterialParams)).unwrap();
         assert_eq!(schema["type"], "object");
         assert_eq!(schema["additionalProperties"], false);
-        assert_eq!(schema["oneOf"].as_array().unwrap().len(), 4);
+        assert_eq!(schema["oneOf"].as_array().unwrap().len(), 5);
         for branch in schema["oneOf"].as_array().unwrap() {
             assert_eq!(branch["additionalProperties"], false);
         }

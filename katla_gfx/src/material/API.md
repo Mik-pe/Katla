@@ -161,8 +161,9 @@ If an authored normal UV differs from the coordinates used to generate tangents,
 fragment derivatives reconstruct its frame; degenerate UVs retain the finite mesh
 basis. Authored glTF tangents retain their supplied basis under UV transformation.
 Other glTF material extensions require dedicated support. Scene serialization
-preserves editable base color, PBR factors, surface multipliers and sampling; texture assignment and standalone
-material assets are not yet editable/persisted. Unresolved work and acceptance
+preserves editable base color, PBR factors, surface multipliers and sampling; per-role image assignment now supports standalone files, embedded glTF images,
+neutral defaults and original bindings with atomic history and portable references.
+Standalone reusable material assets are not yet available. Unresolved work and acceptance
 criteria live in [TODO](../../../TODO.md#material-correctness).
 
 ## Surface lighting and transforms

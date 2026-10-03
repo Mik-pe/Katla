@@ -386,6 +386,7 @@ pub struct Application {
     pub(crate) scene_features: Option<scene_features::SceneFeatures>,
     pub(crate) camera: Camera,
     pub(crate) gltf_cache: GltfCache,
+    pub(crate) material_images: crate::material_images::MaterialImages,
     pub(crate) gltf_texture_cache: spawning::GltfTextureCache,
     pub(crate) timer: Timer,
     pub(crate) info: ApplicationInfo,

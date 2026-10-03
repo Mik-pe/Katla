@@ -151,6 +151,12 @@ impl MaterialPreset {
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MaterialOp {
+    /// Assign one image role; source is a portable file, glTF image, neutral or inherit choice.
+    SetTexture {
+        entity_ids: Vec<String>,
+        role: crate::material_sampling::TextureRole,
+        source: serde_json::Value,
+    },
     /// Patch one texture role’s UV transform and sampler as one undoable batch.
     SetSampling {
         entity_ids: Vec<String>,
@@ -200,7 +206,7 @@ impl MaterialOp {
         let properties = serde_json::Map::from_iter([
             (
                 "action".into(),
-                json!({"type":"string","enum":["presets","inspect","set","set_sampling"]}),
+                json!({"type":"string","enum":["presets","inspect","set","set_sampling","set_texture"]}),
             ),
             (
                 "entity_id".into(),
@@ -256,12 +262,23 @@ impl MaterialOp {
             ),
         ]);
         let mut properties = properties;
+        let asset_reference = json!({"type":"object","description":"One explicit asset root: Resource relative to project resources, Scene relative to the open scene, or File absolute. Relative paths use forward slashes and no . or .. segments.","oneOf":[
+            {"properties":{"Resource":{"type":"string","minLength":1}},"required":["Resource"],"additionalProperties":false},
+            {"properties":{"Scene":{"type":"string","minLength":1}},"required":["Scene"],"additionalProperties":false},
+            {"properties":{"File":{"type":"string","minLength":1}},"required":["File"],"additionalProperties":false}
+        ]});
+        properties.insert("source".into(), json!({"type":"object","description":"Image selection: kind inherit or neutral; kind file with asset; kind gltf_image with asset and image_index. Asset is {Resource:relative}, {Scene:relative} or {File:absolute}. Images retain role-specific color interpretation; sampling and factors are preserved.","oneOf":[
+            {"properties":{"kind":{"enum":["inherit","neutral"]}},"required":["kind"],"additionalProperties":false},
+            {"properties":{"kind":{"const":"file"},"asset":asset_reference},"required":["kind","asset"],"additionalProperties":false},
+            {"properties":{"kind":{"const":"gltf_image"},"asset":asset_reference,"image_index":{"type":"integer","minimum":0}},"required":["kind","asset","image_index"],"additionalProperties":false}
+        ]}));
         properties.insert("role".into(), json!({"type":"string","enum":["albedo","normal","metallic_roughness","occlusion","emission"]}));
         properties.insert(
             "patch".into(),
             crate::material_sampling::SamplingPatch::tool_schema(),
         );
         let branches: Vec<_> = [
+            ("set_texture",vec!["action","entity_ids","role","source"],vec!["action","entity_ids","role","source"]),
             ("set_sampling",vec!["action","entity_ids","role","patch"],vec!["action","entity_ids","role","patch"]),
             ("presets", vec!["action"], vec!["action"]),
             ("inspect", vec!["action", "entity_id"], vec!["action", "entity_id"]),

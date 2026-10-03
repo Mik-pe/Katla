@@ -349,6 +349,15 @@ fn validate_entity(entity: &EntityDescriptor, issues: &mut Vec<SceneIssue>) {
         f.unit("drawable.metallic", d.metallic);
         f.unit("drawable.roughness", d.roughness);
         f.unit("drawable.ao", d.ao);
+        if let Some(textures) = &d.textures
+            && let Err(message) = textures.validate()
+        {
+            f.issues.push(SceneIssue {
+                entity: Some(f.id),
+                field: "drawable.textures".into(),
+                message,
+            });
+        }
         if let Some(sampling) = d.sampling {
             f.require(
                 "drawable.sampling",

@@ -91,8 +91,8 @@ capture. The optional drawable `surface` field persists linear RGB
 Capture writes the
 current values; omitted surface overrides retain the imported glTF factors or
 primitive defaults. Emission factors multiply a white fallback when no emission
-texture exists. Texture bindings remain asset-owned and are reconstructed from
-the referenced model. Group mesh colliders retain combined rest-pose geometry independently
+texture exists. Original texture bindings are reconstructed from the referenced model;
+explicit drawable image assignments override individual roles. Group mesh colliders retain combined rest-pose geometry independently
 of rendering; skinned children inherit the controller's animation player unless
 they have an explicit player of their own.
 
@@ -103,6 +103,17 @@ must be finite, comparison samplers are unavailable for material images, and
 anisotropy above one requires linear min/mag filtering. A referenced image cannot
 select a coordinate set missing from its mesh: staging rejects the scene and
 retires staged allocations while preserving the active scene.
+
+The optional drawable `textures` field contains named image choices for albedo,
+normal, metallic/roughness, occlusion and emission. Each choice is tagged by
+`kind`: `inherit`, `neutral`, `file` with an `asset` reference, or `gltf_image` with
+an `asset` reference and `image_index`. Omission retains source images. Runtime
+handles are never serialized. Capture and Save As identify/rebase every nested
+asset reference. Image decoding/upload is staged; invalid UVs or images preserve
+the active scene and retire abandoned allocations. Immutable authored image
+allocations are shared weakly by content, dimensions and native format; live
+bindings and history own their lifetime outside scene resource-tracker snapshots.
+Reload reads standalone image files again; scene saving does not embed their bytes.
 
 The loader checks each built-in referenced file before allocating replacements.
 Mesh recipes compile during preflight unless an identical recipe is already active.

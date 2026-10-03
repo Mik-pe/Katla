@@ -217,6 +217,7 @@ impl SceneManager {
                 crate::application::editor::record_entity_gpu_handles(app, entity);
             }
         }
+        app.drain_material_images();
         Ok(())
     }
 }
@@ -280,6 +281,17 @@ pub(crate) fn entity_assets(entity: &EntityDescriptor) -> Vec<(&'static str, &As
     {
         assets.push(("source.path", path));
     }
+    if let Some(textures) = entity
+        .drawable
+        .as_ref()
+        .and_then(|drawable| drawable.textures.as_ref())
+    {
+        for source in textures.roles() {
+            if let Some(asset) = source.asset() {
+                assets.push(("drawable.textures", asset));
+            }
+        }
+    }
     if let Some(script) = &entity.script {
         assets.push(("script.path", &script.path));
     }
@@ -299,6 +311,17 @@ pub(crate) fn entity_assets_mut(
     | EntitySource::MeshAsset { path } = &mut entity.source
     {
         assets.push(("source.path", path));
+    }
+    if let Some(textures) = entity
+        .drawable
+        .as_mut()
+        .and_then(|drawable| drawable.textures.as_mut())
+    {
+        for source in textures.roles_mut() {
+            if let Some(asset) = source.asset_mut() {
+                assets.push(("drawable.textures", asset));
+            }
+        }
     }
     if let Some(script) = &mut entity.script {
         assets.push(("script.path", &mut script.path));
@@ -468,6 +491,7 @@ pub(crate) fn stage_scene(
             }
             let abandoned = app.gpu_resource_tracker.rollback_to(previous_tracker);
             destroy_resources(app, abandoned);
+            app.drain_material_images();
             return Err(error);
         }
     };

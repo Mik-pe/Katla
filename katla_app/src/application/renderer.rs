@@ -92,6 +92,12 @@ impl Application {
     ) {
         use crate::components::{DrawableComponent, TransformComponent};
 
+        self.drain_material_images();
+        let neutral = self
+            .scene_features
+            .as_ref()
+            .map(super::scene_features::SceneFeatures::material_textures)
+            .unwrap_or_default();
         let poses = crate::systems::resolve_world_transforms(&self.world);
         let entity_count = self.world.entity_count();
         let mut drawable_count = 0;
@@ -146,8 +152,20 @@ impl Application {
 
             draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
 
+            if let Some(textures) = drawable.texture_bindings.textures(
+                self.renderer
+                    .material_textures(material_handle)
+                    .unwrap_or_default(),
+                neutral,
+            ) {
+                draw = draw.with_textures(textures);
+            }
             draw = draw
-                .with_emission(drawable.emission)
+                .with_emission(
+                    drawable
+                        .texture_bindings
+                        .emission(drawable.emission, self.renderer.default_texture()),
+                )
                 .with_surface(drawable.surface)
                 .with_sampling(drawable.sampling)
                 .with_tangent_uv(drawable.tangent_uv);

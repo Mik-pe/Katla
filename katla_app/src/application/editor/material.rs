@@ -101,6 +101,7 @@ impl SceneCommand for FactorCommand {
 pub(crate) enum MaterialCommand {
     Factors(FactorCommand),
     Sampling(super::material_sampling::SamplingCommand),
+    Textures(super::material_textures::TextureCommand),
 }
 impl MaterialCommand {
     fn same_scope(&self, other: &Self) -> bool {
@@ -130,24 +131,28 @@ impl SceneCommand for MaterialCommand {
         match self {
             Self::Factors(command) => command.execute(world),
             Self::Sampling(command) => command.execute(world),
+            Self::Textures(command) => command.execute(world),
         }
     }
     fn undo(&mut self, world: &mut World) -> Result<(), SceneToolError> {
         match self {
             Self::Factors(command) => command.undo(world),
             Self::Sampling(command) => command.undo(world),
+            Self::Textures(command) => command.undo(world),
         }
     }
     fn description(&self) -> String {
         match self {
             Self::Factors(command) => command.description(),
             Self::Sampling(command) => command.description(),
+            Self::Textures(command) => command.description(),
         }
     }
     fn affected_entities(&self) -> Vec<EntityId> {
         match self {
             Self::Factors(command) => command.affected_entities(),
             Self::Sampling(command) => command.affected_entities(),
+            Self::Textures(command) => command.affected_entities(),
         }
     }
 }
@@ -173,9 +178,15 @@ pub(super) fn drawable(world: &World, id: EntityId) -> Result<&DrawableComponent
 }
 
 /// Apply a material operation with complete preflight and the existing editor history.
-pub(super) fn execute(app: &mut Application, op: MaterialOp, agent: bool) -> Result<Value, String> {
-    if matches!(op, MaterialOp::Set { .. } | MaterialOp::SetSampling { .. })
-        && app.play_mode != crate::application::game_state::PlayMode::Editing
+pub(in crate::application) fn execute(
+    app: &mut Application,
+    op: MaterialOp,
+    agent: bool,
+) -> Result<Value, String> {
+    if matches!(
+        op,
+        MaterialOp::Set { .. } | MaterialOp::SetSampling { .. } | MaterialOp::SetTexture { .. }
+    ) && app.play_mode != crate::application::game_state::PlayMode::Editing
     {
         return Err("Stop play mode before editing a material".into());
     }
@@ -184,7 +195,17 @@ pub(super) fn execute(app: &mut Application, op: MaterialOp, agent: bool) -> Res
         MaterialOp::Inspect { entity_id } => Some(entity(&app.world, entity_id)?),
         _ => None,
     };
-    let (mut result, command) = apply(&mut app.world, op)?;
+    let applied = match op {
+        MaterialOp::SetTexture {
+            entity_ids,
+            role,
+            source,
+        } => super::material_textures::apply(app, entity_ids, role, source)
+            .map(|(result, command)| (result, Some(MaterialCommand::Textures(command)))),
+        op => apply(&mut app.world, op),
+    };
+    app.drain_material_images();
+    let (mut result, command) = applied?;
     if let Some(entity) = inspected {
         result["provenance"] = super::material_provenance::inspect(app, entity)?;
     }
@@ -198,6 +219,7 @@ pub(super) fn execute(app: &mut Application, op: MaterialOp, agent: bool) -> Res
             app.editor.push_undo(undo);
         }
     }
+    app.drain_material_images();
     Ok(result)
 }
 
@@ -238,6 +260,9 @@ pub(in crate::application) fn finish_drag(app: &mut Application) {
 
 fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCommand>), String> {
     match op {
+        MaterialOp::SetTexture { .. } => {
+            Err("Image assignment requires the application resource context".into())
+        }
         MaterialOp::SetSampling {
             entity_ids,
             role,
@@ -383,7 +408,10 @@ fn capabilities() -> Value {
         "emission_color_space":"linear RGB; HDR values allowed; missing emissive texture samples white",
         "normal_scale_editable":true,
         "occlusion_strength_editable":true,
-        "textures_editable":false,
+        "textures_editable":true,
+        "texture_sources":["inherit","neutral","file","gltf_image"],
+        "neutral_images":{"albedo":"white RGBA", "normal":"exact linear (0.5,0.5,1,1)","metallic_roughness":"white; factors remain unchanged", "occlusion":"white; factors remain unchanged", "emission":"white; multiplied by the current emissive factor"},
+        "image_reference_policy":"Receipts resolve runtime paths; scene capture/Save As identifies portable Resource/Scene roots where possible",
         "sampling_editable":true,
         "sampling_roles":["albedo","normal","metallic_roughness","occlusion","emission"],
         "rotation_unit":"radians",

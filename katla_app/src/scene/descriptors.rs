@@ -26,6 +26,9 @@ impl TransformDescriptor {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DrawableDescriptor {
+    /// Omission retains the source's original images; choices contain no GPU handles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub textures: Option<crate::material_images::TextureAssignments>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface: Option<crate::rendering::MaterialSurface>,
     /// Omission preserves the mesh source’s imported sampling settings.

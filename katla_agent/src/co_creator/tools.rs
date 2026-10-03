@@ -22,7 +22,7 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "material".into(),
-            description: "Discover presets and supported limits, inspect image provenance/UVs/samplers, set_sampling on one role, or patch base_color (sRGB RGB and linear alpha), metallic, roughness and ao in 0..1 on entity_ids as one undoable batch. Alpha does not switch render mode. Presets provide isotropic factors without textures or directional brushing. Explicit fields override presets. query_entities material_editable flags identify targets. set_sampling takes role and patch (UV rotation is radians), preserves images and omitted fields, and persists through scene reload. Texture assignment is unavailable. IDs are decimal strings; verify native output with editor_view.".into(),
+            description: "Discover presets and supported limits, inspect image provenance/UVs/samplers, set_sampling on one role, or patch base_color (sRGB RGB and linear alpha), metallic, roughness and ao in 0..1 on entity_ids as one undoable batch. Alpha does not switch render mode. Presets provide isotropic factors without textures or directional brushing. Explicit fields override presets. query_entities material_editable flags identify targets. set_sampling takes role and patch (UV rotation is radians), preserves images and omitted fields, and persists through scene reload. set_texture assigns file/glTF images or neutral/inherit choices per role atomically; sampling and factors remain unchanged. IDs are decimal strings; verify native output with editor_view.".into(),
             parameters: crate::material::MaterialOp::tool_schema(),
         },
         ToolDefinition {

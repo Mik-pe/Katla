@@ -156,6 +156,7 @@ fn capture_entities_scoped(
                 world
                     .get_component::<DrawableComponent>(*entity)
                     .map(|d| DrawableDescriptor {
+                        textures: d.texture_bindings.assignments(),
                         surface: Some(d.surface),
                         sampling: Some(d.sampling),
                         color: d.color.map(|c| {

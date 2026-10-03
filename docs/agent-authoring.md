@@ -91,7 +91,7 @@ group a pointer gesture into one editor undo step. Undo and redo restore the
 exact linear color, including an originally absent tint.
 
 Base color multiplies the existing texture. Alpha edits the tint factor; it
-does not switch the object's pipeline to transparent rendering. Texture replacement is outside this per-object factor editor.
+does not switch the object's pipeline to transparent rendering. Use `set_texture` for image replacement; `set` only changes factors.
 
 ## Inspect and edit texture sampling
 
@@ -126,7 +126,34 @@ object. One successful call is one agent undo step; failure changes none of the
 targets. Scene saving persists sampling separately from surface factors.
 Omitting scene sampling retains the imported glTF settings; unavailable
 coordinates required by a referenced image reject scene staging atomically.
-Image replacement and standalone reusable material assets remain unavailable.
+Image assignment uses `set_texture`, independently of sampling and factors:
+
+```json
+{"action":"set_texture", "entity_ids":["4294967302"], "role":"albedo",
+ "source":{"kind":"file", "asset":{"Resource":"textures/wood.png"}}}
+```
+
+An asset reference explicitly selects `Resource` (resource-relative), `Scene`
+(relative to the opened scene file) or `File` (absolute). `kind: gltf_image` also
+requires `image_index`, allowing embedded glTF images reported by inspection to
+be reused. `kind: neutral` selects the role's neutral image; `kind: inherit`
+restores the mesh source's original binding. All target/UV validation precedes
+image preparation and mutation. Failed decoding/upload changes no target.
+Successful assignment is one image-only undo step and preserves sampling,
+factors, other roles, mesh and shared material state. Color roles decode integer
+sRGB; data roles remain linear. Precision/HDR limits match glTF image uploads.
+Identical authored uploads share immutable image generations; modifying a file
+and assigning it again creates a new generation without changing earlier live
+assignments. History retains the exact old generation until discarded. Scene
+reload reads referenced files again; save does not embed images.
+
+Inspection distinguishes original `imported_textures` (with `active` flags) from
+`authored_textures`; each image source object can be reused in `set_texture`.
+`original_generation_uv` describes the stored generated basis and
+`current_normal_uv` the normal coordinates used for current shading. Scene Save As
+rebases assigned image references along with model/script/audio assets. Writing
+or replacing a file does not automatically reassign live objects. Standalone
+reusable material assets remain unavailable.
 
 ## Build rooms with usable dimensions
 

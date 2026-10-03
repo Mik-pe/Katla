@@ -64,6 +64,10 @@ mod alpha_tests;
 #[path = "lighting_tests.rs"]
 mod lighting_tests;
 
+#[cfg(feature = "editor")]
+#[path = "texture_authoring_tests.rs"]
+mod texture_authoring_tests;
+
 #[path = "image_tests.rs"]
 mod image_tests;
 

@@ -24,6 +24,7 @@ pub struct DrawableComponent {
     /// Surface multipliers and coverage policy owned by this drawable.
     pub surface: crate::rendering::MaterialSurface,
     pub(crate) uv_sets: [bool; 2],
+    pub(crate) texture_bindings: crate::material_images::TextureBindings,
     pub(crate) texture_roles: [bool; 5],
     /// Per-role sampling properties, independent of image ownership.
     pub sampling: crate::rendering::MaterialSampling,
@@ -44,6 +45,9 @@ impl DrawableComponent {
             .zip(self.texture_roles)
             .zip(sampling.roles())
         {
+            let has_texture = self.texture_bindings.0[role.index()]
+                .as_ref()
+                .map_or(has_texture, |binding| binding.has_image());
             if has_texture && !self.uv_sets[value.uv.tex_coord as usize] {
                 return Err(format!(
                     "{} texture requires missing TEXCOORD_{}",
@@ -70,6 +74,7 @@ impl DrawableComponent {
             sampling: Default::default(),
             uv_sets: [true; 2],
             texture_roles: [false; 5],
+            texture_bindings: Default::default(),
             tangent_uv: None,
             bounds: None,
         }
@@ -94,6 +99,7 @@ impl DrawableComponent {
             sampling: Default::default(),
             uv_sets: [true; 2],
             texture_roles: [false; 5],
+            texture_bindings: Default::default(),
             tangent_uv: None,
             bounds: None,
         }
@@ -121,6 +127,7 @@ impl DrawableComponent {
             sampling: Default::default(),
             uv_sets: [true; 2],
             texture_roles: [false; 5],
+            texture_bindings: Default::default(),
             tangent_uv: None,
             bounds: None,
         }

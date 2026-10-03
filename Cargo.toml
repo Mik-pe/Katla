@@ -4,6 +4,7 @@ default-members = ["game"]
 resolver = "2"
 
 [workspace.dependencies]
+sha2 = "0.10.9"
 skrifa = "0.40"
 vello_cpu = "0.0.7"
 approx = "0.5"

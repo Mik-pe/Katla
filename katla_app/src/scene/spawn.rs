@@ -174,6 +174,21 @@ pub(super) fn spawn_entity(
                 .unwrap_or_default()
         };
         for target in targets {
+            if let Some(textures) = &drawable_desc.textures {
+                let sampling = drawable_desc
+                    .sampling
+                    .or_else(|| {
+                        app.world
+                            .get_component::<DrawableComponent>(target)
+                            .map(|drawable| drawable.sampling)
+                    })
+                    .ok_or("Material target has no drawable")?;
+                let bindings =
+                    app.prepare_material_assignments(target, textures, context, sampling)?;
+                if let Some(drawable) = app.world.get_component_mut::<DrawableComponent>(target) {
+                    drawable.texture_bindings = bindings;
+                }
+            }
             if let Some(drawable) = app.world.get_component_mut::<DrawableComponent>(target) {
                 drawable.metallic = drawable_desc.metallic;
                 drawable.roughness = drawable_desc.roughness;

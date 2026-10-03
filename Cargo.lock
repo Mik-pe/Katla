@@ -2343,6 +2343,7 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
+ "sha2",
  "skrifa",
  "toml",
  "vello_cpu",

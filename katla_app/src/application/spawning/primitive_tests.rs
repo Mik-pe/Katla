@@ -520,6 +520,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
         },
     );
     desc.drawable = Some(crate::scene::DrawableDescriptor {
+        textures: None,
         surface: None,
         sampling: None,
         color: None,

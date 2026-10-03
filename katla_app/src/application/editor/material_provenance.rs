@@ -10,8 +10,23 @@ pub(super) fn inspect(app: &mut super::Application, entity: EntityId) -> Result<
     let drawable = super::material::drawable(&app.world, entity)?;
     let material = drawable.material_handle;
     let emission = drawable.emission;
+    let inherited =
+        std::array::from_fn::<_, 5, _>(|index| drawable.texture_bindings.0[index].is_none());
+    let authored_textures = serde_json::Value::Object(
+        TextureRole::ALL
+            .into_iter()
+            .map(|role| {
+                (
+                    role.name().to_owned(),
+                    super::material_textures::inspect_binding(
+                        drawable.texture_bindings.0[role.index()].as_ref(),
+                    ),
+                )
+            })
+            .collect(),
+    );
     let tangent_basis = if let Some(original) = drawable.tangent_uv {
-        json!({"kind":if original==drawable.sampling.normal.uv { "generated_mikktspace" } else { "reconstructed_from_current_uv" },"generated_uv":original})
+        json!({"kind":if original==drawable.sampling.normal.uv { "generated_mikktspace" } else { "reconstructed_from_current_uv" },"original_generation_uv":original,"current_normal_uv":drawable.sampling.normal.uv})
     } else {
         json!({"kind":"provided"})
     };
@@ -22,16 +37,15 @@ pub(super) fn inspect(app: &mut super::Application, entity: EntityId) -> Result<
     }) = app.world.get_component::<EntitySource>(entity).cloned()
     else {
         return Ok(
-            json!({"imported_textures":null,"tangent_basis":tangent_basis,"texture_assignment_editable":false}),
+            json!({"imported_textures":null,"tangent_basis":tangent_basis,"texture_assignment_editable":true,"authored_textures":authored_textures}),
         );
     };
-    let path = match path {
-        AssetRef::File(path) => path,
-        AssetRef::Resource(path) => app.resources.root.join(path),
-        AssetRef::Scene(_) => {
-            return Err("Runtime glTF origin must be resolved before inspection".into());
-        }
-    };
+    let context = crate::scene::SceneAssetContext::new(
+        &app.resources.root,
+        app.scene_document.path.as_deref(),
+    )
+    .map_err(|error| error.to_string())?;
+    let path = context.resolve(&path)?;
     let model = app
         .gltf_cache
         .read(path.clone())
@@ -68,7 +82,7 @@ pub(super) fn inspect(app: &mut super::Application, entity: EntityId) -> Result<
         let Some(info) = info else {
             entries.insert(
                 role.name().into(),
-                json!({"source":null,"using_fallback":true}),
+                json!({"source":null,"using_fallback":true,"active":inherited[role.index()]}),
             );
             continue;
         };
@@ -98,9 +112,9 @@ pub(super) fn inspect(app: &mut super::Application, entity: EntityId) -> Result<
                     }
                     gltf::image::Source::Uri { uri, .. } => uri.to_owned(),
                 });
-        entries.insert(role.name().into(),json!({"source":{"kind":"gltf_image","asset":asset,"image_index":info.image_index,"image_source":image_source},"width":image.width,"height":image.height,"mip_levels":32-image.width.max(image.height).leading_zeros(),"decoded_format":format!("{:?}",image.format),"source_color_space":if srgb { "srgb" } else { "linear" },"sampled_color_space":"linear","using_fallback":using_fallback}));
+        entries.insert(role.name().into(),json!({"source":{"kind":"gltf_image","asset":asset,"image_index":info.image_index},"image_source":image_source,"width":image.width,"height":image.height,"mip_levels":32-image.width.max(image.height).leading_zeros(),"decoded_format":format!("{:?}",image.format),"source_color_space":if srgb { "srgb" } else { "linear" },"sampled_color_space":"linear","using_fallback":using_fallback,"active":inherited[role.index()]}));
     }
     Ok(
-        json!({"imported_textures":entries,"tangent_basis":tangent_basis,"texture_assignment_editable":false}),
+        json!({"imported_textures":entries,"tangent_basis":tangent_basis,"texture_assignment_editable":true,"authored_textures":authored_textures}),
     )
 }
