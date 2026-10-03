@@ -70,3 +70,14 @@ combined visual effects from numeric sampler or tangent acceptance. It requests
 linked-role edits, asset texture discovery, effective anisotropy and clearer
 original/current tangent provenance. It is one contextual episode; image
 replacement remains unavailable in this build.
+
+The [image-assignment follow-up](images/observations.md) reused the baseline/
+interface/sampling participant against a private editor built from `573ea608`
+plus the image implementation committed as `cda458b5`. Its 42 calls and ten
+inspected native frames exercise direct source reuse from inspection, standalone
+images, neutral/inherit restoration, masked image alpha, unchanged neighbors,
+invalid-batch recovery, image-only history and exact saved choices after reload.
+The report preserves friction and distinguishes state evidence from observed
+appearance. Precise asset schemas, neutral definitions, requested-source receipts
+and decoded/GPU labels were improved afterward; those improvements are covered
+by implementation checks rather than a repeated participant run.
