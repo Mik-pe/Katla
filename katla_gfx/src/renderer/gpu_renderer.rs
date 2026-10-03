@@ -327,14 +327,14 @@ pub trait GpuRenderer: Sized + 'static {
         textures: crate::renderer::registry::MaterialTextures,
     );
 
-    /// Recompile all materials compiled from the given shader file.
+    /// Prepare replacements for materials depending on a shader or included file.
     ///
-    /// Invalidates cached shader modules, re-reads the shader from disk,
-    /// and rebuilds pipelines for each matching material in-place (keeping
-    /// the same handle). Returns the number of materials recompiled.
-    /// Required: every backend implements this explicitly. A backend with no
-    /// recompilation support returns 0 from its own implementation rather
-    /// than inheriting silence.
+    /// Canonical paths distinguish equal filenames in separate directories.
+    /// Each material keeps its handle and texture bindings. Its reflected
+    /// interface and every live pipeline variant swap only after successful
+    /// preparation; failures preserve the previous ready material. Submitted
+    /// work retains replaced native pipelines until completion.
+    /// Returns affected material count, including failed or queued replacements.
     fn recompile_materials_for_shader(&mut self, shader_path: &std::path::Path) -> usize;
 
     /// Destroy a mesh.

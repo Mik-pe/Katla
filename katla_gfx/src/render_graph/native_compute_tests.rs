@@ -1,6 +1,7 @@
 //! Native output and queued-slot checks for application-owned compute buffers.
 
 mod animation;
+mod material_reloads;
 mod materials;
 #[cfg(target_os = "macos")]
 use crate::backend::resource::GpuBuffer;

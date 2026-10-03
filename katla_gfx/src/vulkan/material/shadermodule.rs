@@ -4,7 +4,6 @@ use naga::{
     front::wgsl,
 };
 use std::{
-    collections::HashSet,
     io::Cursor,
     path::{Path, PathBuf},
 };
@@ -23,79 +22,6 @@ fn shader_stage_to_naga(stage: vk::ShaderStageFlags) -> naga::ShaderStage {
     }
 }
 
-fn find_common_dir(from: &Path) -> Option<PathBuf> {
-    let mut dir = from;
-    loop {
-        let candidate = dir.join("common");
-        if candidate.is_dir() {
-            return Some(candidate);
-        }
-        dir = dir.parent()?;
-    }
-}
-
-fn resolve_includes(
-    source: &str,
-    file_path: &Path,
-    included: &mut HashSet<PathBuf>,
-) -> Result<String, ShaderError> {
-    let canonical = file_path.canonicalize().map_err(ShaderError::IoError)?;
-
-    if !included.insert(canonical.clone()) {
-        return Ok(String::new());
-    }
-
-    let mut result = String::new();
-    let base_dir = file_path.parent().unwrap_or(Path::new("."));
-
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if let Some(path_str) = trimmed
-            .strip_prefix("//include ")
-            .or_else(|| trimmed.strip_prefix("#include "))
-        {
-            let path_str = path_str.trim();
-
-            let include_path = if let Some(quoted) =
-                path_str.strip_prefix('"').and_then(|s| s.strip_suffix('"'))
-            {
-                base_dir.join(quoted)
-            } else if let Some(bracketed) =
-                path_str.strip_prefix('<').and_then(|s| s.strip_suffix('>'))
-            {
-                let common_dir = find_common_dir(base_dir).ok_or_else(|| {
-                    ShaderError::IoError(std::io::Error::new(
-                        std::io::ErrorKind::NotFound,
-                        format!(
-                            "Could not find common/ directory searching up from {:?}",
-                            base_dir
-                        ),
-                    ))
-                })?;
-                common_dir.join(bracketed)
-            } else {
-                continue;
-            };
-
-            let include_source =
-                std::fs::read_to_string(&include_path).map_err(ShaderError::IoError)?;
-            let expanded = resolve_includes(&include_source, &include_path, included)?;
-            result.push_str(&expanded);
-            result.push('\n');
-        } else {
-            result.push_str(line);
-            result.push('\n');
-        }
-    }
-
-    Ok(result)
-}
-
-pub(crate) fn resolved_source(path: &Path) -> Result<String, ShaderError> {
-    let raw = std::fs::read_to_string(path).map_err(ShaderError::IoError)?;
-    resolve_includes(&raw, path, &mut HashSet::new())
-}
-
 impl ShaderModule {
     pub fn from_bytes(
         device: Device,
@@ -111,25 +37,6 @@ impl ShaderModule {
             .map_err(ShaderError::CreationFailed)?;
 
         Ok(Self { module, device })
-    }
-
-    pub fn from_wgsl(
-        device: Device,
-        path: impl AsRef<Path>,
-        stage: vk::ShaderStageFlags,
-        entry_point: impl Into<String>,
-    ) -> Result<Self, ShaderError> {
-        let path = path.as_ref();
-        let raw = std::fs::read_to_string(path).map_err(ShaderError::IoError)?;
-        let resolved = resolve_includes(&raw, path, &mut HashSet::new())?;
-
-        // Dump resolved shader for debugging
-        if std::env::var("KATLA_DUMP_SHADERS").is_ok() {
-            let dump_path = path.with_extension("resolved.wgsl");
-            std::fs::write(&dump_path, &resolved).ok();
-        }
-
-        Self::from_wgsl_string(device, &resolved, stage, entry_point)
     }
 
     pub fn from_wgsl_string(
@@ -178,6 +85,7 @@ impl ShaderModule {
         Self::from_bytes(device, bytes, stage, &entry_point)
     }
 
+    #[cfg(feature = "validation")]
     pub fn from_file(
         device: Device,
         path: impl AsRef<Path>,
@@ -199,7 +107,10 @@ impl Drop for ShaderModule {
 
 pub struct ShaderCache {
     device: Device,
-    shaders: std::collections::HashMap<(PathBuf, vk::ShaderStageFlags, String), vk::ShaderModule>,
+    shaders: std::collections::HashMap<
+        (PathBuf, vk::ShaderStageFlags, String),
+        (vk::ShaderModule, Option<String>),
+    >,
 }
 
 impl ShaderCache {
@@ -211,6 +122,7 @@ impl ShaderCache {
     }
 
     /// Load and cache a shader module for a specific entry point.
+    #[cfg(feature = "validation")]
     pub fn load_shader_with_entry(
         &mut self,
         path: impl AsRef<Path>,
@@ -218,23 +130,50 @@ impl ShaderCache {
         entry_point: &str,
     ) -> Result<vk::ShaderModule, ShaderError> {
         let path = path.as_ref();
-        let cache_key = (path.to_path_buf(), stage, entry_point.to_owned());
-        if let Some(&module) = self.shaders.get(&cache_key) {
-            return Ok(module);
+        if path.extension().is_some_and(|ext| ext == "wgsl") {
+            let source = crate::renderer::shader_source::ShaderSource::load(path)
+                .map_err(ShaderError::IoError)?;
+            return self.load_shader_from_source(path, &source.code, stage, entry_point);
         }
-        let shader = if path.extension().is_some_and(|ext| ext == "wgsl") {
-            ShaderModule::from_wgsl(self.device.clone(), path, stage, entry_point)?
-        } else {
-            ShaderModule::from_file(self.device.clone(), path, stage, entry_point)?
-        };
+        let cache_key = (path.to_path_buf(), stage, entry_point.to_owned());
+        if let Some((module, _)) = self.shaders.get(&cache_key) {
+            return Ok(*module);
+        }
+        let shader = ShaderModule::from_file(self.device.clone(), path, stage, entry_point)?;
         let module = shader.module;
         std::mem::forget(shader);
-        self.shaders.insert(cache_key, module);
+        self.shaders.insert(cache_key, (module, None));
         Ok(module)
     }
 
+    pub(crate) fn load_shader_from_source(
+        &mut self,
+        path: &Path,
+        source: &str,
+        stage: vk::ShaderStageFlags,
+        entry_point: &str,
+    ) -> Result<vk::ShaderModule, ShaderError> {
+        let key = (path.to_path_buf(), stage, entry_point.to_owned());
+        if let Some((module, cached)) = self.shaders.get(&key)
+            && cached.as_deref() == Some(source)
+        {
+            return Ok(*module);
+        }
+        let shader =
+            ShaderModule::from_wgsl_string(self.device.clone(), source, stage, entry_point)?;
+        let module = shader.module;
+        std::mem::forget(shader);
+        if let Some((previous, _)) = self.shaders.insert(key, (module, Some(source.to_owned()))) {
+            unsafe {
+                self.device.destroy_shader_module(previous, None);
+            }
+        }
+        Ok(module)
+    }
+
+    #[cfg(feature = "validation")]
     pub fn invalidate(&mut self, path: &Path) {
-        self.shaders.retain(|(shader_path, _, _), module| {
+        self.shaders.retain(|(shader_path, _, _), (module, _)| {
             if shader_path == path {
                 unsafe {
                     self.device.destroy_shader_module(*module, None);
@@ -247,7 +186,7 @@ impl ShaderCache {
     }
 
     pub fn clear(&mut self) {
-        for (_, module) in self.shaders.drain() {
+        for (_, (module, _)) in self.shaders.drain() {
             unsafe {
                 self.device.destroy_shader_module(module, None);
             }
@@ -263,6 +202,7 @@ impl Drop for ShaderCache {
 
 #[derive(Debug)]
 pub enum ShaderError {
+    #[cfg(feature = "validation")]
     IoError(std::io::Error),
     InvalidSpirv(std::io::Error),
     CreationFailed(vk::Result),
@@ -274,6 +214,7 @@ pub enum ShaderError {
 impl std::fmt::Display for ShaderError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            #[cfg(feature = "validation")]
             Self::IoError(e) => write!(f, "IO error loading shader: {}", e),
             Self::InvalidSpirv(e) => write!(f, "Invalid SPIR-V: {}", e),
             Self::CreationFailed(e) => write!(f, "Failed to create shader module: {:?}", e),
@@ -296,7 +237,9 @@ mod tests {
             let path = Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../resources/shaders")
                 .join(shader);
-            let source = resolved_source(&path).unwrap();
+            let source = crate::renderer::shader_source::ShaderSource::load(&path)
+                .unwrap()
+                .code;
             let interface = crate::renderer::graphics_interface::GraphicsInterface::reflect(
                 &source,
                 &crate::renderer::pipeline_descriptor::PipelineStages::Graphics {

@@ -129,32 +129,83 @@ impl VulkanRenderer {
             .unwrap_or(fallback_slot)
     }
 
-    /// Drop every compiled variant of materials whose shader matches the
-    /// changed file, invalidating cached shader modules for the path.
-    ///
-    /// The next use of each affected material recompiles the variants it
-    /// needs from disk. Returns the number of affected materials.
+    /// Prepare every live variant before replacing a material and its interface.
+    /// Failed preparation retains the last usable material; submitted pipelines retire.
     pub(crate) fn recompile_materials_for_shader(
         &mut self,
         changed_path: &std::path::Path,
     ) -> usize {
         let matches = self.asset_registry.materials_for_shader(changed_path);
-        if matches.is_empty() {
-            return 0;
-        }
-
-        log::info!(
-            "Invalidating pipeline variants of {} material(s) for shader: {}",
-            matches.len(),
-            changed_path.display()
-        );
-
-        self.material_compiler.invalidate_shader_cache(changed_path);
-        for (handle, _) in &matches {
-            for pipeline in self.asset_registry.take_material_variants(*handle) {
-                self.retire(pipeline);
+        for (handle, path) in &matches {
+            let result = self.prepare_material_replacement(*handle, path);
+            match result {
+                Ok(replacement) => {
+                    let previous =
+                        if let Some(material) = self.asset_registry.get_material_mut(*handle) {
+                            material.interface = replacement.interface;
+                            material.dependencies = replacement.dependencies;
+                            std::mem::replace(&mut material.variants, replacement.variants)
+                        } else {
+                            replacement.variants
+                        };
+                    for variant in previous.into_values() {
+                        for pipeline in [Some(variant.pipeline), variant.instanced_pipeline]
+                            .into_iter()
+                            .flatten()
+                        {
+                            if let Some(pipeline) = self.asset_registry.remove_pipeline(pipeline) {
+                                self.retire(pipeline);
+                            }
+                        }
+                    }
+                    log::info!("pipeline_cache event=reload_swap material={handle:?}");
+                }
+                Err(error) => log::warn!(
+                    "pipeline_cache event=reload_failed material={handle:?} reason={error}"
+                ),
             }
         }
         matches.len()
+    }
+
+    fn prepare_material_replacement(
+        &mut self,
+        handle: MaterialHandle,
+        path: &std::path::Path,
+    ) -> Result<super::registry::MaterialAsset, RendererError> {
+        let material = self
+            .asset_registry
+            .get_material(handle)
+            .ok_or_else(|| RendererError::InvalidOperation("Reload material unavailable".into()))?;
+        let descriptor = material.descriptor.clone();
+        let keys: Vec<_> = material.variants.keys().cloned().collect();
+        let source = super::shader_source::ShaderSource::load(path)
+            .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
+        let interface =
+            super::graphics_interface::GraphicsInterface::reflect(&source.code, &descriptor.stages)
+                .map_err(RendererError::InvalidOperation)?;
+        let staged = self
+            .asset_registry
+            .register_material(super::registry::MaterialAsset {
+                descriptor,
+                interface: Some(interface),
+                dependencies: source.dependencies.clone(),
+                textures: MaterialTextures::default(),
+                variants: Default::default(),
+            });
+        for key in keys {
+            if let Err(error) = self.material_compiler.compile_variant_from_source(
+                &mut self.asset_registry,
+                staged,
+                &key,
+                &source,
+            ) {
+                self.destroy_material(staged);
+                return Err(error.into());
+            }
+        }
+        self.asset_registry.remove_material(staged).ok_or_else(|| {
+            RendererError::InvalidOperation("Prepared reload material unavailable".into())
+        })
     }
 }

@@ -395,6 +395,7 @@ impl PipelineBuilder {
             layout: Some(pipeline_layout),
             device: self.context.device.clone(),
             descriptor_set_layouts,
+            descriptor_layout_owner: None,
         })
     }
 }
@@ -406,9 +407,16 @@ pub struct Pipeline {
     /// Descriptor set layouts used when creating this pipeline.
     /// These must be used when allocating descriptor sets for this pipeline.
     descriptor_set_layouts: Vec<vk::DescriptorSetLayout>,
+    descriptor_layout_owner: Option<Rc<super::descriptor_layouts::DescriptorLayouts>>,
 }
 
 impl Pipeline {
+    pub(crate) fn retain_descriptor_layouts(
+        &mut self,
+        layouts: Rc<super::descriptor_layouts::DescriptorLayouts>,
+    ) {
+        self.descriptor_layout_owner = Some(layouts);
+    }
     /// Get the raw Vulkan pipeline handle.
     pub fn vk_pipeline(&self) -> vk::Pipeline {
         self.handle.unwrap_or(vk::Pipeline::null())

@@ -6,7 +6,7 @@ use crate::renderer::pipeline_descriptor::PipelineDescriptor;
 use crate::renderer::pipeline_variant::PipelineVariantKey;
 use crate::texture::ImageFormat;
 
-use super::metal_renderer::{MetalMaterial, MetalMaterialReplacement, MetalRenderer, read_shader};
+use super::metal_renderer::{MetalMaterial, MetalMaterialReplacement, MetalRenderer};
 use super::shader;
 
 impl MetalRenderer {
@@ -29,7 +29,12 @@ impl MetalRenderer {
 
         let declared_format =
             PipelineVariantKey::resolve(descriptor, ImageFormat::Auto).color_format();
-        let wgsl_source = read_shader(&descriptor.shader_path)?;
+        let source = crate::renderer::shader_source::ShaderSource::load(std::path::Path::new(
+            &descriptor.shader_path,
+        ))
+        .map_err(|error| RendererError::InvalidOperation(error.to_string()))?;
+        let wgsl_source = &source.code;
+        let compiler = self.context.pipeline_compiler()?;
         let mut variants = std::collections::HashMap::new();
         let formats =
             if descriptor.color_attachment && descriptor.color_format != ImageFormat::R32Uint {
@@ -47,8 +52,7 @@ impl MetalRenderer {
             };
         for format in formats {
             let key = PipelineVariantKey::resolve(descriptor, format);
-            let pipeline =
-                Self::build_pipeline_for_key(&self.context, descriptor, &key, &wgsl_source)?;
+            let pipeline = Self::build_pipeline_for_key(&compiler, descriptor, &key, wgsl_source)?;
             variants.insert(key, pipeline);
         }
 
@@ -57,12 +61,8 @@ impl MetalRenderer {
                 .clone()
                 .with_graphics_entries("vs_instanced", "fs_instanced");
             let key = PipelineVariantKey::resolve(&instanced_descriptor, ImageFormat::B8G8R8A8Srgb);
-            let pipeline = Self::build_pipeline_for_key(
-                &self.context,
-                &instanced_descriptor,
-                &key,
-                &wgsl_source,
-            )?;
+            let pipeline =
+                Self::build_pipeline_for_key(&compiler, &instanced_descriptor, &key, wgsl_source)?;
             variants.insert(key, pipeline.clone());
             Some(pipeline)
         } else {
@@ -70,12 +70,13 @@ impl MetalRenderer {
         };
 
         let interface = crate::renderer::graphics_interface::GraphicsInterface::reflect(
-            &wgsl_source,
+            wgsl_source,
             &descriptor.stages,
         )
         .map_err(RendererError::InvalidOperation)?;
         let handle = self.materials.insert(MetalMaterial {
             interface,
+            dependencies: source.dependencies,
             descriptor: descriptor.clone(),
             variants,
             pending_reload: None,
@@ -97,7 +98,7 @@ impl MetalRenderer {
     /// Vulkan backend resolves), so both backends build identical logical
     /// variants for the same configuration.
     fn build_pipeline_for_key(
-        context: &super::context::MetalContext,
+        context: &super::context::MetalPipelineCompiler,
         descriptor: &PipelineDescriptor,
         key: &PipelineVariantKey,
         wgsl_source: &str,
@@ -212,6 +213,7 @@ impl MetalRenderer {
                         }
                     }
                     material.interface = replacement.interface;
+                    material.dependencies = replacement.dependencies;
                     material.variants = variants;
                     material.pending_reload = None;
                     log::info!("pipeline_cache event=reload_swap material={handle:?}");
@@ -291,48 +293,63 @@ impl MetalRenderer {
         &mut self,
         changed_path: &std::path::Path,
     ) -> usize {
-        if changed_path
-            .extension()
-            .is_none_or(|extension| extension != "wgsl")
-        {
-            return 0;
-        }
+        let identity = crate::renderer::shader_source::path_identity(changed_path);
         let handles: Vec<_> = self
             .materials
             .iter_enumerated()
-            .filter_map(|(handle, mat)| (!mat.descriptor.shader_path.is_empty()).then_some(handle))
+            .filter_map(|(handle, mat)| mat.dependencies.contains(&identity).then_some(handle))
             .collect();
         let count = handles.len();
         for handle in handles {
             let Some(material) = self.materials.get_mut(handle) else {
                 continue;
             };
+            let compiler = match self.context.pipeline_compiler() {
+                Ok(compiler) => compiler,
+                Err(error) => {
+                    log::warn!(
+                        "pipeline_cache event=reload_failed material={handle:?} reason={error}"
+                    );
+                    continue;
+                }
+            };
             let descriptor = material.descriptor.clone();
+            let source = match crate::renderer::shader_source::ShaderSource::load(
+                std::path::Path::new(&descriptor.shader_path),
+            ) {
+                Ok(source) => source,
+                Err(error) => {
+                    material.pending_reload = None;
+                    log::warn!(
+                        "pipeline_cache event=reload_failed material={handle:?} reason={error}"
+                    );
+                    continue;
+                }
+            };
             let keys: Vec<_> = material.variants.keys().cloned().collect();
             let (sender, receiver) = std::sync::mpsc::channel();
             material.pending_reload = Some(receiver);
             std::thread::spawn(move || {
                 let started = std::time::Instant::now();
                 let result = (|| -> Result<_, RendererError> {
-                    let context = super::context::MetalContext::init_headless_with_size(1, 1)?;
-                    let source = read_shader(&descriptor.shader_path)?;
                     let mut replacements = std::collections::HashMap::new();
                     for key in keys {
                         let pipeline = Self::build_pipeline_for_key(
-                            &context,
+                            &compiler,
                             key.descriptor(),
                             &key,
-                            &source,
+                            &source.code,
                         )?;
                         replacements.insert(key, pipeline);
                     }
                     let interface =
                         crate::renderer::graphics_interface::GraphicsInterface::reflect(
-                            &source,
+                            &source.code,
                             &descriptor.stages,
                         )
                         .map_err(RendererError::InvalidOperation)?;
                     Ok(MetalMaterialReplacement {
+                        dependencies: source.dependencies,
                         interface,
                         variants: replacements,
                     })

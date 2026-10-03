@@ -120,13 +120,24 @@ change triangle winding or culling state.
 
 ## Shader reload
 
-`recompile_materials_for_shader` keeps material handle identity, but its return
-value counts affected materials, not completed successful compilations. Vulkan
-invalidates variants and rebuilds at their next use. Metal queues background
-replacements, retaining the previous pipelines if compilation fails. Atomic,
-last-good reload behavior across backends and include dependencies remain open
-work. Compile shaders and create materials during asset preparation to avoid
-Vulkan frame-path compilation stalls.
+`recompile_materials_for_shader` matches canonical source and transitive include
+paths. Equal filenames in separate directories are distinct; shared includes
+reload only their dependents. Both backends use one include resolver, suppress
+duplicate includes and reject include cycles or malformed directives.
+
+Each replacement uses one expanded source snapshot for every live variant,
+including instanced UI. Pipelines, reflected bindings and dependency identities
+publish together after successful preparation. A failed replacement leaves the
+last working material intact, including texture bindings and handle identity.
+Submitted work retains the old native pipelines; Vulkan descriptor layouts retire
+with their pipelines. The return value counts affected materials, including
+failed or queued replacements, rather than successful compilations.
+
+Vulkan prepares replacements synchronously during the reload request. Metal
+prepares them on a worker using the renderer's device and shared compiler archive;
+it creates no additional context, surface or queue. Frame preparation polls ready
+replacements. A newer request supersedes a pending Metal result. Compile shaders
+and create materials during asset preparation to avoid Vulkan frame-path stalls.
 
 ## Verification
 
@@ -156,3 +167,9 @@ executes the actual shared shader helpers and compares GPU readback with
 independent scalar BRDF results and affine static/skinned frame references.
 Shader-interface validation covers both complete scene shaders. CPU baking
 regressions run with `cargo test -p katla_app --lib test_static_material_frame`.
+
+The native compute suite also runs `material_reloads`: last-good pixels after
+syntax failure, shared-include edits, duplicate filenames, binding-interface
+replacement, submitted work across replacement, and atomic plain/instanced UI
+preparation. The platform selects its native renderer; Metal requires the debug
+environment and Metal 4 hardware described above.

@@ -156,6 +156,7 @@ pub(crate) struct MetalMesh {
 /// whose native pipeline lives in `variants`; the same identity is shared
 /// with the Vulkan backend.
 pub(crate) struct MetalMaterial {
+    pub(crate) dependencies: std::collections::BTreeSet<std::path::PathBuf>,
     pub(crate) descriptor: crate::renderer::pipeline_descriptor::PipelineDescriptor,
     pub(crate) interface: crate::renderer::graphics_interface::GraphicsInterface,
     pub(crate) variants: std::collections::HashMap<
@@ -168,6 +169,7 @@ pub(crate) struct MetalMaterial {
 }
 
 pub(crate) struct MetalMaterialReplacement {
+    pub(crate) dependencies: std::collections::BTreeSet<std::path::PathBuf>,
     pub(crate) interface: crate::renderer::graphics_interface::GraphicsInterface,
     pub(crate) variants: std::collections::HashMap<
         crate::renderer::pipeline_variant::PipelineVariantKey,
@@ -180,93 +182,6 @@ pub(crate) struct MetalTextureEntry {
     pub(crate) texture: super::texture::MetalTexture,
     pub(crate) _view: MetalTextureView,
     pub(crate) bindless_slot: Option<u32>,
-}
-
-pub(crate) fn read_shader(path: &str) -> Result<String, RendererError> {
-    let resolved_path = if std::path::Path::new(path).exists() {
-        std::path::PathBuf::from(path)
-    } else {
-        let mut found = None;
-        for candidate in [
-            format!("resources/shaders/{path}"),
-            format!("../resources/shaders/{path}"),
-            format!("../../resources/shaders/{path}"),
-        ] {
-            if std::path::Path::new(&candidate).exists() {
-                found = Some(std::path::PathBuf::from(candidate));
-                break;
-            }
-        }
-        found
-            .ok_or_else(|| RendererError::InvalidOperation(format!("Shader not found: {}", path)))?
-    };
-
-    let raw = std::fs::read_to_string(&resolved_path).map_err(|e| {
-        RendererError::InvalidOperation(format!(
-            "Failed to read shader '{}': {}",
-            resolved_path.display(),
-            e
-        ))
-    })?;
-    resolve_wgsl_includes(&raw, &resolved_path)
-}
-
-pub(crate) fn resolve_wgsl_includes(
-    source: &str,
-    file_path: &std::path::Path,
-) -> Result<String, RendererError> {
-    let mut result = String::new();
-    let base_dir = file_path.parent().unwrap_or(std::path::Path::new("."));
-    let shader_root = {
-        let mut p = base_dir;
-        while !p.join("common").exists() && p.parent().is_some() {
-            p = p.parent().unwrap();
-        }
-        p.to_path_buf()
-    };
-
-    for line in source.lines() {
-        let trimmed = line.trim();
-        if let Some(path_str) = trimmed
-            .strip_prefix("//include ")
-            .or_else(|| trimmed.strip_prefix("#include "))
-        {
-            let path_str = path_str.trim();
-            let include_rel = path_str
-                .strip_prefix('"')
-                .and_then(|s| s.strip_suffix('"'))
-                .or_else(|| path_str.strip_prefix('<').and_then(|s| s.strip_suffix('>')))
-                .unwrap_or(path_str);
-            let include_path = base_dir
-                .join(include_rel)
-                .exists()
-                .then(|| base_dir.join(include_rel))
-                .or_else(|| {
-                    let p = shader_root.join(include_rel);
-                    p.exists().then_some(p)
-                })
-                .or_else(|| {
-                    let p = shader_root.join("common").join(include_rel);
-                    p.exists().then_some(p)
-                })
-                .ok_or_else(|| {
-                    RendererError::InvalidOperation(format!("Include not found: {}", include_rel))
-                })?;
-            let include_source = std::fs::read_to_string(&include_path).map_err(|e| {
-                RendererError::InvalidOperation(format!(
-                    "Failed to read include '{}': {}",
-                    include_path.display(),
-                    e
-                ))
-            })?;
-            let expanded = resolve_wgsl_includes(&include_source, &include_path)?;
-            result.push_str(&expanded);
-        } else {
-            result.push_str(line);
-        }
-        result.push('\n');
-    }
-    Ok(result)
 }
 
 pub struct MetalRenderer {

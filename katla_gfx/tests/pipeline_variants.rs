@@ -308,7 +308,7 @@ fn test_declared_format_material_gains_variant_for_second_format() {
 
 #[test]
 #[ignore = "requires a Vulkan device"]
-fn test_hot_reload_drops_only_matching_materials_variants() {
+fn test_hot_reload_replaces_all_live_material_variants() {
     let mut renderer = headless_renderer();
     let shaders = shaders();
 
@@ -334,11 +334,10 @@ fn test_hot_reload_drops_only_matching_materials_variants() {
     );
     assert_eq!(
         variant_count(&renderer),
-        0,
-        "every variant of the affected material is invalidated"
+        2,
+        "every live variant is replaced before publication"
     );
 
-    // The next use recompiles what it needs from disk.
     render_variant_graph(
         &mut renderer,
         material,
@@ -346,7 +345,7 @@ fn test_hot_reload_drops_only_matching_materials_variants() {
         None,
         1,
     );
-    assert_eq!(variant_count(&renderer), 1);
+    assert_eq!(variant_count(&renderer), 2);
 
     renderer.destroy();
 }

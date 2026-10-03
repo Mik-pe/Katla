@@ -27,6 +27,7 @@ mod graph_readback;
 pub(crate) mod material_api;
 pub(crate) mod mesh_manager;
 pub(crate) mod registry;
+pub(crate) mod shader_source;
 pub(crate) mod skeleton_api;
 pub(crate) mod texture_api;
 
@@ -419,7 +420,6 @@ impl VulkanRenderer {
         // Destroy all registered assets first (materials, meshes)
         self.asset_registry.destroy();
 
-        // Destroy material compiler (cleans up descriptor layouts)
         self.material_compiler.destroy();
 
         self.context.pre_destroy();

@@ -21,18 +21,11 @@ impl Frame<'_, VulkanRenderer> {
             .renderer
             .asset_registry
             .get_pipeline_handles(pipeline)?;
-        let descriptor = &self
+        let interface = self
             .renderer
             .asset_registry
             .get_material(material)
-            .ok_or_else(|| {
-                RenderGraphError::InvalidConfiguration("Graphics material unavailable".into())
-            })?
-            .descriptor;
-        let interface = self
-            .renderer
-            .material_compiler
-            .interface(descriptor)
+            .and_then(|asset| asset.interface.as_ref())
             .ok_or_else(|| {
                 RenderGraphError::InvalidConfiguration("Graphics interface unavailable".into())
             })?

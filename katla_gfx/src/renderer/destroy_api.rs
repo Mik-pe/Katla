@@ -115,6 +115,8 @@ mod tests {
 
     fn make_material() -> MaterialAsset {
         MaterialAsset {
+            interface: None,
+            dependencies: Default::default(),
             descriptor: PipelineDescriptor::pbr("shaders/pbr.wgsl"),
             variants: std::collections::HashMap::new(),
             textures: MaterialTextures::default(),

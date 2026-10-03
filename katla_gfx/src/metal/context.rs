@@ -89,13 +89,14 @@ pub(crate) struct MetalContext {
     pub(crate) device: Retained<ProtocolObject<dyn MTLDevice>>,
     pub(crate) command_queue: Retained<ProtocolObject<dyn MTL4CommandQueue>>,
     pub(crate) surface: MetalSurface,
-    pub(crate) pipeline_archive: Option<super::pipeline_archive::MetalPipelineArchive>,
+    pub(crate) pipeline_archive:
+        Option<std::sync::Arc<super::pipeline_archive::MetalPipelineArchive>>,
 }
 
 impl MetalContext {
     fn open_pipeline_archive(
         device: &ProtocolObject<dyn MTLDevice>,
-    ) -> Option<super::pipeline_archive::MetalPipelineArchive> {
+    ) -> Option<std::sync::Arc<super::pipeline_archive::MetalPipelineArchive>> {
         match super::pipeline_archive::MetalPipelineArchive::open_or_create(device) {
             Ok(archive) => {
                 let stats = archive.stats();
@@ -105,7 +106,7 @@ impl MetalContext {
                     stats.rejection,
                     stats.open_duration.as_millis(),
                 );
-                Some(archive)
+                Some(std::sync::Arc::new(archive))
             }
             Err(err) => {
                 log::warn!("Pipeline cache disabled: {err}");
@@ -387,6 +388,94 @@ impl MetalContext {
         }
     }
 
+    pub(crate) fn pipeline_compiler(&self) -> Result<MetalPipelineCompiler, RendererError> {
+        Ok(MetalPipelineCompiler {
+            device: self.device.clone(),
+            archive: self.pipeline_archive.clone().ok_or_else(|| {
+                RendererError::InitializationFailed(
+                    "Metal pipeline compiler service unavailable".into(),
+                )
+            })?,
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn create_graphics_pipeline(
+        &self,
+        config: GraphicsPipelineConfig<'_>,
+    ) -> Result<MetalGraphicsPipeline, RendererError> {
+        self.pipeline_compiler()?.create_graphics_pipeline(config)
+    }
+
+    pub(crate) fn create_compute_pipeline(
+        &self,
+        function: &ProtocolObject<dyn MTLFunction>,
+        workgroup: [u32; 3],
+    ) -> Result<MetalComputePipeline, RendererError> {
+        let pipeline_state = self
+            .pipeline_archive
+            .as_ref()
+            .ok_or_else(|| {
+                RendererError::InitializationFailed(
+                    "Metal pipeline compiler service unavailable".into(),
+                )
+            })?
+            .create_compute_pipeline(function, workgroup)?;
+        Ok(MetalComputePipeline {
+            uniform_bindings: Vec::new(),
+            table_layout: super::shader::function_layout(function)?,
+            pipeline_state,
+            workgroup,
+        })
+    }
+
+    pub(crate) fn detect_features(&self) -> MetalFeatures {
+        let is_apple_silicon = self.device.supportsFamily(MTLGPUFamily::Apple7);
+
+        let max_bindless_textures: u32 = if is_apple_silicon { 4096 } else { 2048 };
+
+        MetalFeatures {
+            max_bindless_textures,
+        }
+    }
+}
+
+// SAFETY: `MetalContext` owns `MTLDevice` and `MTL4CommandQueue` plus immutable
+// feature/capability state. Apple's Metal documentation guarantees both
+// `MTLDevice` ("A GPU ... you can access ... from multiple threads") and
+// `MTL4CommandQueue` ("MTL4CommandQueue is thread-safe") for concurrent use; the
+// context holds no encoder, drawable, or layer state. Command *buffers* allocated
+// from the queue are NOT thread-safe and are confined to the encoding thread by
+// the `!Send`/`!Sync` command-buffer and encoder types in this module.
+unsafe impl Send for MetalContext {}
+unsafe impl Sync for MetalContext {}
+
+fn portable_stencil_op(
+    operation: crate::renderer::pipeline_descriptor::StencilOperation,
+) -> objc2_metal::MTLStencilOperation {
+    use crate::renderer::pipeline_descriptor::StencilOperation::*;
+    match operation {
+        Keep => objc2_metal::MTLStencilOperation::Keep,
+        Zero => objc2_metal::MTLStencilOperation::Zero,
+        Replace => objc2_metal::MTLStencilOperation::Replace,
+        IncrementClamp => objc2_metal::MTLStencilOperation::IncrementClamp,
+        DecrementClamp => objc2_metal::MTLStencilOperation::DecrementClamp,
+        Invert => objc2_metal::MTLStencilOperation::Invert,
+        IncrementWrap => objc2_metal::MTLStencilOperation::IncrementWrap,
+        DecrementWrap => objc2_metal::MTLStencilOperation::DecrementWrap,
+    }
+}
+
+/// Same-device pipeline preparation without frame, queue or surface ownership.
+pub(crate) struct MetalPipelineCompiler {
+    pub(crate) device: Retained<ProtocolObject<dyn MTLDevice>>,
+    archive: std::sync::Arc<super::pipeline_archive::MetalPipelineArchive>,
+}
+// SAFETY: Metal permits concurrent MTLDevice use. The archive synchronizes its
+// mutable state; pipeline descriptors are created and owned by the receiving worker.
+unsafe impl Send for MetalPipelineCompiler {}
+
+impl MetalPipelineCompiler {
     pub(crate) fn create_graphics_pipeline(
         &self,
         config: GraphicsPipelineConfig<'_>,
@@ -454,15 +543,13 @@ impl MetalContext {
 
         descriptor.setVertexDescriptor(Some(vertex_descriptor));
 
-        let pipeline_state = self.pipeline_archive.as_ref().ok_or_else(|| {
-            RendererError::InitializationFailed("Metal pipeline compiler service unavailable".into())
-        })?.create_render_pipeline(&descriptor, &format!("depth_write={depth_write_enabled};depth_compare={depth_compare:?};cull={cull_mode:?};front={front_face:?};portable={portable:?}"))?;
+        let pipeline_state = self.archive.create_render_pipeline(&descriptor, &format!("depth_write={depth_write_enabled};depth_compare={depth_compare:?};cull={cull_mode:?};front={front_face:?};portable={portable:?}"))?;
 
         let mut depth_stencil_state = if depth_format.is_some() {
             Some(self.create_depth_stencil_state(
                 depth_write_enabled,
                 to_mtl_compare_func(depth_compare),
-            ))
+            )?)
         } else {
             None
         };
@@ -521,71 +608,15 @@ impl MetalContext {
         &self,
         depth_write_enabled: bool,
         compare_func: MTLCompareFunction,
-    ) -> Retained<ProtocolObject<dyn MTLDepthStencilState>> {
+    ) -> Result<Retained<ProtocolObject<dyn MTLDepthStencilState>>, RendererError> {
         let descriptor = MTLDepthStencilDescriptor::new();
         descriptor.setDepthWriteEnabled(depth_write_enabled);
         descriptor.setDepthCompareFunction(compare_func);
         self.device
             .newDepthStencilStateWithDescriptor(&descriptor)
-            .expect("Failed to create depth-stencil state")
-    }
-
-    pub(crate) fn create_compute_pipeline(
-        &self,
-        function: &ProtocolObject<dyn MTLFunction>,
-        workgroup: [u32; 3],
-    ) -> Result<MetalComputePipeline, RendererError> {
-        let pipeline_state = self
-            .pipeline_archive
-            .as_ref()
             .ok_or_else(|| {
-                RendererError::InitializationFailed(
-                    "Metal pipeline compiler service unavailable".into(),
-                )
-            })?
-            .create_compute_pipeline(function, workgroup)?;
-        Ok(MetalComputePipeline {
-            uniform_bindings: Vec::new(),
-            table_layout: super::shader::function_layout(function)?,
-            pipeline_state,
-            workgroup,
-        })
-    }
-
-    pub(crate) fn detect_features(&self) -> MetalFeatures {
-        let is_apple_silicon = self.device.supportsFamily(MTLGPUFamily::Apple7);
-
-        let max_bindless_textures: u32 = if is_apple_silicon { 4096 } else { 2048 };
-
-        MetalFeatures {
-            max_bindless_textures,
-        }
-    }
-}
-
-// SAFETY: `MetalContext` owns `MTLDevice` and `MTL4CommandQueue` plus immutable
-// feature/capability state. Apple's Metal documentation guarantees both
-// `MTLDevice` ("A GPU ... you can access ... from multiple threads") and
-// `MTL4CommandQueue` ("MTL4CommandQueue is thread-safe") for concurrent use; the
-// context holds no encoder, drawable, or layer state. Command *buffers* allocated
-// from the queue are NOT thread-safe and are confined to the encoding thread by
-// the `!Send`/`!Sync` command-buffer and encoder types in this module.
-unsafe impl Send for MetalContext {}
-unsafe impl Sync for MetalContext {}
-
-fn portable_stencil_op(
-    operation: crate::renderer::pipeline_descriptor::StencilOperation,
-) -> objc2_metal::MTLStencilOperation {
-    use crate::renderer::pipeline_descriptor::StencilOperation::*;
-    match operation {
-        Keep => objc2_metal::MTLStencilOperation::Keep,
-        Zero => objc2_metal::MTLStencilOperation::Zero,
-        Replace => objc2_metal::MTLStencilOperation::Replace,
-        IncrementClamp => objc2_metal::MTLStencilOperation::IncrementClamp,
-        DecrementClamp => objc2_metal::MTLStencilOperation::DecrementClamp,
-        Invert => objc2_metal::MTLStencilOperation::Invert,
-        IncrementWrap => objc2_metal::MTLStencilOperation::IncrementWrap,
-        DecrementWrap => objc2_metal::MTLStencilOperation::DecrementWrap,
+                RendererError::ResourceCreationFailed("Depth-stencil state creation failed".into())
+            })
     }
 }
 

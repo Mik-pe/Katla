@@ -446,6 +446,8 @@ pub struct MaterialVariant {
 /// The same material can render to different render-target configurations:
 /// each configuration resolves to its own variant, compiled on first use.
 pub struct MaterialAsset {
+    pub(crate) interface: Option<crate::renderer::graphics_interface::GraphicsInterface>,
+    pub(crate) dependencies: std::collections::BTreeSet<std::path::PathBuf>,
     /// Compilation identity: shader path, entry points, vertex layout,
     /// render state, specialization, and the declared (possibly `Auto`)
     /// color format.
@@ -561,24 +563,6 @@ impl AssetRegistry {
         self.materials.iter().map(|m| m.variants.len()).sum()
     }
 
-    /// Drop every variant of one material, returning the pipelines for
-    /// retirement.
-    ///
-    /// Used when a variant key input changed (shader hot reload): the next
-    /// use of the material recompiles the variants it needs.
-    pub(crate) fn take_material_variants(&mut self, handle: MaterialHandle) -> Vec<AnyPipeline> {
-        let Some(material) = self.materials.get_mut(handle) else {
-            return Vec::new();
-        };
-        material
-            .variants
-            .drain()
-            .flat_map(|(_, variant)| [Some(variant.pipeline), variant.instanced_pipeline])
-            .flatten()
-            .filter_map(|handle| self.pipelines.remove(handle))
-            .collect()
-    }
-
     /// Get the Vulkan pipeline and layout handles for rendering.
     pub(crate) fn get_pipeline_vk_handles(
         &self,
@@ -612,7 +596,7 @@ impl AssetRegistry {
         self.materials.len()
     }
 
-    /// Find all materials whose shader path matches the given file name.
+    /// Find all materials depending on a canonical shader or include path.
     ///
     /// Used for shader hot reload to identify which materials need recompilation
     /// when a shader file changes on disk.
@@ -620,12 +604,12 @@ impl AssetRegistry {
         &self,
         shader_path: &std::path::Path,
     ) -> Vec<(MaterialHandle, std::path::PathBuf)> {
-        let file_name = shader_path.file_name();
+        let identity = super::shader_source::path_identity(shader_path);
         self.materials
             .iter_enumerated()
             .filter_map(|(handle, mat)| {
                 let sp = std::path::PathBuf::from(&mat.descriptor.shader_path);
-                if sp.file_name() == file_name {
+                if mat.dependencies.contains(&identity) {
                     Some((handle, sp))
                 } else {
                     None

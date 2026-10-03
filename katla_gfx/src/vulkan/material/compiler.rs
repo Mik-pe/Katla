@@ -50,12 +50,6 @@ pub(crate) struct MaterialCompiler {
     pub(crate) shader_cache: Rc<RefCell<ShaderCache>>,
     context: Rc<VulkanContext>,
     bindless_descriptor_layout: vk::DescriptorSetLayout,
-    /// Descriptor layouts owned by compiled material variants.
-    owned_descriptor_layouts: Vec<vk::DescriptorSetLayout>,
-    interfaces: std::collections::HashMap<
-        (String, crate::renderer::pipeline_descriptor::PipelineStages),
-        crate::renderer::graphics_interface::GraphicsInterface,
-    >,
 }
 
 impl MaterialCompiler {
@@ -69,8 +63,6 @@ impl MaterialCompiler {
             shader_cache: Rc::new(RefCell::new(ShaderCache::new(context.device.clone()))),
             context,
             bindless_descriptor_layout,
-            owned_descriptor_layouts: Vec::new(),
-            interfaces: Default::default(),
         }
     }
 
@@ -88,7 +80,12 @@ impl MaterialCompiler {
     ) -> Result<crate::handle::MaterialHandle, MaterialError> {
         self.validate_layout(&descriptor.vertex)?;
 
+        let source =
+            crate::renderer::shader_source::ShaderSource::load(Path::new(&descriptor.shader_path))
+                .map_err(|error| MaterialError::ShaderCompilation(error.to_string()))?;
         let handle = registry.register_material(crate::renderer::registry::MaterialAsset {
+            interface: None,
+            dependencies: source.dependencies.clone(),
             descriptor: descriptor.clone(),
             variants: std::collections::HashMap::new(),
             textures: crate::renderer::registry::MaterialTextures::default(),
@@ -99,7 +96,7 @@ impl MaterialCompiler {
                 descriptor,
                 descriptor.color_format,
             );
-            if let Err(error) = self.compile_variant(registry, handle, &key) {
+            if let Err(error) = self.compile_variant_from_source(registry, handle, &key, &source) {
                 registry.remove_material(handle);
                 return Err(error);
             }
@@ -119,25 +116,19 @@ impl MaterialCompiler {
         material_handle: crate::handle::MaterialHandle,
         key: &crate::renderer::pipeline_variant::PipelineVariantKey,
     ) -> Result<crate::renderer::registry::MaterialVariant, MaterialError> {
-        let previous_layouts = self.owned_descriptor_layouts.len();
-        let result = self.prepare_variant(registry, material_handle, key);
-        if result.is_err() {
-            for layout in self.owned_descriptor_layouts.drain(previous_layouts..) {
-                unsafe {
-                    self.context
-                        .device
-                        .destroy_descriptor_set_layout(layout, None);
-                }
-            }
-        }
-        result
+        let source = crate::renderer::shader_source::ShaderSource::load(Path::new(
+            &key.descriptor().shader_path,
+        ))
+        .map_err(|error| MaterialError::ShaderCompilation(error.to_string()))?;
+        self.compile_variant_from_source(registry, material_handle, key, &source)
     }
 
-    fn prepare_variant(
+    pub(crate) fn compile_variant_from_source(
         &mut self,
         registry: &mut crate::renderer::registry::AssetRegistry,
         material_handle: crate::handle::MaterialHandle,
         key: &crate::renderer::pipeline_variant::PipelineVariantKey,
+        source: &crate::renderer::shader_source::ShaderSource,
     ) -> Result<crate::renderer::registry::MaterialVariant, MaterialError> {
         let fail = |reason: String| MaterialError::VariantCompilation {
             material: material_handle,
@@ -170,42 +161,66 @@ impl MaterialCompiler {
         let shader_path = std::path::PathBuf::from(&descriptor.shader_path);
         let mut cache = self.shader_cache.borrow_mut();
         let vert_module = cache
-            .load_shader_with_entry(&shader_path, vk::ShaderStageFlags::VERTEX, &vertex_entry)
+            .load_shader_from_source(
+                &shader_path,
+                &source.code,
+                vk::ShaderStageFlags::VERTEX,
+                &vertex_entry,
+            )
             .map_err(|e| fail(format!("Vertex shader: {e:?}")))?;
         let frag_module = fragment_entry
             .as_deref()
             .map(|entry| {
                 cache
-                    .load_shader_with_entry(&shader_path, vk::ShaderStageFlags::FRAGMENT, entry)
+                    .load_shader_from_source(
+                        &shader_path,
+                        &source.code,
+                        vk::ShaderStageFlags::FRAGMENT,
+                        entry,
+                    )
                     .map_err(|e| fail(format!("Fragment shader: {e:?}")))
             })
             .transpose()?;
         drop(cache);
 
+        let interface = crate::renderer::graphics_interface::GraphicsInterface::reflect(
+            &source.code,
+            &descriptor.stages,
+        )
+        .map_err(MaterialError::ShaderCompilation)?;
         let layouts = self
-            .build_descriptor_layouts(&descriptor)
+            .build_descriptor_layouts(&descriptor, &interface)
             .map_err(|e| fail(e.to_string()))?;
 
-        let pipeline = self
+        let mut pipeline = self
             .build_pipeline(
                 &descriptor,
                 vert_module,
                 frag_module,
-                &layouts,
+                layouts.as_slice(),
                 &vertex_binding,
                 key.depth_format(),
             )
             .map_err(|e| fail(e.to_string()))?;
         // UI materials additionally compile an instanced pipeline using
         // vs_instanced/fs_instanced entry points with UnitQuadVertex format.
-        let instanced_pipeline = if descriptor.is_ui_layout() {
+        pipeline.retain_descriptor_layouts(layouts.clone());
+        let mut instanced_pipeline = if descriptor.is_ui_layout() {
             Some(
-                self.build_instanced_ui_pipeline(&shader_path, &layouts, key.color_format())
-                    .map_err(|error| fail(error.to_string()))?,
+                self.build_instanced_ui_pipeline(
+                    &shader_path,
+                    &source.code,
+                    layouts.as_slice(),
+                    key.color_format(),
+                )
+                .map_err(|error| fail(error.to_string()))?,
             )
         } else {
             None
         };
+        if let Some(pipeline) = &mut instanced_pipeline {
+            pipeline.retain_descriptor_layouts(layouts);
+        }
         let pipeline_handle = registry.register_pipeline(pipeline);
         let instanced_pipeline =
             instanced_pipeline.map(|pipeline| registry.register_pipeline(pipeline));
@@ -221,6 +236,11 @@ impl MaterialCompiler {
                 registry.remove_pipeline(handle);
             }
             return Err(fail("material handle not found".to_string()));
+        }
+
+        if let Some(material) = registry.get_material_mut(material_handle) {
+            material.interface = Some(interface);
+            material.dependencies = source.dependencies.clone();
         }
 
         log::debug!(
@@ -259,20 +279,17 @@ impl MaterialCompiler {
     fn build_descriptor_layouts(
         &mut self,
         descriptor: &crate::renderer::pipeline_descriptor::PipelineDescriptor,
-    ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
+        interface: &crate::renderer::graphics_interface::GraphicsInterface,
+    ) -> Result<Rc<super::descriptor_layouts::DescriptorLayouts>, MaterialError> {
         // UI materials use a completely different descriptor set layout
         if descriptor.is_ui_layout() {
             return self.build_ui_descriptor_layout();
         }
 
-        use crate::renderer::graphics_interface::{GraphicsBindingKind, GraphicsInterface};
-        let source =
-            super::shadermodule::resolved_source(std::path::Path::new(&descriptor.shader_path))
-                .map_err(|error| MaterialError::ShaderCompilation(format!("{error:?}")))?;
-        let interface = GraphicsInterface::reflect(&source, &descriptor.stages)
-            .map_err(MaterialError::ShaderCompilation)?;
+        use crate::renderer::graphics_interface::GraphicsBindingKind;
         let max_group = interface.bindings.iter().map(|binding| binding.group).max();
-        let mut layouts = Vec::new();
+        let mut layouts =
+            super::descriptor_layouts::DescriptorLayouts::new(self.context.device.clone());
         for group in 0..max_group.map_or(0, |group| group + 1) {
             if group == 1
                 && interface
@@ -280,7 +297,7 @@ impl MaterialCompiler {
                     .iter()
                     .any(|binding| binding.group == 1 && binding.array)
             {
-                layouts.push(self.bindless_descriptor_layout);
+                layouts.push_borrowed(self.bindless_descriptor_layout);
                 continue;
             }
             let bindings: Vec<_> = interface
@@ -328,22 +345,9 @@ impl MaterialCompiler {
             .map_err(|error| {
                 MaterialError::PipelineCreation(format!("Reflected descriptor layout: {error}"))
             })?;
-            self.owned_descriptor_layouts.push(layout);
-            layouts.push(layout);
+            layouts.push_owned(layout);
         }
-        self.interfaces.insert(
-            (descriptor.shader_path.clone(), descriptor.stages.clone()),
-            interface,
-        );
-        Ok(layouts)
-    }
-
-    pub(crate) fn interface(
-        &self,
-        descriptor: &crate::renderer::pipeline_descriptor::PipelineDescriptor,
-    ) -> Option<&crate::renderer::graphics_interface::GraphicsInterface> {
-        self.interfaces
-            .get(&(descriptor.shader_path.clone(), descriptor.stages.clone()))
+        Ok(Rc::new(layouts))
     }
 
     /// Build UI descriptor set layouts.
@@ -353,7 +357,7 @@ impl MaterialCompiler {
     /// - Set 1: Bindless texture array (shared with 3D materials)
     fn build_ui_descriptor_layout(
         &mut self,
-    ) -> Result<Vec<vk::DescriptorSetLayout>, MaterialError> {
+    ) -> Result<Rc<super::descriptor_layouts::DescriptorLayouts>, MaterialError> {
         // UI descriptor set layout Set 0 (must match shader bindings in ui.wgsl):
         // - Binding 1: sampler (shared)
         // - Binding 3: uniforms (screen_size, ndc_y_flip, texture_index)
@@ -390,16 +394,11 @@ impl MaterialCompiler {
                 })?
         };
 
-        // Track this layout for cleanup (owned by MaterialCompiler)
-        self.owned_descriptor_layouts.push(ui_layout);
-
-        // Return both layouts: Set 0 (UI resources) and Set 1 (bindless textures)
-        Ok(vec![ui_layout, self.bindless_descriptor_layout])
-    }
-
-    /// Invalidate cached shader modules for the given path.
-    pub(crate) fn invalidate_shader_cache(&self, path: &Path) {
-        self.shader_cache.borrow_mut().invalidate(path);
+        let mut layouts =
+            super::descriptor_layouts::DescriptorLayouts::new(self.context.device.clone());
+        layouts.push_owned(ui_layout);
+        layouts.push_borrowed(self.bindless_descriptor_layout);
+        Ok(Rc::new(layouts))
     }
 
     /// Build the instanced UI pipeline using `vs_instanced`/`fs_instanced` entry points.
@@ -411,6 +410,7 @@ impl MaterialCompiler {
     fn build_instanced_ui_pipeline(
         &self,
         shader_path: &Path,
+        source: &str,
         layouts: &[vk::DescriptorSetLayout],
         color_format: crate::texture::ImageFormat,
     ) -> Result<crate::vulkan::material::builder::Pipeline, MaterialError> {
@@ -420,12 +420,22 @@ impl MaterialCompiler {
         // Load shaders with instanced entry points
         let mut cache = self.shader_cache.borrow_mut();
         let vert_module = cache
-            .load_shader_with_entry(shader_path, vk::ShaderStageFlags::VERTEX, "vs_instanced")
+            .load_shader_from_source(
+                shader_path,
+                source,
+                vk::ShaderStageFlags::VERTEX,
+                "vs_instanced",
+            )
             .map_err(|e| {
                 MaterialError::ShaderCompilation(format!("Instanced vertex shader: {:?}", e))
             })?;
         let frag_module = cache
-            .load_shader_with_entry(shader_path, vk::ShaderStageFlags::FRAGMENT, "fs_instanced")
+            .load_shader_from_source(
+                shader_path,
+                source,
+                vk::ShaderStageFlags::FRAGMENT,
+                "fs_instanced",
+            )
             .map_err(|e| {
                 MaterialError::ShaderCompilation(format!("Instanced fragment shader: {:?}", e))
             })?;
@@ -571,22 +581,9 @@ impl MaterialCompiler {
         )
     }
 
-    /// Clean up descriptor layouts and pool.
-    /// This is idempotent - can be called multiple times safely.
+    /// Release cached shader modules while the device is still alive.
     pub(crate) fn destroy(&mut self) {
-        for layout in self.owned_descriptor_layouts.drain(..) {
-            unsafe {
-                self.context
-                    .device
-                    .destroy_descriptor_set_layout(layout, None);
-            }
-        }
-    }
-}
-
-impl Drop for MaterialCompiler {
-    fn drop(&mut self) {
-        self.destroy();
+        self.shader_cache.borrow_mut().clear();
     }
 }
 
@@ -623,15 +620,10 @@ mod failure_tests {
         )
         .unwrap();
         let materials = renderer.asset_registry.material_count();
-        let layouts = renderer.material_compiler.owned_descriptor_layouts.len();
         let missing = PipelineDescriptor::pbr("/does-not-exist/material.wgsl")
             .with_color_format(ImageFormat::R16G16B16A16Sfloat);
         assert!(renderer.compile_material(&missing).is_err());
         assert_eq!(renderer.asset_registry.material_count(), materials);
-        assert_eq!(
-            renderer.material_compiler.owned_descriptor_layouts.len(),
-            layouts
-        );
 
         let path =
             std::env::temp_dir().join(format!("katla-ui-failure-{}.wgsl", std::process::id()));
@@ -642,10 +634,6 @@ mod failure_tests {
             .with_color_format(ImageFormat::B8G8R8A8Srgb);
         assert!(renderer.compile_material(&descriptor).is_err());
         assert_eq!(renderer.asset_registry.material_count(), materials);
-        assert_eq!(
-            renderer.material_compiler.owned_descriptor_layouts.len(),
-            layouts
-        );
         std::fs::remove_file(path).unwrap();
         renderer.destroy();
     }
