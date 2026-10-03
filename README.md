@@ -38,7 +38,7 @@ separate portable checks from physical GPU acceptance. Git/GitHub track delivery
 history; [TODO](TODO.md) tracks remaining engineering work.
 
 The progressive [Odin port](odin/README.md) lives under `odin/` on `port/odin`.
-Its standalone ECS/editor and math packages can run together while the Rust
+Its standalone ECS/editor, math, icons and audio DSP packages can run while the Rust
 engine remains the production application and comparison baseline.
 
 ## Running 🏃

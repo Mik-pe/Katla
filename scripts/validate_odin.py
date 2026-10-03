@@ -13,8 +13,12 @@ def main():
     commands = [
         ["odin", "test", "odin/editor", "-all-packages", "-out:target/odin-ecs-editor-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/math", "-out:target/odin-math-tests", "-vet", "-strict-style"],
+        ["odin", "test", "odin/icons", "-out:target/odin-icons-tests", "-vet", "-strict-style"],
+        ["odin", "test", "odin/audio/dsp", "-out:target/odin-audio-dsp-tests", "-vet", "-strict-style"],
         ["odin", "run", "odin/examples/movement", "-out:target/odin-movement", "-vet", "-strict-style"],
         [sys.executable, "scripts/compare_math_port.py"],
+        [sys.executable, "scripts/check_icon_port.py"],
+        [sys.executable, "scripts/compare_audio_dsp.py"],
     ]
     for command in commands:
         print("Running:", " ".join(command), flush=True)

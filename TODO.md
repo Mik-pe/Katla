@@ -4,6 +4,14 @@
 
 Individual tasks should be small enough to complete in a single focused session. For large features (new subsystems, architectural changes, cross-cutting refactors), the TODO item is scoped as **exploration, ideation, and architecture** — research patterns, evaluate alternatives, and produce a concrete implementation plan as smaller TODO items. The output of such a task is a breakdown, not working code.
 
+## Odin port
+
+- [ ] Port audio PCM/codec/metadata loading with real file fixtures before composing voices.
+- [ ] Port voices/resampling/pooling, the category mixer and scheduling/streaming, reusing the completed `odin/audio/dsp` layer.
+- [ ] Add native Odin audio output with real playback and callback/lifecycle acceptance.
+- [ ] Port `katla_gfx` and required dependencies, preserving GPU-core ownership and proving both native Vulkan and Metal behavior.
+- [ ] Port the complete `katla_agent` contract, including optional MCP/LLM paths, on top of Odin ECS/editor rather than duplicating its scene operations.
+
 ## Graphics core and application composition
 
 - [x] Keep core resource, frame, submission and graph operations backend-neutral.

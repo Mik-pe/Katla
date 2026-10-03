@@ -9,9 +9,12 @@ Each completed package can be imported and exercised without a renderer.
 | `ecs` | Entity identities, sparse storage, queries, resources, events, commands, scheduling | [ECS port](../docs/ecs_odin.md) |
 | `editor` | Optional reflection, JSON, reversible scene actions and agent mailbox | [ECS/editor port](../docs/ecs_odin.md) |
 | `math` | Vectors, matrices, quaternion rotation, transforms, bounds, intersections and color | [Math port](../docs/math_odin.md) |
+| `icons` | All Katla icon codepoints and precache data | [Leaf ports](../docs/odin_leaf_ports.md) |
+| `audio/dsp` | Filters, reverb, zone controls, effect chains and aux processing | [Audio DSP](../docs/odin_leaf_ports.md#audio-dsp) |
 | `examples/movement` | Runnable ECS + math composition | `odin run odin/examples/movement` |
 | `workload`, `compile_workload`, `editor_workload` | Consumers for the recorded ECS compilation comparison | [Measurements](../docs/ecs_odin.md#validation-and-compilation-measurements) |
 | `math_reference` | Numeric consumer paired with Rust for migration validation | `python3 scripts/compare_math_port.py` |
+| `icon_reference`, `audio_reference` | Compiled icon catalogue and offline DSP consumers paired with Rust | [Leaf validation](../docs/odin_leaf_ports.md#validation-and-current-boundary) |
 
 Use imports relative to the consuming package, for example:
 
@@ -32,14 +35,14 @@ From the repository root:
 python3 scripts/validate_odin.py
 ```
 
-This runs the ECS/editor and math tests with strict vet/style checks, an actual
-ECS/math consumer, and Rust/Odin numeric comparison in dev and release. It needs
+This runs ECS/editor, math, icon and audio DSP tests with strict vet/style checks,
+an actual ECS/math consumer, icon parity and Rust/Odin math/DSP comparisons in dev and release. It needs
 Odin, Python 3 and Rust/Cargo. See the math contract for native sanitizer commands.
 
 ## Continuing the migration
 
 Add each next engine responsibility as a package under `odin/`. Keep math and
-ECS independent; optional editor tooling can import ECS; application composition
+ECS, icons and audio DSP independent; optional editor tooling can import ECS; application composition
 imports the packages it needs. A future GPU core must retain its generic resource
 and execution responsibility rather than depending on ECS, math or editor policy.
 
