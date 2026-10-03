@@ -60,7 +60,7 @@ impl VulkanRenderer {
     /// Destroy a texture and retire its GPU image and bindless slot.
     ///
     /// The handle invalidates immediately (`TextureManager::contains(handle)`
-    /// returns `false`). The native image (with its view, sampler, and
+    /// returns `false`). The native image (with its view and
     /// allocation) retires instead of freeing right away, and the bindless
     /// slot stays occupied: in-flight submissions may still sample this
     /// texture through that slot, so both are released only once those

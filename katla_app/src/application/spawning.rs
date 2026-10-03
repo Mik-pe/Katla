@@ -1,6 +1,8 @@
 //! Entity spawning and owned model resource preparation.
 
 mod gltf_model;
+mod texture_cache;
+pub(crate) use texture_cache::GltfTextureCache;
 
 #[derive(katla_ecs::Component)]
 pub(crate) struct ModelTextures {
@@ -410,6 +412,7 @@ impl super::Application {
     /// draw call, not on material state.
     fn upload_gltf_textures(
         &mut self,
+        asset: &std::path::Path,
         images: &[gltf::image::Data],
         mat: &crate::util::gltf_material::GltfMaterialInfo,
     ) -> GltfTextureUpload {
@@ -419,6 +422,7 @@ impl super::Application {
         );
         let mut emission = katla_gfx::TextureHandle::NONE;
         let mut handles = Vec::new();
+        self.gltf_texture_cache.prune(&self.renderer);
 
         for (image_index, srgb, role) in [
             (mat.base_color_texture, true, &mut textures.albedo),
@@ -438,10 +442,20 @@ impl super::Application {
                 log::warn!("GLTF image {image_index} is missing; retaining material fallback");
                 continue;
             };
-            match self.upload_gltf_image(image, srgb) {
+            let srgb = srgb
+                && !matches!(
+                    image.format,
+                    gltf::image::Format::R32G32B32FLOAT | gltf::image::Format::R32G32B32A32FLOAT
+                );
+            let cached = self.gltf_texture_cache.get(asset, image_index, srgb);
+            match cached.map_or_else(|| self.upload_gltf_image(image, srgb), Ok) {
                 Ok(handle) => {
                     *role = handle;
-                    handles.push(handle);
+                    self.gltf_texture_cache
+                        .insert(asset, image_index, srgb, handle);
+                    if !handles.contains(&handle) {
+                        handles.push(handle);
+                    }
                     debug!("Uploaded GLTF image {image_index} -> {handle:?} (srgb={srgb})");
                 }
                 Err(error) => log::warn!(
@@ -463,12 +477,7 @@ impl super::Application {
         image: &gltf::image::Data,
         srgb: bool,
     ) -> Result<katla_gfx::TextureHandle, String> {
-        let pixels = crate::util::gltf_image::rgba8_pixels(image)?;
-        let descriptor = if srgb {
-            katla_gfx::TextureDescriptor::rgba8_srgb(image.width, image.height)
-        } else {
-            katla_gfx::TextureDescriptor::rgba8_unorm(image.width, image.height)
-        };
+        let (descriptor, pixels) = crate::util::gltf_image::texture_upload(image, srgb)?;
         self.renderer
             .create_texture(&descriptor, &pixels)
             .map_err(|e| e.to_string())

@@ -403,6 +403,7 @@ mod tests {
         .unwrap();
         let baseline = renderer.context.allocator.debug_allocation_stats();
         let meshes_before = renderer.asset_registry.mesh_count();
+        let pending_before = renderer.context.pending_staged_uploads();
         renderer
             .context
             .gfx_queue
@@ -416,7 +417,7 @@ mod tests {
             RendererError::VulkanError(_, vk::Result::ERROR_OUT_OF_HOST_MEMORY)
         ));
         assert_eq!(renderer.asset_registry.mesh_count(), meshes_before);
-        assert_eq!(renderer.context.pending_staged_uploads(), 0);
+        assert_eq!(renderer.context.pending_staged_uploads(), pending_before);
         assert_eq!(
             renderer.context.allocator.debug_allocation_stats(),
             baseline

@@ -201,7 +201,14 @@ Mesh uploads batch copy-to-vertex/index barriers in one dependency operation.
 Rejected submissions release their unsubmitted command buffers, fences and
 staging allocations. Submitted one-time command buffers and optional staging
 allocations remain owned until fence completion or an idle device drain, even
-if a CPU wait fails.
+if a CPU wait fails. Asset image uploads also submit on the graphics queue
+without a CPU wait. Their barriers cover the allocated mip chain; filtered blits
+check native format support before allocation. Full base updates regenerate
+authored mips. Image views span all levels. If an image owner disappears before
+upload completion, its allocation moves to the last referencing upload fence;
+native retirement contains no context ownership cycle. A successful device-wide
+idle wait drains these uploads. Unsampled asset images receive no bindless slot
+and arrive in GENERAL layout, while sampled images arrive shader-read-only.
 
 Vulkan resets a retired slot's command buffer before recycling its descriptor
 and upload storage. This also discards partial recording and dynamic

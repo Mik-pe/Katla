@@ -245,7 +245,7 @@ impl Application {
                 reason: error.to_string(),
             })?;
         self.gpu_resource_tracker.track_material(material);
-        let upload = self.upload_gltf_textures(&model.images, &primitive.material);
+        let upload = self.upload_gltf_textures(path, &model.images, &primitive.material);
         for handle in &upload.handles {
             self.gpu_resource_tracker.track_texture(*handle);
         }

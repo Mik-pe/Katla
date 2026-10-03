@@ -108,13 +108,31 @@ import. Static positions preserve exact node matrices, including shear, and bake
 negative determinants reverse triangle winding as well as tangent handedness.
 
 Base color factors are already linear and are copied without sRGB conversion.
-Metallic, roughness, normal scale, occlusion strength and emissive RGB factors initialize the drawable. Albedo and emissive
-textures upload as sRGB; normal, MR and occlusion upload as linear UNORM. A single
-image used for color and data roles receives separate uploads. Grayscale images
-expand to RGB, grayscale-alpha retains alpha, and 16-bit integer channels
-quantize to RGBA8. Malformed and floating-point images fail explicitly and log
-an optional-texture fallback; failed uploads retain the role's existing fallback
-and add no handle to resource tracking.
+Metallic, roughness, normal scale, occlusion strength and emissive RGB factors
+initialize the drawable. Eight-bit albedo/emissive images use hardware sRGB
+sampling; normal, MR and occlusion images use linear UNORM. Grayscale expands to
+RGB and grayscale-alpha retains alpha. Sixteen-bit data uses RGBA16 UNORM without
+8-bit quantization. Sixteen-bit color decodes RGB into linear RGBA16F before
+filtering; alpha remains linear. Decoded float images already contain linear
+light and use RGBA16F in every role, preserving HDR and signed data within the
+finite half-float range. Nonfinite values and values outside -65504..65504 reject
+with pixel/component context rather than clipping. Half-float storage rounds to
+its native precision.
+
+Imports allocate the complete filtered mip chain. Both backends generate it after
+base upload and regenerate it on complete image updates. The Vulkan device must
+support filtered blits for the requested format; unsupported generation rejects
+before allocating. Color mip filtering occurs in linear light.
+
+An immutable decoded glTF asset shares uploads by canonical asset path, image
+index and transfer function, including reuse between roles and primitives.
+Decoded floats share one linear upload across color/data roles. Each drawable
+tracks one reference per distinct image; editing factors or destroying one
+owner preserves other owners. The cache holds generational handles without
+pinning GPU allocations, rejects stale handles and reuses live uploads during
+scene reconstruction. Sampler/UV choices do not change image identity. Malformed
+optional images log a fallback, retain the role's existing default and add no
+tracked handle.
 
 UV sets and transforms, per-texture samplers and material extensions still need
 dedicated support. Scene serialization

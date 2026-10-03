@@ -1,547 +1,139 @@
+//! Vulkan image ownership and validated descriptor-based texture creation.
+
+#[path = "texture_upload.rs"]
+mod upload;
+
 use super::context::VulkanContext;
-use crate::barrier::ImageBarrier;
-use crate::sync::{VkDescriptorSet, VkImage, VkImageView, VkSampler};
-use crate::texture::ImageFormat;
-use crate::vulkan::context::VulkanFrameCtx;
-
-use std::mem::ManuallyDrop;
-use std::rc::Rc;
-
+use crate::{
+    RendererError,
+    sync::{VkImage, VkImageView},
+    texture::{ImageFormat, TextureDescriptor, TextureUsage},
+};
 use ash::vk;
 use gpu_allocator::vulkan::Allocation;
+use std::{mem::ManuallyDrop, rc::Rc};
 
 pub struct Texture {
-    pub width: u32,
-    pub height: u32,
-    pub channels: u32,
-    format: ImageFormat,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+    descriptor: TextureDescriptor,
     image_memory: ManuallyDrop<Allocation>,
     image: VkImage,
     pub(crate) image_view: VkImageView,
-    pub(crate) image_sampler: VkSampler,
-    /// Descriptors that should be auto-updated when the image view changes.
-    registered_descriptors: Vec<(VkDescriptorSet, u32)>,
     context: Rc<VulkanContext>,
 }
 
 impl Texture {
-    fn create_staging_buffer(
-        context: &VulkanContext,
-        size: vk::DeviceSize,
-    ) -> (vk::Buffer, Allocation) {
-        let create_info = vk::BufferCreateInfo::default()
-            .sharing_mode(vk::SharingMode::EXCLUSIVE)
-            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
-            .size(size);
-
-        context
-            .allocate_buffer(&create_info, gpu_allocator::MemoryLocation::CpuToGpu)
-            .expect("Failed to create staging buffer")
-    }
-
-    fn transition_image_layout(
-        context: &VulkanContext,
-        command_buffer: vk::CommandBuffer,
-        image: vk::Image,
-        old_layout: vk::ImageLayout,
-        new_layout: vk::ImageLayout,
-    ) {
-        // Use the automatic transition deduction with default subresource range
-        ImageBarrier::transition(
-            &command_buffer,
-            &context.device,
-            image,
-            old_layout,
-            new_layout,
-        );
-    }
-
-    fn copy_buffer_to_image(
-        context: &VulkanContext,
-        command_buffer: vk::CommandBuffer,
-        src_buffer: vk::Buffer,
-        dst_image: vk::Image,
-        dst_image_layout: vk::ImageLayout,
-        extent: vk::Extent3D,
-    ) {
-        let subresources = vk::ImageSubresourceLayers::default()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .mip_level(0)
-            .base_array_layer(0)
-            .layer_count(1);
-        unsafe {
-            let regions = vk::BufferImageCopy::default()
-                .image_extent(extent)
-                .image_subresource(subresources);
-            context.device.cmd_copy_buffer_to_image(
-                command_buffer,
-                src_buffer,
-                dst_image,
-                dst_image_layout,
-                &[regions],
-            );
-        }
-    }
-
-    fn create_texture_sampler(context: &VulkanContext) -> vk::Sampler {
-        // Use the shared sampler factory for consistency
-        context
-            .create_sampler_repeat_anisotropic()
-            .expect("Failed to create texture sampler")
-            .into()
-    }
-
-    /// Convert RGB pixel data to RGBA format.
-    ///
-    /// This is useful for loading textures stored as RGB (3 bytes per pixel)
-    /// into the more common RGBA format (4 bytes per pixel).
-    pub fn convert_rgb_to_rgba(rgb_data: &[u8], width: u32, height: u32) -> Vec<u8> {
-        let pixel_count = (width * height) as usize;
-        let mut rgba_data = Vec::with_capacity(pixel_count * 4);
-
-        for chunk in rgb_data.as_chunks::<3>().0 {
-            rgba_data.push(chunk[0]);
-            rgba_data.push(chunk[1]);
-            rgba_data.push(chunk[2]);
-            rgba_data.push(255);
-        }
-
-        rgba_data
-    }
-
-    pub fn create_image_rgb(
-        context: Rc<VulkanContext>,
-        width: u32,
-        height: u32,
-        pixel_data: &[u8],
-    ) -> Self {
-        let rgba_data = Self::convert_rgb_to_rgba(pixel_data, width, height);
-        Self::create_image(
-            context,
-            width,
-            height,
-            ImageFormat::R8G8B8A8Srgb,
-            crate::texture::TextureUsage::default(),
-            &rgba_data,
-        )
-    }
-
-    /// Create a texture from a TextureDescriptor.
-    ///
-    /// This is the preferred method for creating textures when using the
-    /// TextureManager system.
-    ///
-    /// # Arguments
-    /// * `context` - Vulkan context for resource creation
-    /// * `desc` - Texture descriptor specifying dimensions, format, and usage
-    /// * `pixel_data` - Initial pixel data (must match descriptor dimensions and format)
+    /// Allocate and upload a validated 2D texture, optionally generating filtered mips.
+    /// Creation errors release every resource without inserting a texture handle.
     pub fn from_descriptor(
         context: &Rc<VulkanContext>,
-        desc: &crate::texture::TextureDescriptor,
-        pixel_data: &[u8],
-    ) -> Result<Self, crate::error::RendererError> {
-        desc.validate_data(pixel_data.len())?;
-        if desc.depth != 1
-            || desc.array_layers != 1
-            || desc.mip_levels != 1
-            || desc.generate_mips
-            || desc.format.block_extent() != [1, 1]
-        {
-            return Err(crate::error::RendererError::UnsupportedFeature(format!(
-                "Vulkan asset texture creation does not support {:?} {}x{}x{} layers {} mips {} generation {}",
-                desc.format,
-                desc.width,
-                desc.height,
-                desc.depth,
-                desc.array_layers,
-                desc.mip_levels,
-                desc.generate_mips
+        desc: &TextureDescriptor,
+        pixels: &[u8],
+    ) -> Result<Self, RendererError> {
+        desc.validate_data(pixels.len())?;
+        if desc.depth != 1 || desc.array_layers != 1 || desc.format.block_extent() != [1, 1] {
+            return Err(RendererError::UnsupportedFeature(format!(
+                "Vulkan asset texture creation does not support {:?} {}x{}x{} layers {}",
+                desc.format, desc.width, desc.height, desc.depth, desc.array_layers
             )));
         }
-        Ok(Self::create_image(
-            context.clone(),
-            desc.width,
-            desc.height,
-            desc.format,
-            desc.usage,
-            pixel_data,
-        ))
-    }
-
-    pub fn create_image(
-        context: Rc<VulkanContext>,
-        width: u32,
-        height: u32,
-        format: ImageFormat,
-        usage: crate::texture::TextureUsage,
-        pixel_data: &[u8],
-    ) -> Self {
-        let extent = vk::Extent3D {
-            width,
-            height,
-            depth: 1,
-        };
-
-        // Convert ImageFormat to vk::Format for internal use
-        let vk_format: ash::vk::Format = format.into();
-
-        let mut vk_usage = vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED;
-        if usage.contains(crate::texture::TextureUsage::STORAGE) {
-            vk_usage |= vk::ImageUsageFlags::STORAGE;
+        upload::validate_mip_generation(context, desc)?;
+        let mut usage = vk::ImageUsageFlags::TRANSFER_DST;
+        if desc.generate_mips {
+            usage |= vk::ImageUsageFlags::TRANSFER_SRC;
         }
-        if usage.contains(crate::texture::TextureUsage::COLOR_ATTACHMENT) {
-            vk_usage |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
+        if desc.usage.contains(TextureUsage::SAMPLED) {
+            usage |= vk::ImageUsageFlags::SAMPLED;
         }
-        if usage.contains(crate::texture::TextureUsage::DEPTH_STENCIL_ATTACHMENT) {
-            vk_usage |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
+        if desc.usage.contains(TextureUsage::STORAGE) {
+            usage |= vk::ImageUsageFlags::STORAGE;
         }
-
-        //Create the image memory gpu_only:
-        let create_info = vk::ImageCreateInfo::default()
-            .extent(extent)
+        if desc.usage.contains(TextureUsage::COLOR_ATTACHMENT) {
+            usage |= vk::ImageUsageFlags::COLOR_ATTACHMENT;
+        }
+        if desc.usage.contains(TextureUsage::DEPTH_STENCIL_ATTACHMENT) {
+            usage |= vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT;
+        }
+        let info = vk::ImageCreateInfo::default()
+            .extent(vk::Extent3D {
+                width: desc.width,
+                height: desc.height,
+                depth: 1,
+            })
             .image_type(vk::ImageType::TYPE_2D)
-            .mip_levels(1)
+            .mip_levels(desc.mip_levels)
             .array_layers(1)
-            .format(vk_format)
-            .usage(vk_usage)
+            .format(desc.format.into())
+            .usage(usage)
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .tiling(vk::ImageTiling::OPTIMAL)
             .samples(vk::SampleCountFlags::TYPE_1)
             .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let (image_object, image_memory) = context
-            .create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly)
-            .expect("Failed to create image");
-
-        let total_size = pixel_data.len() as u64;
-
-        let (staging_buffer, staging_allocation) =
-            Self::create_staging_buffer(&context, total_size);
-
-        let map = context
-            .map_buffer(&staging_allocation)
-            .expect("Failed to map buffer");
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
-
-            let command_buffer = context
-                .begin_single_time_commands()
-                .expect("Failed to begin single-time commands");
-            Self::transition_image_layout(
-                &context,
-                command_buffer.vk_command_buffer(),
-                image_object,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        let (image, allocation) =
+            context.create_image(info, gpu_allocator::MemoryLocation::GpuOnly)?;
+        let mut texture = Self {
+            width: desc.width,
+            height: desc.height,
+            descriptor: desc.clone(),
+            image_memory: ManuallyDrop::new(allocation),
+            image: VkImage::new(image),
+            image_view: VkImageView::new(vk::ImageView::null()),
+            context: context.clone(),
+        };
+        let view = vk::ImageViewCreateInfo::default()
+            .image(image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(desc.format.into())
+            .subresource_range(
+                vk::ImageSubresourceRange::default()
+                    .aspect_mask(upload::image_aspects(desc.format))
+                    .level_count(desc.mip_levels)
+                    .layer_count(1),
             );
-            Self::copy_buffer_to_image(
-                &context,
-                command_buffer.vk_command_buffer(),
-                staging_buffer,
-                image_object,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                extent,
-            );
-            Self::transition_image_layout(
-                &context,
-                command_buffer.vk_command_buffer(),
-                image_object,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            );
-
-            // NOTE: Synchronous command buffer submission can be a bottleneck.
-            // For better performance, batch multiple uploads or use async transfer queues.
-            context
-                .end_single_time_commands(command_buffer)
-                .expect("Failed to end single-time commands");
-            context.free_buffer(staging_buffer, staging_allocation);
-
-            let image_view = VulkanFrameCtx::create_image_view(
-                &context.device,
-                image_object,
-                vk_format,
-                vk::ImageAspectFlags::COLOR,
-            )
-            .expect("Failed to create texture image view");
-            let image_sampler = Self::create_texture_sampler(&context);
-
-            let channels = match format {
-                ImageFormat::R8Unorm => 1,
-                ImageFormat::Rg8Unorm => 2,
-                ImageFormat::R32Sfloat | ImageFormat::R32Uint => 1,
-                ImageFormat::R8G8B8A8Srgb
-                | ImageFormat::R8G8B8A8Unorm
-                | ImageFormat::B8G8R8A8Srgb => 4,
-                ImageFormat::R16G16B16A16Sfloat => 4,
-                ImageFormat::D32Sfloat
-                | ImageFormat::D32SfloatS8Uint
-                | ImageFormat::D24UnormS8Uint => 1,
-                ImageFormat::Auto | ImageFormat::Bc1RgbaUnorm | ImageFormat::Bc3RgbaUnorm => 4,
-            };
-
-            Self {
-                width,
-                height,
-                channels,
-                format,
-                image_memory: ManuallyDrop::new(image_memory),
-                image: VkImage::new(image_object),
-                image_view: VkImageView::new(image_view),
-                image_sampler: VkSampler::new(image_sampler),
-                registered_descriptors: Vec::new(),
-                context,
-            }
-        }
+        let view = unsafe { context.device.create_image_view(&view, None) }.map_err(|error| {
+            RendererError::VulkanError("Failed to create texture image view".into(), error)
+        })?;
+        texture.image_view = VkImageView::new(view);
+        upload::upload(context, image, desc, pixels, vk::ImageLayout::UNDEFINED)?;
+        Ok(texture)
     }
 
-    /// Register a descriptor set to be auto-updated when the image view changes.
-    ///
-    /// Call this after creating a texture to enable automatic descriptor updates
-    /// when `resize()` is called. Useful for dynamic textures like font atlases.
-    ///
-    /// # Arguments
-    ///
-    /// * `descriptor_set` - The descriptor set containing a SAMPLED_IMAGE binding for this texture
-    /// * `binding` - The binding number within the descriptor set
-    ///
-    /// # Safety Invariants
-    ///
-    /// - The descriptor set must remain valid for the lifetime of this texture
-    /// - The binding must be a SAMPLED_IMAGE type in the descriptor set layout
-    /// - If the descriptor set is destroyed, this registration becomes invalid (but won't cause UB)
-    ///
-    /// # Example
-    ///
-    /// Update all registered descriptors with the current image view.
-    ///
-    /// Called automatically by `resize()` after the image view is recreated.
-    ///
-    /// # Safety
-    ///
-    /// All registered descriptor sets must still be valid. This is ensured by the
-    /// caller's obligation to only register descriptors that outlive the texture.
-    fn update_registered_descriptors(&self) {
-        for (descriptor_set, binding) in &self.registered_descriptors {
-            // SAFETY: The descriptor set is valid (caller's obligation via register_for_descriptor).
-            // The image_view is valid (invariant of Self). The binding matches the layout.
-            unsafe {
-                let image_info = vk::DescriptorImageInfo {
-                    sampler: vk::Sampler::null(),
-                    image_view: self.image_view.into(),
-                    image_layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                };
-                let image_infos = [image_info];
-                let write = vk::WriteDescriptorSet::default()
-                    .dst_set((*descriptor_set).into())
-                    .dst_binding(*binding)
-                    .descriptor_type(vk::DescriptorType::SAMPLED_IMAGE)
-                    .descriptor_count(1)
-                    .image_info(&image_infos);
-                let writes = [write];
-                self.context.device.update_descriptor_sets(&writes, &[]);
-            }
-        }
-    }
-
-    /// Update texture data in-place using a staging buffer.
-    ///
-    /// Dimensions must match current texture size.
-    /// Uses staging buffer for transfer with proper synchronization.
-    pub fn update_data(&self, pixel_data: &[u8]) -> Result<(), crate::error::RendererError> {
-        let bytes_per_pixel = self.format.bytes_per_pixel();
-        let expected_size = (self.width * self.height * bytes_per_pixel) as usize;
-        if pixel_data.len() != expected_size {
-            return Err(crate::error::RendererError::UploadFailed {
-                resource: "texture".to_string(),
-                expected_bytes: expected_size,
-                actual_bytes: pixel_data.len(),
-                detail: format!("{}x{} {:?}", self.width, self.height, self.format),
+    /// Upload the complete base level and regenerate this texture's authored mip chain.
+    /// The graphics queue orders these writes before later draws and retains staging.
+    pub fn update_data(&self, pixels: &[u8]) -> Result<(), RendererError> {
+        self.descriptor.validate_data(pixels.len())?;
+        let expected = self
+            .descriptor
+            .expected_bytes()
+            .ok_or_else(|| RendererError::InvalidOperation("Texture byte count overflow".into()))?;
+        if pixels.len() != expected {
+            return Err(RendererError::UploadFailed {
+                resource: "texture".into(),
+                expected_bytes: expected,
+                actual_bytes: pixels.len(),
+                detail: format!(
+                    "{}x{} {:?}",
+                    self.descriptor.width, self.descriptor.height, self.descriptor.format
+                ),
             });
         }
-
-        let total_size = pixel_data.len() as u64;
-        let (staging_buffer, staging_allocation) =
-            Self::create_staging_buffer(&self.context, total_size);
-
-        let map = self
-            .context
-            .map_buffer(&staging_allocation)
-            .expect("Failed to map buffer");
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
-
-            let command_buffer = self
-                .context
-                .begin_single_time_commands()
-                .expect("Failed to begin single-time commands");
-            let cmd = command_buffer.vk_command_buffer();
-
-            // Transition from SHADER_READ_ONLY to TRANSFER_DST
-            ImageBarrier::transition(
-                &cmd,
-                &self.context.device,
-                self.image.vk(),
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            );
-
-            // Copy buffer to image
-            let extent = vk::Extent3D {
-                width: self.width,
-                height: self.height,
-                depth: 1,
-            };
-            Self::copy_buffer_to_image(
-                &self.context,
-                cmd,
-                staging_buffer,
-                self.image.vk(),
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                extent,
-            );
-
-            // Transition from TRANSFER_DST to SHADER_READ_ONLY
-            ImageBarrier::transition(
-                &cmd,
-                &self.context.device,
-                self.image.vk(),
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            );
-
-            self.context
-                .end_single_time_commands(command_buffer)
-                .expect("Failed to end single-time commands");
-            self.context.free_buffer(staging_buffer, staging_allocation);
-            Ok(())
-        }
-    }
-
-    /// Resize the texture, recreating the internal image.
-    ///
-    /// The image view and sampler are updated to the new image.
-    /// Returns false if dimensions are 0.
-    pub fn resize(&mut self, width: u32, height: u32, pixel_data: &[u8]) -> bool {
-        if width == 0 || height == 0 {
-            return false;
-        }
-
-        // Store old handles to clean up after creating new resources
-        let old_image = self.image;
-        let old_image_view = self.image_view;
-        let old_allocation = unsafe { ManuallyDrop::take(&mut self.image_memory) };
-
-        // Create new image at new size
-        let extent = vk::Extent3D {
-            width,
-            height,
-            depth: 1,
-        };
-
-        let vk_format: ash::vk::Format = self.format.into();
-
-        let create_info = vk::ImageCreateInfo::default()
-            .extent(extent)
-            .image_type(vk::ImageType::TYPE_2D)
-            .mip_levels(1)
-            .array_layers(1)
-            .format(vk_format)
-            .usage(vk::ImageUsageFlags::TRANSFER_DST | vk::ImageUsageFlags::SAMPLED)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .tiling(vk::ImageTiling::OPTIMAL)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .sharing_mode(vk::SharingMode::EXCLUSIVE);
-
-        let (new_image, new_memory) = self
-            .context
-            .create_image(create_info, gpu_allocator::MemoryLocation::GpuOnly)
-            .expect("Failed to create image");
-
-        let total_size = pixel_data.len() as u64;
-        let (staging_buffer, staging_allocation) =
-            Self::create_staging_buffer(&self.context, total_size);
-
-        let map = self
-            .context
-            .map_buffer(&staging_allocation)
-            .expect("Failed to map buffer");
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(pixel_data.as_ptr(), map, total_size as usize);
-
-            let command_buffer = self
-                .context
-                .begin_single_time_commands()
-                .expect("Failed to begin single-time commands");
-            Self::transition_image_layout(
-                &self.context,
-                command_buffer.vk_command_buffer(),
-                new_image,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-            );
-            Self::copy_buffer_to_image(
-                &self.context,
-                command_buffer.vk_command_buffer(),
-                staging_buffer,
-                new_image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                extent,
-            );
-            Self::transition_image_layout(
-                &self.context,
-                command_buffer.vk_command_buffer(),
-                new_image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-            );
-
-            self.context
-                .end_single_time_commands(command_buffer)
-                .expect("Failed to end single-time commands");
-            self.context.free_buffer(staging_buffer, staging_allocation);
-            // Create new image view
-            let new_image_view = VulkanFrameCtx::create_image_view(
-                &self.context.device,
-                new_image,
-                vk_format,
-                vk::ImageAspectFlags::COLOR,
-            )
-            .expect("Failed to create texture image view");
-
-            // Clean up old resources
-            self.context
-                .device
-                .destroy_image_view(old_image_view.vk(), None);
-            self.context.free_image(old_image, old_allocation);
-            // Update self with new resources
-            self.width = width;
-            self.height = height;
-            self.image_memory = ManuallyDrop::new(new_memory);
-            self.image = VkImage::new(new_image);
-            self.image_view = VkImageView::new(new_image_view);
-
-            // Update any registered descriptors with the new image view
-            self.update_registered_descriptors();
-        }
-
-        true
+        upload::upload(
+            &self.context,
+            self.image.vk(),
+            &self.descriptor,
+            pixels,
+            upload::final_layout(&self.descriptor),
+        )
     }
 
     pub(crate) fn image(&self) -> VkImage {
         self.image
     }
-
     pub(crate) fn format(&self) -> ImageFormat {
-        self.format
+        self.descriptor.format
     }
-
-    /// Get the image view for this texture.
-    ///
-    /// Used for binding the texture to descriptors or the bindless system.
+    /// Native view spanning all allocated mip levels.
     pub fn image_view(&self) -> &VkImageView {
         &self.image_view
     }
@@ -552,90 +144,11 @@ impl Drop for Texture {
         unsafe {
             self.context
                 .device
-                .destroy_sampler(self.image_sampler.vk(), None);
-            self.context
-                .device
                 .destroy_image_view(self.image_view.vk(), None);
         }
         let allocation = unsafe { ManuallyDrop::take(&mut self.image_memory) };
-        self.context.free_image(self.image, allocation);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_convert_rgb_to_rgba_single_pixel() {
-        let rgb_data = vec![255, 128, 64];
-        let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
-
-        assert_eq!(result.len(), 4);
-        assert_eq!(result[0], 255);
-        assert_eq!(result[1], 128);
-        assert_eq!(result[2], 64);
-        assert_eq!(result[3], 255);
-    }
-
-    #[test]
-    fn test_convert_rgb_to_rgba_multiple_pixels() {
-        let rgb_data = vec![255, 0, 0, 0, 255, 0, 0, 0, 255];
-        let result = Texture::convert_rgb_to_rgba(&rgb_data, 3, 1);
-
-        assert_eq!(result.len(), 12);
-        assert_eq!(result[0], 255);
-        assert_eq!(result[1], 0);
-        assert_eq!(result[2], 0);
-        assert_eq!(result[3], 255);
-        assert_eq!(result[4], 0);
-        assert_eq!(result[5], 255);
-        assert_eq!(result[6], 0);
-        assert_eq!(result[7], 255);
-        assert_eq!(result[8], 0);
-        assert_eq!(result[9], 0);
-        assert_eq!(result[10], 255);
-        assert_eq!(result[11], 255);
-    }
-
-    #[test]
-    fn test_convert_rgb_to_rgba_2x2() {
-        let rgb_data = vec![255, 0, 0, 0, 255, 0, 0, 0, 255, 128, 128, 128];
-        let result = Texture::convert_rgb_to_rgba(&rgb_data, 2, 2);
-
-        assert_eq!(result.len(), 16);
-        assert_eq!(&result[12..16], &[128, 128, 128, 255]);
-    }
-
-    #[test]
-    fn test_convert_rgb_to_rgba_capacity() {
-        let rgb_data = vec![100, 150, 200];
-        let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
-
-        assert_eq!(result.capacity(), 4);
-    }
-
-    #[test]
-    fn test_convert_rgb_to_rgba_empty() {
-        let rgb_data: Vec<u8> = vec![];
-        let result = Texture::convert_rgb_to_rgba(&rgb_data, 0, 0);
-
-        assert_eq!(result.len(), 0);
-    }
-
-    #[test]
-    fn test_convert_rgb_to_rgba_preserves_black() {
-        let rgb_data = vec![0, 0, 0];
-        let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
-
-        assert_eq!(result, vec![0, 0, 0, 255]);
-    }
-
-    #[test]
-    fn test_convert_rgb_to_rgba_preserves_white() {
-        let rgb_data = vec![255, 255, 255];
-        let result = Texture::convert_rgb_to_rgba(&rgb_data, 1, 1);
-
-        assert_eq!(result, vec![255, 255, 255, 255]);
+        if let Some(allocation) = self.context.retire_upload_image(self.image, allocation) {
+            self.context.free_image(self.image, allocation);
+        }
     }
 }

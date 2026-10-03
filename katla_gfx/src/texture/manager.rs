@@ -105,17 +105,6 @@ impl TextureManager {
         self.create_rgba(1, 1, &color)
     }
 
-    /// Create a texture from RGB data (converts to RGBA internally).
-    pub fn create_from_rgb(
-        &mut self,
-        width: u32,
-        height: u32,
-        rgb_data: &[u8],
-    ) -> Result<TextureHandle, crate::error::RendererError> {
-        let rgba_data = Texture::convert_rgb_to_rgba(rgb_data, width, height);
-        self.create_rgba(width, height, &rgba_data)
-    }
-
     /// Create an empty texture (no initial data).
     ///
     /// Useful for render targets or textures that will be filled later.
@@ -269,18 +258,6 @@ impl TextureManager {
                     detail: format!("{handle:?} in TextureManager::update_data"),
                 })?;
         texture.update_data(data)
-    }
-
-    /// Resize a texture with new dimensions and data.
-    ///
-    /// This recreates the internal image and updates the image view.
-    /// Any registered descriptors are automatically updated.
-    pub fn resize(&mut self, handle: TextureHandle, width: u32, height: u32, data: &[u8]) -> bool {
-        if let Some(texture) = self.get_texture_mut(handle) {
-            texture.resize(width, height, data)
-        } else {
-            false
-        }
     }
 
     /// Remove a bindless slot registration.

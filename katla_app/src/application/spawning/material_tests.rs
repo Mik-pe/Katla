@@ -61,6 +61,12 @@ impl Fixture {
 #[path = "alpha_tests.rs"]
 mod alpha_tests;
 
+#[path = "image_tests.rs"]
+mod image_tests;
+
+#[path = "import_benchmark.rs"]
+mod import_benchmark;
+
 #[path = "primitive_tests.rs"]
 mod primitive_tests;
 
@@ -110,7 +116,11 @@ fn test_native_material_defaults_import_factors_and_texture_color_spaces() {
     model.primitives[0].material.emission_texture = Some(0);
     model.primitives[0].material.normal_texture = Some(0);
     model.images.push(image);
-    let upload = app.upload_gltf_textures(&model.images, &model.primitives[0].material);
+    let upload = app.upload_gltf_textures(
+        &fixture.0.join("mesh.gltf"),
+        &model.images,
+        &model.primitives[0].material,
+    );
     assert_eq!(upload.handles.len(), 2);
     let color_texture = upload.emission;
     let data_texture = upload.textures.normal;
@@ -240,7 +250,11 @@ fn test_native_material_defaults_import_factors_and_texture_color_spaces() {
         width: 1,
         height: 1,
     };
-    let upload = app.upload_gltf_textures(&model.images, &model.primitives[0].material);
+    let upload = app.upload_gltf_textures(
+        &fixture.0.join("malformed.gltf"),
+        &model.images,
+        &model.primitives[0].material,
+    );
     assert!(upload.textures.normal.is_none());
     assert!(upload.handles.is_empty());
     graph.cleanup();

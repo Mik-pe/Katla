@@ -19,7 +19,10 @@ impl MetalRenderer {
             .context
             .create_texture(desc)
             .inspect_err(|_| self.texture_uploads.record_failure())?;
-        let bindless_slot = if desc.depth == 1 && desc.array_layers == 1 {
+        let bindless_slot = if desc.depth == 1
+            && desc.array_layers == 1
+            && desc.usage.contains(crate::texture::TextureUsage::SAMPLED)
+        {
             Some(
                 self.bindless_manager
                     .register_texture(&texture.inner)

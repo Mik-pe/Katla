@@ -217,7 +217,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
             );
             assert_eq!(app.gpu_resource_tracker.mesh_count(), 2);
             assert_eq!(app.gpu_resource_tracker.material_count(), 2);
-            assert_eq!(app.gpu_resource_tracker.texture_count(), 7);
+            assert_eq!(app.gpu_resource_tracker.texture_count(), 3);
             assert!(
                 app.world
                     .query_ref::<&DrawableComponent>()
@@ -367,7 +367,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
         before.entities
     );
     assert_eq!(app.gpu_resource_tracker.mesh_count(), 2);
-    assert_eq!(app.gpu_resource_tracker.texture_count(), 7);
+    assert_eq!(app.gpu_resource_tracker.texture_count(), 3);
     let mut original = crate::scene::Scene::new("Whole model input");
     let mut desc = crate::scene::EntityDescriptor::new(
         crate::scene::SceneEntityId(1),

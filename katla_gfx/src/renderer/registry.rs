@@ -405,7 +405,7 @@ impl MeshAsset {
 /// `TextureHandle::NONE` (the default) means "use the role's fallback
 /// texture"; stale handles also resolve to the fallback rather than to
 /// whatever now occupies a recycled slot.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MaterialTextures {
     /// Base-color (albedo) texture.
     pub albedo: crate::handle::TextureHandle,

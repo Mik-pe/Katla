@@ -211,7 +211,8 @@ suite includes them too. The existing Metal 4 capability-gated document step
 also runs the native `material_tests` fixtures, including static/skinned
 per-primitive surfaces, textureless/textured emission, scaled normals, occlusion
 strength, alpha coverage/compositing across color/depth/shadow/picking, mirrored
-faces, second-skin selection, scene round-trip/rollback and
+faces, integer/HDR image fidelity, filtered mip regeneration, weak image sharing,
+second-skin selection, scene round-trip/rollback and
 resource retirement. The primitive probes use API validation. The full PBR
 compile fixture disables Vulkan validation on the affected Intel driver; Metal
 requires its debug environment.
@@ -231,3 +232,15 @@ for current import and surface-feature limits. Its Vulkan PBR compilation disabl
 Khronos validation because of the known Intel compiler crash; passing this fixture
 does not establish validation-layer acceptance or native Metal acceptance on a
 machine without a Metal 4 device.
+
+Linux CI runs the dedicated image-fidelity and submission/early-retirement
+fixtures with native Vulkan validation. They use small shaders and are independent
+of the full PBR compiler. Full-asset timing evidence is retained in the
+[import study](material-import-study/README.md); its opt-in benchmark does not
+assert machine-dependent performance thresholds.
+
+Local submission/retirement acceptance:
+
+```bash
+cargo test -p katla_gfx --lib test_native_image_upload_failures --locked -- --ignored --nocapture
+```

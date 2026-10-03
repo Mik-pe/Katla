@@ -187,6 +187,7 @@ mod tests {
             (ImageFormat::R32Sfloat, 4),
             (ImageFormat::R32Uint, 4),
             (ImageFormat::R16G16B16A16Sfloat, 8),
+            (ImageFormat::R16G16B16A16Unorm, 8),
         ] {
             let desc = TextureDescriptor::new(7, 3, format);
             let layout = TextureUploadRegion::base(&desc)

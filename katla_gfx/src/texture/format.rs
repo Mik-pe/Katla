@@ -11,6 +11,8 @@ pub enum ImageFormat {
     Rg8Unorm,
     R32Sfloat,
     R32Uint,
+    /// Four normalized unsigned 16-bit channels.
+    R16G16B16A16Unorm,
     R16G16B16A16Sfloat,
     /// BC1 RGBA blocks, eight bytes per 4×4 texels.
     Bc1RgbaUnorm,
@@ -34,6 +36,7 @@ impl From<ImageFormat> for ash::vk::Format {
             ImageFormat::Rg8Unorm => ash::vk::Format::R8G8_UNORM,
             ImageFormat::R32Sfloat => ash::vk::Format::R32_SFLOAT,
             ImageFormat::R32Uint => ash::vk::Format::R32_UINT,
+            ImageFormat::R16G16B16A16Unorm => ash::vk::Format::R16G16B16A16_UNORM,
             ImageFormat::R16G16B16A16Sfloat => ash::vk::Format::R16G16B16A16_SFLOAT,
             ImageFormat::D32Sfloat => ash::vk::Format::D32_SFLOAT,
             ImageFormat::D32SfloatS8Uint => ash::vk::Format::D32_SFLOAT_S8_UINT,
@@ -56,7 +59,7 @@ impl ImageFormat {
             | ImageFormat::B8G8R8A8Srgb
             | ImageFormat::R32Sfloat
             | ImageFormat::R32Uint => 4,
-            ImageFormat::R16G16B16A16Sfloat => 8,
+            ImageFormat::R16G16B16A16Unorm | ImageFormat::R16G16B16A16Sfloat => 8,
             ImageFormat::D32SfloatS8Uint => 8,
             ImageFormat::D32Sfloat | ImageFormat::D24UnormS8Uint => 4,
         }
@@ -77,6 +80,7 @@ impl TryFrom<ash::vk::Format> for ImageFormat {
             ash::vk::Format::R8G8_UNORM => Ok(ImageFormat::Rg8Unorm),
             ash::vk::Format::R32_SFLOAT => Ok(ImageFormat::R32Sfloat),
             ash::vk::Format::R32_UINT => Ok(ImageFormat::R32Uint),
+            ash::vk::Format::R16G16B16A16_UNORM => Ok(ImageFormat::R16G16B16A16Unorm),
             ash::vk::Format::R16G16B16A16_SFLOAT => Ok(ImageFormat::R16G16B16A16Sfloat),
             ash::vk::Format::D32_SFLOAT => Ok(ImageFormat::D32Sfloat),
             ash::vk::Format::D32_SFLOAT_S8_UINT => Ok(ImageFormat::D32SfloatS8Uint),
@@ -107,6 +111,7 @@ impl ImageFormat {
                 | Self::B8G8R8A8Srgb
                 | Self::R8Unorm
                 | Self::Rg8Unorm
+                | Self::R16G16B16A16Unorm
                 | Self::R16G16B16A16Sfloat
         )
     }
@@ -133,6 +138,7 @@ mod tests {
             (ImageFormat::R32Sfloat, [1, 1], 4),
             (ImageFormat::R32Uint, [1, 1], 4),
             (ImageFormat::R16G16B16A16Sfloat, [1, 1], 8),
+            (ImageFormat::R16G16B16A16Unorm, [1, 1], 8),
             (ImageFormat::D32SfloatS8Uint, [1, 1], 8),
         ] {
             assert_eq!(format.block_extent(), block);

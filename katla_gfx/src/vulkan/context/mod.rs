@@ -121,6 +121,8 @@ pub(crate) struct PendingSubmission {
     fence: vk::Fence,
     command_buffer: super::CommandBuffer,
     staging: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+    image: Option<vk::Image>,
+    retired_image: Option<(crate::sync::VkImage, gpu_allocator::vulkan::Allocation)>,
 }
 
 pub struct VulkanFrameCtx {
@@ -497,7 +499,45 @@ impl VulkanContext {
                 fence,
                 command_buffer,
                 staging,
+                image: None,
+                retired_image: None,
             });
+    }
+
+    pub(crate) fn defer_image_upload(
+        &self,
+        fence: vk::Fence,
+        command_buffer: super::CommandBuffer,
+        staging: Option<(vk::Buffer, gpu_allocator::vulkan::Allocation)>,
+        image: vk::Image,
+    ) {
+        self.pending_submissions
+            .borrow_mut()
+            .push(PendingSubmission {
+                fence,
+                command_buffer,
+                staging,
+                image: Some(image),
+                retired_image: None,
+            });
+    }
+
+    pub(crate) fn retire_upload_image(
+        &self,
+        image: crate::sync::VkImage,
+        allocation: gpu_allocator::vulkan::Allocation,
+    ) -> Option<gpu_allocator::vulkan::Allocation> {
+        let mut submissions = self.pending_submissions.borrow_mut();
+        if let Some(submission) = submissions
+            .iter_mut()
+            .rev()
+            .find(|submission| submission.image == Some(image.vk()))
+        {
+            submission.retired_image = Some((image, allocation));
+            None
+        } else {
+            Some(allocation)
+        }
     }
 
     /// Release one-time submissions whose fences prove completion.
@@ -532,6 +572,9 @@ impl VulkanContext {
         }
         if let Some((buffer, allocation)) = entry.staging {
             self.free_buffer(buffer, allocation);
+        }
+        if let Some((image, allocation)) = entry.retired_image {
+            self.free_image(image, allocation);
         }
     }
 

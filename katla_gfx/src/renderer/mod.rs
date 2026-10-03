@@ -435,6 +435,7 @@ impl VulkanRenderer {
         if let Err(e) = unsafe { self.context.device.device_wait_idle() } {
             error!("device_wait_idle failed: {e}");
         } else {
+            self.context.drain_all_submissions();
             self.context.graph_buffer_history.borrow_mut().clear();
         }
     }
@@ -812,7 +813,7 @@ impl VulkanRenderer {
         self.retirements.snapshot()
     }
 
-    /// Report the number of staged mesh uploads submitted but not yet
+    /// Report the number of staged buffer/image uploads submitted but not yet
     /// observed complete (diagnostics and tests). They release at frame
     /// boundaries.
     pub fn pending_staged_uploads(&self) -> usize {

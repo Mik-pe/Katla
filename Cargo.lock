@@ -2323,6 +2323,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "gltf",
+ "half",
  "image",
  "itertools 0.14.0",
  "katla_agent",

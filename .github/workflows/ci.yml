@@ -66,6 +66,11 @@ jobs:
       - name: Test graphics library
         run: cargo test -p katla_gfx --lib --locked --quiet -- --test-threads=1
 
+      - name: Validate image fidelity and upload retirement on Vulkan
+        run: |
+          cargo test -p katla_app --lib image_tests::test_native_import_image_precision_mips_and_shared_lifetimes --all-features --locked -- --ignored --test-threads=1
+          cargo test -p katla_gfx --lib test_native_image_upload_failures --locked -- --ignored --test-threads=1
+
       - name: Test agent-driven animation fades on Vulkan
         run: |
           cargo test -p katla_app -p katla_agent --lib --all-features --locked animation

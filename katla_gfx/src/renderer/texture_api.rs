@@ -4,7 +4,7 @@ impl VulkanRenderer {
     /// Create a texture from a descriptor and pixel data.
     ///
     /// This is the primary method for texture creation. The texture is
-    /// automatically registered with the bindless system.
+    /// registered with the bindless system when its usage permits sampling.
     ///
     /// # Arguments
     /// * `desc` - Texture descriptor specifying dimensions, format, and usage
@@ -28,17 +28,15 @@ impl VulkanRenderer {
     ) -> Result<TextureHandle, crate::error::RendererError> {
         let handle = self.texture_manager.create(desc, data)?;
 
-        if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
+        if desc.usage.contains(crate::texture::TextureUsage::SAMPLED)
+            && let Some(texture) = self.texture_manager.get_texture_rc(handle)
+        {
             let slot = match self
                 .bindless_manager
                 .register_texture(texture.image_view().vk())
             {
                 Ok(slot) => slot,
                 Err(error) => {
-                    // Registration failed after insertion: remove the texture
-                    // so failed creation retains nothing half-created. It was
-                    // never exposed to a submission, so freeing immediately
-                    // is correct.
                     let _ = self.texture_manager.destroy(handle);
                     return Err(error);
                 }
@@ -57,25 +55,7 @@ impl VulkanRenderer {
         &mut self,
         color: [u8; 4],
     ) -> Result<TextureHandle, crate::error::RendererError> {
-        let handle = self.texture_manager.create_solid(color)?;
-
-        if let Some(texture) = self.texture_manager.get_texture_rc(handle) {
-            let slot = match self
-                .bindless_manager
-                .register_texture(texture.image_view().vk())
-            {
-                Err(error) => {
-                    // Same rollback as `create_texture`: never exposed to a
-                    // submission, so freeing immediately is correct.
-                    let _ = self.texture_manager.destroy(handle);
-                    return Err(error);
-                }
-                Ok(slot) => slot,
-            };
-            self.texture_manager.register_bindless_slot(handle, slot);
-        }
-
-        Ok(handle)
+        self.create_texture(&TextureDescriptor::rgba8_srgb(1, 1), &color)
     }
 
     /// Get the descriptor-safe fallback texture.
