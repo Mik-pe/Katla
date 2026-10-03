@@ -517,9 +517,9 @@ fn tool_call_to_scene_op(tool_call: &ToolCall) -> Result<SceneOp, String> {
                 .map_err(|e| format!("Invalid query_entities args: {e}"))?;
             Ok(SceneOp::QueryEntities {
                 component_filter: args.component_filter,
-                name_filter: None,
-                position: None,
-                radius: None,
+                name_filter: args.name_filter,
+                position: args.position,
+                radius: args.radius,
                 limit: args.limit.map(|n| n as usize),
             })
         }
@@ -1220,6 +1220,20 @@ fn generate_scene(description: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_material_discovery_query_preserves_name_and_spatial_filters() {
+        let call = ToolCall {
+            id: "material-discovery".into(),
+            name: "query_entities".into(),
+            arguments: serde_json::json!({"name_filter":"Porcelain","position":[1.0,2.0,3.0],"radius":4.0,"limit":8}),
+        };
+        assert!(
+            matches!(tool_call_to_scene_op(&call).unwrap(), SceneOp::QueryEntities {
+            name_filter:Some(name), position:Some([1.0,2.0,3.0]), radius:Some(4.0), limit:Some(8), ..
+        } if name == "Porcelain")
+        );
+    }
 
     #[test]
     fn test_teen_room_fixture_placement_clearances_and_scene_tool_undo() {

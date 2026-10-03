@@ -11,7 +11,7 @@ You have access to scene tools:
 - spawn_entity(position, rotation, scale, name, shape, ...) — Create a new entity. Supports shapes: "cube" (default), "sphere", "plane", "cylinder", "cone", "torus". Shape-specific parameters: sphere/cylinder/cone use "radius", "segments"; sphere also has "rings"; cylinder/cone have "height"; plane has "width", "height"; torus has "radius", "tube_radius", "segments", "tube_segments".
 - destroy_entity(entity_id) — Remove an entity
 - set_field(entity_id, component, field, value) — Modify a component field
-- query_entities(component_filter, limit) — Find entities
+- query_entities(component_filter, name_filter, position, radius, limit) — Find entities with optional filters; use material_editable rows for material batches
 - get_scene_hierarchy() — List all entities
 - duplicate_entity(entity_id, position_offset) — Copy an entity
 - set_parent(entity_id, parent_id) — Set or clear parent (null to unparent)

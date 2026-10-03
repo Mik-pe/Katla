@@ -40,6 +40,9 @@ pub struct SetFieldArgs {
 #[serde(default)]
 pub struct QueryEntitiesArgs {
     pub component_filter: Option<String>,
+    pub name_filter: Option<String>,
+    pub position: Option<[f32; 3]>,
+    pub radius: Option<f32>,
     pub limit: Option<u64>,
 }
 

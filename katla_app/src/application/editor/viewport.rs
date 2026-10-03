@@ -178,6 +178,7 @@ pub(super) fn snapshot(app: &Application, limit: usize) -> Value {
             .map(|n| n.name.clone());
         candidates.push((id.id(), json!({
             "entity_id": id.id().to_string(), "name": name,
+            "material_editable": true,
             "world_bounds": {"center": array(bounds.center), "extent": array(bounds.extent)},
             "distance": (bounds.center-position).length(),
             "screen_rect": project_bounds(bounds, vp, proj[3][2]),
@@ -188,14 +189,14 @@ pub(super) fn snapshot(app: &Application, limit: usize) -> Value {
     }
     candidates.sort_by_key(|(id, _)| *id);
     let total = candidates.len();
-    candidates.truncate(limit.clamp(1, 256));
+    candidates.truncate(limit.min(256));
     json!({
         "frame": app.frame_count, "captured_unix_ms": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0),
         "camera": {"position": array(position), "direction": array(direction), "view_matrix": view.to_array(), "projection_matrix": proj.to_array(),
             "orbit": app.world.get_component::<OrbitCameraControllerComponent>(app.camera.entity).map(|c| json!({"target": array(c.target), "yaw": c.yaw, "pitch": c.pitch, "distance": c.distance}))},
         "selected_entity_id": app.editor.editor_ui.selected_entity.map(|id| id.id().to_string()),
         "candidates": candidates.into_iter().map(|(_, value)| value).collect::<Vec<_>>(),
-        "candidate_count": total, "truncated": total > limit.clamp(1, 256), "renderables_without_bounds": missing_bounds,
+        "candidate_count": total, "truncated": total > limit.min(256), "renderables_without_bounds": missing_bounds,
         "coordinates": "normalized image coordinates: top-left (0,0), bottom-right (1,1); rectangles conservatively clipped to image",
         "visibility_contract": "Bounds intersect the render frustum; occlusion and room membership are unknown. GPU center/pointer picks identify the foremost pickable draw at those pixels only. No selection is needed. Use image and scene queries; clarify ambiguous references before edits.",
         "game_camera_modified": false,

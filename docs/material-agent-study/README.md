@@ -24,3 +24,15 @@ A follow-up should repeat the task against an isolated binary after those change
 use a fresh agent with schema discovery, and preserve its transcript and native
 frames. Numeric GPU checks remain the rendering correctness gate; the agent run
 measures discoverability, authoring and recovery in the actual interface.
+
+The [interface follow-up](interface/observations.md) used the same agent with its
+prior study context and a private editor built from `90621117` plus the material
+interface changes committed with this report. Shader sources stayed fixed. Its
+15 calls and four native frames verify capability discovery, before/current edit
+receipts, editable target flags, structured failures and zero-candidate images.
+This is a contextual follow-up, not a fresh participant or controlled comparison.
+
+The separate native [authoring acceptance](interface/acceptance.json) passed:
+material edits changed 616 pixels; undo restored the exact original image; invalid
+batches preserved valid members; seven room parts and scene save/load succeeded.
+The recorded paths and submission IDs identify this disposable session.

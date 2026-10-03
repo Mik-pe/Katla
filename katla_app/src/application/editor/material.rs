@@ -11,13 +11,7 @@ use crate::components::{DrawableComponent, EditorHidden};
 
 /// Read authoring values in sRGB space, leaving runtime GPU handles opaque.
 pub(crate) fn values(drawable: &DrawableComponent) -> MaterialValues {
-    let c = drawable.color.unwrap_or(Color::WHITE).to_srgb();
-    MaterialValues {
-        base_color: [c.r, c.g, c.b, c.a],
-        metallic: drawable.metallic,
-        roughness: drawable.roughness,
-        ao: drawable.ao,
-    }
+    Snapshot::read(drawable).values()
 }
 
 #[derive(Clone, Copy)]
@@ -29,6 +23,15 @@ struct Snapshot {
 }
 
 impl Snapshot {
+    fn values(self) -> MaterialValues {
+        let c = self.color.unwrap_or(Color::WHITE).to_srgb();
+        MaterialValues {
+            base_color: [c.r, c.g, c.b, c.a],
+            metallic: self.metallic,
+            roughness: self.roughness,
+            ao: self.ao,
+        }
+    }
     fn read(d: &DrawableComponent) -> Self {
         Self {
             color: d.color,
@@ -167,13 +170,13 @@ pub(in crate::application) fn finish_drag(app: &mut Application) {
 fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCommand>), String> {
     match op {
         MaterialOp::Presets => Ok((
-            json!({"presets":MaterialPreset::ALL.map(|p| json!({"preset":p,"label":p.label(),"values":p.values()})), "color_space":"srgb", "scope":"Per-object multipliers; textures and mesh geometry are preserved."}),
+            json!({"presets":MaterialPreset::ALL.map(|p| json!({"preset":p,"label":p.label(),"values":p.values()})), "color_space":"srgb", "scope":"Per-object multipliers; textures and mesh geometry are preserved.", "capabilities":capabilities()}),
             None,
         )),
         MaterialOp::Inspect { entity_id } => {
             let id = entity(world, &entity_id)?;
             Ok((
-                json!({"entity_id":entity_id,"values":values(drawable(world,id)?),"color_space":"srgb"}),
+                json!({"entity_id":entity_id,"values":values(drawable(world,id)?),"color_space":"srgb","capabilities":capabilities()}),
                 None,
             ))
         }
@@ -240,13 +243,25 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
             }
             let mut command = MaterialCommand { edits };
             command.execute(world).map_err(|e| e.to_string())?;
-            let results: Vec<_> = command.edits.iter().map(|(id,_,_)| Ok(json!({"entity_id":id.id().to_string(),"values":values(drawable(world,*id)?)}))).collect::<Result<_,String>>()?;
+            let results: Vec<_> = command.edits.iter().map(|(id,before,_)| Ok(json!({"entity_id":id.id().to_string(),"before":before.values(),"values":values(drawable(world,*id)?)}))).collect::<Result<_,String>>()?;
             Ok((
-                json!({"materials":results,"color_space":"srgb"}),
+                json!({"materials":results,"color_space":"srgb","capabilities":capabilities()}),
                 Some(command),
             ))
         }
     }
+}
+
+fn capabilities() -> Value {
+    json!({
+        "base_color":"sRGB RGB and linear alpha texture multiplier",
+        "alpha_changes_render_mode":false,
+        "emission_editable":false,
+        "textures_editable":false,
+        "presets":"isotropic metallic/roughness factors; no texture or directional brushing",
+        "maximum_batch_size":256,
+        "batch_atomic":true
+    })
 }
 
 #[cfg(test)]
@@ -280,7 +295,17 @@ mod tests {
         );
         assert_eq!(drawable(&world, a).unwrap().roughness, 0.5);
         assert!(apply(&mut world, set(vec![a.id().to_string()], -0.1)).is_err());
-        let (_, undo) = apply(&mut world, set(vec![a.id().to_string()], 0.2)).unwrap();
+        let (receipt, undo) = apply(&mut world, set(vec![a.id().to_string()], 0.2)).unwrap();
+        assert_eq!(receipt["materials"][0]["before"]["roughness"], 0.5);
+        assert!(
+            (receipt["materials"][0]["values"]["roughness"]
+                .as_f64()
+                .unwrap()
+                - 0.2)
+                .abs()
+                < 1e-6
+        );
+        assert_eq!(receipt["capabilities"]["alpha_changes_render_mode"], false);
         assert_eq!(drawable(&world, a).unwrap().roughness, 0.2);
         let mut undo = undo.unwrap();
         undo.undo(&mut world).unwrap();

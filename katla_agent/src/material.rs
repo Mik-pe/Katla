@@ -112,6 +112,69 @@ pub enum MaterialOp {
     },
 }
 
+impl MaterialOp {
+    /// Shared input contract for MCP and the in-editor co-creator.
+    pub fn tool_schema() -> serde_json::Value {
+        serde_json::Value::Object(Self::schema_object())
+    }
+
+    pub(crate) fn schema_object() -> serde_json::Map<String, serde_json::Value> {
+        use serde_json::json;
+        let properties = serde_json::Map::from_iter([
+            (
+                "action".into(),
+                json!({"type":"string","enum":["presets","inspect","set"]}),
+            ),
+            (
+                "entity_id".into(),
+                json!({"type":"string","pattern":"^[0-9]+$","description":"Decimal generational ID returned by scene queries; required for inspect"}),
+            ),
+            (
+                "entity_ids".into(),
+                json!({"type":"array","items":{"type":"string","pattern":"^[0-9]+$"},"minItems":1,"maxItems":256,"uniqueItems":true}),
+            ),
+            (
+                "preset".into(),
+                json!({"type":"string","enum":["plaster","oak","concrete","ceramic","brushed_metal","fabric"],"description":"Isotropic PBR factor preset; textures and directional brushing are not installed"}),
+            ),
+            (
+                "base_color".into(),
+                json!({"type":"array","items":{"type":"number","minimum":0,"maximum":1},"minItems":4,"maxItems":4,"description":"sRGB RGB and linear alpha multiplier; alpha does not switch render mode"}),
+            ),
+            (
+                "metallic".into(),
+                json!({"type":"number","minimum":0,"maximum":1}),
+            ),
+            (
+                "roughness".into(),
+                json!({"type":"number","minimum":0,"maximum":1}),
+            ),
+            (
+                "ao".into(),
+                json!({"type":"number","minimum":0,"maximum":1}),
+            ),
+        ]);
+        let branches: Vec<_> = [
+            ("presets", vec!["action"], vec!["action"]),
+            ("inspect", vec!["action", "entity_id"], vec!["action", "entity_id"]),
+            ("set", vec!["action", "entity_ids", "preset", "base_color", "metallic", "roughness", "ao"], vec!["action", "entity_ids"]),
+        ].into_iter().map(|(action, allowed, required)| {
+            let mut fields: serde_json::Map<_, _> = properties.iter()
+                .filter(|(name, _)| allowed.contains(&name.as_str()))
+                .map(|(name, value)| (name.clone(), value.clone())).collect();
+            fields.insert("action".into(), json!({"const":action}));
+            json!({"type":"object","properties":fields,"required":required,"additionalProperties":false})
+        }).collect();
+        serde_json::Map::from_iter([
+            ("type".into(), json!("object")),
+            ("properties".into(), json!(properties)),
+            ("required".into(), json!(["action"])),
+            ("additionalProperties".into(), json!(false)),
+            ("oneOf".into(), json!(branches)),
+        ])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

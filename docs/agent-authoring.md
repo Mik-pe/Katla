@@ -4,6 +4,8 @@ Connect to the running editor using [shared editor MCP](shared-editor-view.md).
 Author in edit mode; use `simulation` for gameplay verification. `editor_view` returns a committed viewport PNG;
 use it before editing and again to verify the result. Native Vulkan/Metal output
 is the visual authority. Geometry queries alone cannot establish occlusion.
+`editor_view observe` with `limit: 0` returns the native image and camera/picking
+metadata without candidate rows. The candidate count and truncation remain visible.
 
 For an authored example, launch `cargo run -- --scene assets/scenes/material-studio.katla`.
 Select a material sphere to explore presets and live surface controls alongside
@@ -15,6 +17,8 @@ Use `query_entities` with `name_filter`, `component_filter` or a world-space
 `position` and `radius`. Returned generational IDs are **decimal strings**: retain
 them verbatim. `get_scene_hierarchy` gives parent relationships;
 `list_available_components` and `get_component_attributes` expose editable fields.
+Query rows and viewport candidates expose `material_editable`; choose true rows
+before building a material batch.
 
 `search_assets` searches recursively under the discovered resource root. All
 whitespace-separated words must match the relative path, case-insensitively.
@@ -53,6 +57,9 @@ are flat PBR tints, rather than scanned wood, concrete or fabric textures.
 ```
 
 Available presets: `plaster`, `oak`, `concrete`, `ceramic`, `brushed_metal`, `fabric`.
+Preset discovery and inspection return `capabilities`, including alpha's current
+effect, unavailable emission/texture editing and the batch contract. Presets supply
+isotropic scalar factors; `brushed_metal` installs no directional brushing.
 Explicit fields override the preset. Omitting the preset patches only supplied
 fields. `base_color` is sRGB RGBA; `metallic`, `roughness` and `ao` are linear
 factors. Every number must be finite and in 0..=1. Batch edits accept 1–256
@@ -148,6 +155,11 @@ counters with source submission, so they can lag the current frame.
 base color, metallic, roughness and occlusion through the existing v3 format.
 `save_scene` writes to the explicit destination you supply; loading a scene
 replaces the current document and clears its history.
+
+Material MCP results include structured content; application failures set
+`isError: true` with `success: false` and a message. Successful set receipts report
+each affected ID, its `before` factors and resulting `values`. Invalid argument
+errors are handled by the MCP transport before an application operation runs.
 
 `scripts/validate_authoring.py` exercises asset discovery, room geometry, batch
 material preflight, committed pixel changes, undo and scene save/reload in a

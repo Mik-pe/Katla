@@ -68,7 +68,7 @@ pub(crate) fn poll(app: &mut crate::application::Application) {
                     app.editor
                         .mcp_state
                         .awaiting_view
-                        .push((req, limit.clamp(1, 256)));
+                        .push((req, limit.min(256)));
                     continue;
                 }
                 Err(error) => McpResponse { result: Err(error) },

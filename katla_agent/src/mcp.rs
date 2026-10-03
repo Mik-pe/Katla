@@ -535,10 +535,19 @@ struct EditorViewParams {
     op: EditorViewOp,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize)]
 struct MaterialParams {
     #[serde(flatten)]
     op: crate::material::MaterialOp,
+}
+
+impl JsonSchema for MaterialParams {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "MaterialParams".into()
+    }
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        crate::material::MaterialOp::schema_object().into()
+    }
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -608,13 +617,22 @@ impl KatlaMcpServer {
 
     #[rmcp::tool(
         name = "material",
-        description = "Discover presets, inspect an object material, or set PBR factors on 1..256 mesh objects as one undoable batch. Use action presets first. base_color is sRGB RGBA in 0..1. Partial patches preserve other factors; preset supplies defaults, explicit factors override it. Textures are preserved. Use query_entities to find objects and editor_view to see results."
+        description = "Discover presets and supported limits, inspect an object material, or set PBR factors on 1..256 mesh objects as one undoable batch. Use action presets first. base_color uses sRGB RGB and linear alpha in 0..1; alpha does not switch render mode. Presets provide isotropic factors without textures or directional brushing. Partial patches preserve other factors; preset supplies defaults, explicit factors override it. Use query_entities material_editable flags to choose targets and editor_view to verify native results."
     )]
     async fn material(
         &self,
         Parameters(params): Parameters<MaterialParams>,
-    ) -> Json<McpToolResult> {
-        self.forward_op(McpOp::Material(params.op)).await
+    ) -> rmcp::model::CallToolResult {
+        let result = self.forward_op(McpOp::Material(params.op)).await.0;
+        if result.success {
+            rmcp::model::CallToolResult::structured(
+                serde_json::json!({"success":true,"message":result.message,"data":result.data}),
+            )
+        } else {
+            rmcp::model::CallToolResult::structured_error(
+                serde_json::json!({"success":false,"message":result.message}),
+            )
+        }
     }
 
     #[rmcp::tool(
@@ -722,7 +740,7 @@ impl KatlaMcpServer {
 
     #[rmcp::tool(
         name = "query_entities",
-        description = "Query entities by component type"
+        description = "Find entities by optional component type, name substring, or world position and radius in meters. Results include material_editable flags; choose true rows for material batches. No filter lists the scene. Bounds distance is used when available; this query makes no occlusion claim."
     )]
     async fn query_entities(
         &self,
@@ -971,6 +989,11 @@ mod animation_tests {
     fn test_material_mcp_schema_has_object_root() {
         let schema = serde_json::to_value(schemars::schema_for!(MaterialParams)).unwrap();
         assert_eq!(schema["type"], "object");
+        assert_eq!(schema["additionalProperties"], false);
+        assert_eq!(schema["oneOf"].as_array().unwrap().len(), 3);
+        for branch in schema["oneOf"].as_array().unwrap() {
+            assert_eq!(branch["additionalProperties"], false);
+        }
         let params: MaterialParams = serde_json::from_value(
             serde_json::json!({"action":"set","entity_ids":["4294967302"],"roughness":0.3}),
         )
@@ -982,6 +1005,38 @@ mod animation_tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn test_material_mcp_application_errors_are_structured_tool_errors() {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            use std::future::Future;
+            let (server, bridge, _shutdown) = McpBridge::new();
+            let mut call = Box::pin(server.material(Parameters(MaterialParams {
+                op: crate::material::MaterialOp::Inspect {
+                    entity_id: "42".into(),
+                },
+            })));
+            std::future::poll_fn(|cx| {
+                assert!(call.as_mut().poll(cx).is_pending());
+                std::task::Poll::Ready(())
+            })
+            .await;
+            bridge
+                .poll_requests()
+                .pop()
+                .unwrap()
+                .response_tx
+                .send(McpResponse {
+                    result: Err("Entity 42 has no rendered material".into()),
+                })
+                .unwrap();
+            let response = call.await;
+            assert_eq!(response.is_error, Some(true));
+            let data = response.structured_content.unwrap();
+            assert_eq!(data["success"], false);
+            assert_eq!(data["message"], "Entity 42 has no rendered material");
+        });
     }
 
     #[test]

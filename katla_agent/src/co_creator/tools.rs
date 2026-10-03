@@ -22,17 +22,8 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "material".into(),
-            description: "Discover presets, inspect a mesh material, or patch base_color (sRGB RGBA), metallic, roughness and ao in 0..1 on entity_ids as one undoable batch. Preset defaults can be overridden. Textures are preserved. IDs are decimal strings.".into(),
-            parameters: json!({"type":"object","properties":{
-                "action":{"type":"string","enum":["presets","inspect","set"]},
-                "entity_id":{"type":"string"},
-                "entity_ids":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":256},
-                "preset":{"type":"string","enum":["plaster","oak","concrete","ceramic","brushed_metal","fabric"]},
-                "base_color":{"type":"array","items":{"type":"number","minimum":0,"maximum":1},"minItems":4,"maxItems":4},
-                "metallic":{"type":"number","minimum":0,"maximum":1},
-                "roughness":{"type":"number","minimum":0,"maximum":1},
-                "ao":{"type":"number","minimum":0,"maximum":1}
-            },"required":["action"],"additionalProperties":false}),
+            description: "Discover presets and supported limits, inspect a mesh material, or patch base_color (sRGB RGB and linear alpha), metallic, roughness and ao in 0..1 on entity_ids as one undoable batch. Alpha does not switch render mode. Presets provide isotropic factors without textures or directional brushing. Explicit fields override presets. query_entities material_editable flags identify targets. IDs are decimal strings; verify native output with editor_view.".into(),
+            parameters: crate::material::MaterialOp::tool_schema(),
         },
         ToolDefinition {
             name: "search_assets".into(),
@@ -144,7 +135,7 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "query_entities".to_string(),
-            description: "Query entities by component type.".to_string(),
+            description: "Find entities by optional component type, name substring, or world-space position and radius. Results include material_editable flags; choose true rows for material batches. No filter lists the scene.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -152,12 +143,14 @@ pub fn build_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "string",
                         "description": "Component type name to filter by"
                     },
+                    "name_filter":{"type":"string","description":"Case-insensitive substring of the authored entity name"},
+                    "position":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3,"description":"World position in meters; supply radius too"},
+                    "radius":{"type":"number","minimum":0,"description":"Distance to bounds, or transform origin when bounds are absent; requires position"},
                     "limit": {
                         "type": "integer",
                         "description": "Max entities to return"
                     }
-                },
-                "required": ["component_filter"]
+                }
             }),
         },
         ToolDefinition {

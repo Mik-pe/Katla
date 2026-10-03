@@ -80,6 +80,7 @@ pub(super) fn execute(app: &Application, op: &SceneOp) -> Option<String> {
             }
         }
         rows.push(json!({ "entity_id": id.id().to_string(), "name": name,
+            "material_editable": app.world.get_component::<DrawableComponent>(id).is_some(),
             "position": transform.map(|t| t.transform.position.to_array()),
             "bounds": bounds.map(|b| json!({"center":b.center.to_array(),"extent":b.extent.to_array()})),
             "parent_id": app.world.get_component::<Parent>(id).map(|p|p.parent.id().to_string()),
