@@ -534,7 +534,9 @@ impl MetalPipelineCompiler {
                     .setDestinationRGBBlendFactor(objc2_metal::MTLBlendFactor::OneMinusSourceAlpha);
                 attachment.setRgbBlendOperation(objc2_metal::MTLBlendOperation::Add);
                 attachment.setSourceAlphaBlendFactor(objc2_metal::MTLBlendFactor::One);
-                attachment.setDestinationAlphaBlendFactor(objc2_metal::MTLBlendFactor::Zero);
+                attachment.setDestinationAlphaBlendFactor(
+                    objc2_metal::MTLBlendFactor::OneMinusSourceAlpha,
+                );
                 attachment.setAlphaBlendOperation(objc2_metal::MTLBlendOperation::Add);
             }
         }

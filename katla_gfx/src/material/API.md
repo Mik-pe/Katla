@@ -116,8 +116,8 @@ quantize to RGBA8. Malformed and floating-point images fail explicitly and log
 an optional-texture fallback; failed uploads retain the role's existing fallback
 and add no handle to resource tracking.
 
-This is not full glTF material support. Alpha modes/cutoffs, double-sided shading, UV sets and
-transforms, per-texture samplers and material extensions need dedicated support. Scene serialization
+UV sets and transforms, per-texture samplers and material extensions still need
+dedicated support. Scene serialization
 preserves editable base color, PBR factors and surface multipliers; texture assignment and standalone
 material assets are not yet editable/persisted. Unresolved work and acceptance
 criteria live in [TODO](../../../TODO.md#material-correctness).
@@ -136,8 +136,8 @@ Negative determinants reverse tangent handedness. Skinned frames use the
 combined model and blended joint transform. Static glTF baking follows the same
 contract. Singular transforms produce a finite fallback frame; they do not
 define a physically meaningful surface. Transforming the tangent frame does not
-change runtime triangle winding or culling state. Static import baking separately
-reverses winding for reflected node matrices.
+change runtime triangle winding. Application raster variants account for runtime
+reflections; static import baking separately reverses winding for reflected node matrices.
 
 ## Shader reload
 
@@ -219,3 +219,33 @@ The same static/skinned probes sample scaled normal maps, occlusion strength,
 textureless emission and sRGB emissive textures multiplied by linear RGB factors,
 before and after scene reconstruction. Native document tests cover HDR factor
 editing, gesture grouping, undo/redo and capture without sRGB conversion of emission.
+
+## Coverage and compositing
+
+The application preserves glTF `alphaMode`, `alphaCutoff` and `doubleSided`
+according to the [glTF coverage contract](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#alpha-coverage).
+OPAQUE ignores texture/factor alpha and writes full coverage. MASK discards
+sampled alpha times base alpha below its finite nonnegative cutoff, including
+cutoffs above one; accepted fragments write full coverage. BLEND discards zero
+alpha, composites straight-alpha color and coverage with the over operator,
+tests scene depth and leaves it unchanged. Opaque draws precede transparent
+draws; transparent instance centers sort far to near in view space without
+integer distance quantization. Intersecting transparent triangles are not
+order-independent transparency.
+
+Color and auxiliary passes share coverage helpers. Depth and binary shadow maps
+omit blended surfaces. Picking renders nonzero-alpha blend fragments into its
+own depth attachment, selecting the nearest surface without changing scene
+depth. Double-sided materials disable culling and reverse back-face shading
+normals; opposite runtime transform handedness uses independent raster variants.
+Static and skinned shaders use the same ambient and directional-shadow terms.
+The editor and agent tool expose coverage modes, cutoff and double-sided state
+through the same validated undo/persistence path as numeric factors.
+
+Native static/skinned alpha fixtures use the actual depth, picking and shadow
+shader sources with a small coverage/color probe. Readback verifies texture and
+factor cutoff holes, cutoff above one, opaque alpha suppression, two overlapping
+blend layers, alpha accumulation, unchanged scene depth, nearest picking, shadow
+holes, reversed normals and mirrored culling. Vulkan validation errors fail the
+fixture. Metal runs the same fixture with its required debug environment when
+native hardware is available.

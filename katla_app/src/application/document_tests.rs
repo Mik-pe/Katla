@@ -56,6 +56,9 @@ fn test_live_material_gesture_undo_redo_and_scene_capture() {
                 emissive_factor: Some([roughness * 10.0, 0.5, 0.25]),
                 normal_scale: Some(roughness + 0.25),
                 occlusion_strength: Some(1.0 - roughness),
+                alpha_mode: Some(katla_agent::material::AlphaMode::Blend),
+                alpha_cutoff: Some(roughness),
+                double_sided: Some(true),
             }));
         editor::process_editor_actions(&mut app);
         if index < 2 {
@@ -98,6 +101,9 @@ fn test_live_material_gesture_undo_redo_and_scene_capture() {
     assert_eq!(surface.emissive_factor, [4.0, 0.5, 0.25]);
     assert_eq!(surface.normal_scale, 0.65);
     assert_eq!(surface.occlusion_strength, 0.6);
+    assert_eq!(surface.alpha_mode, katla_agent::material::AlphaMode::Blend);
+    assert_eq!(surface.alpha_cutoff, 0.4);
+    assert!(surface.double_sided);
     app.editor.clear_entity_references();
     assert!(app.editor.material_drag.is_none());
 }

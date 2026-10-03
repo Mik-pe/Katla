@@ -80,8 +80,8 @@ belongs to the application. HDR, depth, object-ID, shadow and viewport images
 belong to the graph.
 
 Scene model pipelines use `R16G16B16A16Sfloat`, matching the graph's HDR target.
-Application `MaterialSurface` contains emissive RGB, normal scale and occlusion
-strength. `FrameContext` collects typed values alongside assigned object slots;
+Application `MaterialSurface` contains emissive RGB, normal scale, occlusion
+strength and coverage policy. `FrameContext` collects typed values alongside assigned object slots;
 the scene geometry packet binds their immutable bytes at group 0, binding 2. This
 layout belongs to application shaders, while the core continues to own generic
 objects, material texture handles and submission retention.
@@ -266,3 +266,14 @@ Output creation allocates command buffers before native targets. Image-view
 failures release completed views and allocations; swapchains retain their
 native device and destroy themselves on rollback. Dropping a frame context
 waits for device retirement before releasing its commands and targets.
+
+Scene surface raster variants belong to the application. The core exposes live
+material descriptors and texture bindings as read-only resource metadata; stale
+handles return `None`. App-owned variants preserve texture bindings, share the
+native compilation cache, and retire when their source material is removed.
+`DrawList::sort_for_view` groups opaque draws first, then orders transparent draws
+by unquantized view depth while preserving slots and equal-depth submission order.
+The frame builder separates transparent instances and opposite transform
+handedness into independent draws. MASK coverage shares a fragment helper across
+color, depth, shadow and picking. The editor preset owns a separate `picking_depth`
+attachment so selecting translucent surfaces does not modify scene depth.

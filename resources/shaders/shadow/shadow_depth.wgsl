@@ -1,40 +1,26 @@
-// Depth-only shader for CSM shadow map rendering.
-// Each cascade is rendered as a separate draw with cascade_index set via a storage buffer.
-
-#include <frame_uniforms.wgsl>
+// Surface-aware scene coverage shared by depth, picking and shadow passes.
+#include <surface_coverage.wgsl>
 #include <shadow_cascade_data.wgsl>
-
-struct ShadowParams {
-    cascade_index: u32,
-    bias: f32,
-    _pad: vec2f,
-}
-
-@group(0) @binding(1)
-var<storage, read> objects: array<ObjectUniforms>;
-
-@group(3) @binding(0)
-var<storage, read> shadow_cascades: array<ShadowCascadeData, 4>;
-
-@group(3) @binding(1)
-var<storage, read> shadow_params: ShadowParams;
-
+struct ShadowParams { cascade_index: u32, bias: f32, _pad: vec2f, }
+@group(3) @binding(0) var<storage, read> shadow_cascades: array<ShadowCascadeData, 4>;
+@group(3) @binding(1) var<storage, read> shadow_params: ShadowParams;
 struct VertexInput {
     @location(0) position: vec3f,
+    @location(3) tex_coords: vec2f,
 }
-
+fn vertex_position(position: vec4f, tex_coords: vec2f, instance_idx: u32) -> VertexOutput {
+    let world_pos = objects[instance_idx].model * position;
+    var out: VertexOutput;
+    out.clip_position = shadow_cascades[shadow_params.cascade_index].view_proj * world_pos;
+    out.instance_idx = instance_idx;
+    out.tex_coords = tex_coords;
+    return out;
+}
 @vertex
-fn vs_main(
-    in: VertexInput,
-    @builtin(instance_index) instance_idx: u32,
-) -> @builtin(position) vec4f {
-    let obj = objects[instance_idx];
-    let cascade = shadow_cascades[shadow_params.cascade_index];
-
-    let world_pos = obj.model * vec4f(in.position, 1.0);
-    return cascade.view_proj * world_pos;
+fn vs_main(in: VertexInput, @builtin(instance_index) instance_idx: u32) -> VertexOutput {
+    return vertex_position(vec4f(in.position, 1.0), in.tex_coords, instance_idx);
 }
-
-@fragment
-fn fs_main() {
+@vertex
+fn vs_position(@location(0) position: vec3f, @builtin(instance_index) instance_idx: u32) -> VertexOutput {
+    return vertex_position(vec4f(position, 1.0), vec2f(0.0), instance_idx);
 }

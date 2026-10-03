@@ -620,6 +620,7 @@ impl Application {
             );
         }
         features.graphics.prepare_frame(
+            &mut self.renderer,
             &mut self.frame_graph,
             super::scene_features::GraphicsFrame {
                 ids: &self.pass_ids,

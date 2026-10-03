@@ -131,7 +131,7 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+fn fs_main(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4f {
     let obj = objects[in.instance_idx];
     let surface = surfaces[in.instance_idx];
 
@@ -143,7 +143,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     let albedo_sample = sample_texture(albedo_idx, in.tex_coords);
     let albedo = albedo_sample.rgb * obj.base_color.rgb;
-    let alpha = albedo_sample.a * obj.base_color.a;
+    let alpha = surface_alpha(albedo_sample.a * obj.base_color.a, surface);
 
     let normal_sample = sample_texture(normal_idx, in.tex_coords);
 
@@ -154,7 +154,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let N = normalize(in.world_normal);
     let TBN = mat3x3f(T, B, N);
 
-    let final_normal = normalize(TBN * tangent_normal);
+    let final_normal = surface_face_normal(normalize(TBN * tangent_normal), front_facing, surface);
 
     let mr_sample = sample_texture(mr_idx, in.tex_coords);
     let roughness = max(mr_sample.g * obj.material_params.y, 0.04);

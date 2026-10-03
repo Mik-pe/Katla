@@ -2,6 +2,7 @@
 struct SurfaceParameters {
     emissive: vec4f,
     normal_occlusion: vec4f,
+    coverage: vec4f,
 }
 
 fn surface_tangent_normal(sample: vec3f, scale: f32) -> vec3f {
@@ -18,4 +19,20 @@ fn surface_occlusion(sample: f32, strength: f32, multiplier: f32) -> f32 {
 
 fn surface_emission(sample: vec3f, factor: vec3f) -> vec3f {
     return sample * factor;
+}
+
+fn surface_alpha(sampled_alpha: f32, surface: SurfaceParameters) -> f32 {
+    if (surface.coverage.y < 0.5) { return 1.0; }
+    if (surface.coverage.y < 1.5) {
+        if (sampled_alpha < surface.coverage.x) { discard; }
+        return 1.0;
+    }
+    if (sampled_alpha <= 0.0) { discard; }
+    return clamp(sampled_alpha, 0.0, 1.0);
+}
+
+fn surface_face_normal(normal: vec3f, front_facing: bool, surface: SurfaceParameters) -> vec3f {
+    let mirrored = surface.coverage.w > 0.5;
+    if (surface.coverage.z > 0.5 && front_facing == mirrored) { return -normal; }
+    return normal;
 }

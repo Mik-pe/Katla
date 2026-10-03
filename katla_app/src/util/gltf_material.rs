@@ -30,6 +30,10 @@ pub struct GltfMaterialInfo {
     pub normal_scale: f32,
     /// Occlusion texture influence on ambient lighting.
     pub occlusion_strength: f32,
+    /// Coverage policy, mask threshold and two-sided rasterization.
+    pub alpha_mode: crate::rendering::AlphaMode,
+    pub alpha_cutoff: f32,
+    pub double_sided: bool,
 
     /// Base color (albedo) texture index in GLTF images array.
     pub base_color_texture: Option<usize>,
@@ -57,6 +61,9 @@ impl Default for GltfMaterialInfo {
             emission_factor: [0.0; 3],
             normal_scale: 1.0,
             occlusion_strength: 1.0,
+            alpha_mode: crate::rendering::AlphaMode::Opaque,
+            alpha_cutoff: 0.5,
+            double_sided: false,
             base_color_texture: None,
             normal_texture: None,
             metallic_roughness_texture: None,
@@ -111,6 +118,13 @@ impl GltfMaterialInfo {
             occlusion_strength: material
                 .occlusion_texture()
                 .map_or(1.0, |info| info.strength()),
+            alpha_mode: match material.alpha_mode() {
+                gltf::material::AlphaMode::Opaque => crate::rendering::AlphaMode::Opaque,
+                gltf::material::AlphaMode::Mask => crate::rendering::AlphaMode::Mask,
+                gltf::material::AlphaMode::Blend => crate::rendering::AlphaMode::Blend,
+            },
+            alpha_cutoff: material.alpha_cutoff().unwrap_or(0.5),
+            double_sided: material.double_sided(),
             base_color_texture,
             normal_texture,
             metallic_roughness_texture,
@@ -188,6 +202,22 @@ mod tests {
         assert_eq!(default.metallic_factor, material.metallic_factor);
         assert_eq!(default.roughness_factor, material.roughness_factor);
         assert_eq!(default.emission_factor, material.emission_factor);
+    }
+
+    #[test]
+    fn test_gltf_coverage_preserves_modes_cutoff_and_double_sided() {
+        let document = gltf::Gltf::from_slice(br#"{"asset":{"version":"2.0"},"materials":[{}, {"alphaMode":"MASK", "alphaCutoff":0.25, "doubleSided":true}, {"alphaMode":"BLEND"}]}"#).unwrap().document;
+        let materials: Vec<_> = document
+            .materials()
+            .map(|material| GltfMaterialInfo::from_gltf(&material))
+            .collect();
+        assert_eq!(materials[0].alpha_mode, crate::rendering::AlphaMode::Opaque);
+        assert_eq!(materials[0].alpha_cutoff, 0.5);
+        assert!(!materials[0].double_sided);
+        assert_eq!(materials[1].alpha_mode, crate::rendering::AlphaMode::Mask);
+        assert_eq!(materials[1].alpha_cutoff, 0.25);
+        assert!(materials[1].double_sided);
+        assert_eq!(materials[2].alpha_mode, crate::rendering::AlphaMode::Blend);
     }
 
     #[test]

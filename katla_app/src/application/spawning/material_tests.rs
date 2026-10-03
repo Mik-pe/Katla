@@ -58,6 +58,9 @@ impl Fixture {
     }
 }
 
+#[path = "alpha_tests.rs"]
+mod alpha_tests;
+
 #[path = "primitive_tests.rs"]
 mod primitive_tests;
 

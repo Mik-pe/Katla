@@ -432,7 +432,18 @@ impl Application {
         let submission = frame.take_submission();
         let mut draw_list = submission.draw_list;
         self.last_draw_call_count = draw_list.len();
-        draw_list.sort_by_material();
+        if let Some(features) = &mut self.scene_features
+            && let Err(error) = features.graphics.material_pipelines.prepare_draws(
+                &mut self.renderer,
+                &mut draw_list,
+                &submission.surfaces,
+            )
+        {
+            log::error!("Scene material preparation failed: {error}");
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
+        draw_list.sort_for_view(&frame_uniforms.view_matrix);
 
         let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
 
@@ -1062,7 +1073,18 @@ impl Application {
         let submission = frame.take_submission();
         let mut draw_list = submission.draw_list;
         self.last_draw_call_count = draw_list.len();
-        draw_list.sort_by_material();
+        if let Some(features) = &mut self.scene_features
+            && let Err(error) = features.graphics.material_pipelines.prepare_draws(
+                &mut self.renderer,
+                &mut draw_list,
+                &submission.surfaces,
+            )
+        {
+            log::error!("Scene material preparation failed: {error}");
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
+        draw_list.sort_for_view(&frame_uniforms.view_matrix);
 
         // Selection and editor overlays append gizmo/debug draws with fresh instance
         // indices. Prepare them before uploading object uniforms so every submitted

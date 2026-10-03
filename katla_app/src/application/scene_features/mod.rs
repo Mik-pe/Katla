@@ -3,6 +3,7 @@
 mod animation;
 mod graphics;
 mod lights;
+pub(crate) mod material_pipelines;
 mod particles;
 
 pub(crate) use animation::AnimationFeatures;

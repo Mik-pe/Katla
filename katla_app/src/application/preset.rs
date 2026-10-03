@@ -71,6 +71,17 @@ impl KatlaEditorFrameGraphPreset {
                 tracks_swapchain_size: true,
             })
             .create_resource(GraphResourceDesc {
+                name: "picking_depth".into(),
+                resource_type: GraphResourceType::DepthAttachment {
+                    clear_value: 0.0,
+                    sampled: false,
+                },
+                format: ImageFormat::D32SfloatS8Uint,
+                width: extent.width,
+                height: extent.height,
+                tracks_swapchain_size: true,
+            })
+            .create_resource(GraphResourceDesc {
                 name: "shadow_atlas".into(),
                 resource_type: GraphResourceType::DepthAttachment {
                     clear_value: 1.0,
@@ -154,8 +165,8 @@ impl KatlaEditorFrameGraphPreset {
                         "object_id",
                         AttachmentOps::clear(ClearValue::TRANSPARENT_BLACK),
                     )
-                    .depth_ops(load_depth, load_depth)
-                    .depth_target("scene_depth"),
+                    .depth_ops(clear_depth, clear_depth)
+                    .depth_target("picking_depth"),
             );
         if wallhack_overlay {
             builder = builder.add_pass(

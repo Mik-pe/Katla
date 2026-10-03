@@ -5,9 +5,9 @@
 pub mod frame_context;
 mod frame_uniforms;
 pub use frame_uniforms::FrameUniforms;
-mod material;
-pub use material::MaterialSurface;
+pub(crate) mod material;
 pub(crate) use material::SurfaceParameters;
+pub use material::{AlphaMode, MaterialSurface};
 mod particle_stats;
 pub use particle_stats::ParticleStats;
 

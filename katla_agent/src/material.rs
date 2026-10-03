@@ -2,6 +2,20 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Surface coverage and compositing policy.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum AlphaMode {
+    /// Full coverage; texture and factor alpha do not reduce coverage.
+    #[default]
+    Opaque,
+    /// Reject fragments whose sampled alpha times base alpha is below the cutoff.
+    Mask,
+    /// Composite straight alpha over opaque geometry without writing scene depth.
+    Blend,
+}
+
 /// Per-object PBR factors. Base color is sRGB; GPU conversion belongs to the app.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "mcp-server", derive(schemars::JsonSchema))]
@@ -21,28 +35,51 @@ pub struct MaterialValues {
     pub normal_scale: f32,
     /// Occlusion texture influence on ambient light, in 0..1.
     pub occlusion_strength: f32,
+    /// Opaque, cutoff mask, or sorted alpha compositing.
+    pub alpha_mode: AlphaMode,
+    /// Alpha threshold for masked surfaces; values above one reject all coverage.
+    pub alpha_cutoff: f32,
+    /// Render both sides and reverse back-face shading normals.
+    pub double_sided: bool,
 }
 
 impl MaterialValues {
     /// Reject invalid factors before changing any object.
     pub fn validate(&self) -> Result<(), String> {
-        if self
-            .base_color
-            .iter()
-            .chain([&self.metallic, &self.roughness, &self.ao])
-            .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
-        {
-            return Err("Base color, metallic, roughness, and ambient occlusion must be finite numbers in 0..=1".into());
+        for (index, value) in self.base_color.into_iter().enumerate() {
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                return Err(format!(
+                    "base_color[{index}] must be finite and within 0..=1; received {value}"
+                ));
+            }
         }
-        if !self
-            .emissive_factor
-            .into_iter()
-            .all(|value| value.is_finite() && value >= 0.0)
-            || !self.normal_scale.is_finite()
-            || !self.occlusion_strength.is_finite()
-            || !(0.0..=1.0).contains(&self.occlusion_strength)
-        {
-            return Err("Emission must be finite nonnegative linear RGB, normal_scale finite, and occlusion_strength within 0..1".into());
+        for (field, value) in [
+            ("metallic", self.metallic),
+            ("roughness", self.roughness),
+            ("ao", self.ao),
+            ("occlusion_strength", self.occlusion_strength),
+        ] {
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                return Err(format!(
+                    "{field} must be finite and within 0..=1; received {value}"
+                ));
+            }
+        }
+        for (index, value) in self.emissive_factor.into_iter().enumerate() {
+            if !value.is_finite() || value < 0.0 {
+                return Err(format!(
+                    "emissive_factor[{index}] must be finite nonnegative linear RGB; received {value}"
+                ));
+            }
+        }
+        if !self.normal_scale.is_finite() {
+            return Err("normal_scale must be finite".into());
+        }
+        if !self.alpha_cutoff.is_finite() || self.alpha_cutoff < 0.0 {
+            return Err(format!(
+                "alpha_cutoff must be finite and nonnegative; received {}",
+                self.alpha_cutoff
+            ));
         }
         Ok(())
     }
@@ -102,6 +139,9 @@ impl MaterialPreset {
             emissive_factor: [0.0; 3],
             normal_scale: 1.0,
             occlusion_strength: 1.0,
+            alpha_mode: AlphaMode::Opaque,
+            alpha_cutoff: 0.5,
+            double_sided: false,
         }
     }
 }
@@ -134,6 +174,12 @@ pub enum MaterialOp {
         normal_scale: Option<f32>,
         #[serde(default)]
         occlusion_strength: Option<f32>,
+        #[serde(default)]
+        alpha_mode: Option<AlphaMode>,
+        #[serde(default)]
+        alpha_cutoff: Option<f32>,
+        #[serde(default)]
+        double_sided: Option<bool>,
     },
 }
 
@@ -183,8 +229,20 @@ impl MaterialOp {
                 json!({"type":"array","items":{"type":"number","minimum":0},"minItems":3,"maxItems":3,"description":"Linear RGB self-emission; values above 1 produce HDR emission; works without an emissive texture"}),
             ),
             (
+                "alpha_mode".into(),
+                json!({"type":"string","enum":["opaque","mask","blend"],"description":"Opaque ignores alpha; mask rejects sampled alpha below alpha_cutoff; blend composites back-to-front without depth writes"}),
+            ),
+            (
+                "alpha_cutoff".into(),
+                json!({"type":"number","minimum":0,"description":"Mask coverage threshold, default 0.5; values above 1 hide the entire masked surface"}),
+            ),
+            (
+                "double_sided".into(),
+                json!({"type":"boolean","description":"Render both faces with reversed back-face shading normals"}),
+            ),
+            (
                 "normal_scale".into(),
-                json!({"type":"number","description":"Tangent-space normal X/Y multiplier; 0 flattens the normal map"}),
+                json!({"type":"number","description":"Finite tangent-space normal X/Y multiplier; 0 flattens the normal map, negative values invert both tangent axes; typical range 0..2"}),
             ),
             (
                 "occlusion_strength".into(),
@@ -194,7 +252,7 @@ impl MaterialOp {
         let branches: Vec<_> = [
             ("presets", vec!["action"], vec!["action"]),
             ("inspect", vec!["action", "entity_id"], vec!["action", "entity_id"]),
-            ("set", vec!["action", "entity_ids", "preset", "base_color", "metallic", "roughness", "ao", "emissive_factor", "normal_scale", "occlusion_strength"], vec!["action", "entity_ids"]),
+            ("set", vec!["action", "entity_ids", "preset", "base_color", "metallic", "roughness", "ao", "emissive_factor", "normal_scale", "occlusion_strength", "alpha_mode", "alpha_cutoff", "double_sided"], vec!["action", "entity_ids"]),
         ].into_iter().map(|(action, allowed, required)| {
             let mut fields: serde_json::Map<_, _> = properties.iter()
                 .filter(|(name, _)| allowed.contains(&name.as_str()))

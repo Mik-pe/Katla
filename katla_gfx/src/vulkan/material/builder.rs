@@ -163,13 +163,14 @@ impl PipelineBuilder {
         self
     }
 
+    /// Composite straight-alpha color and coverage with the over operator.
     pub fn with_alpha_blending(mut self) -> Self {
         self.blend_enable = true;
         self.blend_src_color = BlendFactor::SrcAlpha;
         self.blend_dst_color = BlendFactor::OneMinusSrcAlpha;
         self.blend_color_op = BlendOp::Add;
         self.blend_src_alpha = BlendFactor::One;
-        self.blend_dst_alpha = BlendFactor::Zero;
+        self.blend_dst_alpha = BlendFactor::OneMinusSrcAlpha;
         self.blend_alpha_op = BlendOp::Add;
         self
     }

@@ -320,6 +320,15 @@ pub trait GpuRenderer: Sized + 'static {
         descriptor: &PipelineDescriptor,
     ) -> Result<MaterialHandle, RendererError>;
 
+    /// Read the compilation descriptor of a live material; stale handles return `None`.
+    fn material_descriptor(&self, material: MaterialHandle) -> Option<&PipelineDescriptor>;
+
+    /// Read a live material's texture bindings; stale handles return `None`.
+    fn material_textures(
+        &self,
+        material: MaterialHandle,
+    ) -> Option<crate::renderer::registry::MaterialTextures>;
+
     /// Set texture indices on an existing material.
     fn set_material_textures(
         &mut self,

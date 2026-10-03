@@ -85,7 +85,10 @@ asset; changing that asset's structure can invalidate the reference and rejects
 staging. Whole-model drawable overrides apply to all imported primitives before
 capture. The optional drawable `surface` field persists linear RGB
 `emissive_factor` (finite, nonnegative, including HDR values above one), finite
-`normal_scale`, and `occlusion_strength` within zero to one. Capture writes the
+`normal_scale`, and `occlusion_strength` within zero to one. It also persists
+`alpha_mode` (`opaque`, `mask`, `blend`), finite nonnegative `alpha_cutoff`, and
+`double_sided`. Omitted fields use the opaque, 0.5-cutoff, single-sided defaults.
+Capture writes the
 current values; omitted surface overrides retain the imported glTF factors or
 primitive defaults. Emission factors multiply a white fallback when no emission
 texture exists. Texture bindings remain asset-owned and are reconstructed from

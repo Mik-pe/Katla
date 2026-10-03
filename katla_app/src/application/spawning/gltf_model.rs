@@ -269,6 +269,9 @@ impl Application {
             emissive_factor: factors.emission_factor,
             normal_scale: factors.normal_scale,
             occlusion_strength: factors.occlusion_strength,
+            alpha_mode: factors.alpha_mode,
+            alpha_cutoff: factors.alpha_cutoff,
+            double_sided: factors.double_sided,
         };
         if let Some(skin_index) = primitive.skin_index {
             let skin = model.document.skins().nth(skin_index).ok_or_else(|| {

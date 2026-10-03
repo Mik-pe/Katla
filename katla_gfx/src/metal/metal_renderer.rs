@@ -1028,6 +1028,17 @@ impl GpuRenderer for MetalRenderer {
         self.compile_material_impl(descriptor)
     }
 
+    fn material_descriptor(&self, material: MaterialHandle) -> Option<&PipelineDescriptor> {
+        self.materials.get(material).map(|value| &value.descriptor)
+    }
+
+    fn material_textures(
+        &self,
+        material: MaterialHandle,
+    ) -> Option<crate::renderer::registry::MaterialTextures> {
+        self.materials.get(material).map(|value| value.textures)
+    }
+
     fn set_material_textures(
         &mut self,
         material: MaterialHandle,

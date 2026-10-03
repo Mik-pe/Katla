@@ -578,6 +578,25 @@ impl GpuRenderer for AnyRenderer {
         }
     }
 
+    fn material_descriptor(&self, material: MaterialHandle) -> Option<&PipelineDescriptor> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.material_descriptor(material),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.material_descriptor(material),
+        }
+    }
+
+    fn material_textures(
+        &self,
+        material: MaterialHandle,
+    ) -> Option<crate::renderer::registry::MaterialTextures> {
+        match self {
+            AnyRenderer::Vulkan(r) => r.material_textures(material),
+            #[cfg(target_os = "macos")]
+            AnyRenderer::Metal(r) => r.material_textures(material),
+        }
+    }
+
     fn set_material_textures(
         &mut self,
         material: MaterialHandle,

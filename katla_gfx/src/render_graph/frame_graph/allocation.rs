@@ -227,6 +227,20 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
             .copied()
             .ok_or_else(|| RenderGraphError::ResourceNotFound(name.to_string()))?;
 
+        let descriptor = self
+            .transient_resources
+            .iter()
+            .find(|descriptor| descriptor.name == name)
+            .ok_or_else(|| RenderGraphError::ResourceNotFound(name.into()))?;
+        if matches!(
+            descriptor.resource_type,
+            crate::render_graph::GraphResourceType::DepthAttachment { sampled: false, .. }
+        ) {
+            return Err(RenderGraphError::InvalidConfiguration(format!(
+                "Texture '{name}' does not permit sampling"
+            )));
+        }
+
         for frame_idx in 0..num_frames {
             if let Some(frame_textures) = self.transient_textures.get_mut(frame_idx)
                 && let Some(texture) = frame_textures.get_mut(&resource_id)
@@ -308,7 +322,16 @@ impl<B: RenderGraphBackend> FrameGraph<B> {
         let new_texture_names: Vec<String> = self
             .transient_resources
             .iter()
-            .filter(|desc| !existing_slots.contains_key(&desc.name))
+            .filter(|desc| {
+                !existing_slots.contains_key(&desc.name)
+                    && !matches!(
+                        desc.resource_type,
+                        crate::render_graph::GraphResourceType::DepthAttachment {
+                            sampled: false,
+                            ..
+                        }
+                    )
+            })
             .map(|desc| desc.name.clone())
             .collect();
 

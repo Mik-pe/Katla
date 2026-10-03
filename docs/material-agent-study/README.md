@@ -46,3 +46,13 @@ persistence. The before/after scene reload images are pixel-identical. A lightin
 isolation attempt was inconclusive and is preserved as such. Texture provenance
 and field-specific errors remain useful interface improvements; the ambiguous
 factor-range message observed in this session was corrected with the implementation.
+
+The [coverage follow-up](alpha/observations.md) used the surface-study participant
+with its prior context and a private editor built from `6c905a1b` plus the coverage
+implementation committed with this report. Shader sources stayed fixed. Its 24
+participant calls and seven native images demonstrate transparent foreground
+composition, mask rejection, coverage-aware picking, field-specific errors,
+recovery, undo, and save/load with fresh entity IDs. The restored native frames
+are byte-identical. This is one contextual session; multi-layer compositing,
+depth, shadow coverage and face orientation are validated separately through
+numeric native static and skinned fixtures.

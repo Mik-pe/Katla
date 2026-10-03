@@ -17,6 +17,7 @@
 #include <pbr.wgsl>
 #include <tangent_frame.wgsl>
 #include <material_surface.wgsl>
+#include <shadow_sampling.wgsl>
 
 // Set 0: Uniforms (storage buffers)
 @group(0) @binding(0)
@@ -156,7 +157,7 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+fn fs_main(in: VertexOutput, @builtin(front_facing) front_facing: bool) -> @location(0) vec4f {
     let obj = objects[in.instance_idx];
     let surface = surfaces[in.instance_idx];
 
@@ -168,7 +169,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     let albedo_sample = sample_texture(albedo_idx, in.tex_coords);
     let albedo = albedo_sample.rgb * obj.base_color.rgb;
-    let alpha = albedo_sample.a * obj.base_color.a;
+    let alpha = surface_alpha(albedo_sample.a * obj.base_color.a, surface);
 
     let normal_sample = sample_texture(normal_idx, in.tex_coords);
 
@@ -179,7 +180,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let N = normalize(in.world_normal);
     let TBN = mat3x3f(T, B, N);
 
-    let final_normal = normalize(TBN * tangent_normal);
+    let final_normal = surface_face_normal(normalize(TBN * tangent_normal), front_facing, surface);
 
     let mr_sample = sample_texture(mr_idx, in.tex_coords);
     let roughness = max(mr_sample.g * obj.material_params.y, 0.04);
@@ -196,6 +197,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     let Lo_sun = pbr_direct_light(final_normal, V, L_sun, albedo, metallic, roughness, radiance_sun);
 
+    // Shadow visibility for directional light
+    let view_z = -(frame_data.view * vec4f(in.world_pos, 1.0)).z;
+    let shadow_visibility = sample_shadow(in.world_pos, view_z);
+
     // Point lights (Forward+ tile culling)
     let Lo_point = accumulate_point_lights(
         in.clip_position, in.world_pos,
@@ -203,9 +208,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
         metallic, roughness,
     );
 
-    let Lo = Lo_sun + Lo_point;
+    let Lo = Lo_sun * shadow_visibility + Lo_point;
 
-    let ambient = vec3f(0.03) * albedo * ao;
+    let ambient = vec3f(0.15) * albedo * ao;
 
     let emission = surface_emission(sample_texture(emission_idx, in.tex_coords).rgb, surface.emissive.rgb);
 

@@ -57,6 +57,12 @@ operations come from the pass declaration. `ShadowPass::write_depth` binds its n
 output as its depth target. Arbitrary scene/HDR/object-ID/viewport textures remain
 graph resources, with no renderer-owned fallback.
 
+Only sampleable images can be registered through
+`register_transient_texture_bindless`. A depth attachment declared with
+`sampled: false` rejects registration before native descriptor mutation. Resize
+preserves existing per-frame texture slots and registers new sampleable images;
+unsampled depth attachments remain attachment-only across recreation.
+
 Pass liveness starts from exported resources and explicit side effects. The
 backbuffer is exported by default. Export offscreen results needed after execution,
 including object-ID images and readback buffers. Unused passes are culled, including

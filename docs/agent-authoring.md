@@ -70,7 +70,17 @@ Explicit fields override the preset. Omitting the preset patches only supplied
 fields. `base_color` is sRGB RGB with linear alpha; `metallic`, `roughness` and `ao` are linear
 factors within 0..=1. `emissive_factor` is nonnegative linear RGB and accepts values
 above one for HDR self-illumination, including materials without an emissive texture.
-`normal_scale` multiplies the decoded normal map's X/Y components; zero flattens it.
+`normal_scale` is finite and multiplies the decoded normal map's X/Y components; zero flattens it and negative values invert both tangent axes.
+`alpha_mode` selects `opaque`, `mask`, or `blend`; changing base alpha alone keeps
+that mode. `alpha_cutoff` is finite and nonnegative (default 0.5); values above
+one hide masked surfaces. `double_sided` enables both faces with reversed
+back-face shading normals. Blended surfaces draw after opaque geometry from
+far to near, test scene depth without writing it, and do not cast binary
+shadow-map shadows. Nonzero-alpha blended fragments remain pickable through
+independent picking depth; zero-alpha fragments are discarded. Presets start
+with opaque, single-sided coverage. These controls share inspector editing,
+undo/redo and scene persistence.
+
 `occlusion_strength` is within 0..=1 and blends the occlusion texture's influence on
 ambient lighting. Zero ignores that texture. Every number must be finite. Receipts
 name base-color and emissive color spaces separately. These factors share inspector
@@ -81,8 +91,7 @@ group a pointer gesture into one editor undo step. Undo and redo restore the
 exact linear color, including an originally absent tint.
 
 Base color multiplies the existing texture. Alpha edits the tint factor; it
-does not switch the object's pipeline to transparent rendering. Emission and
-texture replacement are outside this per-object factor editor.
+does not switch the object's pipeline to transparent rendering. Texture replacement is outside this per-object factor editor.
 
 ## Build rooms with usable dimensions
 

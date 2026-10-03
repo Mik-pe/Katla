@@ -333,6 +333,14 @@ impl GpuRenderer for MockRenderer {
         Ok(MaterialHandle::from_raw(0, 0))
     }
 
+    fn material_descriptor(&self, _material: MaterialHandle) -> Option<&PipelineDescriptor> {
+        None
+    }
+
+    fn material_textures(&self, _material: MaterialHandle) -> Option<katla_gfx::MaterialTextures> {
+        None
+    }
+
     fn set_material_textures(
         &mut self,
         _material: MaterialHandle,

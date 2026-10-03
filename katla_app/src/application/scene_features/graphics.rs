@@ -16,7 +16,7 @@ use katla_gfx::{
     MaterialHandle, PipelineDescriptor, Rect, Size2D, VertexLayout,
 };
 
-use super::{LightFeatures, ParticleFeatures};
+use super::{LightFeatures, ParticleFeatures, material_pipelines::CoveragePass};
 use crate::application::{PassIds, frame_graph_config::FrameGraphBindings};
 use crate::{AppResult, FrameGraph, Renderer, resources::ResourceManager};
 
@@ -35,6 +35,7 @@ pub(crate) struct GraphicsFrame<'a> {
 }
 
 pub(crate) struct SceneGraphics {
+    pub(crate) material_pipelines: super::material_pipelines::MaterialPipelines,
     depth: Vec<PassPipeline>,
     picking: Vec<PassPipeline>,
     billboard_depth: MaterialHandle,
@@ -78,16 +79,16 @@ impl SceneGraphics {
                 descriptor.depth_format = Some(ImageFormat::D32SfloatS8Uint);
                 descriptor.stages = PipelineStages::Graphics {
                     vertex_entry: "vs_main".into(),
-                    fragment_entry: None,
+                    fragment_entry: Some("fs_depth".into()),
                 };
             },
         )?;
         let picking = compile_pair(
             renderer,
             resources,
-            "picking/object_id",
+            "depth_prepass",
             ImageFormat::R32Uint,
-            |descriptor| descriptor.depth = depth_state,
+            |descriptor| descriptor.depth = DepthState::default(),
         )?;
         let billboard_descriptor = PipelineDescriptor::billboard(
             resources
@@ -103,7 +104,7 @@ impl SceneGraphics {
             &billboard_descriptor
                 .with_graphics_entries("vs_main", "fs_object_id")
                 .with_color_attachment(true)
-                .with_depth(depth_state)
+                .with_depth(DepthState::default())
                 .with_color_format(ImageFormat::R32Uint),
         )?;
         let shadow = compile_pair(
@@ -119,7 +120,7 @@ impl SceneGraphics {
                 };
                 descriptor.stages = PipelineStages::Graphics {
                     vertex_entry: "vs_main".into(),
-                    fragment_entry: None,
+                    fragment_entry: Some("fs_depth".into()),
                 };
                 descriptor.color_attachment = false;
                 descriptor.depth_format = Some(ImageFormat::D32Sfloat);
@@ -288,6 +289,7 @@ impl SceneGraphics {
             .with_color_format(ImageFormat::R16G16B16A16Sfloat),
         )?;
         Ok(Self {
+            material_pipelines: Default::default(),
             depth,
             picking,
             billboard_depth,
@@ -308,6 +310,7 @@ impl SceneGraphics {
 
     pub(crate) fn prepare_frame(
         &mut self,
+        renderer: &mut Renderer,
         graph: &mut FrameGraph,
         frame: GraphicsFrame<'_>,
     ) -> AppResult<()> {
@@ -348,6 +351,12 @@ impl SceneGraphics {
         if let Some(pass) = ids.shadow {
             let mut packet = PassBindings::default();
             packet.constants.push(constant(
+                0,
+                2,
+                ShaderStages::FRAGMENT,
+                bytemuck::cast_slice(surfaces),
+            ));
+            packet.constants.push(constant(
                 3,
                 0,
                 ShaderStages::VERTEX,
@@ -361,49 +370,66 @@ impl SceneGraphics {
                     index / 2
                 };
                 let params = [index as u32, 0, 0, 0];
-                packet.phases.push(PassDrawPhase {
-                    pipelines: self.shadow.clone(),
-                    constants: vec![constant(
+                let mut phases = self.material_pipelines.auxiliary_phases(
+                    renderer,
+                    &self.shadow,
+                    &ordinary,
+                    surfaces,
+                    CoveragePass::Shadow {
+                        reverse_winding: !self.flip_y,
+                    },
+                )?;
+                for phase in &mut phases {
+                    phase.constants.push(constant(
                         3,
                         1,
                         ShaderStages::VERTEX,
                         bytemuck::cast_slice(&params),
-                    )],
-                    draw: PassDraw::ObjectIndices(ordinary.clone()),
-                    viewport: Some(Rect::new(
+                    ));
+                    phase.viewport = Some(Rect::new(
                         [index as f32 % 2.0 * half, row as f32 * half],
                         [(index as f32 % 2.0 + 1.0) * half, (row as f32 + 1.0) * half],
-                    )),
-                });
+                    ));
+                }
+                packet.phases.extend(phases);
             }
             graph.set_pass_bindings(pass, packet)?;
         }
-        for (pass, pipelines, billboard_material) in [
-            (ids.depth_prepass, &self.depth, self.billboard_depth),
-            (ids.picking, &self.picking, self.billboard_picking),
+        for (pass, pipelines, billboard_material, coverage) in [
+            (
+                ids.depth_prepass,
+                &self.depth,
+                self.billboard_depth,
+                CoveragePass::Depth,
+            ),
+            (
+                ids.picking,
+                &self.picking,
+                self.billboard_picking,
+                CoveragePass::Picking,
+            ),
         ] {
             if let Some(pass) = pass {
+                let mut phases = self
+                    .material_pipelines
+                    .auxiliary_phases(renderer, pipelines, &ordinary, surfaces, coverage)?;
+                phases.push(PassDrawPhase {
+                    pipelines: vec![PassPipeline {
+                        vertex_layout: VertexLayout::pbr(),
+                        material: billboard_material,
+                    }],
+                    constants: Vec::new(),
+                    draw: PassDraw::ObjectIndices(billboards.clone()),
+                    viewport: None,
+                });
                 graph.set_pass_bindings(
                     pass,
                     PassBindings {
-                        constants: vec![frame_binding.clone()],
-                        phases: vec![
-                            PassDrawPhase {
-                                pipelines: pipelines.clone(),
-                                constants: Vec::new(),
-                                draw: PassDraw::ObjectIndices(ordinary.clone()),
-                                viewport: None,
-                            },
-                            PassDrawPhase {
-                                pipelines: vec![PassPipeline {
-                                    vertex_layout: VertexLayout::pbr(),
-                                    material: billboard_material,
-                                }],
-                                constants: Vec::new(),
-                                draw: PassDraw::ObjectIndices(billboards.clone()),
-                                viewport: None,
-                            },
+                        constants: vec![
+                            frame_binding.clone(),
+                            constant(0, 2, ShaderStages::FRAGMENT, bytemuck::cast_slice(surfaces)),
                         ],
+                        phases,
                         ..Default::default()
                     },
                 )?;
@@ -657,6 +683,11 @@ fn compile_pair(
     )
     .with_color_format(format);
     configure(&mut descriptor);
+    if ["depth_prepass", "shadow/shadow_depth"].contains(&shader)
+        && let PipelineStages::Graphics { vertex_entry, .. } = &mut descriptor.stages
+    {
+        *vertex_entry = "vs_position".into();
+    }
     let material = renderer.compile_material(&descriptor)?;
     pipelines.push(PassPipeline {
         vertex_layout: VertexLayout::position(),

@@ -266,6 +266,21 @@ impl GpuRenderer for VulkanRenderer {
         VulkanRenderer::compile_material_descriptor(self, descriptor)
     }
 
+    fn material_descriptor(&self, material: MaterialHandle) -> Option<&PipelineDescriptor> {
+        self.asset_registry
+            .get_material(material)
+            .map(|value| &value.descriptor)
+    }
+
+    fn material_textures(
+        &self,
+        material: MaterialHandle,
+    ) -> Option<crate::renderer::registry::MaterialTextures> {
+        self.asset_registry
+            .get_material(material)
+            .map(|value| value.textures)
+    }
+
     fn set_material_textures(
         &mut self,
         material: MaterialHandle,

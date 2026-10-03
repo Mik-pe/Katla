@@ -1,12 +1,12 @@
 //! Live surface controls using the same PBR vocabulary as agent tools.
 
 use crate::ui::editor_ui::{ColorScheme, types::EditorAction};
-use katla_agent::material::{MaterialOp, MaterialPreset, MaterialValues};
+use katla_agent::material::{AlphaMode, MaterialOp, MaterialPreset, MaterialValues};
 use katla_ecs::EntityId;
 use katla_math::{Color, Vec2};
 use katla_ui::declarative::{
     Alignment, BuildContext, StateId, Widget, WidgetBox, button, empty, grid, hstack, icon,
-    labeled_slider, section, text, vstack,
+    labeled_slider, radio, section, text, toggle, vstack,
 };
 use katla_ui::{FontSize, ForkAwesome};
 
@@ -18,7 +18,9 @@ struct Baseline {
 
 pub(super) struct MaterialControls {
     baseline: StateId,
-    channels: [StateId; 12],
+    channels: [StateId; 13],
+    alpha_mode: StateId,
+    double_sided: StateId,
     expanded: StateId,
 }
 
@@ -30,6 +32,8 @@ impl MaterialControls {
                 values: MaterialPreset::Plaster.values(),
             }),
             channels: std::array::from_fn(|_| ctx.state(0.0f32)),
+            alpha_mode: ctx.state(0usize),
+            double_sided: ctx.state(false),
             expanded: ctx.state(true),
         }
     }
@@ -50,11 +54,16 @@ impl MaterialControls {
         let baseline: Baseline = ctx.get_state(self.baseline)?;
         let actual = channels(values);
         if baseline.entity == Some(entity) {
-            let edited: [f32; 12] = self
+            let edited: [f32; 13] = self
                 .channels
                 .map(|id| ctx.get_state(id).unwrap_or_default());
             let old = channels(baseline.values);
-            if edited != old {
+            let mode = ctx.get_state::<usize>(self.alpha_mode).unwrap_or_default();
+            let double_sided = ctx.get_state::<bool>(self.double_sided).unwrap_or_default();
+            if edited != old
+                || mode != mode_index(baseline.values.alpha_mode)
+                || double_sided != baseline.values.double_sided
+            {
                 ctx.emit(EditorAction::EditMaterial(MaterialOp::Set {
                     entity_ids: vec![entity.id().to_string()],
                     preset: None,
@@ -67,12 +76,24 @@ impl MaterialControls {
                         .then_some([edited[7], edited[8], edited[9]]),
                     normal_scale: (edited[10] != old[10]).then_some(edited[10]),
                     occlusion_strength: (edited[11] != old[11]).then_some(edited[11]),
+                    alpha_mode: (mode != mode_index(baseline.values.alpha_mode)).then_some(
+                        match mode {
+                            1 => AlphaMode::Mask,
+                            2 => AlphaMode::Blend,
+                            _ => AlphaMode::Opaque,
+                        },
+                    ),
+                    alpha_cutoff: (edited[12] != old[12]).then_some(edited[12]),
+                    double_sided: (double_sided != baseline.values.double_sided)
+                        .then_some(double_sided),
                 }));
             }
         }
         for (id, value) in self.channels.iter().zip(actual) {
             ctx.set_state(*id, value);
         }
+        ctx.set_state(self.alpha_mode, mode_index(values.alpha_mode));
+        ctx.set_state(self.double_sided, values.double_sided);
         ctx.set_state(
             self.baseline,
             Baseline {
@@ -122,6 +143,9 @@ impl MaterialControls {
                             emissive_factor: None,
                             normal_scale: None,
                             occlusion_strength: None,
+                            alpha_mode: None,
+                            alpha_cutoff: None,
+                            double_sided: None,
                         }));
                     }))
                     .boxed()])
@@ -138,6 +162,18 @@ impl MaterialControls {
             .grid_spacing(6.0)
             .boxed(),
         );
+        content.push(
+            hstack(
+                ["Opaque", "Mask", "Blend"]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, label)| radio(self.alpha_mode, index, label).boxed())
+                    .collect::<Vec<_>>(),
+            )
+            .spacing(4.0)
+            .boxed(),
+        );
+        content.push(toggle("Double sided", self.double_sided).boxed());
         for (index, label) in [
             "Red",
             "Green",
@@ -151,6 +187,7 @@ impl MaterialControls {
             "Emission B",
             "Normal scale",
             "AO strength",
+            "Alpha cutoff",
         ]
         .iter()
         .enumerate()
@@ -161,6 +198,7 @@ impl MaterialControls {
                 match index {
                     7..=9 => 0.0..=actual[index].max(8.0),
                     10 => actual[index].min(-2.0)..=actual[index].max(2.0),
+                    12 => 0.0..=actual[index].max(1.0),
                     _ => 0.0..=1.0,
                 },
             )
@@ -192,7 +230,7 @@ impl MaterialControls {
     }
 }
 
-fn channels(v: MaterialValues) -> [f32; 12] {
+fn channels(v: MaterialValues) -> [f32; 13] {
     [
         v.base_color[0],
         v.base_color[1],
@@ -206,5 +244,14 @@ fn channels(v: MaterialValues) -> [f32; 12] {
         v.emissive_factor[2],
         v.normal_scale,
         v.occlusion_strength,
+        v.alpha_cutoff,
     ]
+}
+
+fn mode_index(mode: AlphaMode) -> usize {
+    match mode {
+        AlphaMode::Opaque => 0,
+        AlphaMode::Mask => 1,
+        AlphaMode::Blend => 2,
+    }
 }

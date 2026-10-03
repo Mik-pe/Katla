@@ -194,6 +194,18 @@ impl FrameContext {
     pub fn draw_list(&self) -> &DrawList {
         &self.draw_list
     }
+    fn push_draw(&mut self, draw: DrawCall, surface: MaterialSurface) -> u32 {
+        let mut parameters: SurfaceParameters = surface.into();
+        parameters.coverage[3] = f32::from(super::material::mirrored_transform(
+            &draw.instances[0].model_matrix,
+        ));
+        let count = draw.instance_count() as usize;
+        let slot = self.draw_list.push(draw);
+        let end = slot as usize + count;
+        self.surfaces.resize(end, SurfaceParameters::default());
+        self.surfaces[slot as usize..end].fill(parameters);
+        slot
+    }
 }
 
 /// Fluent builder for configuring draw calls.
@@ -332,21 +344,30 @@ impl<'a> DrawBuilder<'a> {
             self.instances
         };
 
-        let mut draw_call = DrawCall::instanced(self.mesh, self.material, instances)
+        let first_mirrored = super::material::mirrored_transform(&instances[0].model_matrix);
+        let split = self.surface.alpha_mode == super::AlphaMode::Blend
+            || instances.iter().any(|instance| {
+                super::material::mirrored_transform(&instance.model_matrix) != first_mirrored
+            });
+        let mut draw = DrawCall::instanced(self.mesh, self.material, instances)
             .with_emission(self.emission.unwrap_or(TextureHandle::NONE));
-
+        draw.transparent = self.surface.alpha_mode == super::AlphaMode::Blend;
         if let Some(skeleton) = self.skeleton {
-            draw_call = draw_call.with_skeleton(skeleton);
+            draw = draw.with_skeleton(skeleton);
         }
-
-        let count = draw_call.instance_count().max(1) as usize;
-        let slot = self.frame.draw_list.push(draw_call);
-        let end = slot as usize + count;
-        self.frame
-            .surfaces
-            .resize(end, SurfaceParameters::default());
-        self.frame.surfaces[slot as usize..end].fill(self.surface.into());
-        slot
+        if !split {
+            return self.frame.push_draw(draw, self.surface);
+        }
+        let base_slot = self.frame.surfaces.len() as u32;
+        for instance in draw.instances {
+            let mut separated = DrawCall::new(draw.mesh, draw.material)
+                .with_emission(draw.emission)
+                .with_skeleton(draw.skeleton);
+            separated.transparent = draw.transparent;
+            separated.instances[0] = instance;
+            self.frame.push_draw(separated, self.surface);
+        }
+        base_slot
     }
 }
 
@@ -355,12 +376,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_blended_and_mixed_handedness_instances_keep_slots_and_sort_individually() {
+        let mut context = FrameContext::new();
+        let mut first = InstanceData::default();
+        first.model_matrix[14] = -1.25;
+        let mut second = InstanceData::default();
+        second.model_matrix[14] = -1.75;
+        let mut third = InstanceData::default();
+        third.model_matrix[14] = -1.5;
+        let base = context
+            .draw_instanced(
+                MeshHandle::NONE,
+                MaterialHandle::NONE,
+                vec![first.clone(), second.clone(), third],
+            )
+            .with_surface(MaterialSurface {
+                alpha_mode: super::super::AlphaMode::Blend,
+                ..Default::default()
+            })
+            .submit();
+        first.model_matrix[0] = -1.0;
+        let opaque = context
+            .draw_instanced(MeshHandle::NONE, MaterialHandle::NONE, vec![first, second])
+            .submit();
+        let mut submission = context.take_submission();
+        assert_eq!(submission.draw_list.len(), 5);
+        submission
+            .draw_list
+            .sort_for_view(&katla_math::Mat4::identity().to_array());
+        let slots: Vec<_> = submission
+            .draw_list
+            .iter()
+            .map(|draw| draw.base_object_slot())
+            .collect();
+        assert_eq!(slots, [opaque, opaque + 1, base + 1, base + 2, base]);
+        assert_eq!(
+            submission.surfaces[opaque as usize].cull_mode(),
+            katla_gfx::CullMode::Front
+        );
+        assert_eq!(
+            submission.surfaces[(opaque + 1) as usize].cull_mode(),
+            katla_gfx::CullMode::Back
+        );
+        assert_eq!(submission.surfaces.len(), 6);
+    }
+
+    #[test]
     fn test_surface_slots_survive_material_sorting_and_reset_with_submission() {
         let mut context = FrameContext::new();
         let surface = MaterialSurface {
             emissive_factor: [2.0, 0.5, 0.0],
             normal_scale: 0.0,
             occlusion_strength: 0.25,
+            ..Default::default()
         };
         let first = context
             .draw(MeshHandle::from_raw(1, 0), MaterialHandle::from_raw(2, 0))

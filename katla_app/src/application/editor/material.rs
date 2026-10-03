@@ -34,6 +34,9 @@ impl Snapshot {
             emissive_factor: self.surface.emissive_factor,
             normal_scale: self.surface.normal_scale,
             occlusion_strength: self.surface.occlusion_strength,
+            alpha_mode: self.surface.alpha_mode,
+            alpha_cutoff: self.surface.alpha_cutoff,
+            double_sided: self.surface.double_sided,
         }
     }
     fn read(d: &DrawableComponent) -> Self {
@@ -196,6 +199,9 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
             emissive_factor,
             normal_scale,
             occlusion_strength,
+            alpha_mode,
+            alpha_cutoff,
+            double_sided,
         } => {
             if entity_ids.is_empty() || entity_ids.len() > 256 {
                 return Err("Choose between 1 and 256 entity_ids".into());
@@ -208,6 +214,9 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
                 && emissive_factor.is_none()
                 && normal_scale.is_none()
                 && occlusion_strength.is_none()
+                && alpha_mode.is_none()
+                && alpha_cutoff.is_none()
+                && double_sided.is_none()
             {
                 return Err("Supply a preset or at least one material factor".into());
             }
@@ -242,6 +251,15 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
                 if let Some(strength) = occlusion_strength {
                     v.occlusion_strength = strength;
                 }
+                if let Some(mode) = alpha_mode {
+                    v.alpha_mode = mode;
+                }
+                if let Some(cutoff) = alpha_cutoff {
+                    v.alpha_cutoff = cutoff;
+                }
+                if let Some(two_sided) = double_sided {
+                    v.double_sided = two_sided;
+                }
                 v.validate()?;
                 let c = v.base_color;
                 let before = Snapshot::read(d);
@@ -263,6 +281,9 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
                             emissive_factor: v.emissive_factor,
                             normal_scale: v.normal_scale,
                             occlusion_strength: v.occlusion_strength,
+                            alpha_mode: v.alpha_mode,
+                            alpha_cutoff: v.alpha_cutoff,
+                            double_sided: v.double_sided,
                         },
                     },
                 ));
@@ -282,6 +303,13 @@ fn capabilities() -> Value {
     json!({
         "base_color":"sRGB RGB and linear alpha texture multiplier",
         "alpha_changes_render_mode":false,
+        "alpha_mode_editable":true,
+        "alpha_modes":["opaque","mask","blend"],
+        "alpha_cutoff_editable":true,
+        "double_sided_editable":true,
+        "blend_depth_policy":"sorted back-to-front, depth test enabled, scene depth writes disabled",
+        "blend_shadow_policy":"blended surfaces do not cast binary shadow-map shadows",
+        "blend_picking_policy":"nonzero-alpha surfaces are pickable; picking has its own depth buffer",
         "emission_editable":true,
         "emission_color_space":"linear RGB; HDR values allowed; missing emissive texture samples white",
         "normal_scale_editable":true,
@@ -297,6 +325,49 @@ fn capabilities() -> Value {
 mod tests {
     use super::*;
     use katla_gfx::{MaterialHandle, MeshHandle};
+    #[test]
+    fn test_coverage_patch_undo_and_invalid_threshold_are_atomic() {
+        let mut world = World::new();
+        let entity = world.spawn((DrawableComponent::with_handles(
+            MeshHandle::NONE,
+            MaterialHandle::NONE,
+        ),));
+        let request = |cutoff| {
+            serde_json::from_value::<MaterialOp>(json!({"action":"set","entity_ids":[entity.id().to_string()],"alpha_mode":"mask","alpha_cutoff":cutoff,"double_sided":true})).unwrap()
+        };
+        let (_, mut command) = apply(&mut world, request(0.25)).unwrap();
+        let surface = world
+            .get_component::<DrawableComponent>(entity)
+            .unwrap()
+            .surface;
+        assert_eq!(surface.alpha_mode, katla_agent::material::AlphaMode::Mask);
+        assert!(surface.double_sided);
+        assert!(apply(&mut world, request(-0.25)).is_err());
+        assert_eq!(
+            world
+                .get_component::<DrawableComponent>(entity)
+                .unwrap()
+                .surface,
+            surface
+        );
+        command.as_mut().unwrap().undo(&mut world).unwrap();
+        assert_eq!(
+            world
+                .get_component::<DrawableComponent>(entity)
+                .unwrap()
+                .surface,
+            Default::default()
+        );
+        command.as_mut().unwrap().execute(&mut world).unwrap();
+        assert_eq!(
+            world
+                .get_component::<DrawableComponent>(entity)
+                .unwrap()
+                .surface,
+            surface
+        );
+    }
+
     #[test]
     fn test_surface_patch_keeps_linear_hdr_values_and_validates_entire_batch() {
         let mut world = World::new();
@@ -337,6 +408,9 @@ mod tests {
             emissive_factor: None,
             normal_scale: None,
             occlusion_strength: None,
+            alpha_mode: None,
+            alpha_cutoff: None,
+            double_sided: None,
         }
     }
     #[test]
@@ -394,6 +468,9 @@ mod tests {
                 emissive_factor: None,
                 normal_scale: None,
                 occlusion_strength: None,
+                alpha_mode: None,
+                alpha_cutoff: None,
+                double_sided: None,
             },
         )
         .unwrap();

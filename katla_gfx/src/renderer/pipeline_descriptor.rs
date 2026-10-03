@@ -73,7 +73,7 @@ pub enum BlendMode {
     /// No blending; source replaces the destination.
     #[default]
     Opaque,
-    /// Standard source-alpha blending.
+    /// Straight-alpha over compositing for both color and destination coverage.
     AlphaBlend,
 }
 
