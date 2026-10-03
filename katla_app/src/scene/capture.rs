@@ -156,6 +156,7 @@ fn capture_entities_scoped(
                 world
                     .get_component::<DrawableComponent>(*entity)
                     .map(|d| DrawableDescriptor {
+                        surface: Some(d.surface),
                         color: d.color.map(|c| {
                             let s = c.to_srgb();
                             [s.r, s.g, s.b, s.a]

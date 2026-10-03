@@ -26,6 +26,10 @@ pub struct GltfMaterialInfo {
 
     /// Emission factor (RGB multiplier for emission texture).
     pub emission_factor: [f32; 3],
+    /// Tangent-space normal X/Y multiplier.
+    pub normal_scale: f32,
+    /// Occlusion texture influence on ambient lighting.
+    pub occlusion_strength: f32,
 
     /// Base color (albedo) texture index in GLTF images array.
     pub base_color_texture: Option<usize>,
@@ -51,6 +55,8 @@ impl Default for GltfMaterialInfo {
             metallic_factor: 1.0,
             roughness_factor: 1.0,
             emission_factor: [0.0; 3],
+            normal_scale: 1.0,
+            occlusion_strength: 1.0,
             base_color_texture: None,
             normal_texture: None,
             metallic_roughness_texture: None,
@@ -101,6 +107,10 @@ impl GltfMaterialInfo {
             metallic_factor,
             roughness_factor,
             emission_factor,
+            normal_scale: material.normal_texture().map_or(1.0, |info| info.scale()),
+            occlusion_strength: material
+                .occlusion_texture()
+                .map_or(1.0, |info| info.strength()),
             base_color_texture,
             normal_texture,
             metallic_roughness_texture,

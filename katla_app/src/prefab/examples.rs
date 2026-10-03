@@ -60,6 +60,7 @@ fn chair() -> Prefab {
     frame.name = Some("Frame".into());
     frame.parent = Some(SceneEntityId(1));
     frame.drawable = Some(DrawableDescriptor {
+        surface: None,
         color: Some([0.55, 0.29, 0.12, 1.0]),
         metallic: 0.0,
         roughness: 0.7,
@@ -78,6 +79,7 @@ fn chair() -> Prefab {
     cushion.parent = Some(SceneEntityId(1));
     cushion.transform.position = [0.0, 0.54, 0.02];
     cushion.drawable = Some(DrawableDescriptor {
+        surface: None,
         color: Some([0.85, 0.18, 0.09, 1.0]),
         metallic: 0.0,
         roughness: 0.9,
@@ -103,6 +105,7 @@ fn workshop() -> Scene {
     floor.name = Some("Floor".into());
     floor.transform.position[1] = -0.01;
     floor.drawable = Some(DrawableDescriptor {
+        surface: None,
         color: Some([0.48, 0.52, 0.56, 1.0]),
         metallic: 0.0,
         roughness: 0.85,

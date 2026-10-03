@@ -21,6 +21,8 @@ pub struct DrawableComponent {
     /// Emission texture for self-illumination, referenced by handle
     /// (the backend resolves it to its binding table each frame)
     pub emission: TextureHandle,
+    /// Emission, normal-map and occlusion multipliers owned by this drawable.
+    pub surface: crate::rendering::MaterialSurface,
     /// Local-space bounding box for frustum culling
     pub bounds: Option<AABB>,
 }
@@ -37,6 +39,7 @@ impl DrawableComponent {
             roughness: 0.5,
             ao: 1.0,
             emission: TextureHandle::NONE,
+            surface: Default::default(),
             bounds: None,
         }
     }
@@ -56,6 +59,7 @@ impl DrawableComponent {
             roughness: 0.5,
             ao: 1.0,
             emission: TextureHandle::NONE,
+            surface: Default::default(),
             bounds: None,
         }
     }
@@ -78,6 +82,7 @@ impl DrawableComponent {
             roughness,
             ao,
             emission: TextureHandle::NONE,
+            surface: Default::default(),
             bounds: None,
         }
     }

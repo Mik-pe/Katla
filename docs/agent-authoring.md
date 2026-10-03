@@ -64,11 +64,17 @@ are flat PBR tints, rather than scanned wood, concrete or fabric textures.
 
 Available presets: `plaster`, `oak`, `concrete`, `ceramic`, `brushed_metal`, `fabric`.
 Preset discovery and inspection return `capabilities`, including alpha's current
-effect, unavailable emission/texture editing and the batch contract. Presets supply
+effect, supported surface factors, unavailable texture editing and the batch contract. Presets supply
 isotropic scalar factors; `brushed_metal` installs no directional brushing.
 Explicit fields override the preset. Omitting the preset patches only supplied
-fields. `base_color` is sRGB RGBA; `metallic`, `roughness` and `ao` are linear
-factors. Every number must be finite and in 0..=1. Batch edits accept 1–256
+fields. `base_color` is sRGB RGB with linear alpha; `metallic`, `roughness` and `ao` are linear
+factors within 0..=1. `emissive_factor` is nonnegative linear RGB and accepts values
+above one for HDR self-illumination, including materials without an emissive texture.
+`normal_scale` multiplies the decoded normal map's X/Y components; zero flattens it.
+`occlusion_strength` is within 0..=1 and blends the occlusion texture's influence on
+ambient lighting. Zero ignores that texture. Every number must be finite. Receipts
+name base-color and emissive color spaces separately. These factors share inspector
+preview, undo and scene persistence. Batch edits accept 1–256
 distinct mesh IDs and preflight every target before changing any object.
 One batch is one agent undo step. Inspector sliders preview continuously and
 group a pointer gesture into one editor undo step. Undo and redo restore the

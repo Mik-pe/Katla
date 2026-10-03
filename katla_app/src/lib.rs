@@ -36,7 +36,7 @@ pub use application::frame_graph_config::{
 };
 pub use preferences::Preferences;
 pub use renderer_type::{FrameGraph, Renderer};
-pub use rendering::FrameContext;
+pub use rendering::{FrameContext, FrameSubmission, MaterialSurface};
 
 /// Editable static mesh assets.
 pub mod mesh_asset;

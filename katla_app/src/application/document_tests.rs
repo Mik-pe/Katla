@@ -53,6 +53,9 @@ fn test_live_material_gesture_undo_redo_and_scene_capture() {
                 metallic: None,
                 roughness: Some(roughness),
                 ao: None,
+                emissive_factor: Some([roughness * 10.0, 0.5, 0.25]),
+                normal_scale: Some(roughness + 0.25),
+                occlusion_strength: Some(1.0 - roughness),
             }));
         editor::process_editor_actions(&mut app);
         if index < 2 {
@@ -61,6 +64,13 @@ fn test_live_material_gesture_undo_redo_and_scene_capture() {
     }
     assert_eq!(app.editor.undo_stack.len(), 1);
     assert!(app.editor.perform_undo(&mut app.world));
+    assert_eq!(
+        app.world
+            .get_component::<DrawableComponent>(entity)
+            .unwrap()
+            .surface,
+        crate::rendering::MaterialSurface::default()
+    );
     assert_eq!(
         app.world
             .get_component::<DrawableComponent>(entity)
@@ -79,6 +89,15 @@ fn test_live_material_gesture_undo_redo_and_scene_capture() {
     let scene = SceneManager::save_scene(&mut app).unwrap();
     assert_eq!(scene.entities[0].drawable.as_ref().unwrap().roughness, 0.4);
     assert_eq!(scene.entities[0].drawable.as_ref().unwrap().color, None);
+    let surface = scene.entities[0]
+        .drawable
+        .as_ref()
+        .unwrap()
+        .surface
+        .unwrap();
+    assert_eq!(surface.emissive_factor, [4.0, 0.5, 0.25]);
+    assert_eq!(surface.normal_scale, 0.65);
+    assert_eq!(surface.occlusion_strength, 0.6);
     app.editor.clear_entity_references();
     assert!(app.editor.material_drag.is_none());
 }

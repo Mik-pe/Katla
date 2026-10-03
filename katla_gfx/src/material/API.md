@@ -67,15 +67,22 @@ an explicit flat normal and neutral metallic/roughness texture.
 | Role | Transfer function | Scene fallback | Shader use |
 | --- | --- | --- | --- |
 | Albedo | sRGB RGB, linear alpha | White | RGB × linear base color; alpha × base alpha |
-| Normal | Linear | `(128,128,255,255)` in RGBA8 | Tangent-space normal |
+| Normal | Linear | `(128,128,255,255)` in RGBA8 | Decode, scale X/Y, normalize tangent-space normal |
 | Metallic/roughness | Linear | White | B × metallic; G × roughness |
-| Occlusion | Linear | White | R × per-object AO |
-| Emission | sRGB RGB | No emission | Add sampled RGB to linear HDR lighting |
+| Occlusion | Linear | White | `mix(1, R, strength)` × per-object AO, applied to ambient light |
+| Emission | sRGB RGB | White × zero factor | Sampled linear RGB × linear emissive factor, added to HDR lighting |
 
 Neutral MR channels are both one. Object defaults are metallic `0`, roughness
 `0.5`, AO `1`; the texture must preserve those values. Bindless slots are GPU
-addresses, never persistent asset identities. Emission is currently a separate
-`DrawCall::with_emission(TextureHandle)` binding with no color/intensity factor.
+addresses, never persistent asset identities. Emission's texture remains a
+`DrawCall::with_emission(TextureHandle)` binding. Its RGB factor, normal scale and
+occlusion strength belong to app `MaterialSurface`, independently of GPU handles.
+`FrameContext::take_submission` returns geometry and surface values indexed by the
+same object slots. Sorting/filtering preserves those indices. The scene composition
+binds immutable `SurfaceParameters` bytes at group 0, binding 2; both backends own
+their submission lifetime through ordinary pass packets. No scene-specific core
+uniform fields or methods are required. Missing emission samples the white fallback;
+zero emissive RGB means no emission even when an emissive texture is installed.
 
 ## glTF import contract and limits
 
@@ -101,7 +108,7 @@ import. Static positions preserve exact node matrices, including shear, and bake
 negative determinants reverse triangle winding as well as tangent handedness.
 
 Base color factors are already linear and are copied without sRGB conversion.
-Metallic and roughness factors initialize the drawable. Albedo and emissive
+Metallic, roughness, normal scale, occlusion strength and emissive RGB factors initialize the drawable. Albedo and emissive
 textures upload as sRGB; normal, MR and occlusion upload as linear UNORM. A single
 image used for color and data roles receives separate uploads. Grayscale images
 expand to RGB, grayscale-alpha retains alpha, and 16-bit integer channels
@@ -110,9 +117,8 @@ an optional-texture fallback; failed uploads retain the role's existing fallback
 and add no handle to resource tracking.
 
 This is not full glTF material support. Alpha modes/cutoffs, double-sided shading, UV sets and
-transforms, per-texture samplers, normal scale, occlusion strength, emissive
-factors and material extensions need dedicated support. Scene serialization
-preserves editable base color and PBR factors; texture assignment and standalone
+transforms, per-texture samplers and material extensions need dedicated support. Scene serialization
+preserves editable base color, PBR factors and surface multipliers; texture assignment and standalone
 material assets are not yet editable/persisted. Unresolved work and acceptance
 criteria live in [TODO](../../../TODO.md#material-correctness).
 
@@ -209,3 +215,7 @@ expand whole-model material overrides, preserve group colliders and retire all
 owned resources. These probes complement the shared BRDF arithmetic checks;
 they are not full-scene visual quality benchmarks. Physical Metal acceptance
 requires its native hardware and debug environment.
+The same static/skinned probes sample scaled normal maps, occlusion strength,
+textureless emission and sRGB emissive textures multiplied by linear RGB factors,
+before and after scene reconstruction. Native document tests cover HDR factor
+editing, gesture grouping, undo/redo and capture without sRGB conversion of emission.

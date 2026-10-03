@@ -1,0 +1,52 @@
+[
+  {
+    "a": 5,
+    "b": 6,
+    "description": "normal_scale 0 to 1; occlusion_strength stays 0",
+    "changed_pixels": 12266,
+    "total_pixels": 685685,
+    "difference_bbox": [
+      221,
+      336,
+      494,
+      666
+    ]
+  },
+  {
+    "a": 6,
+    "b": 7,
+    "description": "occlusion_strength 0 to 1; normal_scale stays 1",
+    "changed_pixels": 19576,
+    "total_pixels": 685685,
+    "difference_bbox": [
+      221,
+      341,
+      494,
+      666
+    ]
+  },
+  {
+    "a": 9,
+    "b": 10,
+    "description": "save/load identical camera",
+    "changed_pixels": 0,
+    "total_pixels": 685685,
+    "difference_bbox": null
+  },
+  {
+    "a": 12,
+    "b": 13,
+    "description": "light intensity 3 to 0",
+    "changed_pixels": 0,
+    "total_pixels": 685685,
+    "difference_bbox": null
+  },
+  {
+    "a": 12,
+    "b": 14,
+    "description": "light intensity undo",
+    "changed_pixels": 0,
+    "total_pixels": 685685,
+    "difference_bbox": null
+  }
+]

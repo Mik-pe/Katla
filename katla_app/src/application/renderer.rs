@@ -146,7 +146,9 @@ impl Application {
 
             draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
 
-            draw = draw.with_emission(drawable.emission);
+            draw = draw
+                .with_emission(drawable.emission)
+                .with_surface(drawable.surface);
 
             #[cfg(feature = "editor")]
             {
@@ -427,15 +429,20 @@ impl Application {
 
         // Collect point lights for Forward+ culling
         self.collect_lights();
-        let mut draw_list = frame.take_draw_list();
+        let submission = frame.take_submission();
+        let mut draw_list = submission.draw_list;
         self.last_draw_call_count = draw_list.len();
         draw_list.sort_by_material();
 
         let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
 
-        if let Err(error) =
-            self.prepare_scene_gpu(&frame_token, delta_time, &frame_uniforms, &draw_list)
-        {
+        if let Err(error) = self.prepare_scene_gpu(
+            &frame_token,
+            delta_time,
+            &frame_uniforms,
+            &draw_list,
+            &submission.surfaces,
+        ) {
             log::error!("Scene GPU preparation failed: {error}");
             let _ = self.renderer.abort(frame_token);
             return;
@@ -1052,7 +1059,8 @@ impl Application {
         self.collect_draws_with_context(&mut frame, &frustum);
 
         self.collect_lights();
-        let mut draw_list = frame.take_draw_list();
+        let submission = frame.take_submission();
+        let mut draw_list = submission.draw_list;
         self.last_draw_call_count = draw_list.len();
         draw_list.sort_by_material();
 
@@ -1061,9 +1069,13 @@ impl Application {
         // draw references initialized GPU data.
         let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
 
-        if let Err(error) =
-            self.prepare_scene_gpu(&frame_token, delta_time, &frame_uniforms, &draw_list)
-        {
+        if let Err(error) = self.prepare_scene_gpu(
+            &frame_token,
+            delta_time,
+            &frame_uniforms,
+            &draw_list,
+            &submission.surfaces,
+        ) {
             log::error!("Scene GPU preparation failed: {error}");
             let _ = self.renderer.abort(frame_token);
             return;

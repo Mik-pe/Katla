@@ -35,7 +35,7 @@
 //!     .submit();
 //!
 //! // Get the draw list to pass to renderer
-//! let draw_list = frame.take_draw_list();
+//! let submission = frame.take_submission();
 //! ```
 
 use katla_gfx::{
@@ -43,19 +43,27 @@ use katla_gfx::{
     renderer::{DrawCall, DrawList, InstanceData},
 };
 
-use super::FrameUniforms;
+use super::{FrameUniforms, MaterialSurface, SurfaceParameters};
+
+/// Geometry and surface values indexed by the draw list's assigned object slots.
+pub struct FrameSubmission {
+    /// Core geometry commands retain their slots across filtering and sorting.
+    pub draw_list: DrawList,
+    pub(crate) surfaces: Vec<SurfaceParameters>,
+}
 
 /// Per-frame context for submitting draws with automatic instance allocation.
 ///
 /// Object storage slots are assigned by the `DrawList` at push time;
 /// `submit()` returns the base slot assigned to the draw. The draw list is
-/// taken (and the context cleared) when `take_draw_list()` is called.
+/// taken (and the context cleared) when `take_submission()` is called.
 pub struct FrameContext {
     /// Accumulated draw calls for this frame
     draw_list: DrawList,
     /// Scene shader data for the submitted frame
     /// Always set via set_camera() or set_frame_uniforms() before rendering
     frame_uniforms: FrameUniforms,
+    surfaces: Vec<SurfaceParameters>,
 }
 
 impl Default for FrameContext {
@@ -72,6 +80,7 @@ impl FrameContext {
         Self {
             draw_list: DrawList::new(),
             frame_uniforms: FrameUniforms::default(),
+            surfaces: vec![SurfaceParameters::default()],
         }
     }
 
@@ -134,6 +143,7 @@ impl FrameContext {
             roughness: None,
             ao: None,
             emission: None,
+            surface: MaterialSurface::default(),
             instances: Vec::new(),
         }
     }
@@ -163,6 +173,7 @@ impl FrameContext {
             roughness: None,
             ao: None,
             emission: None,
+            surface: MaterialSurface::default(),
             instances,
         }
     }
@@ -171,9 +182,12 @@ impl FrameContext {
     ///
     /// This should be called once per frame to submit all draws to the renderer.
     /// After calling this, the frame context is reset and ready for the next frame.
-    pub fn take_draw_list(&mut self) -> DrawList {
+    pub fn take_submission(&mut self) -> FrameSubmission {
         self.frame_uniforms = FrameUniforms::default(); // Reset to defaults
-        std::mem::take(&mut self.draw_list)
+        FrameSubmission {
+            draw_list: std::mem::take(&mut self.draw_list),
+            surfaces: std::mem::replace(&mut self.surfaces, vec![SurfaceParameters::default()]),
+        }
     }
 
     /// Get the current draw list without taking it (for inspection).
@@ -207,11 +221,17 @@ pub struct DrawBuilder<'a> {
     ao: Option<f32>,
     /// Emission texture handle
     emission: Option<TextureHandle>,
+    surface: MaterialSurface,
     /// Instance data for instanced rendering
     instances: Vec<InstanceData>,
 }
 
 impl<'a> DrawBuilder<'a> {
+    /// Set the drawable's linear emission and sampled normal/occlusion multipliers.
+    pub fn with_surface(mut self, surface: MaterialSurface) -> Self {
+        self.surface = surface;
+        self
+    }
     /// Set the model transform matrix (object to world transform).
     pub fn with_transform(mut self, matrix: [f32; 16]) -> Self {
         self.transform = Some(matrix);
@@ -319,6 +339,63 @@ impl<'a> DrawBuilder<'a> {
             draw_call = draw_call.with_skeleton(skeleton);
         }
 
-        self.frame.draw_list.push(draw_call)
+        let count = draw_call.instance_count().max(1) as usize;
+        let slot = self.frame.draw_list.push(draw_call);
+        let end = slot as usize + count;
+        self.frame
+            .surfaces
+            .resize(end, SurfaceParameters::default());
+        self.frame.surfaces[slot as usize..end].fill(self.surface.into());
+        slot
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_surface_slots_survive_material_sorting_and_reset_with_submission() {
+        let mut context = FrameContext::new();
+        let surface = MaterialSurface {
+            emissive_factor: [2.0, 0.5, 0.0],
+            normal_scale: 0.0,
+            occlusion_strength: 0.25,
+        };
+        let first = context
+            .draw(MeshHandle::from_raw(1, 0), MaterialHandle::from_raw(2, 0))
+            .with_surface(surface)
+            .submit();
+        let second = context
+            .draw_instanced(
+                MeshHandle::from_raw(2, 0),
+                MaterialHandle::from_raw(1, 0),
+                vec![InstanceData::default(); 2],
+            )
+            .submit();
+        let mut submission = context.take_submission();
+        submission.draw_list.sort_by_material();
+        assert_eq!(
+            submission
+                .draw_list
+                .iter()
+                .next()
+                .unwrap()
+                .base_object_slot(),
+            second
+        );
+        assert_eq!(submission.surfaces.len(), second as usize + 2);
+        assert_eq!(
+            submission.surfaces[first as usize].emissive,
+            [2.0, 0.5, 0.0, 0.0]
+        );
+        assert_eq!(submission.surfaces[second as usize].emissive, [0.0; 4]);
+        assert_eq!(
+            submission.surfaces[second as usize + 1].normal_occlusion,
+            [1.0, 1.0, 0.0, 0.0]
+        );
+        let empty = context.take_submission();
+        assert!(empty.draw_list.is_empty());
+        assert_eq!(empty.surfaces.len(), 1);
     }
 }

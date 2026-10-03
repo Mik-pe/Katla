@@ -36,3 +36,13 @@ The separate native [authoring acceptance](interface/acceptance.json) passed:
 material edits changed 616 pixels; undo restored the exact original image; invalid
 batches preserved valid members; seven room parts and scene save/load succeeded.
 The recorded paths and submission IDs identify this disposable session.
+
+The [surface-factor study](surface/observations.md) used a fresh independent agent
+with a private editor built from `a517de0f` plus the surface-factor implementation
+committed with this report. Shader sources stayed fixed. Its 45 participant calls
+and 15 native images verify HDR linear emission, separate normal and occlusion
+controls on an imported textured model, rejection and recovery, undo, and numeric
+persistence. The before/after scene reload images are pixel-identical. A lighting
+isolation attempt was inconclusive and is preserved as such. Texture provenance
+and field-specific errors remain useful interface improvements; the ambiguous
+factor-range message observed in this session was corrected with the implementation.

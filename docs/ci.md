@@ -209,7 +209,8 @@ preview controls and capture/save/reload; commands are in [prefabs](prefabs.md#v
 Linux runs the portable `gltf_` and `util::modelcache` application tests; macOS's portable application
 suite includes them too. The existing Metal 4 capability-gated document step
 also runs the native `material_tests` fixtures, including static/skinned
-per-primitive surfaces, second-skin selection, scene round-trip/rollback and
+per-primitive surfaces, textureless/textured emission, scaled normals, occlusion
+strength, second-skin selection, scene round-trip/rollback and
 resource retirement. The primitive probes use API validation. The full PBR
 compile fixture disables Vulkan validation on the affected Intel driver; Metal
 requires its debug environment.

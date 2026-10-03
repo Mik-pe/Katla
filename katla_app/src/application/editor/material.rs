@@ -20,6 +20,7 @@ struct Snapshot {
     metallic: f32,
     roughness: f32,
     ao: f32,
+    surface: crate::rendering::MaterialSurface,
 }
 
 impl Snapshot {
@@ -30,6 +31,9 @@ impl Snapshot {
             metallic: self.metallic,
             roughness: self.roughness,
             ao: self.ao,
+            emissive_factor: self.surface.emissive_factor,
+            normal_scale: self.surface.normal_scale,
+            occlusion_strength: self.surface.occlusion_strength,
         }
     }
     fn read(d: &DrawableComponent) -> Self {
@@ -38,6 +42,7 @@ impl Snapshot {
             metallic: d.metallic,
             roughness: d.roughness,
             ao: d.ao,
+            surface: d.surface,
         }
     }
     fn apply(self, d: &mut DrawableComponent) {
@@ -45,6 +50,7 @@ impl Snapshot {
         d.metallic = self.metallic;
         d.roughness = self.roughness;
         d.ao = self.ao;
+        d.surface = self.surface;
     }
 }
 
@@ -170,13 +176,13 @@ pub(in crate::application) fn finish_drag(app: &mut Application) {
 fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCommand>), String> {
     match op {
         MaterialOp::Presets => Ok((
-            json!({"presets":MaterialPreset::ALL.map(|p| json!({"preset":p,"label":p.label(),"values":p.values()})), "color_space":"srgb", "scope":"Per-object multipliers; textures and mesh geometry are preserved.", "capabilities":capabilities()}),
+            json!({"presets":MaterialPreset::ALL.map(|p| json!({"preset":p,"label":p.label(),"values":p.values()})), "base_color_space":"srgb","emissive_color_space":"linear", "scope":"Per-object multipliers; textures and mesh geometry are preserved.", "capabilities":capabilities()}),
             None,
         )),
         MaterialOp::Inspect { entity_id } => {
             let id = entity(world, &entity_id)?;
             Ok((
-                json!({"entity_id":entity_id,"values":values(drawable(world,id)?),"color_space":"srgb","capabilities":capabilities()}),
+                json!({"entity_id":entity_id,"values":values(drawable(world,id)?),"base_color_space":"srgb","emissive_color_space":"linear","capabilities":capabilities()}),
                 None,
             ))
         }
@@ -187,6 +193,9 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
             metallic,
             roughness,
             ao,
+            emissive_factor,
+            normal_scale,
+            occlusion_strength,
         } => {
             if entity_ids.is_empty() || entity_ids.len() > 256 {
                 return Err("Choose between 1 and 256 entity_ids".into());
@@ -196,6 +205,9 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
                 && metallic.is_none()
                 && roughness.is_none()
                 && ao.is_none()
+                && emissive_factor.is_none()
+                && normal_scale.is_none()
+                && occlusion_strength.is_none()
             {
                 return Err("Supply a preset or at least one material factor".into());
             }
@@ -221,6 +233,15 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
                 if let Some(a) = ao {
                     v.ao = a;
                 }
+                if let Some(emissive) = emissive_factor {
+                    v.emissive_factor = emissive;
+                }
+                if let Some(scale) = normal_scale {
+                    v.normal_scale = scale;
+                }
+                if let Some(strength) = occlusion_strength {
+                    v.occlusion_strength = strength;
+                }
                 v.validate()?;
                 let c = v.base_color;
                 let before = Snapshot::read(d);
@@ -238,6 +259,11 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
                         metallic: v.metallic,
                         roughness: v.roughness,
                         ao: v.ao,
+                        surface: crate::rendering::MaterialSurface {
+                            emissive_factor: v.emissive_factor,
+                            normal_scale: v.normal_scale,
+                            occlusion_strength: v.occlusion_strength,
+                        },
                     },
                 ));
             }
@@ -245,7 +271,7 @@ fn apply(world: &mut World, op: MaterialOp) -> Result<(Value, Option<MaterialCom
             command.execute(world).map_err(|e| e.to_string())?;
             let results: Vec<_> = command.edits.iter().map(|(id,before,_)| Ok(json!({"entity_id":id.id().to_string(),"before":before.values(),"values":values(drawable(world,*id)?)}))).collect::<Result<_,String>>()?;
             Ok((
-                json!({"materials":results,"color_space":"srgb","capabilities":capabilities()}),
+                json!({"materials":results,"base_color_space":"srgb","emissive_color_space":"linear","capabilities":capabilities()}),
                 Some(command),
             ))
         }
@@ -256,7 +282,10 @@ fn capabilities() -> Value {
     json!({
         "base_color":"sRGB RGB and linear alpha texture multiplier",
         "alpha_changes_render_mode":false,
-        "emission_editable":false,
+        "emission_editable":true,
+        "emission_color_space":"linear RGB; HDR values allowed; missing emissive texture samples white",
+        "normal_scale_editable":true,
+        "occlusion_strength_editable":true,
         "textures_editable":false,
         "presets":"isotropic metallic/roughness factors; no texture or directional brushing",
         "maximum_batch_size":256,
@@ -268,6 +297,35 @@ fn capabilities() -> Value {
 mod tests {
     use super::*;
     use katla_gfx::{MaterialHandle, MeshHandle};
+    #[test]
+    fn test_surface_patch_keeps_linear_hdr_values_and_validates_entire_batch() {
+        let mut world = World::new();
+        let entity = world.spawn((DrawableComponent::with_handles(
+            MeshHandle::NONE,
+            MaterialHandle::NONE,
+        ),));
+        let request = |emission| {
+            serde_json::from_value::<MaterialOp>(json!({"action":"set", "entity_ids":[entity.id().to_string()], "emissive_factor":emission, "normal_scale":0.0, "occlusion_strength":0.25})).unwrap()
+        };
+        let (receipt, undo) = apply(&mut world, request([4.0, 0.2, 0.0])).unwrap();
+        assert_eq!(receipt["emissive_color_space"], "linear");
+        assert_eq!(receipt["base_color_space"], "srgb");
+        let surface = drawable(&world, entity).unwrap().surface;
+        assert_eq!(surface.emissive_factor, [4.0, 0.2, 0.0]);
+        assert_eq!(surface.normal_scale, 0.0);
+        assert_eq!(surface.occlusion_strength, 0.25);
+        assert!(apply(&mut world, request([-1.0, 0.2, 0.0])).is_err());
+        assert_eq!(drawable(&world, entity).unwrap().surface, surface);
+        let invalid = serde_json::from_value::<MaterialOp>(json!({"action":"set", "entity_ids":[entity.id().to_string(), "0"], "emissive_factor":[2.0, 0.0, 0.0]})).unwrap();
+        assert!(apply(&mut world, invalid).is_err());
+        assert_eq!(drawable(&world, entity).unwrap().surface, surface);
+        undo.unwrap().undo(&mut world).unwrap();
+        assert_eq!(
+            drawable(&world, entity).unwrap().surface,
+            crate::rendering::MaterialSurface::default()
+        );
+        assert!(drawable(&world, entity).unwrap().color.is_none());
+    }
     fn set(ids: Vec<String>, roughness: f32) -> MaterialOp {
         MaterialOp::Set {
             entity_ids: ids,
@@ -276,6 +334,9 @@ mod tests {
             metallic: None,
             roughness: Some(roughness),
             ao: None,
+            emissive_factor: None,
+            normal_scale: None,
+            occlusion_strength: None,
         }
     }
     #[test]
@@ -330,6 +391,9 @@ mod tests {
                 metallic: None,
                 roughness: None,
                 ao: None,
+                emissive_factor: None,
+                normal_scale: None,
+                occlusion_strength: None,
             },
         )
         .unwrap();

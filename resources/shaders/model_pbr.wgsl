@@ -15,6 +15,7 @@
 #include <bindless.wgsl>
 #include <pbr.wgsl>
 #include <tangent_frame.wgsl>
+#include <material_surface.wgsl>
 #include <shadow_sampling.wgsl>
 
 // Set 0: Uniforms (storage buffers)
@@ -23,6 +24,9 @@ var<storage, read> frame_data: FrameUniforms;
 
 @group(0) @binding(1)
 var<storage, read> objects: array<ObjectUniforms>;
+
+@group(0) @binding(2)
+var<storage, read> surfaces: array<SurfaceParameters>;
 
 // Set 3: Forward+ light culling data
 @group(3) @binding(0)
@@ -129,6 +133,7 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let obj = objects[in.instance_idx];
+    let surface = surfaces[in.instance_idx];
 
     let albedo_idx = obj.texture_indices.x;
     let normal_idx = obj.texture_indices.y;
@@ -142,8 +147,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 
     let normal_sample = sample_texture(normal_idx, in.tex_coords);
 
-    let unpacked = normal_sample.xyz * 2.0 - 1.0;
-    let tangent_normal = vec3f(unpacked.x, unpacked.y, unpacked.z);
+    let tangent_normal = surface_tangent_normal(normal_sample.xyz, surface.normal_occlusion.x);
 
     let T = normalize(in.world_tangent);
     let B = normalize(in.world_bitangent);
@@ -157,7 +161,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let metallic = mr_sample.b * obj.material_params.x;
 
     let ao_sample = sample_texture(ao_idx, in.tex_coords);
-    let ao = ao_sample.r * obj.material_params.z;
+    let ao = surface_occlusion(ao_sample.r, surface.normal_occlusion.y, obj.material_params.z);
 
     let V = normalize(frame_data.camera_position.xyz - in.world_pos);
 
@@ -183,11 +187,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     // Ambient (SSAO and contact shadows disabled - require separate pass for correct depth buffer layout)
     let ambient = vec3f(0.15) * albedo * ao;
 
-    var emission = vec3f(0.0);
-    if (emission_idx > 0u) {
-        let emission_sample = sample_texture(emission_idx, in.tex_coords);
-        emission = emission_sample.rgb;
-    }
+    let emission = surface_emission(sample_texture(emission_idx, in.tex_coords).rgb, surface.emissive.rgb);
 
     let color = ambient + Lo + emission;
 

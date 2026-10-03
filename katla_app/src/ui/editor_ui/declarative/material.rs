@@ -18,7 +18,7 @@ struct Baseline {
 
 pub(super) struct MaterialControls {
     baseline: StateId,
-    channels: [StateId; 7],
+    channels: [StateId; 12],
     expanded: StateId,
 }
 
@@ -50,7 +50,7 @@ impl MaterialControls {
         let baseline: Baseline = ctx.get_state(self.baseline)?;
         let actual = channels(values);
         if baseline.entity == Some(entity) {
-            let edited: [f32; 7] = self
+            let edited: [f32; 12] = self
                 .channels
                 .map(|id| ctx.get_state(id).unwrap_or_default());
             let old = channels(baseline.values);
@@ -63,6 +63,10 @@ impl MaterialControls {
                     metallic: (edited[4] != old[4]).then_some(edited[4]),
                     roughness: (edited[5] != old[5]).then_some(edited[5]),
                     ao: (edited[6] != old[6]).then_some(edited[6]),
+                    emissive_factor: (edited[7..10] != old[7..10])
+                        .then_some([edited[7], edited[8], edited[9]]),
+                    normal_scale: (edited[10] != old[10]).then_some(edited[10]),
+                    occlusion_strength: (edited[11] != old[11]).then_some(edited[11]),
                 }));
             }
         }
@@ -115,6 +119,9 @@ impl MaterialControls {
                             metallic: None,
                             roughness: None,
                             ao: None,
+                            emissive_factor: None,
+                            normal_scale: None,
+                            occlusion_strength: None,
                         }));
                     }))
                     .boxed()])
@@ -139,6 +146,11 @@ impl MaterialControls {
             "Metallic",
             "Roughness",
             "Occlusion",
+            "Emission R",
+            "Emission G",
+            "Emission B",
+            "Normal scale",
+            "AO strength",
         ]
         .iter()
         .enumerate()
@@ -146,7 +158,11 @@ impl MaterialControls {
             let slider = labeled_slider(
                 if width < 220.0 { "" } else { label },
                 self.channels[index],
-                0.0..=1.0,
+                match index {
+                    7..=9 => 0.0..=actual[index].max(8.0),
+                    10 => actual[index].min(-2.0)..=actual[index].max(2.0),
+                    _ => 0.0..=1.0,
+                },
             )
             .label_width(if width < 220.0 { 0.0 } else { 76.0 })
             .show_value(true)
@@ -161,7 +177,7 @@ impl MaterialControls {
             });
         }
         content.push(
-            text("Presets are PBR tints. Model textures stay attached.")
+            text("Emission is linear RGB; values above 1 glow in HDR. Presets preserve model textures.")
                 .color(theme.text_muted)
                 .font_size(FontSize::Small)
                 .wrap((width - 24.0).max(1.0))
@@ -176,7 +192,7 @@ impl MaterialControls {
     }
 }
 
-fn channels(v: MaterialValues) -> [f32; 7] {
+fn channels(v: MaterialValues) -> [f32; 12] {
     [
         v.base_color[0],
         v.base_color[1],
@@ -185,5 +201,10 @@ fn channels(v: MaterialValues) -> [f32; 7] {
         v.metallic,
         v.roughness,
         v.ao,
+        v.emissive_factor[0],
+        v.emissive_factor[1],
+        v.emissive_factor[2],
+        v.normal_scale,
+        v.occlusion_strength,
     ]
 }

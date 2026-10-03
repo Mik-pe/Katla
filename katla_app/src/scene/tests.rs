@@ -36,6 +36,7 @@ fn test_scene_with_entities_round_trip() {
             height: 20.0,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.16, 0.17, 0.20, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -72,6 +73,7 @@ fn test_scene_with_entities_round_trip() {
             size: [1.0, 2.0, 1.0],
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.2, 0.5, 1.0, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -195,6 +197,7 @@ fn test_point_light_descriptor_round_trip() {
         },
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.6, 0.2, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -484,6 +487,7 @@ fn test_scene_serialized_output_is_human_readable() {
             size: [1.0, 1.0, 1.0],
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.0, 0.0, 1.0]),
             metallic: 0.5,
             roughness: 0.3,
@@ -545,6 +549,7 @@ fn test_full_default_scene_like_serialization() {
             height: 20.0,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.16, 0.17, 0.20, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -589,6 +594,7 @@ fn test_full_default_scene_like_serialization() {
                     rings: 16,
                 },
                 drawable: Some(DrawableDescriptor {
+                    surface: None,
                     color: Some([0.4, 0.6, 1.0, 1.0]),
                     metallic,
                     roughness,
@@ -629,6 +635,7 @@ fn test_full_default_scene_like_serialization() {
             size: [1.0, 1.0, 1.0],
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.47, 0.31, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -705,6 +712,7 @@ fn test_full_default_scene_like_serialization() {
         },
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.6, 0.2, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -1398,6 +1406,7 @@ fn test_primitive_round_trip() {
                 size: [1.5, 2.0, 3.0],
             },
             drawable: Some(DrawableDescriptor {
+                surface: None,
                 color: Some([0.8, 0.2, 0.1, 1.0]),
                 metallic: 0.7,
                 roughness: 0.3,
@@ -1436,6 +1445,7 @@ fn test_primitive_round_trip() {
                 rings: 24,
             },
             drawable: Some(DrawableDescriptor {
+                surface: None,
                 color: Some([0.1, 0.5, 0.9, 1.0]),
                 metallic: 0.1,
                 roughness: 0.9,
@@ -1473,6 +1483,7 @@ fn test_primitive_round_trip() {
                 height: 50.0,
             },
             drawable: Some(DrawableDescriptor {
+                surface: None,
                 color: Some([0.5, 0.5, 0.5, 1.0]),
                 metallic: 0.0,
                 roughness: 1.0,
@@ -1511,6 +1522,7 @@ fn test_primitive_round_trip() {
                 segments: 36,
             },
             drawable: Some(DrawableDescriptor {
+                surface: None,
                 color: Some([0.9, 0.7, 0.2, 1.0]),
                 metallic: 0.5,
                 roughness: 0.4,
@@ -1550,6 +1562,7 @@ fn test_primitive_round_trip() {
                 tube_segments: 32,
             },
             drawable: Some(DrawableDescriptor {
+                surface: None,
                 color: Some([0.3, 0.9, 0.4, 1.0]),
                 metallic: 0.3,
                 roughness: 0.6,
@@ -1691,6 +1704,7 @@ fn test_point_light_round_trip() {
         },
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.6, 0.2, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -2337,6 +2351,7 @@ fn test_velocity_round_trip() {
             size: [1.0, 1.0, 1.0],
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.2, 0.4, 0.8, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -2497,6 +2512,7 @@ fn test_load_spawn_integration() {
             size: [1.0, 2.0, 1.0],
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.8, 0.2, 0.1, 1.0]),
             metallic: 0.5,
             roughness: 0.3,
@@ -2539,6 +2555,7 @@ fn test_load_spawn_integration() {
             rings: 16,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.1, 0.5, 0.9, 1.0]),
             metallic: 0.0,
             roughness: 0.8,
@@ -2577,6 +2594,7 @@ fn test_load_spawn_integration() {
             height: 20.0,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.5, 0.5, 0.5, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -2616,6 +2634,7 @@ fn test_load_spawn_integration() {
             segments: 32,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.9, 0.7, 0.2, 1.0]),
             metallic: 0.5,
             roughness: 0.4,
@@ -2656,6 +2675,7 @@ fn test_load_spawn_integration() {
             tube_segments: 16,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.3, 0.9, 0.4, 1.0]),
             metallic: 0.3,
             roughness: 0.6,
@@ -2793,6 +2813,7 @@ fn test_load_spawn_integration() {
         },
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.6, 0.2, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -3035,6 +3056,7 @@ fn test_transform_persistence() {
             size: [1.0, 1.0, 1.0],
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.8, 0.2, 0.1, 1.0]),
             metallic: 0.5,
             roughness: 0.3,
@@ -3412,6 +3434,7 @@ fn test_full_editor_workflow() {
             size: [1.0, 1.0, 1.0],
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.8, 0.2, 0.1, 1.0]),
             metallic: 0.5,
             roughness: 0.3,
@@ -3448,6 +3471,7 @@ fn test_full_editor_workflow() {
         },
         source: EntitySource::Light,
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.9, 0.8, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -3492,6 +3516,7 @@ fn test_full_editor_workflow() {
             rings: 8,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.1, 0.5, 0.9, 1.0]),
             metallic: 0.0,
             roughness: 0.8,

@@ -15,6 +15,12 @@ pub struct MaterialValues {
     pub roughness: f32,
     /// Ambient occlusion multiplier; one leaves the surface unoccluded.
     pub ao: f32,
+    /// Linear RGB emission multiplier, including values above one for HDR emission.
+    pub emissive_factor: [f32; 3],
+    /// Tangent-space normal X/Y multiplier.
+    pub normal_scale: f32,
+    /// Occlusion texture influence on ambient light, in 0..1.
+    pub occlusion_strength: f32,
 }
 
 impl MaterialValues {
@@ -26,7 +32,17 @@ impl MaterialValues {
             .chain([&self.metallic, &self.roughness, &self.ao])
             .any(|v| !v.is_finite() || !(0.0..=1.0).contains(v))
         {
-            return Err("Material color and factors must be finite numbers in 0..=1".into());
+            return Err("Base color, metallic, roughness, and ambient occlusion must be finite numbers in 0..=1".into());
+        }
+        if !self
+            .emissive_factor
+            .into_iter()
+            .all(|value| value.is_finite() && value >= 0.0)
+            || !self.normal_scale.is_finite()
+            || !self.occlusion_strength.is_finite()
+            || !(0.0..=1.0).contains(&self.occlusion_strength)
+        {
+            return Err("Emission must be finite nonnegative linear RGB, normal_scale finite, and occlusion_strength within 0..1".into());
         }
         Ok(())
     }
@@ -83,6 +99,9 @@ impl MaterialPreset {
             metallic,
             roughness,
             ao: 1.0,
+            emissive_factor: [0.0; 3],
+            normal_scale: 1.0,
+            occlusion_strength: 1.0,
         }
     }
 }
@@ -109,6 +128,12 @@ pub enum MaterialOp {
         roughness: Option<f32>,
         #[serde(default)]
         ao: Option<f32>,
+        #[serde(default)]
+        emissive_factor: Option<[f32; 3]>,
+        #[serde(default)]
+        normal_scale: Option<f32>,
+        #[serde(default)]
+        occlusion_strength: Option<f32>,
     },
 }
 
@@ -153,17 +178,33 @@ impl MaterialOp {
                 "ao".into(),
                 json!({"type":"number","minimum":0,"maximum":1}),
             ),
+            (
+                "emissive_factor".into(),
+                json!({"type":"array","items":{"type":"number","minimum":0},"minItems":3,"maxItems":3,"description":"Linear RGB self-emission; values above 1 produce HDR emission; works without an emissive texture"}),
+            ),
+            (
+                "normal_scale".into(),
+                json!({"type":"number","description":"Tangent-space normal X/Y multiplier; 0 flattens the normal map"}),
+            ),
+            (
+                "occlusion_strength".into(),
+                json!({"type":"number","minimum":0,"maximum":1,"description":"Occlusion texture influence on ambient light; 0 ignores the texture"}),
+            ),
         ]);
         let branches: Vec<_> = [
             ("presets", vec!["action"], vec!["action"]),
             ("inspect", vec!["action", "entity_id"], vec!["action", "entity_id"]),
-            ("set", vec!["action", "entity_ids", "preset", "base_color", "metallic", "roughness", "ao"], vec!["action", "entity_ids"]),
+            ("set", vec!["action", "entity_ids", "preset", "base_color", "metallic", "roughness", "ao", "emissive_factor", "normal_scale", "occlusion_strength"], vec!["action", "entity_ids"]),
         ].into_iter().map(|(action, allowed, required)| {
             let mut fields: serde_json::Map<_, _> = properties.iter()
                 .filter(|(name, _)| allowed.contains(&name.as_str()))
                 .map(|(name, value)| (name.clone(), value.clone())).collect();
             fields.insert("action".into(), json!({"const":action}));
-            json!({"type":"object","properties":fields,"required":required,"additionalProperties":false})
+            let mut branch = json!({"type":"object","properties":fields,"required":required,"additionalProperties":false});
+            if action == "set" {
+                branch["anyOf"] = json!(allowed.iter().filter(|name| !["action", "entity_ids"].contains(name)).map(|name| json!({"required":[name]})).collect::<Vec<_>>());
+            }
+            branch
         }).collect();
         serde_json::Map::from_iter([
             ("type".into(), json!("object")),

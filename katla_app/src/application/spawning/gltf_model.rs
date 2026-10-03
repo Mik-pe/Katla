@@ -265,6 +265,11 @@ impl Application {
             drawable = drawable.with_bounds(primitive.bounds);
         }
         drawable.emission = upload.emission;
+        drawable.surface = crate::rendering::MaterialSurface {
+            emissive_factor: factors.emission_factor,
+            normal_scale: factors.normal_scale,
+            occlusion_strength: factors.occlusion_strength,
+        };
         if let Some(skin_index) = primitive.skin_index {
             let skin = model.document.skins().nth(skin_index).ok_or_else(|| {
                 AppError::ModelLoadFailed {

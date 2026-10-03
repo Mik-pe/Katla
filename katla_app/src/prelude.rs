@@ -9,7 +9,7 @@ pub use crate::application::frame_graph_config::{
     FrameGraphRuntime, KatlaEditorFrameGraphPreset, empty_frame_graph,
 };
 pub use crate::error::{AppError, AppResult};
-pub use crate::rendering::FrameContext;
+pub use crate::rendering::{FrameContext, FrameSubmission, MaterialSurface};
 pub use crate::spawner::Spawner;
 
 // Components

@@ -16,11 +16,13 @@ fn test_native_skinned_primitive_surfaces_use_selected_skin_across_roundtrip() {
 fn assert_native_primitive_surfaces(skinned: bool) {
     use crate::components::Children;
     use crate::scene::{EntitySource, SceneManager};
-    use katla_gfx::{DrawCall, DrawList, Vertex};
+    use katla_gfx::Vertex;
     let fixture = Fixture::new();
     let shader = r#"
 struct Object { model: mat4x4f, color: vec4f, params: vec4f, textures: vec4u }
 @group(0) @binding(1) var<storage,read> objects: array<Object>;
+@group(0) @binding(2) var<storage,read> surfaces: array<SurfaceParameters>;
+@group(0) @binding(3) var<uniform> mode: vec4u;
 @group(1) @binding(0) var textures: binding_array<texture_2d<f32>,4096>;
 struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(flat) object: u32 }
 @vertex fn vs_main(@location(0) position: vec3f, @builtin(instance_index) object: u32) -> Output {
@@ -29,9 +31,20 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
 @fragment fn fs_main(input: Output) -> @location(0) vec4f {
     let object = objects[input.object];
     let texel = textureLoad(textures[object.textures.x], vec2i(0),0);
+    if (mode.x == 1u) {
+        let surface = surfaces[input.object];
+        let normal = surface_tangent_normal(textureLoad(textures[object.textures.y], vec2i(0),0).rgb, surface.normal_occlusion.x);
+        let ao = surface_occlusion(textureLoad(textures[object.textures.w], vec2i(0),0).r, surface.normal_occlusion.y, object.params.z);
+        let emission = surface_emission(textureLoad(textures[u32(object.params.w)], vec2i(0),0).rgb, surface.emissive.rgb);
+        return vec4f(emission.r, normal.y * 0.5 + 0.5, ao, emission.g);
+    }
     return vec4f(object.color.rg * texel.rg, object.params.y, object.params.x);
 }
 "#;
+    let shader = format!(
+        "{}\n{shader}",
+        include_str!("../../../../resources/shaders/common/material_surface.wgsl")
+    );
     let skin_shader = shader.replace("@vertex fn vs_main(@location(0) position: vec3f, @builtin(instance_index) object: u32)",
         "@group(2) @binding(0) var<storage,read> joints: array<mat4x4f>; @vertex fn vs_main(@location(0) position: vec3f, @location(4) joint_ids: vec4u, @location(5) weights: vec4f, @builtin(instance_index) object: u32)")
         .replace("objects[object].model * vec4f(position,1)","objects[object].model * (joints[joint_ids.x]*weights.x + joints[joint_ids.y]*weights.y + joints[joint_ids.z]*weights.z + joints[joint_ids.w]*weights.w) * vec4f(position,1)");
@@ -41,7 +54,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
             if name == "model_pbr_skinned.wgsl" {
                 &skin_shader
             } else {
-                shader
+                &shader
             },
         )
         .unwrap();
@@ -69,8 +82,8 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
                      {"bufferView":1,"componentType":5126,"count":3,"type":"VEC3","min":[0,-1,0],"max":[1,1,0]}],
         "meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0},{"attributes":{"POSITION":1},"material":1}]}],
         "images":[{"uri":"left.png"},{"uri":"right.png"}],"textures":[{"source":0},{"source":1}],
-        "materials":[{"pbrMetallicRoughness":{"baseColorFactor":[0.8,0.2,0.1,1],"metallicFactor":0.25,"roughnessFactor":0.75,"baseColorTexture":{"index":0}}},
-                     {"pbrMetallicRoughness":{"baseColorFactor":[0.1,0.9,0.2,1],"metallicFactor":0.8,"roughnessFactor":0.2,"baseColorTexture":{"index":1}}}]
+        "materials":[{"emissiveFactor":[0.2,0.4,0.1],"normalTexture":{"index":0,"scale":0},"occlusionTexture":{"index":0,"strength":0.25},"pbrMetallicRoughness":{"baseColorFactor":[0.8,0.2,0.1,1],"metallicFactor":0.25,"roughnessFactor":0.75,"baseColorTexture":{"index":0}}},
+                     {"emissiveFactor":[0.6,0.1,0.2],"emissiveTexture":{"index":1},"normalTexture":{"index":0,"scale":2},"occlusionTexture":{"index":0,"strength":0.75},"pbrMetallicRoughness":{"baseColorFactor":[0.1,0.9,0.2,1],"metallicFactor":0.8,"roughnessFactor":0.2,"baseColorTexture":{"index":1}}}]
     }"#).unwrap();
     if skinned {
         let mut document: serde_json::Value =
@@ -204,110 +217,135 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
             );
             assert_eq!(app.gpu_resource_tracker.mesh_count(), 2);
             assert_eq!(app.gpu_resource_tracker.material_count(), 2);
-            assert_eq!(app.gpu_resource_tracker.texture_count(), 2);
+            assert_eq!(app.gpu_resource_tracker.texture_count(), 7);
             assert!(
                 app.world
                     .query_ref::<&DrawableComponent>()
                     .all(|(_, drawable)| !original_materials.contains(&drawable.material_handle))
             );
         }
-        let mut list = DrawList::new();
-        let mut pipelines = Vec::new();
-        for (_, drawable) in app.world.query_ref::<&DrawableComponent>() {
-            assert_eq!(app.renderer.mesh_index_count(drawable.mesh_handle), Some(3));
-            pipelines.push(PassPipeline {
-                vertex_layout: if skinned {
-                    katla_gfx::VertexPBRSkinned::layout()
-                } else {
-                    katla_gfx::VertexPBR::layout()
-                },
-                material: drawable.material_handle,
-            });
-            list.push(
-                DrawCall::new(drawable.mesh_handle, drawable.material_handle)
+        for mode in 0u32..2 {
+            let mut context = crate::rendering::FrameContext::new();
+            let mut pipelines = Vec::new();
+            for (_, drawable) in app.world.query_ref::<&DrawableComponent>() {
+                assert_eq!(app.renderer.mesh_index_count(drawable.mesh_handle), Some(3));
+                pipelines.push(PassPipeline {
+                    vertex_layout: if skinned {
+                        katla_gfx::VertexPBRSkinned::layout()
+                    } else {
+                        katla_gfx::VertexPBR::layout()
+                    },
+                    material: drawable.material_handle,
+                });
+                context
+                    .draw(drawable.mesh_handle, drawable.material_handle)
                     .with_skeleton(drawable.skeleton_handle)
                     .with_color(drawable.color.unwrap().to_array())
-                    .with_pbr(drawable.metallic, drawable.roughness, drawable.ao),
-            );
-        }
-        graph
-            .set_pass_bindings(
-                pass,
-                PassBindings {
-                    phases: vec![PassDrawPhase {
-                        pipelines,
-                        constants: vec![],
-                        draw: PassDraw::Submissions,
-                        viewport: None,
-                    }],
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-        #[cfg(target_os = "macos")]
-        {
-            let offscreen = app.renderer.create_offscreen_texture(
-                crate::application::headless::HEADLESS_WIDTH,
-                crate::application::headless::HEADLESS_HEIGHT,
-            );
-            app.renderer.set_headless_drawable(offscreen);
-        }
-        let katla_gfx::FrameAcquisition::Ready(frame) = app.renderer.acquire_frame().unwrap()
-        else {
-            panic!("headless frame")
-        };
-        if let Some(animation) = &mut animation {
-            assert!(
-                app.world
-                    .query_ref::<&crate::animation::Skin>()
-                    .all(|(_, skin)| skin.joints == [2])
-            );
-            animation
-                .prepare_frame(
-                    &mut app.renderer,
-                    &mut graph,
-                    &frame,
-                    &mut app.world,
-                    &mut cpu_animation,
-                )
-                .unwrap();
+                    .with_pbr(drawable.metallic, drawable.roughness, drawable.ao)
+                    .with_emission(drawable.emission)
+                    .with_surface(drawable.surface)
+                    .submit();
+            }
+            let submission = context.take_submission();
+            let list = submission.draw_list;
             graph
-                .set_pass_commands(pass, vec![], animation.skinning_accesses().to_vec())
-                .unwrap();
-            animation.retire_unused_imports(&mut graph).unwrap();
-        }
-        app.renderer.execute_draw_calls(&frame, &list).unwrap();
-        app.renderer
-            .render(&frame, &mut graph, |frame| {
-                frame.submit(pass, std::rc::Rc::new(list));
-            })
-            .unwrap();
-        app.renderer.present(frame).unwrap();
-        let source = app
-            .renderer
-            .graph_texture_source(graph.resource_id("result").unwrap())
-            .unwrap();
-        for (origin, expected) in [([4, 4], [44u8, 51, 191, 64]), ([12, 4], [26, 50, 51, 204])] {
-            let ticket = app
-                .renderer
-                .queue_texture_readback(
-                    source,
-                    TextureReadbackRegion {
-                        origin,
-                        size: Size2D::new(1, 1),
-                        mip_level: 0,
-                        array_layer: 0,
+                .set_pass_bindings(
+                    pass,
+                    PassBindings {
+                        constants: vec![
+                            ConstantBinding {
+                                group: 0,
+                                binding: 2,
+                                stages: ShaderStages::FRAGMENT,
+                                bytes: bytemuck::cast_slice(&submission.surfaces).to_vec(),
+                            },
+                            ConstantBinding {
+                                group: 0,
+                                binding: 3,
+                                stages: ShaderStages::FRAGMENT,
+                                bytes: bytemuck::cast_slice(&[mode, 0, 0, 0]).to_vec(),
+                            },
+                        ],
+                        phases: vec![PassDrawPhase {
+                            pipelines,
+                            constants: vec![],
+                            draw: PassDraw::Submissions,
+                            viewport: None,
+                        }],
+                        ..Default::default()
                     },
                 )
                 .unwrap();
-            app.renderer.wait_for_device();
-            let texel = app.renderer.poll_texture_readback(ticket).unwrap().unwrap();
-            for (actual, expected) in texel.bytes.iter().zip(expected) {
-                assert!(
-                    actual.abs_diff(expected) <= 1,
-                    "roundtrip {roundtrip} at {origin:?}: {:?} expected {expected}",
-                    texel.bytes
+            #[cfg(target_os = "macos")]
+            {
+                let offscreen = app.renderer.create_offscreen_texture(
+                    crate::application::headless::HEADLESS_WIDTH,
+                    crate::application::headless::HEADLESS_HEIGHT,
                 );
+                app.renderer.set_headless_drawable(offscreen);
+            }
+            let katla_gfx::FrameAcquisition::Ready(frame) = app.renderer.acquire_frame().unwrap()
+            else {
+                panic!("headless frame")
+            };
+            if let Some(animation) = &mut animation {
+                assert!(
+                    app.world
+                        .query_ref::<&crate::animation::Skin>()
+                        .all(|(_, skin)| skin.joints == [2])
+                );
+                animation
+                    .prepare_frame(
+                        &mut app.renderer,
+                        &mut graph,
+                        &frame,
+                        &mut app.world,
+                        &mut cpu_animation,
+                    )
+                    .unwrap();
+                graph
+                    .set_pass_commands(pass, vec![], animation.skinning_accesses().to_vec())
+                    .unwrap();
+                animation.retire_unused_imports(&mut graph).unwrap();
+            }
+            app.renderer.execute_draw_calls(&frame, &list).unwrap();
+            app.renderer
+                .render(&frame, &mut graph, |frame| {
+                    frame.submit(pass, std::rc::Rc::new(list));
+                })
+                .unwrap();
+            app.renderer.present(frame).unwrap();
+            let source = app
+                .renderer
+                .graph_texture_source(graph.resource_id("result").unwrap())
+                .unwrap();
+            let expected = if mode == 0 {
+                [([4, 4], [44u8, 51, 191, 64]), ([12, 4], [26, 50, 51, 204])]
+            } else {
+                [([4, 4], [51, 128, 223, 102]), ([12, 4], [153, 242, 160, 6])]
+            };
+            for (origin, expected) in expected {
+                let ticket = app
+                    .renderer
+                    .queue_texture_readback(
+                        source,
+                        TextureReadbackRegion {
+                            origin,
+                            size: Size2D::new(1, 1),
+                            mip_level: 0,
+                            array_layer: 0,
+                        },
+                    )
+                    .unwrap();
+                app.renderer.wait_for_device();
+                let texel = app.renderer.poll_texture_readback(ticket).unwrap().unwrap();
+                for (actual, expected) in texel.bytes.iter().zip(expected) {
+                    assert!(
+                        actual.abs_diff(expected) <= 1,
+                        "roundtrip {roundtrip} at {origin:?}: {:?} expected {expected}",
+                        texel.bytes
+                    );
+                }
             }
         }
     }
@@ -329,7 +367,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
         before.entities
     );
     assert_eq!(app.gpu_resource_tracker.mesh_count(), 2);
-    assert_eq!(app.gpu_resource_tracker.texture_count(), 2);
+    assert_eq!(app.gpu_resource_tracker.texture_count(), 7);
     let mut original = crate::scene::Scene::new("Whole model input");
     let mut desc = crate::scene::EntityDescriptor::new(
         crate::scene::SceneEntityId(1),
@@ -338,6 +376,7 @@ struct Output { @builtin(position) position: vec4f, @location(0) @interpolate(fl
         },
     );
     desc.drawable = Some(crate::scene::DrawableDescriptor {
+        surface: None,
         color: None,
         metallic: 0.33,
         roughness: 0.66,

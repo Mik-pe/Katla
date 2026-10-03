@@ -27,6 +27,8 @@ impl TransformDescriptor {
 #[serde(deny_unknown_fields)]
 pub struct DrawableDescriptor {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<crate::rendering::MaterialSurface>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[f32; 4]>,
     pub metallic: f32,
     pub roughness: f32,

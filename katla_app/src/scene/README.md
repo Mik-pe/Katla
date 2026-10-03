@@ -83,7 +83,13 @@ Reload preserves each primitive's material overrides and textures without
 reimporting duplicate children. The indices identify nodes and primitives in the
 asset; changing that asset's structure can invalidate the reference and rejects
 staging. Whole-model drawable overrides apply to all imported primitives before
-capture. Group mesh colliders retain combined rest-pose geometry independently
+capture. The optional drawable `surface` field persists linear RGB
+`emissive_factor` (finite, nonnegative, including HDR values above one), finite
+`normal_scale`, and `occlusion_strength` within zero to one. Capture writes the
+current values; omitted surface overrides retain the imported glTF factors or
+primitive defaults. Emission factors multiply a white fallback when no emission
+texture exists. Texture bindings remain asset-owned and are reconstructed from
+the referenced model. Group mesh colliders retain combined rest-pose geometry independently
 of rendering; skinned children inherit the controller's animation player unless
 they have an explicit player of their own.
 

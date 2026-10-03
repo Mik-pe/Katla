@@ -52,6 +52,7 @@ pub fn build_default_scene() -> Scene {
             height: 20.0,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.15686275, 0.17254902, 0.20392157, 1.0]),
             metallic: 0.0,
             roughness: 1.0,
@@ -110,6 +111,7 @@ pub fn build_default_scene() -> Scene {
                     rings: 16,
                 },
                 drawable: Some(DrawableDescriptor {
+                    surface: None,
                     color: Some([base_r, base_g, 1.0, 1.0]),
                     metallic,
                     roughness,
@@ -155,6 +157,7 @@ pub fn build_default_scene() -> Scene {
             size: [1.0, 1.0, 1.0],
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.47058824, 0.31372549, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -199,6 +202,7 @@ pub fn build_default_scene() -> Scene {
             rings: 16,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.31372549, 0.86274511, 1.0, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -243,6 +247,7 @@ pub fn build_default_scene() -> Scene {
             segments: 32,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([1.0, 0.31372549, 0.78431373, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -291,6 +296,7 @@ pub fn build_default_scene() -> Scene {
             tube_segments: 16,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.58823529, 1.0, 0.39215686, 1.0]),
             metallic: 0.0,
             roughness: 0.5,
@@ -330,6 +336,7 @@ pub fn build_default_scene() -> Scene {
             height: 8.0,
         },
         drawable: Some(DrawableDescriptor {
+            surface: None,
             color: Some([0.23529412, 0.15686275, 0.39215686, 1.0]),
             metallic: 0.0,
             roughness: 0.5,

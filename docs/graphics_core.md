@@ -80,6 +80,11 @@ belongs to the application. HDR, depth, object-ID, shadow and viewport images
 belong to the graph.
 
 Scene model pipelines use `R16G16B16A16Sfloat`, matching the graph's HDR target.
+Application `MaterialSurface` contains emissive RGB, normal scale and occlusion
+strength. `FrameContext` collects typed values alongside assigned object slots;
+the scene geometry packet binds their immutable bytes at group 0, binding 2. This
+layout belongs to application shaders, while the core continues to own generic
+objects, material texture handles and submission retention.
 Shadow shaders and app packets bind skeletal joints in group 2 and cascade data
 in group 3. Sky and postprocessing draws generate vertices from vertex index
 and declare an empty vertex layout.

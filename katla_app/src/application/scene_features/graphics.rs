@@ -31,6 +31,7 @@ pub(crate) struct GraphicsFrame<'a> {
     pub(crate) billboards: Vec<u32>,
     pub(crate) frame_slot: usize,
     pub(crate) scene_size: Size2D,
+    pub(crate) surfaces: &'a [crate::rendering::SurfaceParameters],
 }
 
 pub(crate) struct SceneGraphics {
@@ -321,6 +322,7 @@ impl SceneGraphics {
             billboards,
             frame_slot,
             scene_size,
+            surfaces,
         } = frame;
         let frame_binding = constant(
             0,
@@ -410,6 +412,12 @@ impl SceneGraphics {
         if let Some(pass) = ids.geometry {
             let mut packet = PassBindings::default();
             packet.constants.push(frame_binding.clone());
+            packet.constants.push(constant(
+                0,
+                2,
+                ShaderStages::FRAGMENT,
+                bytemuck::cast_slice(surfaces),
+            ));
             packet.buffers.extend(lights.graphics_bindings()?);
             packet.constants.push(constant(
                 4,
