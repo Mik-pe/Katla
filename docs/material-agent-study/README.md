@@ -56,3 +56,17 @@ recovery, undo, and save/load with fresh entity IDs. The restored native frames
 are byte-identical. This is one contextual session; multi-layer compositing,
 depth, shadow coverage and face orientation are validated separately through
 numeric native static and skinned fixtures.
+
+The [sampling follow-up](sampling/observations.md) reused the baseline/interface
+participant, with prior study context, against a private editor built from
+`127cb2be` plus the sampling authoring implementation committed as `dcd09b57`.
+Shader sources stayed fixed. The participant made 27 transport calls and inspected
+seven native images; the transcript also includes the investigator's initial
+schema listing. The session discovered five image identities and UV availability,
+showed visible independent albedo/normal sampling changes, recovered from invalid
+UV/sampler requests, checked atomic batch rejection and undo/redo, and preserved
+sampling and provenance through reload with fresh IDs. The report distinguishes
+combined visual effects from numeric sampler or tangent acceptance. It requests
+linked-role edits, asset texture discovery, effective anisotropy and clearer
+original/current tangent provenance. It is one contextual episode; image
+replacement remains unavailable in this build.
