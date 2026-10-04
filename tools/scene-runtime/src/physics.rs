@@ -1,4 +1,5 @@
 //! Rapier owns native bodies and intersections; scene policy remains in Odin.
+mod joints;
 use rapier3d::prelude::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -14,6 +15,7 @@ enum BodyType {
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum Shape {
+    None,
     Box {
         half_extents: [f32; 3],
     },
@@ -64,7 +66,11 @@ fn all_layers() -> u32 {
 #[serde(tag = "method", deny_unknown_fields)]
 enum Request {
     #[serde(rename = "physics_sync")]
-    Sync { bodies: Vec<Body> },
+    Sync {
+        bodies: Vec<Body>,
+        #[serde(default)]
+        joints: Vec<joints::Joint>,
+    },
     #[serde(rename = "physics_step")]
     Step { delta_seconds: f32 },
     #[serde(rename = "physics_reset")]
@@ -73,10 +79,11 @@ enum Request {
 struct Entry {
     authored: Body,
     body: RigidBodyHandle,
-    collider: ColliderHandle,
+    collider: Option<ColliderHandle>,
 }
 pub struct Physics {
     entries: BTreeMap<u64, Entry>,
+    joints: BTreeMap<u64, joints::Owned>,
     overlaps: BTreeSet<(u64, u64)>,
     bodies: RigidBodySet,
     colliders: ColliderSet,
@@ -92,6 +99,7 @@ impl Physics {
     pub fn new() -> Self {
         Self {
             entries: BTreeMap::new(),
+            joints: BTreeMap::new(),
             overlaps: BTreeSet::new(),
             bodies: RigidBodySet::new(),
             colliders: ColliderSet::new(),
@@ -107,7 +115,7 @@ impl Physics {
     pub fn call(&mut self, value: Value) -> Result<Value, String> {
         let request: Request = serde_json::from_value(value).map_err(|e| e.to_string())?;
         match request {
-            Request::Sync { bodies } => self.sync(bodies),
+            Request::Sync { bodies, joints } => self.sync(bodies, joints),
             Request::Step { delta_seconds } => self.step(delta_seconds),
             Request::Reset => {
                 *self = Self::new();
@@ -115,7 +123,7 @@ impl Physics {
             }
         }
     }
-    fn sync(&mut self, input: Vec<Body>) -> Result<Value, String> {
+    fn sync(&mut self, input: Vec<Body>, joint_input: Vec<joints::Joint>) -> Result<Value, String> {
         if input.len() > 100_000 {
             return Err("Physics body budget exceeded".into());
         }
@@ -128,10 +136,17 @@ impl Physics {
             }
         }
         for entry in self.entries.values() {
-            if !self.bodies.contains(entry.body) || !self.colliders.contains(entry.collider) {
+            if !self.bodies.contains(entry.body)
+                || entry
+                    .collider
+                    .is_some_and(|handle| !self.colliders.contains(handle))
+            {
                 return Err("Missing native physics owner".into());
             }
         }
+        let staged_joints = joints::prepare(joint_input, &staged)?;
+        joints::validate_owners(&self.joints, &self.impulses)?;
+        joints::remove_missing(&mut self.joints, &mut self.impulses, &staged_joints);
         let removed: Vec<_> = self
             .entries
             .keys()
@@ -175,27 +190,38 @@ impl Physics {
                 if old.ccd != authored.ccd {
                     body.enable_ccd(authored.ccd);
                 }
-                let collider = self
-                    .colliders
-                    .get_mut(entry.collider)
-                    .ok_or("Missing native collider")?;
                 if old.shape != authored.shape {
-                    collider.set_shape(prepared);
-                }
-                if old.sensor != authored.sensor {
-                    collider.set_sensor(authored.sensor);
-                }
-                if old.density != authored.density {
-                    collider.set_density(authored.density);
-                }
-                if old.friction != authored.friction {
-                    collider.set_friction(authored.friction);
-                }
-                if old.restitution != authored.restitution {
-                    collider.set_restitution(authored.restitution);
-                }
-                if old.layers != authored.layers || old.mask != authored.mask {
-                    collider.set_collision_groups(groups(&authored));
+                    if let Some(handle) = entry.collider.take() {
+                        self.colliders
+                            .remove(handle, &mut self.islands, &mut self.bodies, true);
+                    }
+                    if let Some(prepared) = prepared {
+                        entry.collider = Some(self.colliders.insert_with_parent(
+                            collider_builder(&authored, prepared, id).build(),
+                            entry.body,
+                            &mut self.bodies,
+                        ));
+                    }
+                } else if let Some(handle) = entry.collider {
+                    let collider = self
+                        .colliders
+                        .get_mut(handle)
+                        .ok_or("Missing native collider")?;
+                    if old.sensor != authored.sensor {
+                        collider.set_sensor(authored.sensor);
+                    }
+                    if old.density != authored.density {
+                        collider.set_density(authored.density);
+                    }
+                    if old.friction != authored.friction {
+                        collider.set_friction(authored.friction);
+                    }
+                    if old.restitution != authored.restitution {
+                        collider.set_restitution(authored.restitution);
+                    }
+                    if old.layers != authored.layers || old.mask != authored.mask {
+                        collider.set_collision_groups(groups(&authored));
+                    }
                 }
                 entry.authored = authored;
             } else {
@@ -208,19 +234,13 @@ impl Physics {
                         .user_data(id as u128)
                         .build(),
                 );
-                let collider = self.colliders.insert_with_parent(
-                    ColliderBuilder::new(prepared)
-                        .sensor(authored.sensor)
-                        .active_collision_types(ActiveCollisionTypes::all())
-                        .density(authored.density)
-                        .friction(authored.friction)
-                        .restitution(authored.restitution)
-                        .collision_groups(groups(&authored))
-                        .user_data(id as u128)
-                        .build(),
-                    body,
-                    &mut self.bodies,
-                );
+                let collider = prepared.map(|prepared| {
+                    self.colliders.insert_with_parent(
+                        collider_builder(&authored, prepared, id).build(),
+                        body,
+                        &mut self.bodies,
+                    )
+                });
                 self.entries.insert(
                     id,
                     Entry {
@@ -231,7 +251,13 @@ impl Physics {
                 );
             }
         }
-        Ok(json!({"body_count": self.entries.len()}))
+        joints::publish(
+            &mut self.joints,
+            &mut self.impulses,
+            &self.entries,
+            staged_joints,
+        );
+        Ok(json!({"body_count": self.entries.len(),"joint_count":self.joints.len()}))
     }
     fn step(&mut self, delta: f32) -> Result<Value, String> {
         if !delta.is_finite() || delta <= 0.0 || delta > 0.25 {
@@ -325,6 +351,7 @@ fn validate(body: &Body) -> Result<u64, String> {
             && vertices.iter().flatten().all(|&v| finite(v))
     };
     let valid_shape = match &body.shape {
+        Shape::None => true,
         Shape::Box { half_extents } => half_extents.iter().all(|&v| positive(v)),
         Shape::Sphere { radius } => positive(*radius),
         Shape::Capsule {
@@ -368,8 +395,12 @@ fn body_type(kind: BodyType) -> RigidBodyType {
         BodyType::Fixed => RigidBodyType::Fixed,
     }
 }
-fn shape(shape: &Shape) -> Result<SharedShape, String> {
-    Ok(match shape {
+fn shape(shape: &Shape) -> Result<Option<SharedShape>, String> {
+    if matches!(shape, Shape::None) {
+        return Ok(None);
+    }
+    Ok(Some(match shape {
+        Shape::None => return Ok(None),
         Shape::Box {
             half_extents: [x, y, z],
         } => SharedShape::cuboid(*x, *y, *z),
@@ -391,7 +422,17 @@ fn shape(shape: &Shape) -> Result<SharedShape, String> {
                 .collect::<Vec<_>>(),
         )
         .ok_or("Invalid convex hull")?,
-    })
+    }))
+}
+fn collider_builder(body: &Body, shape: SharedShape, id: u64) -> ColliderBuilder {
+    ColliderBuilder::new(shape)
+        .sensor(body.sensor)
+        .active_collision_types(ActiveCollisionTypes::all())
+        .density(body.density)
+        .friction(body.friction)
+        .restitution(body.restitution)
+        .collision_groups(groups(body))
+        .user_data(id as u128)
 }
 fn groups(body: &Body) -> InteractionGroups {
     InteractionGroups::new(
@@ -512,5 +553,80 @@ mod tests {
         invalid_mesh["shape"]["indices"] = json!([[0, 1, 99]]);
         assert!(sync(&mut p, vec![invalid_mesh, cube]).is_err());
         assert_eq!(p.entries.len(), 2);
+    }
+    #[test]
+    fn test_native_body_without_collider_and_shape_transitions_keep_body_owner() {
+        let mut p = Physics::new();
+        let mut authored = body("1", "dynamic", false, [0.0, 2.0, 0.0]);
+        authored["shape"] = json!({"kind":"none"});
+        authored["linear_velocity"] = json!([2, 0, 0]);
+        sync(&mut p, vec![authored.clone()]).expect("body without collider");
+        let handle = p.entries[&1].body;
+        assert!(p.entries[&1].collider.is_none());
+        assert_eq!(p.colliders.len(), 0);
+        assert_eq!(step(&mut p)["poses"][0]["entity_id"], "1");
+        authored["shape"] = json!({"kind":"sphere","radius":0.5});
+        sync(&mut p, vec![authored.clone()]).expect("attach collider");
+        assert_eq!(p.entries[&1].body, handle);
+        assert!(p.entries[&1].collider.is_some());
+        let first = step(&mut p);
+        authored["shape"] = json!({"kind":"none"});
+        sync(&mut p, vec![authored]).expect("remove collider");
+        assert_eq!(p.entries[&1].body, handle);
+        assert!(p.entries[&1].collider.is_none());
+        assert_eq!(p.colliders.len(), 0);
+        let next = step(&mut p);
+        assert_eq!(
+            next["poses"][0]["linear_velocity"][0],
+            first["poses"][0]["linear_velocity"][0]
+        );
+        assert_eq!(next["overlaps"], json!([]));
+    }
+    #[test]
+    fn test_native_fixed_joint_preserves_ownership_and_rejects_whole_batch() {
+        let mut p = Physics::new();
+        let mut a = body("1", "dynamic", false, [0.0, 3.0, 0.0]);
+        a["gravity_scale"] = json!(0);
+        let b = body("2", "dynamic", false, [2.0, 3.0, 0.0]);
+        let joint = json!({"entity_id":"18446744073709551615","kind":"fixed","a":"1","b":"2","anchor_a":[1,0,0],"anchor_b":[-1,0,0],"limits":null});
+        let sync_joint = |p: &mut Physics, bodies: Vec<Value>, joints: Vec<Value>| {
+            p.call(json!({"method":"physics_sync","bodies":bodies,"joints":joints}))
+        };
+        sync_joint(&mut p, vec![a.clone(), b.clone()], vec![joint.clone()])
+            .expect("native constraint");
+        let handle = p.impulses.iter().next().expect("joint").0;
+        for _ in 0..120 {
+            step(&mut p);
+            sync_joint(&mut p, vec![a.clone(), b.clone()], vec![joint.clone()])
+                .expect("unchanged sync");
+            assert!(p.impulses.contains(handle));
+        }
+        let pose_a = p.bodies[p.entries[&1].body].position();
+        let pose_b = p.bodies[p.entries[&2].body].position();
+        let anchor_a = pose_a.translation + pose_a.rotation * Vector::new(1.0, 0.0, 0.0);
+        let anchor_b = pose_b.translation + pose_b.rotation * Vector::new(-1.0, 0.0, 0.0);
+        assert!(
+            (anchor_a - anchor_b).length() < 0.02,
+            "actual fixed joint anchors {anchor_a}/{anchor_b}"
+        );
+        assert!(pose_a.rotation.dot(pose_b.rotation).abs() > 0.999);
+        assert!(((pose_a.translation - pose_b.translation).length() - 2.0).abs() < 0.02);
+        let mut invalid = joint.clone();
+        invalid["b"] = json!("99");
+        assert!(sync_joint(&mut p, vec![a.clone()], vec![invalid]).is_err());
+        assert_eq!(p.entries.len(), 2);
+        assert!(p.impulses.contains(handle));
+        for kind in ["point_to_point", "hinge", "distance", "fixed"] {
+            let mut variant = joint.clone();
+            variant["kind"] = json!(kind);
+            variant["limits"] = json!([0.25, 0.75]);
+            sync_joint(&mut p, vec![a.clone(), b.clone()], vec![variant])
+                .expect("actual native joint variant");
+            assert_eq!(p.impulses.len(), 1);
+            step(&mut p);
+        }
+        sync_joint(&mut p, vec![a, b], vec![]).expect("remove joint");
+        assert_eq!(p.impulses.len(), 0);
+        assert!(p.joints.is_empty());
     }
 }
