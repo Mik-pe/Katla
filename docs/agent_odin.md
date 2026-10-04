@@ -256,6 +256,28 @@ native material uploads, inspector controls, live dragging, play simulation or
 complete windowed application integration. Those consumers remain in Rust until
 migration and native validation complete.
 
+## Native application consumer
+
+`app.Assistant` owns provider configuration, conversation and cancellable jobs;
+its host jobs carry only the shared scene mailbox. `app/window` installs native
+Send/Cancel/New conversation controls and material presets/sliders, using the
+common command history for Undo/Redo. Local HTTP/TLS/SSE acceptance covers the
+service and real native panel, including streaming, cancellation and HTTP 429.
+Paid model behavior and pointer capture outside a dragged slider remain separate
+acceptance boundaries.
+
+`app/render.Native_Consumer` prepares World SceneMesh geometry through the
+canonical WGSL compiler/adapter and Metal/Vulkan APIs. Its native stage participant
+prepares uploads before asset publication: allocation failure retains the old
+World, native cache and pixels, and releases partial prepared GPU owners. A
+successful prefab insertion publishes its prepared resources; undo and cache
+refresh restore the prior complete image. Actual PBR readbacks verify selected
+material edits, shared agent/gesture undo+redo and empty-scene clear/resume on
+both backends. Native window acceptance verifies acquire/present, retina resize
+and retained pre-resize readback. These checks cover the current mesh/material
+consumer; textured models, GPU particles and remaining full editor flows still
+require their own migration and native acceptance.
+
 ## Validation
 
 Strict Odin checks, AddressSanitizer and captured allocator tracking cover the
