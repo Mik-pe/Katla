@@ -15,7 +15,8 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Port agent application-owned animation, events, prefab/behavior and resource requests with real application consumers.
 - [ ] Preserve embedded component entity references through hierarchy/prefab/event restoration; the current shared history remaps command targets.
 - [x] Preserve agent request correlation through a bounded mailbox with queued cancellation, closed admission, reserved response capacity and concurrent application-owner acceptance.
-- [ ] Port optional MCP transport with real framing, protocol discovery/tool calls, cancellation, shutdown and failure acceptance.
+- [x] Add optional Odin MCP 2026-07-28 stdio framing/discovery/tool calls with real scene/material pipes, cancellation, deadlines, EOF and output-failure acceptance.
+- [ ] Attach the Odin MCP adapter to the live windowed owner/private editor transport and port committed viewport observation/selection/camera plus remaining tool registration.
 - [ ] Port LLM configuration/HTTP/streaming/orchestration with provider and conversational acceptance.
 - [x] Port gfx typed resource storage, exact frame/submission ownership and buffer-range graph compilation; prove the compiled compute/transfer workload on native Metal 4. See `docs/gfx_odin.md`.
 - [x] Port executable gfx buffer packets with native resource/reflection preflight and matching Metal/Vulkan consumers; validate concurrent uniforms, shared allocation hazards and retained native lifetimes.

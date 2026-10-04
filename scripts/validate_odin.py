@@ -27,6 +27,9 @@ def main():
     commands = [
         ["odin", "test", "odin/editor", "-all-packages", "-out:target/odin-ecs-editor-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/app", "-all-packages", "-out:target/odin-app-tests", "-vet", "-strict-style"],
+        ["odin", "test", "odin/agent/mcp", "-all-packages", "-out:target/odin-mcp-tests", "-vet", "-strict-style"],
+        ["odin", "build", "odin/mcp_stdio", "-out:target/katla-odin-mcp", "-vet", "-strict-style"],
+        [sys.executable, "scripts/validate_odin_mcp.py"],
         ["odin", "test", "odin/gfx", "-out:target/odin-gfx-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/gfx/spirv", "-out:target/odin-spirv-tests", "-vet", "-strict-style"],
         ["odin", "run", "odin/examples/agent_scene", "-out:target/odin-agent-scene", "-vet", "-strict-style"],

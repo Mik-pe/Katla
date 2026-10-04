@@ -83,9 +83,83 @@ pre-existing entity. Captured-allocator tracking is empty after teardown:
 odin run odin/examples/agent_mailbox -out:target/odin-agent-mailbox -vet -strict-style
 ```
 
-MCP transport, LLM HTTP/streaming/configuration, conversational orchestration,
-asset/resource tools and remaining typed application requests still need migration.
-This package opens no network or provider connection.
+LLM HTTP/streaming/configuration, conversational orchestration, asset/resource
+tools and remaining typed application requests still need migration. The optional
+MCP adapter below opens no network or provider connection.
+
+## Optional MCP transport
+
+`odin/agent/mcp` handles [MCP 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic)
+through one existing `Agent_Harness`. Its single protocol caller never receives a
+World or application pointer; only the mailbox crosses to the scene owner. The
+adapter is the exclusive consumer of that mailbox's replies. `server_receive`
+returns an owned immediate response or queues a validated tool request;
+`server_poll` drains correlated scene results or expires a stopped-owner request.
+Both return strings to free with the server's captured allocator. Keep protocol
+state stationary and serialize its calls; its mutex-protected mailbox can be
+executed independently on the application thread.
+
+Every request includes `params._meta` with
+`io.modelcontextprotocol/protocolVersion` and an object-valued
+`io.modelcontextprotocol/clientCapabilities`. `server/discover` advertises the
+supported version and tools capability; there is no initialization handshake or
+connection-derived capability state. An unsupported version returns `-32022`
+with supported/requested versions. Results include `resultType: "complete"` and
+server identity metadata. `ping`, `tools/list`, `tools/call` and
+`notifications/cancelled` are supported. The deterministic tool list contains
+only the nine CPU scene tools and application-owned `material` described above.
+Missing tool names/protocol metadata yield protocol errors; invalid tool input
+and scene failures yield `isError: true` tool results. Successful results expose
+lossless decimal `entity_ids` and actual component/material JSON in
+`structuredContent`, repeated as text for clients using textual content.
+
+String IDs and signed 64-bit integer IDs remain distinct, including integers
+above JavaScript's exact range. Empty string IDs are valid. Null/fractional IDs,
+duplicate in-flight IDs and integer overflow are rejected; a rejected duplicate
+has no ID to avoid delivering a second reply for the original accepted request.
+A JSON frame is capped at one MiB and 64 container levels. Input must be UTF-8,
+strict JSON with one complete value, unique nonempty object keys and supported
+finite numeric values. Trailing values, embedded NUL and invalid numeric syntax
+are rejected before decoding can silently normalize them. The blocking line
+reader retains bounded storage and discards oversized input until the next
+newline. EOF in a partial frame reports an error without executing it.
+
+Cancellation removes queued work and sends no reply. If the owner has already
+taken the operation, the adapter suppresses its eventual response and leaves the
+accepted mutation/history intact. The default 15-second deadline applies to
+requests without a ready result. A stopped queued owner is cancelled; an already
+executing operation retains a tombstone until its result is drained. A deadline
+never retries a mutation. Closing admission drains accepted work, while adapter
+destruction cancels any remaining queued requests. Join owner/transport threads
+before destroying their mailbox.
+
+The optional headless consumer supplies a real `app.Authoring`, editable name
+and position components and the material service. Its input thread owns no scene
+pointer; a four-frame queue crosses to the application owner. Stdout contains
+only newline-delimited protocol messages. EOF closes admission, drains accepted
+requests/replies, joins input and releases all tracked allocation. Unrecoverable
+input/output failure terminates the process promptly; it does not wait forever
+for an input thread whose client left stdin open.
+
+```sh
+odin build odin/mcp_stdio -out:target/katla-odin-mcp -vet -strict-style
+python3 scripts/validate_odin_mcp.py
+odin test odin/agent/mcp -all-packages -out:target/odin-mcp-tests -vet -strict-style
+```
+
+The pipe acceptance executes actual spawn/component/material/query/destroy calls,
+fragmented UTF-8, integer/string correlation, pipelining, cancellation races,
+oversized-frame recovery, immediate EOF after 40 accepted requests, partial/empty
+EOF and broken stdout. Native-thread tests also stall an owner during accepted
+execution, expire its real monotonic deadline and prove its late reply is
+suppressed while the mutation remains undoable. Captured-allocator tests cover
+pending, cancelled, unread and transferred ownership.
+
+This headless scene transport does not yet attach to the running windowed editor,
+create mesh geometry, publish viewport PNGs or expose the remaining application
+services. The existing [private editor attachment](shared-editor-view.md) remains
+a separate migration requirement; this consumer never replaces a live editor's
+scene or claims viewport/GPU acceptance.
 
 ## Material requests and the application owner
 
@@ -124,7 +198,11 @@ surfaces, protected entities and mutations outside editing mode.
 
 The common editor `Undo_Group` now owns one typed command and its affected
 identity array, replacing its previous single-entity snapshot representation.
-Scene commands and material batches use the same session stack. Application
+Scene commands and material batches use the same session stack.
+`agent_record_action` consumes/zeros an already applied result and undo owner,
+clones its borrowed operation and assigns one monotonic action ID without
+reexecuting the mutation. `agent_execute` uses that same recording path; grouped
+material gestures can record their exact first-before/last-after command once. Application
 commands must validate all targets before mutation, own their state, release it
 using the captured allocator, and remap stored targets after restoration creates
 fresh entity generations. Material undo/redo preflights all targets and changes

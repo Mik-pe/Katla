@@ -177,11 +177,15 @@ remove_component_type :: proc(w: ^World, id: Entity_Id, T: typeid) -> bool {
 /// Spawns a struct bundle with one component per field, up to eight fields.
 spawn :: proc(w: ^World, bundle: $B) -> Entity_Id {
     owned_bundle:=bundle
-    fields := reflect.struct_fields_zipped(B)
+    return spawn_bundle(w,any(owned_bundle))
+}
+@(private="package")
+spawn_bundle :: #force_inline proc(w:^World,bundle:any)->Entity_Id {
+    fields:=reflect.struct_fields_zipped(bundle.id)
     assert(len(fields)<=8)
     id:=create_entity(w)
     for f in fields {
-        insert_component_value(w,id,f.type.id,address(rawptr(&owned_bundle),int(f.offset)))
+        insert_component_value(w,id,f.type.id,address(bundle.data,int(f.offset)))
     }
     return id
 }
