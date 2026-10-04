@@ -27,6 +27,8 @@ format_payload :: proc(format:gfx.Texture_Format)->([]byte,[4]byte) {
             value:=[1]f32{0.25}; copy(payload[offset:offset+4],mem.slice_to_bytes(value[:])); expected[0]=64
         case .RGBA16_Float:
             payload[offset+1]=0x38; payload[offset+7]=0x3c; expected[0]=128
+        case .RGBA16_Unorm:
+            payload[offset]=0x80;payload[offset+1]=0x80;payload[offset+6]=255;payload[offset+7]=255;expected[0]=128
         case .RGBA8_Srgb: payload[offset]=128; payload[offset+3]=255; expected[0]=55
         case .BGRA8_Srgb: payload[offset+2]=128; payload[offset+3]=255; expected[0]=55
         case: panic("Unknown expanded format fixture")
@@ -40,7 +42,7 @@ run_formats :: proc(r:^gpu.Renderer,vertex_code,fragment_code:[]u32) {
     defer assert(gpu.destroy_graphics_pipeline(r,pipeline)==.None)
     sampler,sampler_error:=gpu.create_sampler(r,{address_u=.Clamp_Edge,address_v=.Clamp_Edge,address_w=.Clamp_Edge,max_anisotropy=1}); assert(sampler_error==.None)
     defer assert(gpu.destroy_sampler(r,sampler)==.None)
-    formats:=[8]gfx.Texture_Format{.R8_Unorm,.RG8_Unorm,.R32_Float,.RGBA16_Float,.RGBA8_Srgb,.BGRA8_Srgb,.BC1_RGBA_Unorm,.BC3_RGBA_Unorm}
+    formats:=[9]gfx.Texture_Format{.R8_Unorm,.RG8_Unorm,.R32_Float,.RGBA16_Float,.RGBA16_Unorm,.RGBA8_Srgb,.BGRA8_Srgb,.BC1_RGBA_Unorm,.BC3_RGBA_Unorm}
     for format in formats {
         payload,expected:=format_payload(format); defer delete(payload)
         texture_desc:=gfx.Texture_Desc{8,8,1,1,format,{.Sampled,.Transfer_Source,.Transfer_Destination},1}

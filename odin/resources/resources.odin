@@ -144,6 +144,11 @@ write_atomic :: proc(root:^Root,path:string,data:[]byte)->(published:bool,error:
     return write_atomic_native(root,path,data)
 }
 
+/// Creates confined parent directories for an already validated atomic publication.
+make_parents :: proc(root:^Root,path:string)->Error {
+    if root.file==nil || !valid_relative_path(path) { return .Invalid_Path }; return make_parents_native(root,path)
+}
+
 /// Creates missing confined parent directories and atomically admits a new file only.
 create_atomic :: proc(root:^Root,path:string,data:[]byte)->(published:bool,error:Error) {
     if root.file==nil || !valid_relative_path(path) { return false,.Invalid_Path }

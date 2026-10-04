@@ -190,6 +190,31 @@ surface images, semaphores/drawables and readback copies remain owned through
 acceptance, failed presentation and recreation. Application window policy belongs
 outside the GPU core.
 
+## Immutable draw sampling and pipeline reuse
+
+`Sampler_Desc` separates minification/magnification from `Mip_Filter`. `None`
+restricts both implicit and explicit LOD to mip zero. The shared normalizer
+rejects invalid enum values, non-finite/inverted LOD ranges and anisotropy outside
+1–16; anisotropy above one requires linear minification and magnification.
+Vulkan clamps a valid request to the physical device limit.
+
+A render phase may override image and sampler bindings by logical group/slot.
+Prepared phases own the effective bindings and nested image-access arrays;
+shared defaults are restored independently for every phase. Graph declarations
+cover the union of effective image ranges actually selected by phases, and native preflight verifies array
+counts, stage visibility, resource access and comparison samplers before any
+queue mutation. Application material identity and provenance stay outside gfx.
+
+`graphics_desc_clone` owns all source strings, binaries, reflected bindings,
+vertex layouts and target arrays. `graphics_desc_equal` compares complete
+compilation and raster/depth/blend state by content. Native weak caches share
+immutable pipeline owners between independent generational public handles and
+accepted submissions; the cache adds no strong reference and evicts an owner
+when its final real reference retires. Sampler policies use equivalent weak
+ownership. Formats include eight-byte `RGBA16_Unorm`, and explicit vertex
+layouts support `Uint8x4`, `Uint16x4` and `Unorm16x4` alongside the existing
+normalized byte and floating-point attributes.
+
 ## Native acceptance
 
 `odin/gfx_conformance` supplies required native function inputs to both adapters.

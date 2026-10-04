@@ -48,6 +48,7 @@ scene_action_restore_prepare :: proc(state:rawptr,w:^ecs.World,reg:^editor.Compo
     if error:=audio_scene_validate(owner,visible[:]); error!=.None { return nil,error }
     if error:=perspective_scene_validate(owner,visible[:]); error!=.None { return nil,error }
     if error:=billboard_scene_validate(owner,visible[:]); error!=.None { return nil,error }
+    if error:=material_images_prepare_entities(owner,changed); error!=.None { return nil,error }
     mode:=Scene_Preparation_Mode.Insert; entities:=changed
     if len(removed)>0 { mode=.Remove; entities=removed }
     preparation,error:=scene_prepare_begin(owner,entities,mode)

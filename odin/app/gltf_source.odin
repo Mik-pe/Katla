@@ -111,11 +111,13 @@ gltf_extract_images :: proc(root:^resources.Root,path:string,data:^cgltf.data,mo
         target:=&model.images[i]; target.name=gltf_name(image.name)
         mime:=""; if image.mime_type!=nil { mime=string(image.mime_type) }
         if image.buffer_view!=nil {
+            target.origin=strings.clone("embedded_buffer_view")
             view:=image.buffer_view
             if view.size>uint(budget^) { return .Limit }
             bytes:=cgltf.buffer_view_data(view); if bytes==nil { return .Invalid_Data }
             target.encoded=slice.clone(bytes[:int(view.size)]); budget^-=int(view.size)
         } else if image.uri!=nil {
+            target.origin=strings.clone("embedded_data_uri" if strings.has_prefix(string(image.uri),"data:") else string(image.uri))
             encoded,uri_mime,error:=gltf_uri_bytes(root,path,string(image.uri),budget)
             if error!=.None { return error }; target.encoded=encoded
             if mime=="" { mime=uri_mime }

@@ -56,11 +56,11 @@ default to 64; omitted/null uses that default and unsigned values clamp to 1–2
 Duplicate offsets, shapes and parenting are not silently ignored.
 
 The application owner explicitly installs `authoring_services_init` and confined
-asset roots. Typed `material`, `animation`, `simulation`, `behavior`, `trigger`,
+asset roots. Typed `material`, `material_asset`, `animation`, `simulation`, `behavior`, `trigger`,
 `prefab`, `load_scene`, `save_scene`, `search_assets`, `list_resources` and
 `read_resource`, `create_resource` and `write_resource` calls validate
 before admission, then execute on that same owner. The canonical
-`agent.TOOLS_JSON` owns the sorted 26 schemas; `tools_select` copies only named
+`agent.TOOLS_JSON` owns the sorted 28 schemas; `tools_select` copies only named
 schemas supported by a concrete consumer and rejects unknown/duplicate names.
 Mesh/model instantiation loads the actual confined Resource, Project or explicit
 File source, prepares CPU/native resources before publication and records the
@@ -143,9 +143,10 @@ connection-derived capability state. An unsupported version returns `-32022`
 with supported/requested versions. Results include `resultType: "complete"` and
 server identity metadata. `ping`, `tools/list`, `tools/call` and
 `notifications/cancelled` are supported. The deterministic tool list contains
-the canonical 20 scene/application tools described above.
+the canonical 28 scene/application tools described above.
 Missing tool names/protocol metadata yield protocol errors; invalid tool input
-and scene failures yield `isError: true` tool results. Successful results expose
+and scene failures yield `isError: true` tool results with
+`structuredContent: {success:false,message:...}` as well as matching text. Successful results expose
 lossless decimal `entity_ids` and actual component/material JSON in
 `structuredContent`, repeated as text for clients using textual content.
 
@@ -205,17 +206,51 @@ viewport journeys validate those separate consumers.
 
 ## Material requests and the application owner
 
-`material` accepts `presets`, `inspect` and `set` through the same `submit_call`
-entry point. `decode_material` produces a typed `Material_Op`, rejecting unknown
-fields per action, malformed IDs, duplicate IDs (including equivalent decimal
-spellings), empty patches, out-of-range factors and batches outside 1..256.
-Entity IDs remain decimal strings even above JavaScript's exact integer range.
-Optional null preset/factors are absent patches. `base_color` needs four finite
-channels in 0..1, and `metallic`, `roughness` and `ao` need finite factors in 0..1.
-An optional preset establishes values before explicit patches. The six presets
-match the Rust material library: plaster, oak, concrete, ceramic, brushed metal
-and fabric. Decoded numeric operations retain no borrowed JSON strings; the
-entity array has an explicit captured-allocator destruction operation.
+`material` accepts `presets`, `inspect`, `set`, `set_sampling` and
+`set_texture` through the same `submit_call` entry point. `decode_material`
+produces an owned typed `Material_Op`; it rejects unknown fields per action,
+malformed or equivalent duplicate IDs, empty/null-only patches, nonfinite or
+out-of-range numbers and batches outside 1–256. Entity IDs remain exact decimal
+strings above JavaScript's integer range. Raw unsigned UV, anisotropy and image
+index tokens are checked before floating parsing; overflow and fractional
+aliases cannot wrap into a valid small index. Image indices are bounded to u32,
+matching the prepared application's index representation.
+
+`base_color` contains sRGB RGB and linear alpha in 0–1. Metallic, roughness,
+AO and occlusion strength are linear factors in 0–1. Emission is nonnegative
+linear RGB, including HDR values above one. Normal scale is signed and finite;
+zero flattens a normal map. Coverage has explicit opaque/mask/blend mode,
+nonnegative cutoff and double-sided choice. Alpha alone preserves the render
+mode. A preset establishes all surface factors before supplied patches; omitted
+or null properties preserve existing values. The six named presets are plaster,
+oak, concrete, ceramic, brushed metal and fabric. They start opaque and
+single-sided with normal scale/occlusion strength one and cutoff 0.5; they do not
+install texture images or directional brushing.
+
+`Material_Set_Sampling` patches one of the five roles: albedo, normal,
+metallic_roughness, occlusion or emission. UV sets are 0/1, translation and scale
+have two finite channels, and rotation uses radians. Negative or zero scale is
+legal. Six minification policies, two magnification policies, independent U/V
+wrap modes and requested anisotropy 1–16 are explicit. Presence bits distinguish
+omission from zero. Target UV availability and the complete sampler policy are
+validated by the application before mutation; partial patches cannot validate
+against invented defaults in the producer.
+
+`Material_Set_Texture` chooses inherit, neutral, a file, or a selected glTF
+image. The asset reference explicitly chooses Resource, Scene or File; path
+resolution and File capability checks belong to the retained application roots.
+The decoded source owns its path, and `decoded_material_destroy` releases it and
+the entity array through their captured allocator even if the current allocator
+changes. Producers carry no World or GPU resource pointer.
+
+`material_asset` has six strict typed actions: describe, read, validate, write,
+capture and apply. Its `.katmat` document workflow and material/image ownership
+are described in [material contracts](material_contracts.md). Query rows and
+frozen viewport candidates report `material_editable` using the same actual
+prepared primitive policy as material authoring; group/model controllers are
+not advertised as independently editable surfaces. `editor_view observe` with
+`limit: 0` retains the committed PNG, camera, picking/provenance and total/count/
+truncated metadata while returning empty candidate arrays.
 
 The mailbox clones the validated request's tool name and payload. Its owner can
 supply `editor.Application_Executor` explicitly to `agent_tick`, `agent_execute`
@@ -226,11 +261,12 @@ for application requests, rather than claiming success.
 `odin/app.Authoring` composes World, the registry and the existing agent history.
 `authoring_tick` dispatches material calls to the application service and ordinary
 scene calls to `editor.scene_execute`. It guards targeted editor-hidden entities
-and restricts mutations to editing mode. These mode guards do not implement the
-simulation lifecycle; that port remains pending.
+and restricts mutations to editing mode. Preview transitions use the application
+simulation owner and restore authored identity through registered snapshots.
 
-`Surface_Material` contains only optional linear tint and numeric PBR factors;
-mesh/texture/native handles remain separate. The material tool reports sRGB
+`Surface_Material` contains optional linear tint, PBR factors and explicit
+surface/sampling override presence. Owned portable image assignments and prepared
+image generations remain separate from geometry and GPU handles. The material tool reports sRGB
 values. Preset/color edits convert to linear once; a factors-only patch preserves
 the exact previous linear channels and the absence of a tint. Material fields
 are hidden from generic `set_field` so that path cannot bypass material validation.
@@ -248,7 +284,9 @@ material gestures can record their exact first-before/last-after command once. A
 commands must validate all targets before mutation, own their state, release it
 using the captured allocator, and remap stored targets after restoration creates
 fresh entity generations. Material undo/redo preflights all targets and changes
-only the surface component, preserving unrelated position/mesh/texture state.
+the owned material state for that operation, preserving unrelated position and
+mesh state. Factors, sampling, image assignment and complete material application
+retain their respective prepared before/after owners.
 Scene history restoration prepares owned component clones and validates all
 registered references/native participants before publishing. Prepared history does
 not reload a changed source file or replay transient particle queues.
@@ -363,3 +401,21 @@ from CPU or local provider fixtures. The canonical build supplies pinned native
 parser, image, font, physics and script dependencies. Historical Rust comparison
 results describe migration evidence; the current scene/editor operating path and
 its acceptance use the Odin consumers.
+
+## Descriptive resource generation
+
+`generate_resource` preserves the working local assistant resource-creation feature
+through the canonical MCP/LLM registry. It creates a new project-relative file
+from `resource_type` (`particle_system` or `scene`) and a bounded UTF-8 description.
+Keyword priority follows the original descriptive templates. It uses confined,
+exclusive atomic publication, creates missing parents, rejects existing files and
+requires editing mode. File creation does not add a scene undo operation.
+
+Generated particles are actual `behavior set_particles` descriptors, including
+the chosen lifetime range, velocity, colors and size progression. Generated scenes
+use the current version3 RON codec and load through `load_scene`; night, sunset,
+interior and daytime presets produce a configured directional light. This repairs
+the older generator's unusable version1 scene/settings output. Generation preserves
+the current world; loading the resulting scene is an explicit separate action.
+The real stdio fixture attaches all nine particle keyword templates and loads all
+four lighting templates before reading their actual authored state.

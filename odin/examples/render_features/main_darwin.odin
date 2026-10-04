@@ -51,7 +51,7 @@ tone :: proc(x:f32,mode:render.Tonemap_Operator)->f32 {
 }
 spawn_mesh :: proc(owner:^app.Authoring,source:string,position:km.Vec3,color:km.Color)->ecs.Entity_Id {
     mesh,error:=app.scene_mesh_prepare(owner,{kind=.Geometry,geometry=transmute([]byte)source}); assert(error==.None)
-    return ecs.spawn(&owner.world,struct {transform:app.Scene_Transform,mesh:app.Scene_Mesh,material:app.Surface_Material}{{km.transform(position=position)},mesh,{color,true,0,0.7,1}})
+    return ecs.spawn(&owner.world,struct {transform:app.Scene_Transform,mesh:app.Scene_Mesh,material:app.Surface_Material}{{km.transform(position=position)},mesh,{linear_color=color,has_tint=true,metallic=0,roughness=.7,ao=1}})
 }
 exercise :: proc(renderer:^$R,ops:render.GPU_Ops(R),captures:Capture(R),pipelines:render.Scene_Pipelines,backend:string,particle_ops:render.Particle_GPU_Ops(R),compiler:^shader.Compiler) {
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner); assert(app.authoring_services_init(&owner)==.None)

@@ -1,0 +1,522 @@
+{
+  "baseline_revision": "a162c360eecce7c687c0a33845e3e28914e2dcc8",
+  "current_base_revision": "a162c360eecce7c687c0a33845e3e28914e2dcc8",
+  "current_tree_diff": " Cargo.lock                                         |   1 +\n Cargo.toml                                         |   1 +\n TODO.md                                            |   2 +-\n docs/ci.md                                         |  10 +-\n docs/graphics_core.md                              |   9 +-\n katla_app/Cargo.toml                               |   1 +\n katla_app/src/application/builder.rs               |   2 +\n katla_app/src/application/mod.rs                   |   1 +\n katla_app/src/application/spawning.rs              |  25 +-\n katla_app/src/application/spawning/gltf_model.rs   |   2 +-\n .../src/application/spawning/material_tests.rs     |  18 +-\n .../src/application/spawning/primitive_tests.rs    |   4 +-\n katla_app/src/util/gltf_image.rs                   | 271 ++++++--\n katla_gfx/src/material/API.md                      |  32 +-\n katla_gfx/src/metal/format.rs                      |   2 +\n katla_gfx/src/metal/texture_api.rs                 |   5 +-\n katla_gfx/src/renderer/destroy_api.rs              |   2 +-\n katla_gfx/src/renderer/mod.rs                      |   3 +-\n katla_gfx/src/renderer/registry.rs                 |   2 +-\n katla_gfx/src/renderer/texture_api.rs              |  30 +-\n katla_gfx/src/texture/format.rs                    |   8 +-\n katla_gfx/src/texture/manager.rs                   |  23 -\n katla_gfx/src/texture/upload.rs                    |   1 +\n katla_gfx/src/vulkan/context/mod.rs                |  43 ++\n katla_gfx/src/vulkan/staged_upload.rs              |   3 +-\n katla_gfx/src/vulkan/texture.rs                    | 691 +++------------------\n 26 files changed, 464 insertions(+), 728 deletions(-)\n",
+  "fixture_sha256": "be9737a8a7011943bbf152303c181cf9bf9b89773d69f52809d6bc9470cc635e",
+  "asset_sha256": "a1e3b04de97b11de564ce6e53b95f02954a297f0008183ac63a4f5974f6b32d8",
+  "platform": "Linux-7.2.5-3-omarchy-x86_64-with-glibc2.44",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)\nbinary: rustc\ncommit-hash: 48a229ceaefd4985c50990b14116b6d856af0985\ncommit-date: 2026-09-01\nhost: x86_64-unknown-linux-gnu\nrelease: 1.98.1\nLLVM version: 22.1.8\n",
+  "cpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           39 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  8\nOn-line CPU(s) list:                     0-7\nVendor ID:                               GenuineIntel\nModel name:                              Intel(R) Core(TM) i5-1035G7 CPU @ 1.20GHz\nCPU family:                              6\nModel:                                   126\nThread(s) per core:                      2\nCore(s) per socket:                      4\nSocket(s):                               1\nStepping:                                5\nMicrocode version:                       0xce\nCPU(s) scaling MHz:                      55%\nCPU max MHz:                             3700.0000\nCPU min MHz:                             400.0000\nBogoMIPS:                                2995.20\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid avx512f avx512dq rdseed adx smap avx512ifma clflushopt intel_pt avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves split_lock_detect dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp hwp_pkg_req vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid fsrm md_clear flush_l1d arch_capabilities\nVirtualization:                          VT-x\nL1d cache:                               192 KiB (4 instances)\nL1i cache:                               128 KiB (4 instances)\nL2 cache:                                2 MiB (4 instances)\nL3 cache:                                6 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-7\nVulnerability Gather data sampling:      Mitigation; Microcode\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Mitigation; Aligned branch/return thunks\nVulnerability Itlb multihit:             KVM: Mitigation: Split huge pages\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT vulnerable\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; Enhanced IBRS\nVulnerability Spec rstack overflow:      Not affected\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop\nVulnerability Srbds:                     Mitigation; Microcode\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n",
+  "profile": "test/dev opt-level=1; eight complete imports; cached OS file pages; shader/driver warmup excluded",
+  "samples": [
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 231328,
+      "first_cpu_us": 408502,
+      "first_ready_us": 408908,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 40,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 1252882,
+      "warm_ready_us": 1253210,
+      "version": "baseline",
+      "iteration": 1
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 233646,
+      "first_cpu_us": 422084,
+      "first_ready_us": 427537,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 5,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 15283,
+      "warm_ready_us": 16086,
+      "version": "current",
+      "iteration": 1
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 220451,
+      "first_cpu_us": 404992,
+      "first_ready_us": 410479,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 5,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 15548,
+      "warm_ready_us": 16341,
+      "version": "current",
+      "iteration": 2
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 218299,
+      "first_cpu_us": 410241,
+      "first_ready_us": 410647,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 40,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 1233301,
+      "warm_ready_us": 1233741,
+      "version": "baseline",
+      "iteration": 2
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 219581,
+      "first_cpu_us": 411895,
+      "first_ready_us": 412240,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 40,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 1226198,
+      "warm_ready_us": 1226615,
+      "version": "baseline",
+      "iteration": 3
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 219380,
+      "first_cpu_us": 401251,
+      "first_ready_us": 406725,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 5,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 14962,
+      "warm_ready_us": 15712,
+      "version": "current",
+      "iteration": 3
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 222228,
+      "first_cpu_us": 406604,
+      "first_ready_us": 412222,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 5,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 15448,
+      "warm_ready_us": 16128,
+      "version": "current",
+      "iteration": 4
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 221105,
+      "first_cpu_us": 413289,
+      "first_ready_us": 413679,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 40,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 1227087,
+      "warm_ready_us": 1227522,
+      "version": "baseline",
+      "iteration": 4
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 221639,
+      "first_cpu_us": 409226,
+      "first_ready_us": 409660,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 40,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 1223252,
+      "warm_ready_us": 1223656,
+      "version": "baseline",
+      "iteration": 5
+    },
+    {
+      "asset": "/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb",
+      "asset_bytes": 3773916,
+      "decode_us": 219037,
+      "first_cpu_us": 404448,
+      "first_ready_us": 409659,
+      "image_bytes": 62914560,
+      "image_extents": [
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ],
+        [
+          2048,
+          2048
+        ]
+      ],
+      "index_count": 46356,
+      "instances": 8,
+      "native_rgba16f_texel": [
+        5,
+        56,
+        187,
+        56,
+        228,
+        56,
+        0,
+        60
+      ],
+      "unique_texture_handles": 5,
+      "validation_enabled": false,
+      "vertex_count": 46356,
+      "warm_cpu_us": 15053,
+      "warm_ready_us": 15759,
+      "version": "current",
+      "iteration": 5
+    }
+  ],
+  "medians": {
+    "baseline": {
+      "decode_us": 221105,
+      "first_cpu_us": 410241,
+      "first_ready_us": 410647,
+      "warm_cpu_us": 1227087,
+      "warm_ready_us": 1227522,
+      "unique_texture_handles": 40
+    },
+    "current": {
+      "decode_us": 220451,
+      "first_cpu_us": 404992,
+      "first_ready_us": 410479,
+      "warm_cpu_us": 15283,
+      "warm_ready_us": 16086,
+      "unique_texture_handles": 5
+    }
+  },
+  "baseline_fixture_sha256": "2c7ec7f8812e94298f7b2c2e33f32efb084084e75bc090edc3c2da3db7061e0c"
+}

@@ -35,7 +35,8 @@ paint_text :: proc(ctx:^Context,node:^Node,text:string,position:Vec2,color:Color
 @(private="package")
 slider_track :: proc(ctx:^Context,node:^Node)->Rect {
     pad:=ctx.theme.padding; label:f32=0; if node.descriptor.text!="" { label=min(node.bounds.width*0.4,80) }
-    return {node.bounds.x+label+pad,node.bounds.y+node.bounds.height/2-2,max(0,node.bounds.width-label-2*pad),4}
+    _,size:=node_font(ctx,node); number_width:=size*4.75+pad
+    return {node.bounds.x+label+pad,node.bounds.y+node.bounds.height/2-2,max(0,node.bounds.width-label-2*pad-number_width),4}
 }
 @(private="package")
 node_number :: proc(ctx:^Context,node:^Node)->f32 { if value,ok:=state_get(ctx,node.descriptor.state,f32); ok { return value }; return node.descriptor.value }
@@ -56,7 +57,12 @@ paint_node :: proc(ctx:^Context,node:^Node) {
     case: if d.has_background { paint_rect(ctx,b,clip,d.background,ctx.theme.radius) }
     }
     #partial switch d.kind {
-    case .Text: paint_text(ctx,node,d.text,{b.x,b.y},fg,clip,b.width)
+    case .Text:
+        if d.text_max_width>0 {
+            label,shortened:=text_ellipsize(ctx,node,min(d.text_max_width,b.width))
+            paint_text(ctx,node,label,{b.x,b.y},fg,clip)
+            if shortened { delete(label,ctx.allocator) }
+        } else { paint_text(ctx,node,d.text,{b.x,b.y},fg,clip,b.width) }
     case .Button,.Icon_Button,.Menu_Item,.Selectable,.Tree_Row,.Section:
         if d.kind==.Tree_Row || d.kind==.Section {
             marker:="▸"; if d.expanded { marker="▾" }; if d.kind==.Section || d.has_children { paint_text(ctx,node,marker,label_pos,ctx.theme.muted,clip) }; label_pos.x+=14
@@ -68,7 +74,14 @@ paint_node :: proc(ctx:^Context,node:^Node) {
         if node_boolean(ctx,node) { paint_rect(ctx,rect_inset(box,3),clip,ctx.theme.accent,1) }; label_pos.x+=20; paint_text(ctx,node,d.text,label_pos,fg,clip)
     case .Slider:
         track:=slider_track(ctx,node); value:=clamp(node_number(ctx,node),d.minimum,d.maximum); ratio:=(value-d.minimum)/(d.maximum-d.minimum)
-        paint_text(ctx,node,d.text,label_pos,fg,clip); paint_rect(ctx,track,clip,ctx.theme.hover,2)
+        label_clip:=rect_intersection(clip,{b.x,b.y,max(0,track.x-b.x-ctx.theme.padding),b.height})
+        paint_text(ctx,node,d.text,label_pos,fg,label_clip)
+        number:=fmt.aprintf("%.3g",node_number(ctx,node)); defer delete(number)
+        font,size:=node_font(ctx,node); measured:=ctx.fonts.measure(ctx.fonts.state,font,number,size,0)
+        number_start:=track.x+track.width+ctx.theme.padding
+        number_clip:=rect_intersection(clip,{number_start,b.y,max(0,b.x+b.width-ctx.theme.padding-number_start),b.height})
+        paint_text(ctx,node,number,{max(number_start,b.x+b.width-ctx.theme.padding-measured.x),label_pos.y},fg,number_clip)
+        paint_rect(ctx,track,clip,ctx.theme.hover,2)
         paint_rect(ctx,{track.x,track.y,track.width*ratio,track.height},clip,ctx.theme.accent,2)
         paint_rect(ctx,{track.x+track.width*ratio-4,track.y-5,8,14},clip,ctx.theme.accent,3)
     case .Drag_Value:

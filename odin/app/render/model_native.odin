@@ -15,7 +15,7 @@ Model_Config :: struct($R:typeid) { shader:^Model_Shader, operations:Model_GPU_O
 @(private="package")
 Model_Slot :: struct { frame,objects,geometry:gfx.Buffer_Handle }
 @(private="package")
-Model_Texture :: struct { entity:ecs.Entity_Id,image:i32,srgb:bool,native:Native_Texture, encoded:[]byte }
+Model_Texture :: struct { entity:ecs.Entity_Id,image:i32,srgb:bool,native:Native_Texture, encoded:[]byte,digest:[32]byte }
 @(private="package")
 Model_Sampler :: struct { desc:gfx.Sampler_Desc,handle:gfx.Sampler_Handle }
 @(private="package")
@@ -32,38 +32,6 @@ Native_Model :: struct($R:typeid) {
     allocator:mem.Allocator,
 }
 @(private="package")
-model_texture_prepare :: proc(cache:^Native_Model($R),owner:^app.Authoring,entry:Model_Entry,role:int)->(int,Native_Error) {
-    view:=entry.views[role]
-    srgb:=role==0 || role==4 || (role==2 && entry.material.workflow==.Specular_Glossiness)
-    entity:=entry.entity; image:i32
-    source:=ecs.get_component_mut(&owner.world,entity,app.Scene_Model); if source==nil { return 0,{scene=.Invalid_Geometry} }
-    if view.texture<0 { entity=0; image= -2 if role==1 else -1 }
-    else {
-        if int(view.texture)>=len(source.model.textures) { return 0,{scene=.Invalid_Material} }
-        image=source.model.textures[view.texture].image
-        if image<0 || int(image)>=len(source.model.images) { return 0,{scene=.Invalid_Material} }
-    }
-    for item,i in cache.textures { if item.entity==entity && item.image==image && item.srgb==srgb { return i,{} } }
-    decoded:Texture_Image
-    encoded:[]byte
-    retain_encoded:=false; defer { if !retain_encoded { delete(encoded,cache.allocator) } }
-    if image<0 {
-        pixels:=make([]byte,4,cache.allocator); copy(pixels,([]byte{128,128,255,255} if image== -2 else []byte{255,255,255,255}))
-        decoded={1,1,pixels,cache.allocator}
-    } else {
-        error:Texture_Image_Error
-        encoded_error:app.Gltf_Error
-        encoded,encoded_error=app.scene_model_image_read(owner,source,int(image),cache.allocator)
-        if encoded_error!=.None { return 0,{scene=.Invalid_Material} }
-        decoded,error=texture_image_decode(encoded,cache.allocator)
-        if error!=.None { return 0,{scene=.Invalid_Material} }
-    }
-    defer texture_image_destroy(&decoded)
-    native,error:=native_texture_upload(cache.renderer,cache.operations.gpu,&decoded,srgb,cache.allocator)
-    if error!={} { return 0,error }
-    index:=len(cache.textures); append(&cache.textures,Model_Texture{entity,image,srgb,native,encoded}); retain_encoded=true; return index,{}
-}
-@(private="package")
 model_sampler_prepare :: proc(cache:^Native_Model($R),owner:^app.Authoring,entry:Model_Entry,role,texture:int)->(int,Native_Error) {
     source:=app.Gltf_Sampler{}
     view:=entry.views[role]
@@ -73,6 +41,7 @@ model_sampler_prepare :: proc(cache:^Native_Model($R),owner:^app.Authoring,entry
         if index>=0 { if int(index)>=len(model.model.samplers) { return 0,{scene=.Invalid_Material} }; source=model.model.samplers[index] }
     }
     desc:=model_sampler_desc(source,cache.textures[texture].native.desc.mip_levels)
+    if entry.has_sampling { desc=entry.samplers[role];desc.max_lod=min(desc.max_lod,f32(cache.textures[texture].native.desc.mip_levels-1)) }
     for sampler,i in cache.samplers { if sampler.desc==desc { return i,{} } }
     handle,error:=cache.operations.create_sampler(cache.renderer,desc); if error!=.None { return 0,{gpu=error} }
     index:=len(cache.samplers); append(&cache.samplers,Model_Sampler{desc,handle}); return index,{}

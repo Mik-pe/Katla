@@ -69,8 +69,18 @@ world_callback :: proc "c"(state:luau.State,opaque:rawptr)->i32 {
         path:=luau.to_string(vm,2); if len(path)==0 || len(path)>4096 { return binding_error(owner,"Sound requires bounded path or cue") }
         if op=="play_sound_cue" { command.kind=.Play_Sound_Cue; command.name=strings.clone(path,owner.allocator) } else {
             index:=i32(3); if op=="play_sound_at" { command.kind=.Play_Sound_At; position,valid:=vector(owner,3); if !valid || !finite_vector(position) { return binding_error(owner,"Sound position requires finite Vec3") }; command.origin=position; index=4 } else { command.kind=.Play_Sound }
-            volume,valid:=number(owner,index); if !valid || (math.is_nan(volume) || math.is_inf(volume)) || volume<0 || volume>1 || api.type(state,index+1)!=.Boolean { return binding_error(owner,"Sound requires volume 0..1 and loop flag") }
-            command.path=strings.clone(path,owner.allocator); command.volume=volume; command.looping=api.boolean(state,index+1)!=0
+            volume:=f32(1); volume_kind:=api.type(state,index)
+            if volume_kind!=.None && volume_kind!=.Nil {
+                explicit,valid:=number(owner,index)
+                if volume_kind!=.Number || !valid || math.is_nan(explicit) || math.is_inf(explicit) || explicit<0 || explicit>1 { return binding_error(owner,"Sound volume requires a number in 0..1") }
+                volume=explicit
+            }
+            looping:=false; loop_kind:=api.type(state,index+1)
+            if loop_kind!=.None && loop_kind!=.Nil {
+                if loop_kind!=.Boolean { return binding_error(owner,"Sound looping requires a bool") }
+                looping=api.boolean(state,index+1)!=0
+            }
+            command.path=strings.clone(path,owner.allocator); command.volume=volume; command.looping=looping
         }
     case "raycast":
         origin,origin_valid:=vector(owner,2); direction,direction_valid:=vector(owner,3); maximum,valid:=number(owner,4)

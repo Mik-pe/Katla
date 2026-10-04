@@ -27,7 +27,7 @@ editor_shader_reload_init :: proc(owner:^Editor_Shader_Reload($R),gpu:^GPU_Owner
         {path="grid.wgsl",selections={{"vs_grid",.Vertex},{"fs_grid",.Fragment}}},
         {path="lighting_cull.wgsl",selections={{"cs_lights",.Compute}}},
         {path="shadow_primitives.wgsl",selections={{"vs_shadow",.Vertex},{"vs_mark",.Vertex},{"vs_outline",.Vertex},{"fs_depth",.Fragment},{"fs_outline",.Fragment},{"fs_indicator",.Fragment}}},
-        {path="shadow_models.wgsl",selections={{"vs_shadow",.Vertex},{"vs_mark",.Vertex},{"vs_outline",.Vertex},{"fs_depth",.Fragment},{"fs_outline",.Fragment},{"fs_indicator",.Fragment}}},
+        {path="shadow_models.wgsl",selections={{"vs_shadow",.Vertex},{"vs_mark",.Vertex},{"vs_outline",.Vertex},{"fs_depth_model",.Fragment},{"fs_outline_model",.Fragment},{"fs_indicator_model",.Fragment}}},
         {path="model.wgsl",selections={{"vs_model",.Vertex},{"fs_model",.Fragment}}},
         {path="particles_emit.wgsl",selections={{"cs_main",.Compute}}},
         {path="particle_simulate.wgsl",selections={{"cs_main",.Compute}}},

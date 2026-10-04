@@ -135,8 +135,8 @@ test_scene_drop_batch_actual_prefab_model_native_admission_and_missing_asset_rol
     result,group=scene_action_execute_batch(&owner,operations[:]); testing.expect(t,result.error!=.None && group.state==nil && owner.world.live_count==0); editor.tool_result_destroy(&result)
     operations[1].path="models/Box.glb"
     result,group=scene_action_execute_batch(&owner,operations[:]); testing.expect_value(t,result.error,editor.Scene_Error.None)
-    testing.expect(t,native.commits==1 && len(result.entities)==4 && owner.world.live_count==4)
+    testing.expect(t,native.commits==1 && len(result.entities)==5 && owner.world.live_count==5)
     editor.agent_record_action(&owner.agent.session,{kind=.Application,tool_name="asset_drop"},&result,&group)
     testing.expect_value(t,authoring_undo_last(&owner),editor.Scene_Error.None); testing.expect_value(t,owner.world.live_count,0)
-    testing.expect_value(t,authoring_redo_last(&owner),editor.Scene_Error.None); testing.expect_value(t,owner.world.live_count,4)
+    testing.expect_value(t,authoring_redo_last(&owner),editor.Scene_Error.None); testing.expect_value(t,owner.world.live_count,5)
 }

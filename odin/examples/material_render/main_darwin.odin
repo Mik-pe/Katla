@@ -74,22 +74,20 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     sphere_mesh_b,sphere_error_b:=app.scene_mesh_prepare(&owner,{kind=.Geometry,geometry=sphere_descriptor}); assert(sphere_error_b==.None)
     red:=km.color_to_linear({0.85,0.12,0.08,1}); blue:=km.color_to_linear({0.08,0.2,0.85,1})
     ids:=[3]ecs.Entity_Id{
-        ecs.spawn(&owner.world,struct { transform:app.Scene_Transform, surface:app.Surface_Material, mesh:app.Scene_Mesh }{{km.transform(position={-0.65,0,0},scale={1.4,1.4,1.4})},{red,true,0,0.7,1},sphere_mesh_a}),
-        ecs.spawn(&owner.world,struct { transform:app.Scene_Transform, surface:app.Surface_Material, mesh:app.Scene_Mesh }{{km.transform(position={0.65,0,0},scale={1.4,1.4,1.4})},{blue,true,0,0.4,1},sphere_mesh_b}),
-        ecs.spawn(&owner.world,struct { transform:app.Scene_Transform, surface:app.Surface_Material, mesh:app.Scene_Mesh }{{km.transform(position={0,-1.08,-0.55},rotation=km.quat_axis_angle(km.VEC3_Y,0.4),scale={0.65,0.65,0.65})},{km.color_to_linear({0.8,0.65,0.3,1}),true,0,0.6,1},prepared_mesh}),
+        ecs.spawn(&owner.world,struct { transform:app.Scene_Transform, surface:app.Surface_Material, mesh:app.Scene_Mesh }{{km.transform(position={-0.65,0,0},scale={1.4,1.4,1.4})},{linear_color=red,has_tint=true,metallic=0,roughness=0.7,ao=1},sphere_mesh_a}),
+        ecs.spawn(&owner.world,struct { transform:app.Scene_Transform, surface:app.Surface_Material, mesh:app.Scene_Mesh }{{km.transform(position={0.65,0,0},scale={1.4,1.4,1.4})},{linear_color=blue,has_tint=true,metallic=0,roughness=0.4,ao=1},sphere_mesh_b}),
+        ecs.spawn(&owner.world,struct { transform:app.Scene_Transform, surface:app.Surface_Material, mesh:app.Scene_Mesh }{{km.transform(position={0,-1.08,-0.55},rotation=km.quat_axis_angle(km.VEC3_Y,0.4),scale={0.65,0.65,0.65})},{linear_color=km.color_to_linear({0.8,0.65,0.3,1}),has_tint=true,metallic=0,roughness=0.6,ao=1},prepared_mesh}),
     }
     consumer:render.Native_Consumer(R)
     initialization_error:=render.native_consumer_init(&consumer,&owner,renderer,operations,descriptor,3,384,256)
     fmt.println("Scene initialization:",initialization_error)
     assert(initialization_error=={})
     defer { assert(render.native_consumer_destroy(&consumer)==.None) }
-    native,batch:=consumer.active,consumer.batch
-    assert(len(batch.entries)==3)
+    native:=consumer.active
+    assert(len(consumer.batch.entries)==3)
     camera:=render.camera_default(); camera.position={0,0,3.4}
     frame,scene_error:=render.frame_data(camera,384,256,backend=="vulkan"); assert(scene_error==.None)
-    draws:=batch.draws
-    objects:=batch.objects
-    before,error:=render_frame(native,frame,objects[:],draws[:]); assert(error=={})
+    before,error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(error=={})
     before_pixels:=read_pixels(native,capture,before); defer gfx.readback_data_destroy(&before_pixels)
     assert(render.native_scene_wait(native,before)==.None)
     left_before:=region_mean(&before_pixels,48,180); right_before:=region_mean(&before_pixels,204,336)
@@ -100,47 +98,50 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     ticket,call_error:=agent.submit_call(&owner.agent,{"native-surface", "material",transmute([]byte)arguments}); assert(ticket>0 && call_error==.None)
     assert(app.authoring_tick(&owner)==1)
     response,has_response:=editor.agent_take_result(&owner.agent); assert(has_response && response.ticket==ticket && response.result.error==.None); defer editor.agent_response_destroy(&response)
-    assert(render.scene_batch_refresh(batch,&owner)=={})
-    changed,render_error:=render_frame(native,frame,objects[:],draws[:]); assert(render_error=={})
+    assert(consumer.active!=native,"accepted material admission must replace the previous native scene")
+    assert(render.native_consumer_refresh(&consumer)=={});native=consumer.active
+    changed,render_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(render_error=={})
     changed_pixels:=read_pixels(native,capture,changed); defer gfx.readback_data_destroy(&changed_pixels)
     assert(render.native_scene_wait(native,changed)==.None)
     left_after:=region_mean(&changed_pixels,48,180); right_after:=region_mean(&changed_pixels,204,336)
     assert(left_after[2]>left_after[0]+12 && right_before==right_after,"material edit failed to affect only its native object")
     assert(app.authoring_undo_last(&owner)==.None)
-    assert(render.scene_batch_refresh(batch,&owner)=={})
-    restored,restore_error:=render_frame(native,frame,objects[:],draws[:]); assert(restore_error=={})
+    assert(render.native_consumer_refresh(&consumer)=={});native=consumer.active
+    restored,restore_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(restore_error=={})
     restored_pixels:=read_pixels(native,capture,restored); defer gfx.readback_data_destroy(&restored_pixels)
     assert(render.native_scene_wait(native,restored)==.None)
     assert(mem.compare(before_pixels.bytes,restored_pixels.bytes)==0,"undo failed to restore exact native PBR image")
     assert(app.authoring_redo_last(&owner)==.None)
-    assert(render.scene_batch_refresh(batch,&owner)=={})
-    redone,redo_error:=render_frame(native,frame,objects[:],draws[:]); assert(redo_error=={})
+    assert(render.native_consumer_refresh(&consumer)=={});native=consumer.active
+    redone,redo_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(redo_error=={})
     redone_pixels:=read_pixels(native,capture,redone); defer gfx.readback_data_destroy(&redone_pixels)
     assert(render.native_scene_wait(native,redone)==.None)
     assert(mem.compare(changed_pixels.bytes,redone_pixels.bytes)==0,"redo failed to restore exact native PBR image")
     assert(app.authoring_undo_last(&owner)==.None)
+    native=consumer.active
     gesture:app.Material_Gesture; defer app.material_gesture_destroy(&gesture)
     actions_before:=len(owner.agent.session.actions)
     assert(app.material_gesture_begin(&owner,&gesture,ids[:1])==.None)
-    for roughness in ([3]f32{0.8,0.4,0.1}) { assert(app.material_gesture_preview(&owner,&gesture,{.Roughness},{roughness=roughness})==.None) }
+    for roughness in ([3]f32{0.8,0.4,0.1}) { assert(app.material_gesture_preview(&owner,&gesture,{.Roughness},{roughness=roughness})==.None);native=consumer.active }
     assert(app.material_gesture_preview(&owner,&gesture,{.Base_Color},{base_color={0.12,0.82,0.2,1}})==.None)
+    native=consumer.active
     assert(len(owner.agent.session.actions)==actions_before)
     assert(app.material_gesture_finish(&owner,&gesture)==.None && len(owner.agent.session.actions)==actions_before+1)
-    assert(render.scene_batch_refresh(batch,&owner)=={})
-    gestured,gesture_error:=render_frame(native,frame,objects[:],draws[:]); assert(gesture_error=={})
+    assert(render.native_consumer_refresh(&consumer)=={});native=consumer.active
+    gestured,gesture_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(gesture_error=={})
     gesture_pixels:=read_pixels(native,capture,gestured); defer gfx.readback_data_destroy(&gesture_pixels)
     assert(render.native_scene_wait(native,gestured)==.None)
     left_gesture:=region_mean(&gesture_pixels,48,180)
     assert(left_gesture[1]>left_gesture[0]+15 && left_gesture[1]>left_gesture[2]+15)
     assert(app.authoring_undo_last(&owner)==.None)
-    assert(render.scene_batch_refresh(batch,&owner)=={})
-    gesture_undone,gesture_undo_error:=render_frame(native,frame,objects[:],draws[:]); assert(gesture_undo_error=={})
+    assert(render.native_consumer_refresh(&consumer)=={});native=consumer.active
+    gesture_undone,gesture_undo_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(gesture_undo_error=={})
     gesture_undo_pixels:=read_pixels(native,capture,gesture_undone); defer gfx.readback_data_destroy(&gesture_undo_pixels)
     assert(render.native_scene_wait(native,gesture_undone)==.None)
     assert(mem.compare(before_pixels.bytes,gesture_undo_pixels.bytes)==0,"grouped gesture undo failed to restore first native image")
     assert(app.authoring_redo_last(&owner)==.None)
-    assert(render.scene_batch_refresh(batch,&owner)=={})
-    gesture_redone,gesture_redo_error:=render_frame(native,frame,objects[:],draws[:]); assert(gesture_redo_error=={})
+    assert(render.native_consumer_refresh(&consumer)=={});native=consumer.active
+    gesture_redone,gesture_redo_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(gesture_redo_error=={})
     gesture_redo_pixels:=read_pixels(native,capture,gesture_redone); defer gfx.readback_data_destroy(&gesture_redo_pixels)
     assert(render.native_scene_wait(native,gesture_redone)==.None)
     assert(mem.compare(gesture_pixels.bytes,gesture_redo_pixels.bytes)==0,"grouped gesture redo failed to restore last native image")
@@ -153,7 +154,7 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
         if mem.compare(empty_pixels.bytes[offset:offset+4],([]byte{53,56,63,255}))!=0 { fmt.eprintln("Clear-only first mismatching pixel",offset/4,empty_pixels.bytes[offset:offset+4]);assert(false,"empty editor world did not clear its real color attachment") }
     }
     native.feature_settings=saved_features
-    resumed,resume_error:=render_frame(native,frame,objects[:],draws[:]); assert(resume_error=={})
+    resumed,resume_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(resume_error=={})
     resumed_pixels:=read_pixels(native,capture,resumed); defer gfx.readback_data_destroy(&resumed_pixels)
     assert(render.native_scene_wait(native,resumed)==.None)
     assert(mem.compare(gesture_pixels.bytes,resumed_pixels.bytes)==0,"scene drawings did not resume after the empty-world access transition")
@@ -163,20 +164,21 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     rejected:=editor.agent_execute(&owner.agent.session,&owner.world,&owner.registry,{kind=.Application,tool_name="prefab",value=instantiate_arguments},app.authoring_executor(&owner))
     assert(rejected.result.error!=.None && owner.world.live_count==3 && consumer.active==previous_scene && consumer.last_error.gpu==.Allocation_Failed,"failed native upload partially published an asset")
     consumer.operations.create_buffer=operations.create_buffer
-    after_failure,failure_render_error:=render_frame(native,frame,objects[:],draws[:]); assert(failure_render_error=={})
+    native=consumer.active
+    after_failure,failure_render_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(failure_render_error=={})
     after_failure_pixels:=read_pixels(native,capture,after_failure); defer gfx.readback_data_destroy(&after_failure_pixels)
     assert(render.native_scene_wait(native,after_failure)==.None)
     assert(mem.compare(gesture_pixels.bytes,after_failure_pixels.bytes)==0,"failed asset native staging changed old rendered pixels")
     accepted:=editor.agent_execute(&owner.agent.session,&owner.world,&owner.registry,{kind=.Application,tool_name="prefab",value=instantiate_arguments},app.authoring_executor(&owner))
     assert(accepted.result.error==.None && owner.world.live_count==4 && consumer.active!=previous_scene && len(consumer.batch.entries)==4)
-    native,batch=consumer.active,consumer.batch
-    uploaded,uploaded_error:=render_frame(native,frame,batch.objects,batch.draws); assert(uploaded_error=={})
+    native=consumer.active
+    uploaded,uploaded_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(uploaded_error=={})
     uploaded_pixels:=read_pixels(native,capture,uploaded); defer gfx.readback_data_destroy(&uploaded_pixels)
     assert(render.native_scene_wait(native,uploaded)==.None)
     assert(mem.compare(gesture_pixels.bytes,uploaded_pixels.bytes)!=0,"successful native asset publication did not render its actual geometry")
     assert(app.authoring_undo_last(&owner)==.None && render.native_consumer_refresh(&consumer)=={})
-    native,batch=consumer.active,consumer.batch
-    asset_undone,asset_undo_error:=render_frame(native,frame,batch.objects,batch.draws); assert(asset_undo_error=={})
+    native=consumer.active
+    asset_undone,asset_undo_error:=render_frame(native,frame,consumer.batch.objects,consumer.batch.draws); assert(asset_undo_error=={})
     asset_undo_pixels:=read_pixels(native,capture,asset_undone); defer gfx.readback_data_destroy(&asset_undo_pixels)
     assert(render.native_scene_wait(native,asset_undone)==.None)
     assert(mem.compare(gesture_pixels.bytes,asset_undo_pixels.bytes)==0,"asset undo did not restore old native geometry pixels")

@@ -149,7 +149,7 @@ def main():
             "params": "odin/gfx_native/shaders/params.comp",
             **{name: f"odin/gfx_vulkan_native/shaders/{name}.{stage}" for name, stage in
                (("triangle", "vert"), ("color", "frag"), ("mesh", "vert"), ("depth_sense", "vert"), ("tint", "frag"),
-                ("sample", "frag"), ("image", "comp"), ("volume", "comp"))},
+                ("sample", "frag"), ("image", "comp"), ("volume", "comp"), ("sampler_policy", "frag"), ("packed_formats", "vert"))},
         }
         for name, source in sources.items():
             binary = output / f"{name}.spv"
@@ -162,7 +162,7 @@ def main():
             binaries[name] = basename.with_suffix(".spv")
         executable = build("odin/gfx_vulkan_native", "vulkan-native")
         command = [executable, *(binaries[name] for name in ("fill", "params", "triangle", "color")), loader,
-                   "--volume", binaries["volume"], "--images", binaries["sample"], binaries["image"],
+                   "--sampling", binaries["sampler_policy"], "--vertex-formats", binaries["packed_formats"], "--volume", binaries["volume"], "--images", binaries["sample"], binaries["image"],
                    "--mesh", binaries["mesh"], binaries["tint"], "--arrays", binaries["array"],
                    "--storage-arrays", binaries["storage_array"], "--depth-sense", binaries["depth_sense"], binaries["tint"]]
         if args.native_surface:

@@ -16,7 +16,7 @@ image_view :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Graph,a
         range:=access.range
         view:=send(^MTL.Texture,object,"newTextureViewWithPixelFormat:textureType:levels:slices:",pixel_format(texture.desc.format),texture_type,NS.Range{NS.UInteger(range.base_mip),NS.UInteger(range.mip_count)},NS.Range{NS.UInteger(range.base_layer),NS.UInteger(range.layer_count)})
         if view==nil { return nil,.Invalid_Range }
-        append(&slot.auxiliary,cast(^NS.Object)view); send(nil,slot.residency,"addAllocation:",view); object=view
+        append(&slot.auxiliary,cast(^NS.Object)view); capture_residency(r,slot,cast(^NS.Object)view); capture_auxiliary(r,slot,cast(^NS.Object)view,"retained texture view");object=view
     }
     return object,.None
 }
@@ -28,12 +28,13 @@ encode_image_binding :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepar
         if count!=1 { return .Invalid_Shader }
         texture,err:=image_view(r,slot,prepared,binding.accesses[0],dimension,arrayed); if err!=.None { return err }
         send(nil,table,"setTexture:atIndex:",texture->gpuResourceID(),NS.UInteger(index))
+        capture_image_binding(r,slot,table,cast(^NS.Object)texture,binding.accesses[0],binding.group,binding.slot,u32(index),0)
         return .None
     }
     if r.device->argumentBuffersSupport()!=.Tier2 { return .Unsupported }
     object:=r.device->newBufferWithLength(NS.UInteger(count)*8,MTL.ResourceOptions{.HazardTrackingModeUntracked})
     if object==nil { return .Allocation_Failed }
-    append(&slot.auxiliary,cast(^NS.Object)object); send(nil,slot.residency,"addAllocation:",object)
+    append(&slot.auxiliary,cast(^NS.Object)object); capture_residency(r,slot,cast(^NS.Object)object)
     ids:=mem.slice_ptr(cast(^MTL.ResourceID)raw_data(object->contents()),int(count))
     objects:=make(map[gfx.Image_Access]^MTL.Texture,r.allocator); defer delete(objects)
     for access,i in binding.accesses {
@@ -43,8 +44,10 @@ encode_image_binding :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepar
             objects[access]=texture
         }
         ids[i]=texture->gpuResourceID()
+        capture_image_binding(r,slot,table,cast(^NS.Object)texture,access,binding.group,binding.slot,u32(index),u32(i))
     }
     send(nil,table,"setAddress:atIndex:",object->gpuAddress(),NS.UInteger(index))
+    capture_constant_binding(r,slot,table,cast(^NS.Object)object,binding.group,binding.slot,u32(index),u64(count)*8,"immutable texture-ID array")
     return .None
 }
 

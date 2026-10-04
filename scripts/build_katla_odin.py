@@ -18,7 +18,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 ODIN_VERSION = "dev-2026-09"
 CPU_TEST_PACKAGES = ("app", "app/render", "app/editor", "gfx", "gfx/shader_tests",
-                     "script", "audio", "ui", "resources", "agent/host", "deps/font_native")
+                     "script", "audio", "ui", "image", "resources", "agent/host", "deps/font_native")
 ODIN_ARCHIVES = {
     ("Linux", "amd64"): ("linux-amd64.tar.gz", "167c3e1d7056419dad2e04bb3bd98715b7ff286d4c125f3c5a5ee337c6254283"),
     ("Linux", "arm64"): ("linux-arm64.tar.gz", "c150c6f2d13668f3a1c4116ef96ea85c1ba1c9ededfd76081cd3c7d4ba92aa91"),
@@ -212,7 +212,7 @@ def build(options):
     flags = ["-vet", "-strict-style", "-debug", *foreign_defines(paths)]
     if options.sanitize:
         flags += ["-sanitize:address"]
-    if options.optimize:
+    if options.optimize or not options.sanitize:
         flags += ["-o:speed"]
     binaries = directory / "bin"
     binaries.mkdir(exist_ok=True)
@@ -269,7 +269,7 @@ def main():
     parser.add_argument("--cargo", default="cargo", help="Only builds the isolated, locked offline Naga executable")
     parser.add_argument("--install-odin", type=Path, help="Download and verify the pinned host compiler, then exit")
     parser.add_argument("--sanitize", action="store_true")
-    parser.add_argument("--optimize", action="store_true")
+    parser.add_argument("--optimize", action="store_true", help="Optimize sanitized builds too; normal builds are always optimized")
     parser.add_argument("--dependencies-only", action="store_true")
     parser.add_argument("--objects-only", action="store_true", help="Generate actual editor entrypoint and reachable application object code without linking a desktop executable")
     parser.add_argument("--tests", action="store_true", help="Run real native-dependency CPU suites serially")

@@ -23,10 +23,17 @@ authoring_services_init :: proc(app:^Authoring)->editor.Scene_Error {
 authoring_application :: proc(app:^Authoring,op:editor.Scene_Op)->(editor.Tool_Result,editor.Undo_Group) {
     allocator:=app.world.allocator
     switch op.tool_name {
+    case "generate_resource":
+        decoded,err:=agent.resource_generation_decode(op.value,allocator); if err!=.None { return error_result(&app.world,.Invalid_Operation),{} }; defer agent.resource_generation_destroy(&decoded)
+        return resource_generation_execute(app,decoded.request)
     case "material":
         decoded,err:=agent.decode_material(op.value,allocator); if err!=.None { return error_result(&app.world,.Invalid_Operation),{} }; defer agent.decoded_material_destroy(&decoded)
         if _,mutation:=decoded.operation.(agent.Material_Set); mutation { if error:=authoring_before_mutation(app); error!=.None { return error_result(&app.world,error),{} } }
         return material_execute(app,decoded.operation)
+    case "material_asset":
+        decoded,err:=asset.material_asset_decode(op.value,allocator); if err!=.None { return error_result(&app.world,.Invalid_Operation),{} }; defer asset.material_asset_destroy(&decoded)
+        if decoded.request.action in (bit_set[asset.Material_Asset_Action]{.Apply,.Capture,.Write}) { if error:=authoring_before_mutation(app); error!=.None { return error_result(&app.world,error),{} } }
+        return material_asset_execute(app,decoded.request)
     case "animation":
         decoded,err:=scene.decode_animation(op.value,allocator); if err!=.None { return error_result(&app.world,.Invalid_Operation),{} }; defer scene.decoded_animation_destroy(&decoded)
         if decoded.operation.action!=.Inspect { if error:=authoring_before_mutation(app); error!=.None { return error_result(&app.world,error),{} } }

@@ -16,7 +16,8 @@ scene_stage_destroy :: proc(app:^Authoring,stage:^Scene_Stage,rollback:bool) {
 /// Decodes every component and binds references; fresh_key_start assigns new global scene keys for insertion.
 scene_snapshot_stage :: proc(app:^Authoring,snapshot:^Scene_Snapshot,fresh_key_start:u64=0)->(Scene_Stage,editor.Scene_Error) {
     context.allocator=app.world.allocator
-    stage:=Scene_Stage{entities=make([dynamic]ecs.Entity_Id,app.world.allocator),mapping=make(map[ecs.Entity_Id]ecs.Entity_Id,app.world.allocator),allocator=app.world.allocator,next_key=fresh_key_start}
+    model_preparation_owned:=scene_model_preparation_begin(app); defer scene_model_preparation_end(app,model_preparation_owned)
+    stage:=Scene_Stage{entities=make([dynamic]ecs.Entity_Id,app.world.allocator),mapping=make(map[ecs.Entity_Id]ecs.Entity_Id,app.world.allocator),allocator=app.world.allocator,next_key=fresh_key_start if fresh_key_start>0 else snapshot.next_entity_id}
     success:=false; defer { if !success { scene_stage_destroy(app,&stage,true) } }
     if len(snapshot.entities)>100_000 || snapshot.next_entity_id==0 { return {},.Invalid_Operation }
     if fresh_key_start>0 && u64(len(snapshot.entities))>max(u64)-fresh_key_start { return {},.Invalid_Operation }
@@ -61,7 +62,7 @@ scene_snapshot_stage :: proc(app:^Authoring,snapshot:^Scene_Snapshot,fresh_key_s
         mesh,has_mesh:=ecs.get_component(&app.world,entity,Scene_Mesh)
         model,has_model:=ecs.get_component(&app.world,entity,Scene_Model)
         if has_mesh && mesh.source.kind!=.Empty && has_model { return {},.Invalid_Operation }
-        if has_model && !captured {
+        if has_model && !captured && model.source.kind!=.Primitive {
             if _,has_animation:=ecs.get_component(&app.world,entity,Animation_Model); !has_animation {
                 entry:=app.registry.entries["AnimationModel"]; if entry==nil { return {},.Component_Not_Found }
                 cloned:=editor.editor_clone_value(entry,&model.model.animation,app.world.allocator)
@@ -69,7 +70,7 @@ scene_snapshot_stage :: proc(app:^Authoring,snapshot:^Scene_Snapshot,fresh_key_s
             }
             if _,has_player:=ecs.get_component(&app.world,entity,Animation_Player); !has_player { ecs.add_component(&app.world,entity,animation_player_stopped()) }
         }
-        if !captured && ((has_mesh && mesh.source.kind!=.Empty) || has_model) {
+        if !captured && ((has_mesh && mesh.source.kind!=.Empty) || (has_model && model.source.kind!=.Group)) {
             if _,has_material:=ecs.get_component(&app.world,entity,Surface_Material); !has_material {
                 material:=Surface_Material{roughness=0.5,ao=1}; if has_model { material.metallic=1; material.roughness=1 }; ecs.add_component(&app.world,entity,material)
             }
@@ -78,6 +79,15 @@ scene_snapshot_stage :: proc(app:^Authoring,snapshot:^Scene_Snapshot,fresh_key_s
             if _,err:=scene_world_matrix(app,entity); err!=.None { return {},err }
         }
     }
+    original_count:=len(stage.entities)
+    for i in 0..<original_count {
+        entity:=stage.entities[i]
+        if component:=ecs.get_component_mut(&app.world,entity,Scene_Model); component!=nil && component.source.kind==.Model && !snapshot.entities[i].has_source {
+            component.source.kind=.Group
+            if error:=scene_model_expand_children(app,entity,&stage.entities,&stage.next_key); error!=.None { return {},error }
+        }
+    }
+    if err:=material_images_prepare_entities(app,stage.entities[:]); err!=.None { return {},err }
     if err:=billboard_scene_validate(app,stage.entities[:]); err!=.None { return {},err }
     if err:=perspective_scene_validate(app,stage.entities[:]); err!=.None { return {},err }
     if err:=light_scene_validate(app,stage.entities[:]); err!=.None { return {},err }

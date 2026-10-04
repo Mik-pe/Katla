@@ -40,28 +40,14 @@ struct Vertex_Output {
     let surface = objects[input.object_index];
     let color = surface.linear_color.rgb;
     let metallic = clamp(surface.factors.x, 0.0, 1.0);
-    let roughness = clamp(surface.factors.y, 0.045, 1.0);
+    let roughness = clamp(surface.factors.y, 0.04, 1.0);
     let ao = clamp(surface.factors.z, 0.0, 1.0);
     let normal = normalize(input.normal);
     let view = normalize(frame.camera_position.xyz - input.world_position);
     let light = normalize(-frame.light_direction.xyz);
-    let halfway = normalize(view + light);
-    let nv = max(dot(normal, view), 0.0);
-    let nl = max(dot(normal, light), 0.0);
-    let nh = max(dot(normal, halfway), 0.0);
-    let vh = max(dot(view, halfway), 0.0);
-    let alpha = roughness * roughness;
-    let alpha_squared = alpha * alpha;
-    let denominator = nh * nh * (alpha_squared - 1.0) + 1.0;
-    let distribution = alpha_squared / max(3.14159265359 * denominator * denominator, 0.00001);
-    let k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
-    let geometry_term = nv / max(nv * (1.0 - k) + k, 0.00001)
-                      * nl / max(nl * (1.0 - k) + k, 0.00001);
     let f0 = mix(vec3<f32>(0.04), color, metallic);
-    let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - vh, 5.0);
-    let specular = distribution * geometry_term * fresnel / max(4.0 * nv * nl, 0.00001);
-    let diffuse = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic) * color / 3.14159265359;
-    let direct = (diffuse + specular) * frame.light_color.rgb * frame.light_color.w * nl * shadow_visibility(input.world_position,normal);
+    let direct = pbr_light(normal,view,light,color*(1.0-metallic),f0,roughness)
+               * frame.light_color.rgb * frame.light_color.w * shadow_visibility(input.world_position,normal);
     let points = point_illumination(input.clip_position.xy,input.world_position,normal,view,color*(1.0-metallic),f0,roughness);
     let radiance = frame.ambient.rgb * color * ao + direct + points;
     return vec4<f32>(radiance, surface.linear_color.a);

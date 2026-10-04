@@ -2,7 +2,7 @@
 package gfx
 
 /// Pixel layouts, independent of native format constants.
-Texture_Format :: enum { RGBA8_Unorm, BGRA8_Unorm, RGBA16_Float, R32_Uint, D32_Float, D24_Unorm_S8_Uint, D32_Float_S8_Uint, RGBA8_Srgb, BGRA8_Srgb, R8_Unorm, RG8_Unorm, R32_Float, BC1_RGBA_Unorm, BC3_RGBA_Unorm }
+Texture_Format :: enum { RGBA8_Unorm, BGRA8_Unorm, RGBA16_Float, R32_Uint, D32_Float, D24_Unorm_S8_Uint, D32_Float_S8_Uint, RGBA8_Srgb, BGRA8_Srgb, R8_Unorm, RG8_Unorm, R32_Float, BC1_RGBA_Unorm, BC3_RGBA_Unorm, RGBA16_Unorm }
 /// Image roles permitted by one native allocation.
 Texture_Usage :: enum { Sampled, Storage, Color_Attachment, Depth_Attachment, Transfer_Source, Transfer_Destination, Present }
 Texture_Usages :: bit_set[Texture_Usage]
@@ -36,7 +36,7 @@ texture_pixel_size :: proc(format:Texture_Format)->u32 {
     #partial switch format {
     case .R8_Unorm: return 1
     case .RG8_Unorm: return 2
-    case .RGBA16_Float,.D32_Float_S8_Uint: return 8
+    case .RGBA16_Float,.RGBA16_Unorm,.D32_Float_S8_Uint: return 8
     case .BC1_RGBA_Unorm,.BC3_RGBA_Unorm: return 0
     case: return 4
     }
@@ -50,7 +50,7 @@ texture_block_layout :: proc(format:Texture_Format)->(width,height,bytes:u32) {
 /// Formats admitted for native filtered mip generation.
 texture_filterable_mips :: proc(format:Texture_Format)->bool {
     #partial switch format {
-    case .RGBA8_Unorm,.BGRA8_Unorm,.RGBA8_Srgb,.BGRA8_Srgb,.R8_Unorm,.RG8_Unorm,.RGBA16_Float: return true
+    case .RGBA8_Unorm,.BGRA8_Unorm,.RGBA8_Srgb,.BGRA8_Srgb,.R8_Unorm,.RG8_Unorm,.RGBA16_Float,.RGBA16_Unorm: return true
     case: return false
     }
 }

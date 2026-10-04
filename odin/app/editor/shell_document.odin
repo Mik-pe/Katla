@@ -30,12 +30,15 @@ shell_document :: proc(shell:^Shell,size:ui.Vec2)->ui.Descriptor {
     case .None:
     }
     content:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(content)
-    append(&content,text(40,title),text(41,message)); append(&content,..children[:])
+    heading:=text(40,title);heading.layout.height={};heading.layout.no_shrink=true
+    detail:=text(41,message);detail.layout.height={};detail.layout.no_shrink=true
+    append(&content,heading,detail); append(&content,..children[:])
     for &action in actions { action.key=key(42,action.text,u64(action.action)) }
     append(&content,ui.Descriptor{key=key(40,"actions"),kind=.Row,layout={gap={8,0},wrap=true},children=nodes(shell,actions[:])})
-    width:=min(500,max(0,size[0]-32)); height:f32=240
-    column:=ui.Descriptor{key=key(40,"content"),kind=.Column,layout={padding={16,16,16,16},gap={0,14},width=ui.percent(1),height=ui.percent(1)},children=nodes(shell,content[:])}
-    return {key=key(40,"dialog"),kind=.Modal,action=u64(Action.Document_Cancel),has_fixed_bounds=true,fixed_bounds={max(0,(size[0]-width)/2),max(0,(size[1]-height)/2),width,height},children=nodes(shell,{column})}
+    width:=min(500*shell_scale(shell),max(0,size[0]-16)); height:=min(260*shell_scale(shell),max(0,size[1]-16))
+    column:=ui.Descriptor{key=key(40,"content"),kind=.Column,layout={padding={12,12,12,12},gap={0,14},width=ui.percent(1),no_shrink=true},children=nodes(shell,content[:])}
+    scroll:=ui.Descriptor{key=key(40,"scroll"),kind=.Scroll_Area,layout={width=ui.percent(1),height=ui.percent(1)},children=nodes(shell,{column})}
+    return {key=key(40,"dialog"),kind=.Modal,action=u64(Action.Document_Cancel),has_fixed_bounds=true,fixed_bounds={max(0,(size[0]-width)/2),max(0,(size[1]-height)/2),width,height},children=nodes(shell,{scroll})}
 }
 
 /// The OS close button requests the same unsaved decision as File → Quit.

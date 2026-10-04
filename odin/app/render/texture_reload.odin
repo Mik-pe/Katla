@@ -57,6 +57,7 @@ texture_reload_rollback_graph :: proc(prepared:^Texture_Reload_Preparation($R)) 
     cache:=prepared.cache; graph:=scene_graph_target(cache.graph)
     for index in prepared.changed { error:=gfx.graph_replace_image(graph,cache.image_ids[index],cache.textures[index].native.desc); assert(error==.None) }
     for index,i in cache.order { error:=model_graph_packet(cache,cache.graph,cache.passes[i],index,true); assert(error=={}) }
+    coverage_error:=model_coverage_rebind(cache); assert(coverage_error=={})
     graph.revision=prepared.revision
 }
 /// Prepares all uploads and sampler owners before publishing any cache or graph resource mapping.
@@ -123,6 +124,7 @@ model_texture_reload :: proc(owner:^app.Authoring,caches:[]^Native_Model($R))->(
             item.candidate.image_ids[index]=id; item.candidate.texture_inputs[index]={id,texture.texture}
         }
         for index,i in cache.order { error:=model_graph_packet(&item.candidate,cache.graph,cache.passes[i],index,true); if error!={} { return {},error } }
+        coverage_error:=model_coverage_rebind(&item.candidate); if coverage_error!={} { return {},coverage_error }
     }
     for &item in prepared {
         if !item.patched { continue }

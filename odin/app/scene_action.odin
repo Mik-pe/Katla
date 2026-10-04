@@ -80,6 +80,7 @@ scene_action_execute :: proc(owner:^Authoring,op:editor.Scene_Op,selected:[]ecs.
                 append(&command.rows,row)
             }
             if op.kind==.Destroy { scene_action_remove_references(owner,command,ids[:]) }
+            if error:=physics_collider_remove_joints(owner,command); error!=.None { return error_result(&owner.world,error),{} }
         }
     }
     group:=scene_action_command_group(command); transferred=true
@@ -102,6 +103,7 @@ scene_action_mutate_proposal :: proc(owner:^Authoring,id:ecs.Entity_Id,op:editor
     #partial switch op.kind {
     case .Set_Field:
         if entry:=owner.registry.entries[op.component]; entry!=nil && entry.T==Particle_Emitter { return particle_edit_field(owner,id,op) }
+        if op.component=="PhysicsBody" && op.field=="has_collider" { return physics_collider_edit_field(owner,id,op) }
         return editor.editor_set_field(&owner.world,&owner.registry,id,op.component,op.field,op.value)
     case .Add_Component,.Remove_Component:
         entry:=owner.registry.entries[op.component]; if entry==nil { return .Component_Not_Found }

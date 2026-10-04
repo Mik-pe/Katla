@@ -64,7 +64,12 @@ are carried by `action` and `payload`. The application controls expanded tree
 contents and mounts panel contents into `dock_bounds` results. A tree disclosure
 only expands rows with `has_children`; body clicks select independently.
 
-Slider rendering and capture share `slider_track`. A held drag continues outside
+Positive `text_max_width` gives a shaped, grapheme-safe single-line ellipsis;
+overflow exposes the complete text in a noninteractive hover preview. The
+preview respects clipped descendants and modal/popup scope.
+
+Slider rendering and capture share `slider_track` and reserve a fixed shaped
+value column, so continuous values remain visible without moving the track. A held drag continues outside
 the field and reports start/change/finish actions. Numeric input keeps an editing
 buffer and publishes only finite, bounded parsed values as one edit gesture;
 invalid text remains marked without changing the application value. Selectable
@@ -72,6 +77,9 @@ and tree rows with `draggable` emit pointer source intents; crossing four logica
 pixels suppresses the normal release click. Asset payloads and drops remain app
 policy. Scrollbars share exact thumb geometry with drawing, support both axes,
 and preserve capture outside bounds. Scroll descendants receive inherited clips.
+Content extents are measured independently of the scroll viewport constraints.
+Wheel and scrollbar changes resolve descendant bounds before later input events
+in the same batch, so drawing and hit testing agree immediately.
 
 ## Layers, focus and text
 
@@ -155,3 +163,8 @@ replacing any active node. ASan tests prove exact tab migration, split floating
 roots, restore/rollback, complete redocking cleanup and captured move/resize
 input. Real editor mounting and native desktop input are separate acceptance
 owned by the application shell.
+
+Numeric text commits quantize in double precision. A minimum outside the
+representable step grid uses a zero anchor, so full-range finite controls retain
+small signed values rather than overflowing during quantization. Ordinary bounded
+controls keep their declared minimum as the step origin.

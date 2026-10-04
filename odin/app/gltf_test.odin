@@ -188,6 +188,8 @@ test_gltf_normal_texture_tangents_use_selected_transformed_uv_and_retain_authore
     testing.expect_value(t,error,Gltf_Error.None); if error!=.None { return }
     testing.expect_value(t,len(model.primitives),2)
     generated:=model.primitives[0]; authored:=model.primitives[1]
+    testing.expect(t,generated.tangent_generated && !authored.tangent_generated)
+    testing.expect_value(t,generated.tangent_uv,model.materials[0].normal_texture)
     testing.expect_value(t,model.materials[0].normal_texture.texcoord,i32(1))
     for index in generated.geometry.indices {
         vertex:=generated.geometry.vertices[index]

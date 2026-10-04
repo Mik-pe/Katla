@@ -26,7 +26,7 @@ test_query_actual_bounds_world_hierarchy_unicode_and_rich_null_rows :: proc(t:^t
     data:=tree.(json.Object); rows:=data["entities"].(json.Array); row:=rows[0].(json.Object)
     testing.expect(t,data["total"].(json.Integer)==1 && !bool(data["truncated"].(json.Boolean)))
     bounds:=row["bounds"].(json.Object); extent:=bounds["extent"].(json.Array)
-    testing.expect(t,query_test_number(extent[0])==10 && len(row["components"].(json.Array))>0)
+    testing.expect(t,query_test_number(extent[0])==10 && len(row["components"].(json.Array))>0 && row["material_editable"].(bool))
     _,root_parent:=row["parent_id"].(json.Null); testing.expect(t,root_parent && row["entity_id"].(string)=="0")
     for filter in ([]string{"ος","i\u0307stanbul"}) {
         filtered:=scene_action_query(&owner,{kind=.Query_Entities,name_filter=filter}); testing.expect(t,filtered.error==.None && len(filtered.entities)==1); editor.tool_result_destroy(&filtered)
@@ -45,7 +45,7 @@ test_query_actual_bounds_world_hierarchy_unicode_and_rich_null_rows :: proc(t:^t
     testing.expect(t,len(full_rows)==4)
     final:=full_rows[3].(json.Object); _,no_name:=final["name"].(json.Null); _,no_position:=final["position"].(json.Null); _,no_bounds:=final["bounds"].(json.Null)
     unplaced_text:=scene_action_id_text(unplaced,context.allocator); defer delete(unplaced_text)
-    testing.expect(t,no_name && no_position && no_bounds && final["entity_id"].(string)==unplaced_text)
+    testing.expect(t,no_name && no_position && no_bounds && !final["material_editable"].(bool) && final["entity_id"].(string)==unplaced_text)
     named:=scene_action_query(&owner,{kind=.Query_Entities,has_name_filter=true,name_filter=""}); defer editor.tool_result_destroy(&named)
     testing.expect(t,named.error==.None && len(named.entities)==1 && named.entities[0]==big)
 }
@@ -72,6 +72,24 @@ test_query_actual_glTF_posed_skin_morph_active_scene_bounds :: proc(t:^testing.T
     testing.expect(t,query.error==.None && len(query.entities)==1 && query.entities[0]==entity,"Spatial query must use sampled skin/morph bounds, excluding inactive scene geometry")
     far:=scene_action_query(&owner,{kind=.Query_Entities,position={210,0,0},radius=1,has_query_position=true,has_radius=true}); defer editor.tool_result_destroy(&far)
     testing.expect(t,far.error==.None && len(far.entities)==0)
+    // A controller's prepared model is not one drawable material target.
+    controller:=ecs.get_component_mut(&owner.world,entity,Scene_Model); controller.source.kind=.Group
+    ecs.add_component(&owner.world,entity,Surface_Material{roughness=0.5,ao=1})
+    testing.expect(t,!scene_material_editable(&owner,entity))
+    selected,selected_ok:=scene_model_select(controller,0,0); testing.expect(t,selected_ok)
+    if selected_ok {
+        defer scene_model_destroy(&selected)
+        child:=ecs.create_entity(&owner.world); ecs.add_component(&owner.world,child,selected); ecs.add_component(&owner.world,child,Surface_Material{roughness=0.5,ao=1}); ecs.add_component(&owner.world,child,Scene_Transform{km.TRANSFORM_IDENTITY})
+        testing.expect(t,scene_material_editable(&owner,child))
+        children:=scene_action_query(&owner,{kind=.Query_Entities}); defer editor.tool_result_destroy(&children)
+        child_tree,child_error:=json.parse(children.data); testing.expect(t,child_error==nil)
+        if child_error==nil {
+            defer json.destroy_value(child_tree); child_rows:=child_tree.(json.Object)["entities"].(json.Array)
+            testing.expect(t,len(child_rows)==2 && !child_rows[0].(json.Object)["material_editable"].(bool) && child_rows[1].(json.Object)["material_editable"].(bool))
+        }
+        ecs.add_component(&owner.world,child,Editor_Hidden{}); testing.expect(t,!scene_material_editable(&owner,child)); ecs.remove_component(&owner.world,child,Editor_Hidden)
+        primitive:=ecs.get_component_mut(&owner.world,child,Scene_Model); primitive.source.primitive_index=max(u32); testing.expect(t,!scene_material_editable(&owner,child))
+    }
 }
 
 @(test)

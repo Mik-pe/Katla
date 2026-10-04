@@ -70,7 +70,7 @@ prepare_texture_journals :: proc(r:^Renderer,prepared:^gfx.Prepared_Graph)->([]T
                 access:=packet.depth.access; if packet.depth.load!=.Load { access.mode=.Write }
                 if !journal_access(r,prepared,journals,access,packet.depth.store==.Store && packet.depth.load!=.Discard) { return nil,.Invalid_Graph }
             }
-            for binding in packet.images { for access in binding.accesses { if !journal_access(r,prepared,journals,access) { return nil,.Invalid_Graph } } }
+            for phase in packet.phases { for binding in phase.images { for access in binding.accesses { if !journal_access(r,prepared,journals,access) { return nil,.Invalid_Graph } } } }
         case gfx.Dispatch:
             for binding in packet.images { for access in binding.accesses { if !journal_access(r,prepared,journals,access) { return nil,.Invalid_Graph } } }
         case gfx.Generate_Mips:
@@ -119,7 +119,7 @@ commit_content_epochs :: proc(r:^Renderer,prepared:^gfx.Prepared_Graph) {
         case gfx.Render:
             for attachment in packet.colors { texture,_:=resolve_texture(r,prepared,attachment.access.resource); mark_texture_written(r,texture) }
             if packet.depth.enabled { texture,_:=resolve_texture(r,prepared,packet.depth.access.resource); mark_texture_written(r,texture) }
-            for binding in packet.images { for access in binding.accesses { if gfx.access_writes(access.mode) { texture,_:=resolve_texture(r,prepared,access.resource); mark_texture_written(r,texture) } } }
+            for phase in packet.phases { for binding in phase.images { for access in binding.accesses { if gfx.access_writes(access.mode) { texture,_:=resolve_texture(r,prepared,access.resource); mark_texture_written(r,texture) } } } }
         case gfx.Dispatch:
             for binding in packet.bindings { if gfx.access_writes(binding.access.mode) { buffer,_:=resolve_buffer(r,prepared,binding.access.resource); mark_buffer_written(r,buffer) } }
             for binding in packet.images { for access in binding.accesses { if gfx.access_writes(access.mode) { texture,_:=resolve_texture(r,prepared,access.resource); mark_texture_written(r,texture) } } }
@@ -141,7 +141,7 @@ content_epochs_available :: proc(r:^Renderer,prepared:^gfx.Prepared_Graph)->bool
     for pass in prepared.passes {
         count:u64=1
         #partial switch packet in pass.packet {
-        case gfx.Render: count=u64(len(packet.colors))+1; for binding in packet.images { count+=u64(len(binding.accesses)) }
+        case gfx.Render: count=u64(len(packet.colors))+1; for phase in packet.phases { for binding in phase.images { count+=u64(len(binding.accesses)) } }
         case gfx.Dispatch: count=u64(len(packet.bindings)); for binding in packet.images { count+=u64(len(binding.accesses)) }
         }
         if count>max(u64)-budget { return false }

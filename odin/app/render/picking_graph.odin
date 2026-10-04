@@ -9,7 +9,8 @@ import m "core:math"
 
 /// Existing scene graph identities are reused instead of duplicating physical buffer aliases.
 Picking_Buffer :: struct { resource:gfx.Resource_Id, handle:gfx.Buffer_Handle, desc:gfx.Buffer_Desc }
-Picking_Mask :: struct { enabled:bool,texture:UI_Texture,sampler:gfx.Sampler_Handle,uv_offset,vertex_alpha_offset,object_alpha_offset:u32,vertex_alpha:bool,cutoff:f32 }
+Picking_Alpha_Mode :: enum { Mask,Blend }
+Picking_Mask :: struct { enabled:bool,texture:UI_Texture,sampler:gfx.Sampler_Handle,uv_offset,vertex_alpha_offset,object_alpha_offset:u32,vertex_alpha:bool,cutoff:f32,mode:Picking_Alpha_Mode }
 /// One immutable scene range associates explicit object identity with its actual GPU geometry.
 Picking_Draw :: struct {
     geometry,objects:Picking_Buffer,
@@ -36,7 +37,7 @@ picking_append_input :: proc(inputs:^[dynamic]gfx.Buffer_Input,resource:gfx.Reso
     append(inputs,gfx.Buffer_Input{resource,handle}); return true
 }
 @(private="package")
-picking_cutoff_valid :: proc(value:f32)->bool { return !m.is_nan(value) && !m.is_inf(value) && value>=0 && value<=1 }
+picking_cutoff_valid :: proc(value:f32)->bool { return !m.is_nan(value) && !m.is_inf(value) && value>=0 }
 /// Appends integer/depth draws and captures their immutable generational entity map.
 /// Position/model offsets and strides are bytes; all GPU data remains the scene's accepted allocation.
 picking_graph_append :: proc(g:^gfx.Graph,pipeline:gfx.Graphics_Pipeline_Handle,frame:Picking_Buffer,draws:[]Picking_Draw,id,depth:gfx.Image_Id,allocator:=context.allocator,depth_sense:Depth_Sense=.Forward)->(Picking_Graph_Input,Native_Error) {
@@ -49,7 +50,7 @@ picking_graph_append :: proc(g:^gfx.Graph,pipeline:gfx.Graphics_Pipeline_Handle,
         if draw.encoded==0 || draw.vertex_count==0 || draw.vertex_count%3!=0 || draw.vertex_stride%4!=0 || draw.object_stride%4!=0 || draw.position_offset%4!=0 || draw.model_offset%4!=0 || draw.vertex_stride<16 || draw.object_stride<64 || draw.position_offset>draw.vertex_stride-16 || draw.model_offset>draw.object_stride-64 || .Storage not_in draw.geometry.desc.usage || .Storage not_in draw.objects.desc.usage { return {},{gpu=.Invalid_Range} }
         if (u64(draw.first_vertex)+u64(draw.vertex_count))*u64(draw.vertex_stride)>draw.geometry.desc.size || (u64(draw.object_index)+1)*u64(draw.object_stride)>draw.objects.desc.size { return {},{gpu=.Invalid_Range} }
         if draw.mask.enabled {
-            if draw.pipeline.owner==nil || draw.mask.texture.handle.owner==nil || draw.mask.sampler.owner==nil || .Sampled not_in draw.mask.texture.desc.usage || draw.mask.uv_offset%4!=0 || draw.mask.object_alpha_offset%4!=0 || draw.mask.vertex_alpha_offset%4!=0 || draw.mask.uv_offset>draw.vertex_stride-8 || draw.mask.object_alpha_offset>draw.object_stride-4 || (draw.mask.vertex_alpha && draw.mask.vertex_alpha_offset>draw.vertex_stride-4) || !picking_cutoff_valid(draw.mask.cutoff) { return {},{gpu=.Invalid_Range} }
+            if draw.pipeline.owner==nil || draw.mask.texture.handle.owner==nil || draw.mask.sampler.owner==nil || .Sampled not_in draw.mask.texture.desc.usage || draw.mask.uv_offset%4!=0 || draw.mask.object_alpha_offset%4!=0 || draw.mask.vertex_alpha_offset%4!=0 || draw.mask.uv_offset>draw.vertex_stride-8 || draw.mask.object_alpha_offset>draw.object_stride-4 || (draw.mask.vertex_alpha && draw.mask.vertex_alpha_offset>draw.vertex_stride-4) || (!picking_cutoff_valid(draw.mask.cutoff) || draw.mask.mode not_in (bit_set[Picking_Alpha_Mode]{.Mask,.Blend})) { return {},{gpu=.Invalid_Range} }
         }
         for other in draws[:i] { if other.encoded==draw.encoded && other.entity!=draw.entity { return {},{gpu=.Invalid_Resource} } }
     }
@@ -105,7 +106,7 @@ picking_graph_append :: proc(g:^gfx.Graph,pipeline:gfx.Graphics_Pipeline_Handle,
                 mask_access[0]={image,gfx.image_full_range(texture.desc),.Read,.Sampled}
                 mask_binding[0]={1,0,{.Fragment},mask_access[:]}
                 mask_sampler[0]={1,1,{.Fragment},draw.mask.sampler}
-                mask_uniforms[0]={uniforms[0],draw.mask.uv_offset/4,draw.mask.vertex_alpha_offset/4,draw.mask.object_alpha_offset/4,u32(draw.mask.vertex_alpha),draw.mask.cutoff,{}}
+                mask_uniforms[0]={uniforms[0],draw.mask.uv_offset/4,draw.mask.vertex_alpha_offset/4,draw.mask.object_alpha_offset/4,u32(draw.mask.vertex_alpha),draw.mask.cutoff,{u32(draw.mask.mode),0,0}}
                 constant[0].bytes=mem.slice_to_bytes(mask_uniforms[:])
             }
             operation[0]=gfx.Draw{draw.vertex_count,1,draw.first_vertex,0}

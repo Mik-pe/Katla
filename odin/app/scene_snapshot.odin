@@ -27,7 +27,7 @@ scene_snapshot_destroy :: proc(snapshot:^Scene_Snapshot) {
 }
 
 /// Captures every registered visible component, rejecting references outside the captured scene.
-scene_snapshot_capture :: proc(app:^Authoring,subset:[]ecs.Entity_Id=nil,detach_root:bool=false,root:ecs.Entity_Id=0,commit_identity:bool=true,subset_only:bool=false)->(Scene_Snapshot,editor.Scene_Error) {
+scene_snapshot_capture :: proc(app:^Authoring,subset:[]ecs.Entity_Id=nil,detach_root:bool=false,root:ecs.Entity_Id=0,commit_identity:bool=true,subset_only:bool=false,next_key_override:u64=0)->(Scene_Snapshot,editor.Scene_Error) {
     allocator:=app.world.allocator; context.allocator=allocator
     result:=Scene_Snapshot{entities=make([dynamic]Scene_Entity,allocator),allocator=allocator}
     success:=false; defer { if !success { scene_snapshot_destroy(&result) } }
@@ -39,7 +39,7 @@ scene_snapshot_capture :: proc(app:^Authoring,subset:[]ecs.Entity_Id=nil,detach_
     known_types[Scene_Key]=true
     for _,entry in app.registry.entries { known_types[entry.T]=true }
     next_key:u64=1
-    if identity,exists:=ecs.get_resource(&app.world,Scene_Identity); exists { next_key=max(identity.next_entity_id,1) }
+    if next_key_override>0 { next_key=next_key_override } else if identity,exists:=ecs.get_resource(&app.world,Scene_Identity); exists { next_key=max(identity.next_entity_id,1) }
     for id in ids {
         if _,hidden:=ecs.get_component(&app.world,id,Editor_Hidden); hidden { continue }
         if key,exists:=ecs.get_component(&app.world,id,Scene_Key); exists {
@@ -93,7 +93,7 @@ scene_snapshot_restore :: proc(app:^Authoring,snapshot:^Scene_Snapshot,file_publ
     committed:=false; defer scene_stage_destroy(app,&stage,!committed)
     observation:Scene_File_Observation; defer scene_file_observe_finish(&observation,committed)
     if file_publication && ecs.contains_resource(&app.world,Scene_File_Observer) {
-        prepared,baseline_error:=scene_snapshot_capture(app,subset=stage.entities[:],commit_identity=false,subset_only=true)
+        prepared,baseline_error:=scene_snapshot_capture(app,subset=stage.entities[:],commit_identity=false,subset_only=true,next_key_override=stage.next_key)
         if baseline_error!=.None { return baseline_error }; defer scene_snapshot_destroy(&prepared)
         token,observe_error:=scene_file_observe_begin(app,&prepared); if observe_error!=.None { return observe_error }; observation=token
     }
@@ -106,7 +106,7 @@ scene_snapshot_restore :: proc(app:^Authoring,snapshot:^Scene_Snapshot,file_publ
         if _,hidden:=ecs.get_component(&app.world,entity,Editor_Hidden); hidden { continue }
         if !staged_set[entity] { ecs.destroy_entity(&app.world,entity) }
     }
-    ecs.insert_resource(&app.world,Scene_Identity{snapshot.next_entity_id})
+    ecs.insert_resource(&app.world,Scene_Identity{stage.next_key})
     committed=true
     return .None
 }

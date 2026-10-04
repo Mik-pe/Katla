@@ -62,6 +62,9 @@ Native_Frame :: struct {
     token:gfx.Frame_Token,
     submission:u64,
     resident:bool,
+    capture_pass,capture_phase:int,
+    capture_stages:u64,
+    capture_encoder,capture_pipeline,capture_layout:u64,
 }
 /// Stationary, thread-affine headless owner with three exact native submission slots.
 Renderer :: struct {
@@ -73,6 +76,8 @@ Renderer :: struct {
     textures:gfx.Resource_Storage(^Native_Texture,gfx.Texture_Kind),
     graphics:gfx.Resource_Storage(^Native_Graphics,gfx.Graphics_Pipeline_Kind),
     samplers:gfx.Resource_Storage(^Native_Sampler,gfx.Sampler_Kind),
+    graphics_cache:[dynamic]^Native_Graphics,
+    sampler_cache:[dynamic]^Native_Sampler,
     readbacks:gfx.Resource_Storage(^Native_Texture_Transfer,gfx.Readback_Kind),
     exports:[dynamic]Published_Source,
     uploads:[dynamic]^Native_Texture_Transfer,
@@ -84,6 +89,7 @@ Renderer :: struct {
     surface:Surface,
     surface_texture:gfx.Texture_Handle,
     allocator:mem.Allocator,
+    capture:gfx.Capture_Store,
 }
 /// Requires Metal 4 before creating any compiler, queue or command allocator.
 renderer_init :: proc(r:^Renderer,allocator:=context.allocator)->gfx.Gpu_Error {
@@ -92,6 +98,7 @@ renderer_init :: proc(r:^Renderer,allocator:=context.allocator)->gfx.Gpu_Error {
     if r.device==nil { return .No_Device }
     if !bool(r.device->supportsFamily(MTL.GPUFamily(5002))) { send(nil,r.device,"release"); r.device=nil; return .Unsupported }
     success:=false; defer { if !success { renderer_destroy(r) } }
+    gfx.capture_init(&r.capture,allocator)
     descriptor:=new_object("MTL4CompilerDescriptor")
     if descriptor==nil { return .Allocation_Failed }; defer descriptor->release()
     native_error:^NS.Error
@@ -101,6 +108,7 @@ renderer_init :: proc(r:^Renderer,allocator:=context.allocator)->gfx.Gpu_Error {
     if r.queue==nil { return .Allocation_Failed }
     gfx.storage_init(&r.buffers,allocator); gfx.storage_init(&r.pipelines,allocator); gfx.storage_init(&r.textures,allocator); gfx.frames_init(&r.frames,3,allocator)
     gfx.storage_init(&r.graphics,allocator); gfx.storage_init(&r.samplers,allocator)
+    r.graphics_cache=make([dynamic]^Native_Graphics,allocator); r.sampler_cache=make([dynamic]^Native_Sampler,allocator)
     gfx.storage_init(&r.readbacks,allocator); r.exports=make([dynamic]Published_Source,allocator); r.uploads=make([dynamic]^Native_Texture_Transfer,allocator)
     for &slot in r.slots {
         slot.allocator=send(^NS.Object,r.device,"newCommandAllocator")
@@ -163,10 +171,12 @@ renderer_destroy :: proc(r:^Renderer)->gfx.Gpu_Error {
     r.readbacks.count=0
     gfx.storage_destroy(&r.buffers); gfx.storage_destroy(&r.pipelines); gfx.storage_destroy(&r.textures)
     gfx.storage_destroy(&r.graphics); gfx.storage_destroy(&r.samplers)
+    assert(len(r.graphics_cache)==0 && len(r.sampler_cache)==0); delete(r.graphics_cache); delete(r.sampler_cache)
     gfx.storage_destroy(&r.readbacks)
     if r.frames.slots!=nil { gfx.frames_destroy(&r.frames) }
     if r.queue!=nil { r.queue->release() }; if r.compiler!=nil { r.compiler->release() }
     if r.device!=nil { send(nil,r.device,"release") }
+    gfx.capture_destroy(&r.capture)
     r^={}; return outcome
 }
 /// Creates CPU-visible shared storage; its initial bytes remain undefined until written.

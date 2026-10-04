@@ -54,6 +54,7 @@ scene_batch_refresh :: proc(batch:^Scene_Batch,owner:^app.Authoring)->Batch_Erro
     for id in ids {
         if _,hidden:=ecs.get_component(&owner.world,id,app.Editor_Hidden); hidden { continue }
         if _,model:=ecs.get_component(&owner.world,id,app.Scene_Model); model { if batch.models_supported { continue }; return {kind=.Unsupported_Model} }
+        if batch.models_supported { continue }
         mesh,present:=ecs.get_component(&owner.world,id,app.Scene_Mesh)
         if present && mesh.source.kind!=.Empty { count+=1 }
     }

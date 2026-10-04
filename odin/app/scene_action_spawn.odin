@@ -26,7 +26,7 @@ scene_action_spawn_proposal :: proc(owner:^Authoring,id:ecs.Entity_Id,op:editor.
             mesh,error:=scene_mesh_prepare(owner,{kind=kind,path=op.path,root=root}); if error!=.None { return .Invalid_Operation }
             ecs.add_component(&owner.world,id,mesh)
         } else {
-            model,error:=scene_model_prepare(owner,{path=op.path,root=root}); if error!=.None { return .Invalid_Operation }
+            model,error:=scene_model_prepare(owner,{path=op.path,root=root,kind=.Group}); if error!=.None { return .Invalid_Operation }
             ecs.add_component(&owner.world,id,model)
             entry:=owner.registry.entries["AnimationModel"]
             cloned:=editor.editor_clone_value(entry,&model.model.animation,owner.world.allocator)
@@ -49,6 +49,6 @@ scene_action_spawn_proposal :: proc(owner:^Authoring,id:ecs.Entity_Id,op:editor.
         mesh,error:=scene_mesh_prepare(owner,{kind=.Geometry,geometry=transmute([]byte)descriptor})
         if error!=.None { return .Invalid_Operation }; ecs.add_component(&owner.world,id,mesh)
     }
-    ecs.add_component(&owner.world,id,material)
+    if model,present:=ecs.get_component(&owner.world,id,Scene_Model); !present || model.source.kind!=.Group { ecs.add_component(&owner.world,id,material) }
     return .None
 }

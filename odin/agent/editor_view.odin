@@ -10,7 +10,7 @@ Editor_View_Request :: struct { action:Editor_View_Action, entity:ecs.Entity_Id,
 /// Validates owner-routed view arguments without retaining JSON or GPU state.
 editor_view_decode :: proc(arguments:[]byte,allocator:=context.allocator)->(Editor_View_Request,Call_Error) {
     context.allocator=allocator
-    limit,validation:=query_arguments_validate(arguments,allocator); if validation!=.None { return {},validation }
+    limit,validation:=query_arguments_validate(arguments,allocator,true); if validation!=.None { return {},validation }
     tree,err:=json.parse(arguments,spec=.JSON,parse_integers=false,allocator=allocator)
     if err!=nil { return {},.Invalid_JSON }; defer json.destroy_value(tree)
     object,object_ok:=tree.(json.Object); if !object_ok { return {},.Invalid_Arguments }

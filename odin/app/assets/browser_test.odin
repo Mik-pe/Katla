@@ -12,7 +12,7 @@ test_browser_real_inventory_folders_selection_refresh_and_root_confined_drag :: 
     directory,error:=os.make_directory_temp("","katla-asset-browser-*",context.allocator); testing.expect(t,error==nil); if error!=nil { return }; defer { os.remove_all(directory); delete(directory) }
     resource:=strings.concatenate({directory,"/resources"}); defer delete(resource); testing.expect(t,os.make_directory(resource)==nil)
     for name in ([2]string{"z-folder","a-folder"}) { path:=strings.concatenate({resource,"/",name}); testing.expect(t,os.make_directory(path)==nil); delete(path) }
-    for name in ([7]string{"a.gltf","b.stl","c.katprefab","d.wav","e.jpeg","f.toml",".hidden"}) { path:=strings.concatenate({resource,"/",name}); testing.expect(t,os.write_entire_file(path,"actual asset bytes")==nil); delete(path) }
+    for name in ([7]string{"a.gltf","b.stl","c.katprefab","d.wav","e.jpeg","f.katmat",".hidden"}) { path:=strings.concatenate({resource,"/",name}); testing.expect(t,os.write_entire_file(path,"actual asset bytes")==nil); delete(path) }
     linked:=strings.concatenate({resource,"/outside"}); defer delete(linked); testing.expect(t,os.symlink(directory,linked)==nil)
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner); testing.expect_value(t,app.asset_resources_init(&owner,directory,resource),resources.Error.None)
     state:State; init(&state,&owner); defer destroy(&state); testing.expect_value(t,refresh(&state),resources.Error.None)

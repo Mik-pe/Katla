@@ -40,7 +40,7 @@ picking_mirrored :: proc(model:km.Mat4)->bool { return km.dot(km.cross(km.xyz(mo
 @(private="package")
 picking_material_cutoff :: proc(material:app.Gltf_Material)->(bool,f32) {
     if material.alpha_mode==.Mask { return true,material.alpha_cutoff }
-    if material.alpha_mode==.Blend { return true,0.000001 }
+    if material.alpha_mode==.Blend { return true,0 }
     return false,0
 }
 @(private="package")
@@ -89,7 +89,7 @@ picking_scene_draws :: proc(scene:^Native_Scene($R),token:gfx.Frame_Token,pipeli
                 receipt:=models.receipts[index]; texture_index,sampler_index:=receipt.textures[0],receipt.samplers[0]
                 if texture_index<0 || texture_index>=len(models.textures) || sampler_index<0 || sampler_index>=len(models.samplers) || texture_index>=len(models.image_ids) { return nil,{gpu=.Invalid_Resource} }
                 texture:=models.textures[texture_index].native
-                draw.mask={enabled=true,texture={handle=texture.texture,desc=texture.desc,resource=models.image_ids[texture_index]},sampler=models.samplers[sampler_index].handle,uv_offset=u32(offset_of(Model_Vertex,uvs)),vertex_alpha_offset=u32(offset_of(Model_Vertex,color))+12,object_alpha_offset=u32(offset_of(Model_Object,base_color))+12,vertex_alpha=true,cutoff=cutoff}
+                draw.mask={enabled=true,texture={handle=texture.texture,desc=texture.desc,resource=models.image_ids[texture_index]},sampler=models.samplers[sampler_index].handle,uv_offset=u32(offset_of(Model_Vertex,uvs)),vertex_alpha_offset=u32(offset_of(Model_Vertex,color))+12,object_alpha_offset=u32(offset_of(Model_Object,base_color))+12,vertex_alpha=true,cutoff=cutoff,mode=.Blend if entry.material.alpha_mode==.Blend else .Mask}
             }
             append(&draws,draw)
         }

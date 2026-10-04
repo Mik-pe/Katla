@@ -1,6 +1,6 @@
 // Picking reuses the exact immutable geometry and model data accepted by the scene.
 struct Frame { view_projection:mat4x4<f32>,camera:vec4<f32>,light_direction:vec4<f32>,light_color:vec4<f32>,ambient:vec4<f32> }
-struct Picking { vertex_stride:u32,object_stride:u32,position_offset:u32,model_offset:u32,object_index:u32,encoded:u32,padding:vec2<u32>,uv_offset:u32,vertex_alpha_offset:u32,object_alpha_offset:u32,vertex_alpha_enabled:u32,cutoff:f32,pad0:u32,pad1:u32,pad2:u32 }
+struct Picking { vertex_stride:u32,object_stride:u32,position_offset:u32,model_offset:u32,object_index:u32,encoded:u32,padding:vec2<u32>,uv_offset:u32,vertex_alpha_offset:u32,object_alpha_offset:u32,vertex_alpha_enabled:u32,cutoff:f32,alpha_mode:u32,pad1:u32,pad2:u32 }
 @group(0) @binding(0) var<uniform> frame:Frame;
 @group(0) @binding(1) var<storage,read> objects:array<u32>;
 @group(0) @binding(2) var<storage,read> geometry:array<u32>;
@@ -27,6 +27,7 @@ fn object_vec4(offset:u32)->vec4<f32> { return bitcast<vec4<f32>>(vec4<u32>(obje
 }
 @fragment fn fs_pick(input:Output)->@location(0) u32 {
     let alpha=textureSample(base_texture,base_sampler,input.uv).a*input.alpha;
-    if alpha<picking.cutoff { discard; }
+    if picking.alpha_mode==1u { if alpha<=0.0 { discard; } }
+    else if alpha<picking.cutoff { discard; }
     return picking.encoded;
 }

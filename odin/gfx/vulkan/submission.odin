@@ -16,6 +16,7 @@ clear_frame :: proc(r:^Renderer,slot:^Native_Frame,submitted:bool) {
 }
 @(private="package")
 retire_slot :: proc(r:^Renderer,slot:^Native_Frame,failed:bool)->gfx.Gpu_Error {
+    gfx.capture_feedback(&r.capture,slot.submission,.Failed if failed else .Completed)
     err:=gfx.frame_completed(&r.frames,slot.token,slot.submission)
     clear_frame(r,slot,true)
     if failed || err!=.None { r.failed=true; return .Native_Failure }
@@ -33,6 +34,7 @@ poll :: proc(r:^Renderer,submission:gfx.Submission)->(bool,gfx.Gpu_Error) {
     result:=r.table.GetFenceStatus(r.device,slot.fence)
     if result==.NOT_READY { return false,.None }
     if result!=.SUCCESS && result!=.ERROR_DEVICE_LOST { return false,.Native_Failure }
+    if result==.SUCCESS { if error:=retire_uploads(r);error!=.None { return false,error } }
     return true,retire_slot(r,slot,result==.ERROR_DEVICE_LOST)
 }
 /// A nonterminal CPU wait failure retains GPU owners for a later retry or successful drain.
@@ -40,6 +42,7 @@ wait :: proc(r:^Renderer,submission:gfx.Submission)->gfx.Gpu_Error {
     slot,ok:=submission_slot(r,submission); if !ok { return .Invalid_Resource }
     result:=r.table.WaitForFences(r.device,1,&slot.fence,true,max(u64))
     if result!=.SUCCESS && result!=.ERROR_DEVICE_LOST { log.error("Vulkan fence wait failed",result); return .Native_Failure }
+    if result==.SUCCESS { if error:=retire_uploads(r);error!=.None { return error } }
     return retire_slot(r,slot,result==.ERROR_DEVICE_LOST)
 }
 @(private="package")
@@ -78,6 +81,10 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
     if uses_surface && r.surface.submitted.owner!=nil { return {},.Busy,.None }
     import_error:=image_recording_imports(r,&recording,&prepared)
     if import_error!=.None { return {},import_error,.None }
+    gfx.capture_begin(&r.capture,.Vulkan,token,g,plan);r.capture_prepared=&prepared;r.capture_pass=-1;r.capture_phase=-1
+    defer { gfx.capture_abandon(&r.capture);capture_clear_handles(r) }
+    capture_physical_resources(r,&prepared);capture_buffer_expectations(r,&prepared)
+    if r.capture.recording { for pass in prepared.passes { gfx.capture_expect(&r.capture,{kind=.Pass_Begin,pass_index=pass.id.index,phase_index=-1,resource_index=-1,emitted=true,label=g.passes[pass.id.index].name}) } }
     index:=token.slot
     slot:=&r.slots[index]; slot.token=token
     committed:=false
@@ -89,6 +96,8 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
     slot.active_descriptor=0
     begin:=vk.CommandBufferBeginInfo{sType=.COMMAND_BUFFER_BEGIN_INFO,flags={.ONE_TIME_SUBMIT}}
     if r.table.BeginCommandBuffer(slot.command,&begin)!=.SUCCESS { return {},.Native_Failure,.None }
+    r.capture_encoder=gfx.capture_object(&r.capture,cast(rawptr)slot.command)
+    gfx.capture_record(&r.capture,{kind=.Encoder_Begin,pass_index=-1,phase_index=-1,resource_index=-1,encoder=r.capture_encoder,emitted=true,label="vkBeginCommandBuffer"})
     for input in prepared.buffers {
         entry,ok:=gfx.storage_get(&r.buffers,input.handle); if !ok { return {},.Invalid_Resource,.None }
         entry^.refs+=1; append(&slot.buffers,entry^)
@@ -99,10 +108,14 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
         if !retained { entry^.refs+=1; append(&slot.textures,entry^) }
     }
     // Persistent allocations may have been used by an earlier graph on this queue.
+    capture_global_expect(r,{.ALL_COMMANDS},{.MEMORY_READ,.MEMORY_WRITE},{.ALL_COMMANDS},{.MEMORY_READ,.MEMORY_WRITE})
     history:=vk.MemoryBarrier2{sType=.MEMORY_BARRIER_2,srcStageMask={.ALL_COMMANDS},srcAccessMask={.MEMORY_READ,.MEMORY_WRITE},dstStageMask={.ALL_COMMANDS},dstAccessMask={.MEMORY_READ,.MEMORY_WRITE}}
     initial_dependency:=vk.DependencyInfo{sType=.DEPENDENCY_INFO,memoryBarrierCount=1,pMemoryBarriers=&history}
     r.table.CmdPipelineBarrier2(slot.command,&initial_dependency)
+    capture_memory_barrier(r,history,"queue allocation history")
     for pass in prepared.passes {
+        r.capture_pass=pass.id.index;r.capture_phase=-1
+        gfx.capture_record(&r.capture,{kind=.Pass_Begin,pass_index=pass.id.index,phase_index=-1,resource_index=-1,encoder=r.capture_encoder,emitted=true,label=g.passes[pass.id.index].name})
         for alias in prepared.aliases {
             if alias.after!=pass.id { continue }
             err:=image_alias_handoff(r,slot.command,&recording,&prepared,alias); if err!=.None { return {},err,.None }
@@ -118,12 +131,15 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
             barrier:=vk.BufferMemoryBarrier2{sType=.BUFFER_MEMORY_BARRIER_2,srcStageMask=source_stage,srcAccessMask=access_mask(hazard.source),dstStageMask=destination_stage,dstAccessMask=access_mask(hazard.destination),srcQueueFamilyIndex=vk.QUEUE_FAMILY_IGNORED,dstQueueFamilyIndex=vk.QUEUE_FAMILY_IGNORED,buffer=buffer.object,offset=vk.DeviceSize(start),size=vk.DeviceSize(end-start)}
             dependency:=vk.DependencyInfo{sType=.DEPENDENCY_INFO,bufferMemoryBarrierCount=1,pBufferMemoryBarriers=&barrier}
             r.table.CmdPipelineBarrier2(slot.command,&dependency)
+            gfx.capture_record(&r.capture,{kind=.Buffer_Barrier,pass_index=pass.id.index,phase_index=-1,resource_kind=.Buffer,resource_index=hazard.resource.index,object=capture_handle(r,5,u64(barrier.buffer)),encoder=r.capture_encoder,buffer_range={u64(barrier.offset),u64(barrier.size)},source_stages=transmute(u64)barrier.srcStageMask,destination_stages=transmute(u64)barrier.dstStageMask,source_access=transmute(u64)barrier.srcAccessMask,destination_access=transmute(u64)barrier.dstAccessMask,emitted=true,label="vkCmdPipelineBarrier2 buffer"})
         }
         switch packet in pass.packet {
         case gfx.Fill_Buffer:
             destination,present:=resolve_buffer(r,&prepared,packet.destination)
             if !present { return {},.Invalid_Resource,.None }
+            capture_transfer_buffer(r,destination,packet.destination.index,{packet.offset,packet.size},0,0,value=packet.value,expected=true)
             r.table.CmdFillBuffer(slot.command,destination.object,vk.DeviceSize(packet.offset),vk.DeviceSize(packet.size),packet.value)
+            capture_transfer_buffer(r,destination,packet.destination.index,{packet.offset,packet.size},0,0,value=packet.value)
         case gfx.Generate_Mips:
             err:=encode_generate_mips(r,slot,&recording,&prepared,packet); if err!=.None { return {},err,.None }
         case gfx.Render:
@@ -139,21 +155,30 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
             destination,destination_ok:=resolve_buffer(r,&prepared,packet.destination)
             if !source_ok || !destination_ok { return {},.Invalid_Resource,.None }
             copy_info:=vk.BufferCopy{vk.DeviceSize(packet.source_offset),vk.DeviceSize(packet.destination_offset),vk.DeviceSize(packet.size)}
+            capture_transfer_buffer(r,source,packet.source.index,{packet.source_offset,packet.size},0,0,expected=true)
+            capture_transfer_buffer(r,destination,packet.destination.index,{packet.destination_offset,packet.size},1,0,expected=true)
             r.table.CmdCopyBuffer(slot.command,source.object,destination.object,1,&copy_info)
+            capture_transfer_buffer(r,source,packet.source.index,{u64(copy_info.srcOffset),u64(copy_info.size)},0,0)
+            capture_transfer_buffer(r,destination,packet.destination.index,{u64(copy_info.dstOffset),u64(copy_info.size)},1,0)
         }
+        gfx.capture_record(&r.capture,{kind=.Pass_End,pass_index=pass.id.index,phase_index=-1,resource_index=-1,encoder=r.capture_encoder,emitted=true,label=g.passes[pass.id.index].name})
     }
+    r.capture_pass=-1;r.capture_phase=-1
     for image in prepared.images {
         if image.contract.final==.Undefined { continue }
         texture,ok:=resolve_texture(r,&prepared,image.input.resource); if !ok { return {},.Invalid_Resource,.None }
-        err:=transition_image(r,slot.command,&recording,texture,gfx.image_full_range(image.desc),image.contract.final,{.ALL_COMMANDS},{.MEMORY_READ,.MEMORY_WRITE}); if err!=.None { return {},err,.None }
+        err:=transition_image(r,slot.command,&recording,texture,gfx.image_full_range(image.desc),image.contract.final,{.ALL_COMMANDS},{.MEMORY_READ,.MEMORY_WRITE},image.input.resource.index); if err!=.None { return {},err,.None }
     }
     if uses_surface {
         err:=surface_recording_final(r,slot.command,&recording); if err!=.None { return {},err,.None }
     }
+    capture_global_expect(r,{.ALL_COMMANDS},{.MEMORY_WRITE},{.HOST},{.HOST_READ})
     visible:=vk.MemoryBarrier2{sType=.MEMORY_BARRIER_2,srcStageMask={.ALL_COMMANDS},srcAccessMask={.MEMORY_WRITE},dstStageMask={.HOST},dstAccessMask={.HOST_READ}}
     final_dependency:=vk.DependencyInfo{sType=.DEPENDENCY_INFO,memoryBarrierCount=1,pMemoryBarriers=&visible}
     r.table.CmdPipelineBarrier2(slot.command,&final_dependency)
+    capture_memory_barrier(r,visible,"host readback visibility")
     if r.table.EndCommandBuffer(slot.command)!=.SUCCESS { return {},.Native_Failure,.None }
+    gfx.capture_record(&r.capture,{kind=.Encoder_End,pass_index=-1,phase_index=-1,resource_index=-1,encoder=r.capture_encoder,emitted=true,label="vkEndCommandBuffer"})
     if gfx.frame_recorded(&r.frames,token)!=.None { return {},.Native_Failure,.None }
     if r.table.ResetFences(r.device,1,&slot.fence)!=.SUCCESS { return {},.Native_Failure,.None }
     command_info:=vk.CommandBufferSubmitInfo{sType=.COMMAND_BUFFER_SUBMIT_INFO,commandBuffer=slot.command}
@@ -175,6 +200,8 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
         r.failed=true; log.error("Accepted Vulkan submission lost its frame token")
         return {},.Native_Failure,.None
     }
+    gfx.capture_record(&r.capture,{kind=.Submit,pass_index=-1,phase_index=-1,resource_index=-1,object=r.capture_encoder,emitted=true,label="vkQueueSubmit2"})
+    gfx.capture_accept(&r.capture,{r,token,submission})
     commit_content_epochs(r,g,&prepared)
     image_recording_commit(&recording,submission)
     publish_exports(r,&prepared,{r,token,submission})

@@ -40,12 +40,12 @@ physics_inspector_presence_document :: proc(t:^testing.T,native:bool) {
     testing.expect_value(t,authoring_undo_last(&owner),editor.Scene_Error.None)
     restored,_:=ecs.get_component(&owner.world,body_entity,Physics_Body); testing.expect(t,restored.has_collider && restored.has_material && restored.has_filter && restored.shape.kind==.Box)
     testing.expect_value(t,authoring_redo_last(&owner),editor.Scene_Error.None)
-    disabled,_:=ecs.get_component(&owner.world,body_entity,Physics_Body); testing.expect(t,!disabled.has_collider && disabled.has_rigid_body && disabled.has_material && disabled.has_filter)
+    disabled,_:=ecs.get_component(&owner.world,body_entity,Physics_Body); testing.expect(t,!disabled.has_collider && disabled.has_rigid_body && !disabled.has_material && !disabled.has_filter)
     roots:=ecs.get_resource_mut(&owner.world,Asset_Roots); bytes,read_error:=resources.read_text(&roots.project,"physics.katla"); testing.expect(t,read_error==.None && strings.contains(string(bytes),"physics_material:") && strings.contains(string(bytes),"collision_filter:") && !strings.contains(string(bytes),"collider_shape:")); delete(bytes)
     testing.expect_value(t,physics_inspector_file(&owner,true),editor.Scene_Error.None)
     testing.expect(t,!ecs.entity_exists(&owner.world,body_entity) && !ecs.entity_exists(&owner.world,metadata_entity))
     loaded_body:=physics_inspector_find(&owner,"Body"); loaded_metadata:=physics_inspector_find(&owner,"Metadata")
-    body,present:=ecs.get_component(&owner.world,loaded_body,Physics_Body); testing.expect(t,present && body.has_rigid_body && !body.has_collider && body.has_material && body.has_filter && body.shape.kind==.None && body.friction==.5 && body.layers==max(u32))
+    body,present:=ecs.get_component(&owner.world,loaded_body,Physics_Body); testing.expect(t,present && body.has_rigid_body && !body.has_collider && !body.has_material && !body.has_filter && body.shape.kind==.None && body.friction==.5 && body.layers==max(u32))
     owned,has_owned:=ecs.get_component(&owner.world,loaded_metadata,Physics_Body); testing.expect(t,has_owned && !owned.has_rigid_body && !owned.has_collider && owned.has_material && owned.has_filter && owned.friction==.8 && owned.restitution==.3 && owned.density==2 && owned.layers==4 && owned.mask==8)
     if native {
         played,play_group:=simulation_execute(&owner,.Play); testing.expect_value(t,played.error,editor.Scene_Error.None); editor.tool_result_destroy(&played); editor.undo_group_destroy(&play_group)
@@ -53,7 +53,7 @@ physics_inspector_presence_document :: proc(t:^testing.T,native:bool) {
         stopped,stop_group:=simulation_execute(&owner,.Stop); testing.expect_value(t,stopped.error,editor.Scene_Error.None); editor.tool_result_destroy(&stopped); editor.undo_group_destroy(&stop_group)
         testing.expect(t,!ecs.entity_exists(&owner.world,loaded_body) && !ecs.entity_exists(&owner.world,loaded_metadata))
         current:=physics_inspector_find(&owner,"Metadata"); after,_:=ecs.get_component(&owner.world,current,Physics_Body); testing.expect(t,!after.has_rigid_body && !after.has_collider && after.has_material && after.has_filter && after.friction==owned.friction && after.restitution==owned.restitution && after.density==owned.density && after.layers==owned.layers && after.mask==owned.mask)
-        body_after,_:=ecs.get_component(&owner.world,physics_inspector_find(&owner,"Body"),Physics_Body); testing.expect(t,body_after.has_rigid_body && !body_after.has_collider && body_after.has_material && body_after.has_filter && body_after.body_type==body.body_type && body_after.gravity_scale==body.gravity_scale && body_after.shape.kind==.None && body_after.friction==body.friction && body_after.mask==body.mask)
+        body_after,_:=ecs.get_component(&owner.world,physics_inspector_find(&owner,"Body"),Physics_Body); testing.expect(t,body_after.has_rigid_body && !body_after.has_collider && !body_after.has_material && !body_after.has_filter && body_after.body_type==body.body_type && body_after.gravity_scale==body.gravity_scale && body_after.shape.kind==.None && body_after.friction==body.friction && body_after.mask==body.mask)
     }
     current_metadata:=physics_inspector_find(&owner,"Metadata"); ecs.get_component_mut(&owner.world,current_metadata,Physics_Body).sensor=true
     testing.expect_value(t,physics_inspector_file(&owner,false),editor.Scene_Error.Invalid_Field_Value)

@@ -134,18 +134,22 @@ gltf_deform_geometry :: proc(model:^Gltf_Model,primitive_index,node_index:u32,wo
     }
     if node.skin>=0 {
         matrices,error:=gltf_skin_matrices(model,node_index,world,allocator); if error!=.None { return {},error }; defer delete(matrices,allocator)
-        normals:=make([]km.Mat3,len(matrices),allocator); defer delete(normals,allocator)
-        for matrix_value,i in matrices { inverse,invertible:=km.inverse(km.mat4_to_mat3(matrix_value)); if !invertible { return {},.Invalid_Skin }; normals[i]=km.transpose(inverse) }
         if len(source.joints)!=len(geometry.vertices) || len(source.weights)!=len(geometry.vertices) { return {},.Invalid_Skin }
         for &vertex,i in geometry.vertices {
-            position,normal,tangent:km.Vec3
+            blended:km.Mat4
             for weight,j in source.weights[i] {
                 if weight==0 { continue }; joint:=source.joints[i][j]; if int(joint)>=len(matrices) { return {},.Invalid_Skin }
-                position+=km.xyz(km.matrix_vector(matrices[joint],km.Vec4{vertex.position[0],vertex.position[1],vertex.position[2],1}))*weight
-                normal+=km.matrix_vector(normals[joint],vertex.normal)*weight
-                tangent+=km.matrix_vector(km.mat4_to_mat3(matrices[joint]),km.xyz(vertex.tangent))*weight
+                for column in 0..<4 { blended[column]+=matrices[joint][column]*weight }
             }
-            vertex.position=position; vertex.normal=normal; vertex.tangent={tangent[0],tangent[1],tangent[2],vertex.tangent[3]}
+            linear:=km.mat4_to_mat3(blended)
+            cofactors:=km.Mat3{km.cross(linear[1],linear[2]),km.cross(linear[2],linear[0]),km.cross(linear[0],linear[1])}
+            orientation:f32=1; if km.dot(linear[0],cofactors[0])<0 { orientation=-1 }
+            normal:=km.matrix_vector(cofactors,vertex.normal)*orientation
+            if km.length_squared(normal)<0.000000000001 { normal=km.matrix_vector(linear,vertex.normal) }
+            if km.length_squared(normal)<0.000000000001 { normal={0,1,0} }
+            tangent:=km.matrix_vector(linear,km.xyz(vertex.tangent))
+            vertex.position=km.xyz(km.matrix_vector(blended,km.Vec4{vertex.position[0],vertex.position[1],vertex.position[2],1}))
+            vertex.normal=normal; vertex.tangent={tangent[0],tangent[1],tangent[2],vertex.tangent[3]*orientation}
         }
     }
     if len(geometry.vertices)==0 { return {},.Invalid_Geometry }
@@ -154,7 +158,7 @@ gltf_deform_geometry :: proc(model:^Gltf_Model,primitive_index,node_index:u32,wo
         if !mesh_vec_finite(vertex.position) || km.length_squared(vertex.normal)<0.000000000001 { return {},.Invalid_Geometry }
         vertex.normal=km.normalize(vertex.normal)
         tangent:=km.xyz(vertex.tangent)-vertex.normal*km.dot(vertex.normal,km.xyz(vertex.tangent))
-        if km.length_squared(tangent)<0.000000000001 { vertex.tangent=mesh_tangent(vertex.normal) } else { tangent=km.normalize(tangent); vertex.tangent={tangent[0],tangent[1],tangent[2],vertex.tangent[3]} }
+        if km.length_squared(tangent)<0.000000000001 { fallback:=mesh_tangent(vertex.normal); vertex.tangent={fallback[0],fallback[1],fallback[2],vertex.tangent[3]} } else { tangent=km.normalize(tangent); vertex.tangent={tangent[0],tangent[1],tangent[2],vertex.tangent[3]} }
         for axis in 0..<3 { low[axis]=min(low[axis],vertex.position[axis]); high[axis]=max(high[axis],vertex.position[axis]) }
     }
     geometry.bounds=km.aabb_from_min_max(low,high); success=true; return geometry,.None

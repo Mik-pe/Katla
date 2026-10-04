@@ -20,6 +20,8 @@ manifests define the current API. Git/GitHub record delivery and CI;
 | Physics, joints and queries | [Physics ownership](physics-engine-adr.md) | [Box3D native contract](../tools/box3d/README.md) |
 | Assets, mesh and prefab authoring | [Prefabs](prefabs.md), [models](gltf_odin.md) | [Confined resources](../odin/resources/README.md), [image thumbnails](thumbnails_odin.md) |
 | Agent tools and live room authoring | [Agent ownership](agent_odin.md), [authoring guide](agent-authoring.md) | [MCP viewport sharing](shared-editor-view.md) |
+| Material authoring and assets | [Material actions](material_contracts.md) | [Scene/native ownership](odin_material_scene.md) |
+| Render graph diagnostics | [Capture and comparison](render_graph_capture.md) | [Backend-independent graph](backend_agnostic_render_graph.md) |
 | Shader compilation and refresh | [Compiler/cache](../tools/naga_bridge/README.md) | [Atomic reload](odin-shader-reload.md), [application refresh](render_shader_reload_odin.md) |
 | Math and icons | [Math](math_odin.md) | [Leaf packages](odin_leaf_ports.md) |
 

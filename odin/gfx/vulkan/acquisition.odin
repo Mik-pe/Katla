@@ -12,6 +12,7 @@ valid_acquisition :: proc(r:^Renderer,token:gfx.Frame_Token)->bool {
 /// Acquires one reusable native frame slot without accepting any GPU work.
 acquire :: proc(r:^Renderer)->(gfx.Frame_Token,gfx.Gpu_Error) {
     if r.device==nil || r.failed { return {},.Native_Failure }
+    if error:=retire_uploads(r);error!=.None { return {},error }
     token,err:=gfx.frame_acquire(&r.frames,r.next_slot)
     if err==.Busy { return {},.Busy }
     if err!=.None { return {},.Native_Failure }

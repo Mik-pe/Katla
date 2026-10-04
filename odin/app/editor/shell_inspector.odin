@@ -25,8 +25,9 @@ shell_inspector :: proc(shell:^Shell,particle_only:bool=false,scope:u64=30)->ui.
     if !shell.inspector.has_entity { append(&content,text(scope+0,"Select an entity to inspect its components")) }
     for &component,index in shell.inspector.components {
         if particle_only && component.name!="ParticleEmitter" { continue }
+        if component.name=="MaterialTextures" { continue }
         if component.name=="Script" { append(&content,shell_script(shell)) }
-        if component.name=="SurfaceMaterial" { append(&content,shell_material(shell)); continue }
+        if component.name=="SurfaceMaterial" { append(&content,shell_material(shell),shell_material_textures(shell)); continue }
         header:=text(scope+1,component.name); header.key=key(scope+1,component.name)
         if component.removable {
             remove:=button("Remove",.Remove_Component,shell.state.owner.mode!=.Editing); remove.key=key(scope+2,component.name); remove.payload=u64(index+1)

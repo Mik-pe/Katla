@@ -37,7 +37,7 @@ before the native trampoline raises the pending error.
 
 The host supplies immutable entity, local-transform, component-name, input,
 event and prior-query snapshots. `on_spawn(entity, world)`,
-`on_update(entity, world, dt)` and `on_destroy(entity, world)` run through protected
+`on_update(entity, world, dt)` and `on_destroy(entity)` run through protected
 calls. A retained world proxy expires when its tick or instance ownership ends;
 it cannot become an unrestricted live ECS pointer.
 
@@ -47,6 +47,11 @@ activation/bursts, sound, force/impulse/velocity and native spatial queries.
 A command failure produces diagnostics; scripts cannot claim successful native
 work by emitting an unsupported packet. Query tickets identify owner and index,
 and their results arrive in the next host tick.
+
+`world:play_sound(path, volume, looping)` and
+`world:play_sound_at(path, position, volume, looping)` default omitted or nil
+volume to 1 and looping to false. Explicit arguments require a finite numeric
+volume in 0..1 and a boolean loop flag.
 
 Event subscriptions are per instance. Emitted payloads remain VM-owned until
 released. Trigger and animation events preserve ordering and complete entity

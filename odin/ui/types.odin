@@ -27,6 +27,8 @@ Theme :: struct { canvas,panel,control,hover,active,text,muted,disabled,accent,s
 Descriptor :: struct {
     key:u64,kind:Widget_Kind,layout:Layout,children:[]Descriptor,
     text,placeholder:string,font:Font_Id,font_size:f32,
+    /// Positive widths keep text on one shaped line and reveal overflow on hover.
+    text_max_width:f32,
     state:State_Id,action,payload:u64,
     minimum,maximum,step,value:f32,
     texture:Texture_Id,uv:Rect,

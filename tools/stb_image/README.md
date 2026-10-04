@@ -69,3 +69,15 @@ libraries used by the consumer must share that sanitizer runtime.
 
 Upstream: [STB](https://github.com/nothings/stb),
 [LibTIFF](https://libtiff.gitlab.io/libtiff/), [IJG](https://www.ijg.org/).
+
+The private precision ABI preserves PNG16 and unsigned TIFF16 as native-endian
+expanded RGBA16. Float TIFF32 preserves linear samples, including HDR and
+negative values, within finite half-float upload range. TIFF strips, tiles,
+separate planes, byte order and orientation normalize before publication.
+Unsupported sample types reject explicitly. Decoded output remains bounded to
+64 MiB, with 8192-pixel axes and at most 16 million pixels.
+
+`odin/image` owns source precision. Material composition separately selects
+RGBA8 sRGB/data, exact RGBA16 UNORM data, or linear RGBA16F color/HDR. Only
+explicit display preview conversion quantizes to eight bits; retained authored
+images and history keep their precise source revision.

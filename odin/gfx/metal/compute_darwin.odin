@@ -125,6 +125,7 @@ create_pipeline :: proc(r:^Renderer,desc:gfx.Compute_Desc)->(gfx.Pipeline_Handle
 encode_dispatch :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Graph,encoder:^NS.Object,packet:gfx.Dispatch)->gfx.Gpu_Error {
     entry,ok:=gfx.storage_get(&r.pipelines,packet.pipeline); if !ok { return .Invalid_Resource }
     pipeline:=entry^; retain_pipeline(slot,pipeline)
+    slot.capture_pipeline=gfx.capture_object(&r.capture,pipeline.object);slot.capture_layout=gfx.capture_object(&r.capture,&pipeline.desc)
     buffer_count,texture_count,sampler_count:u32
     for binding in pipeline.desc.buffers { buffer_count=max(buffer_count,u32(binding.metal_index)+1) }
     for binding in pipeline.desc.images { if binding.metal_kind==.Argument_Buffer { buffer_count=max(buffer_count,u32(binding.metal_index)+1) } else { texture_count=max(texture_count,u32(binding.metal_index)+1) } }
@@ -136,12 +137,14 @@ encode_dispatch :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Gr
     native_error:^NS.Error
     table:=send(^NS.Object,r.device,"newArgumentTableWithDescriptor:error:",descriptor,&native_error)
     if table==nil { return .Allocation_Failed }; append(&slot.tables,table)
+    capture_table(r,slot,table,.Compute)
     sizes:=make([]u32,int(pipeline.desc.runtime_sizes_words),r.allocator); defer delete(sizes,r.allocator)
     for binding in packet.bindings {
         buffer,present:=resolve_buffer(r,prepared,binding.access.resource); if !present { return .Invalid_Resource }
         for requirement in pipeline.desc.buffers {
             if requirement.group!=binding.group || requirement.slot!=binding.slot { continue }
             send(nil,table,"setAddress:atIndex:",buffer.object->gpuAddress()+binding.access.range.offset,NS.UInteger(requirement.metal_index))
+            capture_buffer_binding(r,slot,table,cast(^NS.Object)buffer.object,binding.access,binding.group,binding.slot,u32(requirement.metal_index))
             if requirement.size_index>=0 {
                 if binding.access.range.size>u64(max(u32)) { return .Invalid_Range }
                 sizes[requirement.size_index]=u32(binding.access.range.size)
@@ -160,21 +163,24 @@ encode_dispatch :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Gr
         sampler:=entry^; retained:=false
         for previous in slot.samplers { if previous==sampler { retained=true; break } }
         if !retained { sampler.refs+=1; append(&slot.samplers,sampler) }
-        for requirement in pipeline.desc.samplers { if requirement.group==binding.group && requirement.slot==binding.slot { send(nil,table,"setSamplerState:atIndex:",sampler.object->gpuResourceID(),NS.UInteger(requirement.metal_index)) } }
+        for requirement in pipeline.desc.samplers { if requirement.group==binding.group && requirement.slot==binding.slot { send(nil,table,"setSamplerState:atIndex:",sampler.object->gpuResourceID(),NS.UInteger(requirement.metal_index));capture_sampler_binding(r,slot,table,sampler.object,binding.group,binding.slot,u32(requirement.metal_index)) } }
     }
     if len(sizes)>0 {
         buffer:=r.device->newBufferWithLength(NS.UInteger(len(sizes))*4,MTL.ResourceOptions{.HazardTrackingModeUntracked})
         if buffer==nil { return .Allocation_Failed }
         copy(buffer->contents(),mem.slice_to_bytes(sizes))
-        append(&slot.auxiliary,cast(^NS.Object)buffer); send(nil,slot.residency,"addAllocation:",buffer)
+        append(&slot.auxiliary,cast(^NS.Object)buffer); capture_residency(r,slot,cast(^NS.Object)buffer)
         send(nil,table,"setAddress:atIndex:",buffer->gpuAddress(),NS.UInteger(pipeline.desc.runtime_sizes_index))
+        capture_constant_binding(r,slot,table,cast(^NS.Object)buffer,0,0,u32(pipeline.desc.runtime_sizes_index),u64(len(sizes))*4,"runtime-array sizes")
     }
     send(nil,encoder,"setComputePipelineState:",pipeline.object); send(nil,encoder,"setArgumentTable:",table)
+    capture_emit(r,slot,{kind=.Bind_Pipeline,resource_index= -1,object=gfx.capture_object(&r.capture,pipeline.object),emitted=true,label="compute pipeline state"})
     groups:=MTL.Size{NS.Integer(packet.groups[0]),NS.Integer(packet.groups[1]),NS.Integer(packet.groups[2])}
     local:=MTL.Size{NS.Integer(pipeline.local_size[0]),NS.Integer(pipeline.local_size[1]),NS.Integer(pipeline.local_size[2])}
     if packet.indirect.enabled {
         command,command_ok:=resolve_buffer(r,prepared,packet.indirect.command.resource); if !command_ok { return .Invalid_Resource }
         send(nil,encoder,"dispatchThreadgroupsWithIndirectBuffer:threadsPerThreadgroup:",command.object->gpuAddress()+packet.indirect.command.range.offset,local)
+        capture_direct_binding(r,slot,cast(^NS.Object)command.object,packet.indirect.command,.Indirect,0,4)
     } else { send(nil,encoder,"dispatchThreadgroups:threadsPerThreadgroup:",groups,local) }
     return .None
 }

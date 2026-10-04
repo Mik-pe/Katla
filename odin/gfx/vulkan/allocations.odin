@@ -5,7 +5,7 @@ import gfx ".."
 import vk "vendor:vulkan"
 
 @(private="package")
-Native_Heap :: struct { memory:vk.DeviceMemory, mapped:rawptr, size,epoch:u64, refs,pending:int, domain:gfx.Memory_Domain }
+Native_Heap :: struct { memory:vk.DeviceMemory, mapped:rawptr, size,epoch:u64, refs,pending:int, domain:gfx.Memory_Domain,memory_type:u32 }
 @(private="package")
 release_heap :: proc(r:^Renderer,heap:^Native_Heap) {
     if heap==nil { return }
@@ -31,12 +31,13 @@ allocate_heap :: proc(r:^Renderer,size:u64,bits:u32,domain:gfx.Memory_Domain,buf
     if compatible==0 { return nil,.Unsupported }
     memory_type:u32
     for index in 0..<r.memory_properties.memoryTypeCount { if compatible&(u32(1)<<index)!=0 { memory_type=index; break } }
-    heap:=new(Native_Heap,r.allocator); heap.refs=1; heap.size=size; heap.domain=domain
+    heap:=new(Native_Heap,r.allocator); heap.refs=1; heap.size=size; heap.domain=domain;heap.memory_type=memory_type
     success:=false; defer { if !success { release_heap(r,heap) } }
     dedicated:=vk.MemoryDedicatedAllocateInfo{sType=.MEMORY_DEDICATED_ALLOCATE_INFO,buffer=buffer,image=image}
     info:=vk.MemoryAllocateInfo{sType=.MEMORY_ALLOCATE_INFO,allocationSize=vk.DeviceSize(size),memoryTypeIndex=memory_type}
     if buffer!=0 || image!=0 { info.pNext=&dedicated }
     if r.table.AllocateMemory(r.device,&info,nil,&heap.memory)!=.SUCCESS { return nil,.Allocation_Failed }
+    if r.capture.recording { gfx.capture_record(&r.capture,{kind=.Allocation,pass_index=r.capture_pass,phase_index=r.capture_phase,resource_kind=.Auxiliary,resource_index=-1,object=gfx.capture_object(&r.capture,heap),heap=gfx.capture_object(&r.capture,heap),size=u64(info.allocationSize),memory_type=info.memoryTypeIndex,memory_flags=u64(transmute(u32)r.memory_properties.memoryTypes[info.memoryTypeIndex].propertyFlags),emitted=true,label="vkAllocateMemory",reason="actual allocation accepted during command recording"}) }
     if domain==.CPU_Visible && r.table.MapMemory(r.device,heap.memory,0,vk.DeviceSize(size),{},&heap.mapped)!=.SUCCESS { return nil,.Allocation_Failed }
     success=true; return heap,.None
 }

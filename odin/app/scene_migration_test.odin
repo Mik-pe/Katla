@@ -23,7 +23,10 @@ test_scene_migration_actual_older_documents_stage_current_owned_components :: pr
         testing.expect(t,len(snapshot.entities)>2 && snapshot.next_entity_id==u64(len(snapshot.entities)+1))
         testing.expect_value(t,scene_snapshot_restore(&owner,&snapshot),editor.Scene_Error.None)
         ids:=ecs.entity_ids(&owner.world); defer delete(ids)
-        testing.expect(t,len(ids)==len(snapshot.entities))
+        primitive_count:=0
+        for id in ids { if model,present:=ecs.get_component(&owner.world,id,Scene_Model); present && model.source.kind==.Primitive { primitive_count+=1 } }
+        testing.expect_value(t,len(ids),len(snapshot.entities)+primitive_count)
+        if text!=MIGRATION_V1 { testing.expect_value(t,primitive_count,2) }
         mesh_count,light_count,script_count:int
         for id in ids {
             if _,present:=ecs.get_component(&owner.world,id,Scene_Mesh); present { mesh_count+=1 }

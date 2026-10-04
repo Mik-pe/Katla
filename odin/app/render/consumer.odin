@@ -57,7 +57,7 @@ consumer_prepare :: proc(consumer:^Native_Consumer($R),owner:^app.Authoring,enti
     for id in selected {
         if _,model:=ecs.get_component(&owner.world,id,app.Scene_Model); model {
             if _,hidden:=ecs.get_component(&owner.world,id,app.Editor_Hidden); !hidden && consumer.model_config.shader==nil { consumer.last_error={scene=.Invalid_Geometry}; return nil,.Invalid_Operation }
-        } else { append(&mesh_ids,id) }
+        } else if consumer.model_config.shader==nil { append(&mesh_ids,id) }
     }
     batch_error:Batch_Error
     token.batch^,batch_error=scene_batch_prepare_entities(owner,mesh_ids[:],consumer.allocator)

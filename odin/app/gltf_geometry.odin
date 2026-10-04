@@ -76,6 +76,8 @@ gltf_primitive :: proc(data:^cgltf.data,source:^cgltf.primitive,target:^Gltf_Pri
     }
     uvs:[]km.Vec2; if len(target.uv_sets)>0 { uvs=target.uv_sets[0] }
     tangent_uvs:=uvs
+    target.tangent_generated=gltf_attribute(source.attributes,.tangent)==nil && len(uvs)>0
+    target.tangent_uv={texture= -1,texcoord=0,uv_scale={1,1},scale=1}
     transformed_uvs:[]km.Vec2; defer delete(transformed_uvs)
     if source.material!=nil && source.material.normal_texture.texture!=nil && gltf_attribute(source.attributes,.tangent)==nil {
         view,view_error:=gltf_texture_view(data,source.material.normal_texture); if view_error!=.None { return view_error }
@@ -83,6 +85,7 @@ gltf_primitive :: proc(data:^cgltf.data,source:^cgltf.primitive,target:^Gltf_Pri
         transformed_uvs=make([]km.Vec2,count)
         for uv,i in target.uv_sets[view.texcoord] { transformed_uvs[i]=gltf_texture_uv(view,uv) }
         tangent_uvs=transformed_uvs
+        target.tangent_generated=true;target.tangent_uv=view
     }
     geometry,geometry_error:=mesh_triangles(positions,indices[:],normals,tangent_uvs)
     if geometry_error!=.None { return .Limit if geometry_error==.Limit else .Invalid_Geometry }; target.geometry=geometry

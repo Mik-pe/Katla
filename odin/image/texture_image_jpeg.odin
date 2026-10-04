@@ -1,5 +1,5 @@
 //! JPEG marker framing rejects missing scan/end markers before native decoding.
-package render
+package image
 
 @(private="package")
 texture_jpeg_validate :: proc(encoded:[]byte,width,height:u32)->Texture_Image_Error {

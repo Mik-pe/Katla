@@ -12,7 +12,7 @@ test_world_mesh_batch_preserves_material_edits_and_detects_geometry_replacement 
     app.scene_components_register(&owner); app.scene_mesh_register(&owner)
     mesh,error:=app.scene_mesh_prepare(&owner,{kind=.Geometry,geometry=transmute([]byte)string(`{"kind":"cube","size":[1,1,1]}`)})
     testing.expect_value(t,error,app.Mesh_Error.None)
-    entity:=ecs.spawn(&owner.world,struct { mesh:app.Scene_Mesh, transform:app.Scene_Transform, surface:app.Surface_Material }{mesh,{km.TRANSFORM_IDENTITY},{km.color_to_linear({0.7,0.2,0.1,1}),true,0,0.5,1}})
+    entity:=ecs.spawn(&owner.world,struct { mesh:app.Scene_Mesh, transform:app.Scene_Transform, surface:app.Surface_Material }{mesh,{km.TRANSFORM_IDENTITY},{linear_color=km.color_to_linear({0.7,0.2,0.1,1}),has_tint=true,metallic=0,roughness=0.5,ao=1}})
     empty:=ecs.spawn(&owner.world,struct { mesh:app.Scene_Mesh }{{source={kind=.Empty},geometry={allocator=context.allocator}}})
     batch,batch_error:=scene_batch_prepare(&owner); defer scene_batch_destroy(&batch)
     testing.expect_value(t,batch_error,Batch_Error{})

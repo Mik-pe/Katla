@@ -25,13 +25,15 @@ test_capture_context_is_owned_and_frustum_bound :: proc(t:^testing.T) {
     app.scene_components_register(&owner)
     geometry,error:=app.mesh_cube({1,1,1}); defer app.mesh_geometry_destroy(&geometry); testing.expect(t,error==.None)
     entity:=ecs.spawn(&owner.world,struct{mesh:app.Scene_Mesh,transform:app.Scene_Transform,name:app.Scene_Name}{{geometry=geometry},{km.transform()},{strings.clone("Before")}})
+    ecs.add_component(&owner.world,entity,app.Surface_Material{roughness=0.5,ao=1})
     state:State; state_init(&state,&owner); defer state_destroy(&state); selection_set(&state,entity,.Replace)
     shell:=Shell{state=&state,allocator=context.allocator}; viewport_grid_init(&shell.viewports)
     encoded,valid:=capture_context(&shell,0,{frame=3,serial=7,width=100,height=100},{{encoded=1,entity=entity}},context.allocator); defer delete(encoded); testing.expect(t,valid)
+    ecs.remove_component(&owner.world,entity,app.Surface_Material)
     name:=ecs.get_component_mut(&owner.world,entity,app.Scene_Name); delete(name.name); name.name=strings.clone("After")
     tree,parse_error:=json.parse(encoded,parse_integers=true); testing.expect(t,parse_error==nil); defer json.destroy_value(tree)
     value:=tree.(json.Object); rows:=value["frustum_candidates"].(json.Array)
-    testing.expect(t,value["frame_id"].(string)=="3" && value["capture_serial"].(string)=="7" && len(value["selected_entities"].(json.Array))==1 && len(rows)==1 && rows[0].(json.Object)["name"].(string)=="Before")
+    testing.expect(t,value["frame_id"].(string)=="3" && value["capture_serial"].(string)=="7" && len(value["selected_entities"].(json.Array))==1 && len(rows)==1 && rows[0].(json.Object)["name"].(string)=="Before" && rows[0].(json.Object)["material_editable"].(bool))
     testing.expect(t,!capture_bounds_visible(camera_view_projection(&shell.viewports.slots[0].camera,1),km.AABB{{0,0,100},{1,1,1}}))
 }
 
@@ -53,7 +55,7 @@ test_capture_candidate_near_clipped_projection_and_sorted_owned_primary_context 
     encoded,valid:=capture_context(&shell,0,{frame=3,serial=7,width=100,height=100},{{encoded=2,entity=second},{encoded=1,entity=first}},context.allocator); defer delete(encoded); testing.expect(t,valid)
     tree,parse_error:=json.parse(encoded,parse_integers=true); testing.expect(t,parse_error==nil); defer json.destroy_value(tree)
     object:=tree.(json.Object); rows:=object["frustum_candidates"].(json.Array); first_row:=rows[0].(json.Object); second_row:=rows[1].(json.Object)
-    testing.expect(t,len(rows)==2 && first_row["entity_id"].(string)=="0" && second_row["parent_id"].(string)=="0")
+    testing.expect(t,len(rows)==2 && !first_row["material_editable"].(bool) && !second_row["material_editable"].(bool) && first_row["entity_id"].(string)=="0" && second_row["parent_id"].(string)=="0")
     _,name_null:=first_row["name"].(json.Null); testing.expect(t,name_null && !object["undo_available"].(bool) && !object["redo_available"].(bool))
     camera:=object["camera"].(json.Object); testing.expect(t,len(camera["view_matrix"].(json.Array))==4 && first_row["visibility"].(string)=="frustum_candidate_occlusion_unknown")
 }

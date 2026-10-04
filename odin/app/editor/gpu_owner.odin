@@ -43,6 +43,7 @@ gpu_owner_init :: proc(gpu:^GPU_Owner($R),owner:Editor_Authoring,renderer:^R,ope
     }
     if error:=render.picking_native_init(&gpu.picking,renderer,operations,compiler); error!={} { return error }
     ecs.insert_resource(&owner.world,app.Scene_Participant{gpu,gpu_prepare_callback(R),gpu_finish_callback(R)})
+    ecs.insert_resource(&owner.world,app.Material_Native_Inspection{gpu,gpu_material_inspection_callback(R)})
     success=true; return {}
 }
 @(private="package")
@@ -71,6 +72,7 @@ gpu_owner_wait :: proc(gpu:^GPU_Owner($R))->gfx.Gpu_Error {
 /// Shared graph exports belong to this host and outlive every individual view's accepted preparation.
 gpu_owner_destroy :: proc(gpu:^GPU_Owner($R))->gfx.Gpu_Error {
     first:=gpu_owner_wait(gpu)
+    if gpu.owner!=nil { inspection,present:=ecs.get_resource(&gpu.owner.world,app.Material_Native_Inspection);if present && inspection.state==gpu { ecs.remove_resource(&gpu.owner.world,app.Material_Native_Inspection) } }
     if gpu.owner!=nil { participant,present:=ecs.get_resource(&gpu.owner.world,app.Scene_Participant); if present && participant.state==gpu { ecs.remove_resource(&gpu.owner.world,app.Scene_Participant) } }
     if gpu.renderer!=nil { error:=gpu.operations.release_exports(gpu.renderer,&gpu.graph); if first==.None { first=error } }
     render.picking_capture_destroy(gpu.renderer,gpu.pick_ops,&gpu.capture); render.picking_snapshot_destroy(&gpu.snapshot); delete(gpu.capture_context,gpu.allocator)
@@ -84,4 +86,13 @@ gpu_owner_destroy :: proc(gpu:^GPU_Owner($R))->gfx.Gpu_Error {
     if gpu.ui.renderer!=nil { error:=render.ui_gpu_destroy(&gpu.ui); if first==.None { first=error } }
     render.overlay_shader_destroy(&gpu.overlay_shader)
     gfx.compiled_graph_destroy(&gpu.plan); gfx.graph_destroy(&gpu.graph); gpu^={}; return first
+}
+
+/// Reads provenance from accepted native material receipts without borrowing CPU source guesses.
+gpu_material_inspection_callback :: proc($R:typeid)->proc(rawptr,ecs.Entity_Id,int)->(bool,bool) {
+    return proc(state:rawptr,entity:ecs.Entity_Id,role:int)->(bool,bool) {
+        gpu:=cast(^GPU_Owner(R))state
+        if gpu==nil || gpu.views[0].active==nil { return false,false }
+        return render.model_native_image_fallback(gpu.views[0].active.models,entity,role)
+    }
 }

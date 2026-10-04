@@ -37,18 +37,14 @@ native_features_finish :: proc(scene:^Native_Scene($R),token:gfx.Frame_Token,dra
         f.late_bound=true
     }
     error:=feature_grid_packet(&scene.graph,scene.feature_settings); if error!={} { return error }
-    selected:=[2][dynamic]gfx.Draw_Op{}
-    for &array in selected { array=make([dynamic]gfx.Draw_Op,scene.allocator) }
-    defer { for array in selected { delete(array) } }
+    selected:=make([dynamic]gfx.Draw_Op,scene.allocator)
+    defer delete(selected)
     if scene.batch!=nil {
-        for entry,i in scene.batch.entries { for id in scene.selected { if entry.entity==id && i<len(draws) { append(&selected[0],draws[i]); break } } }
-    }
-    if scene.models!=nil {
-        for entry in scene.models.batch.entries { for id in scene.selected { if entry.entity==id { append(&selected[1],gfx.Draw{entry.vertex_count,1,entry.first_vertex,entry.object_index}); break } } }
+        for entry,i in scene.batch.entries { for id in scene.selected { if entry.entity==id && i<len(draws) { append(&selected,draws[i]); break } } }
     }
     for effect in 0..<4 {
-        error=feature_selection_packet(&scene.graph,0,effect,scene.graph.frame,scene.graph.objects,scene.graph.geometry,scene.graph.frame_desc,scene.graph.object_desc,scene.graph.geometry_desc,selected[0][:],scene.feature_settings); if error!={} { return error }
-        if scene.models!=nil { error=feature_selection_packet(&scene.graph,1,effect,scene.models.frame,scene.models.objects,scene.models.geometry,scene.models.frame_desc,scene.models.object_desc,scene.models.geometry_desc,selected[1][:],scene.feature_settings) }
+        error=feature_selection_packet(&scene.graph,0,effect,scene.graph.frame,scene.graph.objects,scene.graph.geometry,scene.graph.frame_desc,scene.graph.object_desc,scene.graph.geometry_desc,selected[:],scene.feature_settings); if error!={} { return error }
+        if scene.models!=nil { error=feature_model_coverage_packet(scene.models,&scene.graph,effect+1,scene.feature_settings.outline && (effect!=1 && effect!=3 || scene.feature_settings.wallhack),1,scene.selected) }
         else { error=feature_selection_packet(&scene.graph,1,effect,scene.graph.frame,scene.graph.objects,scene.graph.geometry,scene.graph.frame_desc,scene.graph.object_desc,scene.graph.geometry_desc,nil,scene.feature_settings) }
         if error!={} { return error }
     }

@@ -3,14 +3,33 @@ package katla_vulkan
 
 import gfx ".."
 import vk "vendor:vulkan"
+import "core:log"
+
+@(private="package")
+retire_uploads :: proc(r:^Renderer,drained:bool=false)->gfx.Gpu_Error {
+    index:=0
+    for index<len(r.pending_uploads) {
+        transfer:=r.pending_uploads[index]
+        result:=vk.Result.SUCCESS
+        if !drained { result=r.table.GetFenceStatus(r.device,transfer.fence) }
+        if result==.NOT_READY { index+=1;continue }
+        if result!=.SUCCESS && result!=.ERROR_DEVICE_LOST { log.error("Vulkan upload fence query failed",result);return .Native_Failure }
+        readback_release(r,transfer);ordered_remove(&r.pending_uploads,index)
+        if result==.ERROR_DEVICE_LOST { r.failed=true;return .Native_Failure }
+    }
+    return .None
+}
 
 /// Writes tightly packed bytes to one mip/layer/aspect while preserving untouched initialized pixels.
 upload_texture :: proc(r:^Renderer,handle:gfx.Texture_Handle,region:gfx.Image_Region,bytes:[]byte)->gfx.Gpu_Error {
     if r.device==nil || r.failed { return .Native_Failure }
+    if error:=retire_uploads(r);error!=.None { return error }
     entry,ok:=gfx.storage_get(&r.textures,handle)
     if !ok { return .Invalid_Resource }
     texture:=entry^
-    if texture.swapchain!=nil || texture.pending!=0 || texture.allocation.heap.pending!=0 { return .Busy }
+    queued:int
+    for transfer in r.pending_uploads { if transfer.texture==texture { queued+=1 } }
+    if texture.swapchain!=nil || texture.pending!=queued || texture.allocation.heap.pending!=queued { return .Busy }
     if .Transfer_Destination not_in texture.desc.usage || !gfx.image_region_valid(region,texture.desc) { return .Invalid_Range }
     layout,layout_ok:=gfx.image_region_layout(region,texture.desc)
     if !layout_ok { return .Invalid_Range }
@@ -51,13 +70,11 @@ upload_texture :: proc(r:^Renderer,handle:gfx.Texture_Handle,region:gfx.Image_Re
     if result!=.SUCCESS { if result==.ERROR_DEVICE_LOST { r.failed=true }; return .Native_Failure }
     transfer.accepted=true; accepted=true; texture.pending+=1; texture.allocation.heap.pending+=1; texture.allocation.heap.epoch+=1
     image_recording_commit(&recording,0)
-    result=r.table.WaitForFences(r.device,1,&transfer.fence,true,max(u64))
-    if result!=.SUCCESS && result!=.ERROR_DEVICE_LOST { append(&r.pending_uploads,transfer); return .Native_Failure }
-    readback_release(r,transfer)
-    if result==.ERROR_DEVICE_LOST { r.failed=true; return .Native_Failure }
+    append(&r.pending_uploads,transfer)
     return .None
 }
-/// Creates and uploads one full single-mip/single-layer image before publishing its handle.
+/// Publishes one full single-mip/single-layer image after upload queue acceptance.
+/// Accepted uploads retain their staging and image independently until an actual fence retires.
 create_texture_with_data :: proc(r:^Renderer,desc:gfx.Texture_Desc,bytes:[]byte)->(gfx.Texture_Handle,gfx.Gpu_Error) {
     aspects:=gfx.texture_aspects(desc.format)
     if desc.mip_levels!=1 || desc.layers!=1 || (aspects!={.Color} && aspects!={.Depth}) { return {},.Invalid_Range }

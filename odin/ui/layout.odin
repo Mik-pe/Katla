@@ -38,16 +38,18 @@ node_text :: proc(ctx:^Context,node:^Node)->string {
     return node.descriptor.text
 }
 @(private="package")
-measure_node :: proc(ctx:^Context,node:^Node,available:Vec2)->Vec2 {
+measure_node :: proc(ctx:^Context,node:^Node,available:Vec2,constrain_self:bool=true)->Vec2 {
     d:=node.descriptor; s:=d.layout
     if d.hidden { return {} }
     pad:=Vec2{s.padding.left+s.padding.right,s.padding.top+s.padding.bottom}
     inside:=Vec2{max(0,available.x-pad.x),max(0,available.y-pad.y)}
-    if s.width.kind!=.Auto { inside.x=max(0,length_value(s.width,available.x,0)-pad.x) }
+    if constrain_self && s.width.kind!=.Auto { inside.x=max(0,length_value(s.width,available.x,0)-pad.x) }
     font,size:=node_font(ctx,node); intrinsic:=Vec2{}
     if len(node.children)==0 {
         wrap:f32=0; if s.width.kind!=.Auto || d.multiline || d.kind==.Text { wrap=inside.x }
+        if d.text_max_width>0 { wrap=0 }
         intrinsic=ctx.fonts.measure(ctx.fonts.state,font,node_text(ctx,node),size,wrap)
+        if d.text_max_width>0 { intrinsic.x=min(intrinsic.x,d.text_max_width); intrinsic.y=size }
         #partial switch d.kind {
         case .Button,.Icon_Button,.Menu_Item,.Text_Input,.Code_Editor,.Numeric_Input,.Checkbox,.Combo,.Tree_Row,.Selectable,.Slider,.Drag_Value,.Tabs:
             intrinsic.x+=ctx.theme.padding*2; intrinsic.y=max(intrinsic.y+ctx.theme.padding*2,ctx.theme.row_height)
@@ -87,6 +89,7 @@ measure_node :: proc(ctx:^Context,node:^Node,available:Vec2)->Vec2 {
         if row && s.wrap { intrinsic.x=min(intrinsic.x,inside.x); intrinsic.y=wrapped_height+line_height }
     }
     result:=intrinsic+pad
+    if !constrain_self { return result }
     result.x=length_value(s.width,available.x,result.x); result.y=length_value(s.height,available.y,result.y)
     if s.aspect_ratio>0 {
         if s.width.kind!=.Auto && s.height.kind==.Auto { result.y=result.x/s.aspect_ratio }
@@ -168,7 +171,7 @@ layout_node :: proc(ctx:^Context,node:^Node,input_bounds,inherited_clip:Rect) {
     inside:=node.content
     clip:=inherited_clip; if d.clip_children || d.kind==.Scroll_Area || d.kind==.Modal { clip=rect_intersection(clip,inside) }
     if d.kind==.Scroll_Area {
-        size:=measure_node(ctx,node,{inside.width,max(f32)/4})
+        size:=measure_node(ctx,node,{inside.width,inside.height},false)
         node.scroll.y=clamp(node.scroll.y,0,max(0,size.y-bounds.height)); node.scroll.x=clamp(node.scroll.x,0,max(0,size.x-bounds.width))
         inside.x-=node.scroll.x; inside.y-=node.scroll.y; inside.height=max(inside.height,size.y-s.padding.top-s.padding.bottom); inside.width=max(inside.width,size.x-s.padding.left-s.padding.right)
         node.content=inside

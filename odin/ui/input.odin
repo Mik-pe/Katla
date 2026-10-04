@@ -43,7 +43,12 @@ focus_next :: proc(ctx:^Context,backward:bool) {
 @(private="package")
 set_number :: proc(ctx:^Context,node:^Node,value:f32,started,finished:bool) {
     d:=node.descriptor; bounded:=clamp(value,d.minimum,d.maximum)
-    if d.step>0 { bounded=clamp(d.minimum+math.round((bounded-d.minimum)/d.step)*d.step,d.minimum,d.maximum) }
+    if d.step>0 {
+        step:=f64(d.step); anchor:=f64(d.minimum)
+        if math.abs(anchor)>step*16_777_216 { anchor=0 }
+        quantized:=anchor+math.round((f64(bounded)-anchor)/step)*step
+        bounded=f32(clamp(quantized,f64(d.minimum),f64(d.maximum)))
+    }
     state_set(ctx,d.state,bounded); append(&ctx.actions,Number_Action{node.id,d.action,d.payload,d.state,bounded,started,finished})
 }
 @(private="package")
@@ -180,7 +185,8 @@ route_input :: proc(ctx:^Context,input:Input)->Frame_Result {
             for node!=nil {
                 if node.descriptor.kind==.Scroll_Area {
                     node.scroll+=e.delta; node.scroll.x=clamp(node.scroll.x,0,max(0,node.content.width-node.bounds.width)); node.scroll.y=clamp(node.scroll.y,0,max(0,node.content.height-node.bounds.height))
-                    append(&ctx.actions,Scroll_Action{node.id,node.descriptor.action,node.descriptor.payload,node.scroll}); result.consumed_pointer=true; break
+                    append(&ctx.actions,Scroll_Action{node.id,node.descriptor.action,node.descriptor.payload,node.scroll}); result.consumed_pointer=true
+                    layout_node(ctx,node_get(ctx,ctx.root),root_bounds(ctx,ctx.logical_size),{0,0,ctx.logical_size.x,ctx.logical_size.y}); break
                 }; node=node_get(ctx,node.parent)
             }
         case Key_Down:

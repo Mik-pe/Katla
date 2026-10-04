@@ -1,7 +1,7 @@
 //! PNG framing, integrity and fixed-output inflation prevent compressed payloads exceeding their header.
-package render
+package image
 
-import image "../../deps/stb_image"
+import image "../deps/stb_image"
 import "core:mem"
 import "core:hash"
 import "core:c"

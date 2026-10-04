@@ -1,47 +1,14 @@
-# Historical Rust roadmap at the Odin cutover
+# Historical Rust roadmap at Odin cutover
 
-This preserves earlier research and unresolved proposals. Current engineering work
-is tracked in [TODO](../../TODO.md); the retired Rust APIs are not operating contracts.
+This records the Rust roadmap on main at `8b76a167`. Current unresolved work
+is tracked in [TODO](../../TODO.md); the old implementation and commands below
+are historical evidence.
 
 # TODO
 
 ## Task Sizing Convention
 
 Individual tasks should be small enough to complete in a single focused session. For large features (new subsystems, architectural changes, cross-cutting refactors), the TODO item is scoped as **exploration, ideation, and architecture** — research patterns, evaluate alternatives, and produce a concrete implementation plan as smaller TODO items. The output of such a task is a breakdown, not working code.
-
-## Odin port
-
-- [ ] Complete the full [Odin editor contract](docs/odin_editor.md), including canonical application integration and real user-visible acceptance.
-- [ ] Port retained declarative UI, flex/grid layout, text/focus/IME, docking and captured pointer gestures to Odin.
-- [ ] Integrate hierarchy, generic inspector, documents, preferences, assets, timeline, console, mixer and viewport transforms in the canonical Odin editor.
-- [x] Replace runtime shader compiler bindings with an external build process and validated source/options/compiler cache refresh.
-- [x] Port audio PCM/codec/metadata loading with real file fixtures before composing voices.
-- [x] Port voices/resampling/pooling, the category mixer and scheduling/streaming, reusing the completed `odin/audio/dsp` layer.
-- [x] Add native Odin audio output with real playback and callback/lifecycle acceptance.
-- [x] Port agent CPU JSON validation, selected scene observations and synchronized rate admission on top of the Odin editor mailbox/undo owner. See `docs/agent_odin.md`.
-- [x] Port typed material presets/inspect/set with an application-owned scene consumer, atomic 1..256-object batches and shared exact undo/redo.
-- [x] Integrate Odin surface factors with native material uploads, rendered PBR output, inspector controls and shared grouped gesture undo/redo.
-- [ ] Prove native pointer capture and gesture completion outside a dragged material slider.
-- [x] Port agent application-owned animation, events, prefab/behavior and resource requests with real application consumers.
-- [x] Preserve registered component entity references through hierarchy, prefab, trigger, joint and simulation restoration with fresh runtime identities.
-- [x] Preserve agent request correlation through a bounded mailbox with queued cancellation, closed admission, reserved response capacity and concurrent application-owner acceptance.
-- [x] Add optional Odin MCP 2026-07-28 stdio framing/discovery/tool calls with real scene/material pipes, cancellation, deadlines, EOF and output-failure acceptance.
-- [ ] Attach the Odin MCP adapter to the live windowed owner/private editor transport and port committed viewport observation/selection/camera plus remaining tool registration.
-- [x] Port LLM configuration/HTTP/streaming/orchestration with real local HTTP/TLS provider and conversational acceptance.
-- [x] Port gfx typed resource storage, exact frame/submission ownership and buffer-range graph compilation; prove the compiled compute/transfer workload on native Metal 4. See `docs/gfx_odin.md`.
-- [x] Port executable gfx buffer packets with native resource/reflection preflight and matching Metal/Vulkan consumers; validate concurrent uniforms, shared allocation hazards and retained native lifetimes.
-- [x] Port shared WGSL shader compilation, complete reflection and asynchronous replacement with native Metal/Vulkan acceptance.
-- [x] Port gfx images/subresources, graphics packets, allocation/aliasing, retained readback and window/surface lifecycle with native output and ownership tests.
-- [x] Port fixed sampled/storage texture arrays, including 4096 material slots and native resource lifetime on both backends.
-- [x] Import owned glTF/GLB geometry, materials, skinning and morph animation through confined asset roots.
-- [x] Load/save scene files and capture/instantiate/remove prefabs atomically through canonical agent tools.
-- [x] Add explicit Box3D primitive/mesh/hull bodies, body-only descriptions and native collider replacement acceptance.
-- [x] Compose native textured models and GPU particles with staged scene replacement and windowed agent services.
-- [x] Complete Box3D native joint ownership and whole-batch scene synchronization acceptance.
-- [ ] Add Box3D heightfields and spatial queries before exposing those application operations.
-- [ ] Unify GPU particle color composition with the native model linear/HDR path.
-- [ ] Port remaining application rendering, including shadows, point lights and postprocessing, with native acceptance.
-- [ ] Move complete agent/gfx application consumers to Odin and remove the superseded Rust subsystems after native Vulkan and Metal acceptance.
 
 ## Graphics core and application composition
 
@@ -50,6 +17,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] Execute generic compute, transfer and graphics commands on both backends without hidden feature dispatch.
 - [x] Retain exact committed graph exports and queued readback ownership across resize and slot reuse.
 - [x] Capture compiled synchronization, physical allocations and actual native encoder/binding/residency/feedback traces without changing execution.
+- [x] Preserve Vulkan frame-slot progression across output recreation so particle rollover never aliases its committed source. Verified native resize/readback regression and repeated windowed maximize/restore on Intel Iris Plus (ICL GT2).
 
 ## Audio System
 
@@ -155,6 +123,15 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] **Add physics collision event scripting** — Already wired. Fixed one-frame delay in event dispatch order.
 
 ## Rendering
+
+### Material correctness
+
+- [ ] **MAT-P1-001: Complete per-primitive native acceptance** — Import now retains node/primitive identities, independent materials/textures, u32 indices and each node's skin. Selected-scene accessors handle offsets, strides and sparse data; missing normals/tangents use flat normals/MikkTSpace, and static baking preserves shear and reflected winding. Scene capture expands models into explicit child sources; material overrides, group colliders and animation inheritance survive reload. Native Vulkan static/skinned probes verify distinct surface pixels, second-skin selection, atomic invalid-identity rollback, round-trip factors/textures and complete retirement. Remaining acceptance: the same fixtures on physical Metal 4 hardware.
+- [ ] **MAT-P1-002: Complete glTF surface semantics** — Normal scale, occlusion strength and linear emissive RGB now reach both scene shaders through typed app-owned per-object data. Native Vulkan static/skinned probes verify textureless/textured emission, scaled normals, AO influence and scene persistence. The inspector and agent tool share linear HDR emission editing, numeric units, undo and serialization. OPAQUE/MASK/BLEND, nonnegative cutoff, double-sided back-face normals, mirrored rasterization and per-instance sorted transparency are now preserved. Strict native Vulkan static/skinned fixtures verify masked color/depth/shadow/picking, independent picking depth, zero-alpha rejection and the full alpha-over operation. Remaining acceptance: the same fixtures on physical Metal 4 hardware.
+- [ ] **MAT-P1-003: Complete PBR lighting and transformed-frame acceptance** — Shared shaders now use perceptual GGX roughness, correlated Smith visibility and per-light Fresnel/energy partition. CPU static baking and static/skinned shaders use orthogonalized inverse-transpose frames with mirrored handedness and finite singular fallbacks. Vulkan arithmetic readback and CPU regressions pass. The actual static/skinned PBR shaders now pass 120 native Vulkan HDR comparisons against a double-precision lighting reference, combining identity/nonuniform/mirrored transforms with CPU baking, model/skin/composed frames, roughness, metallicity, two point lights, directional shadows, AO, signed normal scale and HDR emission. A native regression exposed and fixed the biased RGBA8 flat-normal fallback; exact RGBA16F neutral values now keep missing-map lighting bit-identical under normal-scale changes. Remaining acceptance: physical Metal execution and full-shader Vulkan validation on a driver without the documented Intel compiler crash. Static/skinned native surface probes now cover mirrored winding/culling and two-sided face orientation; both scene shaders use the same ambient and directional-shadow contribution.
+- [ ] **MAT-P1-004: Complete cross-backend atomic reload acceptance** — Both backends use canonical/transitive source identity, prepare all live variants from a source snapshot, publish interfaces with variants only on success, and retain submitted pipelines. Metal workers share the renderer's device/archive; Vulkan descriptor layouts retire with their pipelines. Native Vulkan regressions cover syntax recovery, include edits, duplicate filenames, interface changes, instanced UI failure/recovery and submissions across replacement. Rapid successive requests also preserve the latest replacement. Remaining acceptance: run these tests on physical Metal 4 hardware.
+- [ ] **MAT-P2-005: Preserve texture sampling contracts** — Image uploads now preserve 16-bit linear data, decode 16-bit color into RGBA16F, accept finite decoded HDR floats within half-float range, generate/regenerate filtered mip chains on both backends, and share immutable uploads by asset/image identity and transfer function without pinning retired resources. Generic sampler descriptors and phase overrides independently select min/mag/mip filters, wrap modes, comparison and anisotropy; imported image bindings expose complete or selected mip views. Strict native Vulkan fixtures verify these policies, all depth comparison directions, sharing through reconstruction, weak-cache recovery, failed submission and early image retirement. All five glTF roles now preserve UV0/UV1, KHR_texture_transform and independent samplers through static/skinned drawing and scene persistence; missing or unsupported referenced UVs reject import. Color/depth/shadow/picking share transformed alpha sampling, and changed generated normal UVs reconstruct the tangent frame with finite degenerate fallbacks. Strict Vulkan numeric probes cover role-specific pixels, repeat/clamp independence, transformed cutouts and authored/regenerated bases through round trips. Agent sampling patches now share atomic validation, undo and scene persistence; inspection reports source image identity, UV availability, filtering/wrapping and tangent-basis provenance. Scene staging rejects unavailable UV overrides without changing the active scene. Remaining acceptance: the same fixtures on physical Metal 4 hardware.
+- [ ] **MAT-P2-006: Complete material reuse acceptance** — Both backends now share immutable native pipelines by exact expanded source and resolved render state, with independent material handles, texture sets and reload dependencies. Weak caches preserve submission retirement. Native Vulkan checks prove 32 identical instances share one pipeline, state/source changes remain distinct, texture edits are isolated and plain/instanced UI reload remains atomic. The repeatable native benchmark records first/warm registration, reload-to-pixels and frame allocations; [measurements](docs/material-pipeline-study/README.md) compare the previous implementation. The [full asset benchmark](docs/material-import-study/README.md) now measures actual glTF decode/import through device idle: eight independently registered models share five image uploads; warm seven-model preparation falls from a 1227.5 ms baseline median to 16.1 ms with identical native texels. Decoder/first-import gains are not established. Remaining acceptance: the native sharing/retirement tests and measurements on physical Metal 4 hardware.
 
 ### Metal rendering bugs
 - [x] Billboard icons don't show in Metal
@@ -299,12 +276,12 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Wire timeline to AnimationPlayer — preview animations in viewport while scrubbing
 
 #### Material editor
-- [ ] Design material editor layout — texture slots (albedo, normal, metallic, roughness, emission), numeric sliders, live preview
-- [ ] Add texture slot widgets — drag-and-drop from asset browser, thumbnail preview, clear button
+- [x] Design material editor layout — independent role previews, numeric factors, UV/filter/wrap controls, live viewport preview and reusable `.katmat` save/apply
+- [x] Add texture slot widgets — drag-and-drop from asset browser, effective image thumbnails, neutral/original controls and explicit portable sources
 - [x] Add per-object PBR factor controls — sRGB RGBA, metallic, roughness and occlusion, shared presets and validated agent batch edits
-- [ ] Add emission color/intensity controls and texture assignment
+- [x] Add emission color/intensity controls and texture assignment — linear HDR emission, independent normal/AO factors and atomic file/glTF/neutral/inherit image edits with scoped history
 - [x] Add live material preview — apply PBR factors to the selected entity, group pointer gestures for undo/redo and persist factors in the scene
-- [ ] Add material serialization — save edited material back to .mat file
+- [x] Add material serialization — complete portable `.katmat` capture/read/validate/write and atomic batch apply; copies remain independently editable and persist in scenes
 
 #### Terrain editor
 - [ ] Design terrain component — `TerrainComponent` with heightmap, layer count, grid resolution

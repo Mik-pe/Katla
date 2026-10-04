@@ -145,7 +145,7 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     }
     for encoded,index in ([][]byte{green,blue,red,blue,green,red}) {
         assert(os.write_entire_file(image_path,encoded)==nil)
-        receipt,reload_error:=render.model_texture_reload(&owner,caches[:]); assert(reload_error=={} && receipt.textures==4 && receipt.caches==4 && receipt.cleanup==.None)
+        receipt,reload_error:=render.model_texture_reload(&owner,caches[:]); assert(reload_error=={} && receipt.textures==4 && receipt.caches==4 && receipt.cleanup==.None,fmt.tprintf("reload step%d: %v error%v",index,receipt,reload_error))
         unchanged,no_change_error:=render.model_texture_reload(&owner,caches[:]); assert(no_change_error=={} && unchanged.textures==0)
         for &consumer,i in consumers {
             assert(len(consumer.active.graph.graph.images)==image_counts[i])

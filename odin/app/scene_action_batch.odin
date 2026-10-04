@@ -14,6 +14,7 @@ import "core:encoding/json"
 /// Inserts a mixed primitive, model and prefab batch atomically; returned roots precede descendants.
 scene_action_execute_batch :: proc(owner:^Authoring,operations:[]editor.Scene_Op)->(editor.Tool_Result,editor.Undo_Group) {
     context.allocator=owner.world.allocator
+    model_preparation_owned:=scene_model_preparation_begin(owner); defer scene_model_preparation_end(owner,model_preparation_owned)
     if owner.mode!=.Editing { return error_result(&owner.world,.Editing_Required),{} }
     if len(operations)==0 || len(operations)>256 { return error_result(&owner.world,.Invalid_Operation),{} }
     if error:=authoring_before_mutation(owner); error!=.None { return error_result(&owner.world,error),{} }
@@ -29,6 +30,7 @@ scene_action_execute_batch :: proc(owner:^Authoring,operations:[]editor.Scene_Op
             if next_key==max(u64) { return error_result(&owner.world,.Invalid_Operation),{} }
             id:=ecs.create_entity(&owner.world); append(&created,id); append(&roots,id)
             if error:=scene_action_spawn_proposal(owner,id,op,next_key); error!=.None { return error_result(&owner.world,error),{} }; next_key+=1
+            if error:=scene_model_expand_children(owner,id,&created,&next_key); error!=.None { return error_result(&owner.world,error),{} }
         } else if op.kind==.Application && op.tool_name=="prefab" {
             decoded,decode_error:=asset.prefab_decode(op.value,owner.world.allocator)
             if decode_error!=.None { return error_result(&owner.world,.Invalid_Operation),{} }; defer asset.prefab_destroy(&decoded)

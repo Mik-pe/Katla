@@ -3,7 +3,7 @@ package gfx
 
 import "core:mem"
 
-Vertex_Format :: enum { Float, Float2, Float3, Float4, Uint, Uint2, Uint3, Uint4, Sint, Sint2, Sint3, Sint4, Unorm8x4 }
+Vertex_Format :: enum { Float, Float2, Float3, Float4, Uint, Uint2, Uint3, Uint4, Sint, Sint2, Sint3, Sint4, Unorm8x4, Uint8x4, Uint16x4, Unorm16x4 }
 Vertex_Step :: enum { Vertex, Instance }
 /// Shader locations select attributes; bindings name ordinary vertex allocations.
 Vertex_Attribute :: struct { location,binding,offset:u32, format:Vertex_Format }
@@ -34,7 +34,7 @@ Depth_Bias :: struct { constant,slope,clamp:f32 }
 /// Byte width of one portable vertex attribute.
 vertex_format_size :: proc(format:Vertex_Format)->u32 {
     #partial switch format {
-    case .Float2,.Uint2,.Sint2: return 8
+    case .Float2,.Uint2,.Sint2,.Uint16x4,.Unorm16x4: return 8
     case .Float3,.Uint3,.Sint3: return 12
     case .Float4,.Uint4,.Sint4: return 16
     case: return 4

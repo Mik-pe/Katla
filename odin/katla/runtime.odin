@@ -13,6 +13,7 @@ import ui "../ui"
 import ecs "../ecs"
 import editor "../editor"
 import "core:fmt"
+import "core:mem"
 import "base:runtime"
 import "core:os"
 import "core:time"
@@ -22,6 +23,8 @@ import "core:encoding/base64"
 import "core:path/filepath"
 
 Backend_API :: struct($R:typeid) {
+    capture_enable:proc(^R,bool)->gfx.Gpu_Error,
+    capture_snapshot:proc(^R,u64,mem.Allocator)->(gfx.Capture_Snapshot,bool),
     gpu:render.GPU_Ops(R),ui:render.UI_GPU_Ops(R),picking:render.Picking_Ops(R),particles:render.Particle_GPU_Ops(R),
     attach:proc(^R,gfx.Surface_Desc)->gfx.Gpu_Error,
     resize:proc(^R,u32,u32)->gfx.Gpu_Error,
@@ -50,6 +53,10 @@ run_editor :: proc(renderer:^$R,api:Backend_API(R),config:Config,compiler:^shade
     return success && restore_error==.None
 }
 run_editor_owned :: proc(renderer:^$R,api:Backend_API(R),config:Config,compiler:^shader.Compiler,fonts:^render.UI_Font_System,down:bool,console_logger:^editor_app.Console_Logger)->bool {
+    if config.dump_graph || config.dump_graph_file!="" {
+        if error:=api.capture_enable(renderer,true); error!=.None { fmt.eprintln("Cannot enable native graph capture:",error); return false }
+    }
+    defer { if config.dump_graph || config.dump_graph_file!="" { api.capture_enable(renderer,false) } }
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
     services_error:=app.authoring_services_init(&owner); if services_error!=.None { fmt.eprintln("Cannot initialize authoring services:",services_error); return false }
     resources_error:=app.asset_resources_init(&owner,config.project_root,config.resource_root); if resources_error!=.None { fmt.eprintln("Cannot initialize project resources:",resources_error); return false }
@@ -101,6 +108,9 @@ run_editor_owned :: proc(renderer:^$R,api:Backend_API(R),config:Config,compiler:
     thumbnails:render.Thumbnail_Cache(R)
     thumbnail_init_error:=render.thumbnail_cache_init(&thumbnails,&gpu.ui); if thumbnail_init_error!={} { fmt.eprintln("Thumbnail cache:",thumbnail_init_error);return false }
     defer render.thumbnail_cache_destroy(&thumbnails)
+    previews:render.Material_Preview_Cache(R)
+    preview_error:=render.material_preview_init(&previews,&gpu.ui,api.gpu);if preview_error!={} { fmt.eprintln("Material previews:",preview_error);return false }
+    defer render.material_preview_destroy(&previews)
     shader_root:=config.shader_root
     if shader_root=="" { shader_root="odin/app/render/shaders" }
     shader_reload:editor_app.Editor_Shader_Reload(R)
@@ -129,7 +139,7 @@ run_editor_owned :: proc(renderer:^$R,api:Backend_API(R),config:Config,compiler:
     origin:=time.tick_now(); previous:=origin; last_script_poll:=origin; frame_count:=0
     for !doc.quit_requested {
         pool:=window.frame_begin()
-        now:=time.tick_now(); delta:=clamp(f32(time.duration_seconds(time.tick_diff(previous,now))),0,.1); previous=now
+        now:=time.tick_now(); elapsed:=max(0,f32(time.duration_seconds(time.tick_diff(previous,now)))); delta:=min(elapsed,.1); previous=now
         actual:=extent; input_frame:=ui.Input{pixel_scale=1,time=time.duration_seconds(time.tick_diff(origin,now))}
         if !config.headless { actual,input_frame=window.native_input_poll(&input,input_frame.time) }
         if actual.closed { fmt.eprintln("Native window owner closed unexpectedly"); window.frame_end(pool); return false }
@@ -146,6 +156,14 @@ run_editor_owned :: proc(renderer:^$R,api:Backend_API(R),config:Config,compiler:
         receipt,reload_error:=render.model_texture_reload_poll(&texture_reload,&owner,model_caches[:model_count])
         if reload_error!={} { log.warn("Texture hot reload retained previous GPU resources",reload_error) }
         if receipt.cleanup!=.None { fmt.eprintln("Texture hot reload published with cleanup failure:",receipt.cleanup) }
+        editor_app.selection_refresh(&state)
+        shell.material_preview_has_entity=false
+        if state.selection.has_primary {
+            models:^render.Native_Model(R);if gpu.views[0].active!=nil { models=gpu.views[0].active.models }
+            preview:=render.material_preview_update(&previews,models,&owner,state.selection.primary)
+            shell.material_preview_has_entity=preview.ready;shell.material_preview_entity=preview.entity;shell.material_preview_textures=preview.textures
+            if preview.error!={} { log.warn("Material preview retained previous images",preview.error) }
+        }
         if !config.headless && (actual.width!=extent.width || actual.height!=extent.height) { if api.resize(renderer,actual.width,actual.height)!=.None { window.frame_end(pool); return false }; extent=actual }
         completed,capture_error:=editor_app.gpu_capture_poll(&gpu)
         if capture_error!=.None { editor_app.host_panel_capture_failed(&host_panel); editor_app.view_service_capture_failed(&views); fmt.eprintln("Viewport capture:",capture_error) }
@@ -207,10 +225,10 @@ run_editor_owned :: proc(renderer:^$R,api:Backend_API(R),config:Config,compiler:
         if render_error!={} { if !config.headless { api.abort_surface(renderer,drawable) }; api.gpu.abort(renderer,token); fmt.eprintln("Combined editor frame:",render_error); window.frame_end(pool); return false }
         if !config.headless { outcome,present_error:=api.present(renderer,drawable,submission); if present_error!=.None || outcome.surface==.Fatal { fmt.eprintln("Presentation:",present_error,outcome.surface); window.frame_end(pool); return false } }
         frame_count+=1
-        editor_app.shell_frame_statistics(&shell,max(.000001,delta),len(gpu.plan.order),gpu.serial)
+        editor_app.shell_frame_statistics(&shell,max(.000001,elapsed),len(gpu.plan.order),gpu.serial)
         window.frame_end(pool)
         if frame_count==1 && (config.dump_layout || config.dump_layout_file!="") { if !diagnostic_layout(&shell,config.dump_layout_file) { return false } }
-        if frame_count==1 && (config.dump_graph || config.dump_graph_file!="") { if !diagnostic_graph(&gpu,config.dump_graph_file) { return false } }
+        if frame_count==1 && (config.dump_graph || config.dump_graph_file!="") { if !diagnostic_graph(&gpu,api.capture_snapshot,config.dump_graph_file) { return false }; if api.capture_enable(renderer,false)!=.None { return false } }
         if config.check_black_frames { if !diagnostic_image(&gpu,extent.width,extent.height,"",true) { return false } }
         if journey.directory!="" && !cli_after_frame(&journey,&shell,&gpu,frame_count,extent.width,extent.height,config.interaction_test!="") { return false }
         if config.frames>0 && frame_count>=config.frames { break }

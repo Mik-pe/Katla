@@ -54,6 +54,7 @@ image_type :: proc(binding:shader.Binding)->(gfx.Texture_Sample_Type,gfx.Texture
         switch binding.storage_format {
         case "Rgba8Unorm": format=.RGBA8_Unorm
         case "Rgba16Float": format=.RGBA16_Float
+        case "Rgba16Unorm": format=.RGBA16_Unorm
         case "R32Uint": format=.R32_Uint
         case "R32Float": format=.R32_Float
         case: return {},{},.Unsupported_Image
@@ -158,7 +159,7 @@ stage_interface_valid :: proc(vertex,fragment:^shader.Entry,colors:[]gfx.Color_T
         if output.location<0 { continue }
         if int(output.location)>=len(colors) || output.blend_source>0 || output.width!=4 { return false }
         #partial switch colors[output.location].format {
-        case .RGBA8_Unorm,.BGRA8_Unorm,.RGBA16_Float,.RGBA8_Srgb,.BGRA8_Srgb,.R8_Unorm,.RG8_Unorm,.R32_Float: if output.scalar!=.Float { return false }
+        case .RGBA8_Unorm,.BGRA8_Unorm,.RGBA16_Float,.RGBA16_Unorm,.RGBA8_Srgb,.BGRA8_Srgb,.R8_Unorm,.RG8_Unorm,.R32_Float: if output.scalar!=.Float { return false }
         case .R32_Uint: if output.scalar!=.Uint { return false }
         case: return false
         }

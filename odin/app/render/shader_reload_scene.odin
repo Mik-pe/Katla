@@ -27,7 +27,7 @@ scene_shader_reload_snapshot :: proc(reference:^Surface_Shader,model:^Model_Shad
     for &mapping,index in surface.features.graphics {
         descriptor:=reference.features.graphics[index].descriptor
         descriptor.colors=surface.features.colors[index:index+1] if len(descriptor.colors)>0 else nil
-        compiled_index:=index if index<2 else 3+(index-2)/5
+        compiled_index:=index if index<2 else (3+(index-2)/5 if index<12 else 4)
         mapping,error=shader_reload_map(&surface.features.compiled[compiled_index],descriptor,allocator); if error!=.None { return {},{},error }
     }
     surface.features.compute,error=shader_reload_compute_map(&surface.features.compiled[2],reference.features.compute.descriptor.entry,allocator); if error!=.None { return {},{},error }
@@ -75,6 +75,11 @@ scene_shader_reload_prepare :: proc(consumers:[]^Native_Consumer($R),surface:^Su
                 descriptor:=descriptors.features.geometry[kind][effect]; if effect!=0 { descriptor=depth_descriptor(descriptor,Depth_Sense(sense)) }
                 if error:=scene_shader_reload_raster(candidate,&set.geometry[kind][effect],descriptor); error!=.None { return candidate,error }
             } }
+            for effect in 0..<5 { for extra in 0..<3 {
+                if sense==1 && effect==0 { continue }
+                descriptor:=descriptors.features.model_variants[effect][extra];if effect!=0 { descriptor=depth_descriptor(descriptor,Depth_Sense(sense)) }
+                if error:=scene_shader_reload_raster(candidate,&set.model_variants[effect][extra],descriptor);error!=.None { return candidate,error }
+            } }
         }
         compute,compute_error:=candidate.operations.create_compute(candidate.renderer,descriptors.features.cull); if compute_error!=.None { shader_reload_native_report(compute_error,false); return candidate,.Prepare }; append(&candidate.computes,Shader_Compute_Replacement{&features.pipelines.cull,compute})
         if scene.models!=nil && len(scene.models.batch.entries)>0 {
@@ -97,6 +102,7 @@ scene_shader_reload_publish :: proc(candidate:^Scene_Shader_Reload_Candidate($R)
         scene:=consumer.active; features:=&scene.features
         features.reverse_pipelines.sky=features.pipelines.sky; features.reverse_pipelines.cull=features.pipelines.cull
         for kind in 0..<2 { features.reverse_pipelines.geometry[kind][0]=features.pipelines.geometry[kind][0] }
+        features.reverse_pipelines.model_variants[0]=features.pipelines.model_variants[0]
         scene.graph.pipeline=scene.reverse_pipeline if scene.graph.depth_sense==.Reverse else scene.pipeline
         scene.graph.display_pipeline=scene.display_pipeline
         scene.graph.features.pipelines=features.reverse_pipelines if scene.graph.depth_sense==.Reverse else features.pipelines

@@ -81,6 +81,11 @@ test_view_reply_immutable_provenance_samples_null_selection_and_bounded_candidat
     provenance:=object["gpu_provenance"].(json.Object); testing.expect(t,provenance["submission_id"].(string)=="19" && provenance["frame_generation"].(string)=="3")
     samples:=provenance["samples"].(json.Array); overlay:=samples[1].(json.Object); _,overlay_null:=overlay["entity_id"].(json.Null); testing.expect(t,overlay["raw_id"].(json.Integer)==99 && overlay_null)
     mapped:=samples[2].(json.Object); testing.expect(t,mapped["entity_id"].(string)=="18446744073709551615")
+    zero_bytes,zero_ok:=view_reply_encode(&snapshot,transmute([]byte)frozen,png,0,context.allocator); defer delete(zero_bytes); testing.expect(t,zero_ok)
+    zero_tree,zero_error:=json.parse(zero_bytes,parse_integers=true); defer json.destroy_value(zero_tree); testing.expect(t,zero_error==nil)
+    zero:=zero_tree.(json.Object)
+    testing.expect(t,len(zero["frustum_candidates"].(json.Array))==0 && len(zero["candidates"].(json.Array))==0 && zero["total"].(json.Integer)==2 && zero["candidate_count"].(json.Integer)==2 && zero["truncated"].(bool))
+    testing.expect(t,zero["image_png_base64"].(string)==object["image_png_base64"].(string) && zero["submission"].(string)=="19" && len(zero["gpu_provenance"].(json.Object)["samples"].(json.Array))==5)
     snapshot.id_pixels.source.generation+=1; rejected,reject_ok:=view_reply_encode(&snapshot,transmute([]byte)frozen,png,64,context.allocator); defer delete(rejected); testing.expect(t,!reject_ok)
 }
 @(test)

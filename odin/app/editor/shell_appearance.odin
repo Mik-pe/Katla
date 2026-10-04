@@ -41,6 +41,7 @@ scale_descriptor :: proc(descriptor:^ui.Descriptor,scale:f32) {
     descriptor.layout.padding.top*=scale; descriptor.layout.padding.right*=scale; descriptor.layout.padding.bottom*=scale; descriptor.layout.padding.left*=scale
     descriptor.layout.gap*=scale
     if descriptor.font_size>0 { descriptor.font_size*=scale }
+    if descriptor.text_max_width>0 { descriptor.text_max_width*=scale }
     for &child in descriptor.children { scale_descriptor(&child,scale) }
 }
 /// Performance values come from the actual accepted owner frame, independently of the active dock panel.

@@ -6,9 +6,10 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ## Odin port
 
-- [ ] Complete the full [Odin editor contract](docs/odin_editor.md), including canonical application integration and real user-visible acceptance.
-- [ ] Port retained declarative UI, flex/grid layout, text/focus/IME, docking and captured pointer gestures to Odin.
-- [ ] Integrate hierarchy, generic inspector, documents, preferences, assets, timeline, console, mixer and viewport transforms in the canonical Odin editor.
+- [x] Port the material additions on main at `8b76a167`: independent glTF primitives, complete surface/coverage semantics, role images and sampling, reusable `.katmat` capture/apply and matching Inspector/agent consumers.
+- [x] Complete the full [Odin editor contract](docs/odin_editor.md), including canonical application integration and real user-visible acceptance.
+- [x] Port retained declarative UI, flex/grid layout, text/focus/IME, docking and captured pointer gestures to Odin.
+- [x] Integrate hierarchy, generic inspector, documents, preferences, assets, timeline, console, mixer and viewport transforms in the canonical Odin editor.
 - [x] Replace runtime shader compiler bindings with an external build process and validated source/options/compiler cache refresh.
 - [x] Port audio PCM/codec/metadata loading with real file fixtures before composing voices.
 - [x] Port voices/resampling/pooling, the category mixer and scheduling/streaming, reusing the completed `odin/audio/dsp` layer.
@@ -16,7 +17,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] Port agent CPU JSON validation, selected scene observations and synchronized rate admission on top of the Odin editor mailbox/undo owner. See `docs/agent_odin.md`.
 - [x] Port typed material presets/inspect/set with an application-owned scene consumer, atomic 1..256-object batches and shared exact undo/redo.
 - [x] Integrate Odin surface factors with native material uploads, rendered PBR output, inspector controls and shared grouped gesture undo/redo.
-- [ ] Prove native pointer capture and gesture completion outside a dragged material slider.
+- [x] Prove native pointer capture and gesture completion outside a dragged material slider.
 - [x] Port agent application-owned animation, events, prefab/behavior and resource requests with real application consumers.
 - [x] Preserve registered component entity references through hierarchy, prefab, trigger, joint and simulation restoration with fresh runtime identities.
 - [x] Preserve agent request correlation through a bounded mailbox with queued cancellation, closed admission, reserved response capacity and concurrent application-owner acceptance.
@@ -36,7 +37,7 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] Add Box3D heightfields and spatial queries before exposing those application operations.
 - [x] Unify GPU particle color composition with the native model linear/HDR path.
 - [x] Port remaining application rendering, including shadows, point lights and postprocessing, with native acceptance.
-- [ ] Move complete agent/gfx application consumers to Odin and remove the superseded Rust subsystems after native Vulkan and Metal acceptance.
+- [x] Move complete agent/gfx application consumers to Odin and remove the superseded Rust subsystems after native Vulkan and Metal acceptance.
 
 ## Further engineering
 

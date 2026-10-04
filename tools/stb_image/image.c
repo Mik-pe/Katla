@@ -8,6 +8,22 @@
 #define STBI_NO_LINEAR
 #include "stb_image.h"
 #include "tiff_memory.c"
+#include "tiff_precision.c"
+
+int katla_image_precision_from_memory(const unsigned char *encoded, int length) {
+    if (katla_tiff_signature(encoded,length)) return katla_tiff_precision(encoded,length);
+    return stbi_is_16_bit_from_memory(encoded,length) ? 2 : 1;
+}
+
+unsigned short *katla_image_load_16_from_memory(const unsigned char *encoded,int length,int *width,int *height,int *channels,int desired_channels) {
+    if (katla_tiff_signature(encoded,length)) return desired_channels==4 ? (unsigned short*)katla_tiff_decode_precise(encoded,length,width,height,channels,2) : NULL;
+    return stbi_load_16_from_memory(encoded,length,width,height,channels,desired_channels);
+}
+
+float *katla_image_load_float_from_memory(const unsigned char *encoded,int length,int *width,int *height,int *channels,int desired_channels) {
+    if (!katla_tiff_signature(encoded,length) || desired_channels!=4) return NULL;
+    return (float*)katla_tiff_decode_precise(encoded,length,width,height,channels,4);
+}
 
 int katla_image_info_from_memory(const unsigned char *encoded, int length, int *width, int *height, int *channels) {
     if (katla_tiff_signature(encoded,length)) return katla_tiff_info(encoded,length,width,height,channels);

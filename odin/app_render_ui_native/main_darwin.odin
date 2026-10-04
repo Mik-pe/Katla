@@ -44,8 +44,9 @@ exercise :: proc(renderer:^$R,api:API(R),compiler:^shader.Compiler,fonts:^render
     owner:render.UI_GPU(R); assert(render.ui_gpu_init(&owner,renderer,api.ui,&ui_shader)==.None); defer assert(render.ui_gpu_destroy(&owner)==.None)
     retained:render.Picking_Snapshot
     defer render.picking_snapshot_destroy(&retained)
-    for cycle in 0..<2 {
+    for cycle in 0..<3 {
         width:=u32(128+cycle*16); height:=u32(96+cycle*8)
+        if cycle==2 { width=320; height=160 }
         clip:=ui.Rect{0,0,f32(width),f32(height)}
         commands:=[4]ui.Draw_Command{
             ui.Rect_Draw{bounds=clip,clip=clip,color={1,0,0,1}},
@@ -72,6 +73,24 @@ exercise :: proc(renderer:^$R,api:API(R),compiler:^shader.Compiler,fonts:^render
         bidi_text:="שלום"; visual_right:=provider.navigate(provider.state,render.UI_FONT_REGULAR,bidi_text,20,0,len(bidi_text),1)
         assert(visual_right<len(bidi_text),"RTL visual arrow must move toward a preceding logical character")
         layered:=make([dynamic]ui.Draw_Command); append(&layered,..commands[:]); append(&layered,..ui_draw.commands); defer delete(layered)
+        controls:ui.Context; assert(ui.context_init(&controls,provider)==.None); defer ui.context_destroy(&controls)
+        if cycle==2 {
+            rows:=[]ui.Descriptor{
+                {key=21,kind=.Text,text="Åäö 👩‍💻 väldigt långt materialnamn.png",text_max_width=152,font_size=14,has_fixed_bounds=true,fixed_bounds={160,4,152,24}},
+                {key=22,kind=.Slider,text="Scale",value=-0.25,minimum=-1,maximum=1,has_fixed_bounds=true,fixed_bounds={160,34,152,30}},
+            }
+            control_draw,control_result:=ui.frame(&controls,{key=20,kind=.Stack,children=rows},{},{f32(width),f32(height)})
+            assert(control_result.error==.None)
+            short_found,value_found:=false,false
+            for command in control_draw.commands {
+                if text,ok:=command.(ui.Text_Draw);ok {
+                    if text.position.y==4 { short_found=true; assert(len(text.text)>=3 && text.text[len(text.text)-3:]=="…" && provider.measure(provider.state,text.font,text.text,text.size,0).x<=152,"native shaped ellipsis width diverged") }
+                    if text.text=="-0.25" { value_found=true }
+                }
+            }
+            assert(short_found && value_found,"native retained numeric/ellipsis controls missing")
+            append(&layered,..control_draw.commands)
+        }
         registered:=make([dynamic]gfx.Texture_Handle); defer delete(registered)
         sample_desc:=gfx.Texture_Desc{width=1,height=1,depth=1,layers=1,mip_levels=1,format=.RGBA8_Unorm,usage={.Sampled,.Transfer_Destination}}
         for index in 0..<66 {
@@ -142,7 +161,7 @@ exercise :: proc(renderer:^$R,api:API(R),compiler:^shader.Compiler,fonts:^render
         mask_handle,mask_error:=api.ui.create_texture(renderer,sample_desc,transparent[:]); assert(mask_error==.None)
         if cycle==1 { draws[1].pipeline=masked_pipeline; draws[1].mask={enabled=true,texture={handle=mask_handle,desc=sample_desc},sampler=owner.sampler,uv_offset=32,object_alpha_offset=140,cutoff=0.5} }
         picking,picking_error:=render.picking_graph_append(&graph,pipeline,{frame_id,frame_handle,frame_desc},draws[:],id,depth); assert(picking_error=={}); defer render.picking_graph_input_destroy(&picking)
-        composition,composition_error:=render.ui_graph_append(&graph,&owner,&prepared,&mesh,color,color_desc,cycle==0,down); assert(composition_error=={}); defer render.ui_graph_input_destroy(&composition)
+        composition,composition_error:=render.ui_graph_append(&graph,&owner,&prepared,&mesh,color,color_desc,cycle!=1,down); assert(composition_error=={}); defer render.ui_graph_input_destroy(&composition)
         buffers:=make([dynamic]gfx.Buffer_Input); append(&buffers,..picking.buffers); append(&buffers,..composition.buffers); defer delete(buffers)
         textures:=make([dynamic]gfx.Texture_Input); append(&textures,gfx.Texture_Input{color,color_handle},gfx.Texture_Input{id,id_handle},gfx.Texture_Input{depth,depth_handle}); append(&textures,..composition.textures); append(&textures,..picking.textures); defer delete(textures)
         plan,plan_error:=gfx.graph_compile(&graph); assert(plan_error==.None); defer gfx.compiled_graph_destroy(&plan)
@@ -167,7 +186,7 @@ exercise :: proc(renderer:^$R,api:API(R),compiler:^shader.Compiler,fonts:^render
             if complete { break }; time.sleep(time.Millisecond)
         }
         assert(complete,"paired capture completion timed out")
-        foreground:=render.picking_sample(&snapshot,i32(width/2),i32(height/2)); assert(foreground.mapped && foreground.encoded==(7 if cycle==0 else 19) && foreground.entity==draws[1 if cycle==0 else 0].entity)
+        foreground:=render.picking_sample(&snapshot,i32(width/2),i32(height/2)); assert(foreground.mapped && foreground.encoded==(19 if cycle==1 else 7) && foreground.entity==draws[0 if cycle==1 else 1].entity)
         assert(render.picking_sample(&snapshot,0,0).encoded==0)
         assert(pixel(&snapshot,22,42)==[4]u8{255,0,0,255})
         assert(pixel(&snapshot,26,42)==[4]u8{0,255,0,255})
@@ -192,6 +211,13 @@ exercise :: proc(renderer:^$R,api:API(R),compiler:^shader.Compiler,fonts:^render
         for y in 0..<32 { for x in 0..<64 { rgba:=pixel(&snapshot,x,y); if rgba[1]>32 && rgba[2]>32 { glyph_pixels+=1 } } }
         assert(glyph_pixels>100,"actual Swedish glyph raster coverage missing")
         for y in 0..<32 { assert(pixel(&snapshot,65,y)==[4]u8{255,0,0,255},"glyph clipping leaked") }
+        if cycle==2 {
+            label_pixels,value_pixels:=0,0
+            for y in 4..<28 { for x in 160..<312 { rgba:=pixel(&snapshot,x,y); if rgba[1]>100 && rgba[2]>100 { label_pixels+=1 } } }
+            for y in 34..<64 { for x in 249..<312 { rgba:=pixel(&snapshot,x,y); if rgba[1]>100 && rgba[2]>100 { value_pixels+=1 } } }
+            assert(label_pixels>40 && value_pixels>20,"actual shaped truncated label or numeric slider pixels absent")
+            fmt.printf("%s native retained ellipsis and actual numeric slider pixels %d/%d PASS\n",name,label_pixels,value_pixels)
+        }
         if cycle==0 { retained=snapshot } else {
             assert(render.picking_sample(&retained,64,48).entity==draws[1].entity && retained.metadata.width==128 && retained.metadata.frame==1)
             assert(pixel(&retained,30,46)==[4]u8{255,255,0,255},"older paired snapshot changed after nextframe resize")

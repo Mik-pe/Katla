@@ -36,7 +36,9 @@ Renderer :: struct {
     buffers:gfx.Resource_Storage(^Native_Buffer,gfx.Buffer_Kind),
     textures:gfx.Resource_Storage(^Native_Texture,gfx.Texture_Kind),
     samplers:gfx.Resource_Storage(^Native_Sampler,gfx.Sampler_Kind),
+    sampler_cache:[dynamic]^Native_Sampler,
     graphics:gfx.Resource_Storage(^Native_Graphics_Pipeline,gfx.Graphics_Pipeline_Kind),
+    graphics_cache:[dynamic]^Native_Graphics_Pipeline,
     readbacks:gfx.Resource_Storage(^Native_Readback,gfx.Readback_Kind),
     exports:[dynamic]Exported_Image,
     pending_uploads:[dynamic]^Native_Readback,
@@ -46,6 +48,11 @@ Renderer :: struct {
     next_slot:int,
     validation_errors:u32,
     failed:bool,
+    capture:gfx.Capture_Store,
+    capture_handles:map[Capture_Handle_Key]^byte,
+    capture_prepared:^gfx.Prepared_Graph,
+    capture_pass,capture_phase:int,
+    capture_encoder:u64,
     allocator:mem.Allocator,
 }
 @(private="package")
@@ -69,6 +76,7 @@ renderer_init :: proc(r:^Renderer,validation:=false,loader_path:string="",alloca
     }
     loaded:bool; r.loader,loaded=dynlib.load_library(path)
     if !loaded { return .No_Device }
+    gfx.capture_init(&r.capture,allocator);r.capture_handles=make(map[Capture_Handle_Key]^byte,allocator)
     success:=false; defer { if !success { renderer_destroy(r) } }
     address,found:=dynlib.symbol_address(r.loader,"vkGetInstanceProcAddr"); if !found { return .Unsupported }
     get_instance:=cast(vk.ProcGetInstanceProcAddr)address
@@ -148,7 +156,7 @@ renderer_init :: proc(r:^Renderer,validation:=false,loader_path:string="",alloca
     if r.instance_api.CreateDevice(r.physical,&device_info,nil,&r.device)!=.SUCCESS { return .Allocation_Failed }
     load_device_api(&r.table,r.device,r.instance_api.GetDeviceProcAddr,r.allocator)
     r.table.GetDeviceQueue(r.device,r.queue_family,0,&r.queue)
-    gfx.storage_init(&r.readbacks,allocator); r.exports=make([dynamic]Exported_Image,allocator); r.pending_uploads=make([dynamic]^Native_Readback,allocator); gfx.storage_init(&r.graphics,allocator); gfx.storage_init(&r.samplers,allocator); gfx.storage_init(&r.textures,allocator); gfx.storage_init(&r.buffers,allocator); gfx.storage_init(&r.pipelines,allocator); gfx.frames_init(&r.frames,3,allocator)
+    gfx.storage_init(&r.readbacks,allocator); r.exports=make([dynamic]Exported_Image,allocator); r.pending_uploads=make([dynamic]^Native_Readback,allocator); r.graphics_cache=make([dynamic]^Native_Graphics_Pipeline,allocator);r.sampler_cache=make([dynamic]^Native_Sampler,allocator); gfx.storage_init(&r.graphics,allocator); gfx.storage_init(&r.samplers,allocator); gfx.storage_init(&r.textures,allocator); gfx.storage_init(&r.buffers,allocator); gfx.storage_init(&r.pipelines,allocator); gfx.frames_init(&r.frames,3,allocator)
     for &slot in r.slots {
         pool_info:=vk.CommandPoolCreateInfo{sType=.COMMAND_POOL_CREATE_INFO,queueFamilyIndex=r.queue_family}
         if r.table.CreateCommandPool(r.device,&pool_info,nil,&slot.pool)!=.SUCCESS { return .Allocation_Failed }
@@ -214,6 +222,8 @@ renderer_destroy :: proc(r:^Renderer)->gfx.Gpu_Error {
         r.graphics.count=0; gfx.storage_destroy(&r.graphics)
         for &slot in r.pipelines.slots { if slot.occupied { release_pipeline(r,slot.value); slot.occupied=false } }
         r.buffers.count=0; r.pipelines.count=0; gfx.storage_destroy(&r.buffers); gfx.storage_destroy(&r.pipelines)
+        delete(r.graphics_cache)
+        delete(r.sampler_cache)
         if r.frames.slots!=nil { gfx.frames_destroy(&r.frames) }
         r.table.DestroyDevice(r.device,nil)
     }
@@ -221,6 +231,7 @@ renderer_destroy :: proc(r:^Renderer)->gfx.Gpu_Error {
     if r.instance!=nil { r.instance_api.DestroyInstance(r.instance,nil) }
     if r.loader!=nil { dynlib.unload_library(r.loader) }
     if validation_error_count(r)!=0 { outcome=.Native_Failure }
+    capture_clear_handles(r);delete(r.capture_handles);gfx.capture_destroy(&r.capture)
     r^={}; return outcome
 }
 /// Invalidates a registry handle while accepted work retains the underlying allocation.
@@ -240,6 +251,7 @@ create_buffer :: proc(r:^Renderer,desc:gfx.Buffer_Desc)->(gfx.Buffer_Handle,gfx.
     if heap_error!=.None { return {},heap_error }
     if r.table.BindBufferMemory(r.device,object,heap.memory,0)!=.SUCCESS { release_heap(r,heap); return {},.Allocation_Failed }
     buffer:=new(Native_Buffer,r.allocator); buffer^={object=object,memory=heap.memory,mapped=heap.mapped,heap=heap,desc=desc,refs=1}
+    if r.capture.recording { gfx.capture_record(&r.capture,{kind=.Allocation,pass_index=r.capture_pass,phase_index=r.capture_phase,resource_kind=.Auxiliary,resource_index=-1,object=capture_handle(r,5,u64(object)),heap=gfx.capture_object(&r.capture,heap),offset=0,size=heap.size,alignment=u64(requirements.alignment),memory_type=heap.memory_type,memory_flags=u64(transmute(u32)r.memory_properties.memoryTypes[heap.memory_type].propertyFlags),emitted=true,label="vkBindBufferMemory",reason="actual buffer bound to accepted allocation"}) }
     success=true; return gfx.storage_insert(&r.buffers,buffer),.None
 }
 /// Checks generational identity, pending native use and byte bounds before CPU mutation.

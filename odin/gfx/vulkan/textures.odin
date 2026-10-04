@@ -30,6 +30,7 @@ texture_format :: proc(format:gfx.Texture_Format)->vk.Format {
     case .RGBA8_Unorm: return .R8G8B8A8_UNORM
     case .BGRA8_Unorm: return .B8G8R8A8_UNORM
     case .RGBA16_Float: return .R16G16B16A16_SFLOAT
+    case .RGBA16_Unorm: return .R16G16B16A16_UNORM
     case .R32_Uint: return .R32_UINT
     case .D32_Float: return .D32_SFLOAT
     case .D24_Unorm_S8_Uint: return .D24_UNORM_S8_UINT

@@ -73,14 +73,18 @@ exercise_models :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Captur
         baseline_again:=model_pixels(&consumer,capture,frame); defer gfx.readback_data_destroy(&baseline_again); assert(mem.compare(before.bytes,baseline_again.bytes)==0)
         saved,save_history:=app.scene_file_execute(&owner,{action=.Save,path="model.katla",has_path=true}); defer editor.tool_result_destroy(&saved); defer editor.undo_group_destroy(&save_history); assert(saved.error==.None)
         old_cache:=consumer.active
+        primitive_count:=len(consumer.active.models.batch.entries)
         consumer.model_config.operations.create_sampler=fail_model_sampler
         rejected,rejected_history:=app.scene_file_execute(&owner,{action=.Load,path="model.katla",has_path=true}); defer editor.tool_result_destroy(&rejected); defer editor.undo_group_destroy(&rejected_history)
         assert(rejected.error!=.None && consumer.last_error.gpu==.Allocation_Failed && consumer.active==old_cache && owner.world.live_count==1 && ecs.entity_exists(&owner.world,entity))
         consumer.model_config.operations.create_sampler=model_operations.create_sampler
         preserved:=model_pixels(&consumer,capture,frame); defer gfx.readback_data_destroy(&preserved); assert(mem.compare(before.bytes,preserved.bytes)==0)
         loaded,load_history:=app.scene_file_execute(&owner,{action=.Load,path="model.katla",has_path=true}); defer editor.tool_result_destroy(&loaded); defer editor.undo_group_destroy(&load_history)
-        assert(loaded.error==.None && len(loaded.entities)==1 && !ecs.entity_exists(&owner.world,entity) && consumer.active!=old_cache)
-        entity=loaded.entities[0]
+        assert(loaded.error==.None && len(loaded.entities)==1+primitive_count && !ecs.entity_exists(&owner.world,entity) && consumer.active!=old_cache)
+        controllers:=0
+        for id in loaded.entities { controller,present:=ecs.get_component(&owner.world,id,app.Scene_Model);if present && controller.source.kind==.Group { entity=id;controllers+=1 } }
+        assert(controllers==1)
+        for child in loaded.entities { if child==entity {continue};selected,has_selected:=ecs.get_component(&owner.world,child,app.Scene_Model);parent,has_parent:=ecs.get_component(&owner.world,child,app.Scene_Parent);assert(has_selected && selected.source.kind==.Primitive && has_parent && parent.entity==entity) }
         restored:=model_pixels(&consumer,capture,frame); defer gfx.readback_data_destroy(&restored); assert(mem.compare(before.bytes,restored.bytes)==0)
         fmt.println("Native model material shared undo/redo and actual .katla staged load failure/success preserved every pixel:",path)
         if path=="models/Fox.glb" {

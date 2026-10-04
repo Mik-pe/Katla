@@ -32,6 +32,7 @@ retire_slot :: proc(r:^Renderer,slot:^Native_Frame)->gfx.Gpu_Error {
     done,failed:=completion.done,completion.failed
     sync.mutex_unlock(&completion.mutex)
     if !done { return .Busy }
+    gfx.capture_feedback(&r.capture,slot.submission,.Failed if failed else .Completed)
     if failed { log.error("Metal 4 terminal GPU failure",completion.code,string(completion.message[:completion.message_length])); r.failed=true }
     frame_error:=gfx.frame_completed(&r.frames,slot.token,slot.submission)
     clear_frame(r,slot,true)
@@ -104,11 +105,14 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
     if journal_error!=.None { return {},journal_error,.None }
     defer journal_destroy(r,journals)
     if r.frames.next_submission==max(u64) { return {},.Native_Failure,.None }
+    gfx.capture_begin(&r.capture,.Metal,token,g,plan)
     index:=token.slot
     slot:=&r.slots[index]; slot.token=token
+    slot.capture_pass= -1;slot.capture_phase= -1;slot.capture_stages=0;slot.capture_encoder=0;slot.capture_pipeline=0;slot.capture_layout=0
+    capture_expectations(r,&prepared)
     committed:=false
     defer {
-        if !committed { clear_frame(r,slot,false); gfx.frame_abort(&r.frames,token) }
+        if !committed { gfx.capture_abandon(&r.capture); clear_frame(r,slot,false); gfx.frame_abort(&r.frames,token) }
     }
     send(nil,slot.allocator,"reset")
     slot.command=send(^NS.Object,r.device,"newCommandBuffer")
@@ -120,31 +124,38 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
     for input in prepared.buffers {
         entry,ok:=gfx.storage_get(&r.buffers,input.handle); if !ok { return {},.Invalid_Resource,.None }
         buffer:=entry^; buffer.refs+=1; append(&slot.buffers,buffer)
-        send(nil,slot.residency,"addAllocation:",buffer.object)
-        if buffer.heap!=nil { send(nil,slot.residency,"addAllocation:",buffer.heap.object) }
+        capture_allocation(r,slot,cast(^NS.Object)buffer.object,.Buffer,input.resource.index,buffer.heap)
+        capture_residency(r,slot,cast(^NS.Object)buffer.object)
+        if buffer.heap!=nil { capture_residency(r,slot,cast(^NS.Object)buffer.heap.object) }
     }
     for input in prepared.textures {
         entry,ok:=gfx.storage_get(&r.textures,input.handle); if !ok { return {},.Invalid_Resource,.None }
-        texture:=entry^; retained:=false
+        texture:=entry^
+        capture_allocation(r,slot,cast(^NS.Object)texture.object,.Image,input.resource.index,texture.heap)
+        retained:=false
         for previous in slot.textures { if previous==texture { retained=true; break } }
         if retained { continue }
         texture.refs+=1; append(&slot.textures,texture)
-        send(nil,slot.residency,"addAllocation:",texture.object)
-        if texture.heap!=nil { send(nil,slot.residency,"addAllocation:",texture.heap.object) }
+        capture_residency(r,slot,cast(^NS.Object)texture.object)
+        if texture.heap!=nil { capture_residency(r,slot,cast(^NS.Object)texture.heap.object) }
     }
     send(nil,slot.command,"beginCommandBufferWithAllocator:",slot.allocator)
     send(nil,slot.command,"useResidencySet:",slot.residency)
     for pass in prepared.passes {
+        slot.capture_pass=pass.id.index;slot.capture_phase= -1;slot.capture_stages=0
+        capture_emit(r,slot,{kind=.Pass_Begin,resource_index= -1,emitted=true,label=g.passes[pass.id.index].name})
         if packet,rendering:=pass.packet.(gfx.Render); rendering {
-            err:=encode_render(r,slot,&prepared,pass,packet); if err!=.None { return {},err,.None }; continue
+            err:=encode_render(r,slot,&prepared,pass,packet); if err!=.None { return {},err,.None }; capture_emit(r,slot,{kind=.Pass_End,resource_index= -1,emitted=true,label=g.passes[pass.id.index].name}); continue
         }
         encoder:=send(^NS.Object,slot.command,"computeCommandEncoder")
         if encoder==nil { return {},.Allocation_Failed,.None }
+        capture_encoder_begin(r,slot,encoder,"MTL4 compute encoder")
         visibility:=NS.UInteger(1)
         for buffer in slot.buffers { if buffer.heap!=nil { visibility|=2 } }
         for texture in slot.textures { if texture.heap!=nil { visibility|=2 } }
         for alias in prepared.aliases { if alias.after==pass.id { visibility|=2 } }
         send(nil,encoder,"barrierAfterQueueStages:beforeStages:visibilityOptions:",NS.UInteger(max(int)),NS.UInteger(max(int)),visibility)
+        capture_barrier(r,slot,visibility,&prepared)
         #partial switch packet in pass.packet {
         case gfx.Dispatch:
             err:=encode_dispatch(r,slot,&prepared,encoder,packet)
@@ -156,18 +167,22 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
             err:=encode_mips(r,slot,&prepared,encoder,packet)
             if err!=.None { send(nil,encoder,"endEncoding"); return {},err,.None }
         case gfx.Copy_Image_Buffer:
-            err:=encode_image_copy(r,encoder,&prepared,packet)
+            err:=encode_image_copy(r,slot,encoder,&prepared,packet)
             if err!=.None { send(nil,encoder,"endEncoding"); return {},err,.None }
         case gfx.Copy_Buffer_Image:
-            err:=encode_buffer_image_copy(r,encoder,&prepared,packet)
+            err:=encode_buffer_image_copy(r,slot,encoder,&prepared,packet)
             if err!=.None { send(nil,encoder,"endEncoding"); return {},err,.None }
         case gfx.Copy_Buffer:
             source,source_ok:=resolve_buffer(r,&prepared,packet.source)
             destination,destination_ok:=resolve_buffer(r,&prepared,packet.destination)
             if !source_ok || !destination_ok { send(nil,encoder,"endEncoding"); return {},.Invalid_Resource,.None }
             send(nil,encoder,"copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:",source.object,NS.UInteger(packet.source_offset),destination.object,NS.UInteger(packet.destination_offset),NS.UInteger(packet.size))
+            capture_transfer_buffer(r,slot,cast(^NS.Object)source.object,packet.source,{packet.source_offset,packet.size},0)
+            capture_transfer_buffer(r,slot,cast(^NS.Object)destination.object,packet.destination,{packet.destination_offset,packet.size},1)
         }
         send(nil,encoder,"endEncoding")
+        capture_encoder_end(r,slot)
+        capture_emit(r,slot,{kind=.Pass_End,resource_index= -1,emitted=true,label=g.passes[pass.id.index].name})
     }
     send(nil,slot.command,"endCommandBuffer")
     send(nil,slot.residency,"commit"); send(nil,slot.residency,"requestResidency"); slot.resident=true
@@ -191,9 +206,13 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
     send(nil,r.queue,"commit:count:options:",raw_data(commands[:]),NS.UInteger(1),slot.options)
     submission,frame_error:=gfx.frame_submitted(&r.frames,token)
     slot.submission=submission; committed=true
+    slot.capture_pass= -1
+    capture_emit(r,slot,{kind=.Submit,resource_index= -1,object=gfx.capture_object(&r.capture,slot.command),emitted=true,label="Metal queue commit"})
+    gfx.capture_accept(&r.capture,gfx.Submission{r,token,submission})
     if frame_error!=.None {
         sync.wait_group_wait(&slot.completion.wait_group)
         sync.mutex_lock(&slot.completion.mutex); sync.mutex_unlock(&slot.completion.mutex)
+        capture_completion(r,slot)
         clear_frame(r,slot,true); gfx.frame_abort(&r.frames,token)
         r.failed=true; log.error("Accepted Metal submission lost its frame token")
         return {},.Native_Failure,.None

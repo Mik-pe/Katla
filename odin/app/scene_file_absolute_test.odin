@@ -23,7 +23,7 @@ test_external_scene_file_origins_rebase_actual_assets_and_save_metadata :: proc(
     testing.expect_value(t,os.write_entire_file(source_file,`(version:3,name:"External",author:"Ada",created_at:"123",engine_version:"old",next_entity_id:2,entities:[(id:1,transform:(),source:MeshAsset(path:Scene("objects/cube.katmesh")),perspective:(fov:75,near:0.1,aspect_ratio:1.5))])`),os.Error(nil))
     owner:Authoring; authoring_init(&owner); defer authoring_destroy(&owner); testing.expect_value(t,authoring_services_init(&owner),editor.Scene_Error.None); testing.expect_value(t,asset_resources_init(&owner,project,resource),resources.Error.None)
     loaded,load_group:=scene_file_execute(&owner,{action=.Load,path=source_file,has_path=true}); defer editor.tool_result_destroy(&loaded); defer editor.undo_group_destroy(&load_group)
-    testing.expect_value(t,loaded.error,editor.Scene_Error.None); testing.expect(t,len(loaded.entities)==1); if len(loaded.entities)!=1 { return }
+    testing.expect_value(t,loaded.error,editor.Scene_Error.None); testing.expect(t,len(loaded.entities)==1); if len(loaded.entities)!=2 { return }
     id:=loaded.entities[0]; mesh,present:=ecs.get_component(&owner.world,id,Scene_Mesh); testing.expect(t,present && mesh.source.root==.File && mesh.source.path==mesh_file && len(mesh.geometry.vertices)>0)
     destination:=strings.concatenate({directory,"/destination/renamed.scene"}); defer delete(destination)
     before:=time.to_unix_seconds(time.now()); saved,save_group:=scene_file_execute(&owner,{action=.Save,path=destination,has_path=true}); defer editor.tool_result_destroy(&saved); defer editor.undo_group_destroy(&save_group); testing.expect_value(t,saved.error,editor.Scene_Error.None)
@@ -68,14 +68,16 @@ external_document_sources :: proc(t:^testing.T,native:bool) {
     testing.expect_value(t,rejected.error,editor.Scene_Error.Invalid_Operation); testing.expect(t,ecs.entity_exists(&owner.world,before) && owner.world.live_count==1)
     unauthorized,unauthorized_error:=script_source_read(&owner,{path=script_file,root=.File}); delete(unauthorized); testing.expect(t,unauthorized_error==.Invalid_Field_Value)
     ecs.remove_resource(&owner.world,Scene_Participant)
-    loaded,load_group:=scene_file_execute(&owner,{action=.Load,path=path,has_path=true}); defer editor.tool_result_destroy(&loaded); defer editor.undo_group_destroy(&load_group); testing.expect_value(t,loaded.error,editor.Scene_Error.None); testing.expect(t,len(loaded.entities)==1 && !ecs.entity_exists(&owner.world,before)); if len(loaded.entities)!=1 { return }
-    id:=loaded.entities[0]; imported,has_model:=ecs.get_component(&owner.world,id,Scene_Model); testing.expect(t,has_model && imported.source.root==.File && imported.source.path==model && len(imported.model.primitives)>0)
+    loaded,load_group:=scene_file_execute(&owner,{action=.Load,path=path,has_path=true}); defer editor.tool_result_destroy(&loaded); defer editor.undo_group_destroy(&load_group); testing.expect_value(t,loaded.error,editor.Scene_Error.None); testing.expect(t,len(loaded.entities)==2 && !ecs.entity_exists(&owner.world,before)); if len(loaded.entities)!=2 { return }
+    id:ecs.Entity_Id
+    for entity in loaded.entities { if candidate,present:=ecs.get_component(&owner.world,entity,Scene_Model); present && candidate.source.kind==.Group { id=entity; break } }
+    imported,has_model:=ecs.get_component(&owner.world,id,Scene_Model); testing.expect(t,has_model && imported.source.root==.File && imported.source.path==model && len(imported.model.primitives)>0)
     source,has_script:=ecs.get_component(&owner.world,id,Script_Component); testing.expect(t,has_script && source.root==.File && source.path==script_file)
     bytes,read_error:=script_source_read(&owner,source); defer delete(bytes); testing.expect(t,read_error==.None && string(bytes)=="speed=3")
     source_audio,has_audio:=ecs.get_component(&owner.world,id,Audio_Source); metadata,metadata_error:=audio_source_metadata(&owner,source_audio); testing.expect(t,has_audio && source_audio.root==.File && source_audio.path==audio_file && metadata_error==.None && metadata.frames==4800)
     if native {
         played,play_group:=simulation_execute(&owner,.Play); defer editor.tool_result_destroy(&played); defer editor.undo_group_destroy(&play_group); testing.expect(t,played.error==.None && owner.mode==.Playing)
-        stopped,stop_group:=simulation_execute(&owner,.Stop); defer editor.tool_result_destroy(&stopped); defer editor.undo_group_destroy(&stop_group); testing.expect(t,stopped.error==.None && owner.mode==.Editing && !ecs.entity_exists(&owner.world,id) && owner.world.live_count==1)
+        stopped,stop_group:=simulation_execute(&owner,.Stop); defer editor.tool_result_destroy(&stopped); defer editor.undo_group_destroy(&stop_group); testing.expect(t,stopped.error==.None && owner.mode==.Editing && !ecs.entity_exists(&owner.world,id) && owner.world.live_count==2)
     }
 }
 

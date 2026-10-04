@@ -9,8 +9,11 @@ import "core:fmt"
 import "core:time"
 
 window_clear :: proc(renderer:^gpu.Renderer,view:rawptr,width,height:u32,color:[4]f64,resize:bool,ticket:^gfx.Readback_Ticket) {
+    next_slot,next_submission,next_generation:=renderer.next_slot,renderer.frames.next_submission,renderer.surface.next_generation
     if resize { assert(gpu.attach_surface(renderer,{view=view,width=width,height=height})==.None) }
+    assert(renderer.next_slot==next_slot && renderer.frames.next_submission==next_submission && renderer.surface.next_generation==next_generation)
     token,acquired:=gpu.acquire(renderer); assert(acquired==.None)
+    assert(token.slot==next_slot)
     abandoned,status,surface_error:=gpu.acquire_surface(renderer); assert(status==.Presented && surface_error==.None)
     assert(gpu.abort_surface(renderer,abandoned)==.None)
     assert(gpu.abort(renderer,token)==.None)
@@ -28,6 +31,7 @@ window_clear :: proc(renderer:^gpu.Renderer,view:rawptr,width,height:u32,color:[
     plan,plan_error:=gfx.graph_compile(&graph); assert(plan_error==.None); defer gfx.compiled_graph_destroy(&plan)
     submission,native_error,packet_error:=gpu.submit(renderer,token,&graph,&plan,nil,{{image,frame.texture}})
     assert(native_error==.None && packet_error==.None)
+    assert(submission.id>next_submission && renderer.next_slot==(next_slot+1)%len(renderer.slots))
     source,source_error:=gpu.graph_texture_source(renderer,submission,image); assert(source_error==.None)
     if ticket!=nil {
         ticket^,source_error=gpu.queue_texture_readback(renderer,source,{0,0,0,0,frame.width,frame.height,.Color,0,1,0,0}); assert(source_error==.None)
@@ -57,7 +61,7 @@ run_window :: proc(renderer:^gpu.Renderer) {
                 i:=int(u64(y)*data.row_pitch+u64(x)*4)
                 assert(data.bytes[i]==191 && data.bytes[i+1]==128 && data.bytes[i+2]==64 && data.bytes[i+3]==255)
             } }
-            fmt.println("Window: acquired-image abort/reacquire, accepted present, resize and retained BGRA pixels verified",data.region.width,data.region.height)
+            fmt.println("Window: swapchain resize preserves next frame slot, submission sequence and surface generations; abort/reacquire, accepted present and retained BGRA pixels verified",data.region.width,data.region.height)
             gfx.readback_data_destroy(&data); completed=true; break
         }
         time.sleep(time.Millisecond)

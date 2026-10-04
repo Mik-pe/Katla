@@ -38,7 +38,13 @@ scene_export_mesh :: proc(app:^Authoring,row:Scene_Entity,fields:^json.Object,or
     if scene_row_has(row,"SceneModel") {
         value,decoded:=scene_row_owned_decode(app,row,"SceneModel"); defer scene_row_owned_destroy(app,"SceneModel",value); if !decoded { return .Decode_Failed }
         source:=(cast(^Scene_Model)value).source; path,valid:=scene_asset_reference(app,source.path,source.root,origin); if !valid { return .Invalid_Operation }; defer json.destroy_value(path)
-        descriptor:=trigger_json_value(struct {GltfModel:struct {path:json.Value}}{{path}}); if descriptor==nil { return .Decode_Failed }; scene_json_put(fields,"source",descriptor); return .None
+        descriptor:json.Value
+        switch source.kind {
+        case .Model: descriptor=trigger_json_value(struct {GltfModel:struct {path:json.Value}}{{path}})
+        case .Group: descriptor=trigger_json_value(struct {GltfGroup:struct {path:json.Value}}{{path}})
+        case .Primitive: descriptor=trigger_json_value(struct {GltfPrimitive:struct {path:json.Value,node_index,primitive_index:u32}}{{path,source.node_index,source.primitive_index}})
+        }
+        if descriptor==nil { return .Decode_Failed }; scene_json_put(fields,"source",descriptor); return .None
     }
     if !scene_row_has(row,"SceneMesh") {
         source:="Empty"
@@ -96,8 +102,24 @@ scene_document_encode :: proc(app:^Authoring,snapshot:^Scene_Snapshot,name,origi
         if err:=scene_export_mesh(app,row,&fields,origin); err!=.None { return nil,err }
         if scene_row_has(row,"SurfaceMaterial") {
             value,ok:=scene_row_owned_decode(app,row,"SurfaceMaterial"); defer scene_row_owned_destroy(app,"SurfaceMaterial",value); if !ok { return nil,.Decode_Failed }
-            surface:=(cast(^Surface_Material)value)^; descriptor:=trigger_json_value(struct {metallic,roughness,ao:f32}{surface.metallic,surface.roughness,surface.ao})
+            surface:=(cast(^Surface_Material)value)^
+            model:^Scene_Model
+            if scene_row_has(row,"SceneModel") { decoded_model,model_ok:=scene_row_owned_decode(app,row,"SceneModel"); defer scene_row_owned_destroy(app,"SceneModel",decoded_model); if !model_ok { return nil,.Decode_Failed }; model=cast(^Scene_Model)decoded_model
+                effective,effective_error:=material_source_values(surface,model); if effective_error!=.None { return nil,effective_error }
+                surface.linear_color=km.color_to_linear({effective.base_color[0],effective.base_color[1],effective.base_color[2],effective.base_color[3]}); surface.has_tint=true
+                surface.metallic=effective.metallic; surface.roughness=effective.roughness; surface.ao=effective.ao
+                surface.surface={effective.emissive_factor,effective.normal_scale,effective.occlusion_strength,Material_Alpha_Mode(effective.alpha_mode),effective.alpha_cutoff,effective.double_sided}; surface.has_surface=true
+            }
+            descriptor:=trigger_json_value(struct {metallic,roughness,ao:f32}{surface.metallic,surface.roughness,surface.ao})
             if surface.has_tint { object:=descriptor.(json.Object); color:=km.color_to_srgb(surface.linear_color); scene_json_put(&object,"color",trigger_json_value([4]f32{color.r,color.g,color.b,color.a})); descriptor=object }
+            object:=descriptor.(json.Object)
+            if surface.has_surface { scene_json_put(&object,"surface",material_surface_encode(surface.surface)) }
+            if surface.has_sampling { scene_json_put(&object,"sampling",material_sampling_encode(surface.sampling)) }
+            if scene_row_has(row,"MaterialTextures") {
+                sources,sources_ok:=scene_row_owned_decode(app,row,"MaterialTextures"); defer scene_row_owned_destroy(app,"MaterialTextures",sources); if !sources_ok { return nil,.Decode_Failed }
+                textures,textures_ok:=material_textures_encode(app,(cast(^Texture_Assignments)sources)^,origin); if !textures_ok { return nil,.Invalid_Operation }; scene_json_put(&object,"textures",textures)
+            }
+            descriptor=object
             scene_json_put(&fields,"drawable",descriptor)
         }
         if err:=perspective_scene_encode(app,row,&fields); err!=.None { return nil,err }
@@ -112,7 +134,7 @@ scene_document_encode :: proc(app:^Authoring,snapshot:^Scene_Snapshot,name,origi
         }
         for component in row.components {
             known:=false
-            for builtin in ([24]string{"Perspective","AudioSource","AudioEmitter","AudioListener","ReverbZone","PointLight","DirectionalLight","PhysicsJoint","SceneModel","SceneKey","SceneName","SceneTransform","SceneParent","SceneMesh","SurfaceMaterial","SceneUnknown","AnimationPlayer","ParticleEmitter","Script","PhysicsBody","TriggerVolume","TriggerRules","Velocity","SceneSource"}) { if component.name==builtin { known=true; break } }
+            for builtin in ([26]string{"MaterialTextures","MaterialImages","Perspective","AudioSource","AudioEmitter","AudioListener","ReverbZone","PointLight","DirectionalLight","PhysicsJoint","SceneModel","SceneKey","SceneName","SceneTransform","SceneParent","SceneMesh","SurfaceMaterial","SceneUnknown","AnimationPlayer","ParticleEmitter","Script","PhysicsBody","TriggerVolume","TriggerRules","Velocity","SceneSource"}) { if component.name==builtin { known=true; break } }
             if component.name=="AnimationModel" && scene_row_has(row,"SceneModel") { known=true }
             if component.name=="SceneMesh" && !scene_mesh_has_builtin_source(component.data) { known=false }
             if known { continue }

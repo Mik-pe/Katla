@@ -12,7 +12,7 @@ import "core:slice"
 /// Import failures reject the entire candidate before scene publication.
 Gltf_Error :: enum { None, IO, Invalid_Path, Invalid_Data, Invalid_Accessor, Invalid_Geometry, Invalid_Animation, Invalid_Skin, Unsupported, Limit, Allocation, Parse, Validation }
 /// Imported images retain encoded source bytes; native image decoding/upload has a separate owner.
-Gltf_Image :: struct { name,mime:string, encoded:[]byte, source_path:string }
+Gltf_Image :: struct { name,mime:string, encoded:[]byte, source_path,origin:string }
 Gltf_Sampler :: struct { min_filter,mag_filter,wrap_s,wrap_t:i32 }
 Gltf_Texture :: struct { image,sampler:i32 }
 /// Texture indices reference model.textures; -1 means no texture.
@@ -37,7 +37,7 @@ Gltf_Material :: struct {
 /// Morph deltas are separate from immutable bind geometry.
 Gltf_Morph :: struct { position,normal,tangent:[]km.Vec3 }
 /// Skin attributes index the selected node's skin.joints, never global node IDs.
-Gltf_Primitive :: struct { mesh:u32, material:i32, geometry:Mesh_Geometry, joints:[][4]u16, weights:[][4]f32, colors:[]km.Vec4, uv_sets:[][]km.Vec2, morphs:[]Gltf_Morph }
+Gltf_Primitive :: struct { mesh:u32, material:i32, tangent_generated:bool,tangent_uv:Gltf_Texture_View, geometry:Mesh_Geometry, joints:[][4]u16, weights:[][4]f32, colors:[]km.Vec4, uv_sets:[][]km.Vec2, morphs:[]Gltf_Morph }
 /// Original global node indices are preserved across meshes, skins and animation channels.
 Gltf_Node :: struct { name:string, parent,mesh,skin:i32, local:km.Transform, local_matrix,world_matrix:km.Mat4, matrix_authored:bool, weights:[]f32 }
 Gltf_Skin :: struct { name:string, joints:[]u32, inverse_bind:[]km.Mat4, skeleton:i32 }
@@ -71,7 +71,7 @@ gltf_model_destroy :: proc(model:^Gltf_Model) {
     for node in model.nodes { delete(node.name); delete(node.weights) }
     for skin in model.skins { delete(skin.name); delete(skin.joints); delete(skin.inverse_bind) }
     for material in model.materials { delete(material.name) }
-    for image in model.images { delete(image.name); delete(image.mime); delete(image.encoded); delete(image.source_path) }
+    for image in model.images { delete(image.name); delete(image.mime); delete(image.encoded); delete(image.source_path); delete(image.origin) }
     for scene in model.scenes { delete(scene.name); delete(scene.roots) }
     animation_model_destroy(&model.animation)
     delete(model.primitives); delete(model.nodes); delete(model.skins); delete(model.materials); delete(model.images); delete(model.textures); delete(model.samplers); delete(model.scenes)
@@ -91,7 +91,7 @@ gltf_model_clone :: proc(source:^Gltf_Model,allocator:=context.allocator)->Gltf_
     for &node in result.nodes { node.name=strings.clone(node.name); node.weights=slice.clone(node.weights) }
     for &skin in result.skins { skin.name=strings.clone(skin.name); skin.joints=slice.clone(skin.joints); skin.inverse_bind=slice.clone(skin.inverse_bind) }
     for &material in result.materials { material.name=strings.clone(material.name) }
-    for &image in result.images { image.name=strings.clone(image.name); image.mime=strings.clone(image.mime); image.encoded=slice.clone(image.encoded); image.source_path=strings.clone(image.source_path) }
+    for &image in result.images { image.name=strings.clone(image.name); image.mime=strings.clone(image.mime); image.encoded=slice.clone(image.encoded); image.source_path=strings.clone(image.source_path); image.origin=strings.clone(image.origin) }
     for &scene in result.scenes { scene.name=strings.clone(scene.name); scene.roots=slice.clone(scene.roots) }
     animation_model_clone(&result.animation,&source.animation)
     return result

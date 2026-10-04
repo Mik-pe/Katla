@@ -18,7 +18,7 @@ PRIMARY_TOOLS = frozenset({
     "add_component", "animation", "behavior", "create_resource", "destroy_entity",
     "duplicate_entity", "editor_view", "get_component_attributes", "get_scene_hierarchy",
     "list_available_components", "list_resources", "load_scene", "material", "prefab",
-    "query_entities", "read_resource", "save_scene", "search_assets", "set_field",
+    "material_asset", "query_entities", "read_resource", "save_scene", "search_assets", "set_field",
     "set_parent", "simulation", "spawn_entity", "spawn_model", "trigger", "write_resource",
 })
 
@@ -88,7 +88,7 @@ def run(sanitize=False, manifest=None):
             one = Client(proxy, endpoint, environment)
             assert one.request("server/discover")["supportedVersions"] == ["2026-07-28"]
             names = {tool["name"] for tool in one.request("tools/list")["tools"]}
-            assert PRIMARY_TOOLS <= names and names == PRIMARY_TOOLS | {"remove_component"}
+            assert PRIMARY_TOOLS <= names and names == PRIMARY_TOOLS | {"remove_component", "generate_resource"}
             assert names == {tool["name"] for tool in json.loads((ROOT / "odin/agent/tools.json").read_text())}
             first = one.tool("spawn_entity", name="ÅNGSTRÖM shared sphere", position=[1, 2, 3], rotation=[0, 90, 0], scale=[1, 1, 1], shape="sphere")["entity_ids"][0]
             second = one.tool("duplicate_entity", entity_id=first, position_offset=[2, 0, 0])["entity_ids"][0]
@@ -105,7 +105,12 @@ def run(sanitize=False, manifest=None):
             one.tool("create_resource", path="resources/shared.txt", content="first content")
             one.tool("write_resource", path="resources/shared.txt", content="replacement content")
             assert (project / "resources/shared.txt").read_text() == "replacement content"
+            one.tool("generate_resource", path="resources/shared-generated.json", resource_type="particle_system", description="rain")
             two = Client(proxy, endpoint, environment)
+            generated = json.loads(two.tool("read_resource", path="resources/shared-generated.json")["data"]["content"])
+            assert generated["emit_rate"] == 500
+            two.tool("behavior", action="set_particles", entity_id=first, document=generated)
+            assert two.tool("behavior", action="inspect", entity_id=first)["data"]["particles"] == generated
             assert set(two.tool("query_entities")["entity_ids"]) == {first, second}
             assert len(two.tool("query_entities", position=[1, 2, 3], radius=0.1)["entity_ids"]) == 1
             hierarchy = two.tool("get_scene_hierarchy")["data"]["entities"]
@@ -116,7 +121,7 @@ def run(sanitize=False, manifest=None):
             assert owner.wait(timeout=5) == 0, owner.stderr.read().decode()
             assert not endpoint.exists(), "Only owned listener endpoint must be cleaned up"
             assert owner.stdout.read() == b"", "MCP-owner lifecycle output must never contaminate protocol stdout"
-            print("PASS real two-process stdio/MCP socket: frozen primary 25-tool contract plus Odin remove_component, exact string IDs, actual primitive/duplicate/spatial query/hierarchy/resource writes, shared world survives independent disconnect and captured-owner cleanup")
+            print("PASS real two-process stdio/MCP socket: 26 primary tools plus generation and Odin remove_component (28 tools), exact string IDs, actual primitive/duplicate/spatial query/hierarchy/resource writes and generated actual particle attachment, shared world survives independent disconnect and captured-owner cleanup")
         finally:
             if owner.poll() is None:
                 owner.terminate(); owner.wait(timeout=3)

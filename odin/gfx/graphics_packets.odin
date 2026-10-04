@@ -23,13 +23,15 @@ packet_image_accesses :: proc(g:^Graph,packet:Packet,allocator:mem.Allocator)->[
         for binding in p.images { copy(result[index:],binding.accesses); index+=len(binding.accesses) }
         return result
     case Render:
-        count:=len(p.colors)+int(p.depth.enabled); for binding in p.images { count+=len(binding.accesses) }
-        result:=make([]Image_Access,count,allocator)
-        index:int
-        for color in p.colors { result[index]=color.access; index+=1 }
-        if p.depth.enabled { result[index]=p.depth.access; index+=1 }
-        for binding in p.images { copy(result[index:],binding.accesses); index+=len(binding.accesses) }
-        return result
+        accesses:=make([dynamic]Image_Access,allocator);defer delete(accesses)
+        for color in p.colors { append(&accesses,color.access) }
+        if p.depth.enabled { append(&accesses,p.depth.access) }
+        for phase in p.phases {
+            effective:=phase_effective_images(p.images,phase.images,allocator)
+            for binding in effective { for access in binding.accesses { append_image_access_unique(&accesses,access) } }
+            delete(effective,allocator)
+        }
+        return clone_slice(accesses[:],allocator)
     case Generate_Mips:
         base:=p.range; base.mip_count=1
         rest:=p.range; rest.base_mip+=1; rest.mip_count-=1
@@ -77,24 +79,21 @@ validate_render_packet :: proc(g:^Graph,pass:Graph_Pass,p:Render)->Packet_Error 
         }
         if phase.scissor.enabled && (phase.scissor.width==0 || phase.scissor.height==0 || phase.scissor.x>width || phase.scissor.width>width-phase.scissor.x || phase.scissor.y>height || phase.scissor.height>height-phase.scissor.y) { return .Invalid_Packet }
         for draw in phase.draws { err:=validate_draw_packet(draw); if err!=.None { return err } }
-        err:=validate_constants(phase.constants,p); if err!=.None { return err }
+        image_error:=validate_graphics_images(phase.images,p);if image_error!=.None { return image_error }
+        view:=p;view.images=phase.images
+        sampler_error:=validate_graphics_samplers(phase.samplers,view);if sampler_error!=.None { return sampler_error }
+        view.samplers=phase.samplers
+        err:=validate_constants(phase.constants,view); if err!=.None { return err }
+        err=validate_constants(phase.constants,p);if err!=.None { return err }
+        err=validate_constants(p.constants,view);if err!=.None { return err }
     }
     constant_error:=validate_constants(p.constants,p); if constant_error!=.None { return constant_error }
     for binding,i in p.buffers {
         if binding.stages=={} || .Compute in binding.stages { return .Invalid_Binding }
         for previous in p.buffers[:i] { if previous.group==binding.group && previous.slot==binding.slot { return .Invalid_Binding } }
     }
-    for binding,i in p.images {
-        if binding.stages=={} || .Compute in binding.stages || len(binding.accesses)==0 { return .Invalid_Binding }
-        for previous in p.images[:i] { if previous.group==binding.group && previous.slot==binding.slot { return .Invalid_Binding } }
-        for buffer in p.buffers { if buffer.group==binding.group && buffer.slot==binding.slot { return .Invalid_Binding } }
-    }
-    for binding,i in p.samplers {
-        if binding.stages=={} || .Compute in binding.stages { return .Invalid_Binding }
-        for previous in p.samplers[:i] { if previous.group==binding.group && previous.slot==binding.slot { return .Invalid_Binding } }
-        for buffer in p.buffers { if buffer.group==binding.group && buffer.slot==binding.slot { return .Invalid_Binding } }
-        for image in p.images { if image.group==binding.group && image.slot==binding.slot { return .Invalid_Binding } }
-    }
+    image_error:=validate_graphics_images(p.images,p);if image_error!=.None { return image_error }
+    sampler_error:=validate_graphics_samplers(p.samplers,p);if sampler_error!=.None { return sampler_error }
     if len(p.phases)==0 && (len(p.buffers)>0 || len(p.images)>0 || len(p.samplers)>0 || len(p.constants)>0) { return .Invalid_Packet }
     return .None
 }
@@ -152,7 +151,9 @@ prepare_packet_bindings :: proc(g:^Graph,packet:Packet,buffers:[]Buffer_Input,bu
         if query.pipeline==nil { return .Unsupported_Query }
         buffer_stages:=make([]Shader_Stages,len(p.buffers),g.allocator); defer delete(buffer_stages,g.allocator)
         image_stages:=make([]Shader_Stages,len(p.images),g.allocator); defer delete(image_stages,g.allocator)
+        image_overridden:=make([]bool,len(p.images),g.allocator);defer delete(image_overridden,g.allocator)
         sampler_stages:=make([]Shader_Stages,len(p.samplers),g.allocator); defer delete(sampler_stages,g.allocator)
+        sampler_overridden:=make([]bool,len(p.samplers),g.allocator);defer delete(sampler_overridden,g.allocator)
         for phase in p.phases {
             info,pipeline_ok:=query.pipeline(query.state,phase.pipeline); if !pipeline_ok { return .Invalid_Pipeline }
             if len(info.colors)!=len(p.colors) || info.depth.enabled!=p.depth.enabled { return .Invalid_Pipeline }
@@ -177,14 +178,32 @@ prepare_packet_bindings :: proc(g:^Graph,packet:Packet,buffers:[]Buffer_Input,bu
                 }
                 if !found { return .Missing_Binding }
             }
-            err:=preflight_image_bindings(p.images,info.images,textures,query); if err!=.None { return err }
-            err=preflight_sampler_bindings(p.samplers,info.samplers,query); if err!=.None { return err }
-            for requirement in info.images { for binding,i in p.images { if requirement.group==binding.group && requirement.slot==binding.slot { image_stages[i]|=requirement.stages } } }
-            for requirement in info.samplers { for binding,i in p.samplers { if requirement.group==binding.group && requirement.slot==binding.slot { sampler_stages[i]|=requirement.stages } } }
+            effective_images:=phase_effective_images(p.images,phase.images,g.allocator);defer delete(effective_images,g.allocator)
+            err:=preflight_image_bindings(effective_images,info.images,textures,query); if err!=.None { return err }
+            for override in phase.images {
+                stages:Shader_Stages
+                for requirement in info.images { if requirement.group==override.group && requirement.slot==override.slot { stages|=requirement.stages } }
+                if stages!=override.stages { return .Invalid_Binding }
+            }
+            effective_samplers:=phase_effective_samplers(p.samplers,phase.samplers,g.allocator);defer delete(effective_samplers,g.allocator)
+            err=preflight_sampler_bindings(effective_samplers,info.samplers,query); if err!=.None { return err }
+            for override in phase.samplers {
+                stages:Shader_Stages
+                for requirement in info.samplers { if requirement.group==override.group && requirement.slot==override.slot { stages|=requirement.stages } }
+                if stages!=override.stages { return .Invalid_Binding }
+            }
+            for requirement in info.images { for binding,i in p.images {
+                overridden:=false;for override in phase.images { if override.group==binding.group && override.slot==binding.slot { overridden=true;image_overridden[i]=true;break } }
+                if !overridden && requirement.group==binding.group && requirement.slot==binding.slot { image_stages[i]|=requirement.stages }
+            } }
+            for requirement in info.samplers { for binding,i in p.samplers {
+                overridden:=false;for override in phase.samplers { if override.group==binding.group && override.slot==binding.slot { overridden=true;sampler_overridden[i]=true;break } }
+                if !overridden && requirement.group==binding.group && requirement.slot==binding.slot { sampler_stages[i]|=requirement.stages }
+            } }
         }
         for binding,i in p.buffers { if buffer_stages[i]!=binding.stages { return .Invalid_Binding } }
-        for binding,i in p.images { if image_stages[i]!=binding.stages { return .Invalid_Binding } }
-        for binding,i in p.samplers { if sampler_stages[i]!=binding.stages { return .Invalid_Binding } }
+        for binding,i in p.images { if (!image_overridden[i] || image_stages[i]!={}) && image_stages[i]!=binding.stages { return .Invalid_Binding } }
+        for binding,i in p.samplers { if (!sampler_overridden[i] || sampler_stages[i]!={}) && sampler_stages[i]!=binding.stages { return .Invalid_Binding } }
 
     }
     return .None
@@ -198,6 +217,34 @@ validate_constants :: proc(constants:[]Constant_Binding,render:Render)->Packet_E
         for buffer in render.buffers { if buffer.group==constant.group && buffer.slot==constant.slot { return .Invalid_Binding } }
         for image in render.images { if image.group==constant.group && image.slot==constant.slot { return .Invalid_Binding } }
         for sampler in render.samplers { if sampler.group==constant.group && sampler.slot==constant.slot { return .Invalid_Binding } }
+    }
+    return .None
+}
+
+@(private="package")
+validate_graphics_samplers :: proc(bindings:[]Sampler_Binding,render:Render)->Packet_Error {
+    for binding,i in bindings {
+        if binding.stages=={} || .Compute in binding.stages { return .Invalid_Binding }
+        for previous in bindings[:i] { if previous.group==binding.group && previous.slot==binding.slot { return .Invalid_Binding } }
+        for buffer in render.buffers { if buffer.group==binding.group && buffer.slot==binding.slot { return .Invalid_Binding } }
+        for image in render.images { if image.group==binding.group && image.slot==binding.slot { return .Invalid_Binding } }
+        for constant in render.constants { if constant.group==binding.group && constant.slot==binding.slot { return .Invalid_Binding } }
+    }
+    return .None
+}
+
+@(private="package")
+append_image_access_unique :: proc(accesses:^[dynamic]Image_Access,access:Image_Access) {
+    for previous in accesses { if previous==access { return } };append(accesses,access)
+}
+@(private="package")
+validate_graphics_images :: proc(bindings:[]Image_Binding,render:Render)->Packet_Error {
+    for binding,i in bindings {
+        if binding.stages=={} || .Compute in binding.stages || len(binding.accesses)==0 { return .Invalid_Binding }
+        for previous in bindings[:i] { if previous.group==binding.group && previous.slot==binding.slot { return .Invalid_Binding } }
+        for buffer in render.buffers { if buffer.group==binding.group && buffer.slot==binding.slot { return .Invalid_Binding } }
+        for sampler in render.samplers { if sampler.group==binding.group && sampler.slot==binding.slot { return .Invalid_Binding } }
+        for constant in render.constants { if constant.group==binding.group && constant.slot==binding.slot { return .Invalid_Binding } }
     }
     return .None
 }

@@ -62,11 +62,16 @@ write_image_descriptors :: proc(r:^Renderer,prepared:^gfx.Prepared_Graph,binding
         if !present { return .Invalid_Resource }
         view,error:=texture_view(r,texture,access.range,requirement.arrayed)
         if error!=.None { return error }
+        if r.capture.recording { gfx.capture_expect(&r.capture,{kind=.Bind_Image,pass_index=r.capture_pass,phase_index=r.capture_phase,resource_kind=.Image,resource_index=access.resource.index,group=binding.group,binding=binding.slot,array_index=u32(i),image_range=access.range,new_layout=u64(image_layout(image_use_state(requirement.usage))),binding_stages=u64(transmute(u32)shader_stages(requirement.stages)),emitted=true,label="translated image descriptor"}) }
         infos[i]={imageView=view,imageLayout=image_layout(image_use_state(access.usage))}
     }
     descriptor:=vk.DescriptorType.STORAGE_IMAGE if requirement.usage==.Storage else vk.DescriptorType.SAMPLED_IMAGE
     write:=vk.WriteDescriptorSet{sType=.WRITE_DESCRIPTOR_SET,dstSet=set,dstBinding=binding.slot,descriptorCount=u32(len(infos)),descriptorType=descriptor,pImageInfo=raw_data(infos)}
     r.table.UpdateDescriptorSets(r.device,1,&write,0,nil)
+    if r.capture.recording { for access,i in binding.accesses {
+        texture,_:=resolve_texture(r,prepared,access.resource)
+        gfx.capture_record(&r.capture,{kind=.Bind_Image,pass_index=r.capture_pass,phase_index=r.capture_phase,resource_kind=.Image,resource_index=access.resource.index,object=capture_handle(r,4,u64(texture.allocation.object)),encoder=r.capture_encoder,table=capture_handle(r,1,u64(write.dstSet)),group=binding.group,binding=write.dstBinding,array_index=u32(i),image_range=access.range,new_layout=u64(infos[i].imageLayout),binding_stages=u64(transmute(u32)shader_stages(requirement.stages)),emitted=true,label="vkUpdateDescriptorSets image"})
+    } }
     return .None
 }
 @(private="package")

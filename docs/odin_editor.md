@@ -17,7 +17,7 @@ tracked in [TODO](../TODO.md#odin-port).
 | Hierarchy | Search through collapsed ancestors, selection, create/delete/duplicate, component inspection and cycle-safe reparenting |
 | Inspector | Registered component metadata, actual field editing, add/remove components and one shared agent/gesture undo history |
 | Viewport | Orbit/pan/focus, manual camera takeover, W/E/R transforms, axis-specific snapping and focus-gated game input |
-| Materials | Source textures and PBR factors, sRGB editing, presets, grouped drags including pointer capture outside the control |
+| Materials | Independent primitive surfaces, HDR emission, alpha coverage, five role images and UV/sampler policies, portable reusable material capture/apply, grouped drags with pointer capture |
 | Assets | Confined discovery/read/create/write, supported model formats, reusable mesh/prefab authoring, browser selection and actual spawn/drop consumers |
 | Animation | Model skin/morph sampling, clips, transitions, inspector controls and timeline behavior |
 | Gameplay | Play/Pause/Resume/Stop, restored authored state with remapped identities, real Luau hooks, sandbox, input, events, hot reload and exposed world operations |

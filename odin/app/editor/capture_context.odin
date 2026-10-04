@@ -14,7 +14,7 @@ import "core:slice"
 Capture_Orbit :: struct { target:[3]f32,yaw,pitch,distance:f32 }
 Capture_Camera :: struct { position,direction:[3]f32,view_matrix,projection_matrix:km.Mat4,orbit:Capture_Orbit }
 Capture_Candidate :: struct {
-    entity_id:string,name,parent_id:Maybe(string),encoded:u32,position,bounds_center,bounds_extent:[3]f32,has_bounds:bool,
+    entity_id:string,name,parent_id:Maybe(string),encoded:u32,position,bounds_center,bounds_extent:[3]f32,has_bounds,material_editable:bool,
     world_bounds:km.AABB,distance:f32,screen_rect:Maybe([4]f32),bounds_fully_in_frustum:bool,visibility:string,
 }
 Capture_Context :: struct {
@@ -42,7 +42,7 @@ capture_context :: proc(shell:^Shell,active:int,metadata:render.Picking_Metadata
         bounds,available,bounds_error:=app.scene_drawable_bounds(shell.state.owner,entry.entity)
         if bounds_error!=.None { return nil,false }; if !available { value.renderables_without_bounds+=1; continue }
         if !capture_bounds_visible(vp,bounds) { continue }
-        row:=&rows[count]; row.entity_id=fmt.aprintf("%d",u64(entry.entity),allocator=allocator); row.encoded=entry.encoded
+        row:=&rows[count]; row.entity_id=fmt.aprintf("%d",u64(entry.entity),allocator=allocator); row.encoded=entry.encoded; row.material_editable=app.scene_material_editable(shell.state.owner,entry.entity)
         if name,present:=ecs.get_component(&shell.state.owner.world,entry.entity,app.Scene_Name); present { row.name=name.name }
         if parent,present:=ecs.get_component(&shell.state.owner.world,entry.entity,app.Scene_Parent); present { row.parent_id=fmt.aprintf("%d",u64(parent.entity),allocator=allocator) }
         world,error:=app.scene_world_matrix(shell.state.owner,entry.entity); if error!=.None { return nil,false }; row.position={world[3][0],world[3][1],world[3][2]}

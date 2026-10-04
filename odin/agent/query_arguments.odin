@@ -6,7 +6,7 @@ import "core:unicode/utf8"
 import "core:strconv"
 
 @(private="package")
-query_arguments_validate :: proc(arguments:[]byte,allocator:=context.allocator)->(int,Call_Error) {
+query_arguments_validate :: proc(arguments:[]byte,allocator:=context.allocator,allow_zero:bool=false)->(int,Call_Error) {
     context.allocator=allocator
     if len(arguments)>1<<20 || !utf8.valid_string(string(arguments)) { return 0,.Invalid_JSON }
     tokenizer:=json.make_tokenizer(string(arguments),.JSON,true)
@@ -17,7 +17,7 @@ query_arguments_validate :: proc(arguments:[]byte,allocator:=context.allocator)-
             if limit_key && token.kind!=.Null {
                 if token.kind!=.Integer { return 0,.Invalid_Arguments }
                 value,valid:=parse_entity_id(token.text); if !valid { return 0,.Invalid_Arguments }
-                limit=int(clamp(u64(value),1,256))
+                minimum:=u64(0) if allow_zero else u64(1); limit=int(clamp(u64(value),minimum,256))
             }
             value_expected=false
         }

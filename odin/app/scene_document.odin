@@ -73,11 +73,15 @@ scene_document_mesh :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value,or
         root_name:=asset_root_name(root)
         source_kind:="Recipe"; if kind=="StlModel" { source_kind="Stl" }
         data,err=json.marshal(struct {kind,path,root:string}{source_kind,path,root_name},allocator=app.world.allocator)
-    case "GltfModel":
-        object,is_object:=payload.(json.Object); if !is_object || !recipe_keys(object,{"path"}) { return .Decode_Failed }
+    case "GltfModel","GltfGroup","GltfPrimitive":
+        object,is_object:=payload.(json.Object)
+        allowed:=[3]string{"path","node_index","primitive_index"}; if kind!="GltfPrimitive" { if !is_object || !recipe_keys(object,{"path"}) { return .Decode_Failed } } else if !is_object || !recipe_keys(object,allowed[:]) { return .Decode_Failed }
         path,root,path_valid:=scene_asset_path(app,object["path"],origin); if !path_valid { return .Invalid_Operation }; defer delete(path,app.world.allocator)
+        node_index,primitive_index:u32
+        if kind=="GltfPrimitive" { for name,index in ([2]string{"node_index","primitive_index"}) { number,is_number:=object[name].(json.Integer); if !is_number || number<0 || number>i64(max(u32)) { return .Invalid_Operation }; if index==0 { node_index=u32(number) } else { primitive_index=u32(number) } } }
+        source_kind:="model"; if kind=="GltfGroup" { source_kind="group" }; if kind=="GltfPrimitive" { source_kind="primitive" }
         root_name:=asset_root_name(root)
-        bytes,marshal_error:=json.marshal(struct {path,root:string}{path,root_name},allocator=app.world.allocator)
+        bytes,marshal_error:=json.marshal(struct {path,root,kind:string,node_index,primitive_index:u32}{path,root_name,source_kind,node_index,primitive_index},allocator=app.world.allocator)
         if marshal_error!=nil { return .Decode_Failed }; return scene_row_wire(app,row,"SceneModel",bytes)
     case "Cube","Sphere","Plane","Cylinder","Torus":
         object,is_object:=payload.(json.Object); if !is_object { return .Decode_Failed }
@@ -95,9 +99,9 @@ scene_document_mesh :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value,or
     if err!=nil { delete(data,app.world.allocator); return .Decode_Failed }; return scene_row_wire(app,row,"SceneMesh",data)
 }
 @(private="package")
-scene_document_material :: proc(app:^Authoring,row:^Scene_Entity,raw_value:json.Value)->editor.Scene_Error {
-    object,is_object:=raw_value.(json.Object); if !is_object || !recipe_keys(object,{"color","metallic","roughness","ao"}) { return .Decode_Failed }
-    material:=Surface_Material{roughness=0.5,ao=1}
+scene_document_material :: proc(app:^Authoring,row:^Scene_Entity,raw_value:json.Value,origin:string)->editor.Scene_Error {
+    object,is_object:=raw_value.(json.Object); if !is_object || !recipe_keys(object,{"color","metallic","roughness","ao","surface","sampling","textures"}) { return .Decode_Failed }
+    material:=Surface_Material{roughness=0.5,ao=1,has_factors=true}
     if value,present:=object["color"]; present { if _,is_null:=value.(json.Null); !is_null { color,valid:=recipe_vector(value,4); if !valid { return .Invalid_Field_Value }; for axis in color { if axis<0 || axis>1 { return .Invalid_Field_Value } }; material.linear_color=km.color_to_linear(km.Color{color[0],color[1],color[2],color[3]}); material.has_tint=true } }
     for field in ([3]string{"metallic","roughness","ao"}) {
         value,present:=object[field]; if !present { return .Decode_Failed }; { number,valid:=recipe_number(value); if !valid || number<0 || number>1 { return .Invalid_Field_Value }; switch field {
@@ -106,6 +110,9 @@ scene_document_material :: proc(app:^Authoring,row:^Scene_Entity,raw_value:json.
             case "ao": material.ao=number
             } }
     }
+    if value,present:=object["surface"]; present { if _,is_null:=value.(json.Null); !is_null { surface,valid:=material_surface_decode(value); if !valid { return .Invalid_Field_Value }; material.surface=surface; material.has_surface=true } }
+    if value,present:=object["sampling"]; present { if _,is_null:=value.(json.Null); !is_null { sampling,valid:=material_sampling_decode(value); if !valid { return .Invalid_Field_Value }; material.sampling=sampling; material.has_sampling=true } }
+    if value,present:=object["textures"]; present { if _,is_null:=value.(json.Null); !is_null { textures,valid:=material_textures_decode(app,value,origin); if !valid { return .Invalid_Operation }; defer texture_assignments_destroy(&textures,app.world.allocator); if error:=scene_row_component(app,row,"MaterialTextures",textures); error!=.None { return error } } }
     return scene_row_component(app,row,"SurfaceMaterial",material)
 }
 
@@ -131,7 +138,7 @@ scene_document_decode :: proc(app:^Authoring,document:json.Value,origin:string="
         if value,present:=fields["name"]; present { if _,is_null:=value.(json.Null); !is_null { text,is_text:=value.(string); if !is_text || len(text)>4096 { return {},.Decode_Failed }; if err:=scene_row_component(app,row,"SceneName",Scene_Name{text}); err!=.None { return {},err } } }
         if value,present:=fields["parent"]; present { if _,is_null:=value.(json.Null); !is_null { parent,is_parent:=scene_document_key(value); if !is_parent || parent<=0 || parent>=next || parent==id { return {},.Invalid_Operation }; if err:=scene_row_component(app,row,"SceneParent",Scene_Parent{ecs.Entity_Id(parent)}); err!=.None { return {},err } } }
         if err:=scene_document_mesh(app,row,fields["source"],origin); err!=.None { return {},err }
-        if value,present:=fields["drawable"]; present { if _,is_null:=value.(json.Null); !is_null { if err:=scene_document_material(app,row,value); err!=.None { return {},err } } }
+        if value,present:=fields["drawable"]; present { if _,is_null:=value.(json.Null); !is_null { if err:=scene_document_material(app,row,value,origin); err!=.None { return {},err } } }
         if err:=scene_builtin_components_decode(app,row,fields,origin); err!=.None { return {},err }
         if components,present:=fields["components"]; present {
             extensions,is_extensions:=components.(json.Object); if !is_extensions { return {},.Decode_Failed }

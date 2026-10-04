@@ -40,6 +40,8 @@ inspector_read :: proc(state:^State)->(Inspector,editor.Scene_Error) {
             if entry.inspector_add { append(&result.available,strings.clone(name,state.allocator)) }
             continue
         }
+        visible:=false; for field in entry.fields { if !field.constraints.skip { visible=true; break } }
+        if !visible && !entry.inspector_remove { continue }
         data,error:=editor.editor_component_json(&state.owner.world,entity,entry)
         if error!=.None { inspector_destroy(&result); return {},error }
         tree,parse_error:=ron.parse_json(data,state.allocator); delete(data,state.owner.world.allocator)

@@ -52,8 +52,8 @@ shell_console_text :: proc(shell:^Shell,event:ui.Text_Action,value:string)->bool
 shell_console :: proc(shell:^Shell)->ui.Descriptor {
     console:=&shell.console; controls:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(controls)
     for name,index in ([5]string{"Error","Warn","Info","Debug","Trace"}) { control:=button(name,.Console_Level); control.key=key(80,name); control.payload=u64(index); control.has_background=true; control.background=shell.ctx.theme.active if console.levels[index] else shell.ctx.theme.control; append(&controls,control) }
-    search_key:=key(80,"search"); append(&controls,ui.Descriptor{key=search_key,kind=.Text_Input,placeholder="Filter logs…",state=ui.state(shell.ctx,search_key,0,console.search),action=u64(Action.Console_Search),layout={grow=1,height=ui.pixels(30)}})
-    append(&controls,button("Clear",.Console_Clear))
+    width:=max(1,shell_panel_width(shell)-16)
+    search_key:=key(80,"search"); search_control:=ui.Descriptor{key=search_key,kind=.Text_Input,placeholder="Filter logs…",state=ui.state(shell.ctx,search_key,0,console.search),action=u64(Action.Console_Search),layout={grow=1,height=ui.pixels(30),min_width=ui.pixels(1)}}
     rows:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(rows)
     search:=strings.to_lower(console.search,shell.allocator); defer delete(search,shell.allocator)
     for row in console.rows {
@@ -62,7 +62,14 @@ shell_console :: proc(shell:^Shell)->ui.Descriptor {
         label:=text(81,row.message); label.key=key(81,"log",row.id); label.layout.height={}; label.layout.no_shrink=true; label.has_foreground=true; label.foreground=ui.Color{1,.43,.35,1} if row.level==.Error else ui.Color{1,.75,.35,1} if row.level==.Warn else shell.ctx.theme.text; append(&rows,label)
     }
     if len(rows)==0 { append(&rows,text(80,"No log entries")) }
-    toolbar:=ui.Descriptor{key=key(80,"toolbar"),kind=.Row,layout={gap={4,0},no_shrink=true},children=nodes(shell,controls[:])}
+    toolbar:=ui.Descriptor{key=key(80,"toolbar"),kind=.Row,layout={width=ui.percent(1),gap={4,0},no_shrink=true}}
+    if width<620 {
+        columns:=clamp(int((width+4)/76),1,5);cell:=(width-4*f32(columns-1))/f32(columns)
+        for &control in controls { control.layout.width=ui.pixels(cell) }
+        levels:=ui.Descriptor{key=key(80,"levels"),kind=.Grid,layout={width=ui.percent(1),columns=u32(columns),cell_size={cell,30},gap={4,4},no_shrink=true},children=nodes(shell,controls[:])}
+        clear_button:=button("Clear",.Console_Clear);clear_button.layout.width=ui.pixels(min(56,width*.35))
+        toolbar.kind=.Column;toolbar.layout.gap={0,6};toolbar.children=nodes(shell,{levels,ui.Descriptor{key=key(80,"search-row"),kind=.Row,layout={width=ui.percent(1),gap={4,0},no_shrink=true},children=nodes(shell,{search_control,clear_button})}})
+    } else { append(&controls,search_control,button("Clear",.Console_Clear));toolbar.children=nodes(shell,controls[:]) }
     content:=ui.Descriptor{key=key(80,"scroll"),kind=.Scroll_Area,layout={grow=1},children=nodes(shell,{ui.Descriptor{key=key(80,"logs"),kind=.Column,layout={width=ui.percent(1),gap={0,4}},children=nodes(shell,rows[:])}})}
     return {key=key(80,"panel"),kind=.Column,layout={padding={8,8,8,8},gap={0,6}},children=nodes(shell,{toolbar,content})}
 }

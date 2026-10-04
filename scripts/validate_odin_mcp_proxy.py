@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the real bounded stdio/private-socket executable without any host/model."""
 import argparse
+import errno
 from pathlib import Path
 import socket
 import subprocess
@@ -20,7 +21,7 @@ def run(sanitize=False, slow=False):
         subprocess.run(command, cwd=ROOT, check=True)
         endpoint = Path(directory) / "editor.sock"
 
-        def fixture(handler):
+        def fixture(handler, closed_output=False):
             server = socket.socket(socket.AF_UNIX)
             server.bind(str(endpoint))
             endpoint.chmod(0o600)
@@ -35,6 +36,9 @@ def run(sanitize=False, slow=False):
                         handler(connection)
                 except (BrokenPipeError, ConnectionResetError):
                     pass
+                except OSError as error:
+                    if not (closed_output and error.errno == errno.ENOTCONN):
+                        failures.append(repr(error))
                 except BaseException as error:
                     failures.append(repr(error))
 
@@ -66,7 +70,7 @@ def run(sanitize=False, slow=False):
         proxy.stdin.close()
         cleanup(server, worker, failures)
 
-        server, worker, failures = fixture(lambda connection: connection.sendall(b"x" * (2 << 20)))
+        server, worker, failures = fixture(lambda connection: connection.sendall(b"x" * (2 << 20)), closed_output=True)
         proxy = subprocess.Popen([str(binary), str(endpoint)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         proxy.stdout.close()
         assert proxy.wait(timeout=3) == 1, "Output faults must be an explicit error, never SIGPIPE death"
@@ -84,7 +88,7 @@ def run(sanitize=False, slow=False):
         endpoint.unlink()
 
         if slow:
-            server, worker, failures = fixture(lambda connection: connection.sendall(b"x" * (8 << 20)))
+            server, worker, failures = fixture(lambda connection: connection.sendall(b"x" * (8 << 20)), closed_output=True)
             started = time.monotonic()
             proxy = subprocess.Popen([str(binary), str(endpoint)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             assert proxy.wait(timeout=18) == 1

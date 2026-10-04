@@ -14,6 +14,9 @@ when ODIN_OS==.Windows {
 @(default_calling_convention="c",link_prefix="katla_image_")
 foreign image {
     info_from_memory :: proc(encoded:[^]byte,length:c.int,width,height,channels:^c.int)->c.int ---
+    precision_from_memory :: proc(encoded:[^]byte,length:c.int)->c.int ---
+    load_16_from_memory :: proc(encoded:[^]byte,length:c.int,width,height,channels:^c.int,desired_channels:c.int)->[^]u16 ---
+    load_float_from_memory :: proc(encoded:[^]byte,length:c.int,width,height,channels:^c.int,desired_channels:c.int)->[^]f32 ---
     load_from_memory :: proc(encoded:[^]byte,length:c.int,width,height,channels:^c.int,desired_channels:c.int)->[^]byte ---
     @(link_name="katla_image_free")
     image_free :: proc(pixels:rawptr) ---

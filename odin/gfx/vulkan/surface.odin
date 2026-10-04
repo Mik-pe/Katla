@@ -64,6 +64,7 @@ attach_surface :: proc(r:^Renderer,desc:gfx.Surface_Desc)->gfx.Gpu_Error {
     if !r.swapchain_supported || !r.surface_supported { return .Unsupported }
     if desc.view==nil || desc.width==0 || desc.height==0 { return .Invalid_Range }
     if r.table.DeviceWaitIdle(r.device)!=.SUCCESS { return .Native_Failure }
+    if error:=retire_uploads(r,true);error!=.None { return error }
     for &slot in r.slots {
         if slot.accepted {
             err:=retire_slot(r,&slot,false)
@@ -182,6 +183,7 @@ surface_recording_final :: proc(r:^Renderer,command:vk.CommandBuffer,recording:^
 detach_surface :: proc(r:^Renderer)->gfx.Gpu_Error {
     if r.device==nil { return .Invalid_Resource }
     if r.table.DeviceWaitIdle(r.device)!=.SUCCESS { return .Native_Failure }
+    if error:=retire_uploads(r,true);error!=.None { return error }
     for &slot in r.slots { if slot.accepted { err:=retire_slot(r,&slot,false); if err!=.None { return err } } }
     readback_latch_drain(r); drop_surface_exports(r)
     surface_release(r)

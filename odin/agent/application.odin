@@ -8,8 +8,12 @@ import "core:mem"
 @(private="package")
 decode_application_call :: proc(call:Tool_Call,allocator:mem.Allocator)->(Decoded_Call,Call_Error) {
     switch call.name {
+    case "generate_resource":
+        decoded,err:=resource_generation_decode(call.arguments,allocator); if err!=.None { return {},err }; resource_generation_destroy(&decoded)
     case "material":
         decoded,err:=decode_material(call.arguments,allocator); if err!=.None { return {},err }; decoded_material_destroy(&decoded)
+    case "material_asset":
+        decoded,err:=asset.material_asset_decode(call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; asset.material_asset_destroy(&decoded)
     case "animation":
         decoded,err:=scene.decode_animation(call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; scene.decoded_animation_destroy(&decoded)
     case "simulation":

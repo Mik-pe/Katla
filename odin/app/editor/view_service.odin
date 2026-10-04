@@ -201,7 +201,7 @@ view_committed_metadata :: proc(snapshot:^render.Picking_Snapshot,frozen_context
     for key,value in object { result[key]=value }
     selected,has_selected:=object["selected_entities"].(json.Array); if !has_selected { return nil,false }
     result["selected_entity"]=json.Null{}; if len(selected)>0 { result["selected_entity"]=selected[0] }; result["selected_entity_id"]=result["selected_entity"]
-    limited:=make(json.Array,allocator); defer delete(limited); append(&limited,..candidates[:min(len(candidates),clamp(limit,1,256))])
+    limited:=make(json.Array,allocator); defer delete(limited); append(&limited,..candidates[:min(len(candidates),clamp(limit,0,256))])
     result["frustum_candidates"]=limited; result["candidates"]=limited; result["total"]=json.Integer(len(candidates)); result["candidate_count"]=json.Integer(len(candidates)); result["truncated"]=len(limited)<len(candidates)
     provenance:=View_Provenance{samples=make([dynamic]View_Sample,allocator),color_resource=snapshot.color_source.resource.index,id_resource=snapshot.id_source.resource.index}
     provenance.submission_id=fmt.aprintf("%d",snapshot.submission.id,allocator=allocator); provenance.frame_generation=fmt.aprintf("%d",snapshot.submission.token.generation,allocator=allocator); provenance.color_generation=fmt.aprintf("%d",snapshot.color_source.generation,allocator=allocator); provenance.id_generation=fmt.aprintf("%d",snapshot.id_source.generation,allocator=allocator)

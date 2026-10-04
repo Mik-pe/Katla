@@ -99,7 +99,12 @@ physics_mesh_rotation :: proc(app:^Authoring,entity:ecs.Entity_Id)->(km.Quat,boo
 }
 @(private="package")
 physics_mesh_collect :: proc(app:^Authoring,entity:ecs.Entity_Id,world_matrix:km.Mat4,resolved:^Physics_Resolved_Body)->editor.Scene_Error {
-    mesh,present:=ecs.get_component(&app.world,entity,Scene_Mesh); if !present { return .Component_Not_Found }
+    mesh,present:=ecs.get_component(&app.world,entity,Scene_Mesh)
+    owned_geometry:Mesh_Geometry; defer mesh_geometry_destroy(&owned_geometry)
+    if !present {
+        component:=ecs.get_component_mut(&app.world,entity,Scene_Model); if component==nil { return .Component_Not_Found }
+        geometry,error:=scene_model_collision_geometry(component,app.world.allocator); if error!=.None { return error }; owned_geometry=geometry; mesh.geometry=geometry
+    }
     if len(mesh.geometry.vertices)<3 || len(mesh.geometry.vertices)>MAX_MESH_VERTICES || len(mesh.geometry.indices)==0 || len(mesh.geometry.indices)%3!=0 || len(mesh.geometry.indices)>MAX_MESH_INDICES { return .Invalid_Field_Value }
     rotation,rotation_ok:=physics_mesh_rotation(app,entity); if !rotation_ok { return .Invalid_Operation }
     resolved.position=km.mat4_extract_translation(world_matrix); resolved.rotation=cast([4]f32)rotation

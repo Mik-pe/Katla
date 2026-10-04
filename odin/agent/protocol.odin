@@ -55,7 +55,7 @@ vector_argument :: proc(value:json.Value)->([3]f32,bool) {
 decode_call :: proc(call:Tool_Call,allocator:=context.allocator)->(Decoded_Call,Call_Error) {
     if call.name=="editor_view" { return decode_view_call(call,allocator) }
     switch call.name {
-    case "material","animation","simulation","behavior","trigger","prefab","search_assets","list_resources","read_resource","load_scene","save_scene","create_resource","write_resource":
+    case "generate_resource","material","material_asset","animation","simulation","behavior","trigger","prefab","search_assets","list_resources","read_resource","load_scene","save_scene","create_resource","write_resource":
         return decode_application_call(call,allocator)
     }
     kind:editor.Scene_Op_Kind

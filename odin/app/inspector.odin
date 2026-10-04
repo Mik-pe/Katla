@@ -53,7 +53,9 @@ material_gesture_preview :: proc(app:^Authoring,gesture:^Material_Gesture,fields
 /// Cancels the whole live gesture atomically, preserving unrelated component edits.
 material_gesture_cancel :: proc(app:^Authoring,gesture:^Material_Gesture)->editor.Scene_Error {
     error:=material_gesture_preflight(app,gesture); if error!=.None { return error }
-    for edit in gesture.edits { ecs.get_component_mut(&app.world,edit.entity,Surface_Material)^=edit.before }
+    command:=Material_Command{edits=gesture.edits}
+    remaps:=make([dynamic]editor.Entity_Remap,gesture.allocator); defer delete(remaps)
+    if restore_error:=material_command_apply(&command,&app.world,&app.registry,false,&remaps); restore_error!=.None { return restore_error }
     material_gesture_destroy(gesture)
     return .None
 }

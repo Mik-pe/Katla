@@ -22,7 +22,7 @@ classify :: proc(path:string,directory:=false)->Kind {
     switch extension {
     case "glb","gltf","stl": return .Model
     case "katmesh","katprefab": return .Prefab
-    case "toml": return .Material
+    case "katmat": return .Material
     case "wgsl": return .Shader
     case "luau","lua": return .Script
     case "png","jpg","jpeg": return .Image

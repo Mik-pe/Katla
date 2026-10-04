@@ -8,13 +8,14 @@ import app ".."
 import render "../render"
 import ui "../../ui"
 import editor "../../editor"
+import ecs "../../ecs"
 import "core:mem"
 
 Action :: enum u64 {
     None,Menu_File,Menu_Edit,Menu_View,Menu_Create,Menu_Hierarchy,Create_Primitive,Delete_Entity,Duplicate_Entity,New,Open,Save,Save_As,Quit,Undo,Redo,
     Play,Pause,Stop,Search,Select,Field,Add_Component,Remove_Component,Viewport,
     Document_Path,Document_Submit,Document_Cancel,Document_Save,Document_Discard,Document_Overwrite,
-    Layout,Expand,Material,Material_Preset,Panel_Open,
+    Layout,Expand,Material,Material_Preset,Material_Alpha,Material_Double,Material_Expand,Material_Save,Material_Apply,Material_Asset_Path,Material_Texture_Expand,Material_Role,Material_Neutral,Material_Original,Material_Browser,Material_Assign,Material_UV,Material_Source_Choice,Material_Source_Text,Material_Sampling,Material_Filter,Panel_Open,
     Asset_Search,Asset_Select,Asset_Parent,Asset_Refresh,Asset_Open,Asset_Root,Asset_New_Folder,Asset_Folder_Name,Asset_Folder_Create,Asset_Delete,Asset_Delete_Confirm,Asset_Cancel,
     Pref_Number,Pref_Toggle,Pref_Theme,Pref_Connection,Pref_Save,Mixer_Volume,
     Host_Connect,Host_Disconnect,Host_Interrupt,Host_Send,Host_Prompt,
@@ -24,7 +25,7 @@ Field_Binding :: struct { component:string,field:^Inspector_Field,color_channel:
 /// The font/UI owner and document service are stationary borrowed application dependencies.
 Shell :: struct {
     state:^State,ctx:^ui.Context,document:^doc.State,
-    dock:ui.Dock_Tree,viewports:Viewport_Grid,
+    dock:ui.Dock_Tree,viewports:Viewport_Grid,panel_size:ui.Vec2,
     inspector:Inspector,bindings:[dynamic]Field_Binding,
     children:[dynamic][]ui.Descriptor,texts:[dynamic]string,option_lists:[dynamic][]string,
     menu:Action,allocator:mem.Allocator,
@@ -36,7 +37,7 @@ Shell :: struct {
     field_gesture:app.Scene_Gesture,field_gesture_node:u64,
     hierarchy_drag_start:ui.Vec2,hierarchy_drag_entity:u64,hierarchy_drag_started,hierarchy_drag_active:bool,
     asset_drag_start:ui.Vec2,asset_drag_started,asset_drag_active:bool,asset_drag:assets.Drag_Batch,
-    material:app.Material_Gesture,gizmo_mode:render.Overlay_Mode,console:Console_State,code:Code_Documents,syntax_lists:[dynamic][]ui.Text_Run,code_quit_requested:bool,
+    material:app.Material_Gesture,sampling_gesture:app.Material_Sampling_Gesture,sampling_node:u64,material_info:app.Material_Inspector,material_info_ready:bool,material_preview_textures:[5]ui.Texture_Id,material_preview_entity:ecs.Entity_Id,material_preview_has_entity:bool,gizmo_mode:render.Overlay_Mode,console:Console_State,code:Code_Documents,syntax_lists:[dynamic][]ui.Text_Run,code_quit_requested:bool,
     script_panel:Script_Panel,particle_statistics:string,particle_reset_requested:bool,frame_seconds:f32,frame_passes:int,frame_serial:u64,
     gizmo:Gizmo_Controller,gizmo_local:bool,gizmo_hover:render.Overlay_Handle,gizmo_meshes:^[4]render.Overlay_Mesh,gizmo_frames:[4]render.Frame_Data,
 }
@@ -78,11 +79,11 @@ dock_leaf :: proc(shell:^Shell,panel:Panel)->ui.Dock_Id { for id,node in shell.d
 shell_frame_destroy :: proc(shell:^Shell) {
     for list in shell.syntax_lists { delete(list,shell.allocator) }; clear(&shell.syntax_lists)
     for list in shell.option_lists { delete(list,shell.allocator) }; clear(&shell.option_lists)
-    inspector_destroy(&shell.inspector); clear(&shell.bindings)
+    inspector_destroy(&shell.inspector);app.material_inspector_destroy(&shell.material_info,shell.allocator);shell.material_info_ready=false; clear(&shell.bindings)
     for children in shell.children { delete(children,shell.allocator) }; clear(&shell.children)
     for text in shell.texts { delete(text,shell.allocator) }; clear(&shell.texts)
 }
-shell_destroy :: proc(shell:^Shell) { if shell.state!=nil && shell.state.owner!=nil && shell.state.owner.before_mutation_state==shell { shell.state.owner.before_mutation=nil; shell.state.owner.before_mutation_state=nil }; if shell.gizmo.gesture.active { gizmo_cancel(&shell.gizmo) }; gizmo_destroy(&shell.gizmo); script_panel_destroy(shell); console_destroy(&shell.console); code_documents_destroy(&shell.code); delete(shell.syntax_lists); assets.drag_batch_destroy(&shell.asset_drag); if shell.field_gesture.active { app.scene_gesture_cancel(shell.state.owner,&shell.field_gesture) }; app.scene_gesture_destroy(&shell.field_gesture); if shell.material.active { app.material_gesture_cancel(shell.state.owner,&shell.material) }; app.material_gesture_destroy(&shell.material); shell_frame_destroy(shell); ui.dock_destroy(&shell.dock); delete(shell.option_lists); delete(shell.children); delete(shell.texts); delete(shell.bindings); delete(shell.service_message,shell.allocator); delete(shell.last_runtime_diagnostic,shell.allocator); delete(shell.particle_statistics,shell.allocator); shell^={} }
+shell_destroy :: proc(shell:^Shell) { if shell.state!=nil && shell.state.owner!=nil && shell.state.owner.before_mutation_state==shell { shell.state.owner.before_mutation=nil; shell.state.owner.before_mutation_state=nil }; if shell.gizmo.gesture.active { gizmo_cancel(&shell.gizmo) }; gizmo_destroy(&shell.gizmo); script_panel_destroy(shell); console_destroy(&shell.console); code_documents_destroy(&shell.code); delete(shell.syntax_lists); assets.drag_batch_destroy(&shell.asset_drag); if shell.field_gesture.active { app.scene_gesture_cancel(shell.state.owner,&shell.field_gesture) }; app.scene_gesture_destroy(&shell.field_gesture); if shell.material.active { app.material_gesture_cancel(shell.state.owner,&shell.material) }; app.material_gesture_destroy(&shell.material); if shell.sampling_gesture.scene.active { app.material_sampling_gesture_cancel(shell.state.owner,&shell.sampling_gesture) }; app.material_sampling_gesture_destroy(&shell.sampling_gesture); shell_frame_destroy(shell); ui.dock_destroy(&shell.dock); delete(shell.option_lists); delete(shell.children); delete(shell.texts); delete(shell.bindings); delete(shell.service_message,shell.allocator); delete(shell.last_runtime_diagnostic,shell.allocator); delete(shell.particle_statistics,shell.allocator); shell^={} }
 @(private="package")
 nodes :: proc(shell:^Shell,items:[]ui.Descriptor)->[]ui.Descriptor {
     owned:=make([]ui.Descriptor,len(items),shell.allocator); copy(owned,items); append(&shell.children,owned); return owned
@@ -96,6 +97,7 @@ text :: proc(scope:u64,value:string)->ui.Descriptor { return {key=key(scope,valu
 shell_build :: proc(shell:^Shell,size:ui.Vec2)->ui.Descriptor {
     shell_frame_destroy(shell); shell_appearance(shell); hierarchy_refresh(shell.state)
     inspector,error:=inspector_read(shell.state); shell.inspector=inspector; if error!=.None { shell.state.last_error=error }
+    if inspector.has_entity { info,info_error:=app.material_inspector_read(shell.state.owner,inspector.entity);if info_error==.None {shell.material_info=info;shell.material_info_ready=true} }
     toolbar:=shell_toolbar(shell,size)
     scale:=shell_scale(shell)
     dock_bounds:=ui.Rect{0,40*scale,size[0],max(0,size[1]-64*scale)}
@@ -118,6 +120,7 @@ shell_dock_descriptor :: proc(shell:^Shell,bounds:[]ui.Dock_Bounds,root:ui.Dock_
     panels:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(panels)
     for region in bounds {
         if !region.has_active || region.floating_root!=root { continue }
+        shell.panel_size={region.content.width,region.content.height}
         panel:ui.Descriptor
         switch Panel(region.active) {
         case .Hierarchy: panel=shell_hierarchy(shell)
@@ -138,17 +141,24 @@ shell_dock_descriptor :: proc(shell:^Shell,bounds:[]ui.Dock_Bounds,root:ui.Dock_
     return {key=key(2,"dock",u64(root)),kind=.Dock_Space,dock=&shell.dock,dock_root=root,dock_tabs=shell.tabs[:],layer=.Overlay if root!=0 else .Content,children=nodes(shell,panels[:]),has_fixed_bounds=true,fixed_bounds=rect}
 }
 @(private="package")
+shell_panel_width :: proc(shell:^Shell)->f32 { return max(1,(shell.panel_size.x if shell.panel_size.x>0 else shell.ctx.logical_size.x if shell.ctx.logical_size.x>0 else 400)/shell_scale(shell)) }
+@(private="package")
 shell_toolbar :: proc(shell:^Shell,size:ui.Vec2)->ui.Descriptor {
     owner:=shell.state.owner
     title:="Katla"
     if shell.document!=nil { title=doc.title(shell.document); append(&shell.texts,title) }
-    return {key=key(1,"toolbar"),kind=.Row,has_fixed_bounds=true,fixed_bounds={8,4,max(0,size[0]-16),32*shell_scale(shell)},layout={gap={6,0},align=.Center},children=nodes(shell,{
+    controls:=nodes(shell,{
         button("File",.Menu_File),button("Edit",.Menu_Edit),button("View",.Menu_View),
         button("Undo",.Undo,owner.mode!=.Editing || !editor.agent_can_undo(&owner.agent.session)),
         button("Redo",.Redo,owner.mode!=.Editing || !editor.agent_can_redo(&owner.agent.session)),
         button("Play",.Play,owner.mode!=.Editing),button("Resume" if owner.mode==.Paused else "Pause",.Pause,owner.mode==.Editing),button("Stop",.Stop,owner.mode==.Editing),
         ui.Descriptor{key=key(1,"title"),kind=.Text,text=title,layout={grow=1,align=.End}},
-    })}
+    })
+    scale:=shell_scale(shell);used:f32=16
+    for control in controls[:len(controls)-1] { used+=shell.ctx.fonts.measure(shell.ctx.fonts.state,shell.ctx.theme.font,control.text,shell.ctx.theme.font_size,0).x/scale+16+6 }
+    available:=max(0,size[0]/scale-used)
+    controls[len(controls)-1].hidden=available<32;controls[len(controls)-1].text_max_width=max(1,available)
+    return {key=key(1,"toolbar"),kind=.Row,has_fixed_bounds=true,fixed_bounds={8,4,max(0,size[0]-16),32*scale},layout={gap={6,0},align=.Center},children=controls}
 }
 @(private="package")
 shell_menu :: proc(shell:^Shell)->ui.Descriptor {

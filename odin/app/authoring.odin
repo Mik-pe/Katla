@@ -27,6 +27,8 @@ authoring_init :: proc(app:^Authoring,allocator:=context.allocator,agent_capacit
     ecs.world_init(&app.world,allocator=allocator)
     editor.editor_registry_init(&app.registry,allocator)
     editor.editor_register(&app.world,&app.registry,"SurfaceMaterial",Surface_Material{metallic=0,roughness=0.5,ao=1})
+    material_textures_register(app)
+    material_images_register(app)
     ecs.register_component(&app.world,Editor_Hidden)
     editor.agent_harness_init(&app.agent,allocator,agent_capacity)
     scene_action_restore_install(app)

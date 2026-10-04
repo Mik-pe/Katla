@@ -12,8 +12,14 @@ model_graph_release :: proc(cache:^Native_Model($R)) {
     cache.image_ids=nil; cache.passes=nil; cache.order=nil; cache.texture_inputs=nil; cache.graph=nil
 }
 @(private="package")
-model_graph_order :: proc(cache:^Native_Model($R),view_projection:km.Mat4,allocator:mem.Allocator=context.allocator)->[]int {
+model_graph_order :: proc(cache:^Native_Model($R),view_projection:km.Mat4,allocator:mem.Allocator=context.allocator,depth_sense:Depth_Sense=.Forward)->[]int {
     model_batch_update_depths(&cache.batch,view_projection)
+    if view_projection[0][3]==0 && view_projection[1][3]==0 && view_projection[2][3]==0 && view_projection[3][3]!=0 {
+        for &entry in cache.batch.entries {
+            clip:=km.matrix_vector(view_projection,km.vec4(entry.world_center,1))
+            entry.camera_depth=(clip[2]/clip[3])*(-1 if depth_sense==.Reverse else 1)
+        }
+    }
     result:=make([]int,len(cache.batch.entries),allocator)
     for &item,i in result { item=i }
     for i in 1..<len(result) {
@@ -113,7 +119,7 @@ model_native_prepare :: proc(cache:^Native_Model($R),scene:^Scene_Graph,token:gf
     if cache.graph!=scene { return {},{gpu=.Invalid_Graph} }
     if len(cache.batch.entries)==0 { return {},{} }
     if token.slot<0 || token.slot>=len(cache.slots) { return {},{gpu=.Invalid_Resource} }
-    order:=model_graph_order(cache,frame.view_projection,cache.allocator); defer delete(order,cache.allocator)
+    order:=model_graph_order(cache,frame.view_projection,cache.allocator,scene.depth_sense); defer delete(order,cache.allocator)
     for index,i in order {
         error:=model_graph_packet(cache,scene,cache.passes[i],index,index!=cache.order[i])
         if error!={} { return {},error }

@@ -12,6 +12,10 @@ python3 scripts/build_katla_odin.py --tests
 python3 scripts/run_katla_odin.py --no-build
 ```
 
+Normal builds use Odin's speed optimization and retain debug symbols. Sanitized
+builds remain unoptimized by default; add `--optimize` to instrument an optimized
+editor as well.
+
 Python 3.12+, Odin, Git, a native C/C++ compiler, an archiver and Cargo are
 required. Unix TIFF builds also require make and system zlib development
 headers; Windows requires Clang/LLVM, a configured Windows SDK, CMake and
@@ -85,7 +89,7 @@ python3 scripts/run_katla_odin.py --no-build --sanitize -- --frames 100
 CPU suites run serially with bad-memory failures enabled, including real
 native decoder, physics, Luau, shader-process and font consumers. Explicit
 package runs cover app, app/render, app/editor, gfx, shader tests, script,
-audio, UI, resources, agent/host and native fonts. Their ASan
+audio, UI, precise image codecs, resources, agent/host and native fonts. Their ASan
 processes always enable leak detection, even if the invoking environment sets
 `detect_leaks=0`. On Darwin the only suppressions are the observed Apple
 `CFPrefsPlistSource` and `CFPrefsSearchListSource` process-cache stacks;

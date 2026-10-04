@@ -100,8 +100,9 @@ image_stage :: proc(usage:gfx.Texture_Usage)->vk.PipelineStageFlags2 {
     return {.ALL_COMMANDS}
 }
 @(private="package")
-transition_image :: proc(r:^Renderer,command:vk.CommandBuffer,recording:^Image_Recording,texture:^Native_Texture,range:gfx.Image_Range,state:gfx.Image_State,destination_stage:vk.PipelineStageFlags2,destination_access:vk.AccessFlags2)->gfx.Gpu_Error {
+transition_image :: proc(r:^Renderer,command:vk.CommandBuffer,recording:^Image_Recording,texture:^Native_Texture,range:gfx.Image_Range,state:gfx.Image_State,destination_stage:vk.PipelineStageFlags2,destination_access:vk.AccessFlags2,logical_index:int= -2)->gfx.Gpu_Error {
     if !gfx.image_range_valid(range,texture.desc) { return .Invalid_Range }
+    captured_index:=logical_index;if captured_index== -2 { captured_index=capture_image_id(r,texture) }
     journal:=image_journal(recording,r,texture)
     layout:=image_layout(state)
     if layout==.UNDEFINED { return .Invalid_Graph }
@@ -110,9 +111,13 @@ transition_image :: proc(r:^Renderer,command:vk.CommandBuffer,recording:^Image_R
             for aspect in range.aspects {
                 index:=texture_state_index(texture,mip,layer,aspect)
                 old:=journal.layouts[index]
+                if r.capture.recording {
+                    gfx.capture_expect(&r.capture,{kind=.Image_Barrier,pass_index=r.capture_pass,phase_index=r.capture_phase,resource_kind=.Image if captured_index>=0 else .Auxiliary,resource_index=captured_index,object=capture_handle(r,4,u64(texture.allocation.object)),image_range={mip,1,layer,1,{aspect}},source_stages=transmute(u64)vk.PipelineStageFlags2{.ALL_COMMANDS},destination_stages=transmute(u64)destination_stage,source_access=transmute(u64)(vk.AccessFlags2{.MEMORY_READ,.MEMORY_WRITE} if old!=.UNDEFINED else vk.AccessFlags2{}),destination_access=transmute(u64)destination_access,old_layout=u64(old),new_layout=u64(image_layout(state)),emitted=true,label="requested image state translation"})
+                }
                 barrier:=vk.ImageMemoryBarrier2{sType=.IMAGE_MEMORY_BARRIER_2,srcStageMask={.ALL_COMMANDS},srcAccessMask={.MEMORY_READ,.MEMORY_WRITE} if old!=.UNDEFINED else {},dstStageMask=destination_stage,dstAccessMask=destination_access,oldLayout=old,newLayout=layout,srcQueueFamilyIndex=vk.QUEUE_FAMILY_IGNORED,dstQueueFamilyIndex=vk.QUEUE_FAMILY_IGNORED,image=texture.allocation.object,subresourceRange=image_range({mip,1,layer,1,{aspect}})}
                 dependency:=vk.DependencyInfo{sType=.DEPENDENCY_INFO,imageMemoryBarrierCount=1,pImageMemoryBarriers=&barrier}
                 r.table.CmdPipelineBarrier2(command,&dependency)
+                gfx.capture_record(&r.capture,{kind=.Image_Barrier,pass_index=r.capture_pass,phase_index=r.capture_phase,resource_kind=.Image if captured_index>=0 else .Auxiliary,resource_index=captured_index,object=capture_handle(r,4,u64(barrier.image)),encoder=r.capture_encoder,image_range={barrier.subresourceRange.baseMipLevel,barrier.subresourceRange.levelCount,barrier.subresourceRange.baseArrayLayer,barrier.subresourceRange.layerCount,{aspect}},source_stages=transmute(u64)barrier.srcStageMask,destination_stages=transmute(u64)barrier.dstStageMask,source_access=transmute(u64)barrier.srcAccessMask,destination_access=transmute(u64)barrier.dstAccessMask,old_layout=u64(barrier.oldLayout),new_layout=u64(barrier.newLayout),emitted=true,label="vkCmdPipelineBarrier2 image"})
                 journal.layouts[index]=layout
             }
         }
@@ -149,7 +154,9 @@ encode_image_copy :: proc(r:^Renderer,slot:^Native_Frame,recording:^Image_Record
     if err!=.None { return err }
     copies,copy_error:=image_copy_regions(r,texture.desc,packet.region,packet.destination_offset)
     if copy_error!=.None { return copy_error }; defer delete(copies,r.allocator)
+    capture_image_copy_expect(r,texture,buffer,packet.source.index,packet.destination.index,packet.region,packet.destination_offset,0,1)
     r.table.CmdCopyImageToBuffer(slot.command,texture.allocation.object,.TRANSFER_SRC_OPTIMAL,buffer.object,u32(len(copies)),raw_data(copies))
+    capture_image_copy_observe(r,texture,buffer,packet.source.index,packet.destination.index,copies,0,1)
     return .None
 }
 @(private="package")
@@ -176,9 +183,30 @@ image_recording_imports :: proc(r:^Renderer,recording:^Image_Recording,prepared:
 }
 @(private="package")
 image_alias_handoff :: proc(r:^Renderer,command:vk.CommandBuffer,recording:^Image_Recording,prepared:^gfx.Prepared_Graph,alias:gfx.Alias_Handoff)->gfx.Gpu_Error {
+    previous_kind:gfx.Capture_Resource_Kind;previous_index:=-1
+    if r.capture.recording { switch previous in alias.previous {
+        case gfx.Resource_Id: previous_kind=.Buffer;previous_index=previous.index
+        case gfx.Image_Id: previous_kind=.Image;previous_index=previous.index
+    } }
     memory:=vk.MemoryBarrier2{sType=.MEMORY_BARRIER_2,srcStageMask={.ALL_COMMANDS},srcAccessMask={.MEMORY_READ,.MEMORY_WRITE},dstStageMask={.ALL_COMMANDS},dstAccessMask={.MEMORY_READ,.MEMORY_WRITE}}
     dependency:=vk.DependencyInfo{sType=.DEPENDENCY_INFO,memoryBarrierCount=1,pMemoryBarriers=&memory}
+    if r.capture.recording {
+        kind:gfx.Capture_Resource_Kind;resource_index:=-1
+        switch next in alias.next {
+        case gfx.Resource_Id: kind=.Buffer;resource_index=next.index
+        case gfx.Image_Id: kind=.Image;resource_index=next.index }
+        gfx.capture_expect(&r.capture,{kind=.Alias,pass_index=r.capture_pass,phase_index=-1,resource_kind=kind,resource_index=resource_index,alias_previous_kind=previous_kind,alias_previous_index=previous_index,previous_pass_index=alias.before.index,source_stages=transmute(u64)vk.PipelineStageFlags2{.ALL_COMMANDS},destination_stages=transmute(u64)vk.PipelineStageFlags2{.ALL_COMMANDS},source_access=transmute(u64)vk.AccessFlags2{.MEMORY_READ,.MEMORY_WRITE},destination_access=transmute(u64)vk.AccessFlags2{.MEMORY_READ,.MEMORY_WRITE},emitted=true,label="physical alias handoff"})
+    }
     r.table.CmdPipelineBarrier2(command,&dependency)
+    if r.capture.recording {
+        kind:gfx.Capture_Resource_Kind;resource_index:=-1;object:u64;heap:rawptr
+        switch next in alias.next {
+        case gfx.Resource_Id:
+            kind=.Buffer;resource_index=next.index;if buffer,ok:=resolve_buffer(r,prepared,next);ok { object=capture_handle(r,5,u64(buffer.object));heap=buffer.heap }
+        case gfx.Image_Id:
+            kind=.Image;resource_index=next.index;if texture,ok:=resolve_texture(r,prepared,next);ok { object=capture_handle(r,4,u64(texture.allocation.object));heap=texture.allocation.heap } }
+        gfx.capture_record(&r.capture,{kind=.Alias,pass_index=r.capture_pass,phase_index=-1,resource_kind=kind,resource_index=resource_index,alias_previous_kind=previous_kind,alias_previous_index=previous_index,previous_pass_index=alias.before.index,object=object,heap=gfx.capture_object(&r.capture,heap),encoder=r.capture_encoder,source_stages=transmute(u64)memory.srcStageMask,destination_stages=transmute(u64)memory.dstStageMask,source_access=transmute(u64)memory.srcAccessMask,destination_access=transmute(u64)memory.dstAccessMask,emitted=true,label="vkCmdPipelineBarrier2 alias"})
+    }
     #partial switch next in alias.next {
     case gfx.Image_Id:
         texture,ok:=resolve_texture(r,prepared,next)
@@ -202,7 +230,9 @@ encode_buffer_image_copy :: proc(r:^Renderer,slot:^Native_Frame,recording:^Image
     if error!=.None { return error }
     copies,copy_error:=image_copy_regions(r,texture.desc,packet.region,packet.source_offset)
     if copy_error!=.None { return copy_error }; defer delete(copies,r.allocator)
+    capture_image_copy_expect(r,texture,buffer,packet.destination.index,packet.source.index,packet.region,packet.source_offset,1,0)
     r.table.CmdCopyBufferToImage(slot.command,buffer.object,texture.allocation.object,.TRANSFER_DST_OPTIMAL,u32(len(copies)),raw_data(copies))
+    capture_image_copy_observe(r,texture,buffer,packet.destination.index,packet.source.index,copies,1,0)
     image_mark_contents(recording,r,texture,range,true)
     return .None
 }

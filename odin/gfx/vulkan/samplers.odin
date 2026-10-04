@@ -3,23 +3,27 @@ package katla_vulkan
 
 import gfx ".."
 import vk "vendor:vulkan"
-import "core:math"
 
 @(private="package")
 Native_Sampler :: struct { object:vk.Sampler, desc:gfx.Sampler_Desc, refs:int }
 @(private="package")
 release_sampler :: proc(r:^Renderer,sampler:^Native_Sampler) {
     sampler.refs-=1
-    if sampler.refs==0 { r.table.DestroySampler(r.device,sampler.object,nil); free(sampler,r.allocator) }
+    if sampler.refs==0 {
+        for cached,index in r.sampler_cache { if cached==sampler { ordered_remove(&r.sampler_cache,index);break } }
+        r.table.DestroySampler(r.device,sampler.object,nil); free(sampler,r.allocator)
+    }
 }
 /// Creates explicit filtering, addressing and comparison state without hidden defaults.
 create_sampler :: proc(r:^Renderer,desc:gfx.Sampler_Desc)->(gfx.Sampler_Handle,gfx.Gpu_Error) {
     if r.device==nil || r.failed { return {},.Native_Failure }
-    if math.is_nan(desc.min_lod) || math.is_inf(desc.min_lod) || math.is_nan(desc.max_lod) || math.is_inf(desc.max_lod) || desc.min_lod<0 || desc.max_lod<desc.min_lod || desc.max_anisotropy==0 { return {},.Invalid_Range }
-    if desc.max_anisotropy>1 && (!r.sampler_anisotropy || f32(desc.max_anisotropy)>r.limits.maxSamplerAnisotropy) { return {},.Unsupported }
-    info:=vk.SamplerCreateInfo{sType=.SAMPLER_CREATE_INFO,magFilter=vk.Filter(desc.mag_filter),minFilter=vk.Filter(desc.min_filter),mipmapMode=vk.SamplerMipmapMode(desc.mip_filter),addressModeU=vk.SamplerAddressMode(desc.address_u),addressModeV=vk.SamplerAddressMode(desc.address_v),addressModeW=vk.SamplerAddressMode(desc.address_w),anisotropyEnable=b32(desc.max_anisotropy>1),maxAnisotropy=f32(desc.max_anisotropy),compareEnable=b32(desc.comparison),compareOp=vk.CompareOp(desc.compare),minLod=desc.min_lod,maxLod=desc.max_lod,borderColor=.FLOAT_TRANSPARENT_BLACK}
-    sampler:=new(Native_Sampler,r.allocator); sampler.desc=desc; sampler.refs=1
+    normalized,valid:=gfx.sampler_desc_normalize(desc);if !valid { return {},.Invalid_Range }
+    for sampler in r.sampler_cache { if sampler.desc==normalized { sampler.refs+=1;return gfx.storage_insert(&r.samplers,sampler),.None } }
+    if normalized.max_anisotropy>1 && !r.sampler_anisotropy { return {},.Unsupported }
+    info:=vk.SamplerCreateInfo{sType=.SAMPLER_CREATE_INFO,magFilter=vk.Filter(normalized.mag_filter),minFilter=vk.Filter(normalized.min_filter),mipmapMode=.LINEAR if normalized.mip_filter==.Linear else .NEAREST,addressModeU=vk.SamplerAddressMode(normalized.address_u),addressModeV=vk.SamplerAddressMode(normalized.address_v),addressModeW=vk.SamplerAddressMode(normalized.address_w),anisotropyEnable=b32(normalized.max_anisotropy>1),maxAnisotropy=min(f32(normalized.max_anisotropy),r.limits.maxSamplerAnisotropy),compareEnable=b32(normalized.comparison),compareOp=vk.CompareOp(normalized.compare),minLod=normalized.min_lod,maxLod=normalized.max_lod,borderColor=.FLOAT_TRANSPARENT_BLACK}
+    sampler:=new(Native_Sampler,r.allocator); sampler.desc=normalized; sampler.refs=1
     if r.table.CreateSampler(r.device,&info,nil,&sampler.object)!=.SUCCESS { free(sampler,r.allocator); return {},.Allocation_Failed }
+    append(&r.sampler_cache,sampler)
     return gfx.storage_insert(&r.samplers,sampler),.None
 }
 /// Removes the registry owner without releasing descriptors still used by accepted work.

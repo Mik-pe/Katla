@@ -22,6 +22,7 @@ shell_asset_pointer :: proc(shell:^Shell,event:ui.Pointer_Action) {
     if !event.released { return }; shell.asset_drag_started=false
     if !shell.asset_drag_active { return }; shell.asset_drag_active=false
     defer assets.drag_batch_destroy(&shell.asset_drag)
+    if shell_material_drop(shell,event.position) { return }
     viewport:=-1
     for slot,index in shell.viewports.slots[:viewport_count(shell.viewports.layout)] { if inside(slot.bounds,event.position) { viewport=index; break } }
     if viewport<0 { return }

@@ -5,6 +5,7 @@ import "core:testing"
 import "core:mem"
 import "core:slice"
 import "core:fmt"
+import image "../../image"
 
 TEXTURE_TEST_BMP :: #load("texture_image_fixtures/rgb.bmp",[]byte)
 TEXTURE_TEST_TIFF :: #load("texture_image_fixtures/rgba.tiff",[]byte)
@@ -82,13 +83,17 @@ test_texture_image_upstream_jpeg_tiff_and_gray16 :: proc(t:^testing.T) {
     testing.expect_value(t,error,Texture_Image_Error.None)
     defer texture_image_destroy(&gray)
     testing.expect(t,gray.width==157 && gray.height==151)
-    low,high:byte=255,0
-    for i in 0..<len(gray.pixels)/4 {
-        offset:=i*4
-        testing.expect(t,gray.pixels[offset]==gray.pixels[offset+1] && gray.pixels[offset]==gray.pixels[offset+2] && gray.pixels[offset+3]==255)
-        low=min(low,gray.pixels[offset]); high=max(high,gray.pixels[offset])
+    testing.expect(t,gray.format==.RGBA16 && len(gray.pixels)==int(gray.width)*int(gray.height)*8)
+    low,high:f32=1,0
+    fractional:=false
+    for i in 0..<int(gray.width)*int(gray.height) {
+        sample:=image.texture_image_sample(&gray,i)
+        testing.expect(t,sample[0]==sample[1] && sample[0]==sample[2] && sample[3]==1)
+        value:=sample[0]*65535
+        if u32(value)%257!=0 { fractional=true }
+        low=min(low,sample[0]); high=max(high,sample[0])
     }
-    testing.expect(t,low<32 && high>223)
+    testing.expect(t,low<32.0/255 && high>223.0/255 && fractional,"Actual gray16 samples must retain precision beyond replicated RGBA8")
     jpeg,jpeg_error:=texture_image_decode(TEXTURE_TEST_UPSTREAM_JPEG_TIFF)
     testing.expect_value(t,jpeg_error,Texture_Image_Error.None)
     defer texture_image_destroy(&jpeg)

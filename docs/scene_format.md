@@ -38,7 +38,7 @@ fields can be omitted. An omitted source is `Empty`. Built-in field names and
 variants are strict. Optional component absence is preserved, including the
 distinction between a rigid body, collider, material and collision filter.
 
-Sources cover primitive geometry, `MeshAsset`, `StlModel`, `GltfModel`, `Empty`,
+Sources cover primitive geometry, `MeshAsset`, `StlModel`, `GltfModel`, `GltfGroup`, `GltfPrimitive`, `Empty`,
 `Light`, `ParticleEmitter` and `Trigger`. Sources and optional components are
 independent: a mesh may also emit light, particles or audio. Point/directional
 lights, perspective, drawable factors, animation/fades, particles, scripts,
@@ -179,6 +179,27 @@ for retry. Animation clocks alone do not dirty the document. Snapshot data
 reconstructs authored descriptors; it does not capture live particles, VM state or
 running voices. Runtime overlap/once/error state resets for the reconstructed
 play session. Pause/Resume changes execution without replacing authored entities.
+
+## Independent material assets
+
+Drawable descriptors retain authored `surface`, five-role `sampling`, and
+`textures` separately. `GltfGroup` controllers retain a source path;
+`GltfPrimitive` children retain that path plus `node_index` and
+`primitive_index`, so each primitive remains independently editable. A legacy
+`GltfModel` descriptor expands to that hierarchy through atomic scene staging.
+
+Reusable `.katmat` files use RON version 1 with a name, complete material values,
+sampling, and explicit neutral/file/glTF-image sources. `material_asset` supports
+Describe/Read/Validate/Write/Capture/Apply through the same application owner.
+Capture resolves inherited images to reproducible sources; Apply creates owned
+independent copies. Editing or rewriting an asset file does not mutate existing
+copies. New image assignment reads the selected source revision, while Undo/Redo
+retains the decoded revision that was accepted with the original command.
+
+Image decoding preserves eight-bit, sixteen-bit and floating-point samples.
+Integer color roles decode sRGB; linear data roles retain their precision.
+Floating HDR stays linear and must fit finite half-float range for native upload.
+Portable documents contain source descriptors rather than pixels or GPU owners.
 
 ## Canonical implementation and verification
 

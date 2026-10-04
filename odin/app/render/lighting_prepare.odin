@@ -49,10 +49,8 @@ native_features_prepare :: proc(scene:^Native_Scene($R),token:gfx.Frame_Token,fr
     uploads:=[3]struct { handle:gfx.Buffer_Handle,bytes:[]byte }{{slot.frame,bytes[0]},{slot.points,bytes[1]},{slot.shadow,bytes[2]}}
     for upload in uploads { gpu_error:=scene.operations.write_buffer(scene.renderer,token,upload.handle,0,upload.bytes); if gpu_error!=.None { return {},{},{gpu=gpu_error} } }
     packet_error:=feature_shadow_packet(&scene.graph,0,scene.graph.objects,scene.graph.geometry,scene.graph.object_desc,scene.graph.geometry_desc,draws,effective.ambient[3],scene.feature_settings.shadows && snapshot.has_sun); if packet_error!={} { return {},{},packet_error }
-    model_draws:=make([dynamic]gfx.Draw_Op,scene.allocator); defer delete(model_draws)
     if scene.models!=nil {
-        for entry in scene.models.batch.entries { if entry.material.alpha_mode!=.Blend && !entry.material.unlit { append(&model_draws,gfx.Draw{entry.vertex_count,1,entry.first_vertex,entry.object_index}) } }
-        packet_error=feature_shadow_packet(&scene.graph,1,scene.models.objects,scene.models.geometry,scene.models.object_desc,scene.models.geometry_desc,model_draws[:],effective.ambient[3],scene.feature_settings.shadows && snapshot.has_sun); if packet_error!={} { return {},{},packet_error }
+        packet_error=feature_model_coverage_packet(scene.models,&scene.graph,0,scene.feature_settings.shadows && snapshot.has_sun,effective.ambient[3]);if packet_error!={} { return {},{},packet_error }
     }
     scene.graph.wallhack=scene.feature_settings.wallhack
     scene.graph.postprocess=scene.feature_settings.postprocess

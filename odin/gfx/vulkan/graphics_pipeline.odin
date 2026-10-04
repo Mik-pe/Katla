@@ -17,18 +17,21 @@ Native_Graphics_Pipeline :: struct {
     depth:gfx.Depth_State,
     stencil:bool,
     vertex:gfx.Vertex_Layout,
+    key:gfx.Graphics_Desc,
     refs:int,
 }
 @(private="package")
 release_graphics_pipeline :: proc(r:^Renderer,pipeline:^Native_Graphics_Pipeline) {
     pipeline.refs-=1
     if pipeline.refs!=0 { return }
+    for cached,index in r.graphics_cache { if cached==pipeline { ordered_remove(&r.graphics_cache,index);break } }
     if pipeline.object!=0 { r.table.DestroyPipeline(r.device,pipeline.object,nil) }
     if pipeline.layout!=0 { r.table.DestroyPipelineLayout(r.device,pipeline.layout,nil) }
     for layout in pipeline.set_layouts { if layout!=0 { r.table.DestroyDescriptorSetLayout(r.device,layout,nil) } }
     delete(pipeline.set_layouts,r.allocator)
     delete(pipeline.vertex.attributes,r.allocator); delete(pipeline.vertex.buffers,r.allocator)
     delete(pipeline.buffers,r.allocator); delete(pipeline.images,r.allocator); delete(pipeline.samplers,r.allocator); delete(pipeline.colors,r.allocator)
+    gfx.graphics_desc_destroy(&pipeline.key,r.allocator)
     free(pipeline,r.allocator)
 }
 @(private="package")
@@ -203,6 +206,9 @@ vertex_format :: proc(format:gfx.Vertex_Format)->vk.Format {
     case .Sint3: return .R32G32B32_SINT
     case .Sint4: return .R32G32B32A32_SINT
     case .Unorm8x4: return .R8G8B8A8_UNORM
+    case .Uint8x4: return .R8G8B8A8_UINT
+    case .Uint16x4: return .R16G16B16A16_UINT
+    case .Unorm16x4: return .R16G16B16A16_UNORM
     }
     return .UNDEFINED
 }

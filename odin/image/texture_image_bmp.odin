@@ -1,5 +1,5 @@
 //! BMP framing bounds palette/mask headers and exact padded rows before native pixel allocation.
-package render
+package image
 
 @(private="package")
 bmp_u16 :: proc(bytes:[]byte)->u32 { return u32(bytes[0])|u32(bytes[1])<<8 }

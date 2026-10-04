@@ -6,6 +6,9 @@ import gfx "../gfx"
 import ui "../ui"
 import "core:encoding/json"
 import "core:fmt"
+import "core:mem"
+import "core:path/filepath"
+import "core:strings"
 import "core:os"
 import "core:time"
 
@@ -21,11 +24,14 @@ diagnostic_layout :: proc(shell:^editor_app.Shell,path:string)->bool {
     return diagnostic_write(struct {width,height:f32,nodes:[]Diagnostic_Node}{shell.ctx.logical_size.x,shell.ctx.logical_size.y,nodes[:]},path)
 }
 @(private="package")
-diagnostic_graph :: proc(gpu:^editor_app.GPU_Owner($R),path:string)->bool {
-    passes:=make([dynamic]Diagnostic_Pass); defer delete(passes)
-    for id in gpu.plan.order { pass:=gpu.graph.passes[id.index]; append(&passes,Diagnostic_Pass{id.index,pass.name,fmt.aprintf("%v",pass.kind),len(pass.accesses),len(pass.images)}) }
-    defer { for pass in passes { delete(pass.kind) } }
-    return diagnostic_write(struct {frame,revision:u64,buffers,images,buffer_hazards,image_hazards:int,passes:[]Diagnostic_Pass}{gpu.serial,gpu.graph.revision,len(gpu.graph.buffers),len(gpu.graph.images),len(gpu.plan.hazards),len(gpu.plan.image_hazards),passes[:]},path)
+diagnostic_graph :: proc(gpu:^editor_app.GPU_Owner($R),snapshot:proc(^R,u64,mem.Allocator)->(gfx.Capture_Snapshot,bool),path:string)->bool {
+    capture,valid:=snapshot(gpu.renderer,gpu.pending.id,context.allocator)
+    if !valid { fmt.eprintln("Accepted native graph capture unavailable for submission",gpu.pending.id); return false }
+    defer gfx.capture_snapshot_destroy(&capture)
+    extension:=strings.to_lower(filepath.ext(path)); defer delete(extension)
+    if extension==".json" { bytes,encoded:=gfx.capture_json(&capture); if !encoded { return false }; defer delete(bytes); return os.write_entire_file(path,bytes)==nil }
+    text:=gfx.capture_dot(&capture) if extension==".dot" else gfx.capture_text(&capture); defer delete(text)
+    if path!="" { return os.write_entire_file(path,transmute([]byte)text)==nil }; fmt.print(text); return true
 }
 @(private="package")
 diagnostic_pixels :: proc(gpu:^editor_app.GPU_Owner($R),width,height:u32)->(gfx.Readback_Data,bool) {

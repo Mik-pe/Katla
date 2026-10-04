@@ -59,15 +59,17 @@ Image_Binding :: struct { group,slot:u32, stages:Shader_Stages, accesses:[]Image
 Sampler_Kind :: struct {}
 Sampler_Handle :: Handle(Sampler_Kind)
 Filter :: enum { Nearest, Linear }
+/// None restricts implicit and explicit sampling to the base mip level.
+Mip_Filter :: enum { Nearest, Linear, None }
 Address_Mode :: enum { Repeat, Mirror_Repeat, Clamp_Edge, Clamp_Border }
-Sampler_Desc :: struct { min_filter,mag_filter,mip_filter:Filter, address_u,address_v,address_w:Address_Mode, min_lod,max_lod:f32, comparison:bool, compare:Compare_Op, max_anisotropy:u32 }
+Sampler_Desc :: struct { min_filter,mag_filter:Filter, mip_filter:Mip_Filter, address_u,address_v,address_w:Address_Mode, min_lod,max_lod:f32, comparison:bool, compare:Compare_Op, max_anisotropy:u32 }
 Sampler_Binding :: struct { group,slot:u32, stages:Shader_Stages, handle:Sampler_Handle }
 Sampler_Info :: struct { desc:Sampler_Desc, identity:rawptr }
 Sampler_Requirement :: struct { group,slot:u32, stages:Shader_Stages, comparison:bool }
 /// Generated vertices need no engine mesh or object storage.
 Draw :: struct { vertex_count,instance_count,first_vertex,first_instance:u32 }
 /// One phase selects pipeline, constants and ordered geometry in an ordinary pass.
-Render_Phase :: struct { pipeline:Graphics_Pipeline_Handle, constants:[]Constant_Binding, viewport:Viewport, scissor:Scissor, draws:[]Draw_Op }
+Render_Phase :: struct { pipeline:Graphics_Pipeline_Handle, constants:[]Constant_Binding, viewport:Viewport, scissor:Scissor, draws:[]Draw_Op, samplers:[]Sampler_Binding, images:[]Image_Binding }
 /// Shared resource bindings feed ordered phases in one native render pass.
 Render :: struct { colors:[]Color_Attachment, depth:Depth_Attachment, buffers:[]Stage_Buffer_Binding, images:[]Image_Binding, samplers:[]Sampler_Binding, constants:[]Constant_Binding, phases:[]Render_Phase }
 /// Image copy regions name one mip/layer and aspect with physical coordinates.

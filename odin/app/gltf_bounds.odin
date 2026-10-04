@@ -33,16 +33,28 @@ scene_drawable_bounds :: proc(owner:^Authoring,id:ecs.Entity_Id)->(km.AABB,bool,
         bounds=km.aabb_transform(mesh.geometry.bounds,entity_world); if !scene_bounds_finite(bounds) { return {},false,.Invalid_Operation }; has_bounds=true
     }
     component:=ecs.get_component_mut(&owner.world,id,Scene_Model); if component==nil { return bounds,has_bounds,.None }
+    if component.source.kind==.Group {
+        ids:=ecs.entity_ids(&owner.world); defer delete(ids)
+        for child in ids {
+            parent,has_parent:=ecs.get_component(&owner.world,child,Scene_Parent); if !has_parent || parent.entity!=id { continue }
+            child_bounds,has_child,child_error:=scene_drawable_bounds(owner,child); if child_error!=.None { return {},false,child_error }
+            if has_child { bounds=km.aabb_merge(bounds,child_bounds) if has_bounds else child_bounds; has_bounds=true }
+        }
+        return bounds,has_bounds,.None
+    }
     model:=&component.model; allocator:=owner.world.allocator
-    player:=ecs.get_component_mut(&owner.world,id,Animation_Player)
+    player:=scene_model_animation_player(owner,id)
     world,pose_error:=gltf_world_matrices(model,player,allocator); if pose_error!=.None { return {},false,pose_error }; defer delete(world,allocator)
     active,active_error:=gltf_active_nodes(model,allocator); if active_error!=.None { return {},false,active_error }; defer delete(active,allocator)
     for node,n in model.nodes {
-        if !active[n] || node.mesh<0 { continue }
+        if !active[n] || node.mesh<0 || (component.source.kind==.Primitive && u32(n)!=component.source.node_index) { continue }
         weights,weight_error:=animation_sample_weights(&model.animation,player,u32(n),node.weights,allocator)
         if weight_error!=.None { return {},false,weight_error }; defer delete(weights,allocator)
+        ordinal:u32
         for primitive,p in model.primitives {
             if primitive.mesh!=u32(node.mesh) { continue }
+            current_ordinal:=ordinal; ordinal+=1
+            if component.source.kind==.Primitive && current_ordinal!=component.source.primitive_index { continue }
             geometry,geometry_error:=gltf_deform_geometry(model,u32(p),u32(n),world,weights,allocator)
             if geometry_error!=.None { return {},false,.Invalid_Operation }
             low,high:km.Vec3; indexed:bool

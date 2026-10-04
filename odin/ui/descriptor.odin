@@ -31,6 +31,7 @@ descriptor_validate :: proc(ctx:^Context,descriptor:Descriptor,keys:^map[u64]boo
     if !layout_valid(descriptor.layout) || (descriptor.has_fixed_bounds && !rect_valid(descriptor.fixed_bounds)) { return .Invalid_Layout }
     if descriptor.kind==.Dock_Space && descriptor.dock==nil { return .Invalid_Descriptor }
     if descriptor.dock_root!=0 && (descriptor.dock==nil || descriptor.dock.nodes[descriptor.dock_root]==nil) { return .Invalid_Descriptor }
+    if !finite(descriptor.text_max_width) || descriptor.text_max_width<0 { return .Invalid_Descriptor }
     if !finite(descriptor.font_size) || descriptor.font_size<0 || !finite(descriptor.minimum) || !finite(descriptor.maximum) || !finite(descriptor.step) || !finite(descriptor.value) { return .Invalid_Descriptor }
     if (descriptor.kind==.Slider || descriptor.kind==.Drag_Value || descriptor.kind==.Numeric_Input) && descriptor.maximum<=descriptor.minimum { return .Invalid_Descriptor }
     if descriptor.kind==.Text_Input || descriptor.kind==.Code_Editor { if _,valid:=state_get(ctx,descriptor.state,string); !valid { return .Invalid_State } }

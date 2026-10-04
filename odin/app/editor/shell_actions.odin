@@ -1,4 +1,4 @@
-//! Drained widget intents run on the scene owner after the renderer freezes the current UI frame.
+//! Drained widget intents finish on the scene owner before any native frame acquisition.
 package editor_app
 
 import document "../document"
@@ -18,6 +18,8 @@ field_change :: proc(shell:^Shell,item:^Field_Binding,value:json.Value) {
 click :: proc(shell:^Shell,event:ui.Click_Action) {
     action:=Action(event.action)
     if action!=.None && action!=.Material { if error:=shell_finish_gestures(shell); error!=.None { shell.state.last_error=error; return } }
+    if shell_material_texture_click(shell,event) { return }
+    if shell_material_asset_click(shell,event) { return }
     if shell_script_click(shell,event) { return }
     if shell_particle_click(shell,event) { return }
     if shell_gizmo_click(shell,event) { return }
@@ -62,7 +64,7 @@ click :: proc(shell:^Shell,event:ui.Click_Action) {
         }
     case .Layout: if event.payload<=3 { shell.viewports.layout=Viewport_Layout(event.payload) }
     case .Panel_Open: if event.payload>=1 && event.payload<=11 { ui.dock_open(&shell.dock,ui.Tab_Id(event.payload)) }
-    case .None,.Search,.Field,.Add_Component,.Viewport,.Document_Path,.Expand,.Material,.Material_Preset,
+    case .None,.Search,.Field,.Add_Component,.Viewport,.Document_Path,.Expand,.Material,.Material_Preset,.Material_Alpha,.Material_Double,.Material_Expand,.Material_Save,.Material_Apply,.Material_Asset_Path,.Material_Texture_Expand,.Material_Role,.Material_Neutral,.Material_Original,.Material_Browser,.Material_Assign,.Material_UV,.Material_Source_Choice,.Material_Source_Text,.Material_Sampling,.Material_Filter,
         .Asset_Back,.Asset_Forward,.Asset_Breadcrumb,.Asset_Reveal,.Asset_Search,.Asset_Select,.Asset_Parent,.Asset_Refresh,.Asset_Open,.Asset_Root,.Asset_New_Folder,.Asset_Folder_Name,.Asset_Folder_Create,.Asset_Delete,.Asset_Delete_Confirm,.Asset_Cancel,
         .Pref_Number,.Pref_Toggle,.Pref_Theme,.Pref_Connection,.Pref_Save,.Mixer_Volume,
         .Host_Connect,.Host_Disconnect,.Host_Interrupt,.Host_Send,.Host_Prompt,
@@ -77,7 +79,7 @@ shell_actions :: proc(shell:^Shell) {
     for action in events {
         switch event in action {
         case ui.Click_Action: click(shell,event)
-        case ui.Expand_Action: if Action(event.action)==.Select { shell.state.expanded[ecs.Entity_Id(event.payload)]=event.expanded }
+        case ui.Expand_Action: if Action(event.action)==.Select { shell.state.expanded[ecs.Entity_Id(event.payload)]=event.expanded } else if Action(event.action)==.Material_Expand || Action(event.action)==.Material_Texture_Expand { ui.state_set(shell.ctx,{node=event.node,slot=0},event.expanded) }
         case ui.Text_Action:
             value:=ui.action_text(shell.ctx,event)
             if shell_script_text(shell,event,value) { continue }
@@ -95,12 +97,14 @@ shell_actions :: proc(shell:^Shell) {
             if shell_timeline_number(shell,event) { continue }
             if shell_service_number(shell,event) { continue }
             if Action(event.action)==.Material { shell_material_change(shell,event); continue }
+            if Action(event.action)==.Material_Sampling { shell_material_sampling_number(shell,event); continue }
             if Action(event.action)==.Field { shell_field_number(shell,event) }
-        case ui.Toggle_Action: if Action(event.action)==.Script_Variable { shell_script_variable(shell,event.payload,event.value); continue }; if !shell_timeline_toggle(shell,event) && !shell_service_toggle(shell,event) && Action(event.action)==.Field { field_change(shell,binding(shell,event.payload),event.value) }
+        case ui.Toggle_Action: if Action(event.action)==.Material_Double { shell_material_property(shell,"double_sided",event.value);continue };if Action(event.action)==.Script_Variable { shell_script_variable(shell,event.payload,event.value); continue }; if !shell_timeline_toggle(shell,event) && !shell_service_toggle(shell,event) && Action(event.action)==.Field { field_change(shell,binding(shell,event.payload),event.value) }
         case ui.Selection_Action:
-            if event.index<0 || shell_code_choice(shell,event) || shell_timeline_choice(shell,event) || shell_service_choice(shell,event) { continue }
+            if event.index<0 || shell_material_filter(shell,event) || shell_code_choice(shell,event) || shell_timeline_choice(shell,event) || shell_service_choice(shell,event) { continue }
             #partial switch Action(event.action) {
             case .Material_Preset: shell_material_preset(shell,event.index)
+            case .Material_Alpha: if event.index<3 { modes:=[3]string{"opaque","mask","blend"};shell_material_property(shell,"alpha_mode",modes[event.index]) }
             case .Add_Component:
                 if shell.inspector.has_entity && event.index<len(shell.inspector.available) { execute(shell.state,{kind=.Add_Component,entity=shell.inspector.entity,component=shell.inspector.available[event.index]}) }
             case .Field:
@@ -143,7 +147,7 @@ shell_shortcut :: proc(shell:^Shell,event:ui.Key_Action) {
         case .Y: action=.Redo
         case .D: shell_selection_command(shell,.Duplicate)
         }
-    } else if event.key==.Escape { if shell.gizmo.gesture.active { shell.state.last_error=gizmo_cancel(&shell.gizmo) } else if shell.field_gesture.active || shell.material.active { shell.state.last_error=shell_cancel_gesture(shell) } else { selection_clear(shell.state) } }
+    } else if event.key==.Escape { if shell.gizmo.gesture.active { shell.state.last_error=gizmo_cancel(&shell.gizmo) } else if shell.field_gesture.active || shell.material.active || shell.sampling_gesture.scene.active { shell.state.last_error=shell_cancel_gesture(shell) } else { selection_clear(shell.state) } }
     else if shell.state.owner.mode==.Editing && event.key in (bit_set[ui.Key]{.W,.E,.R}) { shell_gizmo_key(shell,event.key) }
     else if event.key==.F { shell_focus(shell) }
     else if event.key==.Delete || event.key==.Backspace { shell_selection_command(shell,.Destroy) }

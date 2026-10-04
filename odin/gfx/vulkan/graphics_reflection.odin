@@ -55,6 +55,7 @@ reflect_graphics_stage :: proc(r:^Renderer,desc:gfx.Graphics_Desc,pipeline:^Nati
                 case 13: storage_format=.RG8_Unorm
                 case 15: storage_format=.R8_Unorm
                 case 4: storage_format=.RGBA8_Unorm
+                case 10: storage_format=.RGBA16_Unorm
                 case 33: storage_format=.R32_Uint
                 case: return .Unsupported
                 }
@@ -106,6 +107,9 @@ reflect_graphics_stage :: proc(r:^Renderer,desc:gfx.Graphics_Desc,pipeline:^Nati
 /// Compiles a pipeline only after selected-stage reflection matches all authored bindings.
 create_graphics_pipeline :: proc(r:^Renderer,desc:gfx.Graphics_Desc)->(gfx.Graphics_Pipeline_Handle,gfx.Gpu_Error) {
     if r.device==nil || r.failed { return {},.Native_Failure }
+    for pipeline in r.graphics_cache {
+        if gfx.graphics_desc_equal(pipeline.key,desc) { pipeline.refs+=1;return gfx.storage_insert(&r.graphics,pipeline),.None }
+    }
     if desc.vertex_entry=="" || (len(desc.colors)>0 && desc.fragment_entry=="") || (!desc.depth.enabled && len(desc.colors)==0) { return {},.Invalid_Shader }
     if !gfx.vertex_layout_valid(desc.vertex) { return {},.Invalid_Shader }
     if (desc.wireframe && !r.wireframe) || (desc.depth_bias.clamp!=0 && !r.depth_bias_clamp) { return {},.Unsupported }
@@ -136,6 +140,7 @@ create_graphics_pipeline :: proc(r:^Renderer,desc:gfx.Graphics_Desc)->(gfx.Graph
     for color,i in desc.colors { pipeline.colors[i]=color.format }
     error=graphics_pipeline_allocate(r,desc,pipeline)
     if error!=.None { return {},error }
+    pipeline.key=gfx.graphics_desc_clone(desc,r.allocator);append(&r.graphics_cache,pipeline)
     success=true
     return gfx.storage_insert(&r.graphics,pipeline),.None
 }

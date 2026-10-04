@@ -43,17 +43,17 @@ test_absolute_model_prefab_batch_rolls_back_capabilities_and_redoes_owned_geomet
     result,group=scene_action_execute_batch(&owner,operations[:]); testing.expect(t,result.error!=.None && group.state==nil && owner.world.live_count==1 && native.commits==0); editor.tool_result_destroy(&result)
     denied,denied_error=script_source_read(&owner,{path=script_file,root=.File}); delete(denied); testing.expect_value(t,denied_error,editor.Scene_Error.Invalid_Field_Value)
     operations[1].path=model_file
-    result,group=scene_action_execute_batch(&owner,operations[:]); testing.expect_value(t,result.error,editor.Scene_Error.None); testing.expect(t,len(result.entities)==3 && owner.world.live_count==4 && native.commits==1); if result.error!=.None { editor.tool_result_destroy(&result); return }
+    result,group=scene_action_execute_batch(&owner,operations[:]); testing.expect_value(t,result.error,editor.Scene_Error.None); testing.expect(t,len(result.entities)==4 && owner.world.live_count==5 && native.commits==1); if result.error!=.None { editor.tool_result_destroy(&result); return }
     root,imported,child:=result.entities[0],result.entities[1],result.entities[2]
     source,has_source:=ecs.get_component(&owner.world,root,Script_Component); model,has_model:=ecs.get_component(&owner.world,imported,Scene_Model); mesh,has_mesh:=ecs.get_component(&owner.world,child,Scene_Mesh); parent,has_parent:=ecs.get_component(&owner.world,child,Scene_Parent)
     testing.expect(t,has_source && source.root==.File && source.path==script_file && has_model && model.source.root==.File && len(model.model.primitives)>0 && has_mesh && mesh.source.root==.File && mesh.source.path==mesh_file && has_parent && parent.entity==root)
     saved_file:=strings.concatenate({directory,"/templates/saved.katprefab"}); defer delete(saved_file)
     captured,capture_group:=asset_authoring_execute(&owner,{action=.Capture,path=saved_file,root_entity=root}); defer editor.tool_result_destroy(&captured); defer editor.undo_group_destroy(&capture_group); testing.expect_value(t,captured.error,editor.Scene_Error.None)
-    read,read_group:=asset_authoring_execute(&owner,{action=.Read,path=saved_file}); defer editor.tool_result_destroy(&read); defer editor.undo_group_destroy(&read_group); testing.expect(t,read.error==.None && owner.world.live_count==4)
+    read,read_group:=asset_authoring_execute(&owner,{action=.Read,path=saved_file}); defer editor.tool_result_destroy(&read); defer editor.undo_group_destroy(&read_group); testing.expect(t,read.error==.None && owner.world.live_count==5)
     editor.agent_record_action(&owner.agent.session,{kind=.Application,tool_name="asset_drop"},&result,&group)
     testing.expect(t,os.write_entire_file(model_file,"invalid model")==nil && os.write_entire_file(mesh_file,"invalid mesh")==nil)
     testing.expect_value(t,authoring_undo_last(&owner),editor.Scene_Error.None); testing.expect(t,owner.world.live_count==1 && ecs.entity_exists(&owner.world,before))
-    testing.expect_value(t,authoring_redo_last(&owner),editor.Scene_Error.None); testing.expect(t,owner.world.live_count==4 && !ecs.entity_exists(&owner.world,root) && !ecs.entity_exists(&owner.world,imported) && !ecs.entity_exists(&owner.world,child))
+    testing.expect_value(t,authoring_redo_last(&owner),editor.Scene_Error.None); testing.expect(t,owner.world.live_count==5 && !ecs.entity_exists(&owner.world,root) && !ecs.entity_exists(&owner.world,imported) && !ecs.entity_exists(&owner.world,child))
     restored_root,restored_child:ecs.Entity_Id; found_model:=false
     ids:=ecs.entity_ids(&owner.world); defer delete(ids)
     for entity in ids {

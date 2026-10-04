@@ -12,7 +12,7 @@ test_scene_gpu_abi_linear_material_and_normal_matrix :: proc(t:^testing.T) {
     testing.expect_value(t,size_of(Object_Data),160)
     testing.expect_value(t,size_of(Frame_Data),128)
     color:=km.Color{0.17,0.33,0.61,0.9}
-    surface:=app.Surface_Material{color,true,0.7,0.3,0.8}
+    surface:=app.Surface_Material{linear_color=color,has_tint=true,metallic=0.7,roughness=0.3,ao=0.8}
     transform:=km.transform(position={1,2,3},rotation=km.quat_axis_angle(km.VEC3_Y,km.FRAC_PI_4),scale={2,3,4})
     data,error:=object_data(transform,surface)
     testing.expect_value(t,error,Scene_Error.None)

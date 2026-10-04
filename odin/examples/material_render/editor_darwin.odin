@@ -197,8 +197,8 @@ exercise_editor :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Captur
     meshes:[2]app.Scene_Mesh
     for &mesh in meshes { error:app.Mesh_Error; mesh,error=app.scene_mesh_prepare(&authoring,{kind=.Geometry,geometry=source}); assert(error==.None) }
     ids:=[2]ecs.Entity_Id{
-        ecs.spawn(&authoring.world,struct { mesh:app.Scene_Mesh,transform:app.Scene_Transform, surface:app.Surface_Material,key:app.Scene_Key }{meshes[0],{km.transform(position={-0.65,0,0},scale={1.4,1.4,1.4})},{km.color_to_linear({0.85,0.12,0.08,1}),true,0,0.7,1},{1}}),
-        ecs.spawn(&authoring.world,struct { mesh:app.Scene_Mesh,transform:app.Scene_Transform, surface:app.Surface_Material,key:app.Scene_Key }{meshes[1],{km.transform(position={0.65,0,0},scale={1.4,1.4,1.4})},{km.color_to_linear({0.08,0.2,0.85,1}),true,0,0.4,1},{2}}),
+        ecs.spawn(&authoring.world,struct { mesh:app.Scene_Mesh,transform:app.Scene_Transform, surface:app.Surface_Material,key:app.Scene_Key }{meshes[0],{km.transform(position={-0.65,0,0},scale={1.4,1.4,1.4})},{linear_color=km.color_to_linear({0.85,0.12,0.08,1}),has_tint=true,metallic=0,roughness=0.7,ao=1},{1}}),
+        ecs.spawn(&authoring.world,struct { mesh:app.Scene_Mesh,transform:app.Scene_Transform, surface:app.Surface_Material,key:app.Scene_Key }{meshes[1],{km.transform(position={0.65,0,0},scale={1.4,1.4,1.4})},{linear_color=km.color_to_linear({0.08,0.2,0.85,1}),has_tint=true,metallic=0,roughness=0.4,ao=1},{2}}),
     }
     ecs.get_resource_mut(&authoring.world,app.Scene_Identity).next_entity_id=3
     model_shader,model_error:=render.model_shader_compile(compiler,descriptor.output_format); assert(model_error==.None); defer render.model_shader_destroy(&model_shader)

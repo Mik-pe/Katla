@@ -22,6 +22,9 @@ vertex_format :: proc(format:gfx.Vertex_Format)->MTL.VertexFormat {
     case .Sint3: return .Int3
     case .Sint4: return .Int4
     case .Unorm8x4: return .UChar4Normalized
+    case .Uint8x4: return .UChar4
+    case .Uint16x4: return .UShort4
+    case .Unorm16x4: return .UShort4Normalized
     }
     unreachable()
 }
@@ -76,14 +79,15 @@ stencil_descriptor :: proc(face:gfx.Stencil_Face,state:gfx.Stencil_State)->^MTL.
 }
 
 @(private="package")
-bind_vertices :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Graph,pipeline:^Native_Graphics,packet:gfx.Render,constants:[]gfx.Constant_Binding,encoder:^NS.Object,vertices:[]gfx.Vertex_Binding)->gfx.Gpu_Error {
-    table,err:=render_table(r,slot,pipeline,prepared,packet,constants,.Vertex)
+bind_vertices :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Graph,pipeline:^Native_Graphics,packet:gfx.Render,phase:gfx.Render_Phase,encoder:^NS.Object,vertices:[]gfx.Vertex_Binding)->gfx.Gpu_Error {
+    table,err:=render_table(r,slot,pipeline,prepared,packet,phase.constants,phase.samplers,phase.images,.Vertex)
     if err!=.None { return err }
     for binding in vertices {
         if binding.binding>20 { return .Invalid_Range }
         buffer,ok:=resolve_buffer(r,prepared,binding.access.resource)
         if !ok { return .Invalid_Resource }
         send(nil,table,"setAddress:atIndex:",buffer.object->gpuAddress()+binding.access.range.offset,NS.UInteger(10+binding.binding))
+        capture_buffer_binding(r,slot,table,cast(^NS.Object)buffer.object,binding.access,0,binding.binding,10+binding.binding,.Vertex)
     }
     send(nil,encoder,"setArgumentTable:atStages:",table,NS.UInteger(1))
     return .None
@@ -96,25 +100,25 @@ encode_draw :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Graph,
     case gfx.Draw:
         if draw.vertex_count>0 && draw.instance_count>0 { send(nil,encoder,"drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:",topology,NS.UInteger(draw.first_vertex),NS.UInteger(draw.vertex_count),NS.UInteger(draw.instance_count),NS.UInteger(draw.first_instance)) }
     case gfx.Draw_Vertices:
-        err:=bind_vertices(r,slot,prepared,pipeline,packet,phase.constants,encoder,draw.vertices); if err!=.None { return err }
+        err:=bind_vertices(r,slot,prepared,pipeline,packet,phase,encoder,draw.vertices); if err!=.None { return err }
         if draw.vertex_count>0 && draw.instance_count>0 { send(nil,encoder,"drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:",topology,NS.UInteger(draw.first_vertex),NS.UInteger(draw.vertex_count),NS.UInteger(draw.instance_count),NS.UInteger(draw.first_instance)) }
     case gfx.Draw_Indexed:
-        err:=bind_vertices(r,slot,prepared,pipeline,packet,phase.constants,encoder,draw.vertices); if err!=.None { return err }
+        err:=bind_vertices(r,slot,prepared,pipeline,packet,phase,encoder,draw.vertices); if err!=.None { return err }
         index,ok:=resolve_buffer(r,prepared,draw.index.resource); if !ok { return .Invalid_Resource }
         size:=u64(2) if draw.index_format==.Uint16 else u64(4)
         offset:=u64(draw.first_index)*size
         if offset>draw.index.range.size { return .Invalid_Range }
-        if draw.index_count>0 && draw.instance_count>0 { send(nil,encoder,"drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferLength:instanceCount:baseVertex:baseInstance:",topology,NS.UInteger(draw.index_count),MTL.IndexType.UInt16 if draw.index_format==.Uint16 else MTL.IndexType.UInt32,index.object->gpuAddress()+draw.index.range.offset+offset,NS.UInteger(draw.index.range.size-offset),NS.UInteger(draw.instance_count),NS.Integer(draw.vertex_offset),NS.UInteger(draw.first_instance)) }
+        if draw.index_count>0 && draw.instance_count>0 { send(nil,encoder,"drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferLength:instanceCount:baseVertex:baseInstance:",topology,NS.UInteger(draw.index_count),MTL.IndexType.UInt16 if draw.index_format==.Uint16 else MTL.IndexType.UInt32,index.object->gpuAddress()+draw.index.range.offset+offset,NS.UInteger(draw.index.range.size-offset),NS.UInteger(draw.instance_count),NS.Integer(draw.vertex_offset),NS.UInteger(draw.first_instance));access:=draw.index;access.range.offset+=offset;access.range.size-=offset;capture_direct_binding(r,slot,cast(^NS.Object)index.object,access,.Index,0,1) }
     case gfx.Draw_Indirect:
-        err:=bind_vertices(r,slot,prepared,pipeline,packet,phase.constants,encoder,draw.vertices); if err!=.None { return err }
+        err:=bind_vertices(r,slot,prepared,pipeline,packet,phase,encoder,draw.vertices); if err!=.None { return err }
         buffer,ok:=resolve_buffer(r,prepared,draw.command.resource); if !ok { return .Invalid_Resource }
-        for i in 0..<draw.count { send(nil,encoder,"drawPrimitives:indirectBuffer:",topology,buffer.object->gpuAddress()+draw.command.range.offset+u64(i)*u64(draw.stride)) }
+        for i in 0..<draw.count { send(nil,encoder,"drawPrimitives:indirectBuffer:",topology,buffer.object->gpuAddress()+draw.command.range.offset+u64(i)*u64(draw.stride));access:=draw.command;access.range={draw.command.range.offset+u64(i)*u64(draw.stride),16};capture_direct_binding(r,slot,cast(^NS.Object)buffer.object,access,.Indirect,i,1) }
     case gfx.Draw_Indexed_Indirect:
-        err:=bind_vertices(r,slot,prepared,pipeline,packet,phase.constants,encoder,draw.vertices); if err!=.None { return err }
+        err:=bind_vertices(r,slot,prepared,pipeline,packet,phase,encoder,draw.vertices); if err!=.None { return err }
         index,index_ok:=resolve_buffer(r,prepared,draw.index.resource)
         buffer,buffer_ok:=resolve_buffer(r,prepared,draw.command.resource)
         if !index_ok || !buffer_ok { return .Invalid_Resource }
-        for i in 0..<draw.count { send(nil,encoder,"drawIndexedPrimitives:indexType:indexBuffer:indexBufferLength:indirectBuffer:",topology,MTL.IndexType.UInt16 if draw.index_format==.Uint16 else MTL.IndexType.UInt32,index.object->gpuAddress()+draw.index.range.offset,NS.UInteger(draw.index.range.size),buffer.object->gpuAddress()+draw.command.range.offset+u64(i)*u64(draw.stride)) }
+        for i in 0..<draw.count { send(nil,encoder,"drawIndexedPrimitives:indexType:indexBuffer:indexBufferLength:indirectBuffer:",topology,MTL.IndexType.UInt16 if draw.index_format==.Uint16 else MTL.IndexType.UInt32,index.object->gpuAddress()+draw.index.range.offset,NS.UInteger(draw.index.range.size),buffer.object->gpuAddress()+draw.command.range.offset+u64(i)*u64(draw.stride));capture_direct_binding(r,slot,cast(^NS.Object)index.object,draw.index,.Index,i,1);access:=draw.command;access.range={draw.command.range.offset+u64(i)*u64(draw.stride),20};capture_direct_binding(r,slot,cast(^NS.Object)buffer.object,access,.Indirect,i,1) }
     }
     return .None
 }

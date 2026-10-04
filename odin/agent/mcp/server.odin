@@ -31,7 +31,8 @@ remove_pending :: proc(s:^Server,index:int) { delete(s.pending[index].id,s.alloc
 @(private="package")
 tool_error :: proc(id,message:string,allocator:mem.Allocator)->string {
     text,err:=json.marshal(message,allocator=allocator); assert(err==nil); defer delete(text,allocator)
-    result:=fmt.aprintf(`{{"resultType":"complete","_meta":%s,"isError":true,"content":[{{"type":"text","text":%s}}]}}`,SERVER_META,string(text),allocator=allocator)
+    failure,encode_error:=json.marshal(struct{success:bool,message:string}{false,message},allocator=allocator); assert(encode_error==nil); defer delete(failure,allocator)
+    result:=fmt.aprintf(`{{"resultType":"complete","_meta":%s,"isError":true,"structuredContent":%s,"content":[{{"type":"text","text":%s}}]}}`,SERVER_META,string(failure),string(text),allocator=allocator)
     defer delete(result,allocator)
     return rpc_result(id,result,allocator)
 }

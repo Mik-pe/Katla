@@ -26,24 +26,31 @@ encode_fill_words :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_
     buffer,ok:=resolve_buffer(r,prepared,destination); if !ok { return .Invalid_Resource }
     if value==u32(byte(value))*0x01010101 {
         send(nil,encoder,"fillBuffer:range:value:",buffer.object,NS.Range{NS.UInteger(offset),NS.UInteger(size)},byte(value))
+        capture_transfer_buffer(r,slot,cast(^NS.Object)buffer.object,destination,{offset,size},0,value)
         return .None
     }
     if size/4>u64(max(u32)) { return .Invalid_Range }
     entry,present:=gfx.storage_get(&r.pipelines,r.fill_pipeline); if !present { return .Invalid_Resource }
     pipeline:=entry^; retain_pipeline(slot,pipeline)
+    slot.capture_pipeline=gfx.capture_object(&r.capture,pipeline.object);slot.capture_layout=gfx.capture_object(&r.capture,&pipeline.desc)
     constants:=[4]u32{u32(size/4),value,0,0}
     parameters:=r.device->newBufferWithLength(16,MTL.ResourceOptions{.HazardTrackingModeUntracked})
     if parameters==nil { return .Allocation_Failed }
     copy(parameters->contents(),mem.slice_to_bytes(constants[:]))
-    append(&slot.auxiliary,cast(^NS.Object)parameters); send(nil,slot.residency,"addAllocation:",parameters)
+    append(&slot.auxiliary,cast(^NS.Object)parameters); capture_residency(r,slot,cast(^NS.Object)parameters)
     descriptor:=new_object("MTL4ArgumentTableDescriptor"); if descriptor==nil { return .Allocation_Failed }; defer descriptor->release()
     send(nil,descriptor,"setMaxBufferBindCount:",NS.UInteger(2))
     native_error:^NS.Error
     table:=send(^NS.Object,r.device,"newArgumentTableWithDescriptor:error:",descriptor,&native_error)
     if table==nil { return .Allocation_Failed }; append(&slot.tables,table)
+    capture_table(r,slot,table,.Compute)
     send(nil,table,"setAddress:atIndex:",buffer.object->gpuAddress()+offset,NS.UInteger(0))
     send(nil,table,"setAddress:atIndex:",parameters->gpuAddress(),NS.UInteger(1))
+    capture_buffer_binding(r,slot,table,cast(^NS.Object)buffer.object,{destination,{offset,size},.Write,.Transfer_Destination},0,0,0)
+    capture_constant_binding(r,slot,table,cast(^NS.Object)parameters,0,1,1,16,"fill parameters")
     send(nil,encoder,"setComputePipelineState:",pipeline.object); send(nil,encoder,"setArgumentTable:",table)
+    capture_emit(r,slot,{kind=.Bind_Pipeline,resource_index= -1,object=gfx.capture_object(&r.capture,pipeline.object),emitted=true,label="word-fill pipeline state"})
     send(nil,encoder,"dispatchThreadgroups:threadsPerThreadgroup:",MTL.Size{NS.Integer((size/4+63)/64),1,1},MTL.Size{64,1,1})
+    capture_transfer_buffer(r,slot,cast(^NS.Object)buffer.object,destination,{offset,size},0,value)
     return .None
 }

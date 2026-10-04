@@ -14,6 +14,10 @@ shell_finish_gestures :: proc(shell:^Shell)->editor.Scene_Error {
     if shell.material.active {
         if error:=app.material_gesture_finish(shell.state.owner,&shell.material); error!=.None { shell.state.last_error=error; return error }
     }
+    if shell.sampling_gesture.scene.active {
+        if error:=app.material_sampling_gesture_finish(shell.state.owner,&shell.sampling_gesture); error!=.None { shell.state.last_error=error; return error }
+        shell.sampling_node=0
+    }
     return .None
 }
 /// Installs the same admission gate for native controls and tools routed through Authoring.

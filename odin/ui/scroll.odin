@@ -25,7 +25,7 @@ scroll_pointer_down :: proc(ctx:^Context,node:^Node,position:Vec2)->bool {
             if horizontal { node.scroll.x=clamp(node.scroll.x+direction*node.bounds.width,0,max(0,node.content.width-node.bounds.width)); ctx.capture_value=node.scroll.x }
             else { node.scroll.y=clamp(node.scroll.y+direction*node.bounds.height,0,max(0,node.content.height-node.bounds.height)); ctx.capture_value=node.scroll.y }
             append(&ctx.actions,Scroll_Action{node.id,node.descriptor.action,node.descriptor.payload,node.scroll})
-        }; return true
+        }; layout_node(ctx,node_get(ctx,ctx.root),root_bounds(ctx,ctx.logical_size),{0,0,ctx.logical_size.x,ctx.logical_size.y}); return true
     }; return false
 }
 @(private="package")
@@ -35,4 +35,5 @@ scroll_pointer_move :: proc(ctx:^Context,node:^Node,position:Vec2) {
     if horizontal { extent=node.content.width-node.bounds.width; span=track.width-thumb.width; delta=position.x-ctx.capture_start.x }
     value:=clamp(ctx.capture_value+delta*max(0,extent)/max(1,span),0,max(0,extent))
     if horizontal { node.scroll.x=value } else { node.scroll.y=value }; append(&ctx.actions,Scroll_Action{node.id,node.descriptor.action,node.descriptor.payload,node.scroll})
+    layout_node(ctx,node_get(ctx,ctx.root),root_bounds(ctx,ctx.logical_size),{0,0,ctx.logical_size.x,ctx.logical_size.y})
 }

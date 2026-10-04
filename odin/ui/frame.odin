@@ -48,6 +48,7 @@ frame :: proc(ctx:^Context,descriptor:Descriptor,input:Input,size:Vec2)->(Draw_L
     }
     paint_dock_overlay(ctx,window)
     if node:=node_get(ctx,ctx.popup); node!=nil && node.descriptor.kind==.Combo && node_visible(ctx,node) { paint_combo_popup(ctx,node,window) }
+    paint_text_tooltip(ctx,window)
     if node:=node_get(ctx,ctx.focused); node!=nil && text_editable(node) && ctx.window_focused {
         text_caret_visible(ctx,node); font,font_size:=node_font(ctx,node); inset:=text_inner(ctx,node); wrap:=text_wrap(node,inset.width)
         caret:=ctx.fonts.caret(ctx.fonts.state,font,node_text(ctx,node),font_size,wrap,node.cursor)

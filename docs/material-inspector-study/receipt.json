@@ -1,0 +1,121 @@
+{
+  "checks": [
+    {
+      "detail": "selected after click: Some(\"Sphere_1_0\")",
+      "name": "hierarchy_click_selects_sphere_1_0",
+      "passed": true
+    },
+    {
+      "detail": "selected after pick: Some(\"CenterCube\")",
+      "name": "viewport_click_picks_object",
+      "passed": true
+    },
+    {
+      "detail": "selected after empty click: None",
+      "name": "empty_click_deselects",
+      "passed": true
+    },
+    {
+      "detail": "theme after swatch click: Light",
+      "name": "light_theme_applies",
+      "passed": true
+    },
+    {
+      "detail": "theme after restore click: Dark",
+      "name": "dark_theme_restores",
+      "passed": true
+    },
+    {
+      "detail": "preferences panel visible after close: false",
+      "name": "preferences_close_works",
+      "passed": true
+    },
+    {
+      "detail": "material: Some(MaterialValues { base_color: [0.68, 0.72, 0.76, 1.0], metallic: 1.0, roughness: 0.32, ao: 1.0, emissive_factor: [0.0, 0.0, 0.0], normal_scale: 1.0, occlusion_strength: 1.0, alpha_mode: Opaque, alpha_cutoff: 0.5, double_sided: false })",
+      "name": "material_preset_applies",
+      "passed": true
+    },
+    {
+      "detail": "material: Some(MaterialValues { base_color: [0.68, 0.72, 0.76, 1.0], metallic: 1.0, roughness: 0.74999934, ao: 1.0, emissive_factor: [0.0, 0.0, 0.0], normal_scale: 1.0, occlusion_strength: 1.0, alpha_mode: Opaque, alpha_cutoff: 0.5, double_sided: false })",
+      "name": "material_drag_follows_pointer",
+      "passed": true
+    },
+    {
+      "detail": "preset plus gesture history entries: 2",
+      "name": "material_drag_is_one_undo",
+      "passed": true
+    },
+    {
+      "detail": "material: Some(MaterialValues { base_color: [0.68, 0.72, 0.76, 1.0], metallic: 1.0, roughness: 0.32, ao: 1.0, emissive_factor: [0.0, 0.0, 0.0], normal_scale: 1.0, occlusion_strength: 1.0, alpha_mode: Opaque, alpha_cutoff: 0.5, double_sided: false })",
+      "name": "edit_menu_undo_restores_material",
+      "passed": true
+    },
+    {
+      "detail": "material: Some(MaterialValues { base_color: [0.68, 0.72, 0.76, 1.0], metallic: 1.0, roughness: 0.74999934, ao: 1.0, emissive_factor: [0.0, 0.0, 0.0], normal_scale: 1.0, occlusion_strength: 1.0, alpha_mode: Opaque, alpha_cutoff: 0.5, double_sided: false })",
+      "name": "edit_menu_redo_restores_material",
+      "passed": true
+    },
+    {
+      "detail": "ColliderShape on selected entity after pick: true",
+      "name": "add_component_click_adds_collider",
+      "passed": true
+    },
+    {
+      "detail": "ColliderShape on selected entity after remove: false",
+      "name": "remove_component_click_removes_collider",
+      "passed": true
+    },
+    {
+      "detail": "selected=Some(\"Chair\"), children=Some(2), bounds=Some(AABB { center: Vec3([0.0, 0.67499995, 0.0, 0.0]), extent: Vec3([0.4, 0.67499995, 0.4, 0.0]) })",
+      "name": "double_click_prefab_creates_complete_selected_subtree",
+      "passed": true
+    },
+    {
+      "detail": "mode=Playing",
+      "name": "play_button_starts_prefab_preview",
+      "passed": true
+    },
+    {
+      "detail": "mode=Editing, roots=1",
+      "name": "stop_button_restores_authored_prefab",
+      "passed": true
+    },
+    {
+      "detail": "source=Some(TextureAssignments { albedo: File { asset: File(\"/tmp/katla-material-inspector-delivery/images/checker.png\") }, normal: Inherit, metallic_roughness: Inherit, occlusion: Inherit, emission: Inherit }), history=1",
+      "name": "image_drag_assigns_one_role_and_preserves_factors",
+      "passed": true
+    },
+    {
+      "detail": "sources=Some(TextureAssignments { albedo: Neutral, normal: Inherit, metallic_roughness: Inherit, occlusion: Inherit, emission: Inherit })",
+      "name": "neutral_image_button_preserves_factors",
+      "passed": true
+    },
+    {
+      "detail": "sources=None",
+      "name": "original_image_button_restores_inheritance",
+      "passed": true
+    },
+    {
+      "detail": "sampling=TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Nearest, mag_filter: Linear, mip_filter: None, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }",
+      "name": "image_browser_assignment_and_filter_button",
+      "passed": true
+    },
+    {
+      "detail": "sampling=MaterialSampling { albedo: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [4.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Nearest, mag_filter: Linear, mip_filter: None, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }, normal: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Linear, mag_filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }, metallic_roughness: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Linear, mag_filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }, occlusion: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Linear, mag_filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }, emission: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Linear, mag_filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } } }, history=6",
+      "name": "uv_drag_is_one_scoped_undo",
+      "passed": true
+    },
+    {
+      "detail": "saved=Ok(MaterialAsset { version: 1, name: \"Inspector material fixture\", values: MaterialValues { base_color: [0.99999994, 0.99999994, 0.99999994, 1.0], metallic: 0.0, roughness: 0.5, ao: 1.0, emissive_factor: [0.0, 0.0, 0.0], normal_scale: 1.0, occlusion_strength: 1.0, alpha_mode: Opaque, alpha_cutoff: 0.5, double_sided: false }, sampling: MaterialSampling { albedo: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [4.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Nearest, mag_filter: Linear, mip_filter: None, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }, normal: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Linear, mag_filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }, metallic_roughness: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Linear, mag_filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }, occlusion: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Linear, mag_filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } }, emission: TextureSampling { uv: UvTransform { tex_coord: 0, offset: [0.0, 0.0], rotation: 0.0, scale: [1.0, 1.0] }, sampler: SamplerDescriptor { min_filter: Linear, mag_filter: Linear, mip_filter: Linear, address_u: Repeat, address_v: Repeat, address_w: Repeat, comparison: None, anisotropy: 1 } } }, textures: TextureAssignments { albedo: File { asset: File(\"/tmp/katla-material-inspector-delivery/images/checker.png\") }, normal: Neutral, metallic_roughness: Neutral, occlusion: Neutral, emission: Neutral } })",
+      "name": "save_material_button_captures_effective_surface",
+      "passed": true
+    },
+    {
+      "detail": "history=7",
+      "name": "apply_material_button_is_one_complete_edit",
+      "passed": true
+    }
+  ],
+  "complete": true,
+  "screenshots": 27
+}

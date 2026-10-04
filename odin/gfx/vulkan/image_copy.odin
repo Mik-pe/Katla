@@ -51,7 +51,11 @@ encode_generate_mips :: proc(r:^Renderer,slot:^Native_Frame,recording:^Image_Rec
         }
         region:=vk.ImageBlit2{sType=.IMAGE_BLIT_2,srcSubresource={{.COLOR},level-1,packet.range.base_layer,packet.range.layer_count},srcOffsets={{0,0,0},{i32(sw),i32(sh),i32(sd)}},dstSubresource={{.COLOR},level,packet.range.base_layer,packet.range.layer_count},dstOffsets={{0,0,0},{i32(dw),i32(dh),i32(dd)}}}
         info:=vk.BlitImageInfo2{sType=.BLIT_IMAGE_INFO_2,srcImage=texture.allocation.object,srcImageLayout=.TRANSFER_SRC_OPTIMAL,dstImage=texture.allocation.object,dstImageLayout=.TRANSFER_DST_OPTIMAL,regionCount=1,pRegions=&region,filter=.LINEAR}
+        capture_mip_expect(r,texture,level-1,packet.range.base_layer,packet.range.layer_count,sw,sh,sd,0,level)
+        capture_mip_expect(r,texture,level,packet.range.base_layer,packet.range.layer_count,dw,dh,dd,1,level)
         r.table.CmdBlitImage2(slot.command,&info)
+        capture_mip_observe(r,texture,region.srcSubresource,region.srcOffsets[0],{u32(region.srcOffsets[1].x),u32(region.srcOffsets[1].y),u32(region.srcOffsets[1].z)},0,level)
+        capture_mip_observe(r,texture,region.dstSubresource,region.dstOffsets[0],{u32(region.dstOffsets[1].x),u32(region.dstOffsets[1].y),u32(region.dstOffsets[1].z)},1,level)
         image_mark_contents(recording,r,texture,destination,true)
     }
     return .None

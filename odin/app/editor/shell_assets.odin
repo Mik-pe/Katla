@@ -19,7 +19,7 @@ shell_assets :: proc(shell:^Shell)->ui.Descriptor {
     if browser==nil { append(&children,text(50,"Asset roots are unavailable")) }
     else {
         root_key:=key(50,"root"); root_state:=ui.state(shell.ctx,root_key,0,f32(browser.root)); if shell.ctx.captured.key!=root_key { ui.state_set(shell.ctx,root_state,f32(browser.root)) }
-        append(&children,ui.Descriptor{key=root_key,kind=.Combo,options=ASSET_ROOT_OPTIONS[:],state=root_state,action=u64(Action.Asset_Root),layout={height=ui.pixels(30),width=ui.pixels(160)}})
+        append(&children,ui.Descriptor{key=root_key,kind=.Combo,options=ASSET_ROOT_OPTIONS[:],state=root_state,action=u64(Action.Asset_Root),layout={height=ui.pixels(30),width=ui.percent(1)}})
         search_key:=key(50,"search")
         search:=ui.Descriptor{key=search_key,kind=.Text_Input,placeholder="Search assets",state=ui.state(shell.ctx,search_key,0,browser.search),action=u64(Action.Asset_Search),layout={height=ui.pixels(30),grow=1}}
         tools:=nodes(shell,{button("Back",.Asset_Back,!assets.can_back(browser)),button("Forward",.Asset_Forward,!assets.can_forward(browser)),button("Parent",.Asset_Parent,browser.directory==""),button("Refresh",.Asset_Refresh),button("New Folder",.Asset_New_Folder),button("Delete",.Asset_Delete,len(browser.selected_paths)==0),search})
@@ -54,7 +54,7 @@ shell_asset_image :: proc(shell:^Shell,entry:assets.Entry,row:ui.Descriptor)->ui
     case .Failed: status="Preview unavailable"
     }
     if entry.thumbnail_error && entry.thumbnail_texture!=0 && entry.thumbnail!=.Loading { status="Update failed · showing previous preview" }
-    title:=text(56,entry.name); title.key=key(56,entry.path,u64(shell.browser.root))
+    title:=text(56,entry.name); title.key=key(56,entry.path,u64(shell.browser.root));title.text_max_width=max(1,shell_panel_width(shell)-100)
     detail:=text(57,status); detail.key=key(57,entry.path,u64(shell.browser.root)); detail.has_foreground=true; detail.foreground=shell.ctx.theme.muted
     labels:=ui.Descriptor{key=key(58,entry.path,u64(shell.browser.root)),kind=.Column,layout={grow=1,gap={0,2}},children=nodes(shell,{title,detail})}
     content:=ui.Descriptor{key=key(59,entry.path,u64(shell.browser.root)),kind=.Row,layout={width=ui.percent(1),height=ui.percent(1),gap={10,0},align=.Center},children=nodes(shell,{visual,labels})}
@@ -80,7 +80,10 @@ shell_asset_open :: proc(shell:^Shell,requested_index:int=-1) {
     case .Script:
         error:=code_document_open(&shell.code,browser.root,entry.path)
         if error==.None { ui.dock_open(&shell.dock,ui.Tab_Id(Panel.Code)); shell_dock_save(shell) } else { message(shell,"Cannot open this script source") }
-    case .Material,.Shader,.Image,.Font,.Unknown:
+    case .Material:
+        path,valid:=assets.project_path(browser,entry.path);if !valid { message(shell,"Material assets must resolve inside the project");return };defer delete(path,shell.allocator)
+        shell_material_asset_apply(shell,path)
+    case .Shader,.Image,.Font,.Unknown:
         value:=fmt.aprintf("Selected %s (%d bytes)",entry.path,entry.size); defer delete(value,shell.allocator); message(shell,value)
     }
 }

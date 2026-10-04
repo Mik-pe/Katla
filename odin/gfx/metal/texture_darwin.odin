@@ -24,6 +24,7 @@ pixel_format :: proc(format:gfx.Texture_Format)->MTL.PixelFormat {
     case .RGBA8_Unorm: return .RGBA8Unorm
     case .BGRA8_Unorm: return .BGRA8Unorm
     case .RGBA16_Float: return .RGBA16Float
+    case .RGBA16_Unorm: return .RGBA16Unorm
     case .R32_Uint: return .R32Uint
     case .D32_Float: return .Depth32Float
     case .D24_Unorm_S8_Uint: return .Depth24Unorm_Stencil8

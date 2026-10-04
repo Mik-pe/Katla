@@ -11,7 +11,7 @@ import "core:slice"
 import "core:encoding/json"
 
 @(private="package")
-Scene_Query_Row :: struct { entity_id:string, name:Maybe(string), position:Maybe(km.Vec3), bounds:Maybe(km.AABB), parent_id:Maybe(string), components:[]string }
+Scene_Query_Row :: struct { entity_id:string, name:Maybe(string), position:Maybe(km.Vec3), bounds:Maybe(km.AABB), parent_id:Maybe(string), components:[]string, material_editable:bool }
 @(private="package")
 Scene_Query_Record :: struct { row:Scene_Query_Row, parent:string, components:[dynamic]string }
 
@@ -65,6 +65,7 @@ scene_action_query :: proc(owner:^Authoring,op:editor.Scene_Op)->editor.Tool_Res
         if len(rows)>=limit { continue }
         record:=&records[len(rows)]
         record.row.entity_id=scene_action_id_text(id,owner.world.allocator)
+        record.row.material_editable=scene_material_editable(owner,id)
         if has_name { record.row.name=name.name }
         if has_position { record.row.position=position }
         if has_bounds { record.row.bounds=bounds }
@@ -95,3 +96,13 @@ scene_action_hierarchy :: proc(owner:^Authoring,ids:[]ecs.Entity_Id,result:^edit
 }
 @(private="package")
 scene_action_id_text :: proc(id:ecs.Entity_Id,allocator:mem.Allocator)->string { return fmt.aprintf("%d",u64(id),allocator=allocator) }
+
+/// True only for an editable prepared mesh surface; model controllers never own material batches.
+scene_material_editable :: proc(owner:^Authoring,id:ecs.Entity_Id)->bool {
+    if owner==nil || !ecs.entity_exists(&owner.world,id) { return false }
+    if _,hidden:=ecs.get_component(&owner.world,id,Editor_Hidden); hidden { return false }
+    if _,surface:=ecs.get_component(&owner.world,id,Surface_Material); !surface { return false }
+    if _,mesh:=ecs.get_component(&owner.world,id,Scene_Mesh); mesh { return true }
+    model,primitive,error:=material_imported_primitive(owner,id)
+    return error==.None && model!=nil && primitive!=nil
+}

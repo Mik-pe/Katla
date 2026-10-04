@@ -10,6 +10,41 @@ from the same selected WGSL entry metadata. `Native_Scene` allocates independent
 mutable resources for every native frame slot. Immutable model and material
 owners remain in the model consumer.
 
+## Material surfaces and coverage
+
+Authored primitive meshes and imported model primitives use the same
+`Model_Vertex` (144 bytes) and `Model_Object` (208 bytes) streams in
+`Native_Model`. The lower-level `Native_Scene` buffer API remains available to
+explicit standalone consumers. Each material has five independently selected
+images, UV transforms and samplers: albedo, normal, metallic/roughness (or
+specular/glossiness), occlusion and emission. Prepared image snapshots retain
+native integer or floating-point precision; role-aware upload uses sRGB RGBA8,
+linear RGBA16 UNORM or linear RGBA16F as appropriate. Missing tangent normals
+sample exact `(0.5, 0.5, 1, 1)` RGBA16F values.
+
+Explicit authored factors replace imported factors; omission retains the
+imported surface. Changing alpha mode, sidedness, sampling or image identity
+prepares a complete native candidate before scene publication. Failed decode,
+upload, sampler or graph admission preserves the accepted image and history.
+Numeric properties include linear emission, signed normal scale and occlusion
+strength. Occlusion affects ambient illumination; emission is added in linear
+HDR before display mapping.
+
+Directional and point lights share perceptual GGX roughness clamped to `0.04..1`
+and height-correlated Smith visibility. Affine normal frames use oriented
+cofactors, orthogonalized tangents and explicit mirrored handedness. Generated
+tangents remember their source UV transform; changing that normal-map transform
+regenerates the fragment basis from derivatives. Authored tangents retain their
+original basis.
+
+Opaque surfaces cover every fragment regardless of base-color alpha. Masked
+surfaces discard below the authored cutoff; blended surfaces discard only
+nonpositive alpha and composite back to front without writing scene depth.
+Primitive and model shadow, selection and independent integer-picking passes
+sample the same albedo UV, vertex alpha and object alpha. Blended surfaces do
+not cast opaque shadows. Per-entry phases retain their actual image and sampler
+bindings, with mirrored and double-sided raster variants.
+
 ## Authored illumination and shadows
 
 `Scene_Point_Light` uses the exact hierarchy world position, linear RGB,
@@ -98,6 +133,28 @@ Prospective light validation uses the transaction's selected entity membership,
 including removals and whole-document replacement.
 
 ## Native evidence
+
+`odin/examples/material_brdf_native` renders the production model stages to
+RGBA16F on both Metal and Vulkan. Its 120 roughness/metallic/view cases compare
+360 RGB channels with independent double-precision arithmetic; each case also
+requires identical half-float bits with the exact neutral normal enabled or
+disabled. A second 120-case matrix covers three affine transforms, four real
+geometry paths and ten complete lighting arrangements, including two weighted
+glTF joints, composed transforms, point lights, sampled lit/occluded shadows,
+AO, signed normal scale and HDR emission. Both normal and ASan launches passed
+with native validation. The complete-lighting error stayed within
+`0.00005 + abs(reference) * 0.0006`, with maximum absolute error 0.000217271.
+All public native input parents are removed before waiting for accepted work.
+
+`odin/examples/model_sources_native` admits an actual animated glTF through
+`Spawn_Model`. Both validated ASan backends prove that the controller produces
+two independently editable primitive children sharing one CPU revision. A
+failed sampler admission publishes no entities; a child material edit leaves
+every sibling-region pixel unchanged, and undo/redo restores exact images.
+Controller playback deforms both children without replacing their accepted
+native cache or pipelines. Repeating the same sampled time preserves every
+pixel. The executable also checks accepted native fallback receipts and zero
+Odin tracked allocations.
 
 `odin/examples/render_features` compiles real scene shaders with the explicit
 offline compiler executable. It renders an authored floor, sphere, cube and

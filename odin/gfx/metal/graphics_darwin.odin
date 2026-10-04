@@ -48,14 +48,20 @@ address_mode :: proc(mode:gfx.Address_Mode)->MTL.SamplerAddressMode {
 }
 
 /// Creates an immutable sampler with explicit filtering, addressing and comparison state.
-create_sampler :: proc(r:^Renderer,desc:gfx.Sampler_Desc)->(gfx.Sampler_Handle,gfx.Gpu_Error) {
+create_sampler :: proc(r:^Renderer,descriptor:gfx.Sampler_Desc)->(gfx.Sampler_Handle,gfx.Gpu_Error) {
     if r.device==nil || r.failed { return {},.Native_Failure }
-    if math.is_nan(desc.min_lod) || math.is_inf(desc.min_lod) || math.is_nan(desc.max_lod) || math.is_inf(desc.max_lod) || desc.min_lod<0 || desc.max_lod<desc.min_lod || desc.max_anisotropy==0 || desc.max_anisotropy>16 { return {},.Invalid_Range }
+    desc,valid:=gfx.sampler_desc_normalize(descriptor)
+    if !valid { return {},.Invalid_Range }
+    for cached in r.sampler_cache { if cached.desc==desc {
+        cached.refs+=1; return gfx.storage_insert(&r.samplers,cached),.None
+    } }
     native:=MTL.SamplerDescriptor.alloc()->init()
     if native==nil { return {},.Allocation_Failed }; defer native->release()
     native->setMinFilter(.Nearest if desc.min_filter==.Nearest else .Linear)
     native->setMagFilter(.Nearest if desc.mag_filter==.Nearest else .Linear)
-    native->setMipFilter(.Nearest if desc.mip_filter==.Nearest else .Linear)
+    mip:=MTL.SamplerMipFilter.NotMipmapped
+    if desc.mip_filter==.Nearest { mip=.Nearest }; if desc.mip_filter==.Linear { mip=.Linear }
+    native->setMipFilter(mip); native->setSupportArgumentBuffers(true)
     native->setSAddressMode(address_mode(desc.address_u)); native->setTAddressMode(address_mode(desc.address_v)); native->setRAddressMode(address_mode(desc.address_w))
     native->setLodMinClamp(desc.min_lod); native->setLodMaxClamp(desc.max_lod)
     native->setMaxAnisotropy(NS.UInteger(desc.max_anisotropy))
@@ -63,13 +69,17 @@ create_sampler :: proc(r:^Renderer,desc:gfx.Sampler_Desc)->(gfx.Sampler_Handle,g
     object:=send(^MTL.SamplerState,r.device,"newSamplerStateWithDescriptor:",native)
     if object==nil { return {},.Allocation_Failed }
     sampler:=new(Native_Sampler,r.allocator); sampler^={object,desc,1}
+    append(&r.sampler_cache,sampler)
     return gfx.storage_insert(&r.samplers,sampler),.None
 }
 
 @(private="package")
 release_sampler :: proc(r:^Renderer,sampler:^Native_Sampler) {
     sampler.refs-=1
-    if sampler.refs==0 { sampler.object->release(); free(sampler,r.allocator) }
+    if sampler.refs==0 {
+        for cached,i in r.sampler_cache { if cached==sampler { unordered_remove(&r.sampler_cache,i); break } }
+        sampler.object->release(); free(sampler,r.allocator)
+    }
 }
 
 /// Accepted submissions retain sampler identity even after the CPU registry removes it.
@@ -136,11 +146,11 @@ clone_slice :: proc(values:[]$T,r:^Renderer)->[]T { result:=make([]T,len(values)
 release_graphics :: proc(r:^Renderer,pipeline:^Native_Graphics) {
     pipeline.refs-=1
     if pipeline.refs!=0 { return }
+    for cached,i in r.graphics_cache { if cached==pipeline { unordered_remove(&r.graphics_cache,i); break } }
     if pipeline.object!=nil { pipeline.object->release() }
     if pipeline.depth!=nil { pipeline.depth->release() }
     delete(pipeline.buffers,r.allocator); delete(pipeline.images,r.allocator); delete(pipeline.samplers,r.allocator); delete(pipeline.colors,r.allocator)
-    delete(pipeline.desc.vertex.attributes,r.allocator); delete(pipeline.desc.vertex.buffers,r.allocator)
-    delete(pipeline.desc.buffers,r.allocator); delete(pipeline.desc.images,r.allocator); delete(pipeline.desc.samplers,r.allocator); delete(pipeline.desc.colors,r.allocator)
+    gfx.graphics_desc_destroy(&pipeline.desc,r.allocator)
     free(pipeline,r.allocator)
 }
 
@@ -231,6 +241,9 @@ create_graphics_pipeline :: proc(r:^Renderer,desc:gfx.Graphics_Desc)->(gfx.Graph
     for value in biases { if math.is_nan(value) || math.is_inf(value) { return {},.Invalid_Shader } }
     if len(desc.colors)>8 || (len(desc.colors)==0 && !desc.depth.enabled) || (len(desc.colors)>0 && len(desc.fragment_entry)==0) { return {},.Invalid_Shader }
     if desc.depth.enabled && gfx.texture_aspects(desc.depth.format)=={.Color} { return {},.Invalid_Shader }
+    for cached in r.graphics_cache { if gfx.graphics_desc_equal(cached.desc,desc) {
+        cached.refs+=1; return gfx.storage_insert(&r.graphics,cached),.None
+    } }
     vertex,err:=compile_function(r,desc.vertex_metal_source,desc.vertex_metal_entry,.Vertex)
     if err!=.None { return {},err }; defer vertex->release()
     fragment:^NS.Object
@@ -265,12 +278,8 @@ create_graphics_pipeline :: proc(r:^Renderer,desc:gfx.Graphics_Desc)->(gfx.Graph
     native_error:^NS.Error
     object:=send(^NS.Object,r.compiler,"newRenderPipelineStateWithDescriptor:compilerTaskOptions:error:",descriptor,cast(^NS.Object)nil,&native_error)
     if object==nil { report_error(native_error,"Metal graphics pipeline compilation failed"); return {},.Shader_Compile_Failed }
-    pipeline:=new(Native_Graphics,r.allocator); pipeline^={object=object,desc=desc,refs=1}
+    pipeline:=new(Native_Graphics,r.allocator); pipeline^={object=object,desc=gfx.graphics_desc_clone(desc,r.allocator),refs=1}
     success:=false; defer { if !success { release_graphics(r,pipeline) } }
-    pipeline.desc.buffers=clone_slice(desc.buffers,r); pipeline.desc.images=clone_slice(desc.images,r); pipeline.desc.samplers=clone_slice(desc.samplers,r); pipeline.desc.colors=clone_slice(desc.colors,r)
-    pipeline.desc.vertex.attributes=clone_slice(desc.vertex.attributes,r); pipeline.desc.vertex.buffers=clone_slice(desc.vertex.buffers,r)
-    pipeline.desc.vertex_metal_entry=""; pipeline.desc.fragment_metal_entry=""
-    pipeline.desc.vertex_metal_source=""; pipeline.desc.fragment_metal_source=""; pipeline.desc.vertex_entry=""; pipeline.desc.fragment_entry=""; pipeline.desc.vertex_spirv=nil; pipeline.desc.fragment_spirv=nil
     pipeline.buffers=make([]gfx.Stage_Buffer_Requirement,len(desc.buffers),r.allocator)
     for buffer,i in desc.buffers { pipeline.buffers[i]={group=buffer.group,slot=buffer.slot,stages=buffer.stages,usage=buffer.usage,mode=buffer.mode,minimum_size=buffer.minimum_size} }
     pipeline.images=make([]gfx.Image_Binding_Requirement,len(desc.images),r.allocator)
@@ -303,7 +312,7 @@ create_graphics_pipeline :: proc(r:^Renderer,desc:gfx.Graphics_Desc)->(gfx.Graph
         pipeline.depth=send(^MTL.DepthStencilState,r.device,"newDepthStencilStateWithDescriptor:",depth)
         if pipeline.depth==nil { return {},.Allocation_Failed }
     }
-    success=true
+    append(&r.graphics_cache,pipeline); success=true
     return gfx.storage_insert(&r.graphics,pipeline),.None
 }
 

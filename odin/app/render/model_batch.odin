@@ -4,6 +4,7 @@ package render
 import app ".."
 import ecs "../../ecs"
 import editor "../../editor"
+import gfx "../../gfx"
 import km "../../math"
 import "core:mem"
 import "core:slice"
@@ -21,6 +22,10 @@ Model_Entry :: struct {
     camera_depth:f32,
     material:app.Gltf_Material,
     views:[5]app.Gltf_Texture_View,
+    samplers:[5]gfx.Sampler_Desc,
+    has_sampling,primitive_mesh:bool,
+    material_sources:[5]app.Texture_Source_Kind,
+    material_digests:[5][32]byte,
     source_nodes,source_primitives,source_vertices,source_indices,source_images,source_textures,source_samplers:rawptr,
 }
 Model_Batch_Error_Kind :: enum { None, Rebuild_Required, Invalid_Scene, Invalid_Geometry, Invalid_Material, Limit }
@@ -54,29 +59,44 @@ model_batch_prepare_entities :: proc(owner:^app.Authoring,ids:[]ecs.Entity_Id,al
         if !ecs.entity_exists(&owner.world,id) { return {},{kind=.Invalid_Scene,scene=.Entity_Not_Found} }
         for previous in ids[:i] { if previous==id { return {},{kind=.Invalid_Scene,scene=.Invalid_Operation} } }
         if _,hidden:=ecs.get_component(&owner.world,id,app.Editor_Hidden); hidden { continue }
-        component:=ecs.get_component_mut(&owner.world,id,app.Scene_Model); if component==nil { continue }
+        component:=ecs.get_component_mut(&owner.world,id,app.Scene_Model)
+        if component==nil {
+            mesh,present:=ecs.get_component(&owner.world,id,app.Scene_Mesh);if !present || mesh.source.kind==.Empty { continue }
+            entry,object,stream,error:=model_mesh_prepare(owner,id,&mesh,allocator)
+            if error.kind!=.None { return {},error };defer delete(stream,allocator)
+            if u64(len(vertices))+u64(len(stream))>u64(max(u32)) || u64(len(entries))>=u64(max(u32)) { return {},{kind=.Limit} }
+            entry.first_vertex=u32(len(vertices));entry.object_index=u32(len(objects));entry.vertex_count=u32(len(stream))
+            append(&vertices,..stream);append(&objects,object);append(&entries,entry);continue
+        }
+        if component.source.kind==.Group { continue }
+        selected_primitive:^app.Gltf_Primitive
+        if component.source.kind==.Primitive { selected,valid:=app.scene_model_selected_primitive(component);if !valid { return {},{kind=.Invalid_Geometry} };selected_primitive=selected }
         model:=&component.model
-        player:=ecs.get_component_mut(&owner.world,id,app.Animation_Player)
+        player:=app.scene_model_animation_player(owner,id)
         result.streaming=result.streaming || len(model.animation.clips)>0
         world,world_error:=app.gltf_world_matrices(model,player,allocator); if world_error!=.None { return {},{kind=.Invalid_Scene,scene=world_error} }; defer delete(world,allocator)
         active,active_error:=app.gltf_active_nodes(model,allocator); if active_error!=.None { return {},{kind=.Invalid_Scene,scene=active_error} }; defer delete(active,allocator)
         entity_world,entity_error:=app.scene_world_matrix(owner,id); if entity_error!=.None { return {},{kind=.Invalid_Scene,scene=entity_error} }
         surface,surface_present:=ecs.get_component(&owner.world,id,app.Surface_Material); if !surface_present { surface={metallic=1,roughness=1,ao=1} }
+        if (surface.has_surface && !app.material_surface_valid(surface.surface)) || (surface.has_sampling && !app.material_sampling_valid(surface.sampling)) { return {},{kind=.Invalid_Material} }
         for node,n in model.nodes {
-            if !active[n] || node.mesh<0 { continue }
+            if !active[n] || node.mesh<0 || (selected_primitive!=nil && u32(n)!=component.source.node_index) { continue }
             weights,weight_error:=app.animation_sample_weights(&model.animation,player,u32(n),node.weights,allocator)
             if weight_error!=.None { return {},{kind=.Invalid_Scene,scene=weight_error} }; defer delete(weights,allocator)
             for primitive,p in model.primitives {
-                if primitive.mesh!=u32(node.mesh) { continue }
+                if primitive.mesh!=u32(node.mesh) || (selected_primitive!=nil && selected_primitive!=&model.primitives[p]) { continue }
                 if u64(len(vertices))+u64(len(primitive.geometry.indices))>u64(max(u32)) || u64(len(entries))>=u64(max(u32)) { return {},{kind=.Limit} }
                 material,material_error:=model_material(model,primitive.material); if material_error.kind!=.None { return {},material_error }
-                views:=model_texture_views(material)
+                material=model_material_surface(material,surface)
+                views,samplers:=model_material_sampling(material,surface)
                 object,object_error:=model_object(km.matrix_mul(entity_world,world[n]),surface,material)
                 if object_error.kind!=.None { return {},object_error }
+                if primitive.tangent_generated && !model_uv_equal(views[1],primitive.tangent_uv) { object.flags[3]|=2 }
                 geometry,geometry_error:=app.gltf_deform_geometry(model,u32(p),u32(n),world,weights,allocator)
                 if geometry_error!=.None { return {},{kind=.Invalid_Geometry,gltf=geometry_error} }
-                entry:=Model_Entry{entity=id,node=u32(n),primitive=u32(p),first_vertex=u32(len(vertices)),vertex_count=u32(len(geometry.indices)),object_index=u32(len(objects)),material=material,views=views,source_nodes=raw_data(model.nodes),source_primitives=raw_data(model.primitives),source_vertices=raw_data(primitive.geometry.vertices),source_indices=raw_data(primitive.geometry.indices),source_images=raw_data(model.images),source_textures=raw_data(model.textures),source_samplers=raw_data(model.samplers)}
+                entry:=Model_Entry{entity=id,node=u32(n),primitive=u32(p),first_vertex=u32(len(vertices)),vertex_count=u32(len(geometry.indices)),object_index=u32(len(objects)),material=material,views=views,samplers=samplers,has_sampling=surface.has_sampling,source_nodes=raw_data(model.nodes),source_primitives=raw_data(model.primitives),source_vertices=raw_data(primitive.geometry.vertices),source_indices=raw_data(primitive.geometry.indices),source_images=raw_data(model.images),source_textures=raw_data(model.textures),source_samplers=raw_data(model.samplers)}
                 entry.material.name=""
+                source_error:=model_entry_images(owner,&entry,&object);if source_error.kind!=.None { app.mesh_geometry_destroy(&geometry);return {},source_error }
                 if len(geometry.indices)==0 { app.mesh_geometry_destroy(&geometry); return {},{kind=.Invalid_Geometry} }
                 low,high:km.Vec3
                 for index,stream_index in geometry.indices {
@@ -87,11 +107,12 @@ model_batch_prepare_entities :: proc(owner:^app.Authoring,ids:[]ecs.Entity_Id,al
                     vertex:=Model_Vertex{position=km.vec4(source.position,1),normal=km.vec4(source.normal,0),tangent=source.tangent,color={1,1,1,1}}
                     if len(primitive.colors)>0 { if int(index)>=len(primitive.colors) { app.mesh_geometry_destroy(&geometry); return {},{kind=.Invalid_Geometry} }; vertex.color=primitive.colors[index] }
                     for view,v in views {
-                        uv,uv_error:=model_vertex_uv(primitive,index,view)
+                        if entry.material_sources[v]==.Neutral { continue }
+                        uv,uv_error:=model_vertex_uv(primitive,index,view,entry.material_sources[v]==.File || entry.material_sources[v]==.GltfImage || view.texture>=0)
                         if uv_error.kind!=.None { app.mesh_geometry_destroy(&geometry); return {},uv_error }
                         vertex.uvs[v]={uv[0],uv[1],0,0}
                     }
-                    vertex.uvs[3][2]=material.occlusion_texture.scale if material.occlusion_texture.texture>=0 else 1
+                    vertex.uvs[3][2]=material.occlusion_texture.scale
                     append(&vertices,vertex)
                 }
                 entry.local_bounds=km.aabb_from_min_max(low,high)
@@ -116,7 +137,7 @@ model_batch_refresh :: proc(batch:^Model_Batch,owner:^app.Authoring)->Model_Batc
     if len(candidate.entries)!=len(batch.entries) || len(candidate.vertices)!=len(batch.vertices) { return {kind=.Rebuild_Required} }
     for entry,i in candidate.entries {
         previous:=batch.entries[i]
-        if entry.entity!=previous.entity || entry.node!=previous.node || entry.primitive!=previous.primitive || entry.first_vertex!=previous.first_vertex || entry.vertex_count!=previous.vertex_count || entry.source_nodes!=previous.source_nodes || entry.source_primitives!=previous.source_primitives || entry.source_vertices!=previous.source_vertices || entry.source_indices!=previous.source_indices || entry.source_images!=previous.source_images || entry.source_textures!=previous.source_textures || entry.source_samplers!=previous.source_samplers || entry.material.double_sided!=previous.material.double_sided || entry.material.alpha_mode!=previous.material.alpha_mode { return {kind=.Rebuild_Required} }
+        if entry.material_sources!=previous.material_sources || entry.material_digests!=previous.material_digests || entry.primitive_mesh!=previous.primitive_mesh || entry.entity!=previous.entity || entry.node!=previous.node || entry.primitive!=previous.primitive || entry.first_vertex!=previous.first_vertex || entry.vertex_count!=previous.vertex_count || entry.source_nodes!=previous.source_nodes || entry.source_primitives!=previous.source_primitives || entry.source_vertices!=previous.source_vertices || entry.source_indices!=previous.source_indices || entry.source_images!=previous.source_images || entry.source_textures!=previous.source_textures || entry.source_samplers!=previous.source_samplers || entry.material.double_sided!=previous.material.double_sided || entry.material.alpha_mode!=previous.material.alpha_mode || entry.has_sampling!=previous.has_sampling || entry.samplers!=previous.samplers { return {kind=.Rebuild_Required} }
         for view,v in entry.views { if view.texture!=previous.views[v].texture { return {kind=.Rebuild_Required} } }
     }
     changed:=false

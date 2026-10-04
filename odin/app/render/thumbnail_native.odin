@@ -7,6 +7,8 @@ import resources "../../resources"
 import "core:mem"
 import "core:strings"
 import "core:crypto/sha2"
+import image_api "../../image"
+import "core:math"
 
 /// Identity belongs to the retained root generation; revision belongs to the source bytes.
 Thumbnail_Request :: struct { root:^resources.Root,root_identity:u64,path:string,revision:u64 }
@@ -37,18 +39,28 @@ thumbnail_cache_lookup :: proc(cache:^Thumbnail_Cache($R),root_identity:u64,path
 }
 @(private="package")
 thumbnail_resize :: proc(image:^Texture_Image,max_edge:int,allocator:mem.Allocator)->(Texture_Image,Texture_Image_Error) {
-    if int(max(image.width,image.height))<=max_edge { return image^,.None }
+    if int(max(image.width,image.height))<=max_edge {
+        if image.format==.RGBA8 { return image^,.None }
+        return image_api.texture_image_rgba8(image,allocator)
+    }
     longest:=max(image.width,image.height)
     width:=max(u32(1),u32(u64(image.width)*u64(max_edge)/u64(longest)))
     height:=max(u32(1),u32(u64(image.height)*u64(max_edge)/u64(longest)))
     pixels,allocation_error:=mem.make([]byte,int(width*height)*4,allocator)
     if allocation_error!=nil || len(pixels)!=int(width*height)*4 || raw_data(pixels)==nil { return {},.Allocation }
-    result:=Texture_Image{width,height,pixels,allocator}
+    result:=Texture_Image{width,height,pixels,allocator,.RGBA8}
     for y in 0..<height { for x in 0..<width {
         sx:=min(image.width-1,u32((u64(x)*2+1)*u64(image.width)/(u64(width)*2)))
         sy:=min(image.height-1,u32((u64(y)*2+1)*u64(image.height)/(u64(height)*2)))
         source:=int(sy*image.width+sx)*4; target:=int(y*width+x)*4
-        copy(result.pixels[target:target+4],image.pixels[source:source+4])
+        if image.format==.RGBA8 { copy(result.pixels[target:target+4],image.pixels[source:source+4]) } else {
+            values:=image_api.texture_image_sample(image,source/4)
+            for value,c in values {
+                normalized:=clamp(value,0,1)
+                if image.format==.RGBA32_Float && c<3 { normalized=12.92*normalized if normalized<=0.0031308 else 1.055*math.pow(normalized,f32(1.0/2.4))-0.055 }
+                result.pixels[target+c]=u8(math.round(normalized*255))
+            }
+        }
     } }
     return result,.None
 }

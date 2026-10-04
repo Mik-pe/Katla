@@ -28,6 +28,26 @@ color-space selection, uploads and native texture lifetime belong to the app
 renderer. An importer success does not establish native support for every
 material workflow.
 
+## Accepted material previews
+
+`material_preview_update` runs after retiring the shared GPU frame and before
+building retained UI. It resolves all five roles from the accepted model cache:
+inherited glTF images, confined file and selected glTF-image assignments, and
+exact neutral samples. Each preview owns a separate bounded native allocation
+and opaque UI texture ID. Accepted images retain their original integer or float
+precision through resizing and role-specific color conversion.
+
+All changed roles prepare before publication. Decode or native allocation failure
+preserves the previous same-entity preview IDs and pixels. Previous allocations
+retire at the next post-wait update, so a UI frame built before a material action
+can still consume its frozen IDs after the scene cache changes. Removing a
+preview after queue acceptance does not revoke an accepted UI recording.
+
+`odin/examples/material_preview_native` proves those flows on Metal and Vulkan,
+including actual file/glTF-image assignments, partial allocation failure and
+repair, removing scene source owners before UI preparation, and retaining queued
+UI/readback work after removing the preview owner.
+
 ## Live texture revisions
 
 External images retain their confined, model-relative `source_path` through CPU
