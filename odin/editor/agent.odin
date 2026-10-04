@@ -12,7 +12,7 @@ import "core:strings"
 /// Owns a session action, its result and reversible snapshots.
 Agent_Action :: struct { id:u64, operation:Scene_Op, result:Tool_Result, undo:Undo_Group }
 /// Owns ordered action history and per-session undo state.
-Agent_Session :: struct { actions:[dynamic]Agent_Action, next_id:u64, paused,finished:bool, allocator:mem.Allocator }
+Agent_Session :: struct { actions,redo_actions:[dynamic]Agent_Action, next_id:u64, paused,finished:bool, allocator:mem.Allocator }
 /// Application tools execute only on the scene owner, returning the shared undo command.
 Application_Executor :: struct { state:rawptr, execute:proc(rawptr,^ecs.World,^Component_Registry,Scene_Op)->(Tool_Result,Undo_Group) }
 /// Owns an entity count and sorted available-component names.
@@ -37,32 +37,51 @@ Agent_Harness :: struct {
 }
 /// Initializes owned action history and session controls.
 agent_session_init :: proc(s:^Agent_Session,allocator:=context.allocator) {
-    s.allocator=allocator; s.actions=make([dynamic]Agent_Action,allocator)
+    s.allocator=allocator; s.actions=make([dynamic]Agent_Action,allocator); s.redo_actions=make([dynamic]Agent_Action,allocator)
 }
 /// Releases owned operations, results and scene snapshots.
 agent_session_destroy :: proc(s:^Agent_Session) {
-    for &action in s.actions {
-        scene_op_destroy(&action.operation,s.allocator)
-        tool_result_destroy(&action.result); undo_group_destroy(&action.undo)
-    }
-    delete(s.actions); s^={}
+    for &action in s.actions { agent_action_destroy(&action,s.allocator) }
+    for &action in s.redo_actions { agent_action_destroy(&action,s.allocator) }
+    delete(s.actions); delete(s.redo_actions); s^={}
 }
-/// Undo preserves action IDs on failure and releases the popped action on success.
+@(private="package")
+agent_action_destroy :: proc(action:^Agent_Action,allocator:mem.Allocator) {
+    scene_op_destroy(&action.operation,allocator)
+    tool_result_destroy(&action.result); undo_group_destroy(&action.undo); action^={}
+}
+@(private="package")
+agent_session_remap :: proc(s:^Agent_Session,remap:Entity_Remap) {
+    lists:=[2][]Agent_Action{s.actions[:],s.redo_actions[:]}
+    for actions in lists {
+        for &action in actions {
+            undo_group_remap(&action.undo,remap)
+            if action.operation.entity==remap.before { action.operation.entity=remap.after }
+            if action.operation.has_parent && action.operation.parent==remap.before { action.operation.parent=remap.after }
+            for &entity in action.result.entities { if entity==remap.before { entity=remap.after } }
+        }
+    }
+}
+/// Transfers a successfully restored action to redo history; failure preserves both histories.
 agent_undo_last :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry)->Scene_Error {
     if len(s.actions)==0 { return .None }
     a:=&s.actions[len(s.actions)-1]
     err:=undo_group(w,reg,&a.undo)
     if err!=.None { return err }
-    for remap in a.undo.remaps {
-        for &prior in s.actions[:len(s.actions)-1] {
-            undo_group_remap(&prior.undo,remap)
-            if prior.operation.entity==remap.before { prior.operation.entity=remap.after }
-            if prior.operation.has_parent && prior.operation.parent==remap.before { prior.operation.parent=remap.after }
-        }
-    }
-    scene_op_destroy(&a.operation,s.allocator)
-    tool_result_destroy(&a.result); undo_group_destroy(&a.undo)
+    for remap in a.undo.remaps { agent_session_remap(s,remap) }
+    append(&s.redo_actions,a^)
     resize(&s.actions,len(s.actions)-1)
+    return .None
+}
+/// Reapplies the most recently undone command without executing its tool again or allocating an ID.
+agent_redo_last :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry)->Scene_Error {
+    if len(s.redo_actions)==0 { return .None }
+    a:=&s.redo_actions[len(s.redo_actions)-1]
+    err:=redo_group(w,reg,&a.undo)
+    if err!=.None { return err }
+    for remap in a.undo.remaps { agent_session_remap(s,remap) }
+    append(&s.actions,a^)
+    resize(&s.redo_actions,len(s.redo_actions)-1)
     return .None
 }
 /// Restores session mutations in reverse action order.
@@ -88,6 +107,8 @@ agent_execute :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry,op:S
 /// Borrowed operation data is cloned; previews can group one exact before/after command here.
 agent_record_action :: proc(s:^Agent_Session,op:Scene_Op,result:^Tool_Result,undo:^Undo_Group)->^Agent_Action {
     assert(s.next_id<max(u64))
+    for &action in s.redo_actions { agent_action_destroy(&action,s.allocator) }
+    clear(&s.redo_actions)
     append(&s.actions,Agent_Action{s.next_id,scene_op_clone(op,s.allocator),result^,undo^})
     result^={}; undo^={}; s.next_id+=1
     return &s.actions[len(s.actions)-1]

@@ -121,6 +121,14 @@ Already applied owner-thread previews can enter that same history with
 clones borrowed operation data and assigns one monotonic action ID without
 reexecuting the mutation. `agent_execute` uses the same recording path.
 
+`agent_undo_last` transfers the restored command to the session's owned redo
+history. `agent_redo_last` reapplies that command without reexecuting its tool or
+allocating another action ID. Failed restoration preserves both histories.
+Fresh generational identities remap commands, operation targets and entity-result
+lists in both histories. Recording a new action releases the abandoned redo
+branch. Application editing gates both directions through `authoring_undo_last`
+and `authoring_redo_last`; there is one history for agent calls and UI gestures.
+
 Owner-thread execution can supply an `Application_Executor` to scene sessions and
 mailbox ticks. The mailbox reserves capacity until its correlated reply is taken,
 rejects full/closed admission and allows queued cancellation. Session action IDs

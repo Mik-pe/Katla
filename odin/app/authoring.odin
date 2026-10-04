@@ -35,6 +35,11 @@ authoring_undo_last :: proc(app:^Authoring)->editor.Scene_Error {
     if app.mode!=.Editing { return .Editing_Required }
     return editor.agent_undo_last(&app.agent.session,&app.world,&app.registry)
 }
+/// Reapplies shared authored history only while the application is editing.
+authoring_redo_last :: proc(app:^Authoring)->editor.Scene_Error {
+    if app.mode!=.Editing { return .Editing_Required }
+    return editor.agent_redo_last(&app.agent.session,&app.world,&app.registry)
+}
 @(private="package")
 error_result :: proc(w:^ecs.World,error:editor.Scene_Error)->editor.Tool_Result {
     return {error=error,entities=make([dynamic]ecs.Entity_Id,w.allocator),allocator=w.allocator}
