@@ -28,7 +28,7 @@ authoring_destroy :: proc(app:^Authoring) {
 /// Runs mailbox work on the scene owner thread.
 authoring_tick :: proc(app:^Authoring)->int { return editor.agent_tick(&app.agent,&app.world,&app.registry,authoring_executor(app)) }
 /// Supplies owner-thread dispatch explicitly; this state is never stored in the host mailbox.
-authoring_executor :: proc(app:^Authoring)->editor.Application_Executor { return {app,execute_owned} }
+authoring_executor :: proc(app:^Authoring)->editor.Application_Executor { return {state=app,execute=execute_owned} }
 /// Restores one agent history step only while authored state can be edited.
 authoring_undo_last :: proc(app:^Authoring)->editor.Scene_Error {
     if app.mode!=.Editing { return .Editing_Required }

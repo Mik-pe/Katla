@@ -45,7 +45,7 @@ test_abandon_executing_reply_retains_credit_until_action_completes :: proc(t:^te
     ticket,_:=agent_submit(&h,{kind=.Spawn},"disconnected-executing")
     probe:=Abandon_Probe{harness=&h,ticket=ticket}
     worker:=thread.create(test_abandon_producer); worker.data=&probe; thread.start(worker)
-    processed:=agent_tick(&h,&w,&reg,{&probe,test_abandon_executor})
+    processed:=agent_tick(&h,&w,&reg,{state=&probe,execute=test_abandon_executor})
     thread.join(worker); thread.destroy(worker)
     testing.expect(t,processed==1 && probe.abandoned && !probe.twice && probe.error==.Full)
     testing.expect(t,h.outstanding==0 && len(h.responses)==0 && w.live_count==1 && len(h.session.actions)==1)

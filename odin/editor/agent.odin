@@ -14,7 +14,11 @@ Agent_Action :: struct { id:u64, operation:Scene_Op, result:Tool_Result, undo:Un
 /// Owns ordered action history and per-session undo state.
 Agent_Session :: struct { actions,redo_actions:[dynamic]Agent_Action, next_id:u64, paused,finished:bool, allocator:mem.Allocator }
 /// Application tools execute only on the scene owner, returning the shared undo command.
-Application_Executor :: struct { state:rawptr, execute:proc(rawptr,^ecs.World,^Component_Registry,Scene_Op)->(Tool_Result,Undo_Group) }
+Application_Executor :: struct {
+    state:rawptr,
+    execute:proc(rawptr,^ecs.World,^Component_Registry,Scene_Op)->(Tool_Result,Undo_Group),
+    begin:proc(rawptr,^ecs.World,^Component_Registry,Scene_Op,u64)->bool,
+}
 /// Owns an entity count and sorted available-component names.
 Observation :: struct { entity_count:int, available_components:[dynamic]string }
 /// Distinguishes rejected submission from accepted work without touching the scene.
@@ -27,7 +31,7 @@ Agent_Response :: struct { id,ticket:u64, call_id:string, result:Tool_Result, al
 /// Owns a synchronized mailbox and caller-thread scene session.
 Agent_Harness :: struct {
     session:Agent_Session,
-    requests:[dynamic]Agent_Request,
+    requests,deferred:[dynamic]Agent_Request,
     responses:[dynamic]Agent_Response,
     mutex:sync.Mutex,
     finished_requested:bool,
@@ -161,7 +165,7 @@ agent_harness_init :: proc(h:^Agent_Harness,allocator:=context.allocator,capacit
     assert(capacity>0)
     h.allocator=allocator; h.capacity=capacity; h.next_ticket=1
     agent_session_init(&h.session,allocator)
-    h.requests=make([dynamic]Agent_Request,allocator); h.responses=make([dynamic]Agent_Response,allocator)
+    h.requests=make([dynamic]Agent_Request,allocator); h.deferred=make([dynamic]Agent_Request,allocator); h.responses=make([dynamic]Agent_Response,allocator)
 }
 @(private="package")
 agent_request_destroy :: proc(request:^Agent_Request,allocator:mem.Allocator) {
@@ -174,8 +178,9 @@ agent_response_destroy :: proc(response:^Agent_Response) {
 /// Join producers and consumers before destruction; queued requests and replies are owned here.
 agent_harness_destroy :: proc(h:^Agent_Harness) {
     for &request in h.requests { agent_request_destroy(&request,h.allocator) }
+    for &request in h.deferred { agent_request_destroy(&request,h.allocator) }
     for &response in h.responses { agent_response_destroy(&response) }
-    agent_session_destroy(&h.session); delete(h.requests); delete(h.responses); h^={}
+    agent_session_destroy(&h.session); delete(h.requests); delete(h.deferred); delete(h.responses); h^={}
 }
 /// Clones borrowed data on acceptance; rejection returns ticket zero and reserves no capacity.
 agent_submit :: proc(h:^Agent_Harness,op:Scene_Op,call_id:="")->(u64,Mailbox_Error) {
@@ -219,13 +224,22 @@ agent_tick :: proc(h:^Agent_Harness,w:^ecs.World,reg:^Component_Registry,applica
     for processed<10 {
         sync.mutex_lock(&h.mutex)
         if len(h.requests)==0 {
-            if h.finished_requested { h.session.finished=true }
+            if h.finished_requested && len(h.deferred)==0 { h.session.finished=true }
             sync.mutex_unlock(&h.mutex); break
         }
         request:=h.requests[0]; ordered_remove(&h.requests,0)
         assert(h.executing_ticket==0)
         h.executing_ticket=request.ticket; h.executing_abandoned=false
         sync.mutex_unlock(&h.mutex)
+        if application.begin!=nil && application.begin(application.state,w,reg,request.operation,request.ticket) {
+            sync.mutex_lock(&h.mutex)
+            if h.executing_abandoned { agent_request_destroy(&request,h.allocator); h.outstanding-=1 }
+            else { append(&h.deferred,request) }
+            h.executing_ticket=0; h.executing_abandoned=false
+            sync.mutex_unlock(&h.mutex)
+            processed+=1
+            continue
+        }
         action:=agent_execute(&h.session,w,reg,request.operation,application)
         scene_op_destroy(&request.operation,h.allocator)
         response:=Agent_Response{id=action.id,ticket=request.ticket,call_id=request.call_id,

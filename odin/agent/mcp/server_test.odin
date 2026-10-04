@@ -192,7 +192,7 @@ test_real_stalled_owner_deadline_suppresses_reply_without_reverting_accepted_mut
     probe:=Stalled_Owner{mailbox=&scene.agent}
     worker:=thread.create(stalled_host); worker.data=&probe; thread.start(worker)
     sync.sema_wait(&probe.queued)
-    processed:=editor.agent_tick(&scene.agent,&scene.world,&scene.registry,{&probe,stalled_execute})
+    processed:=editor.agent_tick(&scene.agent,&scene.world,&scene.registry,{state=&probe,execute=stalled_execute})
     sync.sema_post(&probe.complete)
     thread.join(worker); thread.destroy(worker)
     check_error(t,probe.error,1004); delete(probe.error,scene.agent.allocator)

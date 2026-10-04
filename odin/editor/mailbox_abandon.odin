@@ -14,6 +14,12 @@ agent_abandon :: proc(h:^Agent_Harness,ticket:u64)->bool {
         h.outstanding-=1
         return true
     }
+    for &request,index in h.deferred {
+        if request.ticket!=ticket { continue }
+        agent_request_destroy(&request,h.allocator); ordered_remove(&h.deferred,index)
+        h.outstanding-=1
+        return true
+    }
     for &response,index in h.responses {
         if response.ticket!=ticket { continue }
         agent_response_destroy(&response); ordered_remove(&h.responses,index)

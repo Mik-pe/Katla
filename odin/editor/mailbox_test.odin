@@ -174,7 +174,7 @@ test_executing_request_retains_credit_and_cannot_be_cancelled :: proc(t:^testing
     testing.expect_value(t,err,Mailbox_Error.None)
     probe:=In_Flight_Test{harness=&h,ticket=ticket}
     worker:=thread.create(test_in_flight_producer); worker.data=&probe; thread.start(worker)
-    processed:=agent_tick(&h,&w,&reg,{&probe,test_in_flight_executor})
+    processed:=agent_tick(&h,&w,&reg,{state=&probe,execute=test_in_flight_executor})
     thread.join(worker); thread.destroy(worker)
     testing.expect(t,processed==1 && probe.rejected==0 && probe.error==.Full && !probe.cancelled && h.session.finished && w.live_count==1)
     response,ok:=agent_take_result(&h); defer agent_response_destroy(&response)
