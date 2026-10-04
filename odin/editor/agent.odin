@@ -32,7 +32,8 @@ Agent_Harness :: struct {
     mutex:sync.Mutex,
     finished_requested:bool,
     capacity,outstanding:int,
-    next_ticket:u64,
+    next_ticket,executing_ticket:u64,
+    executing_abandoned:bool,
     allocator:mem.Allocator,
 }
 /// Initializes owned action history and session controls.
@@ -211,12 +212,18 @@ agent_tick :: proc(h:^Agent_Harness,w:^ecs.World,reg:^Component_Registry,applica
             sync.mutex_unlock(&h.mutex); break
         }
         request:=h.requests[0]; ordered_remove(&h.requests,0)
+        assert(h.executing_ticket==0)
+        h.executing_ticket=request.ticket; h.executing_abandoned=false
         sync.mutex_unlock(&h.mutex)
         action:=agent_execute(&h.session,w,reg,request.operation,application)
         scene_op_destroy(&request.operation,h.allocator)
         response:=Agent_Response{id=action.id,ticket=request.ticket,call_id=request.call_id,
                                  result=tool_result_clone(action.result,h.allocator),allocator=h.allocator}
-        sync.mutex_lock(&h.mutex); append(&h.responses,response); sync.mutex_unlock(&h.mutex)
+        sync.mutex_lock(&h.mutex)
+        if h.executing_abandoned { agent_response_destroy(&response); h.outstanding-=1 }
+        else { append(&h.responses,response) }
+        h.executing_ticket=0; h.executing_abandoned=false
+        sync.mutex_unlock(&h.mutex)
         processed+=1
     }
     return processed
