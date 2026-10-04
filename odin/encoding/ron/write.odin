@@ -36,10 +36,10 @@ write_value :: proc(builder:^strings.Builder,value:json.Value,field:string,tuple
     #partial switch data in value {
     case json.Object:
         if number,is_uint:=uint_read(data); is_uint { text:=fmt.aprintf("%d",number); defer delete(text); strings.write_string(builder,text); return {} }
-        if name,is_variant:=data["__variant"].(string); is_variant {
+        if name,is_variant:=data[VARIANT_TAG].(string); is_variant {
             if !write_identifier(name) || len(data)>2 { return {.Syntax,strings.builder_len(builder^)} }
             strings.write_string(builder,name)
-            if payload,present:=data["__payload"]; present { return write_value(builder,payload,name,true,depth+1) }
+            if payload,present:=data[PAYLOAD_TAG]; present { return write_value(builder,payload,name,true,depth+1) }
             return {}
         }
         opening,closing:="(",")"; if field=="components" { opening="{"; closing="}" }

@@ -3,6 +3,7 @@ package ron
 
 import "core:encoding/json"
 import "core:mem"
+import "core:unicode/utf8"
 import "core:strings"
 import "core:fmt"
 
@@ -11,10 +12,16 @@ import "core:fmt"
 Error_Kind :: enum { None, Syntax, Limit }
 Error :: struct { kind:Error_Kind,offset:int }
 @(private="package")
+UINT_TAG :: "\xffkatla.uint"
+@(private="package")
+VARIANT_TAG :: "\xffkatla.variant"
+@(private="package")
+PAYLOAD_TAG :: "\xffkatla.payload"
+@(private="package")
 Parser :: struct { text:string,index,nodes:int,allocator:mem.Allocator,error:Error,json_mode:bool }
-/// Parses a current asset document into owned values; named variants use __variant/__payload.
+/// Parses valid UTF-8 assets into owned values with private lossless scalar and variant tags.
 parse :: proc(text:string,allocator:=context.allocator,json_mode:bool=false)->(json.Value,Error) {
-    if len(text)>64*1024*1024 { return nil,{.Limit,0} }
+    if len(text)>64*1024*1024 { return nil,{.Limit,0} }; if !utf8.valid_string(text) { return nil,{.Syntax,0} }
     context.allocator=allocator
     parser:=Parser{text=text,allocator=allocator,json_mode=json_mode}; value:=read_value(&parser,0)
     skip_space(&parser)
@@ -57,7 +64,7 @@ read_string :: proc(parser:^Parser)->json.Value {
         if char=='"' && !escaped {
             data:=transmute([]byte)parser.text[start:parser.index]
             value,err:=json.parse(data,spec=.JSON,allocator=parser.allocator)
-            if err!=nil { fail(parser,.Syntax) }; return value
+            if err!=nil { fail(parser,.Syntax) }; if decoded,is_text:=value.(string); is_text && !utf8.valid_string(decoded) { json.destroy_value(value); fail(parser,.Syntax); return nil }; return value
         }
         if char=='\\' && !escaped { escaped=true } else { escaped=false }
     }
@@ -111,8 +118,8 @@ read_value :: proc(parser:^Parser,depth:int)->json.Value {
         parser.index+=1; return value
     }
     variant:=make(json.Object,parser.allocator)
-    variant[strings.clone("__variant",parser.allocator)]=strings.clone(identifier,parser.allocator)
-    if parser.index<len(parser.text) && parser.text[parser.index]=='(' { variant[strings.clone("__payload",parser.allocator)]=read_container(parser,depth+1) }
+    variant[strings.clone(VARIANT_TAG,parser.allocator)]=strings.clone(identifier,parser.allocator)
+    if parser.index<len(parser.text) && parser.text[parser.index]=='(' { variant[strings.clone(PAYLOAD_TAG,parser.allocator)]=read_container(parser,depth+1) }
     return variant
 }
 @(private="package")
@@ -154,7 +161,7 @@ read_container :: proc(parser:^Parser,depth:int)->json.Value {
 
 /// Strictly validates JSON syntax, then preserves integers through the bounded asset parser.
 parse_json :: proc(data:[]byte,allocator:=context.allocator)->(json.Value,Error) {
-    if len(data)>64*1024*1024 { return nil,{.Limit,0} }
+    if len(data)>64*1024*1024 { return nil,{.Limit,0} }; if !utf8.valid_string(string(data)) { return nil,{.Syntax,0} }
     tree,err:=json.parse(data,spec=.JSON,parse_integers=false,allocator=allocator)
     if err!=nil { return nil,{.Syntax,0} }; context.allocator=allocator; json.destroy_value(tree)
     return parse(string(data),allocator,true)
@@ -162,12 +169,12 @@ parse_json :: proc(data:[]byte,allocator:=context.allocator)->(json.Value,Error)
 /// Represents unsigned values that cannot fit the JSON library's signed integer variant.
 uint_value :: proc(value:u64,allocator:=context.allocator)->json.Value {
     if value<=u64(max(i64)) { return json.Integer(value) }; context.allocator=allocator
-    object:=make(json.Object,allocator); object[strings.clone("__uint",allocator)]=fmt.aprintf("%d",value); return object
+    object:=make(json.Object,allocator); object[strings.clone(UINT_TAG,allocator)]=fmt.aprintf("%d",value); return object
 }
 /// Reads the bounded parser's lossless unsigned representation.
 uint_read :: proc(value:json.Value)->(u64,bool) {
     object,is_object:=value.(json.Object); if !is_object || len(object)!=1 { return 0,false }
-    text,is_text:=object["__uint"].(string); if !is_text { return 0,false }
+    text,is_text:=object[UINT_TAG].(string); if !is_text { return 0,false }
     number,valid:=decimal_u64(text); return number,valid && number>u64(max(i64))
 }
 
@@ -179,4 +186,16 @@ decimal_u64 :: proc(text:string)->(value:u64,valid:bool) {
         if value>(max(u64)-digit)/10 { return 0,false }; value=value*10+digit
     }
     return value,true
+}
+
+/// Reads a parsed named variant; ordinary valid UTF-8 object fields cannot match its internal tag.
+variant_read :: proc(value:json.Value)->(name:string,payload:json.Value,has_payload,valid:bool) {
+    object,is_object:=value.(json.Object); if !is_object || len(object)<1 || len(object)>2 { return }
+    text,is_text:=object[VARIANT_TAG].(string); if !is_text { return }
+    item,present:=object[PAYLOAD_TAG]; if len(object)!=1+int(present) { return }; return text,item,present,true
+}
+/// Creates a parsed variant, cloning its name and taking ownership of its optional payload.
+variant_value :: proc(name:string,payload:json.Value=nil,has_payload:bool=false,allocator:=context.allocator)->json.Value {
+    object:=make(json.Object,allocator); object[strings.clone(VARIANT_TAG,allocator)]=strings.clone(name,allocator)
+    if has_payload { object[strings.clone(PAYLOAD_TAG,allocator)]=payload }; return object
 }

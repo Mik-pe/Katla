@@ -35,9 +35,7 @@ scene_row_wire :: proc(app:^Authoring,row:^Scene_Entity,name:string,data:[]byte)
 scene_variant :: proc(value:json.Value)->(name:string,payload:json.Value,valid:bool) {
     if text,is_text:=value.(string); is_text { return text,nil,true }
     object,is_object:=value.(json.Object); if !is_object { return }
-    if text,is_variant:=object["__variant"].(string); is_variant {
-        if !recipe_keys(object,{"__variant","__payload"}) { return }; return text,object["__payload"],true
-    }
+    if variant_name,variant_payload,_,is_variant:=ron.variant_read(value); is_variant { return variant_name,variant_payload,true }
     if len(object)!=1 { return }; for key,item in object { return key,item,true }; return
 }
 /// Resolves scene-local paths from the retained project origin; external absolute paths are rejected.

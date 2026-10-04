@@ -29,7 +29,8 @@ scene_gameplay_joint_encode :: proc(joint:Physics_Joint)->(json.Value,editor.Sce
     if !physics_joint_valid(joint) || joint.a==0 || joint.b==0 { return nil,.Invalid_Field_Value }
     kinds:=[4]string{"PointToPoint","Hinge","Distance","Fixed"}; limits:json.Value=json.Null{}
     if joint.has_limits { limits=trigger_json_value(joint.limits) }; defer json.destroy_value(limits)
-    a:=scene_document_key_value(u64(joint.a)); b:=scene_document_key_value(u64(joint.b)); defer json.destroy_value(a); defer json.destroy_value(b)
-    value:=trigger_json_value(struct {kind:string,a,b:json.Value,anchor_a,anchor_b:[3]f32,limits:json.Value}{kinds[joint.kind],a,b,joint.anchor_a,joint.anchor_b,limits})
-    if value==nil { return nil,.Decode_Failed }; return value,.None
+    value:=trigger_json_value(struct {kind:string,anchor_a,anchor_b:[3]f32,limits:json.Value}{kinds[joint.kind],joint.anchor_a,joint.anchor_b,limits})
+    if value==nil { return nil,.Decode_Failed }; fields:=value.(json.Object)
+    scene_gameplay_store(&fields,"a",scene_document_key_value(u64(joint.a))); scene_gameplay_store(&fields,"b",scene_document_key_value(u64(joint.b)))
+    return fields,.None
 }

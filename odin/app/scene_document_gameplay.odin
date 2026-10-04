@@ -51,8 +51,7 @@ scene_gameplay_animation :: proc(app:^Authoring,row:^Scene_Entity,value:json.Val
 }
 @(private="package")
 scene_gameplay_rules :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value)->editor.Scene_Error {
-    bytes,marshal_error:=json.marshal(value,allocator=app.world.allocator); if marshal_error!=nil { return .Decode_Failed }; defer delete(bytes,app.world.allocator)
-    tree,parse_error:=json.parse(bytes,spec=.JSON,parse_integers=true,allocator=app.world.allocator); if parse_error!=nil { return .Decode_Failed }; defer json.destroy_value(tree)
+    tree,cloned:=scene_value_clone(value); if !cloned { return .Decode_Failed }; defer json.destroy_value(tree)
     rules,is_rules:=tree.(json.Array); if !is_rules { return .Decode_Failed }
     for rule in rules {
         object,is_object:=rule.(json.Object); if !is_object { return .Decode_Failed }

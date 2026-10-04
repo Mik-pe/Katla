@@ -4,22 +4,18 @@ package app
 import "core:encoding/json"
 import ron "../encoding/ron"
 import "core:strings"
+import "core:fmt"
 
 @(private="package")
-scene_value_clone :: proc(value:json.Value)->(json.Value,bool) { bytes,err:=json.marshal(value); if err!=nil { return nil,false }; defer delete(bytes); result,parse_error:=ron.parse_json(bytes); return result,parse_error.kind==.None }
+scene_value_clone :: proc(value:json.Value)->(json.Value,bool) { cloned,err:=ron.clone_value(value); return cloned,err.kind==.None }
 @(private="package")
 scene_variant_ron :: proc(value:json.Value,newtype:bool)->json.Value {
-    if object,is_object:=value.(json.Object); is_object { if _,marker:=object["__variant"]; marker { return value } }
+    if _,_,_,variant:=ron.variant_read(value); variant { return value }
     name,payload,valid:=scene_variant(value); if !valid { return value }
-    variant:=make(json.Object,context.allocator)
     if object,is_object:=value.(json.Object); is_object { name=strings.clone(name); for key in object { delete(key) }; delete(object) }
     else { name=strings.clone(name); if text,is_text:=value.(string); is_text { delete(text) } }
-    variant[strings.clone("__variant")]=name
-    if payload!=nil {
-        if newtype { wrapped:=make(json.Array,1,context.allocator); wrapped[0]=payload; payload=wrapped }
-        variant[strings.clone("__payload")]=payload
-    }
-    return variant
+    if payload!=nil && newtype { wrapped:=make(json.Array,1,context.allocator); wrapped[0]=payload; payload=wrapped }
+    variant:=ron.variant_value(name,payload,payload!=nil); delete(name); return variant
 }
 /// Clones scene/prefab JSON and converts its built-in enum fields to canonical RON values.
 scene_document_ron_clone :: proc(document:json.Value)->(json.Value,bool) {
@@ -47,9 +43,8 @@ scene_document_ron_clone :: proc(document:json.Value)->(json.Value,bool) {
 scene_public_mutate :: proc(value:json.Value)->json.Value {
     #partial switch tree in value {
     case json.Object:
-        if _,is_uint:=ron.uint_read(tree); is_uint { text:=tree["__uint"]; for key in tree { delete(key) }; delete(tree); return text }
-        if name,is_variant:=tree["__variant"].(string); is_variant {
-            payload,present:=tree["__payload"]
+        if number,is_uint:=ron.uint_read(tree); is_uint { text:=fmt.aprintf("%d",number); json.destroy_value(tree); return text }
+        if name,payload,present,is_variant:=ron.variant_read(tree); is_variant {
             for key in tree { delete(key) }; delete(tree)
             if !present { return name }
             if array,is_array:=payload.(json.Array); is_array && len(array)==1 { payload=array[0]; delete(array) }

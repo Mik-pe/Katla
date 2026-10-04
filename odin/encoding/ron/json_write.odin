@@ -24,9 +24,9 @@ write_json_value :: proc(builder:^strings.Builder,value:json.Value,depth:int)->E
     #partial switch tree in value {
     case json.Object:
         if number,is_uint:=uint_read(tree); is_uint { text:=fmt.aprintf("%d",number); defer delete(text); strings.write_string(builder,text); return {} }
-        if name,is_variant:=tree["__variant"].(string); is_variant {
+        if name,is_variant:=tree[VARIANT_TAG].(string); is_variant {
             if len(tree)>2 { return {.Syntax,strings.builder_len(builder^)} }
-            payload,present:=tree["__payload"]; if !present { return write_json_string(builder,name) }
+            payload,present:=tree[PAYLOAD_TAG]; if !present { return write_json_string(builder,name) }
             if values,is_values:=payload.(json.Array); is_values && len(values)==1 { payload=values[0] }
             strings.write_string(builder,"{"); if err:=write_json_string(builder,name); err.kind!=.None { return err }; strings.write_string(builder,":")
             if err:=write_json_value(builder,payload,depth+1); err.kind!=.None { return err }; strings.write_string(builder,"}"); return {}
