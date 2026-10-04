@@ -11,5 +11,5 @@ Compute_Desc :: struct { entry,metal_entry,metal_source:string, spirv:[]u32, loc
 Submission :: struct { owner:rawptr, token:Frame_Token, id:u64 }
 
 /// Compute-stage image mapping preserves the selected compiler's native index.
-Shader_Compute_Image :: struct { group,slot:u32, metal_index:i32, usage:Texture_Usage, arrayed,depth:bool, dimension:Texture_Dimension, sample_type:Texture_Sample_Type, storage_format:Texture_Format, mode:Access_Mode }
+Shader_Compute_Image :: struct { group,slot:u32, metal_index:i32, usage:Texture_Usage, arrayed,depth:bool, dimension:Texture_Dimension, sample_type:Texture_Sample_Type, storage_format:Texture_Format, mode:Access_Mode, array_count:u32, metal_kind:Metal_Image_Binding }
 Shader_Compute_Sampler :: struct { group,slot:u32, metal_index:i32, comparison:bool }

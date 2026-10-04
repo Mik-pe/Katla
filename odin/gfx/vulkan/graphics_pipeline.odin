@@ -66,6 +66,8 @@ shader_module :: proc(r:^Renderer,words:[]u32)->(vk.ShaderModule,gfx.Gpu_Error) 
 }
 @(private="package")
 graphics_descriptors_allocate :: proc(r:^Renderer,desc:gfx.Graphics_Desc,pipeline:^Native_Graphics_Pipeline)->gfx.Gpu_Error {
+    limits_error:=image_descriptor_limits(r,desc)
+    if limits_error!=.None { return limits_error }
     max_group:int=-1
     for binding in desc.buffers { max_group=max(max_group,int(binding.group)) }
     for binding in desc.images { max_group=max(max_group,int(binding.group)) }
@@ -75,6 +77,8 @@ graphics_descriptors_allocate :: proc(r:^Renderer,desc:gfx.Graphics_Desc,pipelin
     for _,group in pipeline.set_layouts {
         bindings:[128]vk.DescriptorSetLayoutBinding
         count:int
+        flags:[128]vk.DescriptorBindingFlags
+        update:bool
         for binding in desc.buffers {
             if int(binding.group)!=group { continue }
             descriptor:=vk.DescriptorType.STORAGE_BUFFER if binding.usage==.Storage else vk.DescriptorType.UNIFORM_BUFFER
@@ -83,7 +87,12 @@ graphics_descriptors_allocate :: proc(r:^Renderer,desc:gfx.Graphics_Desc,pipelin
         for binding in desc.images {
             if int(binding.group)!=group { continue }
             descriptor:=vk.DescriptorType.STORAGE_IMAGE if binding.usage==.Storage else vk.DescriptorType.SAMPLED_IMAGE
-            bindings[count]={binding=binding.slot,descriptorType=descriptor,descriptorCount=1,stageFlags=shader_stages(binding.stages)}; count+=1
+            if binding.array_count==0 { return .Invalid_Shader }
+            if binding.array_count>1 {
+                if (binding.usage==.Sampled && !r.sampled_arrays) || (binding.usage==.Storage && !r.storage_arrays) { return .Unsupported }
+                flags[count]={.UPDATE_AFTER_BIND}; update=true
+            }
+            bindings[count]={binding=binding.slot,descriptorType=descriptor,descriptorCount=binding.array_count,stageFlags=shader_stages(binding.stages)}; count+=1
         }
         for binding in desc.samplers {
             if int(binding.group)!=group { continue }
@@ -91,6 +100,8 @@ graphics_descriptors_allocate :: proc(r:^Renderer,desc:gfx.Graphics_Desc,pipelin
         }
         for binding,i in bindings[:count] { for previous in bindings[:i] { if binding.binding==previous.binding { return .Invalid_Shader } } }
         info:=vk.DescriptorSetLayoutCreateInfo{sType=.DESCRIPTOR_SET_LAYOUT_CREATE_INFO,bindingCount=u32(count),pBindings=raw_data(bindings[:count])}
+        binding_flags:=vk.DescriptorSetLayoutBindingFlagsCreateInfo{sType=.DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO,bindingCount=u32(count),pBindingFlags=raw_data(flags[:])}
+        if update { info.flags={.UPDATE_AFTER_BIND_POOL}; info.pNext=&binding_flags }
         if r.table.CreateDescriptorSetLayout(r.device,&info,nil,&pipeline.set_layouts[group])!=.SUCCESS { return .Allocation_Failed }
     }
     layout_info:=vk.PipelineLayoutCreateInfo{sType=.PIPELINE_LAYOUT_CREATE_INFO,setLayoutCount=u32(len(pipeline.set_layouts)),pSetLayouts=raw_data(pipeline.set_layouts)}

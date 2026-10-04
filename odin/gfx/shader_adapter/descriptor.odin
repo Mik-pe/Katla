@@ -61,6 +61,21 @@ image_type :: proc(binding:shader.Binding)->(gfx.Texture_Sample_Type,gfx.Texture
     }
     return sample,format,.None
 }
+@(private="package")
+binding_native_valid :: proc(binding:shader.Binding)->Error {
+    if binding.array_count==0 { return .Invalid_Interface }
+    if binding.kind!=.Texture {
+        if binding.array_count!=1 { return .Unsupported_Array }
+        if binding.metal_kind!=binding.kind { return .Invalid_Interface }
+        return .None
+    }
+    if binding.metal_kind==.Texture {
+        if binding.array_count!=1 { return .Invalid_Interface }
+        return .None
+    }
+    if binding.metal_kind!=.Buffer || binding.metal_minimum_size!=u64(binding.array_count)*8 { return .Invalid_Interface }
+    return .None
+}
 /// Releases only adapter-owned arrays; native preparation must finish before their owners die.
 graphics_destroy :: proc(value:^Graphics) {
     delete(value.descriptor.buffers,value.allocator); delete(value.descriptor.images,value.allocator); delete(value.descriptor.samplers,value.allocator)
@@ -79,7 +94,7 @@ compute :: proc(compiled:^shader.Compiled,name:string,allocator:=context.allocat
     success:=false; defer { if !success { compute_destroy(&result) } }
     buffer_count,image_count,sampler_count:int
     for binding in entry.bindings {
-        if binding.array_count!=1 || binding.metal_kind!=binding.kind { return {},.Unsupported_Array }
+        if native_error:=binding_native_valid(binding); native_error!=.None { return {},native_error }
         switch binding.kind {
         case .Buffer: buffer_count+=1
         case .Texture: image_count+=1
@@ -98,7 +113,7 @@ compute :: proc(compiled:^shader.Compiled,name:string,allocator:=context.allocat
             desc.buffers[b]={group=binding.group,slot=binding.binding,metal_index=i32(binding.metal_index),size_index=binding.size_index,usage=.Uniform if binding.uniform else .Storage,mode=access_mode(binding.access),minimum_size=binding.minimum_size}; b+=1
         case .Texture:
             sample,format,err:=image_type(binding); if err!=.None { return {},err }
-            desc.images[i]={group=binding.group,slot=binding.binding,metal_index=i32(binding.metal_index),usage=.Sampled if binding.storage_format=="" else .Storage,arrayed=binding.arrayed,depth=binding.depth,sample_type=sample,storage_format=format,mode=access_mode(binding.access),dimension=.D3 if binding.dimension==.D3 else .D2}; i+=1
+            desc.images[i]={group=binding.group,slot=binding.binding,metal_index=i32(binding.metal_index),usage=.Sampled if binding.storage_format=="" else .Storage,arrayed=binding.arrayed,depth=binding.depth,sample_type=sample,storage_format=format,mode=access_mode(binding.access),dimension=.D3 if binding.dimension==.D3 else .D2,array_count=binding.array_count,metal_kind=.Argument_Buffer if binding.metal_kind==.Buffer else .Texture}; i+=1
         case .Sampler:
             desc.samplers[s]={group=binding.group,slot=binding.binding,metal_index=i32(binding.metal_index),comparison=binding.comparison}; s+=1
         }
@@ -167,7 +182,7 @@ graphics :: proc(compiled:^shader.Compiled,vertex_name,fragment_name:string,stat
         if entry==nil { continue }
         stage:=gfx.Shader_Stage.Vertex if entry.stage==.Vertex else gfx.Shader_Stage.Fragment
         for binding in entry.bindings {
-            if binding.array_count!=1 || binding.metal_kind!=binding.kind { return {},.Unsupported_Array }
+            if native_error:=binding_native_valid(binding); native_error!=.None { return {},native_error }
             switch binding.kind {
             case .Buffer:
                 index:= -1
@@ -185,9 +200,9 @@ graphics :: proc(compiled:^shader.Compiled,vertex_name,fragment_name:string,stat
                 for previous,j in images { if previous.group==binding.group && previous.slot==binding.binding { index=j; break } }
                 usage:=gfx.Texture_Usage.Sampled if binding.storage_format=="" else gfx.Texture_Usage.Storage
                 dimension:=gfx.Texture_Dimension.D3 if binding.dimension==.D3 else gfx.Texture_Dimension.D2
-                if index<0 { index=len(images); append(&images,gfx.Shader_Stage_Image{group=binding.group,slot=binding.binding,usage=usage,vertex_index= -1,fragment_index= -1,arrayed=binding.arrayed,depth=binding.depth,sample_type=sample,storage_format=format,mode=access_mode(binding.access),dimension=dimension}) }
+                if index<0 { index=len(images); append(&images,gfx.Shader_Stage_Image{group=binding.group,slot=binding.binding,usage=usage,vertex_index= -1,fragment_index= -1,arrayed=binding.arrayed,depth=binding.depth,sample_type=sample,storage_format=format,mode=access_mode(binding.access),dimension=dimension,array_count=binding.array_count,metal_kind=.Argument_Buffer if binding.metal_kind==.Buffer else .Texture}) }
                 image:=&images[index]
-                if image.usage!=usage || image.arrayed!=binding.arrayed || image.depth!=binding.depth || image.sample_type!=sample || image.storage_format!=format || image.dimension!=dimension { return {},.Invalid_Interface }
+                if image.usage!=usage || image.arrayed!=binding.arrayed || image.depth!=binding.depth || image.sample_type!=sample || image.storage_format!=format || image.dimension!=dimension || image.array_count!=binding.array_count || image.metal_kind!=(gfx.Metal_Image_Binding.Argument_Buffer if binding.metal_kind==.Buffer else gfx.Metal_Image_Binding.Texture) { return {},.Invalid_Interface }
                 image.mode=merge_mode(image.mode,access_mode(binding.access))
                 image.stages+={stage}
                 if stage==.Vertex { image.vertex_index=i32(binding.metal_index) }

@@ -21,7 +21,11 @@ Color_Target :: struct { format:Texture_Format, write_mask:Color_Components, ble
 Depth_State :: struct { enabled,test,write:bool, compare:Compare_Op, format:Texture_Format }
 /// Native reflection verifies logical bindings against each stage's exact native index.
 Shader_Stage_Buffer :: struct { group,slot:u32, stages:Shader_Stages, usage:Buffer_Usage, vertex_index,fragment_index,vertex_size_index,fragment_size_index:i32, mode:Access_Mode, minimum_size:u64 }
-Shader_Stage_Image :: struct { group,slot:u32, stages:Shader_Stages, usage:Texture_Usage, vertex_index,fragment_index:i32, arrayed,depth:bool, dimension:Texture_Dimension, sample_type:Texture_Sample_Type, storage_format:Texture_Format, mode:Access_Mode }
+/// Distinguishes direct Metal texture slots from immutable argument-buffer slots.
+Metal_Image_Binding :: enum { Texture,Argument_Buffer }
+
+/// Fixed image descriptors preserve their logical count and exact Metal binding namespace.
+Shader_Stage_Image :: struct { group,slot:u32, stages:Shader_Stages, usage:Texture_Usage, vertex_index,fragment_index:i32, arrayed,depth:bool, dimension:Texture_Dimension, sample_type:Texture_Sample_Type, storage_format:Texture_Format, mode:Access_Mode, array_count:u32, metal_kind:Metal_Image_Binding }
 Shader_Stage_Sampler :: struct { group,slot:u32, stages:Shader_Stages, vertex_index,fragment_index:i32, comparison:bool }
 /// Complete target binaries are prepared before encoding.
 Graphics_Desc :: struct {
@@ -50,8 +54,8 @@ Color_Attachment :: struct { access:Image_Access, load:Load_Op, store:Store_Op, 
 Depth_Attachment :: struct { enabled:bool, access:Image_Access, load:Load_Op, store:Store_Op, clear_depth:f64, clear_stencil:u32 }
 /// Buffer bindings preserve group and stage visibility.
 Stage_Buffer_Binding :: struct { group,slot:u32, stages:Shader_Stages, access:Buffer_Access }
-/// Texture bindings use explicit graph subresources.
-Image_Binding :: struct { group,slot:u32, stages:Shader_Stages, access:Image_Access }
+/// Each image descriptor element names its explicit graph subresources.
+Image_Binding :: struct { group,slot:u32, stages:Shader_Stages, accesses:[]Image_Access }
 Sampler_Kind :: struct {}
 Sampler_Handle :: Handle(Sampler_Kind)
 Filter :: enum { Nearest, Linear }
@@ -75,7 +79,7 @@ Stage_Buffer_Requirement :: struct { group,slot:u32, stages:Shader_Stages, usage
 /// Native graphics reflection for a sampled/storage texture binding.
 Texture_Dimension :: enum { D2, D3 }
 Texture_Sample_Type :: enum { Float, Sint, Uint }
-Image_Binding_Requirement :: struct { group,slot:u32, stages:Shader_Stages, usage:Texture_Usage, arrayed,depth:bool, dimension:Texture_Dimension, sample_type:Texture_Sample_Type, storage_format:Texture_Format, mode:Access_Mode }
+Image_Binding_Requirement :: struct { group,slot:u32, stages:Shader_Stages, usage:Texture_Usage, arrayed,depth:bool, dimension:Texture_Dimension, sample_type:Texture_Sample_Type, storage_format:Texture_Format, mode:Access_Mode, array_count:u32 }
 /// Reflection and target formats remain borrowed from retained native pipelines.
 Graphics_Info :: struct { buffers:[]Stage_Buffer_Requirement, images:[]Image_Binding_Requirement, samplers:[]Sampler_Requirement, vertex:Vertex_Layout, supported_draws:Draw_Kinds, colors:[]Texture_Format, depth:Depth_State, stencil:bool }
 /// Physical image identity detects aliases before recording.

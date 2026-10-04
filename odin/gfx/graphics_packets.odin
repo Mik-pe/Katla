@@ -17,15 +17,18 @@ image_access_declared :: proc(pass:Graph_Pass,access:Image_Access)->bool {
 packet_image_accesses :: proc(g:^Graph,packet:Packet,allocator:mem.Allocator)->[]Image_Access {
     #partial switch p in packet {
     case Dispatch:
-        result:=make([]Image_Access,len(p.images),allocator)
-        for binding,i in p.images { result[i]=binding.access }
+        count:int; for binding in p.images { count+=len(binding.accesses) }
+        result:=make([]Image_Access,count,allocator)
+        index:int
+        for binding in p.images { copy(result[index:],binding.accesses); index+=len(binding.accesses) }
         return result
     case Render:
-        result:=make([]Image_Access,len(p.colors)+len(p.images)+int(p.depth.enabled),allocator)
-        i:=0
-        for color in p.colors { result[i]=color.access; i+=1 }
-        if p.depth.enabled { result[i]=p.depth.access; i+=1 }
-        for image in p.images { result[i]=image.access; i+=1 }
+        count:=len(p.colors)+int(p.depth.enabled); for binding in p.images { count+=len(binding.accesses) }
+        result:=make([]Image_Access,count,allocator)
+        index:int
+        for color in p.colors { result[index]=color.access; index+=1 }
+        if p.depth.enabled { result[index]=p.depth.access; index+=1 }
+        for binding in p.images { copy(result[index:],binding.accesses); index+=len(binding.accesses) }
         return result
     case Generate_Mips:
         base:=p.range; base.mip_count=1
@@ -82,7 +85,7 @@ validate_render_packet :: proc(g:^Graph,pass:Graph_Pass,p:Render)->Packet_Error 
         for previous in p.buffers[:i] { if previous.group==binding.group && previous.slot==binding.slot { return .Invalid_Binding } }
     }
     for binding,i in p.images {
-        if binding.stages=={} || .Compute in binding.stages { return .Invalid_Binding }
+        if binding.stages=={} || .Compute in binding.stages || len(binding.accesses)==0 { return .Invalid_Binding }
         for previous in p.images[:i] { if previous.group==binding.group && previous.slot==binding.slot { return .Invalid_Binding } }
         for buffer in p.buffers { if buffer.group==binding.group && buffer.slot==binding.slot { return .Invalid_Binding } }
     }

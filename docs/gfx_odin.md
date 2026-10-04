@@ -132,6 +132,23 @@ writes/blending, raster topology/culling, depth testing and writing, stencil,
 depth bias and wireframe. Required native operations have explicit implementations
 or return a typed failure; they have no default no-op path.
 
+Image shader metadata and native requirements carry an explicit `array_count`;
+ordinary texture bindings use one, and zero is invalid. `Image_Binding.accesses`
+contains exactly that many graph accesses. Fixed material arrays populate every
+slot, including explicitly supplied fallback textures. Repeated fallback reads
+can share one graph declaration. Packet publication and preparation clone the
+nested access slices; replacement cannot rewrite accepted descriptors. Each
+physical texture owner remains retained through its exact submission fence.
+
+The material ABI supports 4,096 sampled image descriptors and a separate scalar
+sampler. Vulkan validates selected SPIR-V counts, nonuniform descriptor-indexing
+features and native limits, and uses update-after-bind layout/pool capacity while
+keeping each submitted descriptor set immutable. Metal validates Tier2 argument
+buffer reflection and immutable resource-ID arrays. `metal_kind` distinguishes
+direct texture slots from argument-buffer slots, including a legal one-element
+binding array. Unsupported hardware returns a typed error before publication.
+Buffer and sampler descriptor arrays remain explicitly unsupported.
+
 ## Physical aliases
 
 Physical identity is distinct from public handle identity. Two graph roles may
@@ -186,8 +203,16 @@ groups, 6,144 compute values and 9,216 image pixels, including public allocation
 owners removed before retirement and readback completion.
 
 Both Metal 4 and Vulkan through MoltenVK execute these shared scenarios on the
-Apple Silicon development host with native validation. Backend-specific scenarios
-also exercise mesh/indirect phases, physical aliases and surface replacement.
+Apple Silicon development host with native validation. Backend-specific scenarios also exercise mesh/indirect phases, depth/stencil and
+blend/raster state, physical aliases and surface replacement. Volume scenarios
+verify padded three-dimensional uploads/copies, selected-entry image3D access,
+filtered non-power-of-two mip chains, GPU-produced indirect compute arguments
+and retained source bytes after overwrites. Both adapters verify expanded-format
+hardware sampling and byte copies, including BC1/BC3 on the development M5.
+Vulkan verifies wireframe edge/interior pixels against a filled triangle, and
+4,096 populated material descriptors with nonuniform sampling, clamped bounds,
+rejected publication/retry, two pending immutable replacements and independent
+readback tickets after public resource and graph-export removal.
 New contracts require rerunning the affected native scenarios before delivery;
 CPU tests and compilation alone do not establish GPU behavior. Linux/Windows
 Vulkan typechecks are separate from native hardware evidence.

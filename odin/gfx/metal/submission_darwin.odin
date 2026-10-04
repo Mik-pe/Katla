@@ -125,7 +125,10 @@ submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled
     }
     for input in prepared.textures {
         entry,ok:=gfx.storage_get(&r.textures,input.handle); if !ok { return {},.Invalid_Resource,.None }
-        texture:=entry^; texture.refs+=1; append(&slot.textures,texture)
+        texture:=entry^; retained:=false
+        for previous in slot.textures { if previous==texture { retained=true; break } }
+        if retained { continue }
+        texture.refs+=1; append(&slot.textures,texture)
         send(nil,slot.residency,"addAllocation:",texture.object)
         if texture.heap!=nil { send(nil,slot.residency,"addAllocation:",texture.heap.object) }
     }

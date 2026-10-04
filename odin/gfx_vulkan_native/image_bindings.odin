@@ -15,10 +15,10 @@ run_image_bindings :: proc(r:^gpu.Renderer,vertex_code,sample_code,image_code:[]
     assert(gpu.upload_texture(r,sampled,{0,0,1,1,2,2,.Color,0,1,0,0},patch[:])==.None)
     sampler,sampler_error:=gpu.create_sampler(r,{address_u=.Clamp_Edge,address_v=.Clamp_Edge,address_w=.Clamp_Edge,max_lod=0,max_anisotropy=1}); assert(sampler_error==.None)
     defer assert(gpu.destroy_sampler(r,sampler)==.None)
-    graphics_desc:=gfx.Graphics_Desc{vertex_entry="main",fragment_entry="main",vertex_spirv=vertex_code,fragment_spirv=sample_code,images={{group=2,slot=1,stages={.Fragment},usage=.Sampled,arrayed=true,sample_type=.Float,mode=.Read}},samplers={{group=2,slot=2,stages={.Fragment}}},colors={{format=.RGBA8_Unorm,write_mask={.Red,.Green,.Blue,.Alpha}}}}
+    graphics_desc:=gfx.Graphics_Desc{vertex_entry="main",fragment_entry="main",vertex_spirv=vertex_code,fragment_spirv=sample_code,images={{group=2,slot=1,stages={.Fragment},usage=.Sampled,arrayed=true,sample_type=.Float,mode=.Read,array_count=1}},samplers={{group=2,slot=2,stages={.Fragment}}},colors={{format=.RGBA8_Unorm,write_mask={.Red,.Green,.Blue,.Alpha}}}}
     graphics,graphics_error:=gpu.create_graphics_pipeline(r,graphics_desc); assert(graphics_error==.None)
     defer assert(gpu.destroy_graphics_pipeline(r,graphics)==.None)
-    compute,compute_error:=gpu.create_pipeline(r,{entry="main",spirv=image_code,local_size={4,4,1},images={{group=3,slot=0,usage=.Storage,sample_type=.Float,storage_format=.RGBA8_Unorm,mode=.Write}}}); assert(compute_error==.None)
+    compute,compute_error:=gpu.create_pipeline(r,{entry="main",spirv=image_code,local_size={4,4,1},images={{group=3,slot=0,usage=.Storage,sample_type=.Float,storage_format=.RGBA8_Unorm,mode=.Write,array_count=1}}}); assert(compute_error==.None)
     defer assert(gpu.destroy_pipeline(r,compute)==.None)
     target_desc:=gfx.Texture_Desc{16,16,1,1,.RGBA8_Unorm,{.Color_Attachment,.Transfer_Source},1}
     target,target_error:=gpu.create_texture(r,target_desc); assert(target_error==.None)
@@ -47,10 +47,10 @@ run_image_bindings :: proc(r:^gpu.Renderer,vertex_code,sample_code,image_code:[]
     sample_access:=gfx.Image_Access{source,gfx.image_full_range(sampled_desc),.Read,.Sampled}
     color_access:=gfx.Image_Access{color,gfx.image_full_range(target_desc),.Write,.Color_Attachment}
     render,_:=gfx.graph_pass(&graph,"array-view-sampling",.Graphics,nil,images={sample_access,color_access})
-    assert(gfx.graph_set_packet(&graph,render,gfx.Render{colors={{color_access,.Clear,.Store,{0,0,0,1}}},images={{2,1,{.Fragment},sample_access}},samplers={{2,2,{.Fragment},sampler}},phases={{pipeline=graphics,draws={gfx.Draw{3,1,0,0}}}}})==.None)
+    assert(gfx.graph_set_packet(&graph,render,gfx.Render{colors={{color_access,.Clear,.Store,{0,0,0,1}}},images={{2,1,{.Fragment},{sample_access}}},samplers={{2,2,{.Fragment},sampler}},phases={{pipeline=graphics,draws={gfx.Draw{3,1,0,0}}}}})==.None)
     storage_access:=gfx.Image_Access{written,gfx.image_full_range(storage_desc),.Write,.Storage}
     dispatch,_:=gfx.graph_pass(&graph,"group3-image-write",.Compute,nil,images={storage_access})
-    assert(gfx.graph_set_packet(&graph,dispatch,gfx.Dispatch{pipeline=compute,groups={2,2,1},images={{3,0,{.Compute},storage_access}}})==.None)
+    assert(gfx.graph_set_packet(&graph,dispatch,gfx.Dispatch{pipeline=compute,groups={2,2,1},images={{3,0,{.Compute},{storage_access}}}})==.None)
     copy_color,_:=gfx.graph_pass(&graph,"sampled-pixels",.Transfer,{{destination,{0,1024},.Write,.Transfer_Destination}},images={{color,gfx.image_full_range(target_desc),.Read,.Transfer_Source}})
     copy_storage,_:=gfx.graph_pass(&graph,"storage-pixels",.Transfer,{{destination,{1024,256},.Write,.Transfer_Destination}},images={{written,gfx.image_full_range(storage_desc),.Read,.Transfer_Source}})
     assert(gfx.graph_set_packet(&graph,copy_color,gfx.Copy_Image_Buffer{color,{0,0,0,0,16,16,.Color,0,1,0,0},destination,0})==.None)

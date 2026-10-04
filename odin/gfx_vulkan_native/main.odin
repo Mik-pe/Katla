@@ -39,6 +39,10 @@ main :: proc() {
     run_subresources(&renderer); run_aliases(&renderer)
     for i:=6; i<len(os.args); {
         switch os.args[i] {
+        case "--storage-arrays":
+            assert(i+1<len(os.args)); code:=load_spirv(os.args[i+1]); run_storage_arrays(&renderer,code); delete(code); i+=2
+        case "--arrays":
+            assert(i+1<len(os.args)); code:=load_spirv(os.args[i+1]); run_arrays(&renderer,vertex_code,code); delete(code); i+=2
         case "--surface": run_window(&renderer); i+=1
         case "--volume":
             assert(i+1<len(os.args)); code:=load_spirv(os.args[i+1]); run_volume(&renderer,code); delete(code); i+=2
@@ -46,11 +50,13 @@ main :: proc() {
             assert(i+2<len(os.args))
             sample_code:=load_spirv(os.args[i+1]); image_code:=load_spirv(os.args[i+2])
             run_image_bindings(&renderer,vertex_code,sample_code,image_code)
+            run_formats(&renderer,vertex_code,sample_code)
             delete(sample_code); delete(image_code); i+=3
         case "--mesh":
             assert(i+2<len(os.args))
             mesh_code:=load_spirv(os.args[i+1]); tint_code:=load_spirv(os.args[i+2])
             run_mesh(&renderer,mesh_code,tint_code)
+            run_wireframe(&renderer,mesh_code,tint_code)
             delete(mesh_code); delete(tint_code); i+=3
         case: panic("Unknown native acceptance option")
         }

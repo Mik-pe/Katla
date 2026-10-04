@@ -50,18 +50,12 @@ phase_descriptors :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_
         r.table.UpdateDescriptorSets(r.device,1,&write,0,nil)
     }
     for binding in packet.images {
-        used:=false; for requirement in pipeline.images { if requirement.group==binding.group && requirement.slot==binding.slot { used=true; break } }
-        if !used { continue }
-        texture,present:=resolve_texture(r,prepared,binding.access.resource)
-        if !present { return {},.Invalid_Resource }
-        arrayed:=false
-        for requirement in pipeline.images { if requirement.group==binding.group && requirement.slot==binding.slot { arrayed=requirement.arrayed; break } }
-        view,view_error:=texture_view(r,texture,binding.access.range,arrayed)
-        if view_error!=.None { return {},view_error }
-        info:=vk.DescriptorImageInfo{imageView=view,imageLayout=image_layout(image_use_state(binding.access.usage))}
-        descriptor:=vk.DescriptorType.STORAGE_IMAGE if binding.access.usage==.Storage else vk.DescriptorType.SAMPLED_IMAGE
-        write:=vk.WriteDescriptorSet{sType=.WRITE_DESCRIPTOR_SET,dstSet=sets[binding.group],dstBinding=binding.slot,descriptorCount=1,descriptorType=descriptor,pImageInfo=&info}
-        r.table.UpdateDescriptorSets(r.device,1,&write,0,nil)
+        for requirement in pipeline.images {
+            if requirement.group!=binding.group || requirement.slot!=binding.slot { continue }
+            error:=write_image_descriptors(r,prepared,binding,requirement,sets[binding.group])
+            if error!=.None { return {},error }
+            break
+        }
     }
     for binding in packet.samplers {
         used:=false; for requirement in pipeline.samplers { if requirement.group==binding.group && requirement.slot==binding.slot { used=true; break } }
@@ -90,13 +84,8 @@ phase_descriptors :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_
 Native_Phase :: struct { pipeline:^Native_Graphics_Pipeline, sets:[32]vk.DescriptorSet, viewport:gfx.Viewport, scissor:gfx.Scissor, draws:[]gfx.Draw_Op }
 @(private="package")
 encode_render :: proc(r:^Renderer,slot:^Native_Frame,recording:^Image_Recording,prepared:^gfx.Prepared_Graph,packet:gfx.Render)->gfx.Gpu_Error {
-    for binding in packet.images {
-        texture,present:=resolve_texture(r,prepared,binding.access.resource)
-        if !present { return .Invalid_Resource }
-        if gfx.access_reads(binding.access.mode) && !image_contents(recording,r,texture,binding.access.range) { return .Invalid_Graph }
-        error:=transition_image(r,slot.command,recording,texture,binding.access.range,image_use_state(binding.access.usage),image_stage(binding.access.usage),image_access_mask(binding.access))
-        if error!=.None { return error }
-    }
+    transition_error:=transition_bound_images(r,slot,recording,prepared,packet.images,false)
+    if transition_error!=.None { return transition_error }
     phases:=make([]Native_Phase,len(packet.phases),r.allocator); defer delete(phases,r.allocator)
     for phase,i in packet.phases {
         native,error:=phase_descriptors(r,slot,prepared,packet,phase)
@@ -159,11 +148,6 @@ encode_render :: proc(r:^Renderer,slot:^Native_Frame,recording:^Image_Recording,
         texture,_:=resolve_texture(r,prepared,packet.depth.access.resource)
         image_mark_contents(recording,r,texture,packet.depth.access.range,packet.depth.store==.Store && packet.depth.load!=.Discard)
     }
-    for binding in packet.images {
-        if gfx.access_writes(binding.access.mode) {
-            texture,_:=resolve_texture(r,prepared,binding.access.resource)
-            image_mark_contents(recording,r,texture,binding.access.range,true)
-        }
-    }
+    mark_bound_images(r,recording,prepared,packet.images)
     return .None
 }

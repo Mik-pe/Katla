@@ -176,6 +176,11 @@ reflect_stage :: proc(r:^Renderer,pipeline:^Native_Graphics,native:^NS.Array,sta
         #partial switch binding->type() {
         case .Buffer:
             native_buffer:=cast(^MTL.BufferBinding)binding
+            for requested in pipeline.desc.images {
+                if requested.metal_kind!=.Argument_Buffer || !(stage in requested.stages) || index!=(requested.vertex_index if vertex else requested.fragment_index) { continue }
+                if matched || !reflect_image_array(native_buffer,requested.array_count,requested.dimension,requested.arrayed,requested.depth,requested.sample_type,requested.mode) { return .Invalid_Shader }
+                matched=true; used_images+=1
+            }
             for requested,j in pipeline.desc.buffers {
                 if !(stage in requested.stages) || index!=(requested.vertex_index if vertex else requested.fragment_index) { continue }
                 if !binding_access_valid(binding->access(),requested.mode) || matched || (requested.usage!=.Storage && requested.usage!=.Uniform) || (requested.usage==.Uniform && binding->access()!=.ReadOnly) { return .Invalid_Shader }
@@ -187,7 +192,7 @@ reflect_stage :: proc(r:^Renderer,pipeline:^Native_Graphics,native:^NS.Array,sta
             }
         case .Texture:
             for requested in pipeline.desc.images {
-                if !(stage in requested.stages) || index!=(requested.vertex_index if vertex else requested.fragment_index) { continue }
+                if requested.metal_kind!=.Texture || !(stage in requested.stages) || index!=(requested.vertex_index if vertex else requested.fragment_index) { continue }
                 if !binding_access_valid(binding->access(),requested.mode) || matched || (requested.usage!=.Sampled && requested.usage!=.Storage) || (requested.usage==.Sampled && binding->access()!=.ReadOnly) { return .Invalid_Shader }
                 texture:=cast(^MTL.TextureBinding)binding
                 expected_type:=shader_texture_type(requested.dimension,requested.arrayed)
@@ -220,6 +225,7 @@ create_graphics_pipeline :: proc(r:^Renderer,desc:gfx.Graphics_Desc)->(gfx.Graph
     if r.compiler==nil || r.failed { return {},.Native_Failure }
     if desc.depth.enabled && desc.depth.format==.D24_Unorm_S8_Uint { return {},.Unsupported }
     if !graphics_native_bindings_valid(desc) { return {},.Invalid_Shader }
+    for image in desc.images { if image.metal_kind==.Argument_Buffer && r.device->argumentBuffersSupport()!=.Tier2 { return {},.Unsupported } }
     if !gfx.graphics_desc_valid(desc) || !gfx.vertex_layout_valid(desc.vertex) || (desc.stencil.enabled && (!desc.depth.enabled || !(.Stencil in gfx.texture_aspects(desc.depth.format)))) { return {},.Invalid_Shader }
     biases:=[3]f32{desc.depth_bias.constant,desc.depth_bias.slope,desc.depth_bias.clamp}
     for value in biases { if math.is_nan(value) || math.is_inf(value) { return {},.Invalid_Shader } }
@@ -268,7 +274,7 @@ create_graphics_pipeline :: proc(r:^Renderer,desc:gfx.Graphics_Desc)->(gfx.Graph
     pipeline.buffers=make([]gfx.Stage_Buffer_Requirement,len(desc.buffers),r.allocator)
     for buffer,i in desc.buffers { pipeline.buffers[i]={group=buffer.group,slot=buffer.slot,stages=buffer.stages,usage=buffer.usage,mode=buffer.mode,minimum_size=buffer.minimum_size} }
     pipeline.images=make([]gfx.Image_Binding_Requirement,len(desc.images),r.allocator)
-    for image,i in desc.images { pipeline.images[i]={group=image.group,slot=image.slot,stages=image.stages,usage=image.usage,arrayed=image.arrayed,depth=image.depth,dimension=image.dimension,sample_type=image.sample_type,storage_format=image.storage_format,mode=image.mode} }
+    for image,i in desc.images { pipeline.images[i]={group=image.group,slot=image.slot,stages=image.stages,usage=image.usage,arrayed=image.arrayed,depth=image.depth,dimension=image.dimension,sample_type=image.sample_type,storage_format=image.storage_format,mode=image.mode,array_count=image.array_count} }
     pipeline.samplers=make([]gfx.Sampler_Requirement,len(desc.samplers),r.allocator)
     for sampler,i in desc.samplers { pipeline.samplers[i]={sampler.group,sampler.slot,sampler.stages,sampler.comparison} }
     pipeline.colors=make([]gfx.Texture_Format,len(desc.colors),r.allocator)
@@ -342,8 +348,13 @@ graphics_native_bindings_valid :: proc(desc:gfx.Graphics_Desc)->bool {
         for image,i in desc.images {
             if !(stage in image.stages) { continue }
             index:=image.vertex_index if vertex else image.fragment_index
-            if index<0 || index>=128 { return false }
-            for previous in desc.images[:i] { if stage in previous.stages && index==(previous.vertex_index if vertex else previous.fragment_index) { return false } }
+            if image.array_count==0 || image.array_count>4096 || (image.metal_kind==.Texture && image.array_count!=1) || index<0 || index>=128 { return false }
+            if image.metal_kind==.Argument_Buffer {
+                if index>=31 || index==sizes_index { return false }
+                for buffer in desc.buffers { if stage in buffer.stages && index==(buffer.vertex_index if vertex else buffer.fragment_index) { return false } }
+                if vertex { for layout in desc.vertex.buffers { if index==i32(10+layout.binding) { return false } } }
+            }
+            for previous in desc.images[:i] { if stage in previous.stages && (previous.metal_kind==.Argument_Buffer)==(image.metal_kind==.Argument_Buffer) && index==(previous.vertex_index if vertex else previous.fragment_index) { return false } }
         }
         for sampler,i in desc.samplers {
             if !(stage in sampler.stages) { continue }

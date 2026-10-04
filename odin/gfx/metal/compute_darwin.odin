@@ -25,6 +25,11 @@ reflect_compute :: proc(r:^Renderer,pipeline:^Native_Pipeline,reflected:^NS.Arra
         #partial switch binding->type() {
         case .Buffer:
             native:=cast(^MTL.BufferBinding)binding
+            for requested in pipeline.desc.images {
+                if requested.metal_kind!=.Argument_Buffer || requested.metal_index!=index { continue }
+                if found || !reflect_image_array(native,requested.array_count,requested.dimension,requested.arrayed,requested.depth,requested.sample_type,requested.mode) { return .Invalid_Shader }
+                found=true; used_images+=1
+            }
             for requested,j in pipeline.desc.buffers {
                 if requested.metal_index!=index { continue }
                 if !binding_access_valid(binding->access(),requested.mode) || found || (requested.usage==.Uniform && binding->access()!=.ReadOnly) { return .Invalid_Shader }
@@ -34,7 +39,7 @@ reflect_compute :: proc(r:^Renderer,pipeline:^Native_Pipeline,reflected:^NS.Arra
         case .Texture:
             native:=cast(^MTL.TextureBinding)binding
             for requested in pipeline.desc.images {
-                if requested.metal_index!=index { continue }
+                if requested.metal_kind!=.Texture || requested.metal_index!=index { continue }
                 if !binding_access_valid(binding->access(),requested.mode) || found || (requested.usage==.Sampled && binding->access()!=.ReadOnly) { return .Invalid_Shader }
                 expected_type:=shader_texture_type(requested.dimension,requested.arrayed)
                 expected_data:=MTL.DataType.Float
@@ -71,8 +76,13 @@ create_pipeline :: proc(r:^Renderer,desc:gfx.Compute_Desc)->(gfx.Pipeline_Handle
         for previous in desc.buffers[:i] { if previous.metal_index==buffer.metal_index || (previous.group==buffer.group && previous.slot==buffer.slot) { return {},.Invalid_Shader } }
     }
     for image,i in desc.images {
-        if image.metal_index<0 || image.metal_index>=128 || (image.usage!=.Sampled && image.usage!=.Storage) { return {},.Invalid_Shader }
-        for previous in desc.images[:i] { if previous.metal_index==image.metal_index || (previous.group==image.group && previous.slot==image.slot) { return {},.Invalid_Shader } }
+        if image.array_count==0 || image.array_count>4096 || (image.metal_kind==.Texture && image.array_count!=1) || image.metal_index<0 || image.metal_index>=128 || (image.usage!=.Sampled && image.usage!=.Storage) { return {},.Invalid_Shader }
+        if image.metal_kind==.Argument_Buffer {
+            if r.device->argumentBuffersSupport()!=.Tier2 { return {},.Unsupported }
+            if image.metal_index>=31 || image.metal_index==desc.runtime_sizes_index { return {},.Invalid_Shader }
+            for buffer in desc.buffers { if buffer.metal_index==image.metal_index { return {},.Invalid_Shader } }
+        }
+        for previous in desc.images[:i] { if ((previous.metal_kind==.Argument_Buffer)==(image.metal_kind==.Argument_Buffer) && previous.metal_index==image.metal_index) || (previous.group==image.group && previous.slot==image.slot) { return {},.Invalid_Shader } }
         for buffer in desc.buffers { if buffer.group==image.group && buffer.slot==image.slot { return {},.Invalid_Shader } }
     }
     for sampler,i in desc.samplers {
@@ -98,7 +108,7 @@ create_pipeline :: proc(r:^Renderer,desc:gfx.Compute_Desc)->(gfx.Pipeline_Handle
     success:=false; defer { if !success { release_pipeline(r,pipeline) } }
     pipeline.requirements=make([]gfx.Binding_Requirement,len(desc.buffers),r.allocator)
     pipeline.images=make([]gfx.Image_Binding_Requirement,len(desc.images),r.allocator)
-    for image,i in desc.images { pipeline.images[i]={group=image.group,slot=image.slot,stages={.Compute},usage=image.usage,arrayed=image.arrayed,depth=image.depth,dimension=image.dimension,sample_type=image.sample_type,storage_format=image.storage_format,mode=image.mode} }
+    for image,i in desc.images { pipeline.images[i]={group=image.group,slot=image.slot,stages={.Compute},usage=image.usage,arrayed=image.arrayed,depth=image.depth,dimension=image.dimension,sample_type=image.sample_type,storage_format=image.storage_format,mode=image.mode,array_count=image.array_count} }
     pipeline.samplers=make([]gfx.Sampler_Requirement,len(desc.samplers),r.allocator)
     for sampler,i in desc.samplers { pipeline.samplers[i]={sampler.group,sampler.slot,{.Compute},sampler.comparison} }
     reflection:=send(^MTL.ComputePipelineReflection,object,"reflection")
@@ -117,7 +127,7 @@ encode_dispatch :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Gr
     pipeline:=entry^; retain_pipeline(slot,pipeline)
     buffer_count,texture_count,sampler_count:u32
     for binding in pipeline.desc.buffers { buffer_count=max(buffer_count,u32(binding.metal_index)+1) }
-    for binding in pipeline.desc.images { texture_count=max(texture_count,u32(binding.metal_index)+1) }
+    for binding in pipeline.desc.images { if binding.metal_kind==.Argument_Buffer { buffer_count=max(buffer_count,u32(binding.metal_index)+1) } else { texture_count=max(texture_count,u32(binding.metal_index)+1) } }
     for binding in pipeline.desc.samplers { sampler_count=max(sampler_count,u32(binding.metal_index)+1) }
     if pipeline.desc.runtime_sizes_words>0 { buffer_count=max(buffer_count,u32(pipeline.desc.runtime_sizes_index)+1) }
     descriptor:=new_object("MTL4ArgumentTableDescriptor")
@@ -139,17 +149,10 @@ encode_dispatch :: proc(r:^Renderer,slot:^Native_Frame,prepared:^gfx.Prepared_Gr
         }
     }
     for binding in packet.images {
-        texture,present:=resolve_texture(r,prepared,binding.access.resource); if !present { return .Invalid_Resource }
         for requirement in pipeline.desc.images {
             if requirement.group!=binding.group || requirement.slot!=binding.slot { continue }
-            object:=texture.object; range:=binding.access.range
-            texture_type:=shader_texture_type(requirement.dimension,requirement.arrayed)
-            if range!=gfx.image_full_range(texture.desc) || object->textureType()!=texture_type {
-                view:=send(^MTL.Texture,object,"newTextureViewWithPixelFormat:textureType:levels:slices:",pixel_format(texture.desc.format),texture_type,NS.Range{NS.UInteger(range.base_mip),NS.UInteger(range.mip_count)},NS.Range{NS.UInteger(range.base_layer),NS.UInteger(range.layer_count)})
-                if view==nil { return .Invalid_Range }
-                append(&slot.auxiliary,cast(^NS.Object)view); send(nil,slot.residency,"addAllocation:",view); object=view
-            }
-            send(nil,table,"setTexture:atIndex:",object->gpuResourceID(),NS.UInteger(requirement.metal_index))
+            err:=encode_image_binding(r,slot,prepared,table,binding,requirement.metal_index,requirement.array_count,requirement.metal_kind,requirement.dimension,requirement.arrayed)
+            if err!=.None { return err }
         }
     }
     for binding in packet.samplers {

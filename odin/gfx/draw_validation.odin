@@ -10,6 +10,7 @@ graphics_desc_valid :: proc(desc:Graphics_Desc)->bool {
     if desc.depth.enabled && .Color in texture_aspects(desc.depth.format) { return false }
     if desc.stencil.enabled && !(.Stencil in texture_aspects(desc.depth.format)) { return false }
     for value in ([3]f32{desc.depth_bias.constant,desc.depth_bias.slope,desc.depth_bias.clamp}) { if math.is_nan(value) || math.is_inf(value) { return false } }
+    for image in desc.images { if image.array_count==0 { return false } }
     for color in desc.colors { if texture_aspects(color.format)!={.Color} { return false } }
     return true
 }

@@ -773,14 +773,22 @@ override WIDTH:u32=8;
 @group(1) @binding(1) var image_sampler:sampler;
 @fragment fn main(@builtin(position) p:vec4f)->@location(0) vec4f {return textureSample(images[u32(p.x)%4u],image_sampler,p.xy);}
 "#;
-        let entries = compile(request(source, "main", Stage::Fragment))
-            .unwrap_or_else(|Failure(_, message)| panic!("{message}"));
-        let image = &entries[0].bindings[0];
-        assert_eq!(image.kind, "Texture");
-        assert_eq!(image.metal_kind, "Buffer");
-        assert_eq!(image.array_count, 4);
-        assert_eq!(image.metal_minimum_size, 32);
-        assert_eq!(image.metal_index, 9);
+        for count in [1, 4, 4096] {
+            let source = source.replace(",4>", &format!(",{count}>"));
+            let entries = compile(request(&source, "main", Stage::Fragment))
+                .unwrap_or_else(|Failure(_, message)| panic!("{message}"));
+            let image = &entries[0].bindings[0];
+            assert_eq!(image.kind, "Texture");
+            assert_eq!(image.metal_kind, "Buffer");
+            assert_eq!(image.array_count, count);
+            assert_eq!(image.metal_minimum_size, u64::from(count) * 8);
+            assert_eq!(image.metal_index, 9);
+            assert!(
+                entries[0]
+                    .metal_source
+                    .contains("NagaArgumentBufferWrapper")
+            );
+        }
     }
     #[test]
     fn test_ffi_protocol_bounds_and_exact_release() {

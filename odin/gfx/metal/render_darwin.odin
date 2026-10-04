@@ -50,7 +50,10 @@ render_table :: proc(r:^Renderer,slot:^Native_Frame,pipeline:^Native_Graphics,pr
     buffer_count,texture_count,sampler_count:u32
     if vertex { for binding in pipeline.desc.vertex.buffers { buffer_count=max(buffer_count,11+binding.binding) } }
     for binding in pipeline.desc.buffers { if stage in binding.stages { buffer_count=max(buffer_count,u32(binding.vertex_index if vertex else binding.fragment_index)+1) } }
-    for binding in pipeline.desc.images { if stage in binding.stages { texture_count=max(texture_count,u32(binding.vertex_index if vertex else binding.fragment_index)+1) } }
+    for binding in pipeline.desc.images { if stage in binding.stages {
+        index:=u32(binding.vertex_index if vertex else binding.fragment_index)+1
+        if binding.metal_kind==.Argument_Buffer { buffer_count=max(buffer_count,index) } else { texture_count=max(texture_count,index) }
+    } }
     for binding in pipeline.desc.samplers { if stage in binding.stages { sampler_count=max(sampler_count,u32(binding.vertex_index if vertex else binding.fragment_index)+1) } }
     sizes_index:=pipeline.desc.vertex_sizes_index if vertex else pipeline.desc.fragment_sizes_index
     sizes_words:=pipeline.desc.vertex_sizes_words if vertex else pipeline.desc.fragment_sizes_words
@@ -102,19 +105,9 @@ render_table :: proc(r:^Renderer,slot:^Native_Frame,pipeline:^Native_Graphics,pr
         if !(stage in binding.stages) { continue }
         for requirement in pipeline.desc.images {
             if requirement.group!=binding.group || requirement.slot!=binding.slot || !(stage in requirement.stages) { continue }
-            texture,ok:=resolve_texture(r,prepared,binding.access.resource); if !ok { return nil,.Invalid_Resource }
             index:=requirement.vertex_index if vertex else requirement.fragment_index
-            if index<0 || index>=128 { return nil,.Invalid_Shader }
-            object:=texture.object
-            range:=binding.access.range
-            texture_type:=shader_texture_type(requirement.dimension,requirement.arrayed)
-            if range!=gfx.image_full_range(texture.desc) || object->textureType()!=texture_type {
-                view:=send(^MTL.Texture,object,"newTextureViewWithPixelFormat:textureType:levels:slices:",pixel_format(texture.desc.format),texture_type,NS.Range{NS.UInteger(range.base_mip),NS.UInteger(range.mip_count)},NS.Range{NS.UInteger(range.base_layer),NS.UInteger(range.layer_count)})
-                if view==nil { return nil,.Invalid_Range }
-                append(&slot.auxiliary,cast(^NS.Object)view); object=view
-                send(nil,slot.residency,"addAllocation:",view)
-            }
-            send(nil,table,"setTexture:atIndex:",object->gpuResourceID(),NS.UInteger(index))
+            err:=encode_image_binding(r,slot,prepared,table,binding,index,requirement.array_count,requirement.metal_kind,requirement.dimension,requirement.arrayed)
+            if err!=.None { return nil,err }
         }
     }
     for binding in packet.samplers {

@@ -22,7 +22,7 @@ create_pipeline :: proc(r:^Renderer,desc:gfx.Compute_Desc)->(gfx.Pipeline_Handle
     native_desc.images=make([]gfx.Shader_Stage_Image,len(desc.images),r.allocator); defer delete(native_desc.images,r.allocator)
     native_desc.samplers=make([]gfx.Shader_Stage_Sampler,len(desc.samplers),r.allocator); defer delete(native_desc.samplers,r.allocator)
     for binding,i in desc.buffers { native_desc.buffers[i]={group=binding.group,slot=binding.slot,stages={.Compute},usage=binding.usage,mode=binding.mode,minimum_size=binding.minimum_size} }
-    for binding,i in desc.images { native_desc.images[i]={group=binding.group,slot=binding.slot,stages={.Compute},usage=binding.usage,arrayed=binding.arrayed,depth=binding.depth,dimension=binding.dimension,sample_type=binding.sample_type,storage_format=binding.storage_format,mode=binding.mode} }
+    for binding,i in desc.images { native_desc.images[i]={group=binding.group,slot=binding.slot,stages={.Compute},usage=binding.usage,arrayed=binding.arrayed,depth=binding.depth,dimension=binding.dimension,sample_type=binding.sample_type,storage_format=binding.storage_format,mode=binding.mode,array_count=binding.array_count} }
     for binding,i in desc.samplers { native_desc.samplers[i]={group=binding.group,slot=binding.slot,stages={.Compute},comparison=binding.comparison} }
     error:=reflect_graphics_stage(r,native_desc,interface,reflection,.Compute)
     if error!=.None { return {},error }

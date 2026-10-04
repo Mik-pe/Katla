@@ -8,6 +8,7 @@ import vk "vendor:vulkan"
 create_descriptor_pool :: proc(r:^Renderer)->(vk.DescriptorPool,gfx.Gpu_Error) {
     sizes:=[5]vk.DescriptorPoolSize{{.STORAGE_BUFFER,4096},{.UNIFORM_BUFFER,4096},{.SAMPLED_IMAGE,4096},{.STORAGE_IMAGE,4096},{.SAMPLER,4096}}
     info:=vk.DescriptorPoolCreateInfo{sType=.DESCRIPTOR_POOL_CREATE_INFO,maxSets=128,poolSizeCount=u32(len(sizes)),pPoolSizes=raw_data(sizes[:])}
+    if r.sampled_arrays || r.storage_arrays { info.flags={.UPDATE_AFTER_BIND} }
     pool:vk.DescriptorPool
     if r.table.CreateDescriptorPool(r.device,&info,nil,&pool)!=.SUCCESS { return 0,.Allocation_Failed }
     return pool,.None

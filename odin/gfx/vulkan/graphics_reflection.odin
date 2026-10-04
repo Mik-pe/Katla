@@ -13,7 +13,7 @@ reflect_graphics_stage :: proc(r:^Renderer,desc:gfx.Graphics_Desc,pipeline:^Nati
     if expected!=len(reflection.resources) { return .Invalid_Shader }
     for resource in reflection.resources {
         mode:=shader_access(resource.access)
-        if resource.array_count!=1 { return .Unsupported }
+        if resource.array_count==0 || (resource.kind!=.Image && resource.array_count!=1) { return .Unsupported }
         matched:=false
         switch resource.kind {
         case .Buffer:
@@ -62,13 +62,13 @@ reflect_graphics_stage :: proc(r:^Renderer,desc:gfx.Graphics_Desc,pipeline:^Nati
             for binding in desc.images {
                 if binding.group!=resource.group || binding.slot!=resource.binding || stage not_in binding.stages { continue }
                 usage:=gfx.Texture_Usage.Storage if resource.storage else gfx.Texture_Usage.Sampled
-                if !gfx.access_covers(binding.mode,mode) || binding.usage!=usage || binding.dimension!=dimension || binding.arrayed!=resource.arrayed || binding.depth!=resource.depth || binding.sample_type!=sample_type || (resource.storage && binding.storage_format!=storage_format) { return .Invalid_Shader }
+                if binding.array_count!=resource.array_count || !gfx.access_covers(binding.mode,mode) || binding.usage!=usage || binding.dimension!=dimension || binding.arrayed!=resource.arrayed || binding.depth!=resource.depth || binding.sample_type!=sample_type || (resource.storage && binding.storage_format!=storage_format) { return .Invalid_Shader }
                 if resource.storage && (resource.access==.Write || resource.access==.Read_Write) && ((stage==.Vertex && !r.vertex_stores) || (stage==.Fragment && !r.fragment_stores)) { return .Unsupported }
-                requirement:=gfx.Image_Binding_Requirement{binding.group,binding.slot,{stage},usage,resource.arrayed,resource.depth,dimension,sample_type,storage_format,mode}
+                requirement:=gfx.Image_Binding_Requirement{binding.group,binding.slot,{stage},usage,resource.arrayed,resource.depth,dimension,sample_type,storage_format,mode,resource.array_count}
                 found:=false
                 for &prior in pipeline.images {
                     if prior.group==requirement.group && prior.slot==requirement.slot {
-                        if prior.usage!=requirement.usage || prior.dimension!=requirement.dimension || prior.arrayed!=requirement.arrayed || prior.depth!=requirement.depth || prior.sample_type!=requirement.sample_type || prior.storage_format!=requirement.storage_format { return .Invalid_Shader }
+                        if prior.array_count!=requirement.array_count || prior.usage!=requirement.usage || prior.dimension!=requirement.dimension || prior.arrayed!=requirement.arrayed || prior.depth!=requirement.depth || prior.sample_type!=requirement.sample_type || prior.storage_format!=requirement.storage_format { return .Invalid_Shader }
                         prior.stages|=requirement.stages; prior.mode=merge_access(prior.mode,requirement.mode); found=true; break
                     }
                 }

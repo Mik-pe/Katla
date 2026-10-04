@@ -39,8 +39,8 @@ Prepared_Graph :: struct { passes:[dynamic]Prepared_Pass, buffers:[]Buffer_Input
 @(private="package")
 packet_destroy :: proc(packet:^Packet,allocator:mem.Allocator) {
     #partial switch p in packet^ {
-    case Dispatch: delete(p.bindings,allocator); delete(p.images,allocator); delete(p.samplers,allocator)
-    case Render: delete(p.colors,allocator); delete(p.buffers,allocator); delete(p.images,allocator); delete(p.samplers,allocator); for &phase in p.phases { phase_destroy(&phase,allocator) }; delete(p.phases,allocator); constants_destroy(p.constants,allocator)
+    case Dispatch: delete(p.bindings,allocator); image_bindings_destroy(p.images,allocator); delete(p.samplers,allocator)
+    case Render: delete(p.colors,allocator); delete(p.buffers,allocator); image_bindings_destroy(p.images,allocator); delete(p.samplers,allocator); for &phase in p.phases { phase_destroy(&phase,allocator) }; delete(p.phases,allocator); constants_destroy(p.constants,allocator)
     }
     packet^={}
 }
@@ -48,11 +48,11 @@ packet_destroy :: proc(packet:^Packet,allocator:mem.Allocator) {
 packet_clone :: proc(packet:Packet,allocator:mem.Allocator)->Packet {
     #partial switch p in packet {
     case Dispatch:
-        copy_packet:=p; copy_packet.bindings=make([]Buffer_Binding,len(p.bindings),allocator); copy(copy_packet.bindings,p.bindings); copy_packet.images=clone_slice(p.images,allocator); copy_packet.samplers=clone_slice(p.samplers,allocator)
+        copy_packet:=p; copy_packet.bindings=make([]Buffer_Binding,len(p.bindings),allocator); copy(copy_packet.bindings,p.bindings); copy_packet.images=image_bindings_clone(p.images,allocator); copy_packet.samplers=clone_slice(p.samplers,allocator)
         return copy_packet
     case Render:
         result:=p
-        result.colors=clone_slice(p.colors,allocator); result.buffers=clone_slice(p.buffers,allocator); result.images=clone_slice(p.images,allocator); result.samplers=clone_slice(p.samplers,allocator); result.phases=make([]Render_Phase,len(p.phases),allocator); for phase,i in p.phases { result.phases[i]=phase_clone(phase,allocator) }; result.constants=constants_clone(p.constants,allocator)
+        result.colors=clone_slice(p.colors,allocator); result.buffers=clone_slice(p.buffers,allocator); result.images=image_bindings_clone(p.images,allocator); result.samplers=clone_slice(p.samplers,allocator); result.phases=make([]Render_Phase,len(p.phases),allocator); for phase,i in p.phases { result.phases[i]=phase_clone(phase,allocator) }; result.constants=constants_clone(p.constants,allocator)
         return result
     }
     return packet
@@ -142,12 +142,12 @@ validate_packet :: proc(g:^Graph,pass:Graph_Pass,packet:Packet)->Packet_Error {
     case Copy_Buffer_Image:
         if pass.kind!=.Transfer || p.destination.owner!=g || p.destination.index<0 || p.destination.index>=len(g.images) { return .Invalid_Packet }
         desc:=g.images[p.destination.index].desc
-        if !image_region_valid(p.region,desc) || p.region.aspect==.Stencil || desc.format==.D24_Unorm_S8_Uint { return .Invalid_Packet }
+        if !image_region_valid(p.region,desc) || p.region.aspect==.Stencil { return .Invalid_Packet }
         layout,valid:=image_region_layout(p.region,desc); if !valid || layout.required_bytes>max(u64)-p.source_offset { return .Invalid_Packet }
     case Copy_Image_Buffer:
         if pass.kind!=.Transfer || p.source.owner!=g || p.source.index<0 || p.source.index>=len(g.images) { return .Invalid_Packet }
         desc:=g.images[p.source.index].desc
-        if !image_region_valid(p.region,desc) || desc.format==.D24_Unorm_S8_Uint { return .Invalid_Packet }
+        if !image_region_valid(p.region,desc) { return .Invalid_Packet }
         layout,valid:=image_region_layout(p.region,desc); if !valid || layout.required_bytes>max(u64)-p.destination_offset || layout.block_rows*u64(p.region.depth)>u64(max(int)) { return .Invalid_Packet }
     case: return .Invalid_Packet
     }

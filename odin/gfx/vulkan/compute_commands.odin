@@ -23,21 +23,15 @@ encode_dispatch :: proc(r:^Renderer,slot:^Native_Frame,recording:^Image_Recordin
         write:=vk.WriteDescriptorSet{sType=.WRITE_DESCRIPTOR_SET,dstSet=sets[binding.group],dstBinding=binding.slot,descriptorCount=1,descriptorType=descriptor,pBufferInfo=&info}
         r.table.UpdateDescriptorSets(r.device,1,&write,0,nil)
     }
+    transition_error:=transition_bound_images(r,slot,recording,prepared,packet.images,true)
+    if transition_error!=.None { return transition_error }
     for binding in packet.images {
-        texture,present:=resolve_texture(r,prepared,binding.access.resource)
-        if !present { return .Invalid_Resource }
-        if gfx.access_reads(binding.access.mode) && !image_contents(recording,r,texture,binding.access.range) { return .Invalid_Graph }
-        state:=image_use_state(binding.access.usage)
-        error:=transition_image(r,slot.command,recording,texture,binding.access.range,state,{.COMPUTE_SHADER},image_access_mask(binding.access))
-        if error!=.None { return error }
-        arrayed:=false
-        for requirement in interface.images { if requirement.group==binding.group && requirement.slot==binding.slot { arrayed=requirement.arrayed; break } }
-        view,view_error:=texture_view(r,texture,binding.access.range,arrayed)
-        if view_error!=.None { return view_error }
-        info:=vk.DescriptorImageInfo{imageView=view,imageLayout=image_layout(state)}
-        descriptor:=vk.DescriptorType.STORAGE_IMAGE if binding.access.usage==.Storage else vk.DescriptorType.SAMPLED_IMAGE
-        write:=vk.WriteDescriptorSet{sType=.WRITE_DESCRIPTOR_SET,dstSet=sets[binding.group],dstBinding=binding.slot,descriptorCount=1,descriptorType=descriptor,pImageInfo=&info}
-        r.table.UpdateDescriptorSets(r.device,1,&write,0,nil)
+        for requirement in interface.images {
+            if requirement.group!=binding.group || requirement.slot!=binding.slot { continue }
+            error:=write_image_descriptors(r,prepared,binding,requirement,sets[binding.group])
+            if error!=.None { return error }
+            break
+        }
     }
     for binding in packet.samplers {
         sampler_entry,present:=gfx.storage_get(&r.samplers,binding.handle)
@@ -54,11 +48,6 @@ encode_dispatch :: proc(r:^Renderer,slot:^Native_Frame,recording:^Image_Recordin
         if !present { return .Invalid_Resource }
         r.table.CmdDispatchIndirect(slot.command,command.object,vk.DeviceSize(packet.indirect.command.range.offset))
     } else { r.table.CmdDispatch(slot.command,packet.groups[0],packet.groups[1],packet.groups[2]) }
-    for binding in packet.images {
-        if gfx.access_writes(binding.access.mode) {
-            texture,_:=resolve_texture(r,prepared,binding.access.resource)
-            image_mark_contents(recording,r,texture,binding.access.range,true)
-        }
-    }
+    mark_bound_images(r,recording,prepared,packet.images)
     return .None
 }

@@ -7,6 +7,7 @@ import gpu "../gfx/metal"
 import acceptance "../gfx_conformance"
 import NS "core:sys/darwin/Foundation"
 import "core:mem"
+import "core:os"
 
 shader_source :: `
 #include <metal_stdlib>
@@ -37,4 +38,6 @@ main :: proc() {
     raster:=gfx.Graphics_Desc{vertex_entry="raster_vertex",fragment_entry="raster_fragment",vertex_metal_entry="raster_vertex",fragment_metal_entry="raster_fragment",vertex_metal_source=shader_source,fragment_metal_source=shader_source,vertex_sizes_index=-1,fragment_sizes_index=-1,colors={{format=.RGBA8_Unorm,write_mask={.Red,.Green,.Blue,.Alpha}}},depth={enabled=true,test=true,write=true,compare=.Less,format=.D32_Float},front_counter_clockwise=true}
     acceptance.run_graphics(&renderer,graphics,raster)
     acceptance.run_allocations(&renderer,api,graphics,gpu.allocation_query(&renderer),gpu.allocation_api(&renderer),fill)
+    assert(len(os.args)<=2,"Pass one explicit Naga compiler library for canonical material-array acceptance")
+    if len(os.args)==2 { run_arrays(&renderer,os.args[1]) }
 }

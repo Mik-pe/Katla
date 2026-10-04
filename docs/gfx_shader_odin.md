@@ -31,10 +31,14 @@ descriptor arrays and borrow binary/source/raster arrays until synchronous nativ
 pipeline preparation finishes. Native renderers validate actual compiled shader
 interfaces before accepting descriptors.
 
-The current native descriptor model accepts individual D2 images, including
+The current native descriptor model accepts individual D2/D3 images, including
 arrayed/depth D2 images, and individual samplers. The adapter explicitly rejects
-resource binding arrays, other image dimensions and multisampled shader images.
-Storage image formats map only RGBA8 Unorm, RGBA16 Float and R32 Uint. Other formats
+buffer/sampler binding arrays, other image dimensions and multisampled shader
+images. Fixed sampled and storage
+texture arrays preserve selected counts, including one-element arrays. Their
+Metal namespace is explicitly `Argument_Buffer`, independent of logical count;
+the exact pointer-wrapper ABI carries one eight-byte resource ID per element.
+Storage image formats map RGBA8 Unorm, RGBA16 Float, R32 Uint and R32 Float. Other formats
 are explicit errors. It does not publish a partially supported pipeline.
 
 `spirv.reflect_entry` decodes the actual selected SPIR-V stage for native Vulkan
@@ -95,3 +99,18 @@ process exit, despite zero Odin-owned allocations. Native rendering acceptance
 does not assert that external driver/framework process caches are leak-free.
 These commands require the stated hardware and loader. CPU
 tests alone do not establish native shader or rendering acceptance.
+
+Export reproducible selected-entry native fixtures after building the independent
+compiler dependency:
+
+```sh
+python3 scripts/compile_odin_shader.py odin/gfx_shader_native/shaders/array.wgsl \
+  --library /path/to/libkatla_naga_compiler.dylib --entry main --stage Fragment \
+  --output /tmp/katla-array4096
+```
+
+The output JSON contains exact canonical reflection alongside emitted MSL and
+SPIRV files. The 4096-slot source indexes the full table without modulo, so
+native 4098-pixel acceptance also verifies both out-of-range indices clamp to
+4095 through Naga's documented binding-array Restrict policy. It uses no fixed
+compiled fixture or parallel shader translation path.

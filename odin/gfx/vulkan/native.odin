@@ -30,6 +30,8 @@ Renderer :: struct {
     table:vk.Device_VTable,
     memory_properties:vk.PhysicalDeviceMemoryProperties,
     limits:vk.PhysicalDeviceLimits,
+    descriptor_limits:vk.PhysicalDeviceDescriptorIndexingProperties,
+    sampled_arrays,storage_arrays:bool,
     sampler_anisotropy,separate_depth_stencil,swapchain_supported,surface_supported,wireframe,depth_bias_clamp,vertex_stores,fragment_stores,indirect_first_instance,compression_bc:bool,
     buffers:gfx.Resource_Storage(^Native_Buffer,gfx.Buffer_Kind),
     textures:gfx.Resource_Storage(^Native_Texture,gfx.Texture_Kind),
@@ -115,18 +117,21 @@ renderer_init :: proc(r:^Renderer,validation:=false,loader_path:string="",alloca
         queues:=make([]vk.QueueFamilyProperties,int(queue_count),allocator)
         r.instance_api.GetPhysicalDeviceQueueFamilyProperties(device,&queue_count,raw_data(queues))
         for queue,i in queues {
-            if queue.queueCount>0 && .COMPUTE in queue.queueFlags && .GRAPHICS in queue.queueFlags { r.physical=device; r.queue_family=u32(i); r.limits=properties.limits; r.sampler_anisotropy=bool(features.features.samplerAnisotropy); r.separate_depth_stencil=bool(features12.separateDepthStencilLayouts); r.wireframe=bool(features.features.fillModeNonSolid); r.depth_bias_clamp=bool(features.features.depthBiasClamp); r.vertex_stores=bool(features.features.vertexPipelineStoresAndAtomics); r.fragment_stores=bool(features.features.fragmentStoresAndAtomics); r.indirect_first_instance=bool(features.features.drawIndirectFirstInstance); r.compression_bc=bool(features.features.textureCompressionBC); break }
+            if queue.queueCount>0 && .COMPUTE in queue.queueFlags && .GRAPHICS in queue.queueFlags { r.physical=device; r.queue_family=u32(i); r.limits=properties.limits; r.sampler_anisotropy=bool(features.features.samplerAnisotropy); r.separate_depth_stencil=bool(features12.separateDepthStencilLayouts); r.wireframe=bool(features.features.fillModeNonSolid); r.depth_bias_clamp=bool(features.features.depthBiasClamp); r.vertex_stores=bool(features.features.vertexPipelineStoresAndAtomics); r.fragment_stores=bool(features.features.fragmentStoresAndAtomics); r.indirect_first_instance=bool(features.features.drawIndirectFirstInstance); r.compression_bc=bool(features.features.textureCompressionBC); r.sampled_arrays=bool(features.features.shaderSampledImageArrayDynamicIndexing) && bool(features12.shaderSampledImageArrayNonUniformIndexing) && bool(features12.descriptorBindingSampledImageUpdateAfterBind); r.storage_arrays=bool(features.features.shaderStorageImageArrayDynamicIndexing) && bool(features12.shaderStorageImageArrayNonUniformIndexing) && bool(features12.descriptorBindingStorageImageUpdateAfterBind); break }
         }
         delete(queues,allocator)
         if r.physical!=nil { log.info("Odin Vulkan device",string(cast(cstring)raw_data(properties.deviceName[:]))); break }
     }
     if r.physical==nil { return .Unsupported }
+    r.descriptor_limits.sType=.PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES
+    properties2:=vk.PhysicalDeviceProperties2{sType=.PHYSICAL_DEVICE_PROPERTIES_2,pNext=&r.descriptor_limits}
+    r.instance_api.GetPhysicalDeviceProperties2(r.physical,&properties2)
     r.instance_api.GetPhysicalDeviceMemoryProperties(r.physical,&r.memory_properties)
     priority:f32=1
     queue_info:=vk.DeviceQueueCreateInfo{sType=.DEVICE_QUEUE_CREATE_INFO,queueFamilyIndex=r.queue_family,queueCount=1,pQueuePriorities=&priority}
     enabled:=vk.PhysicalDeviceVulkan13Features{sType=.PHYSICAL_DEVICE_VULKAN_1_3_FEATURES,synchronization2=true,maintenance4=true,dynamicRendering=true}
-    enabled12:=vk.PhysicalDeviceVulkan12Features{sType=.PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,pNext=&enabled,separateDepthStencilLayouts=b32(r.separate_depth_stencil)}
-    enabled_base:=vk.PhysicalDeviceFeatures{samplerAnisotropy=b32(r.sampler_anisotropy),fillModeNonSolid=b32(r.wireframe),depthBiasClamp=b32(r.depth_bias_clamp),vertexPipelineStoresAndAtomics=b32(r.vertex_stores),fragmentStoresAndAtomics=b32(r.fragment_stores),drawIndirectFirstInstance=b32(r.indirect_first_instance),textureCompressionBC=b32(r.compression_bc)}
+    enabled12:=vk.PhysicalDeviceVulkan12Features{sType=.PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,pNext=&enabled,separateDepthStencilLayouts=b32(r.separate_depth_stencil),shaderSampledImageArrayNonUniformIndexing=b32(r.sampled_arrays),descriptorBindingSampledImageUpdateAfterBind=b32(r.sampled_arrays),shaderStorageImageArrayNonUniformIndexing=b32(r.storage_arrays),descriptorBindingStorageImageUpdateAfterBind=b32(r.storage_arrays)}
+    enabled_base:=vk.PhysicalDeviceFeatures{samplerAnisotropy=b32(r.sampler_anisotropy),fillModeNonSolid=b32(r.wireframe),depthBiasClamp=b32(r.depth_bias_clamp),vertexPipelineStoresAndAtomics=b32(r.vertex_stores),fragmentStoresAndAtomics=b32(r.fragment_stores),drawIndirectFirstInstance=b32(r.indirect_first_instance),textureCompressionBC=b32(r.compression_bc),shaderSampledImageArrayDynamicIndexing=b32(r.sampled_arrays),shaderStorageImageArrayDynamicIndexing=b32(r.storage_arrays)}
     device_info:=vk.DeviceCreateInfo{sType=.DEVICE_CREATE_INFO,pEnabledFeatures=&enabled_base,pNext=&enabled12,queueCreateInfoCount=1,pQueueCreateInfos=&queue_info}
     extension_total:u32
     if r.instance_api.EnumerateDeviceExtensionProperties(r.physical,nil,&extension_total,nil)!=.SUCCESS { return .Unsupported }

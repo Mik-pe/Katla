@@ -20,6 +20,7 @@ Instance_API :: struct {
     GetPhysicalDeviceFormatProperties:vk.ProcGetPhysicalDeviceFormatProperties,
     GetPhysicalDeviceMemoryProperties:vk.ProcGetPhysicalDeviceMemoryProperties,
     GetPhysicalDeviceProperties:vk.ProcGetPhysicalDeviceProperties,
+    GetPhysicalDeviceProperties2:vk.ProcGetPhysicalDeviceProperties2,
     GetPhysicalDeviceQueueFamilyProperties:vk.ProcGetPhysicalDeviceQueueFamilyProperties,
     DestroySurfaceKHR:vk.ProcDestroySurfaceKHR,
     GetPhysicalDeviceSurfaceSupportKHR:vk.ProcGetPhysicalDeviceSurfaceSupportKHR,
@@ -47,6 +48,7 @@ load_instance_api :: proc(api:^Instance_API,instance:vk.Instance,get:vk.ProcGetI
     api.GetPhysicalDeviceFormatProperties=cast(vk.ProcGetPhysicalDeviceFormatProperties)get(instance,"vkGetPhysicalDeviceFormatProperties")
     api.GetPhysicalDeviceFeatures2=cast(vk.ProcGetPhysicalDeviceFeatures2)get(instance,"vkGetPhysicalDeviceFeatures2")
     api.GetPhysicalDeviceMemoryProperties=cast(vk.ProcGetPhysicalDeviceMemoryProperties)get(instance,"vkGetPhysicalDeviceMemoryProperties")
+    api.GetPhysicalDeviceProperties2=cast(vk.ProcGetPhysicalDeviceProperties2)get(instance,"vkGetPhysicalDeviceProperties2")
     api.GetPhysicalDeviceProperties=cast(vk.ProcGetPhysicalDeviceProperties)get(instance,"vkGetPhysicalDeviceProperties")
     api.GetPhysicalDeviceQueueFamilyProperties=cast(vk.ProcGetPhysicalDeviceQueueFamilyProperties)get(instance,"vkGetPhysicalDeviceQueueFamilyProperties")
     api.GetDeviceProcAddr=cast(vk.ProcGetDeviceProcAddr)get(instance,"vkGetDeviceProcAddr")

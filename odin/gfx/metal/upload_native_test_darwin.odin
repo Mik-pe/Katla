@@ -28,7 +28,7 @@ using namespace metal;
 kernel void sampled(texture2d_array<float> src [[texture(0)]], texture2d<float,access::write> dst [[texture(1)]], sampler nearest [[sampler(0)]], uint2 p [[thread_position_in_grid]]) {
     dst.write(src.sample(nearest,(float2(p)+0.5)/4.0,0),p);
 }`
-    pipeline,pipeline_error:=create_pipeline(&r,{entry="sampled",metal_entry="sampled",metal_source=shader,local_size={1,1,1},runtime_sizes_index=-1,images={{group=0,slot=0,metal_index=0,usage=.Sampled,arrayed=true,mode=.Read},{group=0,slot=1,metal_index=1,usage=.Storage,storage_format=.RGBA8_Unorm,mode=.Write}},samplers={{group=0,slot=2,metal_index=0}}}); assert(pipeline_error==.None)
+    pipeline,pipeline_error:=create_pipeline(&r,{entry="sampled",metal_entry="sampled",metal_source=shader,local_size={1,1,1},runtime_sizes_index=-1,images={{group=0,slot=0,metal_index=0,usage=.Sampled,array_count=1,arrayed=true,mode=.Read},{group=0,slot=1,metal_index=1,usage=.Storage,array_count=1,storage_format=.RGBA8_Unorm,mode=.Write}},samplers={{group=0,slot=2,metal_index=0}}}); assert(pipeline_error==.None)
     graph:gfx.Graph; gfx.graph_init(&graph); defer gfx.graph_destroy(&graph)
     input,_:=gfx.graph_image(&graph,source_desc,{.Transfer_Destination,.Shader_Read,true},true,false)
     result,_:=gfx.graph_image(&graph,output_desc,{},false,false)
@@ -37,7 +37,7 @@ kernel void sampled(texture2d_array<float> src [[texture(0)]], texture2d<float,a
     input_access:=gfx.Image_Access{input,{1,1,1,1,{.Color}},.Read,.Sampled}
     output_access:=gfx.Image_Access{result,gfx.image_full_range(output_desc),.Write,.Storage}
     compute,_:=gfx.graph_pass(&graph,"sample-uploaded-array-mip",.Compute,nil,images={input_access,output_access})
-    assert(gfx.graph_set_packet(&graph,compute,gfx.Dispatch{pipeline=pipeline,groups={4,4,1},images={{0,0,{.Compute},input_access},{0,1,{.Compute},output_access}},samplers={{0,2,{.Compute},sampler}}})==.None)
+    assert(gfx.graph_set_packet(&graph,compute,gfx.Dispatch{pipeline=pipeline,groups={4,4,1},images={{0,0,{.Compute},{input_access}},{0,1,{.Compute},{output_access}}},samplers={{0,2,{.Compute},sampler}}})==.None)
     patch_data:[16]byte; for &value in patch_data { value=255 }
     patch_desc:=gfx.Buffer_Desc{16,{.Transfer_Source},.GPU_Private}
     patch_buffer,patch_error:=create_buffer_with_data(&r,patch_desc,patch_data[:]); assert(patch_error==.None)

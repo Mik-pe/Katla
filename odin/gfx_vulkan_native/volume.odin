@@ -46,14 +46,14 @@ run_volume :: proc(r:^gpu.Renderer,code:[]u32) {
     data:[424]byte; assert(gpu.read_buffer(r,output,0,data[:])==.None)
     for z in 0..<3 { for pixel in 0..<32 { for c in 0..<4 { assert(data[z*128+pixel*4+c]==colors[z][c]) } } }
     for pixel in 0..<10 { for c in 0..<4 { assert(data[384+pixel*4+c]==colors[1][c]) } }
-    pipeline,pipeline_error:=gpu.create_pipeline(r,{entry="main",spirv=code,local_size={4,4,1},images={{group=3,slot=0,usage=.Storage,dimension=.D3,sample_type=.Float,storage_format=.RGBA8_Unorm,mode=.Write}}}); assert(pipeline_error==.None)
+    pipeline,pipeline_error:=gpu.create_pipeline(r,{entry="main",spirv=code,local_size={4,4,1},images={{group=3,slot=0,usage=.Storage,dimension=.D3,sample_type=.Float,storage_format=.RGBA8_Unorm,mode=.Write,array_count=1}}}); assert(pipeline_error==.None)
     defer assert(gpu.destroy_pipeline(r,pipeline)==.None)
     replacement:gfx.Graph; gfx.graph_init(&replacement); defer { assert(gpu.release_graph_exports(r,&replacement)==.None); gfx.graph_destroy(&replacement) }
     newer,_:=gfx.graph_image(&replacement,desc,{initial=.Storage,final=.Storage,initialized=true},true,true)
     new_output,_:=gfx.graph_buffer(&replacement,output_desc,false,false)
     write:=gfx.Image_Access{newer,base,.Write,.Storage}
     dispatch,_:=gfx.graph_pass(&replacement,"write-image3d",.Compute,nil,images={write})
-    assert(gfx.graph_set_packet(&replacement,dispatch,gfx.Dispatch{pipeline=pipeline,groups={2,1,3},images={{3,0,{.Compute},write}}})==.None)
+    assert(gfx.graph_set_packet(&replacement,dispatch,gfx.Dispatch{pipeline=pipeline,groups={2,1,3},images={{3,0,{.Compute},{write}}}})==.None)
     copy,_:=gfx.graph_pass(&replacement,"read-image3d",.Transfer,{{new_output,{0,384},.Write,.Transfer_Destination}},images={{newer,base,.Read,.Transfer_Source}},side_effect=true)
     assert(gfx.graph_set_packet(&replacement,copy,gfx.Copy_Image_Buffer{newer,{0,0,0,0,8,4,.Color,0,3,0,0},new_output,0})==.None)
     replacement_plan,replacement_compile:=gfx.graph_compile(&replacement); assert(replacement_compile==.None); defer gfx.compiled_graph_destroy(&replacement_plan)
