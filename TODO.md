@@ -10,7 +10,10 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Port voices/resampling/pooling, the category mixer and scheduling/streaming, reusing the completed `odin/audio/dsp` layer.
 - [ ] Add native Odin audio output with real playback and callback/lifecycle acceptance.
 - [x] Port agent CPU JSON validation, selected scene observations and synchronized rate admission on top of the Odin editor mailbox/undo owner. See `docs/agent_odin.md`.
-- [ ] Port agent application-owned animation, events, materials, prefab/behavior and resource requests with real application consumers.
+- [x] Port typed material presets/inspect/set with an application-owned scene consumer, atomic 1..256-object batches and shared exact undo/redo.
+- [ ] Integrate Odin surface factors with native material uploads, rendered PBR output, inspector controls and grouped live dragging.
+- [ ] Port agent application-owned animation, events, prefab/behavior and resource requests with real application consumers.
+- [ ] Preserve embedded component entity references through hierarchy/prefab/event restoration; the current shared history remaps command targets.
 - [ ] Port optional MCP transport and LLM configuration/HTTP/streaming/orchestration with request correlation, shutdown and failure acceptance.
 - [x] Port gfx typed resource storage, exact frame/submission ownership and buffer-range graph compilation; prove the compiled compute/transfer workload on native Metal 4. See `docs/gfx_odin.md`.
 - [x] Port executable gfx buffer packets with native resource/reflection preflight and matching Metal/Vulkan consumers; validate concurrent uniforms, shared allocation hazards and retained native lifetimes.

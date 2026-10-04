@@ -1,0 +1,102 @@
+//! One owned undo command can contain a validated application batch or a scene edit.
+package editor
+
+import ecs "../ecs"
+import "core:mem"
+
+/// Records replacement identity after restoring a destroyed entity.
+Entity_Remap :: struct { before,after:ecs.Entity_Id }
+/// Mandatory callbacks preflight restoration, release owned state and remap target IDs.
+Undo_Ops :: struct {
+    apply:proc(rawptr,^ecs.World,^Component_Registry,bool,^[dynamic]Entity_Remap)->Scene_Error,
+    destroy:proc(rawptr,mem.Allocator),
+    remap:proc(rawptr,Entity_Remap),
+}
+/// Owns one command, affected identities and the last restoration's identity changes.
+Undo_Group :: struct { state:rawptr, ops:Undo_Ops, entities:[]ecs.Entity_Id, remaps:[dynamic]Entity_Remap, allocator:mem.Allocator }
+/// Transfers command state and clones its affected identity list.
+undo_group_create :: proc(state:rawptr,ops:Undo_Ops,entities:[]ecs.Entity_Id,allocator:=context.allocator)->Undo_Group {
+    assert(state!=nil && ops.apply!=nil && ops.destroy!=nil && ops.remap!=nil)
+    owned:=make([]ecs.Entity_Id,len(entities),allocator); copy(owned,entities)
+    return {state,ops,owned,make([dynamic]Entity_Remap,allocator),allocator}
+}
+/// Releases command state exactly once without changing the world.
+undo_group_destroy :: proc(group:^Undo_Group) {
+    if group.state!=nil { group.ops.destroy(group.state,group.allocator) }
+    delete(group.entities,group.allocator); delete(group.remaps); group^={}
+}
+/// Remaps command targets after another history action restores a fresh generation.
+undo_group_remap :: proc(group:^Undo_Group,remap:Entity_Remap) {
+    if group.state==nil { return }
+    group.ops.remap(group.state,remap)
+    for &entity in group.entities { if entity==remap.before { entity=remap.after } }
+}
+@(private="package")
+restore_group :: proc(w:^ecs.World,reg:^Component_Registry,group:^Undo_Group,redo:bool)->Scene_Error {
+    if group.state==nil { return .None }
+    context.allocator=group.allocator
+    clear(&group.remaps)
+    err:=group.ops.apply(group.state,w,reg,redo,&group.remaps)
+    if err==.None { for remap in group.remaps { for &entity in group.entities { if entity==remap.before { entity=remap.after } } } }
+    return err
+}
+/// Restores the command's previous state, preserving the group on failure.
+undo_group :: proc(w:^ecs.World,reg:^Component_Registry,group:^Undo_Group)->Scene_Error { return restore_group(w,reg,group,false) }
+/// Restores the command's subsequent state with its current generational targets.
+redo_group :: proc(w:^ecs.World,reg:^Component_Registry,group:^Undo_Group)->Scene_Error { return restore_group(w,reg,group,true) }
+
+@(private="package")
+Entity_Command :: struct {
+    entity:ecs.Entity_Id,
+    before_exists,after_exists:bool,
+    before,after:[dynamic]Component_Snapshot,
+    allocator:mem.Allocator,
+}
+@(private="package")
+entity_snapshots_destroy :: proc(command:^Entity_Command) {
+    for s in command.before { delete(s.data,command.allocator) }; for s in command.after { delete(s.data,command.allocator) }
+    delete(command.before); delete(command.after)
+}
+@(private="package")
+entity_command_destroy :: proc(state:rawptr,allocator:mem.Allocator) {
+    command:=cast(^Entity_Command)state; entity_snapshots_destroy(command); free(command,allocator)
+}
+@(private="package")
+entity_command_remap :: proc(state:rawptr,remap:Entity_Remap) {
+    command:=cast(^Entity_Command)state
+    if command.entity==remap.before { command.entity=remap.after }
+}
+@(private="package")
+entity_command_apply :: proc(state:rawptr,w:^ecs.World,reg:^Component_Registry,redo:bool,remaps:^[dynamic]Entity_Remap)->Scene_Error {
+    command:=cast(^Entity_Command)state
+    exists:=command.before_exists; snapshots:=command.before
+    if redo { exists=command.after_exists; snapshots=command.after }
+    if !exists { ecs.destroy_entity(w,command.entity); return .None }
+    context.allocator=w.allocator
+    decoded:=make([]struct { entry:^Editor_Entry, value:rawptr, transferred:bool },len(snapshots),w.allocator)
+    defer {
+        for item in decoded {
+            if item.value!=nil {
+                if !item.transferred && item.entry.ops.destroy!=nil { item.entry.ops.destroy(item.value) }
+                mem.free(item.value,w.allocator)
+            }
+        }
+        delete(decoded,w.allocator)
+    }
+    for snapshot,i in snapshots {
+        entry:=reg.entries[snapshot.name]; if entry==nil { return .Component_Not_Found }
+        value,ok:=entry.decode(snapshot.data,w.allocator)
+        decoded[i].entry=entry; decoded[i].value=value
+        if !ok { return .Decode_Failed }
+    }
+    if !ecs.entity_exists(w,command.entity) {
+        old:=command.entity; command.entity=ecs.create_entity(w)
+        append(remaps,Entity_Remap{old,command.entity})
+    }
+    for _,entry in reg.entries { ecs.remove_component_type(w,command.entity,entry.T) }
+    for &item in decoded {
+        if !ecs.insert_component_value(w,command.entity,item.entry.T,item.value) { return .Entity_Not_Found }
+        item.transferred=true
+    }
+    return .None
+}

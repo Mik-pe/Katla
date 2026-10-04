@@ -44,8 +44,8 @@ or foreign library is required by these ECS packages.
 | Lifecycle arrays and change flags clear after successful ticks | `entity_events`, `component_events`, `world_update` |
 | Integrity validation and empty-entity cleanup | `validate`, `cleanup_empty_entities` |
 | Component field metadata and runtime JSON mutation | `editor_register`, `editor_fields`, `editor_set_field` |
-| Spawn/destroy/duplicate, component add/remove, query/list/attributes, reversible mutation | `scene_execute`, `Undo_Group`, `undo_group`, `redo_group` |
-| Observations, action history, synchronous agent, bounded background requests/results and undo | `Agent_Session`, `agent_run_sync`, `Agent_Harness`, `agent_tick` |
+| Spawn/destroy/duplicate, component add/remove, query/list/attributes, typed owned undo commands | `scene_execute`, `Undo_Group`, `undo_group`, `redo_group` |
+| Observations, action history, synchronous agent, queued background requests/results and bounded tick work | `Agent_Session`, `agent_run_sync`, `Agent_Harness`, `agent_tick` |
 
 `Spawn_Model` and `Set_Parent` return `Application_Owned`. Loading graphics assets
 and defining a transform hierarchy belong to the application; this package does
@@ -107,8 +107,20 @@ Enum variants and nested/array field kinds come from RTTI. Editor registration
 owns its default value and metadata. Scene results, undo groups, observations
 and sessions have explicit destruction functions. The registry must outlive
 its undo groups, because component snapshot names refer to registry metadata.
-Undo of destruction allocates a fresh generation; use the group's resulting
-entity ID rather than reviving an old handle.
+`Undo_Group` owns a command and its affected `entities` array, with mandatory
+apply/destroy/target-remap callbacks. Built-in scene commands own JSON snapshots;
+application material commands own a validated numeric batch. All scene snapshots
+decode before restoration mutates World. The registry must remain alive until
+history is released. Undo of destruction allocates a fresh generation; use the
+group's resulting identity rather than reviving an old handle. Agent history
+remaps earlier command targets after restoration; references inside arbitrary
+serialized payloads still require application-specific ownership.
+
+Owner-thread execution can supply an `Application_Executor` to scene sessions and
+mailbox ticks. The host mailbox stores only owned operations/results and no
+application executor state. Unsupported application calls return
+`Application_Owned` when the owner supplies no executor. See the
+[application authoring contract](agent_odin.md#material-requests-and-the-application-owner).
 
 ## Ownership and language differences
 

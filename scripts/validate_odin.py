@@ -26,10 +26,11 @@ def main():
     (ROOT / "target").mkdir(exist_ok=True)
     commands = [
         ["odin", "test", "odin/editor", "-all-packages", "-out:target/odin-ecs-editor-tests", "-vet", "-strict-style"],
-        ["odin", "test", "odin/agent", "-all-packages", "-out:target/odin-agent-tests", "-vet", "-strict-style"],
+        ["odin", "test", "odin/app", "-all-packages", "-out:target/odin-app-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/gfx", "-out:target/odin-gfx-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/gfx/spirv", "-out:target/odin-spirv-tests", "-vet", "-strict-style"],
         ["odin", "run", "odin/examples/agent_scene", "-out:target/odin-agent-scene", "-vet", "-strict-style"],
+        ["odin", "run", "odin/examples/material_authoring", "-out:target/odin-material-authoring", "-vet", "-strict-style"],
         ["odin", "test", "odin/math", "-out:target/odin-math-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/icons", "-out:target/odin-icons-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/audio/dsp", "-out:target/odin-audio-dsp-tests", "-vet", "-strict-style"],

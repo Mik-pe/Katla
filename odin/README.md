@@ -8,7 +8,9 @@ CPU packages can be exercised independently; native GPU adapters require their t
 | --- | --- | --- |
 | `ecs` | Entity identities, sparse storage, queries, resources, events, commands, scheduling | [ECS port](../docs/ecs_odin.md) |
 | `editor` | Optional reflection, JSON, reversible scene actions and agent mailbox | [ECS/editor port](../docs/ecs_odin.md) |
-| `agent` | Validated JSON scene calls, selected context and synchronized admission | [Agent foundation](../docs/agent_odin.md) |
+| `agent` | Validated JSON scene/material calls, selected context and synchronized admission | [Agent authoring](../docs/agent_odin.md) |
+| `app` | Scene owner, protected/edit-mode authority and atomic material authoring through shared undo | [Application authoring](../docs/agent_odin.md#material-requests-and-the-application-owner) |
+| `examples/material_authoring` | Host-thread two-object edit and shared undo preserving unrelated scene state | `odin run odin/examples/material_authoring` |
 | `gfx` | Typed GPU identity, frames, executable buffer graphs and reflected packet preflight | [GPU core](../docs/gfx_odin.md#gpu-core) |
 | `gfx/metal`, `gfx/vulkan` | Native headless compute/transfer owners and exact resource retirement | [Native adapters](../docs/gfx_odin.md#native-adapters) |
 | `gfx/spirv` | Checked set-zero SPIR-V buffer-layout reflection | [Preflight](../docs/gfx_odin.md#executable-packets-and-preflight) |
@@ -43,8 +45,8 @@ From the repository root:
 python3 scripts/validate_odin.py
 ```
 
-This runs ECS/editor, agent, gfx/SPIR-V, math, icon and audio DSP tests with strict vet/style checks,
-an actual ECS/math consumer, icon parity and Rust/Odin math/DSP comparisons in dev and release. It needs
+This runs ECS/editor, agent/app, gfx/SPIR-V, math, icon and audio DSP tests with strict vet/style checks,
+actual scene/material and ECS/math consumers, icon parity and Rust/Odin math/DSP comparisons in dev and release. It needs
 Odin, Python 3 and Rust/Cargo. See the math contract for native sanitizer commands. Add `--native-metal` to
 require the actual Metal 4 buffer workload with API validation on macOS arm64.
 Add `--native-vulkan` for the same concurrent workload with synchronization

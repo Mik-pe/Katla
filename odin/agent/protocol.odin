@@ -59,6 +59,12 @@ vector_argument :: proc(value:json.Value)->([3]f32,bool) {
 }
 /// Accepts the CPU tool subset and rejects unknown fields and malformed required values.
 decode_call :: proc(call:Tool_Call,allocator:=context.allocator)->(Decoded_Call,Call_Error) {
+    if call.name=="material" {
+        material,err:=decode_material(call.arguments,allocator)
+        if err!=.None { return {},err }; defer decoded_material_destroy(&material)
+        bytes:=make([]byte,len(call.arguments),allocator); copy(bytes,call.arguments)
+        return {operation={kind=.Application,tool_name="material",value=bytes},field_bytes=bytes,allocator=allocator},.None
+    }
     kind:editor.Scene_Op_Kind
     allowed:[]string
     needs_entity,needs_component:bool

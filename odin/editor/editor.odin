@@ -19,7 +19,7 @@ Field_Constraints :: struct { min,max,speed:f32, has_min,has_max,skip:bool }
 /// Describes one reflected component field and its inspection constraints.
 Field_Info :: struct { name,display_name:string, T:typeid, kind:Field_Kind, constraints:Field_Constraints, variants:[]string }
 /// Reports reflected scene mutation or application-boundary failures.
-Scene_Error :: enum { None, Entity_Not_Found, Component_Not_Found, Field_Not_Found, Invalid_Field_Value, Application_Owned, Decode_Failed }
+Scene_Error :: enum { None, Entity_Not_Found, Component_Not_Found, Field_Not_Found, Invalid_Field_Value, Application_Owned, Decode_Failed, Invalid_Operation, Protected_Entity, Editing_Required }
 /// Owns a registered component default and reflected decoding metadata.
 Editor_Entry :: struct {
     name:string, T:typeid, default_value:rawptr, ops:ecs.Value_Ops,
@@ -163,22 +163,15 @@ editor_set_field :: proc(w:^ecs.World,reg:^Component_Registry,id:ecs.Entity_Id,c
     return result
 }
 
-Scene_Op_Kind :: enum { Spawn, Destroy, Set_Field, Query_Entities, Get_Hierarchy, Duplicate, List_Components, Add_Component, Remove_Component, Get_Attributes, Set_Parent, Spawn_Model }
+Scene_Op_Kind :: enum { Spawn, Destroy, Set_Field, Query_Entities, Get_Hierarchy, Duplicate, List_Components, Add_Component, Remove_Component, Get_Attributes, Set_Parent, Spawn_Model, Application }
 /// Describes one CPU scene request; variable data is borrowed by synchronous execution.
 Scene_Op :: struct {
     kind:Scene_Op_Kind, entity,parent:ecs.Entity_Id, has_parent:bool,
-    component,field,name,path:string, value:[]byte,
+    component,field,name,path,tool_name:string, value:[]byte,
     position,rotation:[3]f32, scale:[3]f32,
     limit:int,
 }
 Component_Snapshot :: struct { name:string, data:[]byte }
-/// Owns before/after snapshots for one reversible scene mutation.
-Undo_Group :: struct {
-    entity:ecs.Entity_Id,
-    before_exists,after_exists:bool,
-    before,after:[dynamic]Component_Snapshot,
-    allocator:mem.Allocator,
-}
 /// Owns affected IDs, JSON output and its allocation policy.
 Tool_Result :: struct { error:Scene_Error, entities:[dynamic]ecs.Entity_Id, data:[]byte, allocator:mem.Allocator }
 tool_result_destroy :: proc(result:^Tool_Result) {
@@ -196,62 +189,37 @@ snapshot_entity :: proc(w:^ecs.World,reg:^Component_Registry,id:ecs.Entity_Id)->
     }
     return snapshots
 }
-/// Releases owned scene snapshots without mutating World.
-undo_group_destroy :: proc(group:^Undo_Group) {
-    for s in group.before { delete(s.data,group.allocator) }; for s in group.after { delete(s.data,group.allocator) }
-    delete(group.before); delete(group.after); group^={}
-}
-@(private="package")
-restore_group :: proc(w:^ecs.World,reg:^Component_Registry,group:^Undo_Group,redo:bool)->Scene_Error {
-    if !group.before_exists && !group.after_exists { return .None }
-    exists:=group.before_exists; snapshots:=group.before
-    if redo { exists=group.after_exists; snapshots=group.after }
-    if !exists { ecs.destroy_entity(w,group.entity); return .None }
-    if !ecs.entity_exists(w,group.entity) { group.entity=ecs.create_entity(w) }
-    for _,entry in reg.entries { ecs.remove_component_type(w,group.entity,entry.T) }
-    for snapshot in snapshots {
-        entry:=reg.entries[snapshot.name]
-        if entry==nil { return .Component_Not_Found }
-        err:=editor_restore(w,group.entity,entry,snapshot.data)
-        if err!=.None { return err }
-    }
-    return .None
-}
-/// Restores a mutation's previous state and reports any restoration failure.
-undo_group :: proc(w:^ecs.World,reg:^Component_Registry,group:^Undo_Group)->Scene_Error { return restore_group(w,reg,group,false) }
-/// Restores a mutation's subsequent state using the current entity generation.
-redo_group :: proc(w:^ecs.World,reg:^Component_Registry,group:^Undo_Group)->Scene_Error { return restore_group(w,reg,group,true) }
-
 /// Executes CPU-owned scene operations and returns an owned result and undo group.
 scene_execute :: proc(w:^ecs.World,reg:^Component_Registry,op:Scene_Op)->(Tool_Result,Undo_Group) {
     context.allocator=w.allocator
     result:=Tool_Result{entities=make([dynamic]ecs.Entity_Id,w.allocator),allocator=w.allocator}
-    group:=Undo_Group{entity=op.entity,allocator=w.allocator}
+    command:=Entity_Command{entity=op.entity,allocator=w.allocator}
+    group:Undo_Group
     mutation:=op.kind in bit_set[Scene_Op_Kind]{.Spawn,.Destroy,.Set_Field,.Duplicate,.Add_Component,.Remove_Component,.Set_Parent}
-    if op.kind in (bit_set[Scene_Op_Kind]{.Spawn_Model,.Set_Parent}) {
+    if op.kind in (bit_set[Scene_Op_Kind]{.Spawn_Model,.Set_Parent,.Application}) {
         result.error=.Application_Owned
         return result,group
     }
     if mutation && op.kind!=.Spawn {
         if !ecs.entity_exists(w,op.entity) { result.error=.Entity_Not_Found; return result,group }
-        if op.kind!=.Duplicate { group.before_exists=true; group.before=snapshot_entity(w,reg,op.entity) }
+        if op.kind!=.Duplicate { command.before_exists=true; command.before=snapshot_entity(w,reg,op.entity) }
     }
     switch op.kind {
     case .Spawn:
-        group.entity=ecs.create_entity(w)
+        command.entity=ecs.create_entity(w)
         for _,entry in reg.entries {
-            editor_add_default(w,group.entity,entry)
+            editor_add_default(w,command.entity,entry)
             for axis,i in ([3]string{"x","y","z"}) {
-                data,_:=json.marshal(op.position[i]); editor_set_field(w,reg,group.entity,entry.name,axis,data); delete(data)
+                data,_:=json.marshal(op.position[i]); editor_set_field(w,reg,command.entity,entry.name,axis,data); delete(data)
             }
             for axis,i in ([3]string{"scale_x","scale_y","scale_z"}) {
-                data,_:=json.marshal(op.scale[i]); editor_set_field(w,reg,group.entity,entry.name,axis,data); delete(data)
+                data,_:=json.marshal(op.scale[i]); editor_set_field(w,reg,command.entity,entry.name,axis,data); delete(data)
             }
             for axis,i in ([3]string{"rot_x","rot_y","rot_z"}) {
-                data,_:=json.marshal(op.rotation[i]); editor_set_field(w,reg,group.entity,entry.name,axis,data); delete(data)
+                data,_:=json.marshal(op.rotation[i]); editor_set_field(w,reg,command.entity,entry.name,axis,data); delete(data)
             }
             if op.name!="" {
-                data,_:=json.marshal(op.name); editor_set_field(w,reg,group.entity,entry.name,"name",data); delete(data)
+                data,_:=json.marshal(op.name); editor_set_field(w,reg,command.entity,entry.name,"name",data); delete(data)
             }
         }
     case .Destroy: ecs.destroy_entity(w,op.entity)
@@ -259,8 +227,8 @@ scene_execute :: proc(w:^ecs.World,reg:^Component_Registry,op:Scene_Op)->(Tool_R
     case .Duplicate:
         snapshots:=snapshot_entity(w,reg,op.entity)
         defer { for s in snapshots { delete(s.data) }; delete(snapshots) }
-        group.entity=ecs.create_entity(w)
-        for s in snapshots { err:=editor_restore(w,group.entity,reg.entries[s.name],s.data); if err!=.None { result.error=err; break } }
+        command.entity=ecs.create_entity(w)
+        for s in snapshots { err:=editor_restore(w,command.entity,reg.entries[s.name],s.data); if err!=.None { result.error=err; break } }
     case .Add_Component,.Remove_Component:
         entry:=reg.entries[op.component]
         if entry==nil { result.error=.Component_Not_Found; break }
@@ -282,14 +250,16 @@ scene_execute :: proc(w:^ecs.World,reg:^Component_Registry,op:Scene_Op)->(Tool_R
         entry:=reg.entries[op.component]
         if entry==nil { result.error=.Component_Not_Found; break }
         result.data,result.error=editor_component_json(w,op.entity,entry)
-    case .Set_Parent,.Spawn_Model:
+    case .Set_Parent,.Spawn_Model,.Application:
     }
     if mutation && result.error==.None {
-        group.after_exists=ecs.entity_exists(w,group.entity)
-        if group.after_exists { group.after=snapshot_entity(w,reg,group.entity) }
-        append(&result.entities,group.entity)
+        command.after_exists=ecs.entity_exists(w,command.entity)
+        if command.after_exists { command.after=snapshot_entity(w,reg,command.entity) }
+        append(&result.entities,command.entity)
+        state:=new(Entity_Command,w.allocator); state^=command
+        group=undo_group_create(state,{entity_command_apply,entity_command_destroy,entity_command_remap},{command.entity},w.allocator)
     }
-    if result.error!=.None { undo_group_destroy(&group) }
+    if result.error!=.None { entity_snapshots_destroy(&command) }
     return result,group
 }
 

@@ -13,6 +13,8 @@ import "core:strings"
 Agent_Action :: struct { id:u64, operation:Scene_Op, result:Tool_Result, undo:Undo_Group }
 /// Owns ordered action history and per-session undo state.
 Agent_Session :: struct { actions:[dynamic]Agent_Action, next_id:u64, paused,finished:bool, allocator:mem.Allocator }
+/// Application tools execute only on the scene owner, returning the shared undo command.
+Application_Executor :: struct { state:rawptr, execute:proc(rawptr,^ecs.World,^Component_Registry,Scene_Op)->(Tool_Result,Undo_Group) }
 /// Owns an entity count and sorted available-component names.
 Observation :: struct { entity_count:int, available_components:[dynamic]string }
 /// Transfers an action ID and owned result to a background agent.
@@ -44,6 +46,13 @@ agent_undo_last :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry)->
     a:=&s.actions[len(s.actions)-1]
     err:=undo_group(w,reg,&a.undo)
     if err!=.None { return err }
+    for remap in a.undo.remaps {
+        for &prior in s.actions[:len(s.actions)-1] {
+            undo_group_remap(&prior.undo,remap)
+            if prior.operation.entity==remap.before { prior.operation.entity=remap.after }
+            if prior.operation.has_parent && prior.operation.parent==remap.before { prior.operation.parent=remap.after }
+        }
+    }
     s.next_id=a.id
     scene_op_destroy(&a.operation,s.allocator)
     tool_result_destroy(&a.result); undo_group_destroy(&a.undo)
@@ -62,20 +71,22 @@ build_observation :: proc(w:^ecs.World,reg:^Component_Registry)->Observation {
 /// Releases the observation's owned name array.
 observation_destroy :: proc(o:^Observation) { delete(o.available_components); o^={} }
 /// Records one caller-thread operation with an owned result and undo snapshot.
-agent_execute :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry,op:Scene_Op)->^Agent_Action {
-    result,group:=scene_execute(w,reg,op)
+agent_execute :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry,op:Scene_Op,application:Application_Executor={})->^Agent_Action {
+    result:Tool_Result; group:Undo_Group
+    if application.execute!=nil { result,group=application.execute(application.state,w,reg,op) }
+    else { result,group=scene_execute(w,reg,op) }
     assert(s.next_id<max(u64))
     append(&s.actions,Agent_Action{s.next_id,scene_op_clone(op,s.allocator),result,group}); s.next_id+=1
     return &s.actions[len(s.actions)-1]
 }
 /// Synchronous agents observe, decide and receive each action result on the caller thread.
 agent_run_sync :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry,state:^$S,
-                       decide:proc(^S,Observation)->(Scene_Op,bool),on_result:proc(^S,^Agent_Action)) {
+                       decide:proc(^S,Observation)->(Scene_Op,bool),on_result:proc(^S,^Agent_Action),application:Application_Executor={}) {
     for !s.paused && !s.finished {
         obs:=build_observation(w,reg)
         op,has_op:=decide(state,obs); observation_destroy(&obs)
         if !has_op { s.finished=true; break }
-        action:=agent_execute(s,w,reg,op); on_result(state,action)
+        action:=agent_execute(s,w,reg,op,application); on_result(state,action)
     }
 }
 @(private="package")
@@ -83,13 +94,14 @@ scene_op_clone :: proc(op:Scene_Op,allocator:mem.Allocator)->Scene_Op {
     cloned:=op
     cloned.component=strings.clone(op.component,allocator); cloned.field=strings.clone(op.field,allocator)
     cloned.name=strings.clone(op.name,allocator); cloned.path=strings.clone(op.path,allocator)
+    cloned.tool_name=strings.clone(op.tool_name,allocator)
     cloned.value=make([]byte,len(op.value),allocator); copy(cloned.value,op.value)
     return cloned
 }
 @(private="package")
 scene_op_destroy :: proc(op:^Scene_Op,allocator:mem.Allocator) {
     delete(op.component,allocator); delete(op.field,allocator); delete(op.name,allocator)
-    delete(op.path,allocator); delete(op.value,allocator); op^={}
+    delete(op.path,allocator); delete(op.tool_name,allocator); delete(op.value,allocator); op^={}
 }
 @(private="package")
 tool_result_clone :: proc(result:Tool_Result,allocator:mem.Allocator)->Tool_Result {
@@ -127,7 +139,7 @@ agent_take_result :: proc(h:^Agent_Harness)->(Agent_Response,bool) {
     return result,true
 }
 /// Executes at most ten queued operations; pause preserves requests for a later tick.
-agent_tick :: proc(h:^Agent_Harness,w:^ecs.World,reg:^Component_Registry)->int {
+agent_tick :: proc(h:^Agent_Harness,w:^ecs.World,reg:^Component_Registry,application:Application_Executor={})->int {
     if h.session.paused || h.session.finished { return 0 }
     processed:=0
     for processed<10 {
@@ -138,7 +150,7 @@ agent_tick :: proc(h:^Agent_Harness,w:^ecs.World,reg:^Component_Registry)->int {
         }
         op:=h.requests[0]; ordered_remove(&h.requests,0)
         sync.mutex_unlock(&h.mutex)
-        action:=agent_execute(&h.session,w,reg,op)
+        action:=agent_execute(&h.session,w,reg,op,application)
         scene_op_destroy(&op,h.allocator)
         response:=tool_result_clone(action.result,h.allocator)
         sync.mutex_lock(&h.mutex); append(&h.responses,Agent_Response{action.id,response}); sync.mutex_unlock(&h.mutex)
