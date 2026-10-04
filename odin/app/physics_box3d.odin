@@ -73,7 +73,8 @@ physics_box3d_sync :: proc(app:^Authoring)->editor.Scene_Error {
     if owner==nil { return .Application_Owned }
     joints,joint_error:=physics_collect_joints(app); defer delete(joints,app.world.allocator)
     if joint_error!=.None { return joint_error }
-    if len(joints)>0 { return .Invalid_Operation }
+    native_joints:=make([]box3d.Joint,len(joints),app.world.allocator); defer delete(native_joints,app.world.allocator)
+    for resolved,i in joints { joint:=resolved.joint; native_joints[i]={id=resolved.id,a=u64(joint.a),b=u64(joint.b),kind=cast(box3d.Joint_Kind)joint.kind,has_limits=u32(joint.has_limits),anchor_a=joint.anchor_a,anchor_b=joint.anchor_b,limits=joint.limits} }
     collected,err:=physics_collect(app); defer physics_collected_destroy(&collected,app.world.allocator)
     if err!=.None { return err }
     bodies:=make([]box3d.Body,len(collected),app.world.allocator); defer delete(bodies,app.world.allocator)
@@ -86,7 +87,7 @@ physics_box3d_sync :: proc(app:^Authoring)->editor.Scene_Error {
             gravity_scale=body.gravity_scale,friction=body.friction,restitution=body.restitution,
             layers=body.layers,mask=body.mask,sensor=u32(body.sensor),ccd=u32(body.ccd)}
     }
-    if box3d.backend_sync(owner,bodies)!=.None { return .Invalid_Operation }
+    if box3d.backend_sync(owner,bodies,native_joints)!=.None { return .Invalid_Operation }
     return .None
 }
 /// Publishes validated native world poses atomically and transfers directed native sensor events.

@@ -7,7 +7,7 @@ import "core:math"
 import "core:slice"
 import "core:sync"
 
-Error :: enum { None, Invalid, Budget, Library, ABI, Native, Wrong_Thread, Uninitialized }
+Error :: enum { None, Invalid, Budget, Library, ABI, Native, Wrong_Thread, Uninitialized, Unsupported }
 Body_Type :: enum u32 { Dynamic, Kinematic, Fixed }
 Shape_Kind :: enum u32 { Box, Sphere, Capsule, Trimesh, ConvexHull, None }
 #assert(u32(Shape_Kind.None)==5)
@@ -30,9 +30,11 @@ Entry :: struct { body:Body,native:rawptr }
 /// Stationary owner; every native call runs exclusively on its creating thread.
 Backend :: struct {
     library:dynlib.Library,instance:rawptr,owner_thread:int,allocator:mem.Allocator,
-    entries:map[u64]Entry,overlaps:map[Pair]bool,
+    entries:map[u64]Entry,joints:map[u64]Joint_Entry,overlaps:map[Pair]bool,
     destroy:proc "c"(rawptr),create_body:proc "c"(rawptr,^Body)->rawptr,
     destroy_body:proc "c"(rawptr),update_body:proc "c"(rawptr,^Body),
+    prepare_joint:proc "c"(rawptr,^Joint,rawptr,rawptr)->rawptr,publish_joint:proc "c"(rawptr)->i32,
+    destroy_joint,rollback_joint,restore_joint:proc "c"(rawptr),valid_joint:proc "c"(rawptr)->i32,copy_angular_motion:proc "c"(rawptr,rawptr),
     step:proc "c"(rawptr,f32),pose:proc "c"(rawptr,^Pose),
     overlap_ids:proc "c"(rawptr,[^]u64,i32)->i32,native_bytes:proc "c"()->i64,
 }
@@ -45,42 +47,47 @@ owner_error :: proc(b:^Backend)->Error {
     if b.owner_thread!=sync.current_thread_id() { return .Wrong_Thread }
     return .None
 }
-/// Loads the complete revision-three single-precision ABI before creating a native owner.
+/// Loads the complete revision-four single-precision body and constraint ABI before creating a native owner.
 backend_init :: proc(b:^Backend,path:string,allocator:=context.allocator)->Error {
     if b.instance!=nil { return .Invalid }
     b.allocator=allocator; b.owner_thread=sync.current_thread_id()
     loaded:bool; b.library,loaded=dynlib.load_library(path,allocator=allocator)
     if !loaded { b^={}; return .Library }
     success:=false; defer { if !success { dynlib.unload_library(b.library); b^={} } }
-    names:=[10]string{"katla_box3d_abi","katla_box3d_create","katla_box3d_destroy","katla_box3d_body_create","katla_box3d_body_destroy","katla_box3d_body_update","katla_box3d_step","katla_box3d_pose","katla_box3d_overlaps","katla_box3d_bytes"}
-    addresses:[10]rawptr
+    names:=[17]string{"katla_box3d_abi","katla_box3d_create","katla_box3d_destroy","katla_box3d_body_create","katla_box3d_body_destroy","katla_box3d_body_update","katla_box3d_step","katla_box3d_pose","katla_box3d_overlaps","katla_box3d_bytes","katla_box3d_joint_prepare","katla_box3d_joint_publish","katla_box3d_joint_destroy","katla_box3d_joint_valid","katla_box3d_body_copy_angular_motion","katla_box3d_joint_rollback","katla_box3d_joint_restore"}
+    addresses:[17]rawptr
     for name,i in names { found:bool; addresses[i],found=dynlib.symbol_address(b.library,name,allocator=allocator); if !found { return .ABI } }
-    abi:=cast(proc "c"()->u32)addresses[0]; if abi()!=3 { return .ABI }
+    abi:=cast(proc "c"()->u32)addresses[0]; if abi()!=4 { return .ABI }
     create:=cast(proc "c"()->rawptr)addresses[1]
     b.destroy=cast(proc "c"(rawptr))addresses[2]; b.create_body=cast(proc "c"(rawptr,^Body)->rawptr)addresses[3]
     b.destroy_body=cast(proc "c"(rawptr))addresses[4]; b.update_body=cast(proc "c"(rawptr,^Body))addresses[5]
     b.step=cast(proc "c"(rawptr,f32))addresses[6]; b.pose=cast(proc "c"(rawptr,^Pose))addresses[7]
     b.overlap_ids=cast(proc "c"(rawptr,[^]u64,i32)->i32)addresses[8]; b.native_bytes=cast(proc "c"()->i64)addresses[9]
+    b.prepare_joint=cast(proc "c"(rawptr,^Joint,rawptr,rawptr)->rawptr)addresses[10]; b.publish_joint=cast(proc "c"(rawptr)->i32)addresses[11]
+    b.destroy_joint=cast(proc "c"(rawptr))addresses[12]; b.valid_joint=cast(proc "c"(rawptr)->i32)addresses[13]; b.copy_angular_motion=cast(proc "c"(rawptr,rawptr))addresses[14]
+    b.rollback_joint=cast(proc "c"(rawptr))addresses[15]; b.restore_joint=cast(proc "c"(rawptr))addresses[16]
     b.instance=create(); if b.instance==nil { return .Native }
-    b.entries=make(map[u64]Entry,allocator); b.overlaps=make(map[Pair]bool,allocator)
+    b.entries=make(map[u64]Entry,allocator); b.joints=make(map[u64]Joint_Entry,allocator); b.overlaps=make(map[Pair]bool,allocator)
     success=true; return .None
 }
-/// Destroys body wrappers before the world and unloads only after native storage is released.
+/// Destroys constraints before bodies and unloads only after native storage is released.
 backend_destroy :: proc(b:^Backend)->Error {
     err:=owner_error(b); if err!=.None { return err }
+    for _,joint in b.joints { b.destroy_joint(joint.native) }
     for _,entry in b.entries { b.destroy_body(entry.native); body_destroy(entry.body,b.allocator) }
-    b.destroy(b.instance); delete(b.entries); delete(b.overlaps); dynlib.unload_library(b.library); b^={}; return .None
+    b.destroy(b.instance); delete(b.entries); delete(b.joints); delete(b.overlaps); dynlib.unload_library(b.library); b^={}; return .None
 }
-/// Removes all native bodies and transition membership without replacing the dependency owner.
+/// Removes native constraints, bodies and transition membership while retaining the dependency owner.
 backend_reset :: proc(b:^Backend)->Error {
     err:=owner_error(b); if err!=.None { return err }
+    for _,joint in b.joints { b.destroy_joint(joint.native) }
     for _,entry in b.entries { b.destroy_body(entry.native); body_destroy(entry.body,b.allocator) }
-    clear(&b.entries); clear(&b.overlaps); return .None
+    clear(&b.entries); clear(&b.joints); clear(&b.overlaps); return .None
 }
 /// Validates the complete batch before applying authored changes or removing missing bodies.
-backend_sync :: proc(b:^Backend,bodies:[]Body)->Error {
+backend_sync :: proc(b:^Backend,bodies:[]Body,joints:[]Joint=nil)->Error {
     err:=owner_error(b); if err!=.None { return err }
-    if len(bodies)>100_000 { return .Budget }
+    if len(bodies)>100_000 || len(joints)>100_000 { return .Budget }
     context.allocator=b.allocator
     staged:=make(map[u64]Body,b.allocator); defer delete(staged)
     vertices,indices:u64
@@ -91,17 +98,36 @@ backend_sync :: proc(b:^Backend,bodies:[]Body)->Error {
         if _,exists:=staged[body.id]; exists { return .Invalid }
         staged[body.id]=body
     }
+    staged_joints:=make(map[u64]Joint,b.allocator); defer delete(staged_joints)
+    for joint in joints {
+        joint_error:=joint_valid(joint,staged); if joint_error!=.None { return joint_error }
+        if _,duplicate:=staged_joints[joint.id]; duplicate { return .Invalid }; staged_joints[joint.id]=joint
+    }
+    for _,joint in b.joints { if b.valid_joint(joint.native)==0 { return .Native } }
     created:=make(map[u64]Entry,b.allocator); defer delete(created)
     success:=false; defer { if !success { for _,entry in created { b.destroy_body(entry.native); body_destroy(entry.body,b.allocator) } } }
     for id,body in staged {
         native_body:=body
         if old,exists:=b.entries[id]; exists {
-            if geometry_equal(old.body,body) { continue }
+            if geometry_equal(old.body,body) && old.body.body_type==body.body_type { continue }
             native_body=preserve_motion(b,old,body)
         }
         native:=b.create_body(b.instance,&native_body); if native==nil { return .Native }
+        if old,exists:=b.entries[id]; exists { b.copy_angular_motion(native,old.native) }
         created[id]={body_clone(body,b.allocator),native}
     }
+    prepared_joints:=make(map[u64]Joint_Entry,b.allocator); defer delete(prepared_joints)
+    defer { if !success { for _,joint in prepared_joints { b.rollback_joint(joint.native) }; for _,joint in prepared_joints { b.restore_joint(joint.native) } } }
+    for id,joint in staged_joints {
+        a,a_new:=created[joint.a]; if !a_new { a=b.entries[joint.a] }; c,c_new:=created[joint.b]; if !c_new { c=b.entries[joint.b] }
+        if old,exists:=b.joints[id]; exists && old.joint==joint && old.a_native==a.native && old.b_native==c.native { continue }
+        descriptor:=joint; native:=b.prepare_joint(b.instance,&descriptor,a.native,c.native); if native==nil { return .Native }
+        prepared_joints[id]={joint,native,a.native,c.native}
+    }
+    for _,joint in prepared_joints { if b.publish_joint(joint.native)==0 { return .Native } }
+    removed_joints:=make([dynamic]u64,b.allocator); defer delete(removed_joints)
+    for id,joint in b.joints { _,present:=staged_joints[id]; _,replaced:=prepared_joints[id]; if !present || replaced { b.destroy_joint(joint.native); append(&removed_joints,id) } }
+    for id in removed_joints { delete_key(&b.joints,id) }
     removed:=make([dynamic]u64,b.allocator); defer delete(removed)
     for id,entry in b.entries { if _,exists:=staged[id]; !exists { b.destroy_body(entry.native); body_destroy(entry.body,b.allocator); append(&removed,id) } }
     for id in removed { delete_key(&b.entries,id) }
@@ -116,6 +142,7 @@ backend_sync :: proc(b:^Backend,bodies:[]Body)->Error {
             body_destroy(entry.body,b.allocator); entry.body=body_clone(body,b.allocator); b.entries[id]=entry
         }
     }
+    for id,joint in prepared_joints { b.joints[id]=joint }
     success=true; return .None
 }
 /// Executes actual Box3D integration and derives directed sensor transitions from native overlaps.

@@ -39,6 +39,7 @@ def compiler(sanitize):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sanitize", action="store_true")
+    parser.add_argument("--output", type=Path, help="Explicit native artifact path for an isolated ABI validation")
     args = parser.parse_args()
     source = ROOT / "target/box3d-source"
     source.parent.mkdir(exist_ok=True)
@@ -56,6 +57,9 @@ def main():
     if platform.system() not in ("Darwin", "Linux"):
         raise SystemExit("Use a C17 Windows dependency build; this native driver supports Darwin/Linux")
     output = ROOT / "target" / f"libkatla_box3d{'_asan' if args.sanitize else ''}.{suffix}"
+    if args.output is not None:
+        output = args.output.resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
     command = [compiler(args.sanitize), "-std=c17", "-O1" if args.sanitize else "-O2",
                "-fPIC", "-ffp-contract=off", "-DBOX3D_VALIDATE", "-I", str(source / "include"),
                "-dynamiclib" if suffix == "dylib" else "-shared", *sources,
