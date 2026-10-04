@@ -1,4 +1,4 @@
-//! Versioned Naga compiler dependency boundary, independent of the engine runtime.
+//! Offline Naga compiler tool, independent of the engine runtime.
 
 use naga::{
     back::{msl, spv},
@@ -11,13 +11,6 @@ const ABI: u32 = 1;
 const MAX_REQUEST: usize = 8 * 1024 * 1024;
 const SIZES_BUFFER: u8 = 8;
 const VERTEX_BUFFER: u8 = 10;
-
-/// An owned UTF-8 reply. Release with `katla_naga_free` from this same library.
-#[repr(C)]
-pub struct Buffer {
-    pub data: *mut u8,
-    pub length: usize,
-}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 enum Stage {
@@ -624,18 +617,9 @@ fn reply(bytes: &[u8]) -> Reply {
         },
     }
 }
-/// Reports the compiler ABI before the host sends or decodes a request.
-#[unsafe(no_mangle)]
-pub extern "C" fn katla_naga_abi() -> u32 {
-    ABI
-}
-/// Compiles one bounded JSON request. The buffer is immutable until released.
-///
-/// # Safety
-/// A non-null pointer must refer to `length` readable bytes for the call duration.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katla_naga_compile(data: *const u8, length: usize) -> Buffer {
-    let answer = if data.is_null() || length == 0 || length > MAX_REQUEST {
+/// Compiles one bounded offline JSON request into a validated owned artifact.
+pub fn compile_json(bytes: &[u8]) -> std::result::Result<Vec<u8>, serde_json::Error> {
+    let answer = if bytes.is_empty() || bytes.len() > MAX_REQUEST {
         Reply {
             abi: ABI,
             compiler: "naga-29.0.1;msl-3.0;binding-abi-1;bounds-readzero;binding-arrays-restrict",
@@ -644,8 +628,6 @@ pub unsafe extern "C" fn katla_naga_compile(data: *const u8, length: usize) -> B
             entries: Vec::new(),
         }
     } else {
-        // SAFETY: The caller guarantees a valid readable slice; null/size checked above.
-        let bytes = unsafe { std::slice::from_raw_parts(data, length) };
         std::panic::catch_unwind(AssertUnwindSafe(|| reply(bytes))).unwrap_or_else(|_| Reply {
             abi: ABI,
             compiler: "naga-29.0.1;msl-3.0;binding-abi-1;bounds-readzero;binding-arrays-restrict",
@@ -654,38 +636,7 @@ pub unsafe extern "C" fn katla_naga_compile(data: *const u8, length: usize) -> B
             entries: Vec::new(),
         })
     };
-    let bytes = match serde_json::to_vec(&answer) {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            return Buffer {
-                data: std::ptr::null_mut(),
-                length: 0,
-            };
-        }
-    };
-    let mut boxed = bytes.into_boxed_slice();
-    let result = Buffer {
-        data: boxed.as_mut_ptr(),
-        length: boxed.len(),
-    };
-    std::mem::forget(boxed);
-    result
-}
-/// Releases one reply allocation from this exact compiler library.
-///
-/// # Safety
-/// The buffer must be an unfreed result from `katla_naga_compile`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn katla_naga_free(buffer: Buffer) {
-    if !buffer.data.is_null() {
-        // SAFETY: The caller transfers this library's original boxed slice back once.
-        unsafe {
-            drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-                buffer.data,
-                buffer.length,
-            )));
-        }
-    }
+    serde_json::to_vec(&answer)
 }
 
 #[cfg(test)]
@@ -791,23 +742,13 @@ override WIDTH:u32=8;
         }
     }
     #[test]
-    fn test_ffi_protocol_bounds_and_exact_release() {
-        // SAFETY: A null pointer with zero length takes the checked failure branch.
-        let invalid = unsafe { katla_naga_compile(std::ptr::null(), 0) };
-        // SAFETY: The returned allocation remains alive until freed below.
-        let bytes = unsafe { std::slice::from_raw_parts(invalid.data, invalid.length) };
-        let answer: serde_json::Value = serde_json::from_slice(bytes).expect("valid error JSON");
+    fn test_offline_protocol_bounds_and_unknown_fields() {
+        let invalid = compile_json(&[]).expect("bounded error reply");
+        let answer: serde_json::Value = serde_json::from_slice(&invalid).expect("valid error JSON");
         assert_eq!(answer["error"], "Invalid_Request");
-        // SAFETY: Transfer this library's unfreed result back exactly once.
-        unsafe { katla_naga_free(invalid) };
         let request=br#"{"abi":1,"source":"invalid","selections":[{"name":"main","stage":"Compute"}],"extra":true}"#;
-        // SAFETY: The input points to the complete live request slice.
-        let result = unsafe { katla_naga_compile(request.as_ptr(), request.len()) };
-        // SAFETY: Read only the allocation returned by this call.
-        let bytes = unsafe { std::slice::from_raw_parts(result.data, result.length) };
-        let answer: serde_json::Value = serde_json::from_slice(bytes).expect("valid error JSON");
+        let result = compile_json(request).expect("owned reply");
+        let answer: serde_json::Value = serde_json::from_slice(&result).expect("valid error JSON");
         assert_eq!(answer["error"], "Invalid_Request");
-        // SAFETY: Exact originating allocation, freed once.
-        unsafe { katla_naga_free(result) };
     }
 }

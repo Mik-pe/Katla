@@ -1,10 +1,11 @@
-//! Owned canonical WGSL compilation through the versioned Naga dependency ABI.
+//! Owned WGSL artifacts come from a bounded offline executable and a content-addressed cache.
 package shader
 
-import "core:dynlib"
 import "core:encoding/json"
 import "core:mem"
 import "core:sync"
+import "core:os"
+import "core:path/filepath"
 
 /// Shader entry stages are independent of native renderer types.
 Stage :: enum { Vertex, Fragment, Compute }
@@ -75,49 +76,48 @@ COMPILER :: "naga-29.0.1;msl-3.0;binding-abi-1;bounds-readzero;binding-arrays-re
 MAX_REQUEST :: 8*1024*1024
 @(private="package")
 MAX_REPLY :: 128*1024*1024
-@(private="package")
-Native_Buffer :: struct { data:[^]u8, length:uint }
-@(private="package")
-Native_Compile :: #type proc "c" (data:[^]u8,length:uint)->Native_Buffer
-@(private="package")
-Native_Free :: #type proc "c" (buffer:Native_Buffer)
-/// Stationary compiler dependency owner; concurrent compiles are allowed, unload waits for callers.
+/// Owns an explicit offline compiler executable and cache; closing waits for accepted callers.
 Compiler :: struct {
-    library:dynlib.Library,
-    compile:Native_Compile,
-    release:Native_Free,
+    executable,cache_directory:string,
+    allocator:mem.Allocator,
     mutex:sync.Mutex,
     active:int,
+    process_runs,cache_hits:u64,
 }
 @(private="package")
 Request :: struct { abi:u32, source:string, selections:[]Selection, constants:map[string]f64 }
 @(private="package")
 Reply :: struct { abi:u32, compiler:string, error:Error, message:string, entries:[]Entry }
-/// Opens only the explicit dependency path and validates every mandatory ABI symbol.
-compiler_init :: proc(compiler:^Compiler,path:string)->Error {
-    if compiler.library!=nil { return .Busy }
-    library,loaded:=dynlib.load_library(path)
-    if !loaded { return .Load_Failed }
-    success:=false; defer { if !success { dynlib.unload_library(library) } }
-    abi_ptr,has_abi:=dynlib.symbol_address(library,"katla_naga_abi")
-    compile_ptr,has_compile:=dynlib.symbol_address(library,"katla_naga_compile")
-    free_ptr,has_free:=dynlib.symbol_address(library,"katla_naga_free")
-    if !has_abi || !has_compile || !has_free { return .ABI_Mismatch }
-    abi:=cast(proc "c" ()->u32)abi_ptr
-    if abi()!=ABI { return .ABI_Mismatch }
-    compiler.library=library
-    compiler.compile=cast(Native_Compile)compile_ptr
-    compiler.release=cast(Native_Free)free_ptr
-    success=true; return .None
+/// Configures an explicit offline executable and persistent cache without linking a compiler runtime.
+compiler_init :: proc(compiler:^Compiler,path:string,cache_directory:string="",allocator:=context.allocator)->Error {
+    if compiler.executable!="" { return .Busy }
+    absolute,path_error:=filepath.abs(path,allocator); if path_error!=nil { return .Load_Failed }
+    accepted:=false; defer { if !accepted { delete(absolute,allocator) } }
+    info,stat_error:=os.stat(absolute,allocator)
+    if stat_error!=nil { return .Load_Failed }; defer os.file_info_delete(info,allocator)
+    if info.type!=.Regular || info.size==0 || info.size>MAX_COMPILER_BYTES { return .Load_Failed }
+    cache:=cache_directory
+    base:string
+    if cache=="" {
+        cache_base,base_error:=os.user_cache_dir(allocator); if base_error!=nil { return .Load_Failed }
+        base=cache_base
+        joined,join_error:=filepath.join({base,"wgsl-artifacts-v1"},allocator=allocator); if join_error!=nil { delete(base,allocator); return .Load_Failed }; cache=joined
+    }
+    defer { delete(base,allocator); if cache_directory=="" { delete(cache,allocator) } }
+    if error:=os.make_directory_all(cache); error!=nil && error!=.Exist { return .Load_Failed }
+    cache_absolute,cache_error:=filepath.abs(cache,allocator); if cache_error!=nil { return .Load_Failed }
+    cache_accepted:=false; defer { if !cache_accepted { delete(cache_absolute,allocator) } }
+    cache_info,cache_stat_error:=os.stat(cache_absolute,allocator); if cache_stat_error!=nil { return .Load_Failed }; defer os.file_info_delete(cache_info,allocator)
+    if cache_info.type!=.Directory { return .Load_Failed }
+    compiler.executable=absolute; compiler.cache_directory=cache_absolute; compiler.allocator=allocator
+    accepted=true; cache_accepted=true; return .None
 }
-/// Rejects unload while any accepted compiler call is using the library.
+/// Rejects closing while any accepted compile still owns executable or cache state.
 compiler_destroy :: proc(compiler:^Compiler)->Error {
     sync.mutex_lock(&compiler.mutex); defer sync.mutex_unlock(&compiler.mutex)
     if compiler.active!=0 { return .Busy }
-    if compiler.library!=nil {
-        if !dynlib.unload_library(compiler.library) { return .Load_Failed }
-        compiler.library=nil; compiler.compile=nil; compiler.release=nil
-    }
+    delete(compiler.executable,compiler.allocator); delete(compiler.cache_directory,compiler.allocator)
+    compiler.executable=""; compiler.cache_directory=""
     return .None
 }
 @(private="package")
@@ -177,19 +177,18 @@ compile :: proc(compiler:^Compiler,source:string,selections:[]Selection,constant
         if _,exists:=values[constant.name]; exists { return {},.Invalid_Request }
         values[constant.name]=constant.value
     }
-    bytes,marshal_error:=json.marshal(Request{ABI,source,selections,values},opt={spec=.JSON,use_enum_names=true},allocator=allocator)
+    bytes,marshal_error:=json.marshal(Request{ABI,source,selections,values},opt={spec=.JSON,use_enum_names=true,sort_maps_by_key=true},allocator=allocator)
     if marshal_error!=nil { return {},.Invalid_Request }; defer delete(bytes,allocator)
     if len(bytes)>MAX_REQUEST { return {},.Invalid_Request }
     sync.mutex_lock(&compiler.mutex)
-    if compiler.library==nil { sync.mutex_unlock(&compiler.mutex); return {},.Closed }
+    if compiler.executable=="" { sync.mutex_unlock(&compiler.mutex); return {},.Closed }
     compiler.active+=1
-    native_compile,native_free:=compiler.compile,compiler.release
     sync.mutex_unlock(&compiler.mutex)
     defer { sync.mutex_lock(&compiler.mutex); compiler.active-=1; sync.mutex_unlock(&compiler.mutex) }
-    buffer:=native_compile(raw_data(bytes),uint(len(bytes))); defer native_free(buffer)
-    if buffer.data==nil || buffer.length==0 || buffer.length>MAX_REPLY { return {},.Invalid_Reply }
+    reply_bytes,run_error:=compiler_artifact(compiler,bytes,allocator)
+    if run_error!=.None { return {},run_error }; defer delete(reply_bytes,allocator)
     reply:Reply
-    decode_error:=json.unmarshal(buffer.data[:int(buffer.length)],&reply,spec=.JSON,allocator=allocator)
+    decode_error:=json.unmarshal(reply_bytes,&reply,spec=.JSON,allocator=allocator)
     owned:=Compiled{reply.compiler,reply.message,reply.entries,allocator}
     if decode_error!=nil || reply.abi!=ABI || reply.compiler!=COMPILER { compiled_destroy(&owned); return {},.Invalid_Reply }
     if reply.error!=.None {

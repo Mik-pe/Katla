@@ -4,10 +4,16 @@ WGSL is the canonical shader input. `odin/gfx/shader` owns compiler requests,
 immutable binaries/reflection, bounded asynchronous jobs and replacement
 publication. It imports no gfx, scene, ECS or application package. The pinned
 [Naga dependency helper](../tools/naga_bridge/README.md) provides only compilation
-through an explicit, versioned dynamic-library ABI.
+as a separate offline executable. The editor contains no compiler FFI or Rust
+runtime dependency.
 
-`compiler_init` accepts an explicit dependency path and validates all mandatory
-symbols, ABI and compiler identity. `compile` selects stage/name pairs and
+`compiler_init` accepts an explicit executable and optional cache directory.
+`compile_source_file` expands quoted relative includes and nearest-common
+bracketed includes through a caller-supplied confined reader. Expanded source,
+selected entries, sorted constants and the executable content hash form the
+SHA-256 cache key. Cache entries include the request key and artifact checksum;
+corrupt entries rebuild. Misses run a bounded 30-second compiler process and
+publish only a fully validated atomic artifact. `compile` selects stage/name pairs and
 override constants, returning an owned `Compiled` and a typed error. Destroy
 even failed results with `compiled_destroy` to release their diagnostic. No
 failure returns a partial ready artifact. `find_entry` selects a reflected entry;
@@ -104,7 +110,7 @@ compiler dependency:
 
 ```sh
 python3 scripts/compile_odin_shader.py odin/gfx_shader_native/shaders/array.wgsl \
-  --library /path/to/libkatla_naga_compiler.dylib --entry main --stage Fragment \
+  --compiler /path/to/katla-shader-compiler --entry main --stage Fragment \
   --output /tmp/katla-array4096
 ```
 

@@ -5,7 +5,7 @@ SOURCE :: "@compute @workgroup_size(1) fn main(){}"
 @(test)
 test_unloaded_dependency_and_invalid_requests_fail_explicitly :: proc(t:^testing.T) {
     compiler:Compiler
-    testing.expect_value(t,compiler_init(&compiler,"/missing/katla-naga-compiler-library"),Error.Load_Failed)
+    testing.expect_value(t,compiler_init(&compiler,"/missing/katla-shader-compiler"),Error.Load_Failed)
     artifact,err:=compile(&compiler,SOURCE,{{"cs",.Compute}}); compiled_destroy(&artifact)
     testing.expect_value(t,err,Error.Closed)
     for constants in ([][]Constant{{{"same",1},{"same",2}},{{"",1}}}) {

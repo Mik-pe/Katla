@@ -8,7 +8,7 @@ import "core:mem"
 import "core:time"
 import "core:thread"
 
-NAGA_LIBRARY :: #config(NAGA_LIBRARY, "")
+SHADER_COMPILER :: #config(SHADER_COMPILER, "")
 SOURCE :: `
 struct Frame { transform:mat4x4f, tint:vec4f }
 @group(0) @binding(0) var<uniform> frame:Frame;
@@ -26,8 +26,8 @@ test_canonical_wgsl_selected_entries_and_owned_reflection :: proc(t:^testing.T) 
     backing:=context.allocator
     tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,backing); defer mem.tracking_allocator_destroy(&tracker)
     context.allocator=mem.tracking_allocator(&tracker)
-    testing.expect(t,len(NAGA_LIBRARY)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None)
+    testing.expect(t,len(SHADER_COMPILER)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None)
     artifact,err:=shader.compile(&compiler,SOURCE,{{"vs",.Vertex},{"fs",.Fragment},{"cs",.Compute}},{{"BLOCK",8}})
     testing.expect(t,err==.None,artifact.message)
     if err==.None {
@@ -44,8 +44,8 @@ test_canonical_wgsl_selected_entries_and_owned_reflection :: proc(t:^testing.T) 
 }
 @(test)
 test_compiler_failures_are_owned_and_never_return_partial_entries :: proc(t:^testing.T) {
-    testing.expect(t,len(NAGA_LIBRARY)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None); defer shader.compiler_destroy(&compiler)
+    testing.expect(t,len(SHADER_COMPILER)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None); defer shader.compiler_destroy(&compiler)
     for example in ([]struct { source:string, entry:shader.Selection, expected:shader.Error }{
         {"invalid wgsl",{"main",.Compute},.Parse},
         {SOURCE,{"absent",.Vertex},.Missing_Entry},
@@ -59,8 +59,8 @@ test_compiler_failures_are_owned_and_never_return_partial_entries :: proc(t:^tes
 }
 @(test)
 test_async_replacement_capacity_latest_failure_and_shutdown :: proc(t:^testing.T) {
-    testing.expect(t,len(NAGA_LIBRARY)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None); defer shader.compiler_destroy(&compiler)
+    testing.expect(t,len(SHADER_COMPILER)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None); defer shader.compiler_destroy(&compiler)
     credit:shader.Service; testing.expect_value(t,shader.service_init(&credit,&compiler,1),shader.Service_Error.None)
     shader.service_submit(&credit,1,SOURCE,{{"cs",.Compute}})
     shader.service_close(&credit); thread.join(credit.worker)
@@ -92,8 +92,8 @@ test_async_replacement_capacity_latest_failure_and_shutdown :: proc(t:^testing.T
 
 @(test)
 test_native_spirv_reflection_matches_compiled_entry_contract :: proc(t:^testing.T) {
-    testing.expect(t,len(NAGA_LIBRARY)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None); defer shader.compiler_destroy(&compiler)
+    testing.expect(t,len(SHADER_COMPILER)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None); defer shader.compiler_destroy(&compiler)
     artifact,err:=shader.compile(&compiler,SOURCE,{{"vs",.Vertex},{"fs",.Fragment},{"cs",.Compute}}); defer shader.compiled_destroy(&artifact)
     testing.expect(t,err==.None,artifact.message)
     for entry in artifact.entries {
@@ -117,7 +117,7 @@ test_native_spirv_reflection_matches_compiled_entry_contract :: proc(t:^testing.
 
 @(test)
 test_native_depth_comparison_and_storage_image_reflection :: proc(t:^testing.T) {
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None); defer shader.compiler_destroy(&compiler)
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None); defer shader.compiler_destroy(&compiler)
     source:=`
 @group(2) @binding(0) var depth_image:texture_depth_2d;
 @group(2) @binding(1) var depth_sampler:sampler_comparison;

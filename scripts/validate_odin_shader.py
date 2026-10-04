@@ -44,15 +44,15 @@ def main():
         if operation == "clippy":
             command += ["--all-targets", "--", "-D", "warnings"]
         run(command)
-    name = {"Darwin": "libkatla_naga_compiler.dylib", "Linux": "libkatla_naga_compiler.so", "Windows": "katla_naga_compiler.dll"}.get(system)
+    name = {"Darwin": "katla-shader-compiler", "Linux": "katla-shader-compiler", "Windows": "katla-shader-compiler.exe"}.get(system)
     if name is None:
-        parser.error(f"Unsupported native compiler library platform: {system}")
+        parser.error(f"Unsupported native compiler executable platform: {system}")
     library = target / "debug" / name
     if not library.is_file():
         raise RuntimeError(f"Compiler build did not produce {library}")
     output = ROOT / "target/odin-shader-tests"
     output.parent.mkdir(exist_ok=True)
-    command = ["odin", "test", "odin/gfx/shader_tests", "-all-packages", f"-define:NAGA_LIBRARY={library}", f"-out:{output}", "-vet", "-strict-style", "-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true"]
+    command = ["odin", "test", "odin/gfx/shader_tests", "-all-packages", f"-define:SHADER_COMPILER={library}", f"-out:{output}", "-vet", "-strict-style", "-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true"]
     run(command)
     if args.sanitize:
         if system == "Windows":

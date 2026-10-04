@@ -38,8 +38,8 @@ test_replacement_failure_and_exact_pending_owner_lifetime :: proc(t:^testing.T) 
     backing:=context.allocator
     tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,backing); defer mem.tracking_allocator_destroy(&tracker)
     allocator:=mem.tracking_allocator(&tracker)
-    testing.expect(t,len(NAGA_LIBRARY)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None)
+    testing.expect(t,len(SHADER_COMPILER)>0,"Run scripts/validate_odin_shader.py to select the compiler dependency")
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None)
     service:shader.Service; testing.expect_value(t,shader.service_init(&service,&compiler,4,allocator),shader.Service_Error.None)
     state:=Test_Publisher{allocator=allocator,service=&service}
     registry:shader.Registry; testing.expect_value(t,shader.registry_init(&registry,&service,{&state,prepare_test,destroy_test},allocator),shader.Publication_Error.None)

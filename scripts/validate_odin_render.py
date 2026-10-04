@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--particles", action="store_true", help="Include the combined Rapier/Luau/GPU particle fixture on both adapters")
     parser.add_argument("--sanitize", action="store_true")
     parser.add_argument("--skip-cpu-tests", action="store_true")
-    parser.add_argument("--naga-library", type=Path, help="Reuse this explicit canonical Naga compiler library")
+    parser.add_argument("--shader-compiler", type=Path, help="Reuse this explicit canonical Naga compiler executable")
     parser.add_argument("--target-dir", type=Path, default=ROOT / "target/odin-render-naga")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "target/odin-render-validation")
     parser.add_argument("--vulkan-library", type=Path)
@@ -41,7 +41,7 @@ def main():
         parser.error("--particles requires both adapters, --runtime-library and --vulkan-library")
     if (args.vulkan_library or args.vulkan_icd) and not args.native_vulkan:
         parser.error("Explicit Vulkan paths require --native-vulkan")
-    for value in (args.naga_library, args.vulkan_library, args.vulkan_icd, args.runtime_library):
+    for value in (args.shader_compiler, args.vulkan_library, args.vulkan_icd, args.runtime_library):
         if value and not value.is_file():
             parser.error(f"Explicit dependency does not exist: {value}")
     output = args.output_dir.resolve()
@@ -80,8 +80,8 @@ def main():
         run([executable], env=cpu_environment, timeout=120)
     if not native:
         return
-    library = args.naga_library.resolve() if args.naga_library else args.target_dir.resolve() / "debug/libkatla_naga_compiler.dylib"
-    if not args.naga_library:
+    library = args.shader_compiler.resolve() if args.shader_compiler else args.target_dir.resolve() / "debug/katla-shader-compiler"
+    if not args.shader_compiler:
         run([args.cargo, "build", "--manifest-path", ROOT / "tools/naga_bridge/Cargo.toml", "--locked", "--target-dir", args.target_dir.resolve()])
     if not library.is_file():
         raise RuntimeError(f"Native Naga compiler missing: {library}")

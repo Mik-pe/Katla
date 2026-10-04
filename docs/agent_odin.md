@@ -306,7 +306,7 @@ Run [the native application validator](../scripts/validate_odin_render.py):
 
 ```sh
 python3 scripts/validate_odin_render.py --native-metal --native-vulkan \
-  --native-surface --sanitize --naga-library /path/to/libkatla_naga_compiler.dylib \
+  --native-surface --sanitize --shader-compiler /path/to/katla-shader-compiler \
   --vulkan-library /path/to/libvulkan.dylib --vulkan-icd /path/to/icd.json
 ```
 

@@ -8,7 +8,11 @@ publish = false
 [workspace]
 
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "katla-shader-compiler"
+path = "src/main.rs"
 
 [dependencies]
 naga = { version = "=29.0.1", features = ["wgsl-in", "spv-out", "msl-out"] }

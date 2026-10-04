@@ -10,7 +10,7 @@ import "core:strings"
 
 @(test)
 test_compiler_adapter_maps_exact_stage_bindings_and_runtime_sizes :: proc(t:^testing.T) {
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None); defer shader.compiler_destroy(&compiler)
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None); defer shader.compiler_destroy(&compiler)
     artifact,err:=shader.compile(&compiler,SOURCE,{{"vs",.Vertex},{"fs",.Fragment},{"cs",.Compute}}); defer shader.compiled_destroy(&artifact)
     testing.expect(t,err==.None,artifact.message)
     if err!=.None { return }
@@ -40,7 +40,7 @@ test_compiler_adapter_maps_exact_stage_bindings_and_runtime_sizes :: proc(t:^tes
 
 @(test)
 test_compiler_adapter_rejects_incompatible_stage_linkage :: proc(t:^testing.T) {
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None); defer shader.compiler_destroy(&compiler)
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None); defer shader.compiler_destroy(&compiler)
     source:=`
 struct Out {@builtin(position) position:vec4f,@location(0) uv:vec3f}
 @vertex fn vs(@location(0) position:vec3f)->Out {return Out(vec4f(position,1),position);}
@@ -58,7 +58,7 @@ struct Out {@builtin(position) position:vec4f,@location(0) uv:vec3f}
 
 @(test)
 test_compiler_adapter_fixed_texture_arrays_preserve_count_and_native_namespace :: proc(t:^testing.T) {
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None); defer shader.compiler_destroy(&compiler)
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None); defer shader.compiler_destroy(&compiler)
     for count in ([2]u32{1,4096}) {
         size:="4096" if count==4096 else "1"
         source,_:=strings.replace_all(`@group(1) @binding(0) var images:binding_array<texture_2d<f32>,COUNT>; @group(1) @binding(1) var image_sampler:sampler; @fragment fn main(@builtin(position) p:vec4f)->@location(0) vec4f {return textureSample(images[u32(p.x)],image_sampler,p.xy);}`,"COUNT",size); defer delete(source)
@@ -83,7 +83,7 @@ test_compiler_adapter_fixed_texture_arrays_preserve_count_and_native_namespace :
 
 @(test)
 test_compiler_adapter_storage_texture_array_maps_actual_write_access :: proc(t:^testing.T) {
-    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,NAGA_LIBRARY),shader.Error.None); defer shader.compiler_destroy(&compiler)
+    compiler:shader.Compiler; testing.expect_value(t,shader.compiler_init(&compiler,SHADER_COMPILER),shader.Error.None); defer shader.compiler_destroy(&compiler)
     source:=#load("../../gfx_shader_native/shaders/storage_array.wgsl",string)
     artifact,error:=shader.compile(&compiler,source,{{"main",.Compute}}); defer shader.compiled_destroy(&artifact)
     testing.expect(t,error==.None,artifact.message); if error!=.None { return }

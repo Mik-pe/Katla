@@ -55,7 +55,7 @@ def main():
     for option in (args.vulkan_library, args.vulkan_icd):
         if option and not option.is_file():
             parser.error(f"Explicit Vulkan path does not exist: {option}")
-    library_name = {"Darwin": "libkatla_naga_compiler.dylib", "Linux": "libkatla_naga_compiler.so", "Windows": "katla_naga_compiler.dll"}.get(system)
+    library_name = {"Darwin": "katla-shader-compiler", "Linux": "katla-shader-compiler", "Windows": "katla-shader-compiler.exe"}.get(system)
     if library_name is None:
         parser.error(f"Unsupported Naga library platform: {system}")
     target = args.target_dir.resolve()
@@ -102,7 +102,7 @@ def main():
         executable = build(package, name, tests=True)
         run([executable], env=cpu_env, timeout=60)
     if not args.skip_shader_checks:
-        executable = build("odin/gfx/shader_tests", "shader-tests", tests=True, extra=[f"-define:NAGA_LIBRARY={library}"])
+        executable = build("odin/gfx/shader_tests", "shader-tests", tests=True, extra=[f"-define:SHADER_COMPILER={library}"])
         run([executable], env=cpu_env, timeout=60)
 
     if args.native_metal:
@@ -129,7 +129,7 @@ def main():
         for name, stage in (("array", "Fragment"), ("storage_array", "Compute")):
             basename = output / name
             run([sys.executable, ROOT / "scripts/compile_odin_shader.py", ROOT / f"odin/gfx_shader_native/shaders/{name}.wgsl",
-                 "--library", library, "--entry", "main", "--stage", stage, "--output", basename], timeout=60)
+                 "--compiler", library, "--entry", "main", "--stage", stage, "--output", basename], timeout=60)
             binaries[name] = basename.with_suffix(".spv")
         executable = build("odin/gfx_vulkan_native", "vulkan-native")
         command = [executable, *(binaries[name] for name in ("fill", "params", "triangle", "color")), loader,

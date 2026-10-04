@@ -12,20 +12,25 @@ cargo build --locked --manifest-path tools/naga_bridge/Cargo.toml --target-dir t
 python3 scripts/validate_odin_shader.py --sanitize
 ```
 
-The result is `libkatla_naga_compiler.dylib` on macOS,
-`libkatla_naga_compiler.so` on Linux, or `katla_naga_compiler.dll` on Windows under
-the target directory's `debug` subdirectory. Pass its explicit path to
-`shader.compiler_init`; the application does not discover another compiler or
-fall back to fixed shaders.
+The build produces `katla-shader-compiler` (`.exe` on Windows) under the target
+`debug` directory. The editor launches this independent build tool only when its
+content-addressed artifact is stale. It never loads or links Naga or a Rust
+compiler library into the Odin process.
 
-The versioned C ABI consists of `katla_naga_abi`, `katla_naga_compile` and
-`katla_naga_free`. ABI 1 exchanges length-delimited UTF-8 JSON. A request contains
-`abi`, WGSL `source`, selected `{name,stage}` entries, and named/numeric override
-`constants`. A reply contains `abi`, the exact `compiler` identity, typed `error`,
-owned `message`, and selected `entries`. Requests are limited to 8 MiB, 16 entries
-and 1,024 constants. Odin also bounds replies to 128 MiB. Release each returned
-buffer exactly once with the originating dependency; no exception may unwind
-across the ABI. Tests exercise actual compilation and the allocation boundary.
+Run it with `--request <input.json> --output <artifact.json>`. The input contains
+`abi`, WGSL `source`, selected `{name,stage}` entries and optional override
+`constants`; output contains the exact compiler identity, typed error/diagnostic,
+SPIR-V, MSL and reflection. Input is bounded to 8 MiB, 16 entries and 1,024
+constants; output is bounded to 128 MiB. Output creation is exclusive and synced.
+The Odin owner validates it before publishing an atomic cache entry. Compiler
+failure never replaces the currently accepted native pipeline.
+
+Odin checks SHA-256 of the executable contents and the canonical request, so
+source, transitive includes, options, entry selection and compiler changes all
+invalidate the cache. Cache entries retain their request key and artifact
+checksum; malformed, corrupted or mismatched entries are rebuilt. Process startup
+is serialized, accepted work runs asynchronously through the shader service, and
+execution is bounded to 30 seconds with kill/reap on timeout.
 
 Each selected entry is validated, has overrides resolved, and is emitted as
 SPIR-V and MSL 3.0 from the same Naga module. Reflection preserves logical groups,

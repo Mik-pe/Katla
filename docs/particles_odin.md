@@ -87,7 +87,7 @@ ASAN_OPTIONS=detect_leaks=0 \
 MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
 VK_ICD_FILENAMES=/usr/local/share/vulkan/icd.d/MoltenVK_icd.json \
 odin run odin/examples/particles_render -vet -strict-style -sanitize:address -- \
-  /path/to/libkatla_naga_compiler.dylib \
+  /path/to/katla-shader-compiler \
   /path/to/libvulkan.dylib \
   /path/to/libkatla_odin_scene_runtime.dylib \
   /absolute/project/root
