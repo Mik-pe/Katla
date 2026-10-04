@@ -2,7 +2,6 @@
 package main
 
 import app "../app"
-import ecs "../ecs"
 import editor "../editor"
 import mcp "../agent/mcp"
 import "core:os"
@@ -12,7 +11,6 @@ import "core:sync"
 import "core:time"
 import "core:mem"
 import "core:fmt"
-import "core:strings"
 
 Input :: struct { reader:mcp.Line_Reader, frames:[dynamic]mcp.Frame, mutex:sync.Mutex, changed:sync.Cond, done:bool, allocator:mem.Allocator }
 read_input :: proc(th:^thread.Thread) {
@@ -43,18 +41,17 @@ write_output :: proc(output:string)->bool {
     count,err:=os.write(os.stdout,transmute([]byte)string("\n"))
     return err==nil && count==1
 }
-Position :: struct { x,y,z:f32, scale_x,scale_y,scale_z:f32 }
-Name :: struct { name:string }
-name_destroy :: proc(value:rawptr) { delete((^Name)(value).name); (^Name)(value).name="" }
-name_clone :: proc(dst,src:rawptr) { (^Name)(dst).name=strings.clone((^Name)(src).name) }
 main :: proc() {
     backing:=context.allocator
     tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,backing)
     defer { context.allocator=backing; assert(len(tracker.allocation_map)==0); mem.tracking_allocator_destroy(&tracker) }
     context.allocator=mem.tracking_allocator(&tracker)
     scene:app.Authoring; app.authoring_init(&scene,agent_capacity=64); defer app.authoring_destroy(&scene)
-    editor.editor_register(&scene.world,&scene.registry,"Position",Position{})
-    editor.editor_register(&scene.world,&scene.registry,"Name",Name{},ecs.Value_Ops{name_destroy,name_clone})
+    assert(app.authoring_services_init(&scene)==.None)
+    project_path,resource_path:=".","resources"
+    if len(os.args)==3 { project_path=os.args[1]; resource_path=os.args[2] }
+    else if len(os.args)!=1 { fmt.eprintln("usage: katla-odin-mcp [project-root resource-root]"); os.exit(2) }
+    if app.asset_resources_init(&scene,project_path,resource_path)!=.None { fmt.eprintln("could not initialize confined asset roots"); os.exit(2) }
     server:mcp.Server; mcp.server_init(&server,&scene.agent); defer mcp.server_destroy(&server)
     input:=Input{allocator=context.allocator,frames=make([dynamic]mcp.Frame)}
     defer { for &frame in input.frames { mcp.frame_destroy(&frame) }; delete(input.frames) }
@@ -66,7 +63,7 @@ main :: proc() {
         activity:=false
         for _ in 0..<10 {
             frame,ready,done:=take_input(&input)
-            if done && !closed { closed=true; mcp.server_finish(&server) }
+            if done && !closed { closed=true; mcp.server_finish(&server); editor.agent_finish(&scene.agent) }
             if !ready { break }; defer mcp.frame_destroy(&frame)
             activity=true
             output:=""

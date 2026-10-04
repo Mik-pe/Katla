@@ -1,5 +1,7 @@
 //! Tool schemas describe only the operations executed by the Odin scene owner.
 package mcp
 
+import agent ".."
+
 @(private="package")
-TOOLS_JSON :: #load("tools.json",string)
+TOOLS_JSON :: agent.TOOLS_JSON

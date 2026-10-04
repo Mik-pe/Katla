@@ -37,7 +37,7 @@ write_value :: proc(builder:^strings.Builder,value:json.Value,field:string,tuple
         if name,is_variant:=data["__variant"].(string); is_variant {
             if !write_identifier(name) || len(data)>2 { return {.Syntax,strings.builder_len(builder^)} }
             strings.write_string(builder,name)
-            if payload,present:=data["__payload"]; present { return write_value(builder,payload,"",true,depth+1) }
+            if payload,present:=data["__payload"]; present { return write_value(builder,payload,name,true,depth+1) }
             return {}
         }
         opening,closing:="(",")"; if field=="components" { opening="{"; closing="}" }
@@ -54,7 +54,7 @@ write_value :: proc(builder:^strings.Builder,value:json.Value,field:string,tuple
     case json.Array:
         opening,closing:="[","]"; if tuple { opening="("; closing=")" }; strings.write_string(builder,opening)
         for element in data {
-            child_tuple:=field=="positions" || field=="normals" || field=="uvs"
+            child_tuple:=field=="positions" || field=="normals" || field=="uvs" || field=="Box"
             if err:=write_value(builder,element,"",child_tuple,depth+1); err.kind!=.None { return err }; strings.write_string(builder,",")
         }
         strings.write_string(builder,closing)

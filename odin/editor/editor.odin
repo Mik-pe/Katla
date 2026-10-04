@@ -303,7 +303,7 @@ editor_encode_value :: proc(entry:^Editor_Entry,value:rawptr,allocator:mem.Alloc
     return data,error==nil
 }
 
-@(private="package")
+/// Clones a registered component with its ownership hooks for staged application transactions.
 editor_clone_value :: proc(entry:^Editor_Entry,value:rawptr,allocator:mem.Allocator)->rawptr {
     context.allocator=allocator
     ti:=type_info_of(entry.T); clone:=allocate(ti.size,ti.align,allocator)
@@ -314,6 +314,7 @@ editor_clone_value :: proc(entry:^Editor_Entry,value:rawptr,allocator:mem.Alloca
 component_snapshots_destroy :: proc(snapshots:[dynamic]Component_Snapshot,allocator:mem.Allocator) {
     context.allocator=allocator
     for snapshot in snapshots {
+        if snapshot.value==nil { continue }
         if snapshot.entry.ops.destroy!=nil { snapshot.entry.ops.destroy(snapshot.value) }
         mem.free(snapshot.value,allocator)
     }

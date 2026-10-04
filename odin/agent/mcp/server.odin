@@ -13,20 +13,19 @@ import "core:strings"
 Pending :: struct { id:string, ticket:u64, admitted:time.Duration, abandoned:bool }
 /// Stationary, single-caller protocol state; no World or application pointer crosses here.
 Server :: struct { mailbox:^editor.Agent_Harness, pending:[dynamic]Pending, timeout:time.Duration, closed:bool, allocator:mem.Allocator }
-/// Initializes the adapter over one exclusive response consumer of an existing mailbox.
+/// Initializes a ticket-selective adapter over a scene mailbox shared with other producers.
 server_init :: proc(s:^Server,mailbox:^editor.Agent_Harness,allocator:=context.allocator,timeout:=15*time.Second) {
     assert(timeout>0 && mailbox!=nil)
     s^=Server{mailbox=mailbox,pending=make([dynamic]Pending,allocator),timeout=timeout,allocator=allocator}
 }
-/// Closes admission, cancels remaining queued work and releases protocol correlation.
+/// Releases this connection and its queued or unread replies without closing other producers.
 /// Join the scene owner before destroying its mailbox; already executing mutations are not undone.
 server_destroy :: proc(s:^Server) {
-    editor.agent_finish(s.mailbox)
-    for pending in s.pending { editor.agent_cancel(s.mailbox,pending.ticket); delete(pending.id,s.allocator) }
+    for pending in s.pending { editor.agent_abandon(s.mailbox,pending.ticket); delete(pending.id,s.allocator) }
     delete(s.pending); s^={}
 }
 /// Closes admission while preserving accepted work for normal result draining.
-server_finish :: proc(s:^Server) { s.closed=true; editor.agent_finish(s.mailbox) }
+server_finish :: proc(s:^Server) { s.closed=true }
 @(private="package")
 remove_pending :: proc(s:^Server,index:int) { delete(s.pending[index].id,s.allocator); ordered_remove(&s.pending,index) }
 @(private="package")
@@ -97,7 +96,7 @@ server_receive :: proc(s:^Server,line:string,now:time.Duration)->string {
     switch method {
     case "server/discover":
         if !allowed_fields(params,{"_meta"}) { return rpc_error(id,-32602,"Invalid discovery params",allocator=s.allocator) }
-        result:=fmt.aprintf(`{{"resultType":"complete","_meta":%s,"supportedVersions":["%s"],"capabilities":{{"tools":{{"listChanged":false}}}},"instructions":"CPU scene authoring on the existing owner; no viewport, mesh loading or provider connection."}}`,SERVER_META,PROTOCOL_VERSION)
+        result:=fmt.aprintf(`{{"resultType":"complete","_meta":%s,"supportedVersions":["%s"],"capabilities":{{"tools":{{"listChanged":false}}}},"instructions":"Scene authoring, materials, assets and gameplay on the existing application owner."}}`,SERVER_META,PROTOCOL_VERSION)
         defer delete(result)
         return rpc_result(id,result,s.allocator)
     case "ping":
@@ -136,15 +135,13 @@ server_receive :: proc(s:^Server,line:string,now:time.Duration)->string {
 /// Cancelled/expired accepted mutations are never retried or silently rolled back.
 server_poll :: proc(s:^Server,now:time.Duration)->string {
     context.allocator=s.allocator
-    for {
-        response,ready:=editor.agent_take_result(s.mailbox)
-        if !ready { break }
-        defer editor.agent_response_destroy(&response)
-        index:=-1
-        for pending,i in s.pending { if pending.ticket==response.ticket { index=i; break } }
-        if index<0 { continue }
+    for index:=0;index<len(s.pending); {
         pending:=s.pending[index]
-        defer remove_pending(s,index)
+        response,ready:=editor.agent_take_result_for(s.mailbox,pending.ticket)
+        if !ready { index+=1; continue }
+        defer editor.agent_response_destroy(&response)
+        ordered_remove(&s.pending,index)
+        defer delete(pending.id,s.allocator)
         if pending.abandoned { continue }
         if response.result.error!=.None {
             message:=fmt.aprintf("Scene tool failed: %v",response.result.error); defer delete(message)

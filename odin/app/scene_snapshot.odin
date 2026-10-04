@@ -7,7 +7,7 @@ import "core:mem"
 import "core:strings"
 
 /// A registered component's owned wire value; runtime references use document-local keys.
-Scene_Component :: struct { name:string, data:[]byte }
+Scene_Component :: struct { name:string, data:[]byte,owned_entry:^editor.Editor_Entry,owned_value:rawptr,owned_ops:ecs.Value_Ops,wire_hash:u64 }
 /// Document-local keys remain independent from runtime entity slots and generations.
 Scene_Entity :: struct { key:ecs.Entity_Id, components:[dynamic]Scene_Component }
 /// Owns a reconstructible CPU scene, excluding protected editor entities.
@@ -16,7 +16,10 @@ Scene_Snapshot :: struct { entities:[dynamic]Scene_Entity, next_entity_id:u64, a
 /// Releases snapshot wire values and component names with the captured allocator.
 scene_snapshot_destroy :: proc(snapshot:^Scene_Snapshot) {
     for entity in snapshot.entities {
-        for component in entity.components { delete(component.name,snapshot.allocator); delete(component.data,snapshot.allocator) }
+        for component in entity.components {
+            if component.owned_value!=nil { if component.owned_ops.destroy!=nil { context.allocator=snapshot.allocator; component.owned_ops.destroy(component.owned_value) }; mem.free(component.owned_value,snapshot.allocator) }
+            delete(component.name,snapshot.allocator); delete(component.data,snapshot.allocator)
+        }
         delete(entity.components)
     }
     delete(snapshot.entities); snapshot^={}
@@ -61,18 +64,16 @@ scene_snapshot_capture :: proc(app:^Authoring)->(Scene_Snapshot,editor.Scene_Err
         for name in names {
             entry:=app.registry.entries[name]
             value:=ecs.component_address(&app.world,id,entry.T); if value==nil { continue }
-            bytes,err:=editor.editor_component_json(&app.world,id,entry)
-            if err!=.None { return {},err }
-            decoded,ok:=editor.editor_decode_value(entry,bytes,allocator); delete(bytes,allocator)
-            if !ok { if entry.ops.destroy!=nil { entry.ops.destroy(decoded) }; mem.free(decoded,allocator); return {},.Decode_Failed }
-            mapped:=editor.component_map_references(entry,decoded,{mapping,true})
+            decoded:=editor.editor_clone_value(entry,value,allocator)
+            retained:=false
+            defer { if !retained { if entry.ops.destroy!=nil { entry.ops.destroy(decoded) }; mem.free(decoded,allocator) } }
+            if !editor.component_map_references(entry,decoded,{mapping,true}) { return {},.Invalid_Operation }
             data,encoded:=editor.editor_encode_value(entry,decoded,allocator)
-            if entry.ops.destroy!=nil { entry.ops.destroy(decoded) }; mem.free(decoded,allocator)
-            if !mapped { delete(data,allocator); return {},.Invalid_Operation }
-            if !encoded { return {},.Decode_Failed }
+            if !encoded { delete(data,allocator); return {},.Decode_Failed }
             wire_bytes+=len(name)+len(data)
             if wire_bytes>64*1024*1024 { delete(data,allocator); return {},.Invalid_Operation }
-            append(&stored.components,Scene_Component{strings.clone(name,allocator),data})
+            append(&stored.components,Scene_Component{name=strings.clone(name,allocator),data=data,owned_entry=entry,owned_value=decoded,owned_ops=entry.ops,wire_hash=scene_wire_hash(data)})
+            retained=true
         }
     }
     result.next_entity_id=next_key
@@ -82,53 +83,43 @@ scene_snapshot_capture :: proc(app:^Authoring)->(Scene_Snapshot,editor.Scene_Err
     success=true; return result,.None
 }
 
-/// Stages and decodes replacement entities before retiring the authored scene; failures preserve it.
+/// Stages replacement entities before retiring the authored scene; failures preserve it.
 scene_snapshot_restore :: proc(app:^Authoring,snapshot:^Scene_Snapshot)->editor.Scene_Error {
     context.allocator=app.world.allocator
-    staged:=make([dynamic]ecs.Entity_Id,app.world.allocator); defer delete(staged)
-    mapping:=make(map[ecs.Entity_Id]ecs.Entity_Id,app.world.allocator); defer delete(mapping)
-    if len(snapshot.entities)>100_000 || snapshot.next_entity_id==0 { return .Invalid_Operation }
-    success:=false
-    defer { if !success { for entity in staged { ecs.destroy_entity(&app.world,entity) } } }
-    for row in snapshot.entities {
-        if row.key==0 || u64(row.key)>=snapshot.next_entity_id { return .Invalid_Operation }
-        if _,duplicate:=mapping[row.key]; duplicate { return .Invalid_Operation }
-        entity:=ecs.create_entity(&app.world); append(&staged,entity); mapping[row.key]=entity
-        ecs.add_component(&app.world,entity,Scene_Key{u64(row.key)})
-    }
-    for row in snapshot.entities {
-        entity:=mapping[row.key]
-        seen:=make(map[string]bool,app.world.allocator)
-        defer delete(seen)
-        for component in row.components {
-            if seen[component.name] { return .Invalid_Operation }; seen[component.name]=true
-            entry:=app.registry.entries[component.name]; if entry==nil { return .Component_Not_Found }
-            decoded,ok:=editor.editor_decode_value(entry,component.data,app.world.allocator)
-            transferred:=false
-            defer {
-                if !transferred && entry.ops.destroy!=nil { entry.ops.destroy(decoded) }
-                mem.free(decoded,app.world.allocator)
-            }
-            if !ok { return .Decode_Failed }
-            if entry.T==Scene_Key && (cast(^Scene_Key)decoded).value!=u64(row.key) { return .Invalid_Operation }
-            if !editor.component_map_references(entry,decoded,{mapping,true}) { return .Invalid_Operation }
-            if !ecs.insert_component_value(&app.world,entity,entry.T,decoded) { return .Entity_Not_Found }
-            transferred=true
-        }
-    }
-    for entity in staged {
-        if _,has_parent:=ecs.get_component(&app.world,entity,Scene_Parent); has_parent {
-            if _,err:=scene_world_matrix(app,entity); err!=.None { return err }
-        }
-    }
+    stage,err:=scene_snapshot_stage(app,snapshot)
+    if err!=.None { return err }
+    committed:=false; defer scene_stage_destroy(app,&stage,!committed)
+    preparation,prepare_error:=scene_prepare_begin(app,stage.entities[:],.Replace)
+    if prepare_error!=.None { return prepare_error }; defer scene_prepare_finish(&preparation,committed)
     ids:=ecs.entity_ids(&app.world); defer delete(ids)
     staged_set:=make(map[ecs.Entity_Id]bool,app.world.allocator); defer delete(staged_set)
-    for entity in staged { staged_set[entity]=true }
+    for entity in stage.entities { staged_set[entity]=true }
     for entity in ids {
         if _,hidden:=ecs.get_component(&app.world,entity,Editor_Hidden); hidden { continue }
         if !staged_set[entity] { ecs.destroy_entity(&app.world,entity) }
     }
     ecs.insert_resource(&app.world,Scene_Identity{snapshot.next_entity_id})
-    success=true
+    committed=true
     return .None
+}
+
+@(private="package")
+scene_wire_hash :: proc(data:[]byte)->u64 { hash:u64=14695981039346656037; for value in data { hash=(hash~u64(value))*1099511628211 }; return hash }
+/// Clones captured owned values or decodes file DTOs; the caller releases the returned value.
+scene_row_owned_decode :: proc(app:^Authoring,row:Scene_Entity,name:string)->(rawptr,bool) {
+    entry:=app.registry.entries[name]; if entry==nil { return nil,false }
+    for component in row.components {
+        if component.name!=name { continue }
+        if component.owned_value!=nil {
+            if component.owned_entry!=entry || scene_wire_hash(component.data)!=component.wire_hash { return nil,false }
+            return editor.editor_clone_value(entry,component.owned_value,app.world.allocator),true
+        }
+        return editor.editor_decode_value(entry,component.data,app.world.allocator)
+    }
+    return nil,false
+}
+/// Destroys a temporary decoded row value with its registered ownership hooks.
+scene_row_owned_destroy :: proc(app:^Authoring,name:string,value:rawptr) {
+    if value==nil { return }; context.allocator=app.world.allocator
+    if entry:=app.registry.entries[name]; entry!=nil && entry.ops.destroy!=nil { entry.ops.destroy(value) }; mem.free(value,app.world.allocator)
 }

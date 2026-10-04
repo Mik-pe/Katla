@@ -31,6 +31,24 @@ check_error :: proc(t:^testing.T,output:string,code:int) {
     error,error_ok:=object["error"].(json.Object); testing.expect(t,error_ok && error["code"].(json.Integer)==json.Integer(code))
 }
 @(test)
+test_poll_preserves_unrelated_transport_replies_and_reserved_credits :: proc(t:^testing.T) {
+    scene:app.Authoring; app.authoring_init(&scene); defer app.authoring_destroy(&scene)
+    s:Server; server_init(&s,&scene.agent); defer server_destroy(&s)
+    unrelated,admission:=editor.agent_submit(&scene.agent,{kind=.Spawn},"llm-call")
+    testing.expect_value(t,admission,editor.Mailbox_Error.None)
+    accepted:=receive(&s,`"mcp-call"`,"tools/call",`,"name":"spawn_entity","arguments":{}`); defer delete(accepted)
+    testing.expect(t,accepted=="" && scene.agent.outstanding==2)
+    testing.expect_value(t,app.authoring_tick(&scene),2)
+    reply:=server_poll(&s,0); defer delete(reply)
+    tree,err:=json.parse(reply); testing.expect_value(t,err,json.Error.None); defer json.destroy_value(tree)
+    testing.expect(t,tree.(json.Object)["id"].(string)=="mcp-call" && scene.agent.outstanding==1)
+    again:=server_poll(&s,0); defer delete(again)
+    testing.expect(t,again=="" && scene.agent.outstanding==1)
+    result,ready:=editor.agent_take_result_for(&scene.agent,unrelated); defer editor.agent_response_destroy(&result)
+    testing.expect(t,ready && result.call_id=="llm-call" && result.result.error==.None && scene.agent.outstanding==0)
+}
+
+@(test)
 test_discovery_requires_metadata_on_every_request :: proc(t:^testing.T) {
     scene:app.Authoring; app.authoring_init(&scene); defer app.authoring_destroy(&scene)
     s:Server; server_init(&s,&scene.agent); defer server_destroy(&s)
@@ -115,7 +133,7 @@ test_deadline_cancels_stopped_owner_and_closure_drains_accepted_work :: proc(t:^
     closed:=receive(&s,"4","tools/call",`,"name":"spawn_entity"`,time.Second); defer delete(closed); check_error(t,closed,1003)
     testing.expect_value(t,app.authoring_tick(&scene),1)
     reply:=server_poll(&s,time.Second); defer delete(reply)
-    testing.expect(t,len(reply)>0 && scene.world.live_count==1 && scene.agent.session.finished && len(s.pending)==0)
+    testing.expect(t,len(reply)>0 && scene.world.live_count==1 && !scene.agent.session.finished && len(s.pending)==0)
 }
 @(test)
 test_strict_json_guards_depth_trailing_data_numbers_and_duplicate_keys :: proc(t:^testing.T) {
@@ -179,6 +197,23 @@ test_real_stalled_owner_deadline_suppresses_reply_without_reverting_accepted_mut
     thread.join(worker); thread.destroy(worker)
     check_error(t,probe.error,1004); delete(probe.error,scene.agent.allocator)
     testing.expect(t,processed==1 && probe.suppressed && scene.world.live_count==1 && len(scene.agent.session.actions)==1)
+    testing.expect_value(t,editor.agent_undo_all(&scene.agent.session,&scene.world,&scene.registry),editor.Scene_Error.None)
+    testing.expect_value(t,scene.world.live_count,0)
+}
+
+@(test)
+test_connection_shutdown_leaves_other_producers_and_action_history_alive :: proc(t:^testing.T) {
+    scene:app.Authoring; app.authoring_init(&scene,agent_capacity=3); defer app.authoring_destroy(&scene)
+    server:Server; server_init(&server,&scene.agent)
+    output:=receive(&server,"1","tools/call",`,"name":"spawn_entity"`); testing.expect_value(t,output,"")
+    other,_:=editor.agent_submit(&scene.agent,{kind=.Query_Entities},"assistant")
+    app.authoring_tick(&scene)
+    server_finish(&server); server_destroy(&server)
+    testing.expect(t,!scene.agent.finished_requested && scene.agent.outstanding==1 && len(scene.agent.session.actions)==2)
+    response,ready:=editor.agent_take_result_for(&scene.agent,other); defer editor.agent_response_destroy(&response)
+    testing.expect(t,ready && response.call_id=="assistant" && len(response.result.entities)==1)
+    _,error:=editor.agent_submit(&scene.agent,{kind=.Spawn},"still-connected")
+    testing.expect_value(t,error,editor.Mailbox_Error.None)
     testing.expect_value(t,editor.agent_undo_all(&scene.agent.session,&scene.world,&scene.registry),editor.Scene_Error.None)
     testing.expect_value(t,scene.world.live_count,0)
 }

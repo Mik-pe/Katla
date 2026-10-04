@@ -3,7 +3,6 @@ package app
 
 import ecs "../ecs"
 import editor "../editor"
-import agent "../agent"
 
 /// Protects editor-owned entities from targeted scene and material tools.
 Editor_Hidden :: struct {}
@@ -49,11 +48,9 @@ execute_owned :: proc(state:rawptr,w:^ecs.World,reg:^editor.Component_Registry,o
     app:=cast(^Authoring)state
     assert(w==&app.world && reg==&app.registry)
     if op.kind==.Application {
-        if op.tool_name!="material" { return error_result(w,.Application_Owned),{} }
-        decoded,err:=agent.decode_material(op.value,w.allocator)
-        if err!=.None { return error_result(w,.Invalid_Operation),{} }; defer agent.decoded_material_destroy(&decoded)
-        return material_execute(app,decoded.operation)
+        return authoring_application(app,op)
     }
+    if op.kind==.Spawn && app.registry.entries["SceneTransform"]!=nil { return authoring_spawn(app,op) }
     mutation:=op.kind in bit_set[editor.Scene_Op_Kind]{.Spawn,.Destroy,.Set_Field,.Duplicate,.Add_Component,.Remove_Component,.Set_Parent,.Spawn_Model}
     if mutation && app.mode!=.Editing { return error_result(w,.Editing_Required),{} }
     if op.kind in (bit_set[editor.Scene_Op_Kind]{.Destroy,.Set_Field,.Duplicate,.Add_Component,.Remove_Component,.Get_Attributes,.Set_Parent}) {

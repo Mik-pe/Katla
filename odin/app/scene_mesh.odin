@@ -7,10 +7,12 @@ import "core:mem"
 import "core:strings"
 import "core:encoding/json"
 
-/// A recipe path is resource-relative; generated geometry carries its complete validated descriptor.
+/// Authored recipe origins distinguish installed resources from project-local assets.
+Mesh_Path_Root :: enum { Resource, Project }
+/// Generated geometry carries its complete validated descriptor.
 Mesh_Source_Kind :: enum { Empty, Geometry, Recipe }
 /// Owns its origin and descriptor; native resource handles remain external application cache state.
-Mesh_Source :: struct { kind:Mesh_Source_Kind,path:string,geometry:[]byte }
+Mesh_Source :: struct { kind:Mesh_Source_Kind,path:string,geometry:[]byte,root:Mesh_Path_Root }
 /// One authored source and its prepared immutable CPU stream, ready for native upload.
 Scene_Mesh :: struct { source:Mesh_Source `inspect:"skip"`,geometry:Mesh_Geometry `inspect:"skip"` }
 
@@ -21,7 +23,7 @@ scene_mesh_destroy :: proc(value:rawptr) { mesh:=cast(^Scene_Mesh)value; allocat
 @(private="package")
 scene_mesh_clone :: proc(dst,src:rawptr) {
     source:=cast(^Scene_Mesh)src; result:=cast(^Scene_Mesh)dst
-    result.source={source.source.kind,strings.clone(source.source.path),make([]byte,len(source.source.geometry),context.allocator)}; copy(result.source.geometry,source.source.geometry)
+    result.source={kind=source.source.kind,path=strings.clone(source.source.path),geometry=make([]byte,len(source.source.geometry),context.allocator),root=source.source.root}; copy(result.source.geometry,source.source.geometry)
     result.geometry=mesh_geometry_clone(&source.geometry,context.allocator)
 }
 
@@ -33,7 +35,7 @@ scene_mesh_prepare :: proc(app:^Authoring,source:Mesh_Source)->(Scene_Mesh,Mesh_
     case .Empty: geometry.allocator=app.world.allocator
     case .Recipe:
         roots:=ecs.get_resource_mut(&app.world,Asset_Roots); if roots==nil || !strings.has_suffix(source.path,".katmesh") { return {},.Invalid_Geometry }
-        mesh,err:=mesh_recipe_load(&roots.resource,source.path); if err!=.None { return {},err }; geometry=mesh
+        root:=&roots.resource; if source.root==.Project { root=&roots.project }; mesh,err:=mesh_recipe_load(root,source.path); if err!=.None { return {},err }; geometry=mesh
     case .Geometry:
         tree,parse_error:=json.parse(source.geometry,spec=.JSON,parse_integers=true,allocator=app.world.allocator)
         if parse_error!=nil { return {},.Invalid_Geometry }; defer json.destroy_value(tree)
@@ -41,7 +43,7 @@ scene_mesh_prepare :: proc(app:^Authoring,source:Mesh_Source)->(Scene_Mesh,Mesh_
         if _,_,valid:=recipe_geometry_budget(object); !valid { return {},.Invalid_Geometry }
         mesh,err:=recipe_geometry_compile(object,app.world.allocator); if err!=.None { return {},err }; geometry=mesh
     }
-    result:=Scene_Mesh{geometry=geometry,source={kind=source.kind,path=strings.clone(source.path,app.world.allocator),geometry=make([]byte,len(source.geometry),app.world.allocator)}}
+    result:=Scene_Mesh{geometry=geometry,source={kind=source.kind,path=strings.clone(source.path,app.world.allocator),geometry=make([]byte,len(source.geometry),app.world.allocator),root=source.root}}
     copy(result.source.geometry,source.geometry); return result,.None
 }
 
@@ -52,7 +54,7 @@ scene_mesh_encode :: proc(state,value:rawptr,allocator:mem.Allocator)->([]byte,b
     case .Empty:
         data,err:=json.marshal(struct { kind:string }{"Empty"},allocator=allocator); return data,err==nil
     case .Recipe:
-        data,err:=json.marshal(struct { kind,path:string }{"Recipe",source.path},allocator=allocator); return data,err==nil
+        root:="resource"; if source.root==.Project { root="project" }; data,err:=json.marshal(struct { kind,path,root:string }{"Recipe",source.path,root},allocator=allocator); return data,err==nil
     case .Geometry:
         tree,parse_error:=json.parse(source.geometry,spec=.JSON,parse_integers=true,allocator=allocator)
         if parse_error!=nil { return nil,false }; defer json.destroy_value(tree)
@@ -72,8 +74,13 @@ scene_mesh_decode :: proc(state:rawptr,data:[]byte,allocator:mem.Allocator)->(ra
     switch kind {
     case "Empty": if !recipe_keys(object,{"kind"}) { return result,false }; source.kind=.Empty
     case "Recipe":
-        if !recipe_keys(object,{"kind","path"}) { return result,false }
+        if !recipe_keys(object,{"kind","path","root"}) { return result,false }
         path,is_path:=object["path"].(string); if !is_path { return result,false }; source.kind=.Recipe; source.path=path
+        if value,present:=object["root"]; present { root,is_root:=value.(string); if !is_root { return result,false }; switch root {
+            case "resource": source.root=.Resource
+            case "project": source.root=.Project
+            case: return result,false
+            } }
     case "Geometry":
         if !recipe_keys(object,{"kind","document"}) { return result,false }; source.kind=.Geometry
         descriptor,marshal_error:=json.marshal(object["document"],allocator=allocator); if marshal_error!=nil { return result,false }; source.geometry=descriptor

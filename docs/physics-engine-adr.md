@@ -138,3 +138,30 @@ compares active intersections per step, including deletion exits and both
 directions of sensor pairs. Sensors enable all body-type combinations. The app
 maintains overlap membership and executes [scene-owned rules](scene-events.md);
 physics contains no animation or script policy.
+
+## Odin dependency backends
+
+The Odin application retains the same ownership split and offers explicit
+`Physics_Backend.Rapier` / `Physics_Backend.Box3D` selection. Rapier remains the
+default; Box3D is an additional native C17 backend requested for the Odin port.
+The pinned dependency and native acceptance commands are documented in
+[the Box3D dependency contract](../tools/box3d/README.md).
+
+Both backends use `physics_collect` to preflight complete body batches and resolve
+world poses, and `physics_commit_poses` to validate all output targets and stage
+parent-local transforms before any ECS publication. Ordinary unchanged sync
+preserves native dynamics. Box, sphere and Y-capsule descriptions include
+collision filters, gravity scale, density, friction, restitution, linear velocity and
+CCD. Mesh colliders bind canonical prepared CPU geometry, bake the residual
+world affine transform after extracting the rigid pose, and reverse reflected
+triangle winding. Rapier prepares every actual trimesh or convex-hull shape
+before mutating its native batch. Box3D supports static trimeshes and genuine
+convex hulls; moving trimeshes report unsupported input. Fixed/kinematic mesh
+pose publication preserves authored local transforms, including shear from
+ancestors. Dynamic publication retains the exact positive TRS hierarchy contract. Native handles remain dependency-owned; sensor events use full generational
+IDs and include directed deletion exits and both directions of sensor pairs.
+`physics_prepare`, `physics_step` and `physics_reset` dispatch through the selected
+owner. Selection changes require editing and reset transient native state;
+missing libraries or unsupported input report failure without choosing another
+backend. Native joints, heightfield collider and spatial-query migration
+remain unresolved engineering work.

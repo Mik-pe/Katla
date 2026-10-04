@@ -3,10 +3,11 @@ package assets
 
 import "core:encoding/json"
 import "core:mem"
+import "core:strings"
 
-Prefab_Action :: enum { Describe, Read, Validate, Write }
+Prefab_Action :: enum { Describe, Read, Validate, Write, Instantiate }
 /// Mesh documents are complete authoring input; omitted fields are not implicit patches.
-Prefab_Request :: struct { action:Prefab_Action,path:string,document:json.Value }
+Prefab_Request :: struct { action:Prefab_Action,path,name:string,document:json.Value,position:[3]f32,rotation:[4]f32,scale:[3]f32 }
 Decoded_Prefab :: struct { request:Prefab_Request,tree:json.Value,allocator:mem.Allocator }
 /// Releases the borrowed document's owning transport tree.
 prefab_destroy :: proc(decoded:^Decoded_Prefab) { context.allocator=decoded.allocator; json.destroy_value(decoded.tree); decoded^={} }
@@ -14,7 +15,7 @@ prefab_destroy :: proc(decoded:^Decoded_Prefab) { context.allocator=decoded.allo
 prefab_decode :: proc(data:[]byte,allocator:=context.allocator)->(Decoded_Prefab,Error) {
     context.allocator=allocator
     tree,parse_error:=json.parse(data,spec=.JSON,parse_integers=true,allocator=allocator); if parse_error!=nil { return {},.Invalid_JSON }
-    decoded:=Decoded_Prefab{tree=tree,allocator=allocator}; success:=false; defer { if !success { prefab_destroy(&decoded) } }
+    decoded:=Decoded_Prefab{tree=tree,allocator=allocator}; decoded.request.rotation={0,0,0,1}; decoded.request.scale={1,1,1}; success:=false; defer { if !success { prefab_destroy(&decoded) } }
     object,ok:=tree.(json.Object); if !ok { return {},.Invalid_Arguments }
     action,is_action:=object["action"].(string); if !is_action { return {},.Invalid_Arguments }
     allowed:[]string
@@ -23,6 +24,7 @@ prefab_decode :: proc(data:[]byte,allocator:=context.allocator)->(Decoded_Prefab
     case "read": decoded.request.action=.Read; allowed={"action","path"}
     case "validate": decoded.request.action=.Validate; allowed={"action","path","document"}
     case "write": decoded.request.action=.Write; allowed={"action","path","document"}
+    case "instantiate": decoded.request.action=.Instantiate; allowed={"action","path","name","position","rotation","scale"}
     case: return {},.Invalid_Arguments
     }
     for key in object { found:=false; for name in allowed { if name==key { found=true; break } }; if !found { return {},.Invalid_Arguments } }
@@ -33,5 +35,26 @@ prefab_decode :: proc(data:[]byte,allocator:=context.allocator)->(Decoded_Prefab
         document,present:=object["document"]; if !present { return {},.Invalid_Arguments }
         if _,is_object:=document.(json.Object); !is_object { return {},.Invalid_Arguments }; decoded.request.document=document
     }
+    if decoded.request.action==.Instantiate {
+        if v,present:=object["name"]; present { name,valid:=v.(string); if !valid || len(strings.trim_space(name))==0 || len(name)>256 { return {},.Invalid_Arguments }; decoded.request.name=name }
+        if v,present:=object["position"]; present { vector,valid:=prefab_vector(v,3); if !valid { return {},.Invalid_Arguments }; decoded.request.position=vector }
+        if v,present:=object["scale"]; present { vector,valid:=prefab_vector(v,3); if !valid { return {},.Invalid_Arguments }; for axis in vector { if axis==0 { return {},.Invalid_Arguments } }; decoded.request.scale=vector }
+        if v,present:=object["rotation"]; present { vector,valid:=prefab_vector(v,4); if !valid { return {},.Invalid_Arguments }; norm:f32; for axis in vector { norm+=axis*axis }; if abs(1-norm)>=0.001 { return {},.Invalid_Arguments }; decoded.request.rotation=vector }
+    }
     success=true; return decoded,.None
+}
+
+@(private="package")
+prefab_vector :: proc(value:json.Value,$N:int)->([N]f32,bool) {
+    result:[N]f32; values,valid:=value.(json.Array); if !valid || len(values)!=N { return result,false }
+    for element,i in values {
+        number:f64
+        #partial switch n in element {
+        case json.Integer: number=f64(n)
+        case json.Float: number=f64(n)
+        case: return result,false
+        }
+        if !(number>=-1000000 && number<=1000000) { return result,false }; result[i]=f32(number)
+    }
+    return result,true
 }

@@ -30,7 +30,12 @@ retains requests until resumed. `agent_cancel(ticket)` removes only queued work,
 frees its slot and produces no response or history entry. It returns false once
 the owner has taken the request, even while application execution is in progress;
 transport cancellation after that point must suppress delivery without pretending
-the accepted scene mutation was rolled back. Tickets are never reused within a
+the accepted scene mutation was rolled back. `agent_abandon(ticket)` releases only
+that caller: queued work is removed, completed replies are destroyed and an
+executing reply is suppressed when its action completes. Executing credits
+remain reserved until completion. Other producers stay admitted.
+`agent_take_result_for(ticket)` transfers only the caller's reply, preserving
+unrelated replies and their order. Tickets are never reused within a
 harness, and exhaustion explicitly rejects new work. Destroy transferred replies
 with `agent_response_destroy`, which frees both the correlation string and result
 using captured allocators. Harness destruction owns all remaining queued requests
@@ -42,11 +47,25 @@ The CPU tool names are `spawn_entity`, `destroy_entity`, `duplicate_entity`,
 Entity IDs are decimal strings, including IDs larger than JavaScript's exact
 integer range. Overflow, signs, whitespace and numeric JSON IDs are rejected.
 Spawns accept `name` and finite three-element `position`, `rotation` and `scale`
-arrays; scale defaults to one. These are the existing editor's registered CPU
-component fields, not mesh creation. Query limits default to 256 and must be
-1–256 when supplied. Duplicate offsets, shapes, model loading, parenting and
-application-owned animation/behavior/resource operations remain outside
-this subset and are not silently ignored.
+arrays; scale defaults to one. Application services create canonical SceneName,
+SceneTransform and persistent SceneKey components; rotation is XYZ Euler radians
+composed as Qz*Qy*Qx. Query limits default to 256 and must be 1–256 when supplied.
+Duplicate offsets, shapes and parenting are not silently ignored.
+
+The application owner explicitly installs `authoring_services_init` and confined
+asset roots. Typed `material`, `animation`, `simulation`, `behavior`, `trigger`,
+`prefab`, `search_assets`, `list_resources` and `read_resource` calls validate
+before admission, then execute on that same owner. The canonical
+`agent.TOOLS_JSON` owns the sorted 18 schemas; `tools_select` copies only named
+schemas supported by a concrete consumer and rejects unknown/duplicate names.
+Mesh instantiation loads the actual confined project source, prepares geometry
+before publication and records the canonical owned undo command.
+
+Undo and redo use the shared owned command history. Read-only and failed calls
+remain recorded but are skipped by undo; they preserve an existing redo branch.
+Only a new reversible command abandons that branch. `agent_can_undo` and
+`agent_can_redo` are the common UI authority, and restored entity generations
+remap both command stacks and embedded registered references.
 
 `scene_context` captures sorted registered component counts and optional selected
 component JSON on the editor thread. A stale generational selection yields no
@@ -83,16 +102,20 @@ pre-existing entity. Captured-allocator tracking is empty after teardown:
 odin run odin/examples/agent_mailbox -out:target/odin-agent-mailbox -vet -strict-style
 ```
 
-LLM HTTP/streaming/configuration, conversational orchestration, asset/resource
-tools and remaining typed application requests still need migration. The optional
-MCP adapter below opens no network or provider connection.
+Native provider HTTP/TLS/SSE, configuration, conversational orchestration and
+cancellable jobs are implemented in [the provider package](../odin/agent/llm/README.md).
+Their local subprocess acceptance covers actual sockets, verified TLS, streaming
+progress, correlated owner-thread tool results and cancellation. This proves
+the transport and application contract; paid-provider/model behavior and the
+complete desktop application remain separate acceptance boundaries.
 
 ## Optional MCP transport
 
 `odin/agent/mcp` handles [MCP 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic)
 through one existing `Agent_Harness`. Its single protocol caller never receives a
 World or application pointer; only the mailbox crosses to the scene owner. The
-adapter is the exclusive consumer of that mailbox's replies. `server_receive`
+adapter consumes only its admitted tickets through `agent_take_result_for`, so
+LLM and MCP consumers can share the owner's mailbox. `server_receive`
 returns an owned immediate response or queues a validated tool request;
 `server_poll` drains correlated scene results or expires a stopped-owner request.
 Both return strings to free with the server's captured allocator. Keep protocol
@@ -107,7 +130,7 @@ connection-derived capability state. An unsupported version returns `-32022`
 with supported/requested versions. Results include `resultType: "complete"` and
 server identity metadata. `ping`, `tools/list`, `tools/call` and
 `notifications/cancelled` are supported. The deterministic tool list contains
-only the nine CPU scene tools and application-owned `material` described above.
+the canonical 18 scene/application tools described above.
 Missing tool names/protocol metadata yield protocol errors; invalid tool input
 and scene failures yield `isError: true` tool results. Successful results expose
 lossless decimal `entity_ids` and actual component/material JSON in
@@ -130,11 +153,17 @@ accepted mutation/history intact. The default 15-second deadline applies to
 requests without a ready result. A stopped queued owner is cancelled; an already
 executing operation retains a tombstone until its result is drained. A deadline
 never retries a mutation. Closing admission drains accepted work, while adapter
-destruction cancels any remaining queued requests. Join owner/transport threads
+destruction abandons only this connection's tickets, including unread or
+executing replies, without closing the shared mailbox. The standalone stdio
+consumer explicitly closes its own harness at EOF. Join owner/transport threads
 before destroying their mailbox.
 
 The optional headless consumer supplies a real `app.Authoring`, editable name
-and position components and the material service. Its input thread owns no scene
+and transform components, material/gameplay services and confined asset roots.
+Optional arguments are `[project-root resource-root]`; defaults are `.` and
+`resources`. Source-only component codecs retain prepared CPU values in undo
+and simulation snapshots, so restoring a prepared scene does not reload a changed
+file from disk. Its input thread owns no scene
 pointer; a four-frame queue crosses to the application owner. Stdout contains
 only newline-delimited protocol messages. EOF closes admission, drains accepted
 requests/replies, joins input and releases all tracked allocation. Unrecoverable
@@ -229,21 +258,14 @@ migration and native validation complete.
 
 ## Validation
 
-The application-inclusive suite passes 84 tests across app, agent, editor, ECS
-and math, with strict vet/style checks, optimized and native AddressSanitizer
-execution and allocator leak tracking. Mailbox tests cover eight competing
-producers, unique tickets, exact capacity, unread/executing reply credits,
-queued cancellation, closure during application execution, terminal ID exhaustion
-and all response ownership paths. Tests also cover a real 256-object batch,
-invalid transport rejection before queue mutation, missing/stale/protected targets,
-edit-mode guards, exact absent/linear tint restoration, atomic failed batch undo,
-failed scene snapshot decoding and replacement-generation history. The actual
-host-thread material consumer passes sanitizer execution with an empty allocation
-tracker at teardown. The concurrent 512-call mailbox consumer also passes native
-AddressSanitizer and typechecks for Linux and Windows. The portable validation
-script runs the application suite and both consumers. Rust reference all-target
-check/Clippy and fmt checks pass; its complete agent suite passes 125 tests,
-ECS passes 259 tests with one separately ignored test, and the material-filtered
-application suite passes nine CPU tests with two native GPU tests separately
-ignored. These remain separate evidence; provider,
-graphics and native full application acceptance remain pending.
+Strict Odin checks, AddressSanitizer and captured allocator tracking cover the
+mailbox, owned snapshots, native provider transport and application consumers.
+Tests exercise executing/unread credits, ticket-selective replies, independent
+connection shutdown, native physics mesh contacts and whole-batch failure,
+confined asset reads and exact prepared revision undo. The MCP acceptance script
+uses real process pipes, instantiates a disk mesh, creates/inspects a trigger and
+verifies recovery, EOF draining and output failure. Native Metal/Vulkan render
+acceptance is tracked separately in [graphics](gfx_odin.md); it is not inferred
+from these CPU or provider tests. Rust reference all-target check/Clippy, fmt and
+complete agent/ECS tests remain separate migration evidence. Complete Rust
+consumer removal requires the remaining renderer and desktop application parity.

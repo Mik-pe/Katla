@@ -6,6 +6,7 @@ from pathlib import Path
 import queue
 import subprocess
 import threading
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "2026-07-28"
@@ -19,8 +20,8 @@ def request(identifier, method, **params):
 
 
 class Client:
-    def __init__(self, binary):
-        self.process = subprocess.Popen([str(binary)], cwd=ROOT, stdin=subprocess.PIPE,
+    def __init__(self, binary, roots=()):
+        self.process = subprocess.Popen([str(binary), *map(str, roots)], cwd=ROOT, stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.lines = queue.Queue()
         self.reader = threading.Thread(target=self.read_output, daemon=True)
@@ -52,8 +53,8 @@ class Client:
             assert message["result"]["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "katla-odin"
         return message
 
-    def call(self, identifier, name, **arguments):
-        self.send(request(identifier, "tools/call", name=name, arguments=arguments))
+    def call(self, identifier, tool_name, **arguments):
+        self.send(request(identifier, "tools/call", name=tool_name, arguments=arguments))
         message = self.read()
         assert message["id"] == identifier and type(message["id"]) is type(identifier)
         assert not message.get("result", {}).get("isError"), message
@@ -88,7 +89,7 @@ def acceptance(binary):
         client.send(request(0, "tools/list"))
         tools = client.read()["result"]["tools"]
         names = [tool["name"] for tool in tools]
-        assert names == sorted(names) and len(set(names)) == 10
+        assert names == sorted(names) and len(set(names)) == 18
         assert all(tool["inputSchema"]["type"] == "object" for tool in tools)
         assert "editor_view" not in names and "spawn_model" not in names
         # Fragment a real frame at arbitrary byte boundaries, including UTF-8.
@@ -100,9 +101,9 @@ def acceptance(binary):
         spawned = client.read()
         assert spawned["id"] == 9007199254740993
         entity = spawned["result"]["structuredContent"]["entity_ids"][0]
-        position = client.call("position", "get_component_attributes", entity_id=entity, component="Position")
-        assert position["data"]["x"] == 1 and position["data"]["y"] == 2 and position["data"]["z"] == 3
-        name = client.call("name", "get_component_attributes", entity_id=entity, component="Name")
+        position = client.call("position", "get_component_attributes", entity_id=entity, component="SceneTransform")
+        assert position["data"]["local"]["position"] == [1, 2, 3]
+        name = client.call("name", "get_component_attributes", entity_id=entity, component="SceneName")
         assert name["data"]["name"] == "Study / stol 🪑"
         # The actual application service changes and reads the same component.
         client.call("surface", "add_component", entity_id=entity, component="SurfaceMaterial")
@@ -139,6 +140,34 @@ def acceptance(binary):
         client.finish()
     finally:
         client.abort()
+    # Every application tool uses the same confined roots and canonical scene owner.
+    with tempfile.TemporaryDirectory(prefix="katla-mcp-assets-") as directory:
+        project = Path(directory)
+        resource = project / "resources"
+        resource.mkdir()
+        recipe = '(version:1,name:"Chair",parts:[(id:"seat",geometry:(kind:"cube",size:(2,1,1)))])'
+        (resource / "chair.katmesh").write_text(recipe)
+        client = Client(binary, (project, resource))
+        try:
+            found = client.call("assets", "search_assets", query="chair", extensions=["katmesh"])["data"]
+            assert found["assets"] == ["chair.katmesh"] and found["project_paths"] == ["resources/chair.katmesh"]
+            assert client.call("read", "read_resource", path="resources/chair.katmesh")["data"]["content"] == recipe
+            client.send(request("escape", "tools/call", name="read_resource", arguments={"path":"../outside"}))
+            assert client.read()["result"]["isError"]
+            instantiated = client.call("instantiate", "prefab", action="instantiate", path="resources/chair.katmesh", name="Agent chair", position=[3,0,1])
+            chair = instantiated["entity_ids"][0]
+            mesh = client.call("mesh", "get_component_attributes", entity_id=chair, component="SceneMesh")["data"]
+            assert mesh["kind"] == "Recipe" and mesh["path"] == "resources/chair.katmesh" and mesh["root"] == "project"
+            client.call("simulation", "simulation", action="inspect")
+            client.call("behavior", "behavior", action="inspect", entity_id=chair)
+            trigger = client.call("trigger-create", "trigger", action="create_box", name="Door sensor", position=[0,1,0], half_extents=[1,1,1], rules=[])["entity_ids"][0]
+            client.call("triggers", "trigger", action="inspect", entity_id=trigger)
+            client.call("remove-trigger", "destroy_entity", entity_id=trigger)
+            client.call("remove-chair", "destroy_entity", entity_id=chair)
+            assert client.call("asset-empty", "query_entities")["entity_ids"] == []
+            client.finish()
+        finally:
+            client.abort()
     # Cancellation is allowed to race acceptance; it must suppress later replies,
     # and its explicit mutation boundary is reflected in the following scene query.
     client = Client(binary)
@@ -194,7 +223,7 @@ def acceptance(binary):
         process.wait(timeout=5)
         process.stdin.close()
         process.stderr.close()
-    print("Odin MCP: discovery, 10 tool schemas, actual scene/material edits, typed IDs, pipelining, bounded input, recovery and EOF/output failure passed")
+    print("Odin MCP: discovery, 18 tool schemas, actual scene/material edits, typed IDs, pipelining, bounded input, recovery and EOF/output failure passed")
 
 
 def main():
