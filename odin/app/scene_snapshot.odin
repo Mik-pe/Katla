@@ -27,12 +27,12 @@ scene_snapshot_destroy :: proc(snapshot:^Scene_Snapshot) {
 }
 
 /// Captures every registered visible component, rejecting references outside the captured scene.
-scene_snapshot_capture :: proc(app:^Authoring,subset:[]ecs.Entity_Id=nil,detach_root:bool=false,root:ecs.Entity_Id=0,commit_identity:bool=true)->(Scene_Snapshot,editor.Scene_Error) {
+scene_snapshot_capture :: proc(app:^Authoring,subset:[]ecs.Entity_Id=nil,detach_root:bool=false,root:ecs.Entity_Id=0,commit_identity:bool=true,subset_only:bool=false)->(Scene_Snapshot,editor.Scene_Error) {
     allocator:=app.world.allocator; context.allocator=allocator
     result:=Scene_Snapshot{entities=make([dynamic]Scene_Entity,allocator),allocator=allocator}
     success:=false; defer { if !success { scene_snapshot_destroy(&result) } }
     ids:=ecs.entity_ids(&app.world); defer delete(ids)
-    if subset!=nil { clear(&ids); append(&ids,..subset); for id,i in ids { if !ecs.entity_exists(&app.world,id) { return {},.Entity_Not_Found }; if _,hidden:=ecs.get_component(&app.world,id,Editor_Hidden); hidden { return {},.Protected_Entity }; for earlier in ids[:i] { if earlier==id { return {},.Invalid_Operation } } } }
+    if subset!=nil || subset_only { clear(&ids); append(&ids,..subset); for id,i in ids { if !ecs.entity_exists(&app.world,id) { return {},.Entity_Not_Found }; if _,hidden:=ecs.get_component(&app.world,id,Editor_Hidden); hidden { return {},.Protected_Entity }; for earlier in ids[:i] { if earlier==id { return {},.Invalid_Operation } } } }
     mapping:=make(map[ecs.Entity_Id]ecs.Entity_Id,allocator); defer delete(mapping)
     used:=make(map[u64]bool,allocator); defer delete(used)
     known_types:=make(map[typeid]bool,allocator); defer delete(known_types)
@@ -86,11 +86,17 @@ scene_snapshot_capture :: proc(app:^Authoring,subset:[]ecs.Entity_Id=nil,detach_
 }
 
 /// Stages replacement entities before retiring the authored scene; failures preserve it.
-scene_snapshot_restore :: proc(app:^Authoring,snapshot:^Scene_Snapshot)->editor.Scene_Error {
+scene_snapshot_restore :: proc(app:^Authoring,snapshot:^Scene_Snapshot,file_publication:bool=false)->editor.Scene_Error {
     context.allocator=app.world.allocator
     stage,err:=scene_snapshot_stage(app,snapshot)
     if err!=.None { return err }
     committed:=false; defer scene_stage_destroy(app,&stage,!committed)
+    observation:Scene_File_Observation; defer scene_file_observe_finish(&observation,committed)
+    if file_publication && ecs.contains_resource(&app.world,Scene_File_Observer) {
+        prepared,baseline_error:=scene_snapshot_capture(app,subset=stage.entities[:],commit_identity=false,subset_only=true)
+        if baseline_error!=.None { return baseline_error }; defer scene_snapshot_destroy(&prepared)
+        token,observe_error:=scene_file_observe_begin(app,&prepared); if observe_error!=.None { return observe_error }; observation=token
+    }
     preparation,prepare_error:=scene_prepare_begin(app,stage.entities[:],.Replace)
     if prepare_error!=.None { return prepare_error }; defer scene_prepare_finish(&preparation,committed)
     ids:=ecs.entity_ids(&app.world); defer delete(ids)

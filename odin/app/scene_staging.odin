@@ -76,6 +76,7 @@ scene_snapshot_stage :: proc(app:^Authoring,snapshot:^Scene_Snapshot,fresh_key_s
             if _,err:=scene_world_matrix(app,entity); err!=.None { return {},err }
         }
     }
+    if err:=light_scene_validate(app,stage.entities[:]); err!=.None { return {},err }
     if err:=scene_gameplay_validate_entities(app,stage.entities[:]); err!=.None { return {},err }
     success=true; return stage,.None
 }

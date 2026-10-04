@@ -82,8 +82,10 @@ scene_document_mesh :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value,or
         lower:=strings.to_lower(kind,app.world.allocator); defer delete(lower,app.world.allocator); geometry["kind"]=lower
         if _,_,ok:=recipe_geometry_budget(geometry); !ok { return .Invalid_Operation }
         data,err=json.marshal(struct {kind:string,document:json.Value}{"Geometry",geometry},allocator=app.world.allocator)
-    case "Trigger","ParticleEmitter":
-        if payload!=nil { return .Decode_Failed }; return .None
+    case "Trigger","ParticleEmitter","Light":
+        if payload!=nil { return .Decode_Failed }; source:=Scene_Builtin_Source{kind=.Light}
+        if kind=="Trigger" { source.kind=.Trigger }; if kind=="ParticleEmitter" { source.kind=.ParticleEmitter }
+        return scene_row_component(app,row,"SceneSource",source)
     case: return .Application_Owned
     }
     if err!=nil { delete(data,app.world.allocator); return .Decode_Failed }; return scene_row_wire(app,row,"SceneMesh",data)

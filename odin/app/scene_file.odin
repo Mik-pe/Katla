@@ -49,19 +49,22 @@ scene_file_execute :: proc(app:^Authoring,request:asset.Scene_File_Request)->(ed
     data,marshal_error:=json.marshal(struct {path,name:string,entity_count:int,published,runtime_ids_replaced:bool}{path,state.name,len(snapshot.entities),false,request.action==.Load},allocator=allocator)
     if marshal_error!=nil { result.error=.Decode_Failed; return result,{} }; result.data=data
     if request.action==.Load {
-        restore_error:=scene_snapshot_restore(app,&snapshot); if restore_error!=.None { result.error=restore_error; return result,{} }
+        restore_error:=scene_snapshot_restore(app,&snapshot,file_publication=true); if restore_error!=.None { result.error=restore_error; return result,{} }
         session:=&app.agent.session; next_id,paused,finished:=session.next_id,session.paused,session.finished
         editor.agent_session_destroy(session); editor.agent_session_init(session,allocator); session.next_id=next_id; session.paused=paused; session.finished=finished
         ids:=ecs.entity_ids(&app.world); defer delete(ids); for id in ids { if _,hidden:=ecs.get_component(&app.world,id,Editor_Hidden); !hidden { append(&result.entities,id) } }
         ecs.insert_resource(&app.world,state,ecs.Value_Ops{destroy=scene_file_state_destroy}); state_transferred=true
         return result,{}
     }
+    observation,observe_error:=scene_file_observe_begin(app,&snapshot); if observe_error!=.None { result.error=observe_error; return result,{} }
+    did_publish:=false; defer scene_file_observe_finish(&observation,did_publish)
     ron_document,ron_ok:=scene_document_ron_clone(document); if !ron_ok { result.error=.Decode_Failed; return result,{} }; defer json.destroy_value(ron_document)
     bytes,write_error:=ron.write(ron_document,allocator); if write_error.kind!=.None { result.error=.Decode_Failed; return result,{} }; defer delete(bytes,allocator)
     published_data,published_error:=json.marshal(struct {path,name:string,entity_count:int,published,runtime_ids_replaced:bool}{path,state.name,len(snapshot.entities),true,false},allocator=allocator)
     if published_error!=nil { result.error=.Decode_Failed; return result,{} }; selected:=false; defer { if !selected { delete(published_data,allocator) } }
     published,error:=resources.write_atomic(&roots.project,path,bytes)
     if published {
+        did_publish=true
         delete(result.data,allocator); result.data=published_data; selected=true
         scene_snapshot_commit_keys(app,&snapshot)
         ecs.insert_resource(&app.world,state,ecs.Value_Ops{destroy=scene_file_state_destroy}); state_transferred=true

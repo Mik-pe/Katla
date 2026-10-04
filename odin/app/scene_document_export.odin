@@ -32,7 +32,15 @@ scene_export_mesh :: proc(app:^Authoring,row:Scene_Entity,fields:^json.Object,or
         source:=(cast(^Scene_Model)value).source; path,valid:=scene_asset_reference(app,source.path,source.root,origin); if !valid { return .Invalid_Operation }; defer json.destroy_value(path)
         descriptor:=trigger_json_value(struct {GltfModel:struct {path:json.Value}}{{path}}); if descriptor==nil { return .Decode_Failed }; scene_json_put(fields,"source",descriptor); return .None
     }
-    if !scene_row_has(row,"SceneMesh") { scene_json_put(fields,"source",strings.clone("Empty")); return .None }
+    if !scene_row_has(row,"SceneMesh") {
+        source:="Empty"
+        if scene_row_has(row,"SceneSource") { value,decoded:=scene_row_owned_decode(app,row,"SceneSource"); defer scene_row_owned_destroy(app,"SceneSource",value); if !decoded { return .Decode_Failed }; kind:=(cast(^Scene_Builtin_Source)value).kind; switch kind {
+            case .Light: source="Light"
+            case .ParticleEmitter: source="ParticleEmitter"
+            case .Trigger: source="Trigger"
+            } }
+        scene_json_put(fields,"source",strings.clone(source)); return .None
+    }
     value,decoded:=scene_row_owned_decode(app,row,"SceneMesh"); defer scene_row_owned_destroy(app,"SceneMesh",value)
     if !decoded { return .Decode_Failed }; source:=(cast(^Scene_Mesh)value).source
     switch source.kind {
@@ -81,6 +89,7 @@ scene_document_encode :: proc(app:^Authoring,snapshot:^Scene_Snapshot,name,origi
             if surface.has_tint { object:=descriptor.(json.Object); color:=km.color_to_srgb(surface.linear_color); scene_json_put(&object,"color",trigger_json_value([4]f32{color.r,color.g,color.b,color.a})); descriptor=object }
             scene_json_put(&fields,"drawable",descriptor)
         }
+        if err:=light_scene_encode(app,row,&fields); err!=.None { return nil,err }
         if err:=scene_builtin_components_encode(app,row,&fields,origin); err!=.None { return nil,err }
         extensions:=make(json.Object,app.world.allocator); extensions_transferred:=false; defer { if !extensions_transferred { json.destroy_value(extensions) } }
         if scene_row_has(row,"SceneUnknown") {
@@ -90,7 +99,7 @@ scene_document_encode :: proc(app:^Authoring,snapshot:^Scene_Snapshot,name,origi
         }
         for component in row.components {
             known:=false
-            for builtin in ([17]string{"PhysicsJoint","SceneModel","SceneKey","SceneName","SceneTransform","SceneParent","SceneMesh","SurfaceMaterial","SceneUnknown","AnimationPlayer","ParticleEmitter","Script","PhysicsBody","TriggerVolume","TriggerRules","Velocity","SceneSource"}) { if component.name==builtin { known=true; break } }
+            for builtin in ([19]string{"PointLight","DirectionalLight","PhysicsJoint","SceneModel","SceneKey","SceneName","SceneTransform","SceneParent","SceneMesh","SurfaceMaterial","SceneUnknown","AnimationPlayer","ParticleEmitter","Script","PhysicsBody","TriggerVolume","TriggerRules","Velocity","SceneSource"}) { if component.name==builtin { known=true; break } }
             if component.name=="AnimationModel" && scene_row_has(row,"SceneModel") { known=true }
             if component.name=="SceneMesh" && !scene_mesh_has_builtin_source(component.data) { known=false }
             if known { continue }

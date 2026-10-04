@@ -67,7 +67,8 @@ scene_gameplay_rules :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value)-
 /// Decodes all supported gameplay fields strictly; unsupported runtime subsystems fail explicitly.
 scene_builtin_components_decode :: proc(app:^Authoring,row:^Scene_Entity,fields:json.Object,origin:string="")->editor.Scene_Error {
     context.allocator=app.world.allocator
-    for name in ([5]string{"point_light","perspective","directional_light","audio_emitter","reverb_zone"}) { if _,present:=scene_gameplay_present(fields,name); present { return .Application_Owned } }
+    if error:=light_scene_decode(app,row,fields); error!=.None { return error }
+    for name in ([3]string{"perspective","audio_emitter","reverb_zone"}) { if _,present:=scene_gameplay_present(fields,name); present { return .Application_Owned } }
     if value,present:=scene_gameplay_present(fields,"animation"); present { if err:=scene_gameplay_animation(app,row,value); err!=.None { return err } }
     if value,present:=scene_gameplay_present(fields,"particle_emitter"); present {
         object,is_object:=value.(json.Object); if !is_object { return .Decode_Failed }

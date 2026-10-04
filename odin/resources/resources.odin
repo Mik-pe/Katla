@@ -136,3 +136,11 @@ write_atomic :: proc(root:^Root,path:string,data:[]byte)->(published:bool,error:
     if len(data)>MAX_BYTES { return false,.Limit }
     return write_atomic_native(root,path,data)
 }
+
+/// Creates missing confined parent directories and atomically admits a new file only.
+create_atomic :: proc(root:^Root,path:string,data:[]byte)->(published:bool,error:Error) {
+    if root.file==nil || !valid_relative_path(path) { return false,.Invalid_Path }
+    if len(data)>MAX_BYTES { return false,.Limit }
+    if err:=make_parents_native(root,path); err!=.None { return false,err }
+    return write_atomic_native(root,path,data,exclusive=true)
+}

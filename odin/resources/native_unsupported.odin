@@ -10,4 +10,7 @@ open_child_native :: proc(parent:^os.File,name:string,directory:bool)->(^os.File
 open_relative_native :: proc(root:^Root,path:string,directory:=false)->(^os.File,Error) { return nil,.Unsupported_Platform }
 
 @(private="package")
-write_atomic_native :: proc(root:^Root,path:string,data:[]byte)->(bool,Error) { return false,.Unsupported_Platform }
+write_atomic_native :: proc(root:^Root,path:string,data:[]byte,exclusive:=false)->(bool,Error) { return false,.Unsupported_Platform }
+
+@(private="package")
+make_parents_native :: proc(root:^Root,path:string)->Error { return .Unsupported_Platform }

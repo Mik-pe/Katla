@@ -50,7 +50,7 @@ open_relative_native :: proc(root:^Root,path:string,directory:=false)->(^os.File
 }
 
 @(private="package")
-write_atomic_native :: proc(root:^Root,path:string,data:[]byte)->(bool,Error) {
+write_atomic_native :: proc(root:^Root,path:string,data:[]byte,exclusive:=false)->(bool,Error) {
     if root.file==nil { return false,.Invalid_Path }
     slash:=strings.last_index(path,"/"); basename:=path; parent:=root.file
     if slash>=0 {
@@ -80,8 +80,25 @@ write_atomic_native :: proc(root:^Root,path:string,data:[]byte)->(bool,Error) {
         if count==0 { return false,.IO }; offset+=int(count)
     }
     if posix.fsync(fd)!=.OK { return false,.IO }
-    if posix.renameat(posix.FD(os.fd(parent)),name,posix.FD(os.fd(parent)),target)!=.OK { return false,.IO }
+    if exclusive {
+        if posix.linkat(posix.FD(os.fd(parent)),name,posix.FD(os.fd(parent)),target,{})!=.OK { return false,.IO }
+        posix.unlinkat(posix.FD(os.fd(parent)),name,{})
+    } else if posix.renameat(posix.FD(os.fd(parent)),name,posix.FD(os.fd(parent)),target)!=.OK { return false,.IO }
     renamed=true
     if posix.fsync(posix.FD(os.fd(parent)))!=.OK { return true,.IO }
     return true,.None
+}
+
+@(private="package")
+make_parents_native :: proc(root:^Root,path:string)->Error {
+    slash:=strings.last_index(path,"/"); if slash<0 { return .None }
+    remaining:=path[:slash]; current:=root.file
+    defer { if current!=root.file { os.close(current) } }
+    for part in strings.split_iterator(&remaining,"/") {
+        name:=strings.clone_to_cstring(part); defer delete(name)
+        if posix.mkdirat(posix.FD(os.fd(current)),name,posix.mode_t{.IRUSR,.IWUSR,.IXUSR,.IRGRP,.IXGRP,.IROTH,.IXOTH})!=.OK && posix.errno()!=.EEXIST { return .IO }
+        next,err:=open_child_native(current,part,true); if err!=.None { return err }
+        if current!=root.file { os.close(current) }; current=next
+    }
+    return .None
 }
