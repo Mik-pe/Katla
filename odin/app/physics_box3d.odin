@@ -61,7 +61,7 @@ physics_reset :: proc(app:^Authoring)->editor.Scene_Error {
     }
     if !ecs.contains_resource(&app.world,Scene_Runtime) {
         ids:=ecs.entity_ids(&app.world); defer delete(ids)
-        for entity in ids { if _,body:=ecs.get_component(&app.world,entity,Physics_Body); body { return .Application_Owned } }
+        for entity in ids { if body,has_description:=ecs.get_component(&app.world,entity,Physics_Body); has_description && (body.has_rigid_body || body.has_collider) { return .Application_Owned } }
         return .None
     }
     response:=scene_runtime_call(app,struct { method:string }{"physics_reset"}); defer runtime_response_destroy(&response)
@@ -71,6 +71,9 @@ physics_reset :: proc(app:^Authoring)->editor.Scene_Error {
 physics_box3d_sync :: proc(app:^Authoring)->editor.Scene_Error {
     owner:=ecs.get_resource_mut(&app.world,box3d.Backend)
     if owner==nil { return .Application_Owned }
+    joints,joint_error:=physics_collect_joints(app); defer delete(joints,app.world.allocator)
+    if joint_error!=.None { return joint_error }
+    if len(joints)>0 { return .Invalid_Operation }
     collected,err:=physics_collect(app); defer physics_collected_destroy(&collected,app.world.allocator)
     if err!=.None { return err }
     bodies:=make([]box3d.Body,len(collected),app.world.allocator); defer delete(bodies,app.world.allocator)

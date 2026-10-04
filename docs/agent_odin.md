@@ -54,12 +54,19 @@ Duplicate offsets, shapes and parenting are not silently ignored.
 
 The application owner explicitly installs `authoring_services_init` and confined
 asset roots. Typed `material`, `animation`, `simulation`, `behavior`, `trigger`,
-`prefab`, `search_assets`, `list_resources` and `read_resource` calls validate
+`prefab`, `load_scene`, `save_scene`, `search_assets`, `list_resources` and
+`read_resource` calls validate
 before admission, then execute on that same owner. The canonical
-`agent.TOOLS_JSON` owns the sorted 18 schemas; `tools_select` copies only named
+`agent.TOOLS_JSON` owns the sorted 20 schemas; `tools_select` copies only named
 schemas supported by a concrete consumer and rejects unknown/duplicate names.
-Mesh instantiation loads the actual confined project source, prepares geometry
-before publication and records the canonical owned undo command.
+Mesh/model instantiation loads the actual confined project source, prepares CPU
+geometry before publication and records the canonical owned undo command. Prefab
+capture writes a complete subtree with local document keys; removal retains the
+owned subtree for undo. Load prepares a full replacement before publication,
+then clears history referencing the old world. Save publishes an atomic confined
+`.katla` file before committing new document keys or scene origin. Full unsigned
+64-bit document keys and registered entity references round-trip without floating
+point conversion; overflow identifiers fail before admission.
 
 Undo and redo use the shared owned command history. Read-only and failed calls
 remain recorded but are skipped by undo; they preserve an existing redo branch.
@@ -130,7 +137,7 @@ connection-derived capability state. An unsupported version returns `-32022`
 with supported/requested versions. Results include `resultType: "complete"` and
 server identity metadata. `ping`, `tools/list`, `tools/call` and
 `notifications/cancelled` are supported. The deterministic tool list contains
-the canonical 18 scene/application tools described above.
+the canonical 20 scene/application tools described above.
 Missing tool names/protocol metadata yield protocol errors; invalid tool input
 and scene failures yield `isError: true` tool results. Successful results expose
 lossless decimal `entity_ids` and actual component/material JSON in
@@ -185,8 +192,7 @@ suppressed while the mutation remains undoable. Captured-allocator tests cover
 pending, cancelled, unread and transferred ownership.
 
 This headless scene transport does not yet attach to the running windowed editor,
-create mesh geometry, publish viewport PNGs or expose the remaining application
-services. The existing [private editor attachment](shared-editor-view.md) remains
+publish viewport PNGs or expose camera/selection observation. The existing [private editor attachment](shared-editor-view.md) remains
 a separate migration requirement; this consumer never replaces a live editor's
 scene or claims viewport/GPU acceptance.
 
@@ -239,9 +245,9 @@ only the surface component, preserving unrelated position/mesh/texture state.
 Scene restoration decodes all component snapshots before touching the world.
 Successful undo propagates replacement IDs to earlier command targets, so a
 spawn → material edit → destroy chain can be undone without creating extra
-entities. Remapping references inside arbitrary serialized component payloads is
-not implemented by this target-remapping mechanism; future hierarchy/event/prefab
-commands must own those references explicitly.
+entities. Registered component codecs explicitly own and remap hierarchy, trigger and joint
+references during snapshot, prefab and simulation restoration. Unknown component
+payloads remain preserved data and do not acquire implicit entity-reference semantics.
 
 The real consumer joins a host producer before applying a two-object material
 batch, then undoes both surfaces while retaining an unrelated position edit:

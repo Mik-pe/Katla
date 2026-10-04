@@ -31,3 +31,15 @@ test_duplicate_fields_truncated_input_and_unclosed_comments_fail_without_leaks :
     value,err:=parse(`/* outer /* nested */ comment */ (value:Some("quoted\ntext"),items:[1,2,3,],)`); defer json.destroy_value(value)
     testing.expect_value(t,err.kind,Error_Kind.None)
 }
+
+@(test)
+test_unsigned_integer_roundtrip_preserves_full_document_range :: proc(t:^testing.T) {
+    for text in ([2]string{"9223372036854775808","18446744073709551615"}) {
+        tree,err:=parse(text); defer json.destroy_value(tree); testing.expect_value(t,err.kind,Error_Kind.None)
+        number,valid:=uint_read(tree); testing.expect(t,valid && number>u64(max(i64)))
+        bytes,write_error:=write(tree); defer delete(bytes); testing.expect(t,write_error.kind==.None && string(bytes)==text)
+        json_bytes,json_error:=write_json(tree); defer delete(json_bytes); testing.expect(t,json_error.kind==.None && string(json_bytes)==text)
+        again,parse_error:=parse_json(json_bytes); defer json.destroy_value(again); second,second_valid:=uint_read(again); testing.expect(t,parse_error.kind==.None && second_valid && number==second)
+    }
+    for text in ([3]string{"18446744073709551616","-9223372036854775809","01"}) { tree,err:=parse_json(transmute([]byte)text); defer json.destroy_value(tree); testing.expect_value(t,err.kind,Error_Kind.Syntax) }
+}

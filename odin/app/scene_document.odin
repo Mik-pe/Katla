@@ -9,6 +9,15 @@ import km "../math"
 import "core:encoding/json"
 import "core:strings"
 
+/// Reads positive scene document keys without narrowing their full unsigned range.
+scene_document_key :: proc(value:json.Value)->(u64,bool) {
+    if number,is_number:=value.(json.Integer); is_number { return u64(number),number>0 }
+    if text,is_text:=value.(string); is_text { number,valid:=ron.decimal_u64(text); return number,valid && number>0 }
+    return ron.uint_read(value)
+}
+/// Owns the exact document representation of an unsigned scene key.
+scene_document_key_value :: proc(value:u64)->json.Value { return ron.uint_value(value) }
+
 /// Serializes one registered typed component into an owned document row.
 scene_row_component :: proc(app:^Authoring,row:^Scene_Entity,name:string,value:$T)->editor.Scene_Error {
     entry:=app.registry.entries[name]; if entry==nil || entry.T!=T { return .Component_Not_Found }
@@ -56,13 +65,19 @@ scene_document_mesh :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value,or
     data:[]byte; err:json.Marshal_Error
     switch kind {
     case "Empty":
-        if payload!=nil { return .Decode_Failed }; data,err=json.marshal(struct {kind:string}{"Empty"},allocator=app.world.allocator)
+        if payload!=nil { return .Decode_Failed }; return .None
     case "MeshAsset":
         object,is_object:=payload.(json.Object); if !is_object || !recipe_keys(object,{"path"}) { return .Decode_Failed }
         path,root,path_valid:=scene_asset_path(app,object["path"],origin); if !path_valid { return .Invalid_Operation }; defer delete(path,app.world.allocator)
         root_name:="resource"; if root==.Project { root_name="project" }
         data,err=json.marshal(struct {kind,path,root:string}{"Recipe",path,root_name},allocator=app.world.allocator)
-    case "Cube","Sphere","Plane","Cylinder","Cone","Torus":
+    case "GltfModel":
+        object,is_object:=payload.(json.Object); if !is_object || !recipe_keys(object,{"path"}) { return .Decode_Failed }
+        path,root,path_valid:=scene_asset_path(app,object["path"],origin); if !path_valid { return .Invalid_Operation }; defer delete(path,app.world.allocator)
+        root_name:="resource"; if root==.Project { root_name="project" }
+        bytes,marshal_error:=json.marshal(struct {path,root:string}{path,root_name},allocator=app.world.allocator)
+        if marshal_error!=nil { return .Decode_Failed }; return scene_row_wire(app,row,"SceneModel",bytes)
+    case "Cube","Sphere","Plane","Cylinder","Torus":
         object,is_object:=payload.(json.Object); if !is_object { return .Decode_Failed }
         geometry:=make(json.Object,app.world.allocator); defer delete(geometry)
         for key,item in object { geometry[key]=item }
@@ -79,9 +94,9 @@ scene_document_mesh :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value,or
 scene_document_material :: proc(app:^Authoring,row:^Scene_Entity,raw_value:json.Value)->editor.Scene_Error {
     object,is_object:=raw_value.(json.Object); if !is_object || !recipe_keys(object,{"color","metallic","roughness","ao"}) { return .Decode_Failed }
     material:=Surface_Material{roughness=0.5,ao=1}
-    if value,present:=object["color"]; present { color,valid:=recipe_vector(value,4); if !valid { return .Invalid_Field_Value }; for axis in color { if axis<0 || axis>1 { return .Invalid_Field_Value } }; material.linear_color=km.color_to_linear(km.Color{color[0],color[1],color[2],color[3]}); material.has_tint=true }
+    if value,present:=object["color"]; present { if _,is_null:=value.(json.Null); !is_null { color,valid:=recipe_vector(value,4); if !valid { return .Invalid_Field_Value }; for axis in color { if axis<0 || axis>1 { return .Invalid_Field_Value } }; material.linear_color=km.color_to_linear(km.Color{color[0],color[1],color[2],color[3]}); material.has_tint=true } }
     for field in ([3]string{"metallic","roughness","ao"}) {
-        if value,present:=object[field]; present { number,valid:=recipe_number(value); if !valid || number<0 || number>1 { return .Invalid_Field_Value }; switch field {
+        value,present:=object[field]; if !present { return .Decode_Failed }; { number,valid:=recipe_number(value); if !valid || number<0 || number>1 { return .Invalid_Field_Value }; switch field {
             case "metallic": material.metallic=number
             case "roughness": material.roughness=number
             case "ao": material.ao=number
@@ -97,7 +112,7 @@ scene_document_decode :: proc(app:^Authoring,document:json.Value,origin:string="
     success:=false; defer { if !success { scene_snapshot_destroy(&result) } }
     object,is_object:=document.(json.Object)
     if !is_object || !recipe_keys(object,{"version","name","author","created_at","modified_at","engine_version","next_entity_id","entities"}) { return {},.Decode_Failed }
-    version,is_version:=object["version"].(json.Integer); name,is_name:=object["name"].(string); next,is_next:=object["next_entity_id"].(json.Integer)
+    version,is_version:=object["version"].(json.Integer); name,is_name:=object["name"].(string); next,is_next:=scene_document_key(object["next_entity_id"])
     entities,is_entities:=object["entities"].(json.Array)
     if !is_version || version!=3 || !is_name || len(name)>4096 || !is_next || next<1 || !is_entities || len(entities)>100_000 { return {},.Decode_Failed }
     for field in ([4]string{"author","created_at","modified_at","engine_version"}) { if value,present:=object[field]; present { if _,is_null:=value.(json.Null); !is_null { if _,is_text:=value.(string); !is_text { return {},.Decode_Failed } } } }
@@ -105,12 +120,12 @@ scene_document_decode :: proc(app:^Authoring,document:json.Value,origin:string="
     for entity in entities {
         fields,is_fields:=entity.(json.Object)
         if !is_fields || !recipe_keys(fields,{"id","name","parent","transform","source","drawable","point_light","particle_emitter","animation","velocity","script","perspective","directional_light","audio_emitter","rigid_body","reverb_zone","collider_shape","physics_material","trigger_volume","collision_filter","trigger_rules","joint","components"}) { return {},.Decode_Failed }
-        id,is_id:=fields["id"].(json.Integer); if !is_id || id<=0 || id>=next || used[ecs.Entity_Id(id)] { return {},.Invalid_Operation }; used[ecs.Entity_Id(id)]=true
+        id,is_id:=scene_document_key(fields["id"]); if !is_id || id<=0 || id>=next || used[ecs.Entity_Id(id)] { return {},.Invalid_Operation }; used[ecs.Entity_Id(id)]=true
         append(&result.entities,Scene_Entity{key=ecs.Entity_Id(id),components=make([dynamic]Scene_Component,allocator)}); row:=&result.entities[len(result.entities)-1]
         transform,valid_transform:=recipe_transform(fields["transform"]); if !valid_transform { return {},.Invalid_Field_Value }
         if err:=scene_row_component(app,row,"SceneTransform",Scene_Transform{transform}); err!=.None { return {},err }
         if value,present:=fields["name"]; present { if _,is_null:=value.(json.Null); !is_null { text,is_text:=value.(string); if !is_text || len(text)>4096 { return {},.Decode_Failed }; if err:=scene_row_component(app,row,"SceneName",Scene_Name{text}); err!=.None { return {},err } } }
-        if value,present:=fields["parent"]; present { if _,is_null:=value.(json.Null); !is_null { parent,is_parent:=value.(json.Integer); if !is_parent || parent<=0 || parent>=next || parent==id { return {},.Invalid_Operation }; if err:=scene_row_component(app,row,"SceneParent",Scene_Parent{ecs.Entity_Id(parent)}); err!=.None { return {},err } } }
+        if value,present:=fields["parent"]; present { if _,is_null:=value.(json.Null); !is_null { parent,is_parent:=scene_document_key(value); if !is_parent || parent<=0 || parent>=next || parent==id { return {},.Invalid_Operation }; if err:=scene_row_component(app,row,"SceneParent",Scene_Parent{ecs.Entity_Id(parent)}); err!=.None { return {},err } } }
         if err:=scene_document_mesh(app,row,fields["source"],origin); err!=.None { return {},err }
         if value,present:=fields["drawable"]; present { if _,is_null:=value.(json.Null); !is_null { if err:=scene_document_material(app,row,value); err!=.None { return {},err } } }
         if err:=scene_builtin_components_decode(app,row,fields,origin); err!=.None { return {},err }
@@ -125,7 +140,7 @@ scene_document_decode :: proc(app:^Authoring,document:json.Value,origin:string="
                     if prefab { return {},.Component_Not_Found }; unknown[component_name]=wire; continue
                 }
                 parsed,parse_error:=ron.parse(text,allocator); if parse_error.kind!=.None { return {},.Decode_Failed }; defer json.destroy_value(parsed)
-                data,marshal_error:=json.marshal(parsed,allocator=allocator); if marshal_error!=nil { return {},.Decode_Failed }
+                data,marshal_error:=ron.write_json(parsed,allocator); if marshal_error.kind!=.None { return {},.Decode_Failed }
                 if err:=scene_row_wire(app,row,component_name,data); err!=.None { return {},err }
             }
             if len(unknown)>0 {

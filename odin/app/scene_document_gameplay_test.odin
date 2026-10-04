@@ -37,9 +37,47 @@ test_scene_gameplay_document_roundtrip_and_generational_rule_restore :: proc(t:^
 @(test)
 test_scene_gameplay_rejects_unimplemented_physics_and_invalid_descriptors :: proc(t:^testing.T) {
     owner:Authoring; authoring_init(&owner); defer authoring_destroy(&owner); register_test_scene_runtime(&owner)
-    for source in ([]string{`{"rigid_body":{"kind":"Dynamic"}}`,`{"collider_shape":{"Sphere":0}}`,`{"collider_shape":"Heightfield"}`,`{"physics_material":{"density":-1},"collider_shape":{"Sphere":1}}`,`{"animation":{"playing":true}}`,`{"particle_emitter":{"base_lifetime":0}}`,`{"joint":{}}`}) {
+    for source in ([]string{`{"rigid_body":{}}`,`{"collider_shape":{"Sphere":0}}`,`{"collider_shape":"Heightfield"}`,`{"physics_material":{"density":-1},"collider_shape":{"Sphere":1}}`,`{"animation":{"playing":true}}`,`{"particle_emitter":{"base_lifetime":0}}`,`{"joint":{}}`}) {
         tree,parse_error:=json.parse(transmute([]byte)source,spec=.JSON,parse_integers=true); testing.expect(t,parse_error==nil); fields,_:=tree.(json.Object)
         row:=Scene_Entity{key=1,components=make([dynamic]Scene_Component,owner.world.allocator)}; error:=scene_builtin_components_decode(&owner,&row,fields); testing.expect(t,error!=.None)
         snapshot:=Scene_Snapshot{entities=make([dynamic]Scene_Entity,owner.world.allocator),allocator=owner.world.allocator}; append(&snapshot.entities,row); scene_snapshot_destroy(&snapshot); json.destroy_value(tree)
     }
+}
+
+@(test)
+test_scene_gameplay_required_fields_and_exact_optional_authored_state :: proc(t:^testing.T) {
+    tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,context.allocator); defer mem.tracking_allocator_destroy(&tracker); context.allocator=mem.tracking_allocator(&tracker)
+    owner:Authoring; authoring_init(&owner); register_test_scene_runtime(&owner)
+    for source in ([]string{
+        `{"animation":{"loop_animation":false,"speed":1,"time":0}}`,
+        `{"animation":{"playing":false,"speed":1,"time":0}}`,
+        `{"animation":{"playing":false,"loop_animation":false,"time":0}}`,
+        `{"animation":{"playing":false,"loop_animation":false,"speed":1}}`,
+        `{"velocity":{"velocity":[0,0,0]}}`,
+        `{"collider_shape":{"Capsule":{"radius":1}}}`,
+        `{"physics_material":{"friction":1,"restitution":0},"collider_shape":{"Sphere":1}}`,
+        `{"physics_material":{"friction":1,"restitution":0,"density":0},"collider_shape":{"Sphere":1}}`,
+        `{"collision_filter":{"layers":1},"collider_shape":{"Sphere":1}}`,
+    }) {
+        tree,err:=json.parse(transmute([]byte)source,spec=.JSON,parse_integers=true); testing.expect(t,err==nil); fields,_:=tree.(json.Object)
+        row:=Scene_Entity{key=1,components=make([dynamic]Scene_Component,owner.world.allocator)}
+        testing.expect(t,scene_builtin_components_decode(&owner,&row,fields)!=.None)
+        temporary:=Scene_Snapshot{entities=make([dynamic]Scene_Entity,owner.world.allocator),allocator=owner.world.allocator}; append(&temporary.entities,row); scene_snapshot_destroy(&temporary); json.destroy_value(tree)
+    }
+    for source,index in ([]string{
+        `{"rigid_body":{"kind":"Dynamic","gravity_scale":-1,"linear_velocity":[1,2,3]}}`,
+        `{"collider_shape":{"Sphere":1}}`,
+        `{"animation":{"current_clip":"","playing":false,"loop_animation":true,"speed":-2,"time":3,"blending":true,"target_clip":"Move","blend_duration":1,"blend_time":2,"blend_weight":0.4,"target_time":0.5}}`,
+    }) {
+        tree,err:=json.parse(transmute([]byte)source,spec=.JSON,parse_integers=true); testing.expect(t,err==nil); fields,_:=tree.(json.Object)
+        row:=Scene_Entity{key=1,components=make([dynamic]Scene_Component,owner.world.allocator)}
+        testing.expect(t,scene_builtin_components_decode(&owner,&row,fields)==.None)
+        encoded:=make(json.Object); testing.expect(t,scene_builtin_components_encode(&owner,row,&encoded)==.None)
+        if index==0 { _,has_body:=encoded["rigid_body"]; _,has_shape:=encoded["collider_shape"]; _,has_material:=encoded["physics_material"]; _,has_filter:=encoded["collision_filter"]; testing.expect(t,has_body && !has_shape && !has_material && !has_filter) }
+        else if index==1 { _,has_body:=encoded["rigid_body"]; _,has_shape:=encoded["collider_shape"]; testing.expect(t,!has_body && has_shape) }
+        else { animation,_:=encoded["animation"].(json.Object); text,is_text:=animation["current_clip"].(string); testing.expect(t,is_text && text==""); speed,_:=recipe_number(animation["speed"]); blend_time,_:=recipe_number(animation["blend_time"]); testing.expect(t,speed == -2 && blend_time==2) }
+        json.destroy_value(json.Value(encoded)); json.destroy_value(tree)
+        temporary:=Scene_Snapshot{entities=make([dynamic]Scene_Entity,owner.world.allocator),allocator=owner.world.allocator}; append(&temporary.entities,row); scene_snapshot_destroy(&temporary)
+    }
+    authoring_destroy(&owner); testing.expect(t,len(tracker.allocation_map)==0 && len(tracker.bad_free_array)==0)
 }

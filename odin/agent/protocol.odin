@@ -3,6 +3,7 @@ package agent
 
 import ecs "../ecs"
 import editor "../editor"
+import ron "../encoding/ron"
 import "core:encoding/json"
 import "core:mem"
 
@@ -23,15 +24,8 @@ decoded_call_destroy :: proc(call:^Decoded_Call) {
 }
 /// Converts decimal strings without rounding generational IDs through floating point.
 parse_entity_id :: proc(text:string)->(ecs.Entity_Id,bool) {
-    if len(text)==0 { return {},false }
-    value:u64
-    for ch in text {
-        if ch<'0' || ch>'9' { return {},false }
-        digit:=u64(ch-'0')
-        if value>(max(u64)-digit)/10 { return {},false }
-        value=value*10+digit
-    }
-    return ecs.Entity_Id(value),true
+    value,valid:=ron.decimal_u64(text)
+    return ecs.Entity_Id(value),valid
 }
 @(private="package")
 required_string :: proc(object:json.Object,key:string)->(string,bool) {
@@ -60,7 +54,7 @@ vector_argument :: proc(value:json.Value)->([3]f32,bool) {
 /// Accepts the owner-supported scene and application tools with typed pre-admission validation.
 decode_call :: proc(call:Tool_Call,allocator:=context.allocator)->(Decoded_Call,Call_Error) {
     switch call.name {
-    case "material","animation","simulation","behavior","trigger","prefab","search_assets","list_resources","read_resource":
+    case "material","animation","simulation","behavior","trigger","prefab","search_assets","list_resources","read_resource","load_scene","save_scene":
         return decode_application_call(call,allocator)
     }
     kind:editor.Scene_Op_Kind

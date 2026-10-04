@@ -19,17 +19,17 @@ prefab_document_destroy :: proc(document:^Prefab_Document) { scene_snapshot_dest
 prefab_document_decode :: proc(app:^Authoring,document_value:json.Value,origin:string)->(Prefab_Document,editor.Scene_Error) {
     context.allocator=app.world.allocator
     object,is_object:=document_value.(json.Object); if !is_object || !recipe_keys(object,{"version","root","scene"}) { return {},.Decode_Failed }
-    version,is_version:=object["version"].(json.Integer); root,is_root:=object["root"].(json.Integer)
+    version,is_version:=object["version"].(json.Integer); root,is_root:=scene_document_key(object["root"])
     if !is_version || version!=1 || !is_root || root<=0 { return {},.Decode_Failed }
     scene,is_scene:=object["scene"].(json.Object); if !is_scene { return {},.Decode_Failed }; entities,is_entities:=scene["entities"].(json.Array)
     if !is_entities || len(entities)==0 || len(entities)>100_000 { return {},.Invalid_Operation }
-    parents:=make(map[json.Integer]json.Integer,app.world.allocator); defer delete(parents)
+    parents:=make(map[u64]u64,app.world.allocator); defer delete(parents)
     has_root:=false
     for entity in entities {
-        row,is_row:=entity.(json.Object); if !is_row { return {},.Decode_Failed }; id,is_id:=row["id"].(json.Integer); if !is_id || id<=0 { return {},.Invalid_Operation }
+        row,is_row:=entity.(json.Object); if !is_row { return {},.Decode_Failed }; id,is_id:=scene_document_key(row["id"]); if !is_id || id<=0 { return {},.Invalid_Operation }
         if _,duplicate:=parents[id]; duplicate { return {},.Invalid_Operation }
-        parent:json.Integer
-        if value,present:=row["parent"]; present { if _,is_null:=value.(json.Null); !is_null { valid:bool; parent,valid=value.(json.Integer); if !valid || parent<=0 { return {},.Invalid_Operation } } }
+        parent:u64
+        if value,present:=row["parent"]; present { if _,is_null:=value.(json.Null); !is_null { valid:bool; parent,valid=scene_document_key(value); if !valid || parent<=0 { return {},.Invalid_Operation } } }
         if id==root {
             transform,valid:=recipe_transform(row["transform"]); if parent!=0 || !valid || !km.transform_is_identity(transform) { return {},.Invalid_Operation }; has_root=true
         } else if parent==0 { return {},.Invalid_Operation }

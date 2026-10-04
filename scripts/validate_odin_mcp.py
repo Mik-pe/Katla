@@ -89,7 +89,7 @@ def acceptance(binary):
         client.send(request(0, "tools/list"))
         tools = client.read()["result"]["tools"]
         names = [tool["name"] for tool in tools]
-        assert names == sorted(names) and len(set(names)) == 18
+        assert names == sorted(names) and len(set(names)) == 20
         assert all(tool["inputSchema"]["type"] == "object" for tool in tools)
         assert "editor_view" not in names and "spawn_model" not in names
         # Fragment a real frame at arbitrary byte boundaries, including UTF-8.
@@ -163,6 +163,19 @@ def acceptance(binary):
             trigger = client.call("trigger-create", "trigger", action="create_box", name="Door sensor", position=[0,1,0], half_extents=[1,1,1], rules=[])["entity_ids"][0]
             client.call("triggers", "trigger", action="inspect", entity_id=trigger)
             client.call("remove-trigger", "destroy_entity", entity_id=trigger)
+            client.call("capture-chair", "prefab", action="capture", path="chair.katprefab", root_entity=chair)
+            assert (project / "chair.katprefab").is_file()
+            copied = client.call("copy-chair", "prefab", action="instantiate", path="chair.katprefab", position=[6,0,1])["entity_ids"]
+            assert len(copied) == 1 and copied[0] != chair
+            client.call("remove-copy", "prefab", action="remove", root_entity=copied[0])
+            assert client.call("original-chair", "query_entities")["entity_ids"] == [chair]
+            client.call("save-file", "save_scene", path="authored.katla")
+            assert (project / "authored.katla").is_file()
+            client.call("load-file", "load_scene", path="authored.katla")
+            loaded = client.call("loaded-file", "query_entities")["entity_ids"]
+            assert len(loaded) == 1 and loaded[0] != chair
+            client.call("save-origin", "save_scene", path=None)
+            chair = loaded[0]
             client.call("remove-chair", "destroy_entity", entity_id=chair)
             assert client.call("asset-empty", "query_entities")["entity_ids"] == []
             client.finish()
@@ -223,7 +236,7 @@ def acceptance(binary):
         process.wait(timeout=5)
         process.stdin.close()
         process.stderr.close()
-    print("Odin MCP: discovery, 18 tool schemas, actual scene/material edits, typed IDs, pipelining, bounded input, recovery and EOF/output failure passed")
+    print("Odin MCP: discovery, 20 tool schemas, actual scene/material edits, typed IDs, pipelining, bounded input, recovery and EOF/output failure passed")
 
 
 def main():

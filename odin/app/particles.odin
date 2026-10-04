@@ -26,6 +26,7 @@ particle_clone :: proc(dst,src:rawptr) { target:=cast(^Particle_Emitter)dst; sou
 particle_register :: proc(w:^ecs.World,reg:^editor.Component_Registry) { editor.editor_register(w,reg,"ParticleEmitter",Particle_Emitter{},ecs.Value_Ops{particle_destroy,particle_clone},spawn_default=false) }
 /// Validates every durable field and bounded burst before publishing an emitter.
 particle_descriptor_valid :: proc(p:Particle_Descriptor)->bool {
+    if p.shape not_in (bit_set[Particle_Shape]{.Point,.Line,.Circle,.Sphere,.Box}) { return false }
     for value in ([10]f32{p.emit_rate,p.velocity_magnitude,p.velocity_cone_angle,p.scale_end,p.turbulence_strength,p.turbulence_frequency,p.base_lifetime,p.base_scale,p.timed_emission,p.lifetime_variation}) { if !finite_nonnegative(value) { return false } }
     if p.base_lifetime<=0 || p.base_scale<=0 || p.lifetime_variation>1 { return false }
     for value in ([3]f32{p.scale_variation,p.color_variation,p.lifetime_variation}) { if !finite_nonnegative(value) || value>1 { return false } }

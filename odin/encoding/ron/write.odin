@@ -4,6 +4,7 @@ package ron
 import "core:encoding/json"
 import "core:strings"
 import "core:slice"
+import "core:fmt"
 
 /// Serializes current asset values as deterministic RON; the caller deletes the returned bytes.
 write :: proc(value:json.Value,allocator:=context.allocator)->([]byte,Error) {
@@ -34,6 +35,7 @@ write_value :: proc(builder:^strings.Builder,value:json.Value,field:string,tuple
     if strings.builder_len(builder^)>64*1024*1024 { return {.Limit,strings.builder_len(builder^)} }
     #partial switch data in value {
     case json.Object:
+        if number,is_uint:=uint_read(data); is_uint { text:=fmt.aprintf("%d",number); defer delete(text); strings.write_string(builder,text); return {} }
         if name,is_variant:=data["__variant"].(string); is_variant {
             if !write_identifier(name) || len(data)>2 { return {.Syntax,strings.builder_len(builder^)} }
             strings.write_string(builder,name)

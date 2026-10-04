@@ -4,7 +4,7 @@ package app
 import ecs "../ecs"
 import editor "../editor"
 
-Scene_Preparation_Mode :: enum { Insert, Replace }
+Scene_Preparation_Mode :: enum { Insert, Replace, Remove }
 /// Installed native consumers prepare genuine resources; CPU authoring has no implicit GPU readiness claim.
 Scene_Participant :: struct {
     state:rawptr,

@@ -11,10 +11,10 @@ import "core:strings"
 
 /// Installs scene, animation, physics, preview and behavior authority without loading foreign runtimes.
 authoring_services_init :: proc(app:^Authoring)->editor.Scene_Error {
-    for name in ([14]string{"SceneKey","SceneName","SceneTransform","SceneParent","AnimationModel","AnimationPlayer","PhysicsBody","Velocity","Script","TriggerRules","TriggerVolume","ParticleEmitter","SceneMesh","SceneUnknown"}) {
+    for name in ([16]string{"SceneKey","SceneName","SceneTransform","SceneParent","AnimationModel","AnimationPlayer","PhysicsBody","Velocity","Script","TriggerRules","TriggerVolume","ParticleEmitter","SceneMesh","SceneUnknown","SceneModel","PhysicsJoint"}) {
         if app.registry.entries[name]!=nil { return .Invalid_Operation }
     }
-    scene_components_register(app); scene_mesh_register(app); scene_document_register(app)
+    scene_components_register(app); scene_mesh_register(app); scene_model_register(app); scene_document_register(app)
     animation_register(&app.world,&app.registry); physics_register(app); behavior_register(app)
     events_register(app); simulation_init(app)
     return .None
@@ -41,6 +41,9 @@ authoring_application :: proc(app:^Authoring,op:editor.Scene_Op)->(editor.Tool_R
     case "prefab":
         decoded,err:=asset.prefab_decode(op.value,allocator); if err!=.None { return error_result(&app.world,.Invalid_Operation),{} }; defer asset.prefab_destroy(&decoded)
         return asset_authoring_execute(app,decoded.request)
+    case "load_scene","save_scene":
+        decoded,err:=asset.scene_file_decode(op.tool_name,op.value,allocator); if err!=.None { return error_result(&app.world,.Invalid_Operation),{} }; defer asset.scene_file_destroy(&decoded)
+        return scene_file_execute(app,decoded.request)
     case "search_assets","list_resources","read_resource":
         decoded,err:=asset.decode(op.tool_name,op.value,allocator); if err!=.None { return error_result(&app.world,.Invalid_Operation),{} }; defer asset.destroy(&decoded)
         return asset_execute(app,decoded.request)

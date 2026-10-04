@@ -3,13 +3,14 @@ package app
 
 import ecs "../ecs"
 import editor "../editor"
+import km "../math"
 import "core:mem"
 import "core:strings"
 
 /// A registered component's owned wire value; runtime references use document-local keys.
 Scene_Component :: struct { name:string, data:[]byte,owned_entry:^editor.Editor_Entry,owned_value:rawptr,owned_ops:ecs.Value_Ops,wire_hash:u64 }
 /// Document-local keys remain independent from runtime entity slots and generations.
-Scene_Entity :: struct { key:ecs.Entity_Id, components:[dynamic]Scene_Component }
+Scene_Entity :: struct { key:ecs.Entity_Id, components:[dynamic]Scene_Component,source_entity:ecs.Entity_Id,has_source:bool }
 /// Owns a reconstructible CPU scene, excluding protected editor entities.
 Scene_Snapshot :: struct { entities:[dynamic]Scene_Entity, next_entity_id:u64, allocator:mem.Allocator }
 
@@ -26,11 +27,12 @@ scene_snapshot_destroy :: proc(snapshot:^Scene_Snapshot) {
 }
 
 /// Captures every registered visible component, rejecting references outside the captured scene.
-scene_snapshot_capture :: proc(app:^Authoring)->(Scene_Snapshot,editor.Scene_Error) {
+scene_snapshot_capture :: proc(app:^Authoring,subset:[]ecs.Entity_Id=nil,detach_root:bool=false,root:ecs.Entity_Id=0,commit_identity:bool=true)->(Scene_Snapshot,editor.Scene_Error) {
     allocator:=app.world.allocator; context.allocator=allocator
     result:=Scene_Snapshot{entities=make([dynamic]Scene_Entity,allocator),allocator=allocator}
     success:=false; defer { if !success { scene_snapshot_destroy(&result) } }
     ids:=ecs.entity_ids(&app.world); defer delete(ids)
+    if subset!=nil { clear(&ids); append(&ids,..subset); for id,i in ids { if !ecs.entity_exists(&app.world,id) { return {},.Entity_Not_Found }; if _,hidden:=ecs.get_component(&app.world,id,Editor_Hidden); hidden { return {},.Protected_Entity }; for earlier in ids[:i] { if earlier==id { return {},.Invalid_Operation } } } }
     mapping:=make(map[ecs.Entity_Id]ecs.Entity_Id,allocator); defer delete(mapping)
     used:=make(map[u64]bool,allocator); defer delete(used)
     known_types:=make(map[typeid]bool,allocator); defer delete(known_types)
@@ -58,13 +60,15 @@ scene_snapshot_capture :: proc(app:^Authoring)->(Scene_Snapshot,editor.Scene_Err
     names:=editor.editor_type_names(&app.registry); defer delete(names)
     for id in ids {
         key,included:=mapping[id]; if !included { continue }
-        row:=Scene_Entity{key=key,components=make([dynamic]Scene_Component,allocator)}
+        row:=Scene_Entity{key=key,components=make([dynamic]Scene_Component,allocator),source_entity=id,has_source=true}
         append(&result.entities,row)
         stored:=&result.entities[len(result.entities)-1]
         for name in names {
             entry:=app.registry.entries[name]
+            if detach_root && id==root && entry.T==Scene_Parent { continue }
             value:=ecs.component_address(&app.world,id,entry.T); if value==nil { continue }
             decoded:=editor.editor_clone_value(entry,value,allocator)
+            if detach_root && id==root && entry.T==Scene_Transform { (cast(^Scene_Transform)decoded).local=km.TRANSFORM_IDENTITY }
             retained:=false
             defer { if !retained { if entry.ops.destroy!=nil { entry.ops.destroy(decoded) }; mem.free(decoded,allocator) } }
             if !editor.component_map_references(entry,decoded,{mapping,true}) { return {},.Invalid_Operation }
@@ -77,9 +81,7 @@ scene_snapshot_capture :: proc(app:^Authoring)->(Scene_Snapshot,editor.Scene_Err
         }
     }
     result.next_entity_id=next_key
-    if _,registered:=ecs.component_ops(&app.world,Scene_Key); !registered { ecs.register_component(&app.world,Scene_Key) }
-    for entity,key in mapping { ecs.add_component(&app.world,entity,Scene_Key{u64(key)}) }
-    ecs.insert_resource(&app.world,Scene_Identity{next_key})
+    if commit_identity { scene_snapshot_commit_keys(app,&result) }
     success=true; return result,.None
 }
 
@@ -122,4 +124,11 @@ scene_row_owned_decode :: proc(app:^Authoring,row:Scene_Entity,name:string)->(ra
 scene_row_owned_destroy :: proc(app:^Authoring,name:string,value:rawptr) {
     if value==nil { return }; context.allocator=app.world.allocator
     if entry:=app.registry.entries[name]; entry!=nil && entry.ops.destroy!=nil { entry.ops.destroy(value) }; mem.free(value,app.world.allocator)
+}
+
+/// Publishes keys only after capture's enclosing transaction has succeeded.
+scene_snapshot_commit_keys :: proc(app:^Authoring,snapshot:^Scene_Snapshot) {
+    if _,registered:=ecs.component_ops(&app.world,Scene_Key); !registered { ecs.register_component(&app.world,Scene_Key) }
+    for row in snapshot.entities { if row.has_source { assert(ecs.entity_exists(&app.world,row.source_entity)); ecs.add_component(&app.world,row.source_entity,Scene_Key{u64(row.key)}) } }
+    ecs.insert_resource(&app.world,Scene_Identity{snapshot.next_entity_id})
 }

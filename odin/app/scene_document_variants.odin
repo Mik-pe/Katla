@@ -2,10 +2,11 @@
 package app
 
 import "core:encoding/json"
+import ron "../encoding/ron"
 import "core:strings"
 
 @(private="package")
-scene_value_clone :: proc(value:json.Value)->(json.Value,bool) { bytes,err:=json.marshal(value); if err!=nil { return nil,false }; defer delete(bytes); result,parse_error:=json.parse(bytes,spec=.JSON,parse_integers=true); return result,parse_error==nil }
+scene_value_clone :: proc(value:json.Value)->(json.Value,bool) { bytes,err:=json.marshal(value); if err!=nil { return nil,false }; defer delete(bytes); result,parse_error:=ron.parse_json(bytes); return result,parse_error.kind==.None }
 @(private="package")
 scene_variant_ron :: proc(value:json.Value,newtype:bool)->json.Value {
     if object,is_object:=value.(json.Object); is_object { if _,marker:=object["__variant"]; marker { return value } }
@@ -46,6 +47,7 @@ scene_document_ron_clone :: proc(document:json.Value)->(json.Value,bool) {
 scene_public_mutate :: proc(value:json.Value)->json.Value {
     #partial switch tree in value {
     case json.Object:
+        if _,is_uint:=ron.uint_read(tree); is_uint { text:=tree["__uint"]; for key in tree { delete(key) }; delete(tree); return text }
         if name,is_variant:=tree["__variant"].(string); is_variant {
             payload,present:=tree["__payload"]
             for key in tree { delete(key) }; delete(tree)

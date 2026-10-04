@@ -2,6 +2,7 @@
 package scene
 
 import ecs "../../ecs"
+import ron "../../encoding/ron"
 import "core:encoding/json"
 import "core:mem"
 import "core:math"
@@ -24,8 +25,8 @@ keys_valid :: proc(object:json.Object,allowed:[]string)->bool {
 }
 @(private="package")
 entity_value :: proc(value:json.Value)->(ecs.Entity_Id,bool) {
-    text,ok:=value.(string); if !ok || len(text)==0 { return 0,false }; id:u64
-    for byte in text { if byte<'0' || byte>'9' { return 0,false }; digit:=u64(byte-'0'); if id>(max(u64)-digit)/10 { return 0,false }; id=id*10+digit }; return ecs.Entity_Id(id),true
+    text,ok:=value.(string); if !ok { return 0,false }
+    id,valid:=ron.decimal_u64(text); return ecs.Entity_Id(id),valid
 }
 @(private="package")
 nonnegative :: proc(value:json.Value)->(f32,bool) {

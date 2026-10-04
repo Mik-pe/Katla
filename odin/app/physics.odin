@@ -13,11 +13,12 @@ import "core:math"
 
 Trigger_Phase :: scene.Trigger_Phase
 Physics_Body_Type :: enum { Dynamic, Kinematic, Fixed }
-Physics_Shape_Kind :: enum { Box, Sphere, Capsule, Trimesh, ConvexHull }
+Physics_Shape_Kind :: enum { Box, Sphere, Capsule, Trimesh, ConvexHull, None }
 /// Primitive dimensions stay local; mesh kinds use the entity's sole Scene_Mesh geometry.
 Physics_Shape :: struct { kind:Physics_Shape_Kind,half_extents:[3]f32,radius,half_height:f32 }
 /// Native body/collider handles remain wholly inside the selected dependency owner.
 Physics_Body :: struct {
+    has_rigid_body,has_collider,has_material,has_filter:bool `inspect:"skip"`,
     body_type:Physics_Body_Type `inspect:"skip"`,shape:Physics_Shape `inspect:"skip"`,sensor:bool `inspect:"skip"`,
     linear_velocity:[3]f32 `inspect:"skip"`,gravity_scale,friction,restitution,density:f32 `inspect:"skip"`,layers,mask:u32 `inspect:"skip"`,ccd:bool `inspect:"skip"`,
 }
@@ -26,11 +27,11 @@ Physics_Event :: struct { phase:Trigger_Phase,trigger,other:ecs.Entity_Id }
 /// Owns actual dependency feedback; callers dispatch in order then destroy it.
 Physics_Step_Result :: struct { events:[dynamic]Physics_Event,error:editor.Scene_Error,allocator:mem.Allocator }
 /// Creates a conventional dynamic collider without native allocations.
-physics_body :: proc(shape:Physics_Shape,body_type:=Physics_Body_Type.Dynamic,sensor:=false)->Physics_Body { return {body_type=body_type,shape=shape,sensor=sensor,gravity_scale=1,friction=0.5,density=1,layers=max(u32),mask=max(u32)} }
+physics_body :: proc(shape:Physics_Shape,body_type:=Physics_Body_Type.Dynamic,sensor:=false)->Physics_Body { return {has_rigid_body=true,has_collider=shape.kind!=.None,body_type=body_type,shape=shape,sensor=sensor,gravity_scale=1,friction=0.5,density=1,layers=max(u32),mask=max(u32)} }
 /// A durable motion descriptor retained by the scene and exposed to authored component tools.
 Scene_Velocity :: struct {velocity,acceleration:[3]f32}
 /// Installs optional authored physics descriptions; application spawn chooses participation.
-physics_register :: proc(app:^Authoring) { editor.editor_register(&app.world,&app.registry,"PhysicsBody",Physics_Body{},spawn_default=false); editor.editor_register(&app.world,&app.registry,"Velocity",Scene_Velocity{},spawn_default=false) }
+physics_register :: proc(app:^Authoring) { physics_joints_register(app); editor.editor_register(&app.world,&app.registry,"PhysicsBody",Physics_Body{},spawn_default=false); editor.editor_register(&app.world,&app.registry,"Velocity",Scene_Velocity{},spawn_default=false) }
 /// Releases actual feedback with its captured owner allocator.
 physics_step_result_destroy :: proc(result:^Physics_Step_Result) { delete(result.events); result^={} }
 @(private="package")
@@ -48,13 +49,15 @@ physics_output_destroy :: proc(output:^Physics_Output) { for pose in output.pose
 /// Checks all local collision dimensions and authoring factors without touching the backend.
 physics_body_valid :: proc(body:Physics_Body)->bool {
     if body.body_type not_in (bit_set[Physics_Body_Type]{.Dynamic,.Kinematic,.Fixed}) { return false }
-    if !finite_nonnegative(body.density) || !finite_nonnegative(body.gravity_scale) || !finite_nonnegative(body.friction) || !finite_nonnegative(body.restitution) || body.restitution>1 { return false }
+    if !finite_nonnegative(body.density) || (body.has_material && body.density<=0) || !finite_nonnegative(abs(body.gravity_scale)) || !finite_nonnegative(body.friction) || !finite_nonnegative(body.restitution) || body.restitution>1 { return false }
     for value in body.linear_velocity { if math.is_nan(value) || math.is_inf(value) { return false } }
+    if !body.has_collider { return !body.sensor }
     switch body.shape.kind {
     case .Box: for value in body.shape.half_extents { if !finite_nonnegative(value) || value<=0 { return false } }
     case .Sphere: if !finite_nonnegative(body.shape.radius) || body.shape.radius<=0 { return false }
     case .Capsule: if !finite_nonnegative(body.shape.radius) || body.shape.radius<=0 || !finite_nonnegative(body.shape.half_height) { return false }
     case .Trimesh,.ConvexHull:
+    case .None: return false
     case: return false
     }
     return true
@@ -76,6 +79,7 @@ physics_shape_wire :: proc(description:Physics_Resolved_Body)->(json.Value,bool)
         triangles:=make([][3]u32,len(description.indices)/3,description.allocator); defer delete(triangles,description.allocator)
         for &triangle,i in triangles { copy(triangle[:],description.indices[i*3:i*3+3]) }
         bytes,err=json.marshal(struct {kind:string,vertices:[][3]f32,indices:[][3]u32}{"trimesh",description.vertices,triangles})
+    case .None: bytes,err=json.marshal(struct {kind:string}{"none"})
     case .ConvexHull: bytes,err=json.marshal(struct {kind:string,vertices:[][3]f32}{"convex_hull",description.vertices})
     }
     if err!=nil { return nil,false }; defer delete(bytes)
@@ -115,7 +119,7 @@ physics_mesh_collect :: proc(app:^Authoring,entity:ecs.Entity_Id,world_matrix:km
     for triangle:=0;triangle<len(resolved.indices);triangle+=3 {
         ia,ib,ic:=resolved.indices[triangle],resolved.indices[triangle+1],resolved.indices[triangle+2]
         a,b,c:=km.Vec3(resolved.vertices[ia]),km.Vec3(resolved.vertices[ib]),km.Vec3(resolved.vertices[ic])
-        if km.length_squared(km.cross(b-a,c-a))<0.000000000001 { return .Invalid_Field_Value }
+        if km.length_squared(km.cross(b-a,c-a))<=0 { return .Invalid_Field_Value }
         if determinant<0 { resolved.indices[triangle+1],resolved.indices[triangle+2]=resolved.indices[triangle+2],resolved.indices[triangle+1] }
     }
     return .None
@@ -130,6 +134,9 @@ physics_collect :: proc(app:^Authoring)->([]Physics_Resolved_Body,editor.Scene_E
     for entity in ids {
         body,present:=ecs.get_component(&app.world,entity,Physics_Body); if !present { continue }
         if !physics_body_valid(body) { return nil,.Invalid_Field_Value }
+        if !body.has_rigid_body && !body.has_collider { continue }
+        if !body.has_rigid_body { body.body_type=.Fixed }
+        if !body.has_collider { body.shape=Physics_Shape{kind=.None} }
         if len(bodies)>=100000 { return nil,.Invalid_Operation }
         world_matrix,matrix_error:=scene_world_matrix(app,entity); if matrix_error!=.None { return nil,matrix_error }
         mesh_kind:=body.shape.kind==.Trimesh || body.shape.kind==.ConvexHull
@@ -151,7 +158,7 @@ physics_collect :: proc(app:^Authoring)->([]Physics_Resolved_Body,editor.Scene_E
             case .Box: description.body.shape.half_extents*=pose.scale
             case .Sphere: if abs(pose.scale[0]-pose.scale[1])>0.001 || abs(pose.scale[0]-pose.scale[2])>0.001 { return nil,.Invalid_Operation }; description.body.shape.radius*=pose.scale[0]
             case .Capsule: if abs(pose.scale[0]-pose.scale[2])>0.001 { return nil,.Invalid_Operation }; description.body.shape.radius*=pose.scale[0]; description.body.shape.half_height*=pose.scale[1]
-            case .Trimesh,.ConvexHull:
+            case .Trimesh,.ConvexHull,.None:
             }
         }
         if !physics_body_valid(description.body) { delete(description.vertices,description.allocator); delete(description.indices,description.allocator); return nil,.Invalid_Field_Value }
@@ -173,7 +180,7 @@ physics_commit_poses :: proc(app:^Authoring,poses:[]Physics_Resolved_Pose)->edit
         if seen[entity] { return .Invalid_Operation }; seen[entity]=true
         if !km.quat_is_normalized(km.Quat(pose.rotation)) { return .Invalid_Field_Value }
         for vector in ([2][3]f32{pose.position,pose.linear_velocity}) { for value in vector { if math.is_nan(value) || math.is_inf(value) { return .Invalid_Field_Value } } }
-        body,_:=ecs.get_component(&app.world,entity,Physics_Body); if body.body_type!=.Dynamic { continue }
+        body,_:=ecs.get_component(&app.world,entity,Physics_Body); if !body.has_rigid_body || body.body_type!=.Dynamic { continue }
         current,current_error:=scene_world_matrix(app,entity); if current_error!=.None { return current_error }; scale:=km.mat4_extract_scale(current)
         world_poses[entity]=km.mat4_trs(km.Vec3(pose.position),km.Quat(pose.rotation),scale); velocities[entity]=pose.linear_velocity
     }
@@ -191,7 +198,9 @@ physics_commit_poses :: proc(app:^Authoring,poses:[]Physics_Resolved_Pose)->edit
 }
 /// Synchronizes retained Rapier owners through the common full-scene preflight.
 physics_sync :: proc(app:^Authoring)->editor.Scene_Error {
-    context.allocator=app.world.allocator; resolved,collect_error:=physics_collect(app); if collect_error!=.None { return collect_error }; defer physics_collected_destroy(&resolved,app.world.allocator)
+    context.allocator=app.world.allocator; joints,joint_error:=physics_collect_joints(app); if joint_error!=.None { return joint_error }; defer delete(joints,app.world.allocator)
+    wire_joints:=physics_joints_wire(joints,app.world.allocator); defer physics_joints_wire_destroy(wire_joints,app.world.allocator)
+    resolved,collect_error:=physics_collect(app); if collect_error!=.None { return collect_error }; defer physics_collected_destroy(&resolved,app.world.allocator)
     bodies:=make([]Physics_Wire_Body,len(resolved),app.world.allocator)
     defer { for body in bodies { delete(body.entity_id); json.destroy_value(body.shape) }; delete(bodies) }
     for description,i in resolved {
@@ -199,8 +208,8 @@ physics_sync :: proc(app:^Authoring)->editor.Scene_Error {
         body_name:="dynamic"; if body.body_type==.Kinematic { body_name="kinematic" } else if body.body_type==.Fixed { body_name="fixed" }
         bodies[i]=Physics_Wire_Body{fmt.aprintf("%d",description.id),body_name,description.position,description.rotation,shape,body.sensor,body.linear_velocity,body.gravity_scale,body.friction,body.restitution,body.density,body.layers,body.mask,body.ccd}
     }
-    if len(bodies)==0 && !ecs.contains_resource(&app.world,Scene_Runtime) { return .None }
-    response:=scene_runtime_call(app,struct { method:string,bodies:[]Physics_Wire_Body }{"physics_sync",bodies}); defer runtime_response_destroy(&response)
+    if len(bodies)==0 && len(joints)==0 && !ecs.contains_resource(&app.world,Scene_Runtime) { return .None }
+    response:=scene_runtime_call(app,struct { method:string,bodies:[]Physics_Wire_Body,joints:[]Physics_Wire_Joint }{"physics_sync",bodies,wire_joints}); defer runtime_response_destroy(&response)
     if !response.ok { return .Invalid_Operation }; return .None
 }
 /// Steps real Rapier and commits validated world poses to locals before returning overlap events.

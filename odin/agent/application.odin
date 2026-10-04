@@ -20,6 +20,8 @@ decode_application_call :: proc(call:Tool_Call,allocator:mem.Allocator)->(Decode
         decoded,err:=scene.decode_trigger(call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; scene.decoded_trigger_destroy(&decoded)
     case "prefab":
         decoded,err:=asset.prefab_decode(call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; asset.prefab_destroy(&decoded)
+    case "load_scene","save_scene":
+        decoded,err:=asset.scene_file_decode(call.name,call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; asset.scene_file_destroy(&decoded)
     case "search_assets","list_resources","read_resource":
         decoded,err:=asset.decode(call.name,call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; asset.destroy(&decoded)
     case: return {},.Unknown_Tool

@@ -14,9 +14,11 @@ import "core:strings"
 asset_authoring_execute :: proc(app:^Authoring,request:asset.Prefab_Request)->(editor.Tool_Result,editor.Undo_Group) {
     context.allocator=app.world.allocator; result:=error_result(&app.world,.None)
     if request.action==.Describe {
-        text:string=`{"mesh":{"version":1,"name":"Seat","parts":[{"id":"seat","transform":{"position":[0,0.45,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"geometry":{"kind":"cube","size":[0.8,0.1,0.8]}}]},"geometry_kinds":["cube","sphere","plane","cylinder","cone","torus","triangles"],"operations":["describe","read","validate","write","instantiate"],"path_contract":"project-relative .katmesh paths; complete documents compile before write; geometry remains application-owned."}`
+        text:string=`{"mesh":{"version":1,"name":"Seat","parts":[{"id":"seat","transform":{"position":[0,0.45,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"geometry":{"kind":"cube","size":[0.8,0.1,0.8]}}]},"geometry_kinds":["cube","sphere","plane","cylinder","cone","torus","triangles"],"operations":["describe","read","validate","write","instantiate","capture","remove"],"path_contract":"project-relative .katmesh and .katprefab paths; complete documents compile before publication; capture writes a subtree and remove retains shared undo."}`
         result.data=make([]byte,len(text),app.world.allocator); copy(result.data,transmute([]byte)text); return result,{}
     }
+    if request.action==.Remove { return asset_remove_prefab(app,request.root_entity) }
+    if request.action==.Capture { return asset_capture_prefab(app,request) }
     roots:=ecs.get_resource_mut(&app.world,Asset_Roots)
     if roots==nil || !resources.valid_relative_path(request.path) || (!strings.has_suffix(request.path,".katmesh") && !strings.has_suffix(request.path,".katprefab")) { result.error=.Invalid_Operation; return result,{} }
     if strings.has_suffix(request.path,".katprefab") { return asset_authoring_prefab(app,request) }

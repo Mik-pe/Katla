@@ -63,3 +63,10 @@ created_entities_group :: proc(w:^ecs.World,reg:^Component_Registry,entities:[]e
     }
     return undo_group_create(command,{created_group_apply,created_group_destroy,created_group_remap},entities,w.allocator)
 }
+
+@(private="package")
+removed_group_apply :: proc(state:rawptr,w:^ecs.World,reg:^Component_Registry,redo:bool,remaps:^[dynamic]Entity_Remap)->Scene_Error { return created_group_apply(state,w,reg,!redo,remaps) }
+/// Captures a subtree before removal; the caller applies redo once after enclosing preparation succeeds.
+removed_entities_group :: proc(w:^ecs.World,reg:^Component_Registry,entities:[]ecs.Entity_Id)->Undo_Group {
+    group:=created_entities_group(w,reg,entities); group.ops.apply=removed_group_apply; return group
+}
