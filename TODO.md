@@ -13,7 +13,8 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Port agent application-owned animation, events, materials, prefab/behavior and resource requests with real application consumers.
 - [ ] Port optional MCP transport and LLM configuration/HTTP/streaming/orchestration with request correlation, shutdown and failure acceptance.
 - [x] Port gfx typed resource storage, exact frame/submission ownership and buffer-range graph compilation; prove the compiled compute/transfer workload on native Metal 4. See `docs/gfx_odin.md`.
-- [ ] Port executable gfx buffer packets with native resource/reflection preflight and matching Metal/Vulkan consumers.
+- [x] Port executable gfx buffer packets with native resource/reflection preflight and matching Metal/Vulkan consumers; validate concurrent uniforms, shared allocation hazards and retained native lifetimes.
+- [ ] Port shared WGSL shader compilation, complete reflection and asynchronous replacement before graphics/application consumers move.
 - [ ] Port gfx images/subresources, graphics packets, allocation/aliasing, retained readback and window/surface lifecycle with native output and ownership tests.
 - [ ] Move complete agent/gfx application consumers to Odin and remove the superseded Rust subsystems after native Vulkan and Metal acceptance.
 

@@ -21,18 +21,18 @@ Graph_Error :: enum { None, Invalid_Name, Invalid_Resource, Invalid_Range, Inval
 @(private="package")
 Graph_Buffer :: struct { desc:Buffer_Desc, imported,exported:bool }
 @(private="package")
-Graph_Pass :: struct { name:string, kind:Pass_Kind, accesses:[]Buffer_Access, side_effect:bool }
-/// Owns declarations only; native allocations and executable packets belong to a backend.
-Buffer_Graph :: struct { buffers:[dynamic]Graph_Buffer, passes:[dynamic]Graph_Pass, allocator:mem.Allocator }
+Graph_Pass :: struct { name:string, kind:Pass_Kind, accesses:[]Buffer_Access, side_effect:bool, packet:Packet, has_packet:bool }
+/// Owns declarations and authored packet copies; native allocations remain backend-owned.
+Buffer_Graph :: struct { buffers:[dynamic]Graph_Buffer, passes:[dynamic]Graph_Pass, allocator:mem.Allocator, revision:u64 }
 /// Owns deterministic live pass order and exact range hazards.
-Compiled_Graph :: struct { order:[dynamic]Pass_Id, hazards:[dynamic]Hazard }
+Compiled_Graph :: struct { order:[dynamic]Pass_Id, hazards:[dynamic]Hazard, owner:^Buffer_Graph, revision:u64 }
 /// Initializes a stationary graph independent of ECS, math, editor or scene resources.
 graph_init :: proc(g:^Buffer_Graph,allocator:=context.allocator) {
     g.allocator=allocator; g.buffers=make([dynamic]Graph_Buffer,allocator); g.passes=make([dynamic]Graph_Pass,allocator)
 }
-/// Releases names and copied accesses after all compiled plan consumers finish.
+/// Releases names, accesses and packets after all compiled plan consumers finish.
 graph_destroy :: proc(g:^Buffer_Graph) {
-    for pass in g.passes { delete(pass.name,g.allocator); delete(pass.accesses,g.allocator) }
+    for &pass in g.passes { delete(pass.name,g.allocator); delete(pass.accesses,g.allocator); packet_destroy(&pass.packet,g.allocator) }
     delete(g.buffers); delete(g.passes); g^={}
 }
 /// Releases a plan without modifying its graph or native resources.
@@ -40,7 +40,7 @@ compiled_graph_destroy :: proc(plan:^Compiled_Graph) { delete(plan.order); delet
 /// Imports initialized bytes or declares an uninitialized transient buffer.
 graph_buffer :: proc(g:^Buffer_Graph,desc:Buffer_Desc,imported,exported:bool)->(Resource_Id,Graph_Error) {
     if desc.size==0 || desc.usage=={} { return {},.Invalid_Resource }
-    id:=Resource_Id{g,len(g.buffers)}; append(&g.buffers,Graph_Buffer{desc,imported,exported}); return id,.None
+    id:=Resource_Id{g,len(g.buffers)}; append(&g.buffers,Graph_Buffer{desc,imported,exported}); g.revision+=1; return id,.None
 }
 @(private="package")
 validate_accesses :: proc(g:^Buffer_Graph,kind:Pass_Kind,accesses:[]Buffer_Access)->Graph_Error {
@@ -66,7 +66,8 @@ graph_pass :: proc(g:^Buffer_Graph,name:string,kind:Pass_Kind,accesses:[]Buffer_
     err:=validate_accesses(g,kind,accesses); if err!=.None { return {},err }
     owned:=make([]Buffer_Access,len(accesses),g.allocator); copy(owned,accesses)
     id:=Pass_Id{g,len(g.passes)}
-    append(&g.passes,Graph_Pass{strings.clone(name,g.allocator),kind,owned,side_effect})
+    append(&g.passes,Graph_Pass{name=strings.clone(name,g.allocator),kind=kind,accesses=owned,side_effect=side_effect})
+    g.revision+=1
     return id,.None
 }
 @(private="package")
@@ -89,7 +90,7 @@ range_initialized :: proc(g:^Buffer_Graph,pass_index:int,access:Buffer_Access)->
 }
 /// Compiles authored order, culls dead work and retains every overlapping live hazard.
 graph_compile :: proc(g:^Buffer_Graph)->(Compiled_Graph,Graph_Error) {
-    plan:=Compiled_Graph{make([dynamic]Pass_Id,g.allocator),make([dynamic]Hazard,g.allocator)}
+    plan:=Compiled_Graph{order=make([dynamic]Pass_Id,g.allocator),hazards=make([dynamic]Hazard,g.allocator),owner=g,revision=g.revision}
     success:=false; defer { if !success { compiled_graph_destroy(&plan) } }
     live:=make([]bool,len(g.passes),g.allocator); defer delete(live,g.allocator)
     for pass,i in g.passes {
