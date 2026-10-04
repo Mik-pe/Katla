@@ -10,7 +10,7 @@ engineering work belongs in [TODO](../TODO.md).
 | --- | --- | --- |
 | Crate boundaries, assets or math | [Architecture](architecture.md) | [Scene format](../katla_app/src/scene/README.md) |
 | Mesh authoring, AI prefabs or reusable objects | [Mesh and prefab contract](prefabs.md) | [Scene format](../katla_app/src/scene/README.md), [Physics](physics-engine-adr.md) |
-| Progressive Odin port | [Odin tree](../odin/README.md) | [Math](math_odin.md), [icons and audio DSP](odin_leaf_ports.md), [ECS and compile-time comparison](ecs_odin.md) |
+| Progressive Odin port | [Odin tree](../odin/README.md) | [Agent](agent_odin.md), [Math](math_odin.md), [icons and audio DSP](odin_leaf_ports.md), [ECS and compile-time comparison](ecs_odin.md) |
 | ECS systems, queries or lifecycle | [ECS ownership](ecs.md) | [Measured storage/scheduling decisions](ecs_benchmarks.md) |
 | Animation playback, fades or agent control | [Transition contract](animation-transitions.md) | [Graphics ownership](graphics_core.md), [CI policy](ci.md) |
 | GPU API or scene/editor rendering | [Graphics ownership](graphics_core.md) | [Graph API](../katla_gfx/src/render_graph/API.md), [contracts](contract-suite.md) |
