@@ -9,6 +9,8 @@ Each completed package can be imported and exercised without a renderer.
 | `ecs` | Entity identities, sparse storage, queries, resources, events, commands, scheduling | [ECS port](../docs/ecs_odin.md) |
 | `editor` | Optional reflection, JSON, reversible scene actions and agent mailbox | [ECS/editor port](../docs/ecs_odin.md) |
 | `agent` | Validated JSON scene calls, selected context and synchronized admission | [Agent foundation](../docs/agent_odin.md) |
+| `gfx` | Typed GPU identity, frame/submission slots and buffer-graph compilation | [GPU core](../docs/gfx_odin.md#gpu-core) |
+| `gfx_native` | Real Metal 4 compute/transfer/readback acceptance consumer | [Native acceptance](../docs/gfx_odin.md#native-acceptance-and-checks) |
 | `examples/agent_scene` | Actual host-thread JSON → editor tick → observation → undo | `odin run odin/examples/agent_scene` |
 | `math` | Vectors, matrices, quaternion rotation, transforms, bounds, intersections and color | [Math port](../docs/math_odin.md) |
 | `icons` | All Katla icon codepoints and precache data | [Leaf ports](../docs/odin_leaf_ports.md) |
@@ -37,9 +39,10 @@ From the repository root:
 python3 scripts/validate_odin.py
 ```
 
-This runs ECS/editor, agent, math, icon and audio DSP tests with strict vet/style checks,
+This runs ECS/editor, agent, gfx, math, icon and audio DSP tests with strict vet/style checks,
 an actual ECS/math consumer, icon parity and Rust/Odin math/DSP comparisons in dev and release. It needs
-Odin, Python 3 and Rust/Cargo. See the math contract for native sanitizer commands.
+Odin, Python 3 and Rust/Cargo. See the math contract for native sanitizer commands. Add `--native-metal` to
+require the actual Metal 4 buffer workload with API validation on macOS arm64.
 
 ## Continuing the migration
 

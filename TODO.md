@@ -10,9 +10,12 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Port voices/resampling/pooling, the category mixer and scheduling/streaming, reusing the completed `odin/audio/dsp` layer.
 - [ ] Add native Odin audio output with real playback and callback/lifecycle acceptance.
 - [x] Port agent CPU JSON validation, selected scene observations and synchronized rate admission on top of the Odin editor mailbox/undo owner. See `docs/agent_odin.md`.
-- [ ] Port `katla_gfx` and required dependencies, preserving GPU-core ownership and proving both native Vulkan and Metal behavior.
 - [ ] Port agent application-owned animation, events, materials, prefab/behavior and resource requests with real application consumers.
 - [ ] Port optional MCP transport and LLM configuration/HTTP/streaming/orchestration with request correlation, shutdown and failure acceptance.
+- [x] Port gfx typed resource storage, exact frame/submission ownership and buffer-range graph compilation; prove the compiled compute/transfer workload on native Metal 4. See `docs/gfx_odin.md`.
+- [ ] Port executable gfx buffer packets with native resource/reflection preflight and matching Metal/Vulkan consumers.
+- [ ] Port gfx images/subresources, graphics packets, allocation/aliasing, retained readback and window/surface lifecycle with native output and ownership tests.
+- [ ] Move complete agent/gfx application consumers to Odin and remove the superseded Rust subsystems after native Vulkan and Metal acceptance.
 
 ## Graphics core and application composition
 
