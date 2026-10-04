@@ -1,22 +1,29 @@
 # Odin graphics core
 
-`odin/gfx` is an independent GPU core with executable buffer compute/transfer
-packets. Native adapters live in `odin/gfx/metal` and `odin/gfx/vulkan`; they
-import no ECS, math or editor packages. Complete application migration continues
-in [TODO](../TODO.md#odin-port). See [the agent foundation](agent_odin.md) for
-scene host calls. The superseded fixed Metal acceptance executor has been
-replaced by a consumer of the reusable native adapter.
+`odin/gfx` owns generic resource identities, explicit frame acquisitions,
+compiled graphs and authored compute/transfer/graphics packets. Native adapters
+in `odin/gfx/metal` and `odin/gfx/vulkan` import no ECS, math, editor or scene
+packages. Application composition and material authoring live in `odin/app`.
+The remaining migration is tracked in [TODO](../TODO.md#odin-port).
 
-## GPU core
+## Ownership
 
-`Resource_Storage(T, Kind)` owns slot memory while transferring values on
-insertion/removal. A handle includes its stationary storage owner, slot and
-generation; zero, foreign, removed and stale-generation handles fail lookup.
-Generation exhaustion permanently retires a slot. Remove and release every live
-value before `storage_destroy`, which asserts empty storage. Do not copy owners
-or retain handles beyond their owner's lifetime; keep owners at stable addresses.
+`Resource_Storage(T, Kind)` transfers values on insertion/removal. Handles carry
+stationary owner, slot and generation; foreign, removed and stale handles fail
+lookup. Generation exhaustion permanently retires a slot. Remove native values
+before destroying empty storage. Native submissions retain resolved allocations,
+pipelines, descriptor/argument tables and residency independently of public
+handles. Removing a handle prevents new lookup while accepted work keeps its
+parents alive until exact retirement.
 
-`Frames` tracks acquisition generations and accepted submission numbers:
+`acquire` returns the actual `Frame_Token` before selecting mutable slot resources.
+`write_buffer` requires that acquired token and rejects pending GPU allocations.
+Initialized immutable allocations use `create_buffer_with_data`. Submission
+consumes the token only after the queue accepts work; preflight rejection leaves
+it acquired for repair or `abort`. Recording failures discard its native partial
+work. A submitted acquisition cannot abort. The three-slot ring returns `Busy`
+until the caller explicitly waits or polls an accepted submission; acquisition
+does not introduce an implicit CPU wait.
 
 ```
 Idle -> Acquired -> Recorded -> Submitted -> Idle
@@ -24,131 +31,177 @@ Idle -> Acquired -> Recorded -> Submitted -> Idle
           +-- abort --+
 ```
 
-`frame_submitted` publishes only accepted native work; rejection aborts its
-acquisition. `frame_completed` requires the exact token and submission. Submitted
-work cannot abort. Drain native work before teardown. Native adapters own three
-recording slots in a ring. A busy next slot returns `Busy`; submitting does not
-implicitly wait or retire another frame. `wait` or successful `poll` retires an
-exact submission once. Reusing its retired identity returns `Invalid_Resource`.
+Completion matches the exact token and submission number. Double retirement,
+foreign owners and old acquisition generations fail. Drain accepted native work
+and readback copies before destroying stationary owners.
 
-`Buffer_Graph` owns descriptions, immutable pass declarations and replaceable
-packets. Every declared access has an actual byte range, read/write mode and
-permitted use. Declaration validates identity, overflow-safe bounds, usage,
-unique pass names and nonoverlapping accesses within a pass. Compute supports
-storage and read-only uniforms; transfer supports source reads and destination
-writes. Use one `Read_Write` access for overlapping in-place compute.
+## Declarations and compilation
 
-Compilation preserves authored order, checks read initialization, culls passes
-unrelated to an export or explicit side effect, and emits overlapping read/write,
-write/read and write/write hazards between live passes. Read/read and disjoint
-ranges need no hazard. The conservative plan can retain overwritten writers and
-redundant transitive hazards. Dead declarations still undergo initialization
-validation. Imports promise initialized bytes; transients need previous writes.
-Exports require complete initialized coverage. A plan borrows its stationary graph;
-adding a declaration invalidates the plan through its revision.
+One `Graph` declares buffers and images. There is no separate image or scene
+execution graph. Resource/pass IDs remain stable while declarations are
+appended. Buffer accesses name actual byte intervals, mode and usage. Image
+accesses name actual mip/layer/aspect intervals and usage. Imported images name
+arrival/final states and initialized-content promises separately. Undefined
+contents cannot be loaded; presentation requires an explicit final present state.
 
-## Executable packets and preflight
+Compilation validates initialization even for dead declarations, then traces
+backward demands from exports and side effects. A later write replaces only its
+covered byte, mip, layer and aspect ranges. Fully overwritten producers are
+culled; surviving partial producers remain live. Live read/write, write/read and
+write/write overlaps produce hazards. Read/read, disjoint ranges and query-only
+bindings produce no contents hazard. Query-only bindings still retain resource
+identity and native ownership. Exports require complete initialized coverage.
 
-`graph_set_packet` owns a cloned `Dispatch` or `Copy_Buffer` for one pass. Dispatch
-sizes are workgroup counts; local size belongs to the pipeline. Every packet use
-must match a declaration, and every declaration must have an exact packet use.
-This prevents an authored full-buffer write from claiming initialization when a
-packet binds only a smaller range. Packet replacement failure preserves previous
-work. More operations use more ordinary passes, rather than implicit commands.
+Plans borrow their stationary graph and revision. Declaration changes and attachment content-policy changes invalidate
+old plans. `graph_set_packet` validates a replacement against the existing
+contract before cloning it. `graph_set_commands` validates commands and new
+buffer/image accesses together, commits atomically and increments the revision.
+It supports a real transition to a clear-only empty scene without inventing a
+mesh or dummy draw.
 
-`graph_prepare` freezes live packets, mappings and hazards after mandatory native
-queries. It checks actual allocation capacities/usages, stale and foreign handles,
-unique graph roles, native shader slots/classes, minimum spans, offset alignment,
-maximum descriptor ranges and dispatch limits. Mapping two graph roles to one
-physical allocation is explicitly rejected; storage aliasing is still pending.
-Missing callbacks, resources, packets or unsupported reflection reject execution
-before acquiring a native frame. Replacing a packet after preparation leaves the
-snapshot intact. Changing declarations requires recompilation.
+Shader code, dynamic indexing and imported initialization remain application
+contracts. Reflection supplies selected-entry reads/writes, binding classes and
+minimum spans, but cannot prove every dynamic address or full write coverage.
 
-Shader code and declared accesses remain application contracts: preflight cannot
-prove a shader's dynamic indexing, branch behavior or actual memory operations.
-Callers must declare every actual shader access and dispatch within its bound
-ranges. Import initialization also remains the caller's responsibility.
+## Packets and preflight
 
-## Native adapters
+`Dispatch` carries explicit workgroups or an exact twelve-byte GPU indirect
+command, and logical group/binding resource slots. `Fill_Buffer`, `Copy_Buffer`,
+`Copy_Image_Buffer` and `Copy_Buffer_Image` carry ordinary declared transfer
+accesses. Fill intervals are four-byte aligned. Buffer/image transfers preserve
+explicit row/slice pitches, volume coordinates, compressed block edge rules and
+the actual selected aspect width. Zero pitches select tightly packed rows; padded
+image-to-buffer copies declare only useful rows as written, leaving padding
+uninitialized. `Generate_Mips` reads the selected base mip and initializes the
+remaining chain with native filtered transfers; native format capabilities are
+required. Partial image uploads use `Read_Write` for their mip/layer
+so untouched texels require prior initialization; a full subresource upload can
+initialize with `Write`.
 
-Both stationary adapters require calls from their owning thread. They implement
-buffer/pipeline creation and destruction, CPU byte access,
-preflight queries, submission, exact polling/waiting and teardown. Each accepted
-slot retains its native buffers, pipeline layouts and immutable binding state.
-Removing a public handle immediately prevents new lookups while pending work
-retains its native owner. CPU reads/writes return `Busy` until all consumers of
-that allocation retire, even if a different submission has already completed.
-There is no hidden CPU wait between submissions.
+Texture descriptors specify positive width, height and depth. Volumes require
+one array layer; two-dimensional resources use depth one. Subresource ownership
+covers full mip volumes. The formats include sRGB/unorm color, single/two-channel
+color, float/integer color, depth/stencil and BC1/BC3 blocks. Compression forbids
+volume, storage and attachment roles. Native allocation queries reject unsupported
+physical format/usage combinations before publication; supported format names do
+not imply hardware support on every device.
 
-Metal requires Metal 4 before creating a queue or compiler. It uses direct
-Objective-C calls for APIs absent from Odin's bundled bindings, compiles MSL with
-`MTL4Compiler`, and reflects used buffer bindings. Each dispatch owns an immutable
-argument table; each recording owns a residency snapshot and command allocator.
-Separate Metal 4 compute encoders consume graph order and source/destination
-queue stages with device visibility. Conservative queue barriers also cover
-persistent allocations used by earlier graphs. Commit feedback copies signed
-native errors and diagnostic text; callback synchronization finishes before slot
-cleanup can free its state. Terminal GPU errors block later submissions.
+A `Render` carries explicit color/depth attachments and shared buffer, image,
+sampler and constant bindings. Ordered `Render_Phase` values select pipelines,
+constant overrides, viewport/scissor and generated, vertex, indexed or indirect
+geometry. Native render areas come from the declared attachments, including
+smaller targets and depth-only passes. Attachment extents must agree. Clear
+initializes the whole selected subresource; load requires initialized content.
+Load/store discard invalidates the selected subresources. The latest write
+determines content validity, so an earlier clear cannot satisfy a read or export
+after discard. Raster coverage after a discarded load cannot promise full
+initialization.
 
-Vulkan requires 1.3 synchronization2 and maintenance4. Its loader, instance entry
-points and device table remain with the renderer. On macOS it enables portability
-enumeration/subset for MoltenVK. Buffer allocation requires coherent host-visible
-memory and returns `Unsupported` when unavailable. Each frame owns its descriptor
-pool, immutable descriptor sets, command pool and exact fence. Synchronization2
-consumes compiled range hazards, conservatively orders earlier persistent queue
-uses, and makes writes visible to host reads. A nonterminal wait/drain failure
-preserves pending native owners; device loss permits terminal cleanup.
+Vertex layouts name shader locations, actual buffer bindings, strides and vertex
+or instance stepping. Direct bounds and index/indirect alignment are validated;
+indirect command counts and strides remain explicit. GPU-authored index and
+indirect values remain caller contracts. Native pipelines advertise supported
+draw forms so missing encoding support cannot become successful empty work.
 
-`Compute_Desc` supplies prepared MSL/SPIR-V targets, entry, local size and buffer
-slot classes. Vulkan reflects a single compute entry, fixed local sizes and
-set-zero uniform/storage layouts, including explicit scalar/vector/matrix/array
-strides and struct member offsets. Textures, push constants, other sets, multiple
-entries and unsupported type forms fail explicitly. The checked reflection parser
-is a layout reader, not a complete SPIR-V validator; use compiler-produced modules.
-A shared WGSL compiler and asynchronous shader replacement remain pending.
+Prepared phases own the effective constants after shared defaults and phase
+overrides merge. Their native bytes are immutable for that exact submission.
+Shared bindings may be used by different phases; their aggregate actual shader
+visibility must match the declared stages. Preparation checks actual native
+capacities/usages, reflected binding class/mode/minimum span, alignment, descriptor
+limits, texture shape/format, sampler comparison class and dispatch limits. Missing
+queries, resources, packets, layouts and unsupported shapes fail before encoding.
+Failed preparation owns no partially published packet.
 
-## Native acceptance and checks
+Prepared graphs clone packets, inputs, contracts and hazards. Later packet
+replacement does not rewrite an earlier snapshot. Native adapters resolve handles
+again before retention and retain each resolved owner until accepted work retires.
 
-`odin/gfx_native` and `odin/gfx_vulkan_native` use the same test-only scenario in
-`odin/gfx_conformance`. Required backend function inputs exercise actual generic
-packets, rather than a separate fixed workload executor. The scenario fills
-1,024 integers, transforms them with a reflected uniform and copies to readback.
-Three differently configured graphs share one persistent scratch allocation and
-submit concurrently without CPU waits. Four rounds verify all 12,288 results per
-backend, immutable binding state, ring exhaustion, out-of-order retirement,
-polling, double-retirement rejection and CPU access exclusion. The final three
-submissions retain removed scratch/pipeline identities through completion.
-Invalid slots, uniform spans and alignment reject without creating a submission;
-invalid shader slot metadata rejects pipeline publication.
+## Shader contracts
+
+Prepared shader descriptors carry SPIR-V and MSL targets and independent native
+entry names. Naga may translate a valid WGSL entry name to a different MSL symbol;
+no target-name fallback is permitted. Logical group/binding identities map to
+explicit per-stage Metal indices. Runtime-array sizes use the compiler's reserved
+native index and owned immutable size bytes for each submission.
+
+Compute and graphics descriptors include buffers, textures and independent
+samplers. Selected-entry access modes and minimum byte spans accompany the
+canonical shader metadata; preflight cannot downgrade a shader write to an
+authored read. Query-only access is explicit. Graphics state includes color
+writes/blending, raster topology/culling, depth testing and writing, stencil,
+depth bias and wireframe. Required native operations have explicit implementations
+or return a typed failure; they have no default no-op path.
+
+## Physical aliases
+
+Physical identity is distinct from public handle identity. Two graph roles may
+share an actual allocation only when their compiled live intervals do not overlap.
+A successor cannot promise imported initialized contents; it must initialize its
+own data. An export extends its lifetime through the graph end. Preparation emits
+`Alias_Handoff` values from the previous role's last pass to the next role's first
+pass. Native encoders consume those handoffs as actual memory/queue barriers.
+`graph_allocation_plan` groups live transient buffers/images by disjoint compiled
+lifetimes, native alignment, memory domain and intersecting memory types.
+`graph_allocate` instantiates each group with real native placement storage and
+captures every handle for rollback and cleanup. Independent instances provide
+actual per-slot storage. Imports remain caller-owned. Public allocation removal
+preserves native parents retained by pending submissions. CPU-visible and
+GPU-private buffer domains are explicit; private CPU access is rejected, while
+initialized private construction uses an owned staging submission.
+
+## Sources, readback and presentation
+
+`graph_texture_source(renderer, submission, resource)` identifies an exact
+accepted exported image. An aborted frame publishes no source. A lightweight
+source can be queued while its exact export is retained. Its generation captures
+the physical allocation content epoch: an accepted write through another graph
+or an aliased buffer invalidates an older unqueued source too. Rejected writes
+do not advance that epoch. `release_graph_exports` removes one graph's retained
+exports before its stationary CPU owner is destroyed. `queue_texture_readback` immediately retains
+the selected native source and its independent copy submission. Later graph
+replacement, slot reuse, resize or public-handle removal cannot change that queued
+copy's source. `poll_texture_readback` never waits and transfers owned bytes once.
+`Readback_Data` includes source, region, row/slice pitches and captures its allocator;
+release it with `readback_data_destroy`. Cancel/destroy joins accepted copy work
+before releasing native parents.
+
+Surface acquisition returns a generation-bound image. Presentation associates it
+with the accepted rendering submission. `Present_Outcome` preserves that committed
+submission even if presentation requests recreation or fails afterward. Native
+surface images, semaphores/drawables and readback copies remain owned through
+acceptance, failed presentation and recreation. Application window policy belongs
+outside the GPU core.
+
+## Native acceptance
+
+`odin/gfx_conformance` supplies required native function inputs to both adapters.
+The compute scenario executes 12,288 integers through three concurrently live
+fill/parameter/copy graphs and checks immutable bindings, CPU access exclusion,
+ring exhaustion and exact out-of-order retirement. The graphics scenario checks
+512 RGBA8 pixels and 512 D32 values through real rasterization and image-to-buffer
+copies. A queued image ticket must preserve its earlier pixels across four later
+submissions, frame-slot reuse and public resource destruction. Corrupted/stale physical sources and repeated ticket completion fail. The shared
+allocation scenario verifies three independent mixed buffer/image placement
+groups, 6,144 compute values and 9,216 image pixels, including public allocation
+owners removed before retirement and readback completion.
+
+Both Metal 4 and Vulkan through MoltenVK execute these shared scenarios on the
+Apple Silicon development host with native validation. Backend-specific scenarios
+also exercise mesh/indirect phases, physical aliases and surface replacement.
+New contracts require rerunning the affected native scenarios before delivery;
+CPU tests and compilation alone do not establish GPU behavior. Linux/Windows
+Vulkan typechecks are separate from native hardware evidence.
 
 ```sh
 python3 scripts/validate_odin.py
-python3 scripts/validate_odin.py --native-metal
-python3 scripts/validate_odin.py --native-vulkan
-```
-
-An explicit loader and ICD can be selected without hardcoding host paths in the
-script, for example on the currently validated macOS installation:
-
-```sh
 python3 scripts/validate_odin.py --native-metal --native-vulkan \
   --vulkan-library /usr/local/lib/libvulkan.dylib \
   --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json
 ```
 
-Vulkan acceptance needs `glslc`, a Vulkan loader, an actual device and the Khronos
-validation layer. It enables synchronization validation and fails if validation
-cannot initialize or produces error messages. Native Metal requires macOS arm64,
-sets `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1` before launch, and fails on
-missing/unsupported hardware. Both native runs have bounded execution. CPU tests
-never count as native acceptance.
-
-On the Apple M5 host with macOS 27, Odin dev-2026-09:a2fb372b7 and the current
-Xcode SDK, both the Metal 4 adapter and Vulkan through MoltenVK 1.4.1 execute this
-scenario with native validation enabled and no validation errors. This establishes
-compute/transfer output and tested buffer/pipeline lifetimes on this host. The new CPU suites also pass optimized and AddressSanitizer runs; both native
-consumers pass AddressSanitizer with empty Odin allocation trackers at teardown.
-The Vulkan consumer typechecks for Linux and Windows. This does
-not establish a native Linux/Windows Vulkan run, images, draws, windowed
-presentation, asynchronous readback, surface replacement or the full application.
+Native Metal sets `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1` before launching.
+Native Vulkan enables Khronos synchronization validation and requires a real device,
+loader and validation layer. Failure to initialize validation is not a passing
+run. Native tests have bounded execution and release Odin/native owned state at
+teardown. Full application migration and removal of superseded Rust consumers
+remain separate completion requirements.

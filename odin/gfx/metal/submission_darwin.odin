@@ -3,17 +3,20 @@
 package metal
 
 import gfx ".."
-import MTL "vendor:darwin/Metal"
 import NS "core:sys/darwin/Foundation"
 import "core:sync"
 import "core:log"
 
 @(private="package")
 clear_frame :: proc(r:^Renderer,slot:^Native_Frame,submitted:bool) {
-    for buffer in slot.buffers { if submitted { buffer.pending-=1 }; release_buffer(r,buffer) }
+    for buffer in slot.buffers { if submitted { buffer.pending-=1; if buffer.heap!=nil { buffer.heap.pending-=1 } }; release_buffer(r,buffer) }
     for pipeline in slot.pipelines { release_pipeline(r,pipeline) }
     for table in slot.tables { table->release() }
-    clear(&slot.buffers); clear(&slot.pipelines); clear(&slot.tables)
+    for object in slot.auxiliary { object->release() }
+    for texture in slot.textures { if submitted { texture.pending-=1; if texture.heap!=nil { texture.heap.pending-=1 } }; release_texture(r,texture) }
+    for pipeline in slot.graphics { release_graphics(r,pipeline) }
+    for sampler in slot.samplers { release_sampler(r,sampler) }
+    clear(&slot.buffers); clear(&slot.pipelines); clear(&slot.tables); clear(&slot.auxiliary); clear(&slot.textures); clear(&slot.graphics); clear(&slot.samplers)
     if slot.command!=nil { slot.command->release() }
     if slot.residency!=nil { if slot.resident { send(nil,slot.residency,"endResidency") }; slot.residency->release() }
     if slot.options!=nil { slot.options->release() }
@@ -65,19 +68,43 @@ resolve_buffer :: proc(r:^Renderer,prepared:^gfx.Prepared_Graph,id:gfx.Resource_
     buffer,ok:=gfx.storage_get(&r.buffers,handle); if !ok { return nil,false }
     return buffer^,true
 }
+@(private="package")
+acquired_token_valid :: proc(r:^Renderer,token:gfx.Frame_Token)->bool {
+    if token.owner!=&r.frames || token.slot<0 || token.slot>=len(r.slots) { return false }
+    slot:=r.frames.slots[token.slot]
+    return slot.state==.Acquired && slot.generation==token.generation
+}
+
+/// Acquires an idle slot explicitly; native retirement is chosen by the caller.
+acquire :: proc(r:^Renderer)->(gfx.Frame_Token,gfx.Gpu_Error) {
+    if r.device==nil || r.failed { return {},.Native_Failure }
+    token,err:=gfx.frame_acquire(&r.frames,r.next_slot)
+    if err==.Busy { return {},.Busy }
+    if err!=.None { return {},.Native_Failure }
+    return token,.None
+}
+
+/// Abandons an acquisition without publishing exports or advancing the native slot.
+abort :: proc(r:^Renderer,token:gfx.Frame_Token)->gfx.Gpu_Error {
+    if !acquired_token_valid(r,token) { return .Invalid_Resource }
+    if gfx.frame_abort(&r.frames,token)!=.None { return .Invalid_Resource }
+    return .None
+}
+
 /// Validates and submits authored work without waiting for another frame's completion.
-submit :: proc(r:^Renderer,g:^gfx.Buffer_Graph,plan:^gfx.Compiled_Graph,inputs:[]gfx.Buffer_Input)->(gfx.Submission,gfx.Gpu_Error,gfx.Packet_Error) {
+submit :: proc(r:^Renderer,token:gfx.Frame_Token,g:^gfx.Graph,plan:^gfx.Compiled_Graph,inputs:[]gfx.Buffer_Input,textures:[]gfx.Texture_Input)->(gfx.Submission,gfx.Gpu_Error,gfx.Packet_Error) {
     if r.device==nil || r.failed { return {},.Native_Failure,.None }
-    prepared,preflight:=gfx.graph_prepare(g,plan,inputs,resource_query(r))
+    if !acquired_token_valid(r,token) { return {},.Invalid_Resource,.None }
+    upload_error:=retire_uploads(r,false); if upload_error!=.None { return {},upload_error,.None }
+    prepared,preflight:=gfx.graph_prepare(g,plan,inputs,resource_query(r),textures,graphics_query(r))
     if preflight!=.None { return {},.Invalid_Graph,preflight }
     defer gfx.prepared_graph_destroy(&prepared)
+    if !content_epochs_available(r,&prepared) { return {},.Native_Failure,.None }
+    journals,journal_error:=prepare_texture_journals(r,&prepared)
+    if journal_error!=.None { return {},journal_error,.None }
+    defer journal_destroy(r,journals)
     if r.frames.next_submission==max(u64) { return {},.Native_Failure,.None }
-    index:=r.next_slot
-    token,acquire_error:=gfx.frame_acquire(&r.frames,index)
-    if acquire_error!=.None {
-        if acquire_error==.Busy { return {},.Busy,.None }
-        r.failed=true; log.error("Metal frame acquisition failed",acquire_error); return {},.Native_Failure,.None
-    }
+    index:=token.slot
     slot:=&r.slots[index]; slot.token=token
     committed:=false
     defer {
@@ -94,43 +121,43 @@ submit :: proc(r:^Renderer,g:^gfx.Buffer_Graph,plan:^gfx.Compiled_Graph,inputs:[
         entry,ok:=gfx.storage_get(&r.buffers,input.handle); if !ok { return {},.Invalid_Resource,.None }
         buffer:=entry^; buffer.refs+=1; append(&slot.buffers,buffer)
         send(nil,slot.residency,"addAllocation:",buffer.object)
+        if buffer.heap!=nil { send(nil,slot.residency,"addAllocation:",buffer.heap.object) }
     }
-    send(nil,slot.residency,"commit"); send(nil,slot.residency,"requestResidency"); slot.resident=true
+    for input in prepared.textures {
+        entry,ok:=gfx.storage_get(&r.textures,input.handle); if !ok { return {},.Invalid_Resource,.None }
+        texture:=entry^; texture.refs+=1; append(&slot.textures,texture)
+        send(nil,slot.residency,"addAllocation:",texture.object)
+        if texture.heap!=nil { send(nil,slot.residency,"addAllocation:",texture.heap.object) }
+    }
     send(nil,slot.command,"beginCommandBufferWithAllocator:",slot.allocator)
     send(nil,slot.command,"useResidencySet:",slot.residency)
     for pass in prepared.passes {
+        if packet,rendering:=pass.packet.(gfx.Render); rendering {
+            err:=encode_render(r,slot,&prepared,pass,packet); if err!=.None { return {},err,.None }; continue
+        }
         encoder:=send(^NS.Object,slot.command,"computeCommandEncoder")
         if encoder==nil { return {},.Allocation_Failed,.None }
-        after:u64
-        for hazard in prepared.hazards {
-            if hazard.after!=pass.id { continue }
-            for source in prepared.passes { if source.id==hazard.before { after|=u64(1<<27) if source.kind==.Compute else u64(1<<28); break } }
-        }
-        // Earlier submissions on this queue can reference the same persistent allocation.
-        if after==0 { after=u64((1<<27)|(1<<28)) }
-        stage:=u64(1<<27) if pass.kind==.Compute else u64(1<<28)
-        send(nil,encoder,"barrierAfterQueueStages:beforeStages:visibilityOptions:",after,stage,NS.UInteger(1))
-        switch packet in pass.packet {
+        visibility:=NS.UInteger(1)
+        for buffer in slot.buffers { if buffer.heap!=nil { visibility|=2 } }
+        for texture in slot.textures { if texture.heap!=nil { visibility|=2 } }
+        for alias in prepared.aliases { if alias.after==pass.id { visibility|=2 } }
+        send(nil,encoder,"barrierAfterQueueStages:beforeStages:visibilityOptions:",NS.UInteger(max(int)),NS.UInteger(max(int)),visibility)
+        #partial switch packet in pass.packet {
         case gfx.Dispatch:
-            entry,ok:=gfx.storage_get(&r.pipelines,packet.pipeline); if !ok { send(nil,encoder,"endEncoding"); return {},.Invalid_Resource,.None }
-            pipeline:=entry^; retain_pipeline(slot,pipeline)
-            table_desc:=new_object("MTL4ArgumentTableDescriptor"); if table_desc==nil { send(nil,encoder,"endEncoding"); return {},.Allocation_Failed,.None }
-            count:u32
-            for binding in packet.bindings { count=max(count,binding.slot+1) }
-            send(nil,table_desc,"setMaxBufferBindCount:",NS.UInteger(count))
-            table:=send(^NS.Object,r.device,"newArgumentTableWithDescriptor:error:",table_desc,&native_error)
-            table_desc->release()
-            if table==nil { send(nil,encoder,"endEncoding"); return {},.Allocation_Failed,.None }
-            append(&slot.tables,table)
-            for binding in packet.bindings {
-                buffer,present:=resolve_buffer(r,&prepared,binding.access.resource)
-                if !present { send(nil,encoder,"endEncoding"); return {},.Invalid_Resource,.None }
-                send(nil,table,"setAddress:atIndex:",buffer.object->gpuAddress()+binding.access.range.offset,NS.UInteger(binding.slot))
-            }
-            send(nil,encoder,"setComputePipelineState:",pipeline.object); send(nil,encoder,"setArgumentTable:",table)
-            groups:=MTL.Size{NS.Integer(packet.groups[0]),NS.Integer(packet.groups[1]),NS.Integer(packet.groups[2])}
-            local:=MTL.Size{NS.Integer(pipeline.local_size[0]),NS.Integer(pipeline.local_size[1]),NS.Integer(pipeline.local_size[2])}
-            send(nil,encoder,"dispatchThreadgroups:threadsPerThreadgroup:",groups,local)
+            err:=encode_dispatch(r,slot,&prepared,encoder,packet)
+            if err!=.None { send(nil,encoder,"endEncoding"); return {},err,.None }
+        case gfx.Fill_Buffer:
+            err:=encode_fill_words(r,slot,&prepared,encoder,packet.destination,packet.offset,packet.size,packet.value)
+            if err!=.None { send(nil,encoder,"endEncoding"); return {},err,.None }
+        case gfx.Generate_Mips:
+            err:=encode_mips(r,slot,&prepared,encoder,packet)
+            if err!=.None { send(nil,encoder,"endEncoding"); return {},err,.None }
+        case gfx.Copy_Image_Buffer:
+            err:=encode_image_copy(r,encoder,&prepared,packet)
+            if err!=.None { send(nil,encoder,"endEncoding"); return {},err,.None }
+        case gfx.Copy_Buffer_Image:
+            err:=encode_buffer_image_copy(r,encoder,&prepared,packet)
+            if err!=.None { send(nil,encoder,"endEncoding"); return {},err,.None }
         case gfx.Copy_Buffer:
             source,source_ok:=resolve_buffer(r,&prepared,packet.source)
             destination,destination_ok:=resolve_buffer(r,&prepared,packet.destination)
@@ -140,6 +167,7 @@ submit :: proc(r:^Renderer,g:^gfx.Buffer_Graph,plan:^gfx.Compiled_Graph,inputs:[
         send(nil,encoder,"endEncoding")
     }
     send(nil,slot.command,"endCommandBuffer")
+    send(nil,slot.residency,"commit"); send(nil,slot.residency,"requestResidency"); slot.resident=true
     if gfx.frame_recorded(&r.frames,token)!=.None { return {},.Native_Failure,.None }
     slot.options=new_object("MTL4CommitOptions"); if slot.options==nil { return {},.Allocation_Failed,.None }
     slot.completion=new(Completion,r.allocator); sync.wait_group_add(&slot.completion.wait_group,1)
@@ -147,7 +175,16 @@ submit :: proc(r:^Renderer,g:^gfx.Buffer_Graph,plan:^gfx.Compiled_Graph,inputs:[
     if slot.block==nil { return {},.Allocation_Failed,.None }
     send(nil,slot.options,"addFeedbackHandler:",slot.block)
     commands:=[1]^NS.Object{slot.command}
-    for buffer in slot.buffers { buffer.pending+=1 }
+    consumes_surface:=false
+    for image in prepared.images {
+        if image.input.handle==r.surface_texture && r.surface.drawable!=nil { consumes_surface=true; break }
+    }
+    if consumes_surface {
+        send(nil,r.queue,"waitForDrawable:",r.surface.drawable)
+        r.surface.drawable->retain(); append(&slot.auxiliary,cast(^NS.Object)r.surface.drawable)
+    }
+    for buffer in slot.buffers { buffer.pending+=1; if buffer.heap!=nil { buffer.heap.pending+=1 } }
+    for texture in slot.textures { texture.pending+=1; if texture.heap!=nil { texture.heap.pending+=1 } }
     send(nil,r.queue,"commit:count:options:",raw_data(commands[:]),NS.UInteger(1),slot.options)
     submission,frame_error:=gfx.frame_submitted(&r.frames,token)
     slot.submission=submission; committed=true
@@ -158,6 +195,11 @@ submit :: proc(r:^Renderer,g:^gfx.Buffer_Graph,plan:^gfx.Compiled_Graph,inputs:[
         r.failed=true; log.error("Accepted Metal submission lost its frame token")
         return {},.Native_Failure,.None
     }
+    if consumes_surface { r.surface.submitted={r,token,submission} }
+    commit_content_epochs(r,&prepared)
+    for journal in journals { invalidate_heap_content(r,journal.texture.heap,nil) }
+    for journal in journals { copy(journal.texture.initialized,journal.initialized) }
+    publish_sources(r,&prepared,gfx.Submission{r,token,submission})
     r.next_slot=(index+1)%len(r.slots)
     return {r,token,submission},.None,.None
 }

@@ -38,8 +38,8 @@ test_frame_exact_completion_and_abort :: proc(t:^testing.T) {
 }
 @(test)
 test_graph_live_hazards_and_disjoint_ranges :: proc(t:^testing.T) {
-    g:Buffer_Graph; graph_init(&g); defer graph_destroy(&g)
-    desc:=Buffer_Desc{64,{.Storage,.Transfer_Source,.Transfer_Destination,.Readback}}
+    g:Graph; graph_init(&g); defer graph_destroy(&g)
+    desc:=Buffer_Desc{size=64,usage={.Storage,.Transfer_Source,.Transfer_Destination,.Readback}}
     scratch,_:=graph_buffer(&g,desc,false,false)
     output,_:=graph_buffer(&g,desc,false,true)
     dead,_:=graph_buffer(&g,desc,false,false)
@@ -55,9 +55,9 @@ test_graph_live_hazards_and_disjoint_ranges :: proc(t:^testing.T) {
 }
 @(test)
 test_graph_rejection_and_initialization_gaps :: proc(t:^testing.T) {
-    g,other:Buffer_Graph; graph_init(&g); graph_init(&other); defer graph_destroy(&g); defer graph_destroy(&other)
-    buffer,_:=graph_buffer(&g,{64,{.Storage}},false,true)
-    other_owner,_:=graph_buffer(&other,{64,{.Storage}},true,false)
+    g,other:Graph; graph_init(&g); graph_init(&other); defer graph_destroy(&g); defer graph_destroy(&other)
+    buffer,_:=graph_buffer(&g,{size=64,usage={.Storage}},false,true)
+    other_owner,_:=graph_buffer(&other,{size=64,usage={.Storage}},true,false)
     for access in ([]Buffer_Access{{other_owner,{0,16},.Read,.Storage},{buffer,{max(u64),16},.Write,.Storage},{buffer,{0,0},.Write,.Storage},{buffer,{0,16},.Read,.Transfer_Source}}) {
         _,err:=graph_pass(&g,"bad",.Compute,{access}); testing.expect(t,err!=.None)
     }
@@ -72,8 +72,8 @@ test_graph_rejection_and_initialization_gaps :: proc(t:^testing.T) {
 
 @(test)
 test_export_initialization_and_read_only_hazards :: proc(t:^testing.T) {
-    g:Buffer_Graph; graph_init(&g); defer graph_destroy(&g)
-    buffer,_:=graph_buffer(&g,{64,{.Storage}},false,true)
+    g:Graph; graph_init(&g); defer graph_destroy(&g)
+    buffer,_:=graph_buffer(&g,{size=64,usage={.Storage}},false,true)
     graph_pass(&g,"partial",.Compute,{{buffer,{0,32},.Write,.Storage}})
     empty,rejected:=graph_compile(&g); defer compiled_graph_destroy(&empty)
     testing.expect_value(t,rejected,Graph_Error.Uninitialized_Read)

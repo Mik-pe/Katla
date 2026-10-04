@@ -63,3 +63,8 @@ frame_abort :: proc(f:^Frames,token:Frame_Token)->Frame_Error {
     if slot.state==.Submitted { return .Invalid_State }
     slot.state=.Idle; return .None
 }
+/// Checks active CPU write ownership without changing acquisition state.
+frame_is_acquired :: proc(f:^Frames,token:Frame_Token)->bool {
+    slot,ok:=frame_slot(f,token)
+    return ok && slot.state==.Acquired
+}

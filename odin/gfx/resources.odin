@@ -60,7 +60,8 @@ Buffer_Usage :: enum { Storage, Uniform, Vertex, Index, Indirect, Transfer_Sourc
 /// A set of declared uses that a buffer allocation permits.
 Buffer_Usages :: bit_set[Buffer_Usage]
 /// Generic byte capacity and permitted uses supplied by the caller.
-Buffer_Desc :: struct { size:u64, usage:Buffer_Usages }
+Memory_Domain :: enum { CPU_Visible, GPU_Private }
+Buffer_Desc :: struct { size:u64, usage:Buffer_Usages, memory:Memory_Domain }
 /// A nonempty half-open range; validation uses subtraction to avoid overflow.
 Buffer_Range :: struct { offset,size:u64 }
 /// Checks a range without adding potentially overflowing offsets.
@@ -73,3 +74,6 @@ range_overlaps :: #force_inline proc(a,b:Buffer_Range)->bool {
     if a.offset<=b.offset { return b.offset-a.offset<a.size }
     return a.offset-b.offset<b.size
 }
+
+/// CPU-readable readback allocations cannot promise a GPU-only memory policy.
+buffer_desc_valid :: proc(desc:Buffer_Desc)->bool { return desc.size>0 && desc.usage!={} && !(desc.memory==.GPU_Private && .Readback in desc.usage) }

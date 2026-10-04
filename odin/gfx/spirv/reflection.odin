@@ -87,93 +87,15 @@ entry_name :: proc(words:[]u32)->(string,bool) {
     for ch,i in bytes { if ch==0 { return string(bytes[:i]),true } }
     return "",false
 }
-/// Reflects a single compute entry, fixed local sizes and set-zero scalar/vector/matrix buffers.
+/// Adapts the canonical selected-entry decoder to set-zero compute buffer packets.
 reflect :: proc(words:[]u32,entry:string,allocator:=context.allocator)->(Reflection,Error) {
-    if len(words)<5 || words[0]!=0x07230203 || words[3]==0 || words[4]!=0 || len(entry)==0 { return {},.Invalid_Module }
-    module:=Module{nodes=make(map[u32]Node,allocator),decorations=make([dynamic]Decoration,allocator)}
-    defer delete(module.nodes); defer delete(module.decorations)
-    reflection:=Reflection{buffers=make([dynamic]Buffer,allocator)}
+    selected,err:=reflect_entry(words,entry,.Compute,allocator)
+    if err!=.None { return {},err }; defer stage_destroy(&selected)
+    reflection:=Reflection{buffers=make([dynamic]Buffer,allocator),local_size=selected.local_size}
     success:=false; defer { if !success { destroy(&reflection) } }
-    compute_entries:=0; function_id:u32
-    mode_args:[]u32; mode_ids:=false; function_open:=false
-    for cursor:=5; cursor<len(words); {
-        count:=int(words[cursor]>>16); opcode:=words[cursor]&0xffff
-        if count==0 || count>len(words)-cursor { return {},.Invalid_Module }
-        args:=words[cursor+1:cursor+count]
-        cursor+=count
-        if opcode==54 {
-            if function_open || len(args)!=4 { return {},.Invalid_Module }; function_open=true
-        } else if opcode==56 {
-            if !function_open || len(args)!=0 { return {},.Invalid_Module }; function_open=false
-        }
-        if opcode==15 {
-            if len(args)<3 { return {},.Invalid_Module }
-            name,valid:=entry_name(args[2:]); if !valid { return {},.Invalid_Module }
-            if args[0]!=5 { return {},.Unsupported }
-            compute_entries+=1
-            if name==entry { function_id=args[1] }
-        } else if opcode==16 || opcode==331 {
-            if len(args)<2 { return {},.Invalid_Module }
-            if (opcode==16 && args[1]==17) || (opcode==331 && args[1]==38) {
-                if len(args)!=5 { return {},.Invalid_Module }
-                if mode_args!=nil { return {},.Unsupported }
-                mode_args=args; mode_ids=opcode==331
-            }
-        } else if opcode==71 {
-            if len(args)<2 { return {},.Invalid_Module }
-            if (args[1]==6 || args[1]==33 || args[1]==34) && len(args)!=3 { return {},.Invalid_Module }
-            value:u32
-            if len(args)>2 { value=args[2] }
-            append(&module.decorations,Decoration{target=args[0],kind=args[1],value=value})
-        } else if opcode==72 {
-            if len(args)<3 { return {},.Invalid_Module }
-            if (args[2]==7 || args[2]==35) && len(args)!=4 { return {},.Invalid_Module }
-            value:u32
-            if len(args)>3 { value=args[3] }
-            append(&module.decorations,Decoration{target=args[0],member=args[1],kind=args[2],value=value,is_member=true})
-        } else {
-            id:u32; has_id:=false
-            if opcode>=19 && opcode<=33 { if len(args)<1 { return {},.Invalid_Module }; id=args[0]; has_id=true }
-            else if opcode==43 || opcode==59 || opcode==54 { if len(args)<3 { return {},.Invalid_Module }; id=args[1]; has_id=true }
-            if has_id {
-                if id==0 || id>=words[3] { return {},.Invalid_Module }
-                if _,exists:=module.nodes[id]; exists { return {},.Invalid_Module }
-                module.nodes[id]={opcode,args}
-            }
-        }
-    }
-    if function_open { return {},.Invalid_Module }
-    if words[1]<0x00010000 || words[1]>0x00010600 || words[1]&0xff!=0 { return {},.Unsupported }
-    if compute_entries!=1 { return {},.Unsupported }
-    if function_id==0 || mode_args==nil || mode_args[0]!=function_id { return {},.Invalid_Module }
-    function,has_function:=module.nodes[function_id]
-    if !has_function || function.opcode!=54 { return {},.Invalid_Module }
-    for i in 0..<3 {
-        value:=u64(mode_args[i+2])
-        if mode_ids { value_ok:bool; value,value_ok=constant(&module,mode_args[i+2]); if !value_ok { return {},.Unsupported } }
-        if value==0 || value>u64(max(u32)) { return {},.Invalid_Module }
-        reflection.local_size[i]=u32(value)
-    }
-    for _,variable in module.nodes {
-        if variable.opcode!=59 { continue }
-        args:=variable.args
-        if len(args)<3 { return {},.Invalid_Module }
-        storage:=args[2]
-        if storage!=2 && storage!=12 {
-            if storage==0 || storage==9 { return {},.Unsupported }
-            continue
-        }
-        pointer,exists:=module.nodes[args[0]]
-        if !exists || pointer.opcode!=32 || len(pointer.args)!=3 || pointer.args[1]!=storage { return {},.Invalid_Module }
-        slot,has_slot:=decoration(&module,args[1],33)
-        set,has_set:=decoration(&module,args[1],34)
-        if !has_slot || !has_set { return {},.Invalid_Module }
-        if set!=0 || slot>=32 { return {},.Unsupported }
-        _,block:=decoration(&module,pointer.args[2],2)
-        if !block { return {},.Unsupported }
-        size,valid:=span(&module,pointer.args[2],0); if !valid { return {},.Unsupported }
-        for previous in reflection.buffers { if previous.slot==slot { return {},.Invalid_Module } }
-        append(&reflection.buffers,Buffer{slot,storage==12,size})
+    for resource in selected.resources {
+        if resource.kind!=.Buffer || resource.group!=0 || resource.binding>=32 || resource.array_count!=1 { return {},.Unsupported }
+        append(&reflection.buffers,Buffer{resource.binding,resource.storage,resource.minimum_size})
     }
     success=true; return reflection,.None
 }
