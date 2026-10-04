@@ -7,6 +7,9 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
+sys.path.insert(0,str(Path(__file__).resolve().parents[1] / "tools/box3d"))
+from planar_hulls import prepare as prepare_planar_hulls
 
 ROOT = Path(__file__).resolve().parents[1]
 REVISION = "8441b4a06d6d09dcfb0b0f704df4d847d1437b92"
@@ -53,17 +56,22 @@ def main():
         raise SystemExit("Box3D dependency checkout must be clean")
     listing = (source / "src/CMakeLists.txt").read_text().split("set(BOX3D_SOURCE_FILES", 1)[1].split(")", 1)[0]
     sources = [str(source / "src" / name) for name in re.findall(r"\b[\w]+\.c\b", listing)]
-    suffix = "dylib" if platform.system() == "Darwin" else "so"
-    if platform.system() not in ("Darwin", "Linux"):
-        raise SystemExit("Use a C17 Windows dependency build; this native driver supports Darwin/Linux")
+    host = platform.system()
+    suffix = {"Darwin": "dylib", "Linux": "so", "Windows": "dll"}.get(host)
+    if suffix is None:
+        raise SystemExit(f"Unsupported native Box3D build platform: {host}")
     output = ROOT / "target" / f"libkatla_box3d{'_asan' if args.sanitize else ''}.{suffix}"
     if args.output is not None:
         output = args.output.resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
+    adapted_hull = prepare_planar_hulls(source,output.parent / f"{output.stem}-source")
+    sources = [str(adapted_hull) if Path(item).name == "hull.c" else item for item in sources]
     command = [compiler(args.sanitize), "-std=c17", "-O1" if args.sanitize else "-O2",
-               "-fPIC", "-ffp-contract=off", "-DBOX3D_VALIDATE", "-I", str(source / "include"),
+               *([] if host == "Windows" else ["-fPIC"]), "-ffp-contract=off", "-DBOX3D_VALIDATE",
+               "-Dbox3d_EXPORTS", "-I", str(source / "include"), "-I", str(source / "src"),
                "-dynamiclib" if suffix == "dylib" else "-shared", *sources,
-               str(ROOT / "tools/box3d/bridge.c"), "-o", str(output), "-lm", "-pthread"]
+               str(ROOT / "tools/box3d/bridge.c"), "-o", str(output),
+               *([] if host == "Windows" else ["-lm", "-pthread"])]
     if args.sanitize:
         command.extend(["-fsanitize=address", "-fno-omit-frame-pointer"])
     subprocess.run(command, check=True, cwd=ROOT)

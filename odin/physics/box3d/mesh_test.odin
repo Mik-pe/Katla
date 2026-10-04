@@ -22,8 +22,8 @@ test_native_mesh_floor_owned_hull_geometry_and_atomic_failed_replacement :: proc
     malformed:=cube; malformed.vertices=raw_data(bad_points[:]); malformed.vertex_count=4
     testing.expect_value(t,backend_sync(&b,{malformed}),Error.Native)
     testing.expect(t,len(b.entries)==2 && b.entries[max(u64)].native==prior)
-    unsupported:=ground; unsupported.body_type=.Kinematic
-    testing.expect_value(t,backend_sync(&b,{unsupported,cube}),Error.Invalid)
+    moving:=ground; moving.body_type=.Kinematic
+    testing.expect_value(t,backend_sync(&b,{moving,cube}),Error.None)
     testing.expect_value(t,len(b.entries),2)
     testing.expect_value(t,backend_sync(&b,{ground,cube}),Error.None)
     testing.expect(t,b.entries[max(u64)].native==prior)
@@ -44,11 +44,11 @@ test_native_mesh_floor_owned_hull_geometry_and_atomic_failed_replacement :: proc
 }
 
 @(test)
-test_mesh_preflight_rejects_missing_storage_and_unsupported_body_types :: proc(t:^testing.T) {
+test_mesh_preflight_rejects_missing_storage_and_invalid_indices :: proc(t:^testing.T) {
     body:=test_body(1,.Fixed); body.shape_kind=.Trimesh
     testing.expect(t,!body_valid(body))
     points:=[3][3]f32{{0,0,0},{1,0,0},{0,1,0}}; indices:=[3]u32{0,1,2}
     body.vertices=raw_data(points[:]); body.vertex_count=3; body.indices=raw_data(indices[:]); body.index_count=3
-    testing.expect(t,body_valid(body)); body.body_type=.Dynamic; testing.expect(t,!body_valid(body))
+    testing.expect(t,body_valid(body)); body.body_type=.Dynamic; testing.expect(t,body_valid(body))
     body.body_type=.Fixed; indices[2]=99; testing.expect(t,!body_valid(body))
 }
