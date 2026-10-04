@@ -7,9 +7,10 @@ CPU packages can be exercised independently; native GPU adapters require their t
 | Package | Responsibility | Contract |
 | --- | --- | --- |
 | `ecs` | Entity identities, sparse storage, queries, resources, events, commands, scheduling | [ECS port](../docs/ecs_odin.md) |
-| `editor` | Optional reflection, JSON, reversible scene actions and agent mailbox | [ECS/editor port](../docs/ecs_odin.md) |
+| `editor` | Optional reflection, JSON, reversible scene actions and bounded correlated agent mailbox | [ECS/editor port](../docs/ecs_odin.md) |
 | `agent` | Validated JSON scene/material calls, selected context and synchronized admission | [Agent authoring](../docs/agent_odin.md) |
 | `app` | Scene owner, protected/edit-mode authority and atomic material authoring through shared undo | [Application authoring](../docs/agent_odin.md#material-requests-and-the-application-owner) |
+| `examples/agent_mailbox` | Concurrent 512-call host/owner journey with backpressure, cancellation, close and shared undo | `odin run odin/examples/agent_mailbox` |
 | `examples/material_authoring` | Host-thread two-object edit and shared undo preserving unrelated scene state | `odin run odin/examples/material_authoring` |
 | `gfx` | Typed GPU identity, frames, executable buffer graphs and reflected packet preflight | [GPU core](../docs/gfx_odin.md#gpu-core) |
 | `gfx/metal`, `gfx/vulkan` | Native headless compute/transfer owners and exact resource retirement | [Native adapters](../docs/gfx_odin.md#native-adapters) |

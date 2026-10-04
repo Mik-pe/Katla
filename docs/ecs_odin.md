@@ -117,7 +117,11 @@ remaps earlier command targets after restoration; references inside arbitrary
 serialized payloads still require application-specific ownership.
 
 Owner-thread execution can supply an `Application_Executor` to scene sessions and
-mailbox ticks. The host mailbox stores only owned operations/results and no
+mailbox ticks. The mailbox reserves capacity until its correlated reply is taken,
+rejects full/closed admission and allows queued cancellation. Session action IDs
+remain monotonic through undo; caller IDs and cancellation tickets remain distinct.
+See the [agent mailbox contract](agent_odin.md#scene-calls-context-and-admission).
+The host mailbox stores only owned operations/results and no
 application executor state. Unsupported application calls return
 `Application_Owned` when the owner supplies no executor. See the
 [application authoring contract](agent_odin.md#material-requests-and-the-application-owner).

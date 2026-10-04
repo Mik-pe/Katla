@@ -35,7 +35,8 @@ test_material_malformed_calls_reject_before_mailbox_mutation :: proc(t:^testing.
         `{"action":"set","entity_ids":["0"],"roughness":-0.01}`,
         `{"action":"set","entity_ids":["0"],"ao":1e100}`,
     }) {
-        testing.expect_value(t,submit_call(&h,{"invalid","material",transmute([]byte)args}),Call_Error.Invalid_Arguments)
+        ticket,submission_error:=submit_call(&h,{"invalid","material",transmute([]byte)args})
+        testing.expect_value(t,submission_error,Call_Error.Invalid_Arguments); testing.expect_value(t,ticket,u64(0))
     }
     testing.expect(t,len(h.requests)==0 && len(h.session.actions)==0)
 }
@@ -45,9 +46,10 @@ test_material_without_application_returns_explicit_boundary :: proc(t:^testing.T
     w:ecs.World; ecs.world_init(&w); defer ecs.world_destroy(&w)
     reg:editor.Component_Registry; editor.editor_registry_init(&reg); defer editor.editor_registry_destroy(&reg)
     h:editor.Agent_Harness; editor.agent_harness_init(&h); defer editor.agent_harness_destroy(&h)
-    testing.expect_value(t,submit_call(&h,{"presets","material",transmute([]byte)string(`{"action":"presets"}`)}),Call_Error.None)
+    ticket,submission_error:=submit_call(&h,{"presets","material",transmute([]byte)string(`{"action":"presets"}`)})
+    testing.expect_value(t,submission_error,Call_Error.None); testing.expect(t,ticket>0)
     testing.expect_value(t,editor.agent_tick(&h,&w,&reg),1)
-    response,ok:=editor.agent_take_result(&h); defer editor.tool_result_destroy(&response.result)
+    response,ok:=editor.agent_take_result(&h); defer editor.agent_response_destroy(&response)
     testing.expect(t,ok && response.result.error==.Application_Owned && w.live_count==0)
 }
 @(test)

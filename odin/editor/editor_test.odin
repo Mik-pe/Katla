@@ -106,7 +106,7 @@ test_editor_owned_strings_and_failed_decode_release :: proc(t:^testing.T) {
 @(private="file")
 test_agent_producer :: proc(t:^thread.Thread) {
     h:=cast(^Agent_Harness)t.data
-    for _ in 0..<12 { agent_submit(h,Scene_Op{kind=.Spawn,position={3,0,0}}) }
+    for _ in 0..<12 { ticket,err:=agent_submit(h,Scene_Op{kind=.Spawn,position={3,0,0}}); assert(ticket>0 && err==.None) }
     agent_finish(h)
 }
 @(test)
@@ -122,7 +122,7 @@ test_agent_background_mailbox_and_undo :: proc(t:^testing.T) {
     testing.expect_value(t,agent_tick(&h,&w,&reg),10)
     testing.expect_value(t,agent_tick(&h,&w,&reg),2)
     testing.expect(t,h.session.finished && w.live_count==12)
-    for _ in 0..<12 { response,ok:=agent_take_result(&h); testing.expect(t,ok && response.result.error==.None); tool_result_destroy(&response.result) }
+    for _ in 0..<12 { response,ok:=agent_take_result(&h); testing.expect(t,ok && response.result.error==.None); agent_response_destroy(&response) }
     testing.expect_value(t,agent_undo_all(&h.session,&w,&reg),Scene_Error.None)
     testing.expect(t,w.live_count==0 && len(h.session.actions)==0)
 }

@@ -11,7 +11,7 @@ Message_Role :: enum { System, User, Assistant, Tool }
 /// A borrowed call envelope; arguments must contain one JSON object.
 Tool_Call :: struct { id, name:string, arguments:[]byte }
 /// Reports protocol rejection before a scene action is queued.
-Call_Error :: enum { None, Unknown_Tool, Invalid_JSON, Invalid_Arguments }
+Call_Error :: enum { None, Unknown_Tool, Invalid_JSON, Invalid_Arguments, Mailbox_Full, Mailbox_Closed, Identifier_Exhausted }
 /// Owns decoded JSON and optional field bytes; operation data borrows those owners.
 Decoded_Call :: struct { operation:editor.Scene_Op, tree:json.Value, field_bytes:[]byte, allocator:mem.Allocator }
 /// Releases a decoded call after synchronous execution or mailbox submission.
@@ -145,11 +145,17 @@ decode_call :: proc(call:Tool_Call,allocator:=context.allocator)->(Decoded_Call,
     success=true
     return result,.None
 }
-/// Queues validated data for editor-thread execution; rejection leaves history untouched.
-submit_call :: proc(h:^editor.Agent_Harness,call:Tool_Call)->Call_Error {
+/// Returns a cancellation ticket on acceptance; rejection leaves the scene and history untouched.
+submit_call :: proc(h:^editor.Agent_Harness,call:Tool_Call)->(u64,Call_Error) {
     decoded,err:=decode_call(call,h.allocator)
-    if err!=.None { return err }
+    if err!=.None { return 0,err }
     defer decoded_call_destroy(&decoded)
-    editor.agent_submit(h,decoded.operation)
-    return .None
+    ticket,mailbox_error:=editor.agent_submit(h,decoded.operation,call.id)
+    switch mailbox_error {
+    case .None: err=.None
+    case .Full: err=.Mailbox_Full
+    case .Closed: err=.Mailbox_Closed
+    case .Identifier_Exhausted: err=.Identifier_Exhausted
+    }
+    return ticket,err
 }

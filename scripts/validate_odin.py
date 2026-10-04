@@ -30,6 +30,7 @@ def main():
         ["odin", "test", "odin/gfx", "-out:target/odin-gfx-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/gfx/spirv", "-out:target/odin-spirv-tests", "-vet", "-strict-style"],
         ["odin", "run", "odin/examples/agent_scene", "-out:target/odin-agent-scene", "-vet", "-strict-style"],
+        ["odin", "run", "odin/examples/agent_mailbox", "-out:target/odin-agent-mailbox", "-vet", "-strict-style"],
         ["odin", "run", "odin/examples/material_authoring", "-out:target/odin-material-authoring", "-vet", "-strict-style"],
         ["odin", "test", "odin/math", "-out:target/odin-math-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/icons", "-out:target/odin-icons-tests", "-vet", "-strict-style"],

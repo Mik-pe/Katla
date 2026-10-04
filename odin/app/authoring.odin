@@ -12,12 +12,12 @@ Play_Mode :: enum { Editing, Playing, Paused }
 /// A stationary scene owner; producers receive only its synchronized agent mailbox.
 Authoring :: struct { world:ecs.World, registry:editor.Component_Registry, agent:editor.Agent_Harness, mode:Play_Mode }
 /// Initializes CPU authoring state without installing graphics or network services.
-authoring_init :: proc(app:^Authoring,allocator:=context.allocator) {
+authoring_init :: proc(app:^Authoring,allocator:=context.allocator,agent_capacity:=256) {
     ecs.world_init(&app.world,allocator=allocator)
     editor.editor_registry_init(&app.registry,allocator)
     editor.editor_register(&app.world,&app.registry,"SurfaceMaterial",Surface_Material{metallic=0,roughness=0.5,ao=1})
     ecs.register_component(&app.world,Editor_Hidden)
-    editor.agent_harness_init(&app.agent,allocator)
+    editor.agent_harness_init(&app.agent,allocator,agent_capacity)
 }
 /// Join producers first; the shared history releases command state before the registry/world.
 authoring_destroy :: proc(app:^Authoring) {

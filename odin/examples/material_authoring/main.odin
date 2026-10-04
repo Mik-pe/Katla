@@ -12,7 +12,8 @@ import "core:mem"
 Producer :: struct { mailbox:^editor.Agent_Harness, arguments:[]byte }
 producer :: proc(th:^thread.Thread) {
     state:=cast(^Producer)th.data
-    assert(agent.submit_call(state.mailbox,{"surface-1","material",state.arguments})==.None)
+    ticket,err:=agent.submit_call(state.mailbox,{"surface-1","material",state.arguments})
+    assert(ticket>0 && err==.None)
     editor.agent_finish(state.mailbox)
 }
 Position :: struct { x:f32 }
@@ -30,8 +31,8 @@ main :: proc() {
     worker:=thread.create(producer); worker.data=&state; thread.start(worker); thread.join(worker); thread.destroy(worker)
     unchanged,_:=ecs.get_component(&scene.world,a,app.Surface_Material); assert(unchanged.roughness==0.5 && !unchanged.has_tint)
     assert(app.authoring_tick(&scene)==1)
-    response,ok:=editor.agent_take_result(&scene.agent); assert(ok && response.result.error==.None && len(response.result.entities)==2)
-    defer editor.tool_result_destroy(&response.result)
+    response,ok:=editor.agent_take_result(&scene.agent); assert(ok && response.result.error==.None && len(response.result.entities)==2 && response.call_id=="surface-1" && response.ticket>0)
+    defer editor.agent_response_destroy(&response)
     fmt.println(string(response.result.data))
     for id in ([2]ecs.Entity_Id{a,b}) {
         surface,_:=ecs.get_component(&scene.world,id,app.Surface_Material); assert(surface.has_tint && surface.roughness==0.3)

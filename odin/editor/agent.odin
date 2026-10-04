@@ -17,15 +17,22 @@ Agent_Session :: struct { actions:[dynamic]Agent_Action, next_id:u64, paused,fin
 Application_Executor :: struct { state:rawptr, execute:proc(rawptr,^ecs.World,^Component_Registry,Scene_Op)->(Tool_Result,Undo_Group) }
 /// Owns an entity count and sorted available-component names.
 Observation :: struct { entity_count:int, available_components:[dynamic]string }
-/// Transfers an action ID and owned result to a background agent.
-Agent_Response :: struct { id:u64, result:Tool_Result }
+/// Distinguishes rejected submission from accepted work without touching the scene.
+Mailbox_Error :: enum { None, Full, Closed, Identifier_Exhausted }
+/// Owns one accepted operation and its caller correlation string.
+@(private="package")
+Agent_Request :: struct { ticket:u64, call_id:string, operation:Scene_Op }
+/// Transfers request correlation, action ID and an owned result to the caller.
+Agent_Response :: struct { id,ticket:u64, call_id:string, result:Tool_Result, allocator:mem.Allocator }
 /// Owns a synchronized mailbox and caller-thread scene session.
 Agent_Harness :: struct {
     session:Agent_Session,
-    requests:[dynamic]Scene_Op,
+    requests:[dynamic]Agent_Request,
     responses:[dynamic]Agent_Response,
     mutex:sync.Mutex,
     finished_requested:bool,
+    capacity,outstanding:int,
+    next_ticket:u64,
     allocator:mem.Allocator,
 }
 /// Initializes owned action history and session controls.
@@ -53,7 +60,6 @@ agent_undo_last :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry)->
             if prior.operation.has_parent && prior.operation.parent==remap.before { prior.operation.parent=remap.after }
         }
     }
-    s.next_id=a.id
     scene_op_destroy(&a.operation,s.allocator)
     tool_result_destroy(&a.result); undo_group_destroy(&a.undo)
     resize(&s.actions,len(s.actions)-1)
@@ -72,10 +78,10 @@ build_observation :: proc(w:^ecs.World,reg:^Component_Registry)->Observation {
 observation_destroy :: proc(o:^Observation) { delete(o.available_components); o^={} }
 /// Records one caller-thread operation with an owned result and undo snapshot.
 agent_execute :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry,op:Scene_Op,application:Application_Executor={})->^Agent_Action {
+    assert(s.next_id<max(u64))
     result:Tool_Result; group:Undo_Group
     if application.execute!=nil { result,group=application.execute(application.state,w,reg,op) }
     else { result,group=scene_execute(w,reg,op) }
-    assert(s.next_id<max(u64))
     append(&s.actions,Agent_Action{s.next_id,scene_op_clone(op,s.allocator),result,group}); s.next_id+=1
     return &s.actions[len(s.actions)-1]
 }
@@ -109,36 +115,64 @@ tool_result_clone :: proc(result:Tool_Result,allocator:mem.Allocator)->Tool_Resu
     append(&cloned.entities,..result.entities[:]); copy(cloned.data,result.data)
     return cloned
 }
-/// Initializes a stationary mailbox with a thread-safe allocator.
-agent_harness_init :: proc(h:^Agent_Harness,allocator:=context.allocator) {
-    h.allocator=allocator; agent_session_init(&h.session,allocator)
-    h.requests=make([dynamic]Scene_Op,allocator); h.responses=make([dynamic]Agent_Response,allocator)
+/// Initializes a stationary mailbox; capacity includes queued, executing and unread replies.
+/// Supply a thread-safe allocator and keep this owner stationary until callers have joined.
+agent_harness_init :: proc(h:^Agent_Harness,allocator:=context.allocator,capacity:=256) {
+    assert(capacity>0)
+    h.allocator=allocator; h.capacity=capacity; h.next_ticket=1
+    agent_session_init(&h.session,allocator)
+    h.requests=make([dynamic]Agent_Request,allocator); h.responses=make([dynamic]Agent_Response,allocator)
 }
-/// Join the producer before destruction; queued requests and responses are owned here.
+@(private="package")
+agent_request_destroy :: proc(request:^Agent_Request,allocator:mem.Allocator) {
+    scene_op_destroy(&request.operation,allocator); delete(request.call_id,allocator); request^={}
+}
+/// Releases a transferred response using its captured allocator.
+agent_response_destroy :: proc(response:^Agent_Response) {
+    tool_result_destroy(&response.result); delete(response.call_id,response.allocator); response^={}
+}
+/// Join producers and consumers before destruction; queued requests and replies are owned here.
 agent_harness_destroy :: proc(h:^Agent_Harness) {
-    for &op in h.requests { scene_op_destroy(&op,h.allocator) }
-    for &response in h.responses { tool_result_destroy(&response.result) }
+    for &request in h.requests { agent_request_destroy(&request,h.allocator) }
+    for &response in h.responses { agent_response_destroy(&response) }
     agent_session_destroy(&h.session); delete(h.requests); delete(h.responses); h^={}
 }
-/// May run on a background thread; borrowed operation data is cloned before return.
-agent_submit :: proc(h:^Agent_Harness,op:Scene_Op) {
+/// Clones borrowed data on acceptance; rejection returns ticket zero and reserves no capacity.
+agent_submit :: proc(h:^Agent_Harness,op:Scene_Op,call_id:="")->(u64,Mailbox_Error) {
     sync.mutex_lock(&h.mutex); defer sync.mutex_unlock(&h.mutex)
-    assert(!h.finished_requested,"agent already finished")
-    append(&h.requests,scene_op_clone(op,h.allocator))
+    if h.finished_requested { return 0,.Closed }
+    if h.outstanding>=h.capacity { return 0,.Full }
+    if h.next_ticket==max(u64) { return 0,.Identifier_Exhausted }
+    ticket:=h.next_ticket
+    append(&h.requests,Agent_Request{ticket,strings.clone(call_id,h.allocator),scene_op_clone(op,h.allocator)})
+    h.next_ticket+=1; h.outstanding+=1
+    return ticket,.None
 }
-/// Marks a producer finished after its already queued requests are processed.
+/// Cancels queued work only; an executing or completed action is never rolled back here.
+agent_cancel :: proc(h:^Agent_Harness,ticket:u64)->bool {
+    sync.mutex_lock(&h.mutex); defer sync.mutex_unlock(&h.mutex)
+    for &request,i in h.requests {
+        if request.ticket==ticket {
+            agent_request_destroy(&request,h.allocator); ordered_remove(&h.requests,i)
+            h.outstanding-=1
+            return true
+        }
+    }
+    return false
+}
+/// Closes admission; the owner drains accepted requests unless explicitly cancelled.
 agent_finish :: proc(h:^Agent_Harness) {
     sync.mutex_lock(&h.mutex); defer sync.mutex_unlock(&h.mutex)
     h.finished_requested=true
 }
-/// Returns ownership of the next result to the background agent.
+/// Transfers the next response and frees its reserved mailbox slot.
 agent_take_result :: proc(h:^Agent_Harness)->(Agent_Response,bool) {
     sync.mutex_lock(&h.mutex); defer sync.mutex_unlock(&h.mutex)
     if len(h.responses)==0 { return {},false }
-    result:=h.responses[0]; ordered_remove(&h.responses,0)
+    result:=h.responses[0]; ordered_remove(&h.responses,0); h.outstanding-=1
     return result,true
 }
-/// Executes at most ten queued operations; pause preserves requests for a later tick.
+/// Executes at most ten queued operations; pause preserves requests for a later owner tick.
 agent_tick :: proc(h:^Agent_Harness,w:^ecs.World,reg:^Component_Registry,application:Application_Executor={})->int {
     if h.session.paused || h.session.finished { return 0 }
     processed:=0
@@ -148,12 +182,13 @@ agent_tick :: proc(h:^Agent_Harness,w:^ecs.World,reg:^Component_Registry,applica
             if h.finished_requested { h.session.finished=true }
             sync.mutex_unlock(&h.mutex); break
         }
-        op:=h.requests[0]; ordered_remove(&h.requests,0)
+        request:=h.requests[0]; ordered_remove(&h.requests,0)
         sync.mutex_unlock(&h.mutex)
-        action:=agent_execute(&h.session,w,reg,op,application)
-        scene_op_destroy(&op,h.allocator)
-        response:=tool_result_clone(action.result,h.allocator)
-        sync.mutex_lock(&h.mutex); append(&h.responses,Agent_Response{action.id,response}); sync.mutex_unlock(&h.mutex)
+        action:=agent_execute(&h.session,w,reg,request.operation,application)
+        scene_op_destroy(&request.operation,h.allocator)
+        response:=Agent_Response{id=action.id,ticket=request.ticket,call_id=request.call_id,
+                                 result=tool_result_clone(action.result,h.allocator),allocator=h.allocator}
+        sync.mutex_lock(&h.mutex); append(&h.responses,response); sync.mutex_unlock(&h.mutex)
         processed+=1
     }
     return processed

@@ -14,7 +14,9 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Integrate Odin surface factors with native material uploads, rendered PBR output, inspector controls and grouped live dragging.
 - [ ] Port agent application-owned animation, events, prefab/behavior and resource requests with real application consumers.
 - [ ] Preserve embedded component entity references through hierarchy/prefab/event restoration; the current shared history remaps command targets.
-- [ ] Port optional MCP transport and LLM configuration/HTTP/streaming/orchestration with request correlation, shutdown and failure acceptance.
+- [x] Preserve agent request correlation through a bounded mailbox with queued cancellation, closed admission, reserved response capacity and concurrent application-owner acceptance.
+- [ ] Port optional MCP transport with real framing, protocol discovery/tool calls, cancellation, shutdown and failure acceptance.
+- [ ] Port LLM configuration/HTTP/streaming/orchestration with provider and conversational acceptance.
 - [x] Port gfx typed resource storage, exact frame/submission ownership and buffer-range graph compilation; prove the compiled compute/transfer workload on native Metal 4. See `docs/gfx_odin.md`.
 - [x] Port executable gfx buffer packets with native resource/reflection preflight and matching Metal/Vulkan consumers; validate concurrent uniforms, shared allocation hazards and retained native lifetimes.
 - [ ] Port shared WGSL shader compilation, complete reflection and asynchronous replacement before graphics/application consumers move.
