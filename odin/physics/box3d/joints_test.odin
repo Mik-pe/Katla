@@ -73,10 +73,10 @@ native_joint_whole_batch_rejection :: proc(t:^testing.T) {
     old_a,old_b,old_joint:=b.entries[1].native,b.entries[max(u64)].native,b.joints[7].native
     changed:=bodies; changed[0].position={4,0,0}; invalid:=joint; invalid.b=123
     testing.expect_value(t,backend_sync(&b,changed[:],{invalid}),Error.Invalid)
-    invalid=joint; invalid.kind=.Hinge; invalid.has_limits=1; invalid.limits={-4,4}
-    testing.expect_value(t,backend_sync(&b,changed[:],{invalid}),Error.Unsupported)
-    invalid=joint; invalid.kind=.Distance; invalid.has_limits=1; invalid.limits={-1,1}
-    testing.expect_value(t,backend_sync(&b,changed[:],{invalid}),Error.Unsupported)
+    invalid=joint; invalid.kind=.Hinge; invalid.has_limits=1; invalid.limits={4,-4}
+    testing.expect_value(t,backend_sync(&b,changed[:],{invalid}),Error.Invalid)
+    invalid=joint; invalid.kind=.Distance; invalid.has_limits=1; invalid.limits={math.nan_f32(),1}
+    testing.expect_value(t,backend_sync(&b,changed[:],{invalid}),Error.Invalid)
     testing.expect(t,b.entries[1].native==old_a && b.entries[max(u64)].native==old_b && b.joints[7].native==old_joint)
     original_publish=b.publish_joint; b.publish_joint=fail_second_publish; failed_publish_count=0
     fresh:=joint; fresh.id=8; more:=joint; more.id=9

@@ -14,6 +14,17 @@ graph_image :: proc(g:^Graph,desc:Texture_Desc,contract:Image_Import,imported,ex
     id:=Image_Id{g,len(g.images)}; append(&g.images,Graph_Image{desc,contract,imported,exported}); g.revision+=1
     return id,.None
 }
+/// Replaces an imported declaration while retaining its logical identity and arrival contract.
+/// Callers replace affected commands and compile before recording; failure can restore the old descriptor.
+/// Prepared recordings already own their immutable descriptors and native input snapshots.
+graph_replace_image :: proc(g:^Graph,id:Image_Id,desc:Texture_Desc)->Graph_Error {
+    if g==nil || id.owner!=g || id.index<0 || id.index>=len(g.images) || !texture_desc_valid(desc) { return .Invalid_Resource }
+    image:=&g.images[id.index]
+    if !image.imported { return .Invalid_Resource }
+    if (image.contract.initial==.Present || image.contract.final==.Present) && .Present not_in desc.usage { return .Invalid_Usage }
+    if image.desc!=desc { image.desc=desc; g.revision+=1 }
+    return .None
+}
 @(private="package")
 validate_image_accesses :: proc(g:^Graph,kind:Pass_Kind,accesses:[]Image_Access)->Graph_Error {
     for access,i in accesses {

@@ -11,7 +11,7 @@ foreign AppKit { NSApplicationLoad :: proc "c" ()->NS.BOOL --- }
 @(private="package")
 send :: intrinsics.objc_send
 /// A main-thread NSWindow owner; detach/drain graphics before destroying it.
-Window :: struct { application:^NS.Application, native:^NS.Window, view:^NS.View }
+Window :: struct { application:^NS.Application, native:^NS.Window, view:^NS.View,clipboard:string }
 /// Native construction failures leave no retained window owner.
 Window_Error :: enum { None, Invalid_Size, Native_Failure }
 /// Describes the physical drawable extent and current window visibility.
@@ -33,18 +33,20 @@ window_create :: proc(window:^Window,title:string,width,height:u32)->Window_Erro
     native->center()
     view:=native->contentView()
     if view==nil { native->release(); return .Native_Failure }
-    window^={application,native,view}
+    window^={application=application,native=native,view=view}
     send(nil,application,"finishLaunching")
     native->makeKeyAndOrderFront(nil)
     application->activateIgnoringOtherApps(true)
     return .None
 }
-/// Pumps native events without blocking the GPU owner frame loop.
+/// Pumps AppKit with one bounded run-loop turn so native input and accessibility requests can be serviced.
 window_poll :: proc(window:^Window,user_data:rawptr=nil,event_handler:proc(rawptr,^NS.Event)=nil)->State {
     if window.native==nil { return {closed=true} }
     _=NS.scoped_autoreleasepool()
+    expiration:=NS.Date_dateWithTimeIntervalSinceNow(0.001)
     for {
-        event:=window.application->nextEventMatchingMask(NS.EventMaskAny,NS.Date.distantPast(),NS.DefaultRunLoopMode,true)
+        event:=window.application->nextEventMatchingMask(NS.EventMaskAny,expiration,NS.DefaultRunLoopMode,true)
+        expiration=NS.Date.distantPast()
         if event==nil { break }
         window.application->sendEvent(event)
         if event_handler!=nil { event_handler(user_data,event) }
@@ -83,5 +85,5 @@ window_place_beside :: proc(window,scene:^Window) {
 /// Closes/releases the window after its graphics surface has been detached.
 window_destroy :: proc(window:^Window) {
     if window.native!=nil { window.native->close(); window.native->release() }
-    window^={}
+    delete(window.clipboard); window^={}
 }

@@ -34,7 +34,7 @@ model_pixels :: proc(consumer:^render.Native_Consumer($R),capture:Capture_Ops(R)
     pixels:=read_pixels(consumer.active,capture,submission); assert(render.native_scene_wait(consumer.active,submission)==.None); return pixels
 }
 fail_model_sampler :: proc(renderer:^$R,descriptor:gfx.Sampler_Desc)->(gfx.Sampler_Handle,gfx.Gpu_Error) { return {},.Allocation_Failed }
-exercise_models :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),descriptor:gfx.Graphics_Desc,compiler:^shader.Compiler,model_operations:render.Model_GPU_Ops(R),backend,output,resource_path:string) {
+exercise_models :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),descriptor:render.Scene_Pipelines,compiler:^shader.Compiler,model_operations:render.Model_GPU_Ops(R),backend,output,resource_path:string) {
     compiled,compile_error:=render.model_shader_compile(compiler); assert(compile_error==.None); defer render.model_shader_destroy(&compiled)
     config:=render.Model_Config(R){&compiled,model_operations}
     for path in ([]string{"models/Box.gltf","models/DamagedHelmet.glb","models/Fox.glb","models/Tiger.glb"}) {

@@ -79,7 +79,7 @@ test_tool_calls_keep_typed_ids_and_validate_before_scene_execution :: proc(t:^te
     testing.expect(t,first=="" && second=="" && scene.world.live_count==0 && len(s.pending)==2)
     duplicate:=receive(&s,"9007199254740993","tools/call",`,"name":"spawn_entity","arguments":{}`); defer delete(duplicate)
     check_error(t,duplicate,-32600)
-    malformed:=receive(&s,"0","tools/call",`,"name":"spawn_entity","arguments":{"shape":"cube"}`); defer delete(malformed)
+    malformed:=receive(&s,"0","tools/call",`,"name":"spawn_entity","arguments":{"unsupported_shape":"cube"}`); defer delete(malformed)
     invalid,err:=json.parse(malformed); testing.expect_value(t,err,json.Error.None); defer json.destroy_value(invalid)
     testing.expect(t,bool(invalid.(json.Object)["result"].(json.Object)["isError"].(json.Boolean)))
     absent:=receive(&s,"1","tools/call",`,"name":"missing"`); defer delete(absent); check_error(t,absent,-32602)

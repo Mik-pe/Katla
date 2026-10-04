@@ -14,7 +14,8 @@ Query_Results :: struct { rays:map[Query_Key]Ray_Result,overlaps:map[Query_Key][
 Command_Kind :: enum { Set_Transform, Set_Position, Spawn_Entity, Destroy_Entity, Burst_Particles, Set_Particles_Active, Emit, Play_Sound, Play_Sound_At, Play_Sound_Cue, Raycast, Apply_Force, Apply_Impulse, Set_Velocity, Query_Trigger_Overlaps }
 /// Queue order is observable; query indices address results from the next host tick.
 Command :: struct { kind:Command_Kind,owner,entity:u64,transform:km.Transform,vector,origin:km.Vec3,count:u32,active,looping:bool,name,path:string,volume,max_distance:f32,index:int,payload:i32 }
-Event :: struct { name:string,trigger,other:u64,payload:i32 }
+/// Host animation fields are borrowed for tick; delivery copies them into VM-owned packets.
+Event :: struct { name:string,trigger,other:u64,payload:i32,animation_clip:string,animation_loop_count:u32,has_animation:bool }
 Diagnostic :: struct { entity:u64,path,error:string }
 Instance_State :: struct { entity:u64,spawned,disabled:bool,consecutive_errors:u32 }
 Log_Level :: enum { Info, Warn }

@@ -46,9 +46,24 @@ both return to zero on teardown. Application tests additionally select real
 Box3D and run collision events through Luau, animation/particle commands and
 Play/Pause/Resume/Stop with fresh restored entity generations.
 
-The direct application owner is initialized explicitly using
-`script_native_init`; changing production initialization and retiring the old
-Rust bridge requires the completed editor integration. Generic command packets
-alone do not establish application feature completion. Remaining migration
-acceptance includes the canonical inspector/console consumer, confined script
-name resolution and every physics spatial-query feature.
+The canonical editor initializes the direct application owner using
+`script_native_init`. The superseded Rust scene bridge is not part of that
+initialization path. Generic command packets alone do not establish application
+feature completion. The app owns actual
+inspector variables, forced reload, logs, native ray/force/velocity/audio queries
+and commands, with immutable snapshots and next-tick feedback.
+
+Bare resource names normalize below `scripts/` with a `.luau` extension. Installed
+Resource and Project roots retain relative identity. Explicit File descriptors
+from selected scenes, prefabs or files receive exact parent-and-basename
+capabilities through scene preparation; failed publication revokes new scopes.
+Reads and reloads reuse these retained capabilities and reject symlink children,
+parent escapes, invalid UTF-8 and sources above 1 MiB. Editor byte validation
+uses the real sandbox and does not replace an existing instance on failure.
+
+Runtime destruction prepares renderer membership and native physics removal
+before retiring ECS generations. Constraints referencing removed participants
+retire together. Surviving authored trigger references remain stale during Play
+and produce per-action diagnostics; Stop restores the authored snapshot with
+fresh mapped entity references. Editing deletion instead updates durable
+references through the shared authored undo transaction.

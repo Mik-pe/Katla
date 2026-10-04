@@ -17,6 +17,7 @@ Surface_Result :: enum { Presented, Unavailable, Recreate, Fatal }
 /// Accepted GPU work remains committed even if presenting its image fails.
 Present_Outcome :: struct { submission:Submission, surface:Surface_Result }
 /// Window handles stay outside scene policy and never enter shader interfaces.
-Surface_Desc :: struct { view,display:rawptr, width,height:u32 }
+Surface_Kind :: enum { Native,Xlib,Wayland,Win32 }
+Surface_Desc :: struct { view,display:rawptr, width,height:u32,kind:Surface_Kind }
 /// A borrowed presentation image belongs to one native surface generation.
 Surface_Frame :: struct { owner:rawptr, generation:u64, texture:Texture_Handle, width,height:u32 }

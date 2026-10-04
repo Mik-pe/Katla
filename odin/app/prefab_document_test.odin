@@ -83,8 +83,9 @@ test_actual_chair_prefab_insertion_owned_history_and_native_preparation_failure 
     testing.expect_value(t,scene_snapshot_restore(&owner,&snapshot),editor.Scene_Error.Invalid_Operation)
     testing.expect(t,owner.world.live_count==before && ecs.entity_exists(&owner.world,existing))
     participant.reject=false
+    commits_before_replace:=participant.commits
     testing.expect_value(t,scene_snapshot_restore(&owner,&snapshot),editor.Scene_Error.None)
-    testing.expect(t,owner.world.live_count==before && ecs.entity_exists(&owner.world,hidden) && !ecs.entity_exists(&owner.world,existing) && participant.commits==2)
+    testing.expect(t,owner.world.live_count==before && ecs.entity_exists(&owner.world,hidden) && !ecs.entity_exists(&owner.world,existing) && participant.commits==commits_before_replace+1)
 }
 
 @(test)

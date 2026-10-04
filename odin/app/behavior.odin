@@ -1,11 +1,12 @@
 //! Validated script/emitter attachments share targeted undo and the actual runtime owner.
 package app
 import scene "../agent/scene"
+import script "../script"
 import ecs "../ecs"
 import editor "../editor"
-import resources "../resources"
 import km "../math"
 import "core:mem"
+import "core:slice"
 import "core:strings"
 import "core:fmt"
 import "core:encoding/json"
@@ -27,13 +28,13 @@ Attachment_Command :: struct { entity:ecs.Entity_Id,before,after:Attachment }
 @(private="package")
 attachment_destroy :: proc(attachment:^Attachment) { if attachment.kind==.Script { script_component_destroy(&attachment.script) } else { particle_destroy(&attachment.particles) }; attachment^={} }
 @(private="package")
-attachment_clone :: proc(source:Attachment)->Attachment { source_copy:=source; target:=source; if source.kind==.Script { script_component_clone(&target.script,&source_copy.script) } else { particle_clone(&target.particles,&source_copy.particles) }; return target }
+attachment_clone :: proc(source:Attachment)->Attachment { source_copy:=source; target:=source; if source.kind==.Script { script_component_clone(&target.script,&source_copy.script) } else { particle_clone(&target.particles,&source_copy.particles); delete(target.particles.descriptor.burst_queue); target.particles.descriptor.burst_queue=nil }; return target }
 @(private="package")
 attachment_apply :: proc(w:^ecs.World,entity:ecs.Entity_Id,attachment:Attachment)->editor.Scene_Error {
     if !ecs.entity_exists(w,entity) { return .Entity_Not_Found }; _,hidden:=ecs.get_component(w,entity,Editor_Hidden); if hidden { return .Protected_Entity }
     context.allocator=w.allocator; source_copy:=attachment
     if attachment.kind==.Script { if attachment.present { script:Script_Component; script_component_clone(&script,&source_copy.script); ecs.add_component(w,entity,script) } else { ecs.remove_component(w,entity,Script_Component) } }
-    else { if attachment.present { particles:Particle_Emitter; particle_clone(&particles,&source_copy.particles); ecs.add_component(w,entity,particles) } else { ecs.remove_component(w,entity,Particle_Emitter) } }; return .None
+    else { if attachment.present { particles:Particle_Emitter; particle_clone(&particles,&source_copy.particles); if live:=ecs.get_component_mut(w,entity,Particle_Emitter); live!=nil { delete(particles.descriptor.burst_queue); particles.descriptor.burst_queue=slice.clone_to_dynamic(live.descriptor.burst_queue[:],w.allocator); particles.descriptor.emission_revision=max(particles.descriptor.emission_revision,live.descriptor.emission_revision); if particles.descriptor.active && !live.descriptor.active { particles.descriptor.emission_revision=particle_next_revision(particles.descriptor.emission_revision) } }; ecs.add_component(w,entity,particles) } else { ecs.remove_component(w,entity,Particle_Emitter) } }; return .None
 }
 @(private="package")
 attachment_command_apply :: proc(state:rawptr,w:^ecs.World,_:^editor.Component_Registry,redo:bool,_:^[dynamic]editor.Entity_Remap)->editor.Scene_Error { command:=cast(^Attachment_Command)state; return attachment_apply(w,command.entity,command.after if redo else command.before) }
@@ -63,11 +64,10 @@ particle_document :: proc(p:Particle_Descriptor)->json.Value {
 behavior_target :: proc(app:^Authoring,entity:ecs.Entity_Id)->editor.Scene_Error { if !ecs.entity_exists(&app.world,entity) { return .Entity_Not_Found }; _,hidden:=ecs.get_component(&app.world,entity,Editor_Hidden); if hidden { return .Protected_Entity }; _,transform:=ecs.get_component(&app.world,entity,Scene_Transform); if !transform { return .Component_Not_Found }; return .None }
 /// Reads only a confined Luau source and validates it with the actual sandbox before mutation.
 script_validate_attachment :: proc(app:^Authoring,path:string)->(string,editor.Scene_Error) {
-    if !resources.valid_relative_path(path) || !strings.has_prefix(path,"scripts/") || !strings.has_suffix(path,".luau") { return "",.Invalid_Field_Value }
-    roots:=ecs.get_resource_mut(&app.world,Asset_Roots); if roots==nil { return "",.Application_Owned }
-    bytes,read_error:=resources.read_text(&roots.resource,path,1024*1024); if read_error!=.None { return "",.Invalid_Operation }; defer delete(bytes,app.world.allocator)
-    response:=scene_runtime_call(app,struct {method,path,source:string}{"script_validate",path,string(bytes)}); defer runtime_response_destroy(&response)
-    if !response.ok { return strings.clone(response.error,app.world.allocator),.Invalid_Operation }; return "",.None
+    resolved,resolve_error:=script_source_resolve(app,path); if resolve_error!=.None { return "",resolve_error }; defer delete(resolved.path,app.world.allocator)
+    bytes,read_error:=script_source_read(app,resolved); if read_error!=.None { return "",read_error }; defer delete(bytes,app.world.allocator)
+    if owner:=ecs.get_resource_mut(&app.world,Script_Native_Runtime); owner!=nil { failure:=script.validate(owner.runtime,string(bytes),path); if failure!="" { return failure,.Invalid_Operation }; return "",.None }
+    return strings.clone("Initialize the native Luau runtime before attaching scripts",app.world.allocator),.Application_Owned
 }
 /// Authors complete descriptors, explicit detach and bounded previews on the application owner.
 behavior_execute :: proc(app:^Authoring,op:scene.Behavior_Op)->(editor.Tool_Result,editor.Undo_Group) {
@@ -80,15 +80,20 @@ behavior_execute :: proc(app:^Authoring,op:scene.Behavior_Op)->(editor.Tool_Resu
     switch op.action {
     case .Set_Script:
         if app.mode!=.Editing { result.error=.Editing_Required; return result,undo }
-        if !op.detach { message,validate_error:=script_validate_attachment(app,op.path); defer delete(message); if validate_error!=.None { result.error=validate_error; if message!="" { result.data,_=json.marshal(struct {error:string}{message}) }; return result,undo } }
-        undo,result.error=behavior_edit(app,op.entity,Attachment{kind=.Script,present=!op.detach,script=Script_Component{path=op.path}})
+        source:Script_Component; defer delete(source.path)
+        if !op.detach {
+            resolve_error:editor.Scene_Error; source,resolve_error=script_source_resolve(app,op.path); if resolve_error!=.None { result.error=resolve_error; return result,undo }
+            message,validate_error:=script_validate_attachment(app,op.path); defer delete(message); if validate_error!=.None { result.error=validate_error; if message!="" { result.data,_=json.marshal(struct {error:string}{message}) }; return result,undo }
+        }
+        undo,result.error=behavior_edit(app,op.entity,Attachment{kind=.Script,present=!op.detach,script=source})
     case .Set_Particles:
         if app.mode!=.Editing { result.error=.Editing_Required; return result,undo }; descriptor:=particle_defaults()
         if !op.detach { valid:bool; descriptor,valid=particle_decode(op.document,app.world.allocator); if !valid { result.error=.Invalid_Field_Value; return result,undo } }; defer delete(descriptor.burst_queue)
+        if len(descriptor.burst_queue)>0 { if _,present:=ecs.get_component(&app.world,op.entity,Particle_Emitter); present { result.error=.Invalid_Field_Value; return result,undo } }
         undo,result.error=behavior_edit(app,op.entity,Attachment{kind=.Particles,present=!op.detach,particles=Particle_Emitter{descriptor}})
     case .Burst: result.error=particle_burst(&app.world,op.entity,op.count)
     case .Set_Active:
-        if app.mode==.Editing { emitter,present:=ecs.get_component(&app.world,op.entity,Particle_Emitter); if !present { result.error=.Component_Not_Found; return result,undo }; emitter.descriptor.active=op.active; undo,result.error=behavior_edit(app,op.entity,Attachment{kind=.Particles,present=true,particles=emitter}) }
+        if app.mode==.Editing { emitter,present:=ecs.get_component(&app.world,op.entity,Particle_Emitter); if !present { result.error=.Component_Not_Found; return result,undo }; emitter.descriptor.active=op.active; if op.active { emitter.descriptor.emission_revision=particle_next_revision(emitter.descriptor.emission_revision) }; undo,result.error=behavior_edit(app,op.entity,Attachment{kind=.Particles,present=true,particles=emitter}) }
         else { result.error=particle_set_active(&app.world,op.entity,op.active) }
     case .Inspect:
     case .Describe:

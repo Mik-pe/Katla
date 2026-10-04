@@ -63,7 +63,7 @@ backend_init :: proc(b:^Backend,path:string,allocator:=context.allocator)->Error
     names:=[22]string{"katla_box3d_abi","katla_box3d_create","katla_box3d_destroy","katla_box3d_body_create","katla_box3d_body_destroy","katla_box3d_body_update","katla_box3d_step","katla_box3d_pose","katla_box3d_overlaps","katla_box3d_bytes","katla_box3d_joint_prepare","katla_box3d_joint_publish","katla_box3d_joint_destroy","katla_box3d_joint_valid","katla_box3d_body_copy_angular_motion","katla_box3d_joint_rollback","katla_box3d_joint_restore","katla_box3d_raycast","katla_box3d_body_motion","katla_box3d_shape_query","katla_box3d_body_contacts","katla_box3d_hull_edges"}
     addresses:[22]rawptr
     for name,i in names { found:bool; addresses[i],found=dynlib.symbol_address(b.library,name,allocator=allocator); if !found { return .ABI } }
-    abi:=cast(proc "c"()->u32)addresses[0]; if abi()!=7 { return .ABI }
+    abi:=cast(proc "c"()->u32)addresses[0]; if abi()!=8 { return .ABI }
     create:=cast(proc "c"()->rawptr)addresses[1]
     b.destroy=cast(proc "c"(rawptr))addresses[2]; b.create_body=cast(proc "c"(rawptr,^Body)->rawptr)addresses[3]
     b.destroy_body=cast(proc "c"(rawptr))addresses[4]; b.update_body=cast(proc "c"(rawptr,^Body))addresses[5]

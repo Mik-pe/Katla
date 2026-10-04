@@ -1,154 +1,142 @@
 # Shared editor viewport over MCP
 
-Build `cargo build -p game` (MCP is enabled in the standard editor build). Launch the editor with
-`KATLA_MCP_SOCKET=/tmp/katla-editor.sock target/debug/katla --scene assets/scenes/shared-room.katla`.
-Use the actual Cargo target directory when it is configured externally. The Unix
-socket is private to the current OS user (0600). Existing sockets are never
-silently removed. `katla-mcp /tmp/katla-editor.sock` is the stdio MCP command for
-attaching an external client to that already running editor. Without the socket
-environment variable, the editor itself serves MCP over stdio. MCP logs must go
-to stderr, and stdout belongs to the protocol.
+The running Odin editor owns the scene, viewport cameras, selection and shared
+undo history. MCP transports submit owned commands into its mailbox; they never
+borrow a World or GPU frame. `odin/app/editor/View_Service` admits view actions
+and replies after their accepted native color/object-ID capture completes.
 
-`editor_view` accepts an action:
+## Launch and connect
 
-- `observe`: optional candidate `limit` (default 64, maximum 256).
+Use the [canonical build and launcher](odin_build.md):
+
+```sh
+python3 scripts/build_katla_odin.py --output target/katla-shared-view
+katla_socket_dir=$(mktemp -d "${TMPDIR:-/tmp}/katla-editor.XXXXXX")
+chmod 700 "$katla_socket_dir"
+python3 scripts/run_katla_odin.py --build-dir target/katla-shared-view --no-build -- \
+  --scene assets/scenes/shared-room.katla --gpu-validation \
+  --mcp-socket "$katla_socket_dir/editor.sock"
+```
+
+The Unix endpoint parent is private to its owner; the socket is 0600. Existing
+endpoints are rejected without unlinking them. An empty `--mcp-socket` leaves
+external socket admission disabled. The editor does not read `KATLA_MCP_SOCKET`
+to configure its listener and does not become a stdio server when the flag is
+omitted.
+
+Configure an external MCP client with the built stdio proxy:
+
+```sh
+target/katla-shared-view/bin/katla-mcp-proxy "$katla_socket_dir/editor.sock"
+```
+
+The proxy also accepts `KATLA_MCP_SOCKET` when no endpoint argument is given.
+Stdout belongs to JSONL MCP and diagnostics belong to stderr. Disconnecting a
+client releases its requests, not the shared scene or other clients. Endpoint
+cleanup removes only the socket inode created by this listener. Unix socket
+transport currently reports unsupported on Windows; this is distinct from native
+Windows editor, asset filesystem and CPU stdio support.
+
+`katla-mcp-stdio [project-root resource-root]` is a separate CPU Authoring owner.
+It can validate scene services and files, but does not attach to the running
+editor or provide its native viewport. To use a room script's `--stdio-command`
+with the existing viewport, supply `katla-mcp-proxy ENDPOINT`, not the editor
+executable or CPU owner.
+
+The protocol uses `server/discover`, `tools/list` and `tools/call`, with version
+`2026-07-28` and client capabilities in each request's `_meta`. The canonical
+schemas are [`odin/agent/tools.json`](../odin/agent/tools.json). Ordinary successful
+tool replies expose `{entity_ids, data}` as `structuredContent`; view replies
+instead expose the committed metadata directly plus separate PNG image content.
+The [Python client](../scripts/katla_mcp_client.py) implements that contract.
+
+## View actions and provenance
+
+`editor_view` accepts these actions:
+
+- `observe`: optional/null limit defaults to 64; unsigned values clamp to 1–256.
 - `set_camera`: world `position` and `target` arrays.
-- `select`: a generational `entity_id` string, or null to clear selection.
-- `focus`: `entity_id` and optional `select` (default false).
-- `undo` / `redo`: undo or redo the last agent scene operation.
+- `select`: decimal `entity_id`, or null/omission to clear selection.
+- `focus`: entity ID and optional `select`, default false.
+- `undo` / `redo`: the shared authoring history.
 
-Every successful action returns metadata and a PNG of the next committed editor
-viewport. Camera changes are immediate and ephemeral: no game camera or scene
-file is changed. Manual navigation can immediately take over. Focus animation
-also cancels on manual navigation. `observe` also works during Play/Pause; camera, selection, focus and history
-changes require edit mode. Use `simulation` for explicit preview transitions. A stopped render loop
-fails requests after 15 seconds rather than waiting indefinitely.
+Observe works during Play/Pause; the other actions require Editing. Camera changes
+apply immediately to the active editor viewport. They do not modify an authored
+`ScenePerspective` camera or scene file. Focus frames the entity's drawable
+subtree, using its actual transformed bounds. Manual navigation can immediately
+take over. Scene failures return a tool error; owner requests have a 15-second
+deadline. A timed-out reply is not proof that an already accepted mutation was
+rolled back, so do not retry mutations blindly.
 
-The image and object-ID samples are queued from the same committed submission,
-before its graph sources can be overwritten. Metadata is sampled at that commit,
-before deferred editor actions. Frame, submission, capture time, return frame and
-physical image dimensions describe provenance. Selection is optional; observing
-never selects a candidate. Center and pointer picks come from the committed GPU
-object-ID image and its own instance-to-generational-entity mapping. They identify
-only the foremost mapped pickable draw at the sampled pixel. Raw encoded samples
-are returned as `center_pick_sample` and `pointer_pick_sample`; nonzero unmapped
-values can belong to editor overlays such as gizmos and are not scene entity IDs.
-Pointer coordinates refer
-to the image's native rows; the camera's projected rectangles use top-left image
-coordinates. The cursor is not a gaze sensor.
+PNG color and object-ID samples belong to the same completed GPU submission.
+Camera, hierarchy and selection metadata are frozen for that accepted capture.
+`frame_id`, `capture_serial`, `submission` and provenance generations are exact
+decimal strings. Physical `width`/`height` and `image_size` match the PNG IHDR.
+`gpu_provenance` identifies the submission, color/ID resource generations and
+sampled pixels. There is no invented return-frame value or metadata sampled from
+a later live world.
 
-Candidates reuse the render camera's frustum and the transformed drawable bounds
-consumed by scene rendering. Bounds may intersect while their origin is outside
-the image. Screen rectangles conservatively project near-clipped box edges;
-frustum intersection proves neither occlusion visibility nor room membership.
-IDs are sorted before truncation, and total/truncation counts are explicit.
-Entity references in MCP scene commands are decimal strings preserving the full
-generational u64 value, including when a JSON client uses floating-point numbers.
-Renderables without bounds are counted separately. Skinned deformation and
-non-drawable semantic entities need supplementary scene queries. A room cannot
-be inferred completely from one frustum: inspect the image and hierarchy, query
-nearby objects beyond the image, and ask for clarification when necessary.
+`center_pick` and optional `pointer_pick` use that captured ID image's mapping to
+generational scene IDs. They identify the foremost mapped pickable draw at the
+sampled pixel. Raw `center_pick_sample`/`pointer_pick_sample` explain encoded values:
+zero is background, while an unmapped nonzero value can be editor overlay
+geometry. Entity ID zero remains valid because encoded object IDs are a separate
+mapping. Pointer coordinates use native image rows; projected rectangles use
+normalized top-left image coordinates. A cursor position does not establish gaze
+or user intent.
 
-The prepared room has two differently colored doors, walls, a window and a low
-cabinet. Place the camera inside at `[0,1.6,1]`, looking at `[0,1.2,-6]`, with no
-selection. Discuss the left/right door, focus a candidate, widen it using
-`set_field`, then use `undo`. For furnishing, use `search_assets` to discover resource-relative model paths,
-`material` to inspect and edit per-object PBR factors, and the scene spawn/model
-tools. The [agent authoring guide](agent-authoring.md) includes room recipes and
-copyable requests. This exercises engine affordances; it does not certify
-an external model's semantic room understanding.
+`frustum_candidates`/`candidates` are numerically sorted by exact entity ID before
+truncation. They derive from transformed drawable bounds and the captured camera;
+conservative rectangles clip bounds at the near plane. Their visibility label is
+`frustum_candidate_occlusion_unknown`. Frustum intersection does not establish
+occlusion visibility, room membership or semantic understanding. Total/truncation
+counts are explicit. Use hierarchy and spatial queries for objects outside the
+image and for entities without drawable bounds.
 
-`python3 scripts/validate_shared_view.py /tmp/katla-editor.sock` reloads this
-prepared test scene in the running editor, verifies actual captured geometry for
-a selected door's relative 50% widening and undo, then places and undoes a cube.
-It also checks selection-free observation, center GPU picking, stale ID rejection,
-candidate truncation, off-camera spatial queries and project model discovery.
-It never saves the scene; PNGs and frame metadata go to
-`/tmp/katla-shared-view-proof` by default. Run it only in the prepared test editor,
-as reloading replaces its current scene and undo history.
+## Prepared room journeys
 
-Agent scene changes and undo invalidate the selected inspector's cached fields
-before the next UI build, so stale slider values cannot overwrite those changes.
-The application-owned default material stays protected across scene loads;
-editor overlay resources do not replace that protection.
+`assets/scenes/shared-room.katla` contains two doors, walls, a window, a low cabinet
+and an object behind the initial camera. Start inside at `[0,1.6,1]`, looking at
+`[0,1.2,-6]`, without selection. `validate_shared_view.py` checks selection-free
+observation, truncation, off-camera spatial queries, resource discovery, focus and
+GPU center picking. It widens the left door through `SceneTransform.local`, checks
+captured bounds and undoes the edit; it also places and undoes a primitive. It
+never saves the scene, but its initial load replaces the disposable editor's world
+and history.
+
+The [authoring guide](agent-authoring.md) covers room construction and the prepared
+teen-room furnishing recipe. The furnishing script adds 15 geometric proxies,
+verifies their bounds, undoes to the original entity IDs/camera, then places them
+again. PNGs and JSON receipts document actual tool and render behavior. These
+journeys do not certify navigation, furniture-model quality or a live model's
+design choices.
 
 ## Existing external conversation
 
-The Scene assistant panel forwards text, a committed viewport PNG and its metadata
-to one explicitly selected, already loaded Codex conversation. It does not own an
-internal LLM session. Socket and conversation ID live under Preferences → Connection
-and persist with editor preferences. `KATLA_CODEX_SOCKET` and `KATLA_CODEX_THREAD`
-can provide initial values. The normal panel shows connection status and the host's
-conversation name when available. The first connection is explicit; saved or environment-supplied choices are
-reconnected on launch. A failed connection
-never falls back to another agent.
+The Co-Creator panel sends a question together with a committed viewport PNG and
+metadata to one explicitly selected, already loaded Codex conversation.
+Preferences → Connection stores the private host endpoint and conversation ID.
+Storing or loading preferences does not connect. Connect and reconnect are explicit actions;
+a failed connection has no provider or thread fallback.
 
-This uses the supported [Codex App Server](https://developers.openai.com/codex/app-server/)
-transport: `codex app-server proxy --sock <absolute-private-control-socket>`.
-The host must already be running and expose a private Unix control socket; Katla
-checks the chosen thread is in its loaded list, rejoins it, and uses `turn/start`
-when idle or `turn/steer` with the exact active turn ID when busy. It never invokes
-`thread/start`, forks, starts an app-server daemon, reads authentication files, or
-supplies model/approval/sandbox overrides. Streaming messages retain turn and item
-IDs. EOF or a dropped proxy disables sending; reconnecting replaces only Katla's
-proxy, not the external conversation or active turn. Unsent queued questions
-are cancelled when that connection is replaced.
+`odin/agent/host` uses a direct nonblocking private Unix JSONL stream. It initializes
+that chosen connection, checks the loaded-thread list, resumes the exact selected
+thread and verifies identity. Idle threads receive `turn/start`; active threads
+receive `turn/steer` with the exact active turn ID. Katla creates or forks no
+thread, starts no daemon, reads no authentication file and supplies no model,
+approval or sandbox override. Progress retains turn/item IDs. Disconnect closes
+only Katla's stream and unsent questions; accepted external turns remain alive.
+Explicit cancellation can interrupt the last accepted turn.
 
-Katla does not answer server requests for approvals, tools or authentication.
-The panel directs attention to the main host. Multi-client approval ownership
-must be verified against the actual host before claiming live acceptance.
-MCP scene-tool exposure remains host configuration: `katla-mcp` attaches that
-conversation's tools to the already running Katla editor. The question transport
-and MCP tool transport have distinct responsibilities and socket paths.
+Host requests for approvals, tools or authentication require attention in the main
+host; Katla does not answer them. The host conversation's MCP tool configuration
+must separately point to `katla-mcp-proxy` for this running editor. Question
+transport and scene-tool transport use distinct endpoints and responsibilities.
 
-The installed Codex 0.144.4 CLI exposes the supported proxy. Its default daemon
-control socket was absent in this session, so attaching to the desktop's actual
-conversation has **not** been verified. An existing desktop login alone is not
-evidence that the desktop exposes this interface. Explicit supported host
-configuration is currently required; no desktop socket discovery is claimed.
-
-## Teen bedroom blockout
-
-`assets/scenes/teen-room-blockout.katla` is an editable prepared scene containing
-15 geometric additions: a bed and bedding, bedside table, desk at the window,
-monitor, chair, wardrobe, bookcase and rug. These are honest unit-cube proxies,
-not fabricated furniture models. The current model inventory includes boxes,
-fox/tiger/avocado samples, a helmet, lantern and plane; it has no bed, desk, chair
-or wardrobe assets. `teen-room-plan.json` describes the corresponding
-scene-tool inputs. The base room, both doors, window, existing cabinet and
-outside-room test object are preserved exactly. New upright objects leave a
-2 m central passage and each door's 1.6 m wide, 2 m deep approach clear. These
-are placement clearances, not door swing or navigation-mesh acceptance.
-
-Run `python3 scripts/furnish_shared_room.py --socket /tmp/katla-editor.sock`
-only in the disposable prepared editor. It captures the view, queries objects
-beyond the frustum and available GLTF/GLB project models, places the blockout through
-actual `spawn_entity` calls, checks rendered bounds, undoes every addition and
-checks the original entity IDs, then places it again. PNGs, frame/submission
-metadata and a receipt go to `/tmp/katla-teen-room-proof`. It does not save or
-replace a project scene file. A failed first placement unwinds the additions.
-This deterministic journey validates tools, not a live model's design quality.
-
-For an isolated child instead of an existing socket:
-
-```sh
-MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 python3 scripts/furnish_shared_room.py \
-  --output /tmp/katla-teen-room-proof \
-  --stdio-command <cargo-target>/debug/katla --headless --frames 10000 \
-  --scene assets/scenes/shared-room.katla --screenshot /tmp/katla-teen-room.png
-```
-
-`--stdio-command` consumes the remaining arguments. The bounded frame budget
-allows several asynchronous tool/readback requests; EOF and timeouts fail the
-client. A successful headless GPU run uses the real editor/render path and native
-image readbacks. Its PNGs and committed frame/submission metadata establish the
-rendered output's provenance. The furnishing journey checks all 15 placements
-against rendered bounds, undoes them back to the original entity IDs and camera,
-then places them again. Run with backend API validation enabled and inspect the
-images alongside the receipt; CPU fixture and pipe protocol tests establish
-different parts of the contract.
-
-This validates native rendering and deterministic scene-tool behavior. It does
-not certify real OS input, a live model's room understanding or design quality,
-or attachment to the actual desktop Codex conversation. Those require separate
-end-to-end validation, including approval ownership in the real host.
+`python3 scripts/validate_odin_host.py --sanitize` exercises local private-socket
+fixtures for loaded-thread identity, idle start, active steer, progress, attention,
+interrupt, EOF and cancellation. These fixtures do not prove attachment to the
+user's actual desktop conversation, paid-provider behavior or multi-client
+approval ownership. An existing desktop login does not establish that its host
+exposes the required control endpoint; actual host configuration and end-to-end
+acceptance remain separate evidence.

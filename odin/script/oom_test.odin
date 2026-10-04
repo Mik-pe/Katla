@@ -14,7 +14,7 @@ native_oom_boundary :: proc(t:^testing.T) {
     context.allocator=mem.tracking_allocator(&tracker)
     owner:Runtime
     testing.expect_value(t,init(&owner,LIBRARY),luau.Error.None)
-    source:=`buffers={}
+    source:=`buffers={}; reached=false; completed=false
         function on_spawn(entity,world)
             for _,size in {65536,8192,256} do
                 for i=1,1000000 do
@@ -23,7 +23,9 @@ native_oom_boundary :: proc(t:^testing.T) {
                     buffers[#buffers+1]=value
                 end
             end
+            reached=true
             world:get_all_with("Transform")
+            completed=true
         end`
     diagnostics,failure:=sync(&owner,{Attachment{1,"oom.luau",source}})
     testing.expect(t,failure=="")
@@ -36,6 +38,11 @@ native_oom_boundary :: proc(t:^testing.T) {
     testing.expect(t,len(output.diagnostics)==1 && strings.contains(output.diagnostics[0].error,"memory"))
     testing.expect(t,owner.vm.api.bytes(owner.vm.state)>120*1024*1024)
     delete(error); output_destroy(&owner,&output); delete(entities)
+    current,present:=handle(&owner,1); testing.expect(t,present)
+    values,inspect_error:=inspect(&owner,current); testing.expect(t,inspect_error==""); delete(inspect_error)
+    entered,completed:=false,false
+    for value in values { if value.name=="reached" { entered,_=value.value.(bool) }; if value.name=="completed" { completed,_=value.value.(bool) } }; variables_destroy(values,owner.allocator)
+    testing.expect(t,entered && !completed)
     cleanup:=reset(&owner)
     for entry in cleanup { delete(entry.path); delete(entry.error) }; delete(cleanup)
     owner.vm.api.collect(owner.vm.state,2,0)

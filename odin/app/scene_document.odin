@@ -8,6 +8,7 @@ import ron "../encoding/ron"
 import km "../math"
 import "core:encoding/json"
 import "core:strings"
+import "core:path/filepath"
 
 /// Reads positive scene document keys without narrowing their full unsigned range.
 scene_document_key :: proc(value:json.Value)->(u64,bool) {
@@ -38,7 +39,7 @@ scene_variant :: proc(value:json.Value)->(name:string,payload:json.Value,valid:b
     if variant_name,variant_payload,_,is_variant:=ron.variant_read(value); is_variant { return variant_name,variant_payload,true }
     if len(object)!=1 { return }; for key,item in object { return key,item,true }; return
 }
-/// Resolves scene-local paths from the retained project origin; external absolute paths are rejected.
+/// Resolves scene-local assets against their explicit origin and retains intentional File identity.
 scene_asset_path :: proc(app:^Authoring,value:json.Value,origin:string)->(path:string,root:Mesh_Path_Root,valid:bool) {
     kind,payload,is_variant:=scene_variant(value); if !is_variant { return }
     if array,is_array:=payload.(json.Array); is_array { if len(array)!=1 { return }; payload=array[0] }
@@ -46,14 +47,16 @@ scene_asset_path :: proc(app:^Authoring,value:json.Value,origin:string)->(path:s
     switch kind {
     case "Resource": if !resources.valid_relative_path(text) { return }; return strings.clone(text,app.world.allocator),.Resource,true
     case "Scene":
-        if !resources.valid_relative_path(text) || !resources.valid_relative_path(origin) { return }
+        if !resources.valid_relative_path(text) || origin=="" { return }
+        if filepath.is_abs(origin) {
+            if !asset_file_path_valid(origin) { return }
+            absolute:=strings.concatenate({filepath.dir(origin),"/",text},app.world.allocator); defer delete(absolute,app.world.allocator)
+            return asset_identify_path(app,absolute)
+        }
+        if !resources.valid_relative_path(origin) { return }
         separator:=strings.last_index_byte(origin,'/'); if separator<0 { return strings.clone(text,app.world.allocator),.Project,true }
         return strings.concatenate({origin[:separator+1],text},app.world.allocator),.Project,true
-    case "File":
-        roots:=ecs.get_resource_mut(&app.world,Asset_Roots); if roots==nil { return }
-        prefix:=strings.concatenate({roots.project.path,"/"},app.world.allocator); defer delete(prefix,app.world.allocator)
-        if !strings.has_prefix(text,prefix) { return }; relative:=text[len(prefix):]; if !resources.valid_relative_path(relative) { return }
-        return strings.clone(relative,app.world.allocator),.Project,true
+    case "File": return asset_identify_path(app,text)
     }
     return
 }
@@ -64,15 +67,16 @@ scene_document_mesh :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value,or
     switch kind {
     case "Empty":
         if payload!=nil { return .Decode_Failed }; return .None
-    case "MeshAsset":
+    case "MeshAsset","StlModel":
         object,is_object:=payload.(json.Object); if !is_object || !recipe_keys(object,{"path"}) { return .Decode_Failed }
         path,root,path_valid:=scene_asset_path(app,object["path"],origin); if !path_valid { return .Invalid_Operation }; defer delete(path,app.world.allocator)
-        root_name:="resource"; if root==.Project { root_name="project" }
-        data,err=json.marshal(struct {kind,path,root:string}{"Recipe",path,root_name},allocator=app.world.allocator)
+        root_name:=asset_root_name(root)
+        source_kind:="Recipe"; if kind=="StlModel" { source_kind="Stl" }
+        data,err=json.marshal(struct {kind,path,root:string}{source_kind,path,root_name},allocator=app.world.allocator)
     case "GltfModel":
         object,is_object:=payload.(json.Object); if !is_object || !recipe_keys(object,{"path"}) { return .Decode_Failed }
         path,root,path_valid:=scene_asset_path(app,object["path"],origin); if !path_valid { return .Invalid_Operation }; defer delete(path,app.world.allocator)
-        root_name:="resource"; if root==.Project { root_name="project" }
+        root_name:=asset_root_name(root)
         bytes,marshal_error:=json.marshal(struct {path,root:string}{path,root_name},allocator=app.world.allocator)
         if marshal_error!=nil { return .Decode_Failed }; return scene_row_wire(app,row,"SceneModel",bytes)
     case "Cube","Sphere","Plane","Cylinder","Torus":
@@ -119,7 +123,7 @@ scene_document_decode :: proc(app:^Authoring,document:json.Value,origin:string="
     result.next_entity_id=u64(next); used:=make(map[ecs.Entity_Id]bool,allocator); defer delete(used)
     for entity in entities {
         fields,is_fields:=entity.(json.Object)
-        if !is_fields || !recipe_keys(fields,{"id","name","parent","transform","source","drawable","point_light","particle_emitter","animation","velocity","script","perspective","directional_light","audio_emitter","rigid_body","reverb_zone","collider_shape","physics_material","trigger_volume","collision_filter","trigger_rules","joint","components"}) { return {},.Decode_Failed }
+        if !is_fields || !recipe_keys(fields,{"id","name","parent","transform","source","drawable","point_light","particle_emitter","animation","velocity","script","perspective","directional_light","audio_emitter","audio_source","audio_listener","rigid_body","reverb_zone","collider_shape","physics_material","trigger_volume","collision_filter","trigger_rules","joint","components"}) { return {},.Decode_Failed }
         id,is_id:=scene_document_key(fields["id"]); if !is_id || id<=0 || id>=next || used[ecs.Entity_Id(id)] { return {},.Invalid_Operation }; used[ecs.Entity_Id(id)]=true
         append(&result.entities,Scene_Entity{key=ecs.Entity_Id(id),components=make([dynamic]Scene_Component,allocator)}); row:=&result.entities[len(result.entities)-1]
         transform,valid_transform:=recipe_transform(fields["transform"]); if !valid_transform { return {},.Invalid_Field_Value }

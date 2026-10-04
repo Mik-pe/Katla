@@ -3,9 +3,6 @@ package app
 
 import ecs "../ecs"
 import editor "../editor"
-import "core:encoding/json"
-import "core:fmt"
-import "core:mem"
 
 Physics_Joint_Kind :: enum { PointToPoint, Hinge, Distance, Fixed }
 /// Local anchors and optional limits carry no dependency-native handles.
@@ -45,14 +42,3 @@ physics_collect_joints :: proc(app:^Authoring)->([]Physics_Resolved_Joint,editor
     }
     result:=make([]Physics_Resolved_Joint,len(collected),app.world.allocator); copy(result,collected[:]); return result,.None
 }
-@(private="package")
-Physics_Wire_Joint :: struct { entity_id,kind,a,b:string,anchor_a,anchor_b:[3]f32,limits:json.Value }
-@(private="package")
-physics_joints_wire :: proc(joints:[]Physics_Resolved_Joint,allocator:mem.Allocator)->[]Physics_Wire_Joint {
-    context.allocator=allocator; wire:=make([]Physics_Wire_Joint,len(joints),allocator)
-    kinds:=[4]string{"point_to_point","hinge","distance","fixed"}
-    for resolved,i in joints { joint:=resolved.joint; limits:json.Value=json.Null{}; if joint.has_limits { limits=trigger_json_value(joint.limits) }; wire[i]={fmt.aprintf("%d",resolved.id),kinds[joint.kind],fmt.aprintf("%d",u64(joint.a)),fmt.aprintf("%d",u64(joint.b)),joint.anchor_a,joint.anchor_b,limits} }
-    return wire
-}
-@(private="package")
-physics_joints_wire_destroy :: proc(wire:[]Physics_Wire_Joint,allocator:mem.Allocator) { for joint in wire { delete(joint.entity_id,allocator); delete(joint.a,allocator); delete(joint.b,allocator); json.destroy_value(joint.limits) }; delete(wire,allocator) }

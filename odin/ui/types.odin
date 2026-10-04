@@ -34,7 +34,7 @@ Descriptor :: struct {
     fixed_bounds:Rect,has_fixed_bounds:bool,
     background,foreground:Color,has_background,has_foreground:bool,
     syntax:[]Text_Run,
-    options:[]string,dock:^Dock_Tree,dock_tabs:[]Dock_Tab,
+    options:[]string,dock:^Dock_Tree,dock_tabs:[]Dock_Tab,dock_root:Dock_Id,
 }
 Modifier :: enum { Shift,Control,Alt,Super }
 Modifiers :: bit_set[Modifier]
@@ -86,6 +86,6 @@ Context :: struct {
     generation,frame_index:u64,theme:Theme,fonts:Font_Provider,
     pointer:Vec2,capture_button:Pointer_Button,capture_start:Vec2,capture_value:f32,capture_modifiers:Modifiers,capture_clicks:u32,
     popup,modal,focus_before_modal,focus_before_popup:Node_Id,clipboard:string,clipboard_provider:Clipboard_Provider,
-    dock_source,dock_split:Dock_Id,dock_tab:Tab_Id,dock_bounds:Rect,dock_dragging,scroll_drag,scroll_drag_horizontal,capture_draggable,capture_dragged,capture_text_lines:bool,capture_line_start,capture_line_end:int,
+    dock_source,dock_split,dock_float:Dock_Id,dock_tab:Tab_Id,dock_bounds:Rect,dock_dragging,scroll_drag,scroll_drag_horizontal,capture_draggable,capture_dragged,capture_text_lines:bool,dock_resize_edges:u8,capture_line_start,capture_line_end:int,
     logical_size:Vec2,window_focused,closed,initialized:bool,allocator:mem.Allocator,
 }

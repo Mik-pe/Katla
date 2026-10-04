@@ -73,6 +73,16 @@ graph_pass :: proc(g:^Graph,name:string,kind:Pass_Kind,accesses:[]Buffer_Access,
     g.revision+=1
     return id,.None
 }
+/// Removes the exact last declaration, releases its owned packet and invalidates compiled plans.
+/// Earlier pass and resource identities remain stable; retained native recordings own separate copies.
+graph_remove_last_pass :: proc(g:^Graph,id:Pass_Id)->Graph_Error {
+    if g==nil || id.owner!=g || id.index<0 || id.index!=len(g.passes)-1 { return .Invalid_Resource }
+    pass:=&g.passes[id.index]
+    delete(pass.name,g.allocator); delete(pass.accesses,g.allocator); delete(pass.images,g.allocator)
+    packet_destroy(&pass.packet,g.allocator)
+    pop(&g.passes); g.revision+=1
+    return .None
+}
 @(private="package")
 range_initialized :: proc(g:^Graph,pass_index:int,access:Buffer_Access)->bool {
     if g.buffers[access.resource.index].imported { return true }
@@ -97,6 +107,8 @@ graph_compile :: proc(g:^Graph)->(Compiled_Graph,Graph_Error) {
     success:=false; defer { if !success { compiled_graph_destroy(&plan) } }
     live:=make([]bool,len(g.passes),g.allocator); defer delete(live,g.allocator)
     for pass,i in g.passes {
+        if error:=validate_accesses(g,pass.kind,pass.accesses); error!=.None { return {},error }
+        if error:=validate_image_accesses(g,pass.kind,pass.images); error!=.None { return {},error }
         live[i]=pass.side_effect
         for access in pass.images {
             if g.images[access.resource.index].exported && access_writes(access.mode) { live[i]=true }

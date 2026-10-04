@@ -3,26 +3,34 @@ package app
 
 import editor "../editor"
 import ecs "../ecs"
+import resources "../resources"
 import km "../math"
 import ron "../encoding/ron"
 import "core:encoding/json"
 import "core:strings"
+import "core:path/filepath"
 
 @(private="package")
 scene_json_put :: proc(fields:^json.Object,name:string,value:json.Value) { fields^[strings.clone(name)]=value }
 @(private="package")
 scene_row_has :: proc(row:Scene_Entity,name:string)->bool { for component in row.components { if component.name==name { return true } }; return false }
-/// Rebases a known source to the destination's directory without copying assets or traversing parents.
+/// Rebases a known source against destination/resource directories without copying assets.
 scene_asset_reference :: proc(app:^Authoring,path:string,root:Mesh_Path_Root,origin:string)->(json.Value,bool) {
     if root==.Resource { return trigger_json_value(struct {Resource:string}{path}),true }
-    separator:=strings.last_index_byte(origin,'/'); prefix:=""; if separator>=0 { prefix=origin[:separator+1] }
-    if strings.has_prefix(path,prefix) { return trigger_json_value(struct {Scene:string}{path[len(prefix):]}),true }
-    roots:=ecs.get_resource_mut(&app.world,Asset_Roots); if roots==nil { return nil,false }
-    resource_prefix:=""; project_prefix:=strings.concatenate({roots.project.path,"/"}); defer delete(project_prefix)
-    if strings.has_prefix(roots.resource.path,project_prefix) { resource_prefix=roots.resource.path[len(project_prefix):] }
-    resource_child:=strings.concatenate({resource_prefix,"/"}); defer delete(resource_child)
-    if len(resource_prefix)>0 && strings.has_prefix(path,resource_child) { return trigger_json_value(struct {Resource:string}{path[len(resource_child):]}),true }
-    absolute:=strings.concatenate({roots.project.path,"/",path}); defer delete(absolute)
+    absolute,valid:=asset_absolute_path(app,root,path); if !valid { return nil,false }; defer delete(absolute,app.world.allocator)
+    roots:=ecs.get_resource_mut(&app.world,Asset_Roots)
+    if roots!=nil {
+        prefix:=strings.concatenate({roots.resource.path,"/"},app.world.allocator); defer delete(prefix,app.world.allocator)
+        if strings.has_prefix(absolute,prefix) { relative:=absolute[len(prefix):]; if resources.valid_relative_path(relative) { return trigger_json_value(struct {Resource:string}{relative}),true } }
+    }
+    destination:=origin
+    owned_destination:=false
+    if !filepath.is_abs(destination) && resources.valid_relative_path(destination) { destination,owned_destination=asset_absolute_path(app,.Project,destination) }
+    defer { if owned_destination { delete(destination,app.world.allocator) } }
+    if asset_file_path_valid(destination) {
+        prefix:=strings.concatenate({filepath.dir(destination),"/"},app.world.allocator); defer delete(prefix,app.world.allocator)
+        if strings.has_prefix(absolute,prefix) { relative:=absolute[len(prefix):]; if resources.valid_relative_path(relative) { return trigger_json_value(struct {Scene:string}{relative}),true } }
+    }
     return trigger_json_value(struct {File:string}{absolute}),true
 }
 @(private="package")
@@ -48,6 +56,9 @@ scene_export_mesh :: proc(app:^Authoring,row:Scene_Entity,fields:^json.Object,or
     case .Recipe:
         path,valid:=scene_asset_reference(app,source.path,source.root,origin); if !valid { return .Invalid_Operation }; defer json.destroy_value(path)
         descriptor:=trigger_json_value(struct {MeshAsset:struct {path:json.Value}}{{path}}); if descriptor==nil { return .Decode_Failed }; scene_json_put(fields,"source",descriptor)
+    case .Stl:
+        path,valid:=scene_asset_reference(app,source.path,source.root,origin); if !valid { return .Invalid_Operation }; defer json.destroy_value(path)
+        descriptor:=trigger_json_value(struct {StlModel:struct {path:json.Value}}{{path}}); if descriptor==nil { return .Decode_Failed }; scene_json_put(fields,"source",descriptor)
     case .Geometry:
         tree,parse_error:=json.parse(source.geometry,spec=.JSON,parse_integers=true); if parse_error!=nil { return .Decode_Failed }
         geometry,is_geometry:=tree.(json.Object); if !is_geometry { json.destroy_value(tree); return .Decode_Failed }
@@ -89,7 +100,9 @@ scene_document_encode :: proc(app:^Authoring,snapshot:^Scene_Snapshot,name,origi
             if surface.has_tint { object:=descriptor.(json.Object); color:=km.color_to_srgb(surface.linear_color); scene_json_put(&object,"color",trigger_json_value([4]f32{color.r,color.g,color.b,color.a})); descriptor=object }
             scene_json_put(&fields,"drawable",descriptor)
         }
+        if err:=perspective_scene_encode(app,row,&fields); err!=.None { return nil,err }
         if err:=light_scene_encode(app,row,&fields); err!=.None { return nil,err }
+        if err:=audio_scene_encode(app,row,&fields,origin); err!=.None { return nil,err }
         if err:=scene_builtin_components_encode(app,row,&fields,origin); err!=.None { return nil,err }
         extensions:=make(json.Object,app.world.allocator); extensions_transferred:=false; defer { if !extensions_transferred { json.destroy_value(extensions) } }
         if scene_row_has(row,"SceneUnknown") {
@@ -99,7 +112,7 @@ scene_document_encode :: proc(app:^Authoring,snapshot:^Scene_Snapshot,name,origi
         }
         for component in row.components {
             known:=false
-            for builtin in ([19]string{"PointLight","DirectionalLight","PhysicsJoint","SceneModel","SceneKey","SceneName","SceneTransform","SceneParent","SceneMesh","SurfaceMaterial","SceneUnknown","AnimationPlayer","ParticleEmitter","Script","PhysicsBody","TriggerVolume","TriggerRules","Velocity","SceneSource"}) { if component.name==builtin { known=true; break } }
+            for builtin in ([24]string{"Perspective","AudioSource","AudioEmitter","AudioListener","ReverbZone","PointLight","DirectionalLight","PhysicsJoint","SceneModel","SceneKey","SceneName","SceneTransform","SceneParent","SceneMesh","SurfaceMaterial","SceneUnknown","AnimationPlayer","ParticleEmitter","Script","PhysicsBody","TriggerVolume","TriggerRules","Velocity","SceneSource"}) { if component.name==builtin { known=true; break } }
             if component.name=="AnimationModel" && scene_row_has(row,"SceneModel") { known=true }
             if component.name=="SceneMesh" && !scene_mesh_has_builtin_source(component.data) { known=false }
             if known { continue }

@@ -57,7 +57,8 @@ number_drag :: proc(ctx:^Context,node:^Node,position:Vec2,started,finished:bool)
 dismiss :: proc(ctx:^Context,id:Node_Id,reason:Dismiss_Reason) { node:=node_get(ctx,id); if node!=nil { append(&ctx.actions,Dismiss_Action{node.id,node.descriptor.action,node.descriptor.payload,reason}) }; if ctx.popup==id { ctx.popup={}; if ctx.focus_before_popup.key!=0 { focus_set(ctx,ctx.focus_before_popup); ctx.focus_before_popup={} } } }
 @(private="package")
 dock_pointer_down :: proc(ctx:^Context,node:^Node,position:Vec2,button:Pointer_Button)->bool {
-    tree:=node.descriptor.dock; if tree==nil { return false }; regions:=dock_bounds(tree,node.bounds,ctx.theme.row_height,4,ctx.allocator); defer delete(regions,ctx.allocator)
+    tree:=node.descriptor.dock; if tree==nil { return false }; regions:=dock_subtree_bounds(tree,node.descriptor.dock_root,node.bounds,ctx.theme.row_height,4,ctx.allocator); defer delete(regions,ctx.allocator)
+    if dock_float_pointer_down(ctx,node,position,button) { return true }
     for region in regions {
         dn:=tree.nodes[region.node]
         if dn.kind==.Split {
@@ -69,14 +70,16 @@ dock_pointer_down :: proc(ctx:^Context,node:^Node,position:Vec2,button:Pointer_B
             font,size:=node_font(ctx,node); width:=ctx.fonts.measure(ctx.fonts.state,font,dock_label(node,tab),size,0).x+ctx.theme.padding*2
             if position.x>=x && position.x<x+width {
                 if button==.Middle { append(&ctx.actions,Dock_Action{kind=.Close,source=dn.id,tab=tab}); return false }
-                ctx.dock_source=dn.id; ctx.dock_tab=tab; append(&ctx.actions,Dock_Action{kind=.Activate,source=dn.id,tab=tab}); return true
+                ctx.dock_source=dn.id; ctx.dock_tab=tab; ctx.dock_bounds=region.bounds; append(&ctx.actions,Dock_Action{kind=.Activate,source=dn.id,tab=tab}); return true
             }; x+=width
         }
+        if region.floating_root!=0 && button==.Left { ctx.dock_float=region.floating_root; ctx.dock_bounds=tree.floating[dock_float_index(tree,region.floating_root)].bounds; return true }
     }; return false
 }
 @(private="package")
 dock_pointer_move :: proc(ctx:^Context,node:^Node,position:Vec2,finished:bool) {
     tree:=node.descriptor.dock; if tree==nil { return }
+    if ctx.dock_float!=0 { dock_float_pointer_move(ctx,position); return }
     if ctx.dock_split!=0 {
         dn:=tree.nodes[ctx.dock_split]; if dn==nil { return }; ratio:f32=0.5
         if dn.direction==.Horizontal && ctx.dock_bounds.width>4 { ratio=(position.x-ctx.dock_bounds.x)/(ctx.dock_bounds.width-4) }
@@ -85,8 +88,9 @@ dock_pointer_move :: proc(ctx:^Context,node:^Node,position:Vec2,finished:bool) {
     }
     delta:=position-ctx.capture_start; if delta.x*delta.x+delta.y*delta.y>16 { ctx.dock_dragging=true }
     if !finished || !ctx.dock_dragging || ctx.dock_tab==0 { return }
-    regions:=dock_bounds(tree,node.bounds,ctx.theme.row_height,4,ctx.allocator); defer delete(regions,ctx.allocator)
-    for region in regions {
+    regions:=dock_bounds(tree,dock_host_bounds(ctx,tree),ctx.theme.row_height,4,ctx.allocator); defer delete(regions,ctx.allocator)
+    for i:=len(regions)-1;i>=0;i-=1 {
+        region:=regions[i]
         if tree.nodes[region.node].kind==.Split || !rect_contains(region.bounds,position) { continue }
         zone:=Dock_Zone.Center; at:=len(tree.nodes[region.node].tabs)
         if !rect_contains(region.tab_bar,position) {
@@ -97,8 +101,9 @@ dock_pointer_move :: proc(ctx:^Context,node:^Node,position:Vec2,finished:bool) {
             at=0; x:=region.tab_bar.x; font,size:=node_font(ctx,node)
             for tab in tree.nodes[region.node].tabs { width:=ctx.fonts.measure(ctx.fonts.state,font,dock_label(node,tab),size,0).x+ctx.theme.padding*2; if position.x<x+width/2 { break }; at+=1; x+=width }
         }
-        append(&ctx.actions,Dock_Action{kind=.Move,source=ctx.dock_source,target=region.node,tab=ctx.dock_tab,zone=zone,index=at}); break
+        append(&ctx.actions,Dock_Action{kind=.Move,source=ctx.dock_source,target=region.node,tab=ctx.dock_tab,zone=zone,index=at}); return
     }
+    append(&ctx.actions,Dock_Action{kind=.Undock,source=ctx.dock_source,tab=ctx.dock_tab,bounds={position.x-32,position.y-16,clamp(ctx.dock_bounds.width,240,640),clamp(ctx.dock_bounds.height,160,480)}})
 }
 @(private="package")
 activate_node :: proc(ctx:^Context,node:^Node) {
@@ -143,8 +148,9 @@ route_input :: proc(ctx:^Context,input:Input)->Frame_Result {
             } else if popup!=nil && !popup_contains(ctx,popup,e.position) { dismiss(ctx,popup.id,.Outside); result.consumed_pointer=true; continue }
             if modal:=node_get(ctx,ctx.modal); modal!=nil && !rect_contains(modal.bounds,e.position) { result.consumed_pointer=true; continue }
             node:=hit_node(ctx,e.position); if node==nil { focus_set(ctx,{}); if ctx.modal.key!=0 { result.consumed_pointer=true }; continue }; result.consumed_pointer=true
+            dock_raise_node(ctx,node)
             if focusable(node) { focus_set(ctx,node.id) }; ctx.capture_start=e.position; ctx.capture_value=node_number(ctx,node); ctx.capture_button=e.button; ctx.capture_modifiers=e.modifiers; ctx.capture_clicks=e.clicks
-            ctx.dock_source=0; ctx.dock_tab=0; ctx.dock_split=0; ctx.dock_dragging=false; ctx.scroll_drag=false; ctx.capture_draggable=node.descriptor.draggable && (node.descriptor.kind==.Selectable || node.descriptor.kind==.Tree_Row) && e.button==.Left; ctx.capture_dragged=false; ctx.capture_text_lines=false
+            ctx.dock_source=0; ctx.dock_tab=0; ctx.dock_split=0; ctx.dock_float=0; ctx.dock_resize_edges=0; ctx.dock_dragging=false; ctx.scroll_drag=false; ctx.capture_draggable=node.descriptor.draggable && (node.descriptor.kind==.Selectable || node.descriptor.kind==.Tree_Row) && e.button==.Left; ctx.capture_dragged=false; ctx.capture_text_lines=false
             capture:=true
             #partial switch node.descriptor.kind {
             case .Context_Menu: capture=false
@@ -167,7 +173,7 @@ route_input :: proc(ctx:^Context,input:Input)->Frame_Result {
             case .Image,.Splitter,.Timeline: append(&ctx.actions,Pointer_Action{node.id,node.descriptor.action,node.descriptor.payload,e.position,{},e.button,false,true})
             case .Text_Input,.Code_Editor,.Numeric_Input,.Scroll_Area:
             case: if !ctx.capture_dragged && rect_contains(node.bounds,e.position) && rect_contains(node.clip,e.position) { activate_node(ctx,node) }
-            }; ctx.captured={}; ctx.dock_split=0; ctx.dock_tab=0; ctx.dock_source=0
+            }; ctx.captured={}; ctx.dock_split=0; ctx.dock_tab=0; ctx.dock_source=0; ctx.dock_float=0; ctx.dock_resize_edges=0
         case Scroll:
             ctx.pointer=e.position; node:=hit_node(ctx,e.position)
             if node==nil { for i:=len(ctx.order)-1;i>=0;i-=1 { n:=node_get(ctx,ctx.order[i]); if node_visible(ctx,n) && rect_contains(n.clip,e.position) && n.descriptor.kind==.Scroll_Area && (ctx.modal.key==0 || node_descends(ctx,n,ctx.modal)) { node=n; break } } }
@@ -211,9 +217,12 @@ route_input :: proc(ctx:^Context,input:Input)->Frame_Result {
         case .Button,.Icon_Button,.Checkbox,.Combo,.Menu_Item,.Tree_Row,.Selectable: result.cursor=.Hand
         case .Slider,.Drag_Value,.Splitter: result.cursor=.Horizontal_Resize
         case .Image: result.cursor=.Grab
+        case .Dock_Space:
+            if node.descriptor.dock_root!=0 { result.cursor=.Grab }
         }
     }
     if ctx.captured.key!=0 { node:=node_get(ctx,ctx.captured); if node!=nil && node.descriptor.kind==.Image { result.cursor=.Grabbing } }
+    if ctx.dock_float!=0 { result.cursor=.Grabbing; if ctx.dock_resize_edges&3!=0 { result.cursor=.Horizontal_Resize } else if ctx.dock_resize_edges&12!=0 { result.cursor=.Vertical_Resize } }
     return result
 }
 
@@ -239,5 +248,5 @@ cancel_capture :: proc(ctx:^Context) {
         case .Slider,.Drag_Value: set_number(ctx,node,node_number(ctx,node),false,true)
         case .Image,.Splitter,.Timeline: append(&ctx.actions,Pointer_Action{node.id,node.descriptor.action,node.descriptor.payload,ctx.pointer,{},ctx.capture_button,false,true})
         }
-    }; ctx.captured={}; ctx.dock_dragging=false; ctx.dock_split=0; ctx.dock_tab=0; ctx.scroll_drag=false; ctx.capture_draggable=false; ctx.capture_dragged=false
+    }; ctx.captured={}; ctx.dock_dragging=false; ctx.dock_split=0; ctx.dock_tab=0; ctx.dock_float=0; ctx.dock_resize_edges=0; ctx.scroll_drag=false; ctx.capture_draggable=false; ctx.capture_dragged=false
 }

@@ -4,18 +4,23 @@ import ecs "../ecs"
 import editor "../editor"
 import "core:encoding/json"
 import "core:math"
+import "core:mem"
 import "core:slice"
 
 Particle_Shape :: enum { Point, Line, Circle, Sphere, Box }
 /// Serializable linear-color emitter parameters; the render owner consumes accepted bursts.
 Particle_Descriptor :: struct {
-    emit_rate,base_lifetime,lifetime_variation:f32,
-    velocity_direction:[3]f32,velocity_magnitude,velocity_cone_angle:f32,
-    base_scale,scale_variation:f32,color:[4]f32,color_variation,gravity,turbulence_strength,turbulence_frequency:f32,
-    shape:Particle_Shape,shape_params:[4]f32,active:bool,color_end:[4]f32,scale_end:f32,kill_on_destroy:bool,
-    timed_emission:f32,has_timed_emission:bool,burst_queue:[dynamic]u32,
+    emit_rate:f32 `min:"0" speed:"1"`,
+    base_lifetime:f32 `min:"0.001" speed:"0.05"`,
+    lifetime_variation:f32 `min:"0" max:"1" speed:"0.01"`,
+    velocity_direction:[3]f32,velocity_magnitude:f32 `min:"0"`,velocity_cone_angle:f32 `min:"0"`,
+    base_scale:f32 `min:"0.001" speed:"0.01"`,scale_variation:f32 `min:"0" max:"1" speed:"0.01"`,
+    color:[4]f32 `inspect:"color" min:"0"`,color_variation:f32 `min:"0" max:"1" speed:"0.01"`,gravity:f32,
+    turbulence_strength,turbulence_frequency:f32 `min:"0"`,
+    shape:Particle_Shape,shape_params:[4]f32,active:bool,color_end:[4]f32 `inspect:"color" min:"0"`,scale_end:f32 `min:"0"`,kill_on_destroy:bool,
+    timed_emission:f32 `min:"0"`,has_timed_emission:bool,emission_revision:u64 `inspect:"skip" json:"-"`,burst_queue:[dynamic]u32 `inspect:"skip" json:"-"`,
 }
-Particle_Emitter :: struct { descriptor:Particle_Descriptor `inspect:"skip"` }
+Particle_Emitter :: struct { descriptor:Particle_Descriptor }
 /// Default parameters exactly match the durable engine emitter descriptor.
 particle_defaults :: proc()->Particle_Descriptor { return {emit_rate=50,base_lifetime=5,lifetime_variation=0.2,velocity_direction={0,1,0},velocity_magnitude=1,velocity_cone_angle=0.5,base_scale=0.1,scale_variation=0.5,color={1,1,1,1},color_variation=0.1,gravity=-9.8,turbulence_frequency=3,active=true,color_end={1,1,1,1},scale_end=1} }
 @(private="package")
@@ -23,7 +28,47 @@ particle_destroy :: proc(value:rawptr) { emitter:=cast(^Particle_Emitter)value; 
 @(private="package")
 particle_clone :: proc(dst,src:rawptr) { target:=cast(^Particle_Emitter)dst; source:=cast(^Particle_Emitter)src; target^=source^; target.descriptor.burst_queue=slice.clone_to_dynamic(source.descriptor.burst_queue[:]) }
 /// Registers an opt-in owned attachment; generic scene spawn never receives an emitter.
-particle_register :: proc(w:^ecs.World,reg:^editor.Component_Registry) { editor.editor_register(w,reg,"ParticleEmitter",Particle_Emitter{},ecs.Value_Ops{particle_destroy,particle_clone},spawn_default=false) }
+particle_register :: proc(w:^ecs.World,reg:^editor.Component_Registry) { editor.editor_register(w,reg,"ParticleEmitter",Particle_Emitter{particle_defaults()},ecs.Value_Ops{particle_destroy,particle_clone},spawn_default=false)
+    entry:=reg.entries["ParticleEmitter"]; entry.encode_owned=particle_encode; entry.decode_owned=particle_owned_decode }
+@(private="package")
+particle_encode :: proc(_:rawptr,value:rawptr,allocator:mem.Allocator)->([]byte,bool) {
+    encoded,error:=json.marshal((cast(^Particle_Emitter)value)^,opt=json.Marshal_Options{use_enum_names=true},allocator=allocator); return encoded,error==nil
+}
+@(private="package")
+particle_owned_decode :: proc(_:rawptr,data:[]byte,allocator:mem.Allocator)->(rawptr,bool) {
+    value:=new(Particle_Emitter,allocator)
+    error:=json.unmarshal(data,value,spec=.JSON,allocator=allocator)
+    return value,error==nil && particle_descriptor_valid(value.descriptor)
+}
+/// Authored history owns settings; only a live emitter owns scheduled render work.
+@(private="package")
+particle_history_clear :: proc(entry:^editor.Editor_Entry,value:rawptr) {
+    if entry.T!=Particle_Emitter || value==nil { return }
+    emitter:=cast(^Particle_Emitter)value; delete(emitter.descriptor.burst_queue); emitter.descriptor.burst_queue=nil
+}
+@(private="package")
+particle_history_clone :: proc(entry:^editor.Editor_Entry,target,live:rawptr,allocator:mem.Allocator)->rawptr {
+    result:=editor.editor_clone_value(entry,target,allocator)
+    if entry.T==Particle_Emitter {
+        emitter:=cast(^Particle_Emitter)result; delete(emitter.descriptor.burst_queue); emitter.descriptor.burst_queue=nil
+        if live!=nil {
+            source:=cast(^Particle_Emitter)live; emitter.descriptor.burst_queue=slice.clone_to_dynamic(source.descriptor.burst_queue[:],allocator); emitter.descriptor.emission_revision=source.descriptor.emission_revision
+            if emitter.descriptor.active && !source.descriptor.active { emitter.descriptor.emission_revision=particle_next_revision(emitter.descriptor.emission_revision) }
+        }
+    }
+    return result
+}
+/// Replaces authored fields on a proposal while retaining every pending burst.
+@(private="package")
+particle_edit_field :: proc(owner:^Authoring,id:ecs.Entity_Id,op:editor.Scene_Op)->editor.Scene_Error {
+    emitter:=ecs.get_component_mut(&owner.world,id,Particle_Emitter); if emitter==nil { return .Component_Not_Found }
+    queued:=slice.clone_to_dynamic(emitter.descriptor.burst_queue[:],owner.world.allocator); revision:=emitter.descriptor.emission_revision; active:=emitter.descriptor.active
+    error:=editor.editor_set_field(&owner.world,&owner.registry,id,op.component,op.field,op.value)
+    if error!=.None { delete(queued); return error }
+    updated:=ecs.get_component_mut(&owner.world,id,Particle_Emitter)
+    delete(updated.descriptor.burst_queue); updated.descriptor.burst_queue=queued; updated.descriptor.emission_revision=revision
+    if updated.descriptor.active && !active { updated.descriptor.emission_revision=particle_next_revision(revision) }; return .None
+}
 /// Validates every durable field and bounded burst before publishing an emitter.
 particle_descriptor_valid :: proc(p:Particle_Descriptor)->bool {
     if p.shape not_in (bit_set[Particle_Shape]{.Point,.Line,.Circle,.Sphere,.Box}) { return false }
@@ -93,7 +138,11 @@ particle_burst :: proc(w:^ecs.World,entity:ecs.Entity_Id,count:u32)->editor.Scen
     if emitter.descriptor.burst_queue.allocator.procedure==nil { emitter.descriptor.burst_queue=make([dynamic]u32,w.allocator) }
     append(&emitter.descriptor.burst_queue,count); return .None
 }
-/// Changes runtime activation through the same component used by durable behavior edits.
-particle_set_active :: proc(w:^ecs.World,entity:ecs.Entity_Id,active:bool)->editor.Scene_Error { emitter:=ecs.get_component_mut(w,entity,Particle_Emitter); if emitter==nil { return .Component_Not_Found }; emitter.descriptor.active=active; return .None }
+@(private="package")
+particle_next_revision :: proc(revision:u64)->u64 { return 1 if revision==max(u64) else revision+1 }
+/// Explicitly restarts the configured timer on the next accepted particle frame.
+particle_restart :: proc(w:^ecs.World,entity:ecs.Entity_Id)->editor.Scene_Error { emitter:=ecs.get_component_mut(w,entity,Particle_Emitter); if emitter==nil { return .Component_Not_Found }; emitter.descriptor.emission_revision=particle_next_revision(emitter.descriptor.emission_revision); return .None }
+/// Activating an emitter explicitly restarts its configured timer; deactivation retains pending work.
+particle_set_active :: proc(w:^ecs.World,entity:ecs.Entity_Id,active:bool)->editor.Scene_Error { emitter:=ecs.get_component_mut(w,entity,Particle_Emitter); if emitter==nil { return .Component_Not_Found }; emitter.descriptor.active=active; if active { emitter.descriptor.emission_revision=particle_next_revision(emitter.descriptor.emission_revision) }; return .None }
 /// Transfers accepted bursts to the rendering consumer only after it can retain every emission.
 particle_take_bursts :: proc(emitter:^Particle_Emitter)->[dynamic]u32 { result:=emitter.descriptor.burst_queue; emitter.descriptor.burst_queue=nil; return result }

@@ -26,31 +26,18 @@ created_group_remap :: proc(state:rawptr,remap:Entity_Remap) {
 @(private="package")
 created_group_apply :: proc(state:rawptr,w:^ecs.World,reg:^Component_Registry,redo:bool,remaps:^[dynamic]Entity_Remap)->Scene_Error {
     command:=cast(^Created_Group)state; context.allocator=w.allocator
-    for row in command.rows { if ecs.entity_exists(w,row.entity)==redo { return .Invalid_Operation } }
-    if !redo { for row in command.rows { ecs.destroy_entity(w,row.entity) }; return .None }
-    prepared:=make([][dynamic]Component_Snapshot,len(command.rows),w.allocator)
-    defer { for components in prepared { component_snapshots_destroy(components,w.allocator) }; delete(prepared,w.allocator) }
+    rows:=make([]Restoration_Row,len(command.rows),w.allocator); defer delete(rows,w.allocator)
     for row,i in command.rows {
-        prepared[i]=make([dynamic]Component_Snapshot,w.allocator)
-        for snapshot in row.components {
-            entry:=reg.entries[snapshot.name]; if entry==nil { return .Component_Not_Found }; if entry!=snapshot.entry { return .Invalid_Operation }
-            append(&prepared[i],Component_Snapshot{snapshot.name,entry,editor_clone_value(entry,snapshot.value,w.allocator)})
-        }
+        if ecs.entity_exists(w,row.entity)==redo { return .Invalid_Operation }
+        rows[i]={row.entity,redo,row.components[:]}
     }
-    replacements:=make([]Entity_Remap,len(command.rows),w.allocator); defer delete(replacements,w.allocator)
-    mapping:=make(map[ecs.Entity_Id]ecs.Entity_Id,w.allocator); defer delete(mapping)
-    allocated:=0; success:=false; defer { if !success { for replacement in replacements[:allocated] { ecs.destroy_entity(w,replacement.after) } } }
-    for row,i in command.rows { replacement:=Entity_Remap{row.entity,ecs.create_entity(w)}; replacements[i]=replacement; mapping[replacement.before]=replacement.after; allocated+=1 }
-    for components,i in prepared {
-        for &component in components {
-            if !component_map_references(component.entry,component.value,{mapping,false}) { return .Invalid_Operation }
-            if !ecs.insert_component_value(w,replacements[i].after,component.entry.T,component.value) { return .Entity_Not_Found }
-            mem.free(component.value,w.allocator); component.value=nil
-        }
-    }
-    for replacement in replacements { created_group_remap(command,replacement); editor_remap_world_references(w,reg,replacement); append(remaps,replacement) }
-    success=true; return .None
+    offset:=len(remaps)
+    error:=restoration_apply(w,reg,rows,remaps)
+    if error!=.None { return error }
+    for replacement in remaps^[offset:] { created_group_remap(command,replacement) }
+    return .None
 }
+
 /// Captures one created subtree as an owned command; redo preserves prepared revisions and remaps cross-entity references.
 created_entities_group :: proc(w:^ecs.World,reg:^Component_Registry,entities:[]ecs.Entity_Id)->Undo_Group {
     context.allocator=w.allocator

@@ -25,6 +25,7 @@ particle_consumer_init :: proc(consumer:^Particle_Consumer($R),owner:^app.Author
     }
     error:gfx.Gpu_Error
     consumer.pipeline,error=operations.create_graphics(renderer,consumer.shaders.graphics.descriptor); if error!=.None { return {gpu=error},.None }
+    consumer.reverse_pipeline,error=operations.create_graphics(renderer,depth_descriptor(consumer.shaders.graphics.descriptor,.Reverse)); if error!=.None { return {gpu=error},.None }
     consumer.records=make([dynamic]Particle_Record,allocator); consumer.inputs=make([dynamic]gfx.Buffer_Input,allocator)
     consumer.slots=make([]Particle_Slot,slot_count,allocator)
     storage:=gfx.Buffer_Usages{.Storage,.Transfer_Source,.Transfer_Destination}
@@ -33,8 +34,10 @@ particle_consumer_init :: proc(consumer:^Particle_Consumer($R),owner:^app.Author
     for &index,i in indices { index=u32(i) }
     consumer.data,error=operations.create_buffer(renderer,{size=u64(len(data)),usage=storage,memory=.GPU_Private},data); if error!=.None { return {gpu=error},.None }
     consumer.dead,error=operations.create_buffer(renderer,{size=u64(capacity)*4,usage=storage,memory=.GPU_Private},particle_indices_bytes(indices)); if error!=.None { return {gpu=error},.None }
+    for &index in indices { index=0 }
+    consumer.rollover_alive,error=operations.create_buffer(renderer,{size=u64(capacity)*4,usage=storage,memory=.GPU_Private},particle_indices_bytes(indices)); if error!=.None { return {gpu=error},.None }
     initial:=[1]Particle_Counters{{dead=capacity}}
-    consumer.initial_counters,error=operations.create_buffer(renderer,{size=16,usage=storage,memory=.GPU_Private},particle_counters_bytes(initial[:])); if error!=.None { return {gpu=error},.None }
+    consumer.rollover_counters,error=operations.create_buffer(renderer,{size=16,usage=storage,memory=.GPU_Private},particle_counters_bytes(initial[:])); if error!=.None { return {gpu=error},.None }
     for &slot in consumer.slots {
         handles:=[10]^gfx.Buffer_Handle{&slot.alive,&slot.working,&slot.counters,&slot.indirect,&slot.dispatch,&slot.frame,&slot.configs,&slot.indices,&slot.camera,&slot.readback}
         sizes:=[10]u64{u64(capacity)*4,u64(capacity)*4,16,16,12,32,u64(emitter_capacity)*160,u64(capacity)*4,112,particle_readback_size(consumer)}
@@ -63,12 +66,13 @@ particle_consumer_destroy :: proc(consumer:^Particle_Consumer($R))->gfx.Gpu_Erro
                 if handle.owner!=nil { result:=consumer.operations.destroy_buffer(consumer.renderer,handle); if result!=.None { error=result } }
             }
         }
-        for handle in ([3]gfx.Buffer_Handle{consumer.data,consumer.dead,consumer.initial_counters}) {
+        for handle in ([4]gfx.Buffer_Handle{consumer.data,consumer.dead,consumer.rollover_alive,consumer.rollover_counters}) {
             if handle.owner!=nil { result:=consumer.operations.destroy_buffer(consumer.renderer,handle); if result!=.None { error=result } }
         }
         for pipeline in consumer.pipelines {
             if pipeline.owner!=nil { result:=consumer.operations.destroy_compute(consumer.renderer,pipeline); if result!=.None { error=result } }
         }
+        if consumer.reverse_pipeline.owner!=nil { result:=consumer.operations.destroy_graphics(consumer.renderer,consumer.reverse_pipeline); if result!=.None { error=result } }
         if consumer.pipeline.owner!=nil { result:=consumer.operations.destroy_graphics(consumer.renderer,consumer.pipeline); if result!=.None { error=result } }
     }
     particle_shader_destroy(&consumer.shaders)

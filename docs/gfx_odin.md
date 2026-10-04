@@ -4,7 +4,8 @@
 compiled graphs and authored compute/transfer/graphics packets. Native adapters
 in `odin/gfx/metal` and `odin/gfx/vulkan` import no ECS, math, editor or scene
 packages. Application composition and material authoring live in `odin/app`.
-The remaining migration is tracked in [TODO](../TODO.md#odin-port).
+See [graphics ownership](graphics_core.md) and [application rendering](render_features_odin.md)
+for canonical composition and acceptance boundaries.
 
 ## Ownership
 
@@ -228,5 +229,5 @@ Native Metal sets `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1` before launchi
 Native Vulkan enables Khronos synchronization validation and requires a real device,
 loader and validation layer. Failure to initialize validation is not a passing
 run. Native tests have bounded execution and release Odin/native owned state at
-teardown. Full application migration and removal of superseded Rust consumers
-remain separate completion requirements.
+teardown. Application consumers require their own native acceptance; see
+[the cross-backend suite](contract-suite.md) for those entrypoints.

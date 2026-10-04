@@ -9,6 +9,7 @@ import ron "../encoding/ron"
 import km "../math"
 import "core:encoding/json"
 import "core:strings"
+import "core:path/filepath"
 import "core:fmt"
 
 /// Owns a strict rooted scene template; its keys remain local until insertion.
@@ -46,13 +47,14 @@ prefab_document_decode :: proc(app:^Authoring,document_value:json.Value,origin:s
     return {snapshot,ecs.Entity_Id(root)},.None
 }
 
-/// Loads, prepares and atomically writes rooted scene templates through the retained project root.
+/// Loads and writes scene templates through a retained project root or an explicit file capability.
 asset_authoring_prefab :: proc(app:^Authoring,request:asset.Prefab_Request)->(editor.Tool_Result,editor.Undo_Group) {
     allocator:=app.world.allocator; context.allocator=allocator; result:=error_result(&app.world,.None)
-    roots:=ecs.get_resource_mut(&app.world,Asset_Roots); if roots==nil { result.error=.Invalid_Operation; return result,{} }
+    root_kind:Mesh_Path_Root=.Project; if filepath.is_abs(request.path) { root_kind=.File }
+    scope,scope_error:=asset_path_scope(app,root_kind,request.path); if scope_error!=.None { result.error=.Invalid_Operation; return result,{} }; defer asset_path_scope_destroy(&scope)
     document:=request.document; owned_document:=false; defer { if owned_document { json.destroy_value(document) } }
     if request.action==.Read || request.action==.Instantiate {
-        bytes,read_error:=resources.read_text(&roots.project,request.path); if read_error!=.None { result.error=.Invalid_Operation; return result,{} }; defer delete(bytes,allocator)
+        bytes,read_error:=resources.read_text(&scope.root,scope.path); if read_error!=.None { result.error=.Invalid_Operation; return result,{} }; defer delete(bytes,allocator)
         parsed,parse_error:=ron.parse(string(bytes),allocator); if parse_error.kind!=.None { result.error=.Decode_Failed; return result,{} }; document=parsed; owned_document=true
     }
     prefab,decode_error:=prefab_document_decode(app,document,request.path)
@@ -81,7 +83,9 @@ asset_authoring_prefab :: proc(app:^Authoring,request:asset.Prefab_Request)->(ed
         append(&result.entities,root); for entity in stage.entities { if entity!=root { append(&result.entities,entity) } }
         preparation,prepare_error:=scene_prepare_begin(app,stage.entities[:],.Insert)
         if prepare_error!=.None { clear(&result.entities); result.error=prepare_error; return result,{} }; defer scene_prepare_finish(&preparation,published)
-        group:=editor.created_entities_group(&app.world,&app.registry,stage.entities[:])
+        command:=scene_action_command_new(app)
+        for entity in stage.entities { values:=editor.entity_components_capture(&app.world,&app.registry,entity); append(&command.rows,Scene_Action_Row{entity=entity,after_exists=true,after=values}) }
+        group:=scene_action_command_group(command)
         ecs.insert_resource(&app.world,Scene_Identity{stage.next_key}); published=true
         return result,group
     }
@@ -94,7 +98,7 @@ asset_authoring_prefab :: proc(app:^Authoring,request:asset.Prefab_Request)->(ed
         if published_error!=nil { result.error=.Decode_Failed; return result,{} }; selected:=false; defer { if !selected { delete(published_data,allocator) } }
         ron_document,ron_ok:=scene_document_ron_clone(document); if !ron_ok { result.error=.Decode_Failed; return result,{} }; defer json.destroy_value(ron_document)
         bytes,write_error:=ron.write(ron_document,allocator); if write_error.kind!=.None { result.error=.Decode_Failed; return result,{} }; defer delete(bytes,allocator)
-        did_publish,write_error_native:=resources.write_atomic(&roots.project,request.path,bytes)
+        did_publish,write_error_native:=resources.write_atomic(&scope.root,scope.path,bytes)
         if did_publish { delete(result.data,allocator); result.data=published_data; selected=true }; if write_error_native!=.None { result.error=.Invalid_Operation }
     }
     return result,{}

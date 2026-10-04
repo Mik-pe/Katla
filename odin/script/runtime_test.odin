@@ -63,7 +63,7 @@ native_owned_luau_math_lifecycle_full_u64_events_and_world_commands :: proc(t:^t
         end`
     diagnostics,error:=sync(&owner,{Attachment{max(u64),"full.luau",source}}); testing.expect(t,error=="" && len(diagnostics)==0); delete(error); free_diagnostics(diagnostics)
     entities:=[1]Entity_State{ {id=max(u64),name="Actor",transform=km.TRANSFORM_IDENTITY,velocity={1,0,0},has_velocity=true,components={"Transform"}} }
-    output,tick_error:=tick(&owner,.25,entities[:],{Event{"activated",max(u64),max(u64),-1}},Input{actions={"move_forward"},keys={"W"},mouse_delta={2,3},mouse_wheel=1})
+    output,tick_error:=tick(&owner,.25,entities[:],{Event{name="activated",trigger=max(u64),other=max(u64),payload=-1}},Input{actions={"move_forward"},keys={"W"},mouse_delta={2,3},mouse_wheel=1})
     testing.expect(t,tick_error=="" && len(output.diagnostics)==0 && len(output.commands)==10 && output.instances[0].consecutive_errors==0); delete(tick_error)
     ray_index:=-1; for command in output.commands { if command.kind==.Raycast { ray_index=command.index; testing.expect(t,command.vector==km.Vec3{0,0,-1}) } }; output_destroy(&owner,&output)
     queries:=Query_Results{rays=make(map[Query_Key]Ray_Result)}; queries.rays[{max(u64),ray_index}]={hit=true,entity=max(u64),distance=4}

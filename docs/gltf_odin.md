@@ -28,6 +28,43 @@ color-space selection, uploads and native texture lifetime belong to the app
 renderer. An importer success does not establish native support for every
 material workflow.
 
+## Live texture revisions
+
+External images retain their confined, model-relative `source_path` through CPU
+ownership and history cloning. `scene_model_image_read` reads that capability;
+embedded GLB and data-URI images are re-extracted from a validated source model.
+Refreshing images does not replace the authored `Scene_Model`, document,
+selection, simulation state or Undo history.
+
+The application calls `model_texture_reload_poll` once per owner after retiring
+its accepted frame and before acquiring the next slot. The default interval is
+one second. Exact encoded bytes define freshness, so equal-size edits and
+unchanged timestamps are observed. Each source image is read once per poll
+across the camera caches. Missing, malformed or native-rejected candidates stay
+retryable; the complete previous accepted image revision continues rendering.
+
+Changed images receive new native allocations, real transfer uploads and mip
+generation before publication. All active caches prepare their textures,
+samplers, resource mappings and graph plans together. Changed dimensions and
+mip counts replace the same logical imported image declaration through
+`graph_replace_image`; repeated resizing does not append unused resources.
+Previously prepared recordings retain their immutable descriptors and native
+owners. Publication replaces the whole batch, then removes old native handles.
+A cleanup error is reported separately from acceptance.
+
+`odin/examples/texture_reload` exercises four real model caches on Metal and
+Vulkan. Strict ASan native validation proves malformed-image, first-allocation,
+partial-batch and sampler failures preserve live red pixels, followed by exact
+green/blue/red pixels, resized mip chains and bounded graph resource counts.
+The same native fixture installs one aggregate scene participant: an unrelated
+Transform edit, Undo and Redo rebuild all four model caches from actual sources
+and preserve fresh green pixels while the immutable CPU image still contains
+the original red bytes. CPU checks cover source identity cloning, embedded
+GLB/data-URI re-extraction, exact-byte freshness and immutable
+prepared recordings across descriptor replacement and rollback. Actual editor
+host integration uses the same service; the headless fixture proves native
+replacement rather than operating-system file notification delivery.
+
 Every original node contributes its local TRS and exact column-major matrix.
 Parents preserve ancestors that are not joints. Skins preserve their joint-to-
 node mapping and inverse bind matrices. `gltf_world_matrices` samples canonical

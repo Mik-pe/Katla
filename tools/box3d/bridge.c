@@ -42,7 +42,7 @@ static void lifecycle_unlock(void) { atomic_flag_clear_explicit(&world_lifecycle
 _Static_assert(sizeof(KatlaBodySpec) == 168, "Body ABI");
 _Static_assert(sizeof(KatlaPose) == 48, "Pose ABI");
 _Static_assert(sizeof(KatlaJointSpec) == 64, "Joint ABI");
-KATLA_API uint32_t katla_box3d_abi(void) { return b3IsDoublePrecision() ? 0 : 7; }
+KATLA_API uint32_t katla_box3d_abi(void) { return b3IsDoublePrecision() ? 0 : 8; }
 KATLA_API int64_t katla_box3d_bytes(void) { return b3GetByteCount(); }
 KATLA_API void* katla_box3d_create(void) {
     KatlaWorld* world = calloc(1,sizeof(*world));
@@ -280,6 +280,16 @@ KATLA_API int32_t katla_box3d_overlaps(void* owner, uint64_t* ids, int32_t capac
 }
 
 static b3Vec3 local_anchor(const float anchor[3]) { return (b3Vec3){anchor[0],anchor[1],anchor[2]}; }
+static bool hinge_interval(const KatlaJointSpec* spec,float* center,float* half_width) {
+    if (!spec->has_limits) return false;
+    double width=(double)spec->limits[1]-(double)spec->limits[0];
+    const double tau=6.283185307179586476925286766559;
+    if (width>=tau) return false;
+    double midpoint=((double)spec->limits[0]+(double)spec->limits[1])*0.5;
+    *center=(float)atan2(sin(midpoint),cos(midpoint));
+    *half_width=(float)(width*0.5);
+    return true;
+}
 static b3JointDef joint_base(const KatlaJoint* joint) {
     b3JointDef def = b3DefaultSphericalJointDef().base;
     def.bodyIdA = joint->a->id; def.bodyIdB = joint->b->id;
@@ -288,6 +298,11 @@ static b3JointDef joint_base(const KatlaJoint* joint) {
     if (joint->spec.kind==1) {
         def.localFrameA.q = (b3Quat){{-0.7071067811865475f,0,0},0.7071067811865475f};
         def.localFrameB.q = def.localFrameA.q;
+        float center,half_width;
+        if (hinge_interval(&joint->spec,&center,&half_width)) {
+            b3Quat phase={{0,0,sinf(center*0.5f)},cosf(center*0.5f)};
+            def.localFrameA.q=b3MulQuat(def.localFrameA.q,phase);
+        }
     }
     return def;
 }
@@ -321,9 +336,8 @@ KATLA_API void* katla_box3d_joint_prepare(void* owner,const KatlaJointSpec* spec
     if (a->id.world0!=world->id.index1-1 || b->id.world0!=world->id.index1-1) return NULL;
     for (int i=0;i<3;i++) if (!isfinite(spec->anchor_a[i]) || !isfinite(spec->anchor_b[i])) return NULL;
     if (spec->has_limits && (!isfinite(spec->limits[0]) || !isfinite(spec->limits[1]) || spec->limits[0]>spec->limits[1])) return NULL;
-    if (spec->kind==1 && spec->has_limits && (spec->limits[0]<-0.99f*B3_PI || spec->limits[1]>0.99f*B3_PI)) return NULL;
-    float rest=spec->has_limits ? (spec->limits[0]+spec->limits[1])*0.5f : 0.5f;
-    if (spec->kind==2 && (!isfinite(rest) || rest<B3_LINEAR_SLOP)) return NULL;
+    float rest=spec->has_limits ? (float)(((double)spec->limits[0]+(double)spec->limits[1])*0.5) : 0.5f;
+    if (spec->kind==2 && !isfinite(rest)) return NULL;
     KatlaJoint* joint=calloc(1,sizeof(*joint)); if (!joint) return NULL;
     joint->spec=*spec; joint->world=world; joint->a=a; joint->b=b; joint->awake_a=b3Body_IsAwake(a->id); joint->awake_b=b3Body_IsAwake(b->id);
     if (spec->kind==2) { float hertz,damping; spring_factors(joint,&hertz,&damping); if (!isfinite(hertz) || !isfinite(damping)) { free(joint); return NULL; } }
@@ -334,10 +348,10 @@ KATLA_API int32_t katla_box3d_joint_publish(void* owner) {
     b3JointDef base=joint_base(joint);
     switch (joint->spec.kind) {
     case 0: { b3SphericalJointDef def=b3DefaultSphericalJointDef(); def.base=base; joint->id=b3CreateSphericalJoint(joint->world->id,&def); break; }
-    case 1: { b3RevoluteJointDef def=b3DefaultRevoluteJointDef(); def.base=base; def.enableLimit=joint->spec.has_limits!=0;
-        def.lowerAngle=joint->spec.limits[0]; def.upperAngle=joint->spec.limits[1]; joint->id=b3CreateRevoluteJoint(joint->world->id,&def); break; }
+    case 1: { b3RevoluteJointDef def=b3DefaultRevoluteJointDef(); def.base=base; float center,half_width; def.enableLimit=hinge_interval(&joint->spec,&center,&half_width);
+        def.lowerAngle=def.enableLimit ? -half_width : 0; def.upperAngle=def.enableLimit ? half_width : 0; joint->id=b3CreateRevoluteJoint(joint->world->id,&def); break; }
     case 2: { b3DistanceJointDef def=b3DefaultDistanceJointDef(); def.base=base; def.enableSpring=true; def.enableLimit=false;
-        def.length=joint->spec.has_limits ? (joint->spec.limits[0]+joint->spec.limits[1])*0.5f : 0.5f;
+        def.length=joint->spec.has_limits ? (float)(((double)joint->spec.limits[0]+(double)joint->spec.limits[1])*0.5) : 0.5f;
         spring_factors(joint,&def.hertz,&def.dampingRatio); joint->id=b3CreateDistanceJoint(joint->world->id,&def); break; }
     case 3: { b3WeldJointDef def=b3DefaultWeldJointDef(); def.base=base; joint->id=b3CreateWeldJoint(joint->world->id,&def); break; }
     default: return 0;

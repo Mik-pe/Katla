@@ -22,7 +22,7 @@ def build(output: Path, sanitize: bool = False) -> Path:
             raise RuntimeError(f"Required native C compiler/archive tool unavailable: {command}")
     obj = output / "cgltf.o"
     library = output / "libcgltf.a"
-    command = [*compiler, "-std=c99", "-O2", "-fPIC", "-Wall", "-Wextra", "-Werror", "-c", str(ROOT / "tools/cgltf/cgltf.c"), "-o", str(obj)]
+    command = [*compiler, "-std=c99", "-O2", *([] if platform.system()=="Windows" else ["-fPIC"]), "-Wall", "-Wextra", "-Werror", "-c", str(ROOT / "tools/cgltf/cgltf.c"), "-o", str(obj)]
     if sanitize:
         command += ["-fsanitize=address", "-fno-omit-frame-pointer", "-g"]
     subprocess.run(command, cwd=ROOT, check=True)

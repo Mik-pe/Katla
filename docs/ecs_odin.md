@@ -4,11 +4,11 @@ The shared [Odin tree](../odin/README.md) now also contains the independent
 [math port](math_odin.md) and a runnable `odin/examples/movement` consumer that
 composes math components with typed ECS systems.
 
-The Odin port lives in `odin/ecs`, with the optional reflection/scene/agent layer
-in `odin/editor`. It is a standalone CPU library. Katla's Rust application,
-renderers, scripting and physics still use `katla_ecs`; this experiment does not
-replace their language or introduce an FFI bridge. Rust remains the comparison
-implementation requested for the compilation measurements.
+The canonical ECS lives in `odin/ecs`, with the optional reflection/scene/agent
+layer in `odin/editor`. It is an independent CPU library used by the Odin
+application. Rendering, scripting and physics remain separate owners; they do
+not introduce an ECS FFI bridge. The Rust comparison below records an earlier
+compilation experiment rather than the current engine dependency graph.
 
 ## Dependencies
 
@@ -19,10 +19,10 @@ implementation requested for the compilation measurements.
 | Optional `serde_json` and its dependencies | `core:encoding/json` in the separately imported editor package |
 | Rust collections/allocation | Odin maps/dynamic arrays and aligned `core:mem` allocations |
 
-There is no ECS dependency on `katla_math` or `katla_gfx`, so neither is needed
-for this port. The normal dependency graph in the Rust manifests remains intact.
-The standard Odin packages ship with the compiler; no third-party Odin package
-or foreign library is required by these ECS packages.
+The ECS package imports no math, graphics, script, physics or application
+package. The application composes those owners independently; no Rust ECS
+bridge remains. Standard Odin packages ship with the compiler, so these ECS
+packages require no third-party package or foreign library.
 
 ## Contracts and API mapping
 
@@ -133,6 +133,12 @@ lists in both histories. Recording a new action releases the abandoned redo
 branch. Application editing gates both directions through `authoring_undo_last`
 and `authoring_redo_last`; there is one history for agent calls and UI gestures.
 
+Snapshot conflict comparison ignores JSON object member order, preserves array
+order and scalar type, and compares numeric lexemes exactly without floating
+point conversion. Unchanged owned map/document components therefore preserve
+unrelated edits while full u64 identities and actual component conflicts remain
+precise. UI gestures and agent operations share this comparison.
+
 Owner-thread execution can supply an `Application_Executor` to scene sessions and
 mailbox ticks. The mailbox reserves capacity until its correlated reply is taken,
 rejects full/closed admission and allows queued cancellation. Session action IDs
@@ -175,56 +181,22 @@ operations and respect these rules:
   assertions. Recoverable tick failures return `System_Error`; an Odin panic
   terminates rather than unwinding and restoring the tick as Rust does.
 
-## Validation and compilation measurements
+## Validation and historical measurements
 
 ```sh
-mkdir -p target
-odin test odin/ecs -out:target/odin-ecs-tests -vet -strict-style
-odin test odin/editor -all-packages -out:target/odin-editor-tests -vet -strict-style
-odin test odin/editor -all-packages -out:target/odin-ecs-asan \
-  -sanitize:address -debug -vet -strict-style
-python3 scripts/measure_ecs_compile.py --samples 5
+odin test odin/ecs -vet -strict-style -define:ODIN_TEST_THREADS=1 -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
+odin test odin/editor -vet -strict-style -define:ODIN_TEST_THREADS=1 -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
+python3 scripts/build_katla_odin.py --sanitize --tests
 ```
 
-Tests cover stale IDs, retired slots, sparse-page churn, lifecycle replacement,
-filters/change tracking, cached-address churn, resource aliases/local ownership,
-command order and visibility, recoverable failure, event cursors, real worker
-overlap across multiple frames, conflicting/disabled systems, chunk joins,
-exclusive thread affinity/shutdown, editor JSON/ownership/undo and actual agent
-thread submission. Test memory tracking verifies ownership; AddressSanitizer
-checks native address accesses. No rendering path changes, so these receipts
-are CPU acceptance rather than native GPU evidence.
+Actual application tests cover shared history, generational remapping, failed
+native admission and document/play restoration in addition to library lifetime
+and scheduling tests. Native rendering is a separate acceptance scope.
 
-The build harness instantiates every query arity, spawns 2048 eight-component
-entities, runs a typed movement system, destroys/reuses entities and validates
-the resulting World. The editor variant additionally mutates a reflected field
-and undoes it. Every timed build runs both resulting binaries outside the timed
-interval and requires identical checksums, including after application edits.
-A standalone Rust consumer avoids pulling Criterion or engine crates into
-normal build measurements and retains the production dev/release profiles.
-
-Measurements alternate build order, use five raw samples, isolated targets,
-offline dependency sources, explicit Cargo/rustc binaries and disabled compiler
-wrappers. `clean` means clean compiler artifacts, with warm filesystem and
-registry-source caches. `dependencies_warm` keeps Rust dependencies/macros while
-recompiling the ECS and consumer; Odin rebuilds the whole program. `library_edit`
-changes the default work threshold. `application_edit` changes a numeric step.
-`no_change` compares Cargo freshness with Odin's whole-program rebuild. Clean
-`check` measurements exclude ECS/consumer code generation and linking, and use
-the dev profile. Rust still builds the procedural-macro host dependency.
-
-Rust uses LLVM 23 while this Odin toolchain uses LLVM 22. Release flags preserve
-Rust's thin LTO/one codegen unit and Odin's whole-module speed profile; they are
-practical build configurations, not identical optimization pipelines. Different
-static safety guarantees, generic expansion and RTTI strategies also affect
-compiler work. These observations measure this port and consumer on this host;
-they do not establish language-wide or full-engine compilation ratios. The host
-is shared, without CPU/frequency/cache pinning; raw ranges remain part of the
-published evidence.
-
-Raw observations and all source/toolchain hashes are recorded in
-[CSV](benchmarks/ecs-odin-compile.csv) and
-[environment and summary](benchmarks/ecs-odin-compile.json).
+The source-hashed [CSV](benchmarks/ecs-odin-compile.csv) and
+[environment/summary](benchmarks/ecs-odin-compile.json) retain historical paired
+compilation measurements. The retired Rust comparison harness is not a current
+build dependency or operating contract.
 
 ## Recorded results
 

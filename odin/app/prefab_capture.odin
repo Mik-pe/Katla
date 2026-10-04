@@ -4,7 +4,6 @@ package app
 import asset "../agent/assets"
 import editor "../editor"
 import ecs "../ecs"
-import resources "../resources"
 import "core:encoding/json"
 import "core:strings"
 import "core:fmt"
@@ -35,7 +34,7 @@ scene_subtree :: proc(app:^Authoring,root:ecs.Entity_Id)->([]ecs.Entity_Id,edito
 asset_capture_prefab :: proc(app:^Authoring,request:asset.Prefab_Request)->(editor.Tool_Result,editor.Undo_Group) {
     result:=error_result(&app.world,.None); context.allocator=app.world.allocator
     if app.mode!=.Editing { result.error=.Editing_Required; return result,{} }
-    if !resources.valid_relative_path(request.path) || !strings.has_suffix(request.path,".katprefab") { result.error=.Invalid_Operation; return result,{} }
+    if !asset_document_path_valid(request.path) || !strings.has_suffix(request.path,".katprefab") { result.error=.Invalid_Operation; return result,{} }
     ids,err:=scene_subtree(app,request.root_entity); if err!=.None { result.error=err; return result,{} }; defer delete(ids)
     for id in ids { if _,unknown:=ecs.get_component(&app.world,id,Scene_Unknown); unknown { result.error=.Component_Not_Found; return result,{} } }
     snapshot,capture_error:=scene_snapshot_capture(app,subset=ids,detach_root=true,root=request.root_entity,commit_identity=false)
@@ -58,9 +57,7 @@ asset_remove_prefab :: proc(app:^Authoring,root:ecs.Entity_Id)->(editor.Tool_Res
     text:=fmt.aprintf("%d",u64(root)); defer delete(text,allocator)
     result.data,_=json.marshal(struct {root_entity:string,removed:int}{text,len(ids)},allocator=allocator)
     if result.data==nil { result.error=.Decode_Failed; return result,{} }
-    group:=editor.removed_entities_group(&app.world,&app.registry,ids); transferred:=false; defer { if !transferred { editor.undo_group_destroy(&group) } }
-    preparation,prepare_error:=scene_prepare_begin(app,ids,.Remove); if prepare_error!=.None { result.error=prepare_error; return result,{} }
-    committed:=false; defer scene_prepare_finish(&preparation,committed)
-    apply_error:=editor.redo_group(&app.world,&app.registry,&group); if apply_error!=.None { result.error=apply_error; return result,{} }
-    committed=true; transferred=true; return result,group
+    applied,group:=scene_action_execute(app,{kind=.Destroy,entity=root}); defer editor.tool_result_destroy(&applied)
+    if applied.error!=.None { result.error=applied.error; return result,group }
+    append(&result.entities,..applied.entities[:]); return result,group
 }

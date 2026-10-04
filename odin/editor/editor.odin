@@ -2,6 +2,7 @@
 package editor
 
 import ecs "../ecs"
+import ron "../encoding/ron"
 import "core:mem"
 import "core:reflect"
 import "core:strings"
@@ -31,6 +32,7 @@ Editor_Entry :: struct {
     reference_map:proc(rawptr,Reference_Map)->bool,
     has_references:bool,
     spawn_default:bool,
+    inspector_add,inspector_remove:bool,
     duplicate:bool,
 }
 /// Maps application-selected component names to reflected operations.
@@ -62,7 +64,7 @@ owns_memory :: proc(T:typeid)->bool {
     return false
 }
 /// Replaces the Component derive with RTTI and inspect tags; registry owns default_value.
-editor_register :: proc(w:^ecs.World,reg:^Component_Registry,name:string,default_value:$T,ops:=ecs.Value_Ops{},reference_map:proc(rawptr,Reference_Map)->bool=nil,spawn_default:=true,duplicate:=true) {
+editor_register :: proc(w:^ecs.World,reg:^Component_Registry,name:string,default_value:$T,ops:=ecs.Value_Ops{},reference_map:proc(rawptr,Reference_Map)->bool=nil,spawn_default:=true,duplicate:=true,inspector_add:=true,inspector_remove:=true) {
     assert(reg.entries[name]==nil)
     if owns_memory(T) { assert(ops.clone!=nil && ops.destroy!=nil,"owned editor values require ownership hooks") }
     existing,registered:=ecs.component_ops(w,T)
@@ -70,6 +72,7 @@ editor_register :: proc(w:^ecs.World,reg:^Component_Registry,name:string,default
     else { assert(existing.destroy==ops.destroy && existing.clone==ops.clone) }
     entry:=new(Editor_Entry,reg.allocator)
     entry.name=strings.clone(name,reg.allocator); entry.T=T; entry.ops=ops; entry.reference_map=reference_map; entry.has_references=reference_map!=nil || reference_type_contains(T); entry.spawn_default=spawn_default; entry.duplicate=duplicate
+    entry.inspector_add=inspector_add; entry.inspector_remove=inspector_remove
     entry.default_value=allocate(size_of(T),align_of(T),reg.allocator)
     owned:=default_value
     mem.copy(entry.default_value,rawptr(&owned),size_of(T))
@@ -83,31 +86,31 @@ editor_register :: proc(w:^ecs.World,reg:^Component_Registry,name:string,default
     }
     reg.entries[entry.name]=entry
 }
-@(private="package")
-editor_collect_fields :: proc(entry:^Editor_Entry) {
-    for f in reflect.struct_fields_zipped(entry.T) {
-        metadata:=Field_Info{name=f.name,display_name=f.name,T=f.type.id}
-        tag:=reflect.struct_tag_get(f.tag,"inspect")
-        metadata.constraints.skip=strings.contains(tag,"skip")
-        if display:=reflect.struct_tag_get(f.tag,"display_name"); display!="" { metadata.display_name=display }
-        if v:=reflect.struct_tag_get(f.tag,"min"); v!="" { n,ok:=strconv.parse_f32(v); metadata.constraints.min=n; metadata.constraints.has_min=ok }
-        if v:=reflect.struct_tag_get(f.tag,"max"); v!="" { n,ok:=strconv.parse_f32(v); metadata.constraints.max=n; metadata.constraints.has_max=ok }
-        if v:=reflect.struct_tag_get(f.tag,"speed"); v!="" { n,_:=strconv.parse_f32(v); metadata.constraints.speed=n }
-        base:=reflect.type_info_base(f.type)
-        #partial switch info in base.variant {
-        case runtime.Type_Info_Float: metadata.kind=.Float
-        case runtime.Type_Info_Integer: metadata.kind=.Int
-        case runtime.Type_Info_Boolean: metadata.kind=.Bool
-        case runtime.Type_Info_String: metadata.kind=.String
-        case runtime.Type_Info_Struct: metadata.kind=.Struct
-        case runtime.Type_Info_Enum: metadata.kind=.Enum; metadata.variants=info.names
-        case runtime.Type_Info_Array,runtime.Type_Info_Dynamic_Array: metadata.kind=.Vec
-        }
-        if strings.contains(tag,"color") { metadata.kind=.Color }
-        if f.type.id==ecs.Entity_Id || strings.contains(tag,"entity_ref") { metadata.kind=.Entity_Ref }
-        append(&entry.fields,metadata)
+/// Builds borrowed inspector metadata from one reflected field, including nested component fields.
+editor_field_metadata :: proc(f:reflect.Struct_Field)->Field_Info {
+    metadata:=Field_Info{name=f.name,display_name=f.name,T=f.type.id}
+    tag:=reflect.struct_tag_get(f.tag,"inspect")
+    metadata.constraints.skip=strings.contains(tag,"skip")
+    if display:=reflect.struct_tag_get(f.tag,"display_name"); display!="" { metadata.display_name=display }
+    if v:=reflect.struct_tag_get(f.tag,"min"); v!="" { n,ok:=strconv.parse_f32(v); metadata.constraints.min=n; metadata.constraints.has_min=ok }
+    if v:=reflect.struct_tag_get(f.tag,"max"); v!="" { n,ok:=strconv.parse_f32(v); metadata.constraints.max=n; metadata.constraints.has_max=ok }
+    if v:=reflect.struct_tag_get(f.tag,"speed"); v!="" { n,_:=strconv.parse_f32(v); metadata.constraints.speed=n }
+    base:=reflect.type_info_base(f.type)
+    #partial switch info in base.variant {
+    case runtime.Type_Info_Float: metadata.kind=.Float
+    case runtime.Type_Info_Integer: metadata.kind=.Int
+    case runtime.Type_Info_Boolean: metadata.kind=.Bool
+    case runtime.Type_Info_String: metadata.kind=.String
+    case runtime.Type_Info_Struct: metadata.kind=.Struct
+    case runtime.Type_Info_Enum: metadata.kind=.Enum; metadata.variants=info.names
+    case runtime.Type_Info_Array,runtime.Type_Info_Dynamic_Array: metadata.kind=.Vec
     }
+    if strings.contains(tag,"color") { metadata.kind=.Color }
+    if f.type.id==ecs.Entity_Id || strings.contains(tag,"entity_ref") { metadata.kind=.Entity_Ref }
+    return metadata
 }
+@(private="package")
+editor_collect_fields :: proc(entry:^Editor_Entry) { for f in reflect.struct_fields_zipped(entry.T) { append(&entry.fields,editor_field_metadata(f)) } }
 /// Returns borrowed field metadata and an owned, sorted list of registered names.
 editor_fields :: proc(reg:^Component_Registry,name:string)->[]Field_Info {
     entry:=reg.entries[name]; if entry==nil { return nil }; return entry.fields[:]
@@ -158,18 +161,18 @@ editor_set_field :: proc(w:^ecs.World,reg:^Component_Registry,id:ecs.Entity_Id,c
     for f in entry.fields { if f.name==field && !f.constraints.skip { found=true; break } }
     if !found { return .Field_Not_Found }
     snapshot,err:=editor_component_json(w,id,entry); if err!=.None { return err }; defer delete(snapshot)
-    object,parse_err:=json.parse(snapshot,spec=.JSON,parse_integers=true)
-    if parse_err!=.None { return .Decode_Failed }; defer json.destroy_value(object)
-    value,value_err:=json.parse(data,spec=.JSON,parse_integers=true)
-    if value_err!=.None { return .Invalid_Field_Value }
+    object,parse_err:=ron.parse_json(snapshot,w.allocator)
+    if parse_err.kind!=.None { return .Decode_Failed }; defer json.destroy_value(object)
+    value,value_err:=ron.parse_json(data,w.allocator)
+    if value_err.kind!=.None { return .Invalid_Field_Value }
     fields,ok:=object.(json.Object)
     if !ok { json.destroy_value(value); return .Invalid_Field_Value }
     old,exists:=fields[field]
     if !exists { json.destroy_value(value); return .Field_Not_Found }
     json.destroy_value(old)
     fields[field]=value
-    merged,marshal_err:=json.marshal(object)
-    if marshal_err!=nil { return .Invalid_Field_Value }; defer delete(merged)
+    merged,marshal_err:=ron.write_json(object,w.allocator)
+    if marshal_err.kind!=.None { return .Invalid_Field_Value }; defer delete(merged)
     result:=editor_restore(w,id,entry,merged)
     if result==.Decode_Failed { return .Invalid_Field_Value }
     return result
@@ -179,9 +182,10 @@ Scene_Op_Kind :: enum { Spawn, Destroy, Set_Field, Query_Entities, Get_Hierarchy
 /// Describes one CPU scene request; variable data is borrowed by synchronous execution.
 Scene_Op :: struct {
     kind:Scene_Op_Kind, entity,parent:ecs.Entity_Id, has_parent:bool,
-    component,field,name,path,tool_name:string, value:[]byte,
+    component,field,name,path,tool_name,shape,default_animation,name_filter:string, value:[]byte,
     position,rotation:[3]f32, scale:[3]f32,
     limit:int,
+    position_offset:[3]f32, radius:f32, has_position_offset,has_query_position,has_radius,has_name_filter,project_asset:bool,
 }
 Component_Snapshot :: struct { name:string, entry:^Editor_Entry, value:rawptr }
 /// Owns affected IDs, JSON output and its allocation policy.

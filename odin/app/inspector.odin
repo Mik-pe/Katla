@@ -8,7 +8,7 @@ import "core:mem"
 import "core:encoding/json"
 
 /// A stationary owner-thread gesture retains exact authored first/last linear values.
-Material_Gesture :: struct { edits:[]Material_Edit, allocator:mem.Allocator, history_id:u64, active,changed:bool }
+Material_Gesture :: struct { edits:[]Material_Edit, allocator:mem.Allocator, active,changed:bool }
 /// Begins a selection gesture only after validating the complete editable target set.
 material_gesture_begin :: proc(app:^Authoring,gesture:^Material_Gesture,entities:[]ecs.Entity_Id)->editor.Scene_Error {
     if gesture.active { return .Invalid_Operation }
@@ -22,14 +22,13 @@ material_gesture_begin :: proc(app:^Authoring,gesture:^Material_Gesture,entities
         if !agent.material_values_valid(material_values(surface)) { return .Invalid_Operation }
         edits[i]={entity,surface,surface}
     }
-    gesture^={edits,app.world.allocator,app.agent.session.next_id,true,false}; success=true
+    gesture^={edits=edits,allocator=app.world.allocator,active=true}; success=true
     return .None
 }
 @(private="package")
 material_gesture_preflight :: proc(app:^Authoring,gesture:^Material_Gesture)->editor.Scene_Error {
     if !gesture.active { return .Invalid_Operation }
     if app.mode!=.Editing { return .Editing_Required }
-    if app.agent.session.next_id!=gesture.history_id { return .Invalid_Operation }
     for edit in gesture.edits {
         current,error:=target_surface(&app.world,edit.entity); if error!=.None { return error }
         if current!=edit.after { return .Invalid_Operation }

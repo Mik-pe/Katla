@@ -1,3 +1,4 @@
+// #include lighting_common
 struct Frame {
     view_projection: mat4x4<f32>, camera_position: vec4<f32>,
     light_direction: vec4<f32>, light_color: vec4<f32>, ambient: vec4<f32>,
@@ -83,9 +84,9 @@ struct Output {
         let specular = distribution * geometry_term * fresnel / max(4.0 * nv * nl, 0.00001);
         let diffuse = (vec3<f32>(1.0) - fresnel) * diffuse_color / 3.14159265359;
         let ao = mix(1.0, textureSample(occlusion_texture, occlusion_sampler, input.uv_ao.xy).r, input.uv_ao.z) * surface.factors.z;
-        radiance = frame.ambient.rgb * base.rgb * ao + (diffuse + specular) * frame.light_color.rgb * frame.light_color.w * nl;
+        radiance = frame.ambient.rgb * base.rgb * ao + (diffuse + specular) * frame.light_color.rgb * frame.light_color.w * nl * shadow_visibility(input.position,normal);
+        radiance += point_illumination(input.clip.xy,input.position,normal,view,diffuse_color,f0,roughness);
         radiance += textureSample(emissive_texture, emissive_sampler, input.uv_emissive).rgb * surface.emissive.rgb;
     }
-    let mapped = select(radiance / (radiance + vec3<f32>(1.0)), radiance, surface.flags.z != 0u);
-    return vec4<f32>(mapped, alpha);
+    return vec4<f32>(radiance, alpha);
 }

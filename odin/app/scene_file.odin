@@ -8,6 +8,12 @@ import resources "../resources"
 import ron "../encoding/ron"
 import "core:encoding/json"
 import "core:strings"
+import "core:fmt"
+import "core:time"
+import "core:path/filepath"
+
+/// Identifies the authored engine schema version recorded at actual save publication.
+SCENE_ENGINE_VERSION :: #config(KATLA_ENGINE_VERSION,"0.1.0")
 
 /// Retains the opened origin and header metadata independently from runtime entity identity.
 Scene_File_State :: struct {path,name:string,header:[]byte}
@@ -25,17 +31,17 @@ scene_file_state :: proc(app:^Authoring,path:string,document:json.Value)->(Scene
 scene_file_execute :: proc(app:^Authoring,request:asset.Scene_File_Request)->(editor.Tool_Result,editor.Undo_Group) {
     allocator:=app.world.allocator; context.allocator=allocator; result:=error_result(&app.world,.None)
     if app.mode!=.Editing { result.error=.Editing_Required; return result,{} }
-    roots:=ecs.get_resource_mut(&app.world,Asset_Roots); if roots==nil { result.error=.Invalid_Operation; return result,{} }
     path:=request.path
     current:=ecs.get_resource_mut(&app.world,Scene_File_State)
     if !request.has_path { if request.action!=.Save || current==nil { result.error=.Invalid_Operation; return result,{} }; path=current.path }
-    if !resources.valid_relative_path(path) || !strings.has_suffix(path,".katla") { result.error=.Invalid_Operation; return result,{} }
+    scope_kind:Mesh_Path_Root=.Project; if filepath.is_abs(path) { scope_kind=.File }
+    scope,scope_error:=asset_path_scope(app,scope_kind,path); if scope_error!=.None { result.error=.Invalid_Operation; return result,{} }; defer asset_path_scope_destroy(&scope)
     document:json.Value; defer json.destroy_value(document)
     snapshot:Scene_Snapshot; defer scene_snapshot_destroy(&snapshot)
     if request.action==.Load {
-        bytes,read_error:=resources.read_text(&roots.project,path); if read_error!=.None { result.error=.Invalid_Operation; return result,{} }; defer delete(bytes,allocator)
+        bytes,read_error:=resources.read_text(&scope.root,scope.path); if read_error!=.None { result.error=.Invalid_Operation; return result,{} }; defer delete(bytes,allocator)
         parsed,parse_error:=ron.parse(string(bytes),allocator); if parse_error.kind!=.None { result.error=.Decode_Failed; return result,{} }; document=parsed
-        decoded,decode_error:=scene_document_decode(app,document,path); if decode_error!=.None { result.error=decode_error; return result,{} }; snapshot=decoded
+        decoded,decode_error:=scene_document_prepare(app,document,path); if decode_error!=.None { result.error=decode_error; return result,{} }; snapshot=decoded
     } else {
         captured,capture_error:=scene_snapshot_capture(app,commit_identity=false); if capture_error!=.None { result.error=capture_error; return result,{} }; snapshot=captured
         name:="Untitled"; if current!=nil { name=current.name }
@@ -44,6 +50,14 @@ scene_file_execute :: proc(app:^Authoring,request:asset.Scene_File_Request)->(ed
             metadata,parse_error:=json.parse(current.header,spec=.JSON,parse_integers=true,allocator=allocator); if parse_error!=nil { result.error=.Decode_Failed; return result,{} }; defer json.destroy_value(metadata)
             if fields,is_fields:=metadata.(json.Object); is_fields { target:=document.(json.Object); for field in ([4]string{"author","created_at","modified_at","engine_version"}) { if value,present:=fields[field]; present { cloned,ok:=scene_value_clone(value); if !ok { result.error=.Decode_Failed; return result,{} }; scene_json_put(&target,field,cloned) } }; document=target }
         }
+        target:=document.(json.Object)
+        timestamp:=time.to_unix_seconds(time.now())
+        if timestamp>=0 {
+            if created,present:=scene_gameplay_present(target,"created_at"); !present || created==nil { scene_migration_set(&target,"created_at",fmt.aprintf("%d",timestamp)) }
+            scene_migration_set(&target,"modified_at",fmt.aprintf("%d",timestamp))
+        }
+        scene_migration_set(&target,"engine_version",strings.clone(SCENE_ENGINE_VERSION))
+        document=target
     }
     state,state_ok:=scene_file_state(app,path,document); if !state_ok { result.error=.Decode_Failed; return result,{} }; state_transferred:=false; defer { if !state_transferred { scene_file_state_destroy(&state) } }
     data,marshal_error:=json.marshal(struct {path,name:string,entity_count:int,published,runtime_ids_replaced:bool}{path,state.name,len(snapshot.entities),false,request.action==.Load},allocator=allocator)
@@ -62,7 +76,7 @@ scene_file_execute :: proc(app:^Authoring,request:asset.Scene_File_Request)->(ed
     bytes,write_error:=ron.write(ron_document,allocator); if write_error.kind!=.None { result.error=.Decode_Failed; return result,{} }; defer delete(bytes,allocator)
     published_data,published_error:=json.marshal(struct {path,name:string,entity_count:int,published,runtime_ids_replaced:bool}{path,state.name,len(snapshot.entities),true,false},allocator=allocator)
     if published_error!=nil { result.error=.Decode_Failed; return result,{} }; selected:=false; defer { if !selected { delete(published_data,allocator) } }
-    published,error:=resources.write_atomic(&roots.project,path,bytes)
+    published,error:=resources.write_atomic(&scope.root,scope.path,bytes)
     if published {
         did_publish=true
         delete(result.data,allocator); result.data=published_data; selected=true

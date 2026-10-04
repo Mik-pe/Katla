@@ -34,6 +34,12 @@ scene_document_ron_clone :: proc(document:json.Value)->(json.Value,bool) {
         if collider,present:=row["collider_shape"]; present { kind,_,_:=scene_variant(collider); row["collider_shape"]=scene_variant_ron(collider,kind=="Box" || kind=="Sphere") }
         if body,is_body:=row["rigid_body"].(json.Object); is_body { if kind,present:=body["kind"]; present { body["kind"]=scene_variant_ron(kind,false) } }
         if script,is_script:=row["script"].(json.Object); is_script { if path,present:=script["path"]; present { script["path"]=scene_variant_ron(path,true) } }
+        for name in ([2]string{"audio_source","audio_emitter"}) {
+            if fields,is_fields:=row[name].(json.Object); is_fields {
+                if path,present:=fields["path"]; present { fields["path"]=scene_variant_ron(path,true) }
+                if distance,present:=fields["distance_model"]; present { fields["distance_model"]=scene_variant_ron(distance,false) }
+            }
+        }
         if particle,is_particle:=row["particle_emitter"].(json.Object); is_particle { if shape,present:=particle["shape"]; present { particle["shape"]=scene_variant_ron(shape,false) } }
         if trigger,present:=row["trigger_volume"]; present { row["trigger_volume"]=scene_variant_ron(trigger,false) }
     }

@@ -65,7 +65,7 @@ def build_room(client, plan):
             arguments = {key: value for key, value in part.items() if key != 'preset'}
             result, _ = client.tool('spawn_entity', arguments)
             operations += 1
-            entity_id = result['entities'][0]
+            entity_id = result['entity_ids'][0]
             created.append({**part, 'entity_id': entity_id})
         for preset in sorted({part['preset'] for part in created}):
             ids = [part['entity_id'] for part in created if part['preset'] == preset]

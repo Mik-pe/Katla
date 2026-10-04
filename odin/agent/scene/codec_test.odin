@@ -35,3 +35,45 @@ test_behavior_explicit_detach_and_operation_fields :: proc(t:^testing.T) {
     }
     text:=`{"action":"set_script","entity_id":"18446744073709551615","path":null}`; result,err:=decode_behavior(transmute([]byte)text); testing.expect(t,err==.None && result.operation.detach && u64(result.operation.entity)==max(u64)); decoded_behavior_destroy(&result)
 }
+
+@(test)
+test_animation_timeline_action_arguments_and_lossless_entities :: proc(t:^testing.T) {
+    for text in ([]string{
+        `{"action":"pause","entity_id":"18446744073709551615"}`,
+        `{"action":"resume","entity_id":"18446744073709551615"}`,
+        `{"action":"stop","entity_id":"18446744073709551615"}`,
+        `{"action":"seek","entity_id":"18446744073709551615","time_seconds":-2.5}`,
+        `{"action":"speed","entity_id":"18446744073709551615","speed":0}`,
+        `{"action":"loop","entity_id":"18446744073709551615","looping":false}`,
+        `{"action":"fade","entity_id":"18446744073709551615","clip":"Run","fade_seconds":0.5}`,
+    }) {decoded,error:=decode_animation(transmute([]byte)text);testing.expect_value(t,error,Decode_Error.None);if error==.None {testing.expect_value(t,u64(decoded.operation.entity),max(u64));decoded_animation_destroy(&decoded)}}
+    for text in ([]string{
+        `{"action":"pause","entity_id":"1","clip":"Run"}`,
+        `{"action":"resume","entity_id":"1","speed":1}`,
+        `{"action":"seek","entity_id":"1"}`,
+        `{"action":"seek","entity_id":"1","time_seconds":1e200}`,
+        `{"action":"seek","entity_id":"1","time_seconds":false}`,
+        `{"action":"speed","entity_id":"1"}`,
+        `{"action":"speed","entity_id":"1","speed":-1}`,
+        `{"action":"loop","entity_id":"1"}`,
+        `{"action":"loop","entity_id":"1","looping":1}`,
+        `{"action":"fade","entity_id":"1","clip":"Run","time_seconds":0}`,
+    }) {decoded,error:=decode_animation(transmute([]byte)text);testing.expect_value(t,error,Decode_Error.Invalid_Arguments);if error==.None {decoded_animation_destroy(&decoded)}}
+}
+
+@(test)
+test_animation_wide_integer_timings_preserve_float_range :: proc(t:^testing.T) {
+    for text in ([]string{
+        `{"action":"speed","entity_id":"1","speed":18446744073709551616}`,
+        `{"action":"seek","entity_id":"1","time_seconds":18446744073709551616}`,
+        `{"action":"fade","entity_id":"1","clip":"Run","fade_seconds":18446744073709551616}`,
+    }) {
+        decoded,error:=decode_animation(transmute([]byte)text);testing.expect_value(t,error,Decode_Error.None)
+        if error==.None {
+            value:=decoded.operation.speed;if decoded.operation.action==.Seek {value=decoded.operation.time_seconds};if decoded.operation.action==.Fade {value=decoded.operation.fade_seconds}
+            testing.expect(t,value>1e19);decoded_animation_destroy(&decoded)
+        }
+    }
+    decoded,error:=decode_animation(transmute([]byte)string(`{"action":"speed","entity_id":"1","speed":1000000000000000000000000000000000000000}`))
+    testing.expect_value(t,error,Decode_Error.Invalid_Arguments);if error==.None {decoded_animation_destroy(&decoded)}
+}

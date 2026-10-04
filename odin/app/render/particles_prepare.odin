@@ -44,7 +44,9 @@ particle_plan :: proc(owner:^app.Authoring,previous:[]Particle_Emitter_State,ava
         emitter,present:=ecs.get_component(&owner.world,entity,app.Particle_Emitter); if !present { continue }
         descriptor:=emitter.descriptor
         if !app.particle_descriptor_valid(descriptor) { return {},{code=.Invalid_Configuration} }
-        if !descriptor.active { continue }
+        if !descriptor.active {
+            for &state in states { if state.entity==entity { state.configured_active=false } }; continue
+        }
         world_matrix,error:=app.scene_world_matrix(owner,entity); if error!=.None { return {},{code=.Invalid_Configuration} }
         index:= -1
         for state,i in states { if state.entity==entity { index=i; break } }
@@ -55,8 +57,11 @@ particle_plan :: proc(owner:^app.Authoring,previous:[]Particle_Emitter_State,ava
         position:=km.mat4_extract_translation(world_matrix)
         for value in position { if math.is_nan(value) || math.is_inf(value) { return {},{code=.Invalid_Configuration} } }
         state:=&states[index]; state.config=particle_config(descriptor,position); state.active=true; state.kill_on_destroy=descriptor.kill_on_destroy
+        restart:=!state.clock_initialized || !state.configured_active || state.configured_timed!=descriptor.has_timed_emission || state.configured_duration!=descriptor.timed_emission || state.emission_revision!=descriptor.emission_revision
+        if restart { state.remaining_duration=descriptor.timed_emission; state.accumulator=0 }
+        state.clock_initialized=true; state.configured_active=descriptor.active; state.configured_timed=descriptor.has_timed_emission; state.configured_duration=descriptor.timed_emission; state.emission_revision=descriptor.emission_revision
         effective:=delta
-        if descriptor.has_timed_emission { effective=min(effective,descriptor.timed_emission) }
+        if descriptor.has_timed_emission { effective=min(effective,state.remaining_duration); if state.remaining_duration<=0 { state.active=false } }
         state.accumulator+=f64(descriptor.emit_rate)*f64(effective)
         if len(descriptor.burst_queue)>0 {
             counts:=make([]u32,len(descriptor.burst_queue),allocator); copy(counts,descriptor.burst_queue[:]); append(&bursts,Particle_Burst{entity,counts})
@@ -124,7 +129,7 @@ particle_observe :: proc(consumer:^Particle_Consumer($R))->Particle_Error {
     consumer.alive_upper=u32(upper); return {}
 }
 /// Frees staged CPU inputs without changing queues, committed simulation state or acquired tokens.
-particle_abort :: proc(consumer:^Particle_Consumer($R)) { particle_preparation_destroy(&consumer.pending,consumer.allocator) }
+particle_abort :: proc(consumer:^Particle_Consumer($R)) { particle_reset_discard(consumer); particle_preparation_destroy(&consumer.pending,consumer.allocator) }
 /// Publishes rollover only after native queue acceptance and consumes precisely the staged queue prefix.
 particle_committed :: proc(consumer:^Particle_Consumer($R),submission:gfx.Submission)->Particle_Error {
     prepared:=&consumer.pending
@@ -138,17 +143,21 @@ particle_committed :: proc(consumer:^Particle_Consumer($R),submission:gfx.Submis
         if len(emitter.descriptor.burst_queue)==len(burst.counts) { consumed:=app.particle_take_bursts(emitter); delete(consumed) }
         else { for _ in burst.counts { ordered_remove(&emitter.descriptor.burst_queue,0) } }
     }
-    for state in prepared.states {
-        if !state.active || prepared.deferred { continue }
-        emitter:=ecs.get_component_mut(&consumer.owner.world,state.entity,app.Particle_Emitter)
-        if emitter!=nil && emitter.descriptor.has_timed_emission {
-            emitter.descriptor.timed_emission=max(f32(0),emitter.descriptor.timed_emission-prepared.delta)
-            if emitter.descriptor.timed_emission==0 { emitter.descriptor.has_timed_emission=false; emitter.descriptor.active=false }
-        }
+    for &state in prepared.states {
+        if !state.active || prepared.deferred || !state.configured_timed { continue }
+        state.remaining_duration=max(f32(0),state.remaining_duration-prepared.delta)
+        if state.remaining_duration==0 { state.active=false }
     }
     delete(consumer.states,consumer.allocator); consumer.states=prepared.states; prepared.states=nil
-    consumer.sequence+=1; consumer.slots[prepared.token.slot].sequence=consumer.sequence
+    consumer.sequence+=1; particle_reset_commit(consumer); consumer.slots[prepared.token.slot].sequence=consumer.sequence
     append(&consumer.records,Particle_Record{consumer.sequence,prepared.requested})
-    consumer.alive_upper+=prepared.requested; consumer.previous_slot=prepared.token.slot; consumer.has_previous=true
+    consumer.alive_upper+=prepared.requested; consumer.previous_slot=prepared.token.slot
     particle_abort(consumer); return error
+}
+
+/// Observes the last accepted emitter clock; authored duration and activation stay in the scene.
+Particle_Emitter_Status :: struct { active,timed,finished:bool,remaining_duration:f32,sequence:u64 }
+particle_emitter_status :: proc(consumer:^Particle_Consumer($R),entity:ecs.Entity_Id)->(Particle_Emitter_Status,bool) {
+    for state in consumer.states { if state.entity==entity { return {active=state.active,timed=state.configured_timed,finished=state.configured_timed && state.remaining_duration==0,remaining_duration=state.remaining_duration,sequence=consumer.sequence},true } }
+    return {},false
 }

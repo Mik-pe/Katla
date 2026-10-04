@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import subprocess
 import ssl
@@ -12,6 +13,9 @@ import threading
 import time
 
 from validate_odin_llm import LocalServer, Provider, ROOT
+
+from build_katla_odin import cpu_test_environment
+from odin_validation_manifest import validation_manifest
 
 
 class AssistantProvider(Provider):
@@ -24,7 +28,7 @@ class AssistantProvider(Provider):
         super().respond(scenario, api, step, request)
 
 
-def validate(binary: pathlib.Path):
+def validate(binary: pathlib.Path, environment=None):
     AssistantProvider.calls = {}
     AssistantProvider.failures = []
     server = LocalServer(("127.0.0.1", 0), AssistantProvider)
@@ -51,7 +55,7 @@ def validate(binary: pathlib.Path):
                 path = pathlib.Path(directory) / "llm.toml"
                 timeout = 150 if scenario == "timeout" else 3000
                 path.write_text(f'provider="open_ai_compatible"\napi="{api}"\napi_key="local-transport-test"\nbase_url="http://127.0.0.1:{server.server_port}/{scenario}/v1"\nmodel="explicit-test-model"\nrate_limit_min_interval_ms=0\ntimeout_ms={timeout}\n')
-                result = subprocess.run([str(binary), str(path)] + ([mode] if mode else []), cwd=ROOT, capture_output=True, text=True, timeout=8)
+                result = subprocess.run([str(binary), str(path)] + ([mode] if mode else []), cwd=ROOT, env=environment, capture_output=True, text=True, timeout=8)
                 assert result.returncode == 0, (scenario, result.stderr, result.stdout)
                 assert "local-transport-test" not in result.stderr + result.stdout
                 output = json.loads(result.stdout)
@@ -73,7 +77,7 @@ def validate(binary: pathlib.Path):
             tls_worker.start()
             try:
                 path.write_text(f'provider="open_ai_compatible"\napi="responses"\napi_key="local-transport-test"\nbase_url="https://127.0.0.1:{tls_server.server_port}/untrusted_tls/v1"\nmodel="explicit-test-model"\nrate_limit_min_interval_ms=0\ntimeout_ms=3000\n')
-                result = subprocess.run([str(binary), str(path)], cwd=ROOT, capture_output=True, text=True, timeout=8)
+                result = subprocess.run([str(binary), str(path)], cwd=ROOT, env=environment, capture_output=True, text=True, timeout=8)
                 assert result.returncode == 0, result.stderr
                 output = json.loads(result.stdout)
                 assert output["error"] == "Network" and output["state"] == "Failed" and output["entities"] == output["actions"] == 0, output
@@ -96,14 +100,21 @@ def main():
     parser.add_argument("--binary", type=pathlib.Path, default=ROOT / "target/odin-assistant-authoring")
     parser.add_argument("--sanitize", action="store_true")
     parser.add_argument("--no-build", action="store_true")
+    parser.add_argument("--build-manifest", type=pathlib.Path, help="Reuse verified canonical dependency paths, compiler and sanitizer mode")
     args = parser.parse_args()
+    manifest = validation_manifest(parser, args.build_manifest, args.sanitize, [])
     binary = args.binary.resolve()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    environment = cpu_test_environment(os.environ, binary.parent, args.sanitize)
+    odin = manifest["odin"] if manifest else "odin"
     if not args.no_build:
-        command = ["odin", "build", "odin/examples/assistant_authoring", f"-out:{binary}", "-vet", "-strict-style"]
+        command = [odin, "build", "odin/examples/assistant_authoring", f"-out:{binary}", "-vet", "-strict-style"]
+        if manifest:
+            command += manifest["foreign_defines"]
         if args.sanitize:
             command += ["-sanitize:address", "-debug"]
-        subprocess.run(command, cwd=ROOT, check=True)
-    validate(binary)
+        subprocess.run(command, cwd=ROOT, env=environment, check=True)
+    validate(binary, environment)
 
 
 if __name__ == "__main__":

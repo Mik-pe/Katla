@@ -71,10 +71,11 @@ test_particle_accepted_publication_consumes_only_snapshot_and_advances_rollover 
     testing.expect_value(t,gfx.frame_recorded(&frames,token),gfx.Frame_Error.None)
     sequence,submit_error:=gfx.frame_submitted(&frames,token); testing.expect_value(t,submit_error,gfx.Frame_Error.None)
     testing.expect_value(t,particle_committed(&consumer,gfx.Submission{owner=&frames,token=token,id=sequence}),Particle_Error{})
-    testing.expect(t,consumer.has_previous && consumer.previous_slot==0 && consumer.alive_upper==32)
+    testing.expect(t,consumer.sequence==1 && consumer.previous_slot==0 && consumer.alive_upper==32)
     emitter:=ecs.get_component_mut(&owner.world,entity,app.Particle_Emitter)
     testing.expect_value(t,len(emitter.descriptor.burst_queue),1); testing.expect_value(t,emitter.descriptor.burst_queue[0],u32(2))
-    testing.expect_value(t,emitter.descriptor.timed_emission,f32(0.25))
+    testing.expect_value(t,emitter.descriptor.timed_emission,f32(0.5))
+    testing.expect_value(t,consumer.states[0].remaining_duration,f32(0.25))
     testing.expect_value(t,gfx.frame_completed(&frames,token,sequence),gfx.Frame_Error.None)
 }
 
@@ -85,7 +86,7 @@ test_particle_burst_prefix_is_atomic_and_impossible_bursts_keep_owned_queue :: p
     descriptor:=app.particle_defaults(); descriptor.emit_rate=10; descriptor.has_timed_emission=true; descriptor.timed_emission=1
     entity:=ecs.spawn(&owner.world,struct {transform:app.Scene_Transform,particles:app.Particle_Emitter}{{km.transform()},{descriptor}})
     app.particle_burst(&owner.world,entity,40); app.particle_burst(&owner.world,entity,40)
-    previous:=[1]Particle_Emitter_State{{entity=entity,accumulator=0.75,active=true}}
+    previous:=[1]Particle_Emitter_State{{entity=entity,accumulator=0.75,active=true,clock_initialized=true,configured_active=true,configured_timed=true,configured_duration=1,remaining_duration=1}}
     prepared,error:=particle_plan(&owner,previous[:],64,4,0.5,pool_capacity=64)
     defer particle_preparation_destroy(&prepared,context.allocator)
     testing.expect_value(t,error,Particle_Error{})

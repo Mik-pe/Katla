@@ -67,7 +67,7 @@ render_frame :: proc(scene:^render.Native_Scene($R),frame:render.Frame_Data)->gf
     submission,submit_error:=render.native_scene_render(scene,token,frame,nil,nil); assert(submit_error=={})
     assert(render.native_scene_wait(scene,submission)==.None); return submission
 }
-exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),compiler:^shader.Compiler,descriptor:gfx.Graphics_Desc,model_ops:render.Model_GPU_Ops(R),backend,resource_root:string) {
+exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),compiler:^shader.Compiler,descriptor:render.Scene_Pipelines,model_ops:render.Model_GPU_Ops(R),backend,resource_root:string) {
     texture_budget=-1; reject_exports=false
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
     assert(app.authoring_services_init(&owner)==.None)
@@ -83,7 +83,7 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     camera:=render.camera_default(); camera.position={0,0,3}; camera.target={0,0,0}
     frame,frame_error:=render.frame_data(camera,96,64,backend=="Vulkan1.3"); assert(frame_error==.None)
     baseline_submission:=render_frame(scene,frame)
-    baseline_source,source_error:=capture.source(renderer,baseline_submission,scene.graph.color); assert(source_error==.None)
+    baseline_source,source_error:=capture.source(renderer,baseline_submission,scene.graph.output); assert(source_error==.None)
     baseline_ticket,queue_error:=capture.queue(renderer,baseline_source,{width=96,height=64,depth=1,aspect=.Color}); assert(queue_error==.None)
     baseline:=pixels(renderer,capture,baseline_ticket); defer gfx.readback_data_destroy(&baseline)
     non_background:int
@@ -92,9 +92,9 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     saved_slots:=make([]render.Native_Slot,len(scene.slots)); defer delete(saved_slots); copy(saved_slots,scene.slots)
     saved_model_slots:=make(type_of(scene.models.slots),len(scene.models.slots)); defer delete(saved_model_slots); copy(saved_model_slots,scene.models.slots)
     saved_model:=scene.models
-    graph_order:=raw_data(scene.graph.plan.order); graph_passes:=raw_data(scene.graph.graph.passes); graph_revision:=scene.graph.graph.revision
     model_images:=raw_data(scene.models.image_ids); model_passes:=raw_data(scene.models.passes); model_order:=raw_data(scene.models.order); model_frame:=scene.models.frame
     for fault in 0..<4 {
+        graph_order:=raw_data(scene.graph.plan.order); graph_passes:=raw_data(scene.graph.graph.passes); graph_revision:=scene.graph.graph.revision
         saved_frame_desc:=scene.models.frame_desc
         switch fault {
         case 0: texture_budget=2
@@ -117,7 +117,7 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
         preserved_ticket,preserved_error:=capture.queue(renderer,baseline_source,{width=96,height=64,depth=1,aspect=.Color}); assert(preserved_error==.None)
         preserved:=pixels(renderer,capture,preserved_ticket); assert(mem.compare(preserved.bytes,baseline.bytes)==0); gfx.readback_data_destroy(&preserved)
         continued_submission:=render_frame(scene,frame)
-        continued_source,continued_source_error:=capture.source(renderer,continued_submission,scene.graph.color); assert(continued_source_error==.None)
+        continued_source,continued_source_error:=capture.source(renderer,continued_submission,scene.graph.output); assert(continued_source_error==.None)
         continued_ticket,continued_ticket_error:=capture.queue(renderer,continued_source,{width=96,height=64,depth=1,aspect=.Color}); assert(continued_ticket_error==.None)
         continued:=pixels(renderer,capture,continued_ticket); assert(mem.compare(continued.bytes,baseline.bytes)==0); gfx.readback_data_destroy(&continued)
         baseline_source=continued_source
@@ -128,7 +128,7 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     retained:=pixels(renderer,capture,retained_ticket); assert(mem.compare(retained.bytes,baseline.bytes)==0); gfx.readback_data_destroy(&retained)
     resized_frame,resized_frame_error:=render.frame_data(camera,80,80,backend=="Vulkan1.3"); assert(resized_frame_error==.None)
     resized_submission:=render_frame(scene,resized_frame)
-    resized_source,resized_source_error:=capture.source(renderer,resized_submission,scene.graph.color); assert(resized_source_error==.None)
+    resized_source,resized_source_error:=capture.source(renderer,resized_submission,scene.graph.output); assert(resized_source_error==.None)
     resized_ticket,resized_ticket_error:=capture.queue(renderer,resized_source,{width=80,height=80,depth=1,aspect=.Color}); assert(resized_ticket_error==.None)
     resized:=pixels(renderer,capture,resized_ticket); assert(resized.region.width==80 && resized.region.height==80 && len(resized.bytes)==80*80*4); gfx.readback_data_destroy(&resized)
     fmt.println("Transactional resize GPU PASS",backend,"four rejected candidates preserve graph/cache/attachments/exports and byte-exact Box pixels; success retires unqueued old source while retained capture survives")
@@ -143,14 +143,14 @@ main :: proc() {
     surface,error:=render.surface_shader_compile(&compiler,.RGBA8_Unorm); assert(error==.None); defer render.surface_shader_destroy(&surface)
     {
         renderer:metal.Renderer; assert(metal.renderer_init(&renderer)==.None); defer { assert(metal.renderer_destroy(&renderer)==.None) }
-        operations:=render.GPU_Ops(metal.Renderer){metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,fault_texture(metal.Renderer),fault_destroy_texture(metal.Renderer),metal.acquire,metal.abort,metal.submit,metal.wait,fault_exports(metal.Renderer)}
+        operations:=render.GPU_Ops(metal.Renderer){metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,fault_texture(metal.Renderer),fault_destroy_texture(metal.Renderer),metal.acquire,metal.abort,metal.submit,metal.wait,fault_exports(metal.Renderer),metal.create_pipeline,metal.destroy_pipeline,metal.create_sampler,metal.destroy_sampler}
         capture:=Capture_Ops(metal.Renderer){metal.graph_texture_source,metal.queue_texture_readback,metal.poll_texture_readback}
-        exercise(&renderer,operations,capture,&compiler,surface.descriptor,render.Model_GPU_Ops(metal.Renderer){operations,metal.create_sampler,metal.destroy_sampler},"Metal4",os.args[3])
+        exercise(&renderer,operations,capture,&compiler,render.surface_pipelines(&surface),render.Model_GPU_Ops(metal.Renderer){operations,metal.create_sampler,metal.destroy_sampler},"Metal4",os.args[3])
     }
     {
         renderer:vulkan.Renderer; assert(vulkan.renderer_init(&renderer,validation=true,loader_path=os.args[2])==.None); defer { assert(vulkan.validation_error_count(&renderer)==0); assert(vulkan.renderer_destroy(&renderer)==.None) }
-        operations:=render.GPU_Ops(vulkan.Renderer){vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,fault_texture(vulkan.Renderer),fault_destroy_texture(vulkan.Renderer),vulkan.acquire,vulkan.abort,vulkan.submit,vulkan.wait,fault_exports(vulkan.Renderer)}
+        operations:=render.GPU_Ops(vulkan.Renderer){vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,fault_texture(vulkan.Renderer),fault_destroy_texture(vulkan.Renderer),vulkan.acquire,vulkan.abort,vulkan.submit,vulkan.wait,fault_exports(vulkan.Renderer),vulkan.create_pipeline,vulkan.destroy_pipeline,vulkan.create_sampler,vulkan.destroy_sampler}
         capture:=Capture_Ops(vulkan.Renderer){vulkan.graph_texture_source,vulkan.queue_texture_readback,vulkan.poll_texture_readback}
-        exercise(&renderer,operations,capture,&compiler,surface.descriptor,render.Model_GPU_Ops(vulkan.Renderer){operations,vulkan.create_sampler,vulkan.destroy_sampler},"Vulkan1.3",os.args[3])
+        exercise(&renderer,operations,capture,&compiler,render.surface_pipelines(&surface),render.Model_GPU_Ops(vulkan.Renderer){operations,vulkan.create_sampler,vulkan.destroy_sampler},"Vulkan1.3",os.args[3])
     }
 }

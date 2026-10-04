@@ -1,4 +1,9 @@
-# ECS storage and scheduling measurements
+# Historical ECS storage and scheduling measurements
+
+These source-hashed Rust measurements describe the retired implementation.
+Current ownership and checks are in [Odin ECS](ecs_odin.md). Reproduction requires
+the recorded historical Git source; these are not current build instructions.
+
 
 The production ECS keeps one sparse-set component store. The benchmark-only
 archetype implementation evaluates a storage alternative; it is not a second

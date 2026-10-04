@@ -1,0 +1,282 @@
+name: Odin
+
+on:
+  push:
+    branches: [main, port/odin]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: odin-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  macos:
+    name: Odin editor and Metal 4
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install verified Odin release
+        run: |
+          odin_exe="$(python3 scripts/build_katla_odin.py --install-odin target/odin-toolchain)"
+          dirname "$odin_exe" >> "$GITHUB_PATH"
+      - name: Install native build tools
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          llvm_major="$(odin report | sed -nE 's/.*Backend:.*LLVM ([0-9]+).*/\1/p')"
+          test -n "$llvm_major"
+          brew install "llvm@$llvm_major" cmake ninja
+      - name: Cold build and serial CPU acceptance
+        run: |
+          mkdir -p target/odin-ci-build
+          python3 scripts/build_katla_odin.py --tests 2>&1 | tee target/odin-ci-build/normal.log
+      - name: Cold ASan build and serial CPU acceptance
+        run: |
+          mkdir -p target/odin-ci-build
+          python3 scripts/build_katla_odin.py --sanitize --tests 2>&1 | tee target/odin-ci-build/asan.log
+      - name: Actual MCP and HTTP/TLS assistant process acceptance
+        run: |
+          python3 scripts/validate_odin.py --sanitize \
+            --build-manifest target/katla-odin/darwin-arm64/asan/build.json \
+            2>&1 | tee target/odin-ci-build/processes.log
+      - name: Probe actual Metal 4 support
+        id: metal
+        run: |
+          supported="$(xcrun swift -e 'import Metal; print(MTLCreateSystemDefaultDevice()?.supportsFamily(.metal4) == true ? "true" : "false")')"
+          echo "supported=$supported" >> "$GITHUB_OUTPUT"
+          if [ "$supported" != "true" ]; then
+            echo "::notice::Odin native Metal acceptance BLOCKED: hosted GPU lacks Metal 4"
+            echo "Odin native Metal acceptance: **BLOCKED**. SDK compilation and CPU acceptance run; this is not native GPU acceptance." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Run genuine Metal shader and graph contracts
+        if: steps.metal.outputs.supported == 'true'
+        run: |
+          python3 scripts/validate_odin_gpu.py --native-metal --sanitize \
+            --target-dir target/katla-odin/darwin-arm64/asan/shader-compiler \
+            --output-dir target/odin-ci-metal
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
+      - name: Run actual Metal UI, typography and picking contracts
+        if: steps.metal.outputs.supported == 'true'
+        run: |
+          mkdir -p target/odin-ci-ui
+          python3 scripts/validate_odin_ui_gpu.py --backend metal --sanitize \
+            --skip-font-checks \
+            --build-manifest target/katla-odin/darwin-arm64/asan/build.json \
+            2>&1 | tee target/odin-ci-ui/native.log
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
+      - name: Run actual Metal scene and textured model consumers
+        if: steps.metal.outputs.supported == 'true'
+        run: |
+          python3 scripts/validate_odin_render.py --native-metal --sanitize \
+            --skip-cpu-tests \
+            --build-manifest target/katla-odin/darwin-arm64/asan/build.json \
+            --output-dir target/odin-ci-render
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
+      - name: Run combined native editor frames and retained readback
+        if: steps.metal.outputs.supported == 'true'
+        run: |
+          mkdir -p target/odin-ci-editor
+          python3 scripts/run_katla_odin.py --no-build --sanitize -- \
+            --frames 100 --preferences target/odin-ci-editor/preferences \
+            --screenshot target/odin-ci-editor/editor.png
+        env:
+          MTL_DEBUG_LAYER: "1"
+          METAL_DEVICE_WRAPPER_TYPE: "1"
+          # CPU suites above force leak checks on. This step checks native GPU
+          # addresses; Apple CF/ObjC/driver process globals have a separate boundary.
+          ASAN_OPTIONS: detect_leaks=0
+      - name: Preserve Odin evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odin-macos
+          path: |
+            target/odin-ci-build
+            target/katla-odin/**/build.json
+            target/katla-odin/**/mode.json
+            target/odin-ci-metal
+            target/odin-ci-ui
+            target/odin-ci-render
+            target/odin-ci-editor
+          retention-days: 7
+
+  linux:
+    name: Odin Linux code generation and Vulkan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install verified Odin release
+        run: |
+          odin_exe="$(python3 scripts/build_katla_odin.py --install-odin target/odin-toolchain)"
+          dirname "$odin_exe" >> "$GITHUB_PATH"
+      - name: Install native build and Vulkan dependencies
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome*
+          sudo apt-get update
+          sudo apt-get install -y clang lld llvm cmake ninja-build zlib1g-dev \
+            libasound2-dev libvulkan1 mesa-vulkan-drivers vulkan-tools \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libwayland-dev libxkbcommon-dev \
+            wayland-protocols libdecor-0-dev libdbus-1-dev libibus-1.0-dev pkg-config xvfb \
+            vulkan-validationlayers glslc
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          vulkaninfo --summary
+      - name: Cold native dependencies, editor build and CPU acceptance
+        run: |
+          mkdir -p target/odin-ci-build
+          python3 scripts/build_katla_odin.py --tests 2>&1 | tee target/odin-ci-build/normal.log
+      - name: Native Vulkan baseline contracts with validation
+        run: |
+          icd="$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)"
+          test -n "$icd"
+          loader="$(python3 - <<'PY'
+          import ctypes.util, pathlib, shutil, subprocess
+          name = ctypes.util.find_library('vulkan')
+          if not name:
+              raise SystemExit('Installed Vulkan loader was not found')
+          candidates = [pathlib.Path(name)]
+          ldconfig = shutil.which('ldconfig')
+          if ldconfig:
+              cache = subprocess.check_output([ldconfig, '-p'], text=True)
+              for line in cache.splitlines():
+                  fields = line.strip().split(maxsplit=1)
+                  if fields and fields[0] == name and '=>' in line:
+                      candidates.append(pathlib.Path(line.partition('=>')[2].strip()))
+          for root in ('/usr/lib', '/lib'):
+              candidates.extend(pathlib.Path(root).glob('*/' + name))
+          for candidate in candidates:
+              if candidate.is_file():
+                  print(candidate.resolve())
+                  break
+          else:
+              raise SystemExit('Vulkan soname has no existing resolved library path')
+          PY
+          )"
+          echo "KATLA_CI_VULKAN_LOADER=$loader" >> "$GITHUB_ENV"
+          echo "KATLA_CI_VULKAN_ICD=$icd" >> "$GITHUB_ENV"
+          python3 scripts/validate_odin_gpu.py --native-vulkan --vulkan-baseline \
+            --vulkan-library "$loader" --vulkan-icd "$icd" \
+            --target-dir target/katla-odin/linux-amd64/normal/shader-compiler \
+            --output-dir target/odin-ci-vulkan
+      - name: Probe native Vulkan resource-array breadth
+        id: vulkan_arrays
+        run: |
+          set +e
+          python3 scripts/validate_odin_gpu.py --native-vulkan \
+            --vulkan-probe-array-capabilities \
+            --vulkan-library "$KATLA_CI_VULKAN_LOADER" \
+            --vulkan-icd "$KATLA_CI_VULKAN_ICD" \
+            --output-dir target/odin-ci-vulkan \
+            2>&1 | tee target/odin-ci-vulkan/array-capabilities.log
+          probe_status=("${PIPESTATUS[@]}")
+          set -e
+          if [ "${probe_status[1]}" -ne 0 ]; then exit "${probe_status[1]}"; fi
+          case "${probe_status[0]}" in
+            0) echo "supported=true" >> "$GITHUB_OUTPUT" ;;
+            77)
+              echo "supported=false" >> "$GITHUB_OUTPUT"
+              echo "::notice::Vulkan resource-array acceptance BLOCKED: device lacks required array features or limits; baseline contracts passed separately"
+              echo "Vulkan baseline acceptance passed. Resource-array breadth: **BLOCKED** by actual device capabilities; arrays were not executed." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *) exit "${probe_status[0]}" ;;
+          esac
+      - name: Native Vulkan resource-array contracts with validation
+        if: steps.vulkan_arrays.outputs.supported == 'true'
+        run: |
+          python3 scripts/validate_odin_gpu.py --native-vulkan --skip-shader-checks \
+            --vulkan-library "$KATLA_CI_VULKAN_LOADER" \
+            --vulkan-icd "$KATLA_CI_VULKAN_ICD" \
+            --target-dir target/katla-odin/linux-amd64/normal/shader-compiler \
+            --output-dir target/odin-ci-vulkan-arrays
+      - name: Record editor platform boundary
+        run: echo "Odin Linux editor and source-pinned SDL X11/Wayland build here. Vulkan graph validation is separate from desktop input acceptance." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve Odin evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odin-linux
+          path: |
+            target/odin-ci-build
+            target/katla-odin/**/build.json
+            target/katla-odin/**/mode.json
+            target/odin-ci-vulkan
+            target/odin-ci-vulkan-arrays
+          retention-days: 7
+
+  windows:
+    name: Odin Windows source dependencies and code generation
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install verified Odin release
+        shell: pwsh
+        run: |
+          $odinExe = python scripts/build_katla_odin.py --install-odin target/odin-toolchain
+          Split-Path $odinExe | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Select Windows SDK and native compiler
+        shell: pwsh
+        run: |
+          @'
+          import os, pathlib, subprocess
+          locator = pathlib.Path(os.environ['ProgramFiles(x86)']) / 'Microsoft Visual Studio/Installer/vswhere.exe'
+          install = subprocess.check_output([str(locator), '-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath'], text=True).strip()
+          setup = pathlib.Path(install) / 'Common7/Tools/VsDevCmd.bat'
+          values = subprocess.check_output(['cmd', '/d', '/s', '/c', f'""{setup}" -arch=amd64 -host_arch=amd64 >nul && set"'], text=True)
+          keep = {'PATH','INCLUDE','LIB','LIBPATH','WindowsSdkDir','WindowsSDKVersion','VCToolsInstallDir','VCINSTALLDIR'}
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
+              for line in values.splitlines():
+                  name, separator, value = line.partition('=')
+                  if separator and name in keep:
+                      output.write(f'{name}={value}\n')
+          '@ | python -
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          clang --version
+          cmake --version
+          ninja --version
+      - name: Cold native source build, editor build and CPU acceptance
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target/odin-ci-build | Out-Null
+          python scripts/build_katla_odin.py --tests 2>&1 | Tee-Object target/odin-ci-build/normal.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        env:
+          CC: clang
+          CXX: clang++
+          AR: llvm-ar
+      - name: Execute native Windows capability filesystem contracts
+        shell: pwsh
+        run: |
+          odin test odin/resources -vet -strict-style -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true -define:ODIN_TEST_THREADS=1 -out:target/odin-ci-build/resources-tests.exe 2>&1 | Tee-Object target/odin-ci-build/resources.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record native window boundary
+        shell: pwsh
+        run: Add-Content $env:GITHUB_STEP_SUMMARY "Odin Windows editor and source-pinned SDL build here. No Windows GPU/window acceptance is claimed by compilation and CPU tests."
+      - name: Preserve Odin evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: odin-windows
+          path: |
+            target/odin-ci-build
+            target/katla-odin/**/build.json
+            target/katla-odin/**/mode.json
+          retention-days: 7

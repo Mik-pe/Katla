@@ -1,3 +1,4 @@
+// #include lighting_common
 // Application-owned linear PBR factors and vertex-pulled scene geometry.
 struct Frame {
     view_projection: mat4x4<f32>,
@@ -35,10 +36,6 @@ struct Vertex_Output {
     output.object_index = object;
     return output;
 }
-fn srgb_channel(value: f32) -> f32 {
-    return select(1.055 * pow(value, 1.0 / 2.4) - 0.055,
-                  value * 12.92, value <= 0.0031308);
-}
 @fragment fn fs_main(input: Vertex_Output) -> @location(0) vec4<f32> {
     let surface = objects[input.object_index];
     let color = surface.linear_color.rgb;
@@ -64,8 +61,8 @@ fn srgb_channel(value: f32) -> f32 {
     let fresnel = f0 + (vec3<f32>(1.0) - f0) * pow(1.0 - vh, 5.0);
     let specular = distribution * geometry_term * fresnel / max(4.0 * nv * nl, 0.00001);
     let diffuse = (vec3<f32>(1.0) - fresnel) * (1.0 - metallic) * color / 3.14159265359;
-    let direct = (diffuse + specular) * frame.light_color.rgb * frame.light_color.w * nl;
-    let radiance = frame.ambient.rgb * color * ao + direct;
-    let mapped = radiance / (radiance + vec3<f32>(1.0));
-    return vec4<f32>(srgb_channel(mapped.r), srgb_channel(mapped.g), srgb_channel(mapped.b), surface.linear_color.a);
+    let direct = (diffuse + specular) * frame.light_color.rgb * frame.light_color.w * nl * shadow_visibility(input.world_position,normal);
+    let points = point_illumination(input.clip_position.xy,input.world_position,normal,view,color*(1.0-metallic),f0,roughness);
+    let radiance = frame.ambient.rgb * color * ao + direct + points;
+    return vec4<f32>(radiance, surface.linear_color.a);
 }

@@ -7,10 +7,10 @@ import adapter "../../gfx/shader_adapter"
 import "core:strings"
 import "core:mem"
 
-PARTICLE_COMMON :: #load("../../../resources/shaders/particles/common.wgsl",string)
+PARTICLE_COMMON :: #load("shaders/common.wgsl",string)
 PARTICLE_EMIT :: #load("shaders/particles_emit.wgsl",string)
-PARTICLE_SIMULATE :: #load("../../../resources/shaders/particles/particle_simulate.wgsl",string)
-PARTICLE_DRAW :: #load("../../../resources/shaders/particles/particle_draw_command.wgsl",string)
+PARTICLE_SIMULATE :: #load("shaders/particle_simulate.wgsl",string)
+PARTICLE_DRAW :: #load("shaders/particle_draw_command.wgsl",string)
 PARTICLE_DISPATCH :: #load("shaders/particles_dispatch.wgsl",string)
 PARTICLE_RENDER :: #load("shaders/particles_render.wgsl",string)
 /// Native preparation borrows these immutable artifacts only during pipeline creation.
@@ -41,9 +41,9 @@ particle_shader_compile :: proc(compiler:^shader.Compiler,format:gfx.Texture_For
     result.rendering,error=shader.compile(compiler,expanded,{{"vs_main",.Vertex},{"fs_main",.Fragment}},allocator=allocator)
     if error!=.None { return {},error }
     result.colors=make([]gfx.Color_Target,1,allocator)
-    result.colors[0]={format=format,write_mask={.Red,.Green,.Blue,.Alpha},blend_enabled=true,source_color=.Source_Alpha,destination_color=.One_Minus_Source_Alpha,source_alpha=.One,destination_alpha=.One_Minus_Source_Alpha}
+    result.colors[0]={format=.RGBA16_Float,write_mask={.Red,.Green,.Blue,.Alpha},blend_enabled=true,source_color=.Source_Alpha,destination_color=.One_Minus_Source_Alpha,source_alpha=.One,destination_alpha=.One_Minus_Source_Alpha}
     map_error:adapter.Error
-    result.graphics,map_error=adapter.graphics(&result.rendering,"vs_main","fs_main",{colors=result.colors,depth={enabled=true,test=true,write=false,compare=.Less_Equal,format=.D32_Float},topology=.Triangle_List,cull=.None},allocator)
+    result.graphics,map_error=adapter.graphics(&result.rendering,"vs_main","fs_main",{colors=result.colors,depth={enabled=true,test=true,write=false,compare=.Less_Equal,format=.D32_Float_S8_Uint},topology=.Triangle_List,cull=.None},allocator)
     if map_error!=.None { return {},.Reflection }
     success=true; return result,.None
 }

@@ -14,13 +14,14 @@ dock_new :: proc(tree:^Dock_Tree,kind:Dock_Kind)->^Dock_Node {
 dock_init :: proc(tree:^Dock_Tree,tabs:[]Tab_Id=nil,allocator:mem.Allocator=context.allocator)->Dock_Error {
     seen:=make(map[Tab_Id]bool,allocator); defer delete(seen)
     for tab in tabs { if tab==0 || seen[tab] { return .Duplicate_Tab }; seen[tab]=true }
-    tree^={allocator=allocator,nodes=make(map[Dock_Id]^Dock_Node,allocator)}
+    tree^={allocator=allocator,nodes=make(map[Dock_Id]^Dock_Node,allocator),floating=make([dynamic]Dock_Floating,allocator)}
     root:=dock_new(tree,.Leaf if len(tabs)>0 else .Empty); append(&root.tabs,..tabs); tree.root=root.id; return .None
 }
-dock_destroy :: proc(tree:^Dock_Tree) { for _,node in tree.nodes { delete(node.tabs); free(node,tree.allocator) }; delete(tree.nodes); tree^={} }
+dock_destroy :: proc(tree:^Dock_Tree) { for _,node in tree.nodes { delete(node.tabs); free(node,tree.allocator) }; delete(tree.nodes); delete(tree.floating); tree^={} }
 @(private="package")
 dock_clone :: proc(tree:^Dock_Tree)->Dock_Tree {
-    result:=Dock_Tree{root=tree.root,next_id=tree.next_id,allocator=tree.allocator,nodes=make(map[Dock_Id]^Dock_Node,tree.allocator)}
+    result:=Dock_Tree{root=tree.root,next_id=tree.next_id,allocator=tree.allocator,nodes=make(map[Dock_Id]^Dock_Node,tree.allocator),floating=make([dynamic]Dock_Floating,tree.allocator)}
+    append(&result.floating,..tree.floating[:])
     for id,node in tree.nodes { cloned:=new(Dock_Node,tree.allocator); cloned^=node^; cloned.tabs=make([dynamic]Tab_Id,tree.allocator); append(&cloned.tabs,..node.tabs[:]); result.nodes[id]=cloned }; return result
 }
 @(private="package")
@@ -39,6 +40,11 @@ dock_collapse :: proc(tree:^Dock_Tree,id:Dock_Id) {
 dock_apply_unchecked :: proc(tree:^Dock_Tree,action:Dock_Action)->Dock_Error {
     source,source_present:=tree.nodes[action.source]; target,target_present:=tree.nodes[action.target]
     switch action.kind {
+    case .Undock: return dock_undock_unchecked(tree,action)
+    case .Float_Bounds,.Raise:
+        index,present:=dock_floating_index(tree,action.target); if !present { return .Invalid_Id }
+        if action.kind==.Float_Bounds { if !dock_float_bounds_valid(action.bounds) { return .Invalid_Bounds }; tree.floating[index].bounds=action.bounds }
+        floating:=tree.floating[index]; ordered_remove(&tree.floating,index); append(&tree.floating,floating)
     case .Resize:
         if !target_present || target.kind!=.Split { return .Invalid_Id }
         if !finite(action.ratio) { return .Invalid_Ratio }; target.ratio=clamp(action.ratio,0,1)
@@ -55,7 +61,7 @@ dock_apply_unchecked :: proc(tree:^Dock_Tree,action:Dock_Action)->Dock_Error {
         if action.kind==.Move && (!target_present || target.kind==.Split) { return .Not_Leaf }
         if action.kind==.Move && source==target && action.zone!=.Center && len(source.tabs)==1 { return .Invalid_Tab }
         ordered_remove(&source.tabs,index); source.active=clamp(source.active,0,max(0,len(source.tabs)-1)); if len(source.tabs)==0 { source.kind=.Empty }
-        if action.kind==.Close { dock_collapse(tree,tree.root); return .None }
+        if action.kind==.Close { dock_collapse_all(tree); return .None }
         if action.zone==.Center || target.kind==.Empty {
             target.kind=.Leaf; requested:=action.index; if source==target && requested>index { requested-=1 }; at:=clamp(requested,0,len(target.tabs)); append(&target.tabs,action.tab)
             for i:=len(target.tabs)-1;i>at;i-=1 { target.tabs[i]=target.tabs[i-1] }; target.tabs[at]=action.tab; target.active=at
@@ -67,7 +73,7 @@ dock_apply_unchecked :: proc(tree:^Dock_Tree,action:Dock_Action)->Dock_Error {
             if action.zone==.Top || action.zone==.Bottom { target.direction=.Vertical }
             target.children={previous.id,added.id}; if action.zone==.Left || action.zone==.Top { target.children={added.id,previous.id} }
         }
-        dock_collapse(tree,tree.root)
+        dock_collapse_all(tree)
     }
     return .None
 }
@@ -94,6 +100,7 @@ dock_collect_bounds :: proc(tree:^Dock_Tree,id:Dock_Id,rect:Rect,tab_height,gap:
 dock_bounds :: proc(tree:^Dock_Tree,rect:Rect,tab_height:f32=30,gap:f32=4,allocator:mem.Allocator=context.allocator)->[]Dock_Bounds {
     list:=make([dynamic]Dock_Bounds,allocator); defer delete(list)
     if tree.nodes[tree.root]!=nil { dock_collect_bounds(tree,tree.root,rect,tab_height,gap,&list) }
+    for floating in tree.floating { start:=len(list); dock_collect_bounds(tree,floating.root,floating.bounds,tab_height,gap,&list); for &region in list[start:] { region.floating_root=floating.root } }
     result:=make([]Dock_Bounds,len(list),allocator); copy(result,list[:]); return result
 }
 @(private="package")
@@ -117,7 +124,11 @@ dock_encode_node :: proc(tree:^Dock_Tree,id:Dock_Id,codec:Dock_Tab_Codec,builder
 }
 /// Serializes the established Rust dock schema, with optional panel-name mapping for enum tabs.
 dock_snapshot :: proc(tree:^Dock_Tree,codec:Dock_Tab_Codec={},allocator:mem.Allocator=context.allocator)->string {
-    builder:strings.Builder; strings.builder_init(&builder,allocator); dock_encode_node(tree,tree.root,codec,&builder); return strings.to_string(builder)
+    builder:strings.Builder; strings.builder_init(&builder,allocator)
+    if len(tree.floating)==0 { dock_encode_node(tree,tree.root,codec,&builder) } else {
+        strings.write_string(&builder,"{\"version\":2,\"root\":"); dock_encode_node(tree,tree.root,codec,&builder); strings.write_string(&builder,",\"floating\":[")
+        for floating,i in tree.floating { if i>0 { strings.write_string(&builder,",") }; b:=floating.bounds; strings.write_string(&builder,"{\"bounds\":["); fmt.sbprintf(&builder,"%g,%g,%g,%g],\"root\":",b.x,b.y,b.width,b.height); dock_encode_node(tree,floating.root,codec,&builder); strings.write_string(&builder,"}") }; strings.write_string(&builder,"]}")
+    }; return strings.to_string(builder)
 }
 @(private="package")
 dock_decode_node :: proc(tree:^Dock_Tree,value:json.Value,codec:Dock_Tab_Codec,seen:^map[Tab_Id]bool,depth:int)->(Dock_Id,Dock_Error) {
@@ -147,8 +158,8 @@ dock_decode_node :: proc(tree:^Dock_Tree,value:json.Value,codec:Dock_Tab_Codec,s
 /// A malformed saved layout never replaces the active dock tree.
 dock_restore :: proc(tree:^Dock_Tree,snapshot:string,codec:Dock_Tab_Codec={})->Dock_Error {
     parsed,parse_error:=json.parse(snapshot,spec=.JSON,parse_integers=true,allocator=tree.allocator); if parse_error!=nil { return .Invalid_Snapshot }; defer json.destroy_value(parsed)
-    candidate:=Dock_Tree{next_id=tree.next_id,allocator=tree.allocator,nodes=make(map[Dock_Id]^Dock_Node,tree.allocator)}; seen:=make(map[Tab_Id]bool,tree.allocator); defer delete(seen)
-    root,error:=dock_decode_node(&candidate,parsed,codec,&seen,0); if error!=.None { dock_destroy(&candidate); return error }; candidate.root=root
+    candidate:=Dock_Tree{next_id=tree.next_id,allocator=tree.allocator,nodes=make(map[Dock_Id]^Dock_Node,tree.allocator),floating=make([dynamic]Dock_Floating,tree.allocator)}; seen:=make(map[Tab_Id]bool,tree.allocator); defer delete(seen)
+    error:=dock_decode_layout(&candidate,parsed,codec,&seen); if error!=.None { dock_destroy(&candidate); return error }
     dock_destroy(tree); tree^=candidate; return .None
 }
 

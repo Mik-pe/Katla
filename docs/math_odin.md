@@ -1,9 +1,8 @@
 # Katla math in Odin
 
-`odin/math` ports the public numeric and geometric responsibilities of
-`katla_math`, without external dependencies or an ECS dependency. It is part of
-the [progressive Odin tree](../odin/README.md). Rendering still uses Rust math;
-this package is a native CPU port, not a foreign representation of Rust values.
+`odin/math` owns Katla's column-major numeric and geometric operations without
+external dependencies or an ECS dependency. The actual Odin editor, renderers,
+physics adapters and picking all use this package. See the [package tree](../odin/README.md).
 
 ## A single rotation contract
 
@@ -103,41 +102,21 @@ paths are not retained. Additional differences resolve inconsistent geometry:
 - Slerp clamps the normalized dot product before acos; zero-axis rotation produces
   identity; approximate decomposition reports zero scale as failure.
 
-These changes affect only Odin. The Rust engine's production math is unchanged.
-Four preexisting Clippy warnings in Rust frustum tests were fixed with iterator
-and range expressions; their assertions and numeric behavior remain the same.
-
 ## Validation
 
 ```sh
-python3 scripts/validate_odin.py
+odin test odin/math -vet -strict-style -define:ODIN_TEST_THREADS=1 -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
 odin test odin/math -out:target/odin-math-asan -sanitize:address -debug -vet -strict-style
 odin test odin/math -out:target/odin-math-release -o:speed -vet -strict-style
-python3 scripts/compare_math_port.py --report docs/benchmarks/math-odin-parity.json
-cargo test -p katla_math --locked
-cargo check -p katla_math --all-targets --locked
-cargo clippy -p katla_math --all-targets --locked -- -D warnings
-cargo fmt --all -- --check
 ```
 
-The 25 Odin tests validate matrix/quaternion agreement, column layout, nonsymmetric
-inverses, reverse-Z/finite/orthographic clip coordinates, exact hierarchy shear,
-negative/zero scales, quaternion interpolation and half-turns, camera orientation,
-all eight transformed bounds corners, plane inverse-transpose normals, ray hits,
-parallel slab edges, rectangles, gamma/HSV and color bytes. They run with strict
-vet/style and test allocation tracking, native AddressSanitizer and optimization.
-The ECS/math example advances an actual typed world and transforms its component.
-The Rust reference passes 253 tests including doctests, all-target check, strict
-all-target Clippy and formatting. An additional `linux_amd64` Odin check verifies
-typechecking for x86; execution and sanitizer acceptance remain native arm64.
+Tests validate matrix/quaternion agreement, column layout, nonsymmetric inverses,
+reverse-Z/finite/orthographic clip coordinates, hierarchy shear, negative/zero
+scales, interpolation, transformed bounds, normals, rays, rectangles and color.
+Native rendering additionally validates the same matrices against actual GPU
+depth and picking output.
 
-The paired Rust and Odin consumers run 128 deterministic cases in both dev and
-release. Each profile checks 3,712 operation records and 27,008 finite scalar
-outputs across 29 operations, including quaternions, arbitrary axes, nonsymmetric
-matrix inverse, TRS matrix, bounds, projections, camera, planes and color.
-Absolute tolerance is 2e-5, relative tolerance 5e-5. The deliberate differences
-above receive independent geometric tests instead of an equality assertion against
-the old behavior. [The parity receipt](benchmarks/math-odin-parity.json) records
-toolchain versions, per-profile maxima, output hashes and exact source hashes.
-This is native CPU evidence on Apple Silicon; it does not establish x86 SIMD
-performance, FFI compatibility, rendering acceptance or full-engine migration.
+[The historical migration receipt](benchmarks/math-odin-parity.json) records
+128 paired cases, 3,712 operation records and 27,008 finite scalar outputs per
+profile. The source-hashed Rust baseline remains historical evidence; current
+acceptance runs the Odin geometric tests and actual native consumers.

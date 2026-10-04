@@ -81,7 +81,7 @@ material_keys_valid :: proc(object:json.Object,allowed:[]string)->bool {
 /// Rejects malformed or unknown fields before any scene request can enter its mailbox.
 decode_material :: proc(data:[]byte,allocator:=context.allocator)->(Decoded_Material,Call_Error) {
     context.allocator=allocator
-    tree,err:=json.parse(data,spec=.JSON,parse_integers=true,allocator=allocator)
+    tree,err:=json.parse(data,spec=.JSON,parse_integers=false,allocator=allocator)
     if err!=nil { return {},.Invalid_JSON }; defer json.destroy_value(tree)
     object,ok:=tree.(json.Object); if !ok { return {},.Invalid_Arguments }
     action,valid:=required_string(object,"action"); if !valid { return {},.Invalid_Arguments }

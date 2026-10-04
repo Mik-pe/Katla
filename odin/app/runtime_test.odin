@@ -10,14 +10,14 @@ import "core:testing"
 import ecs "../ecs"
 import km "../math"
 
-RUNTIME_LIBRARY :: #config(SCENE_RUNTIME_LIBRARY,"")
+LUAU_APP_LIBRARY :: #config(LUAU_LIBRARY,"")
 
 @(test)
 test_runtime_missing_owner_refuses_authored_scripts_and_physics :: proc(t:^testing.T) {
     app:Authoring; authoring_init(&app); defer authoring_destroy(&app); register_test_scene_runtime(&app)
     entity:=ecs.create_entity(&app.world); ecs.add_component(&app.world,entity,Scene_Transform{km.TRANSFORM_IDENTITY}); ecs.add_component(&app.world,entity,physics_body(Physics_Shape{kind=.Sphere,radius=0.5}))
-    testing.expect(t,execute_test_simulation(t,&app,.Play)==.Invalid_Operation && app.mode==.Editing)
-    testing.expect(t,scene_runtime_init(&app,"/unavailable/scene-runtime.so")==.Application_Owned)
+    testing.expect(t,execute_test_simulation(t,&app,.Play)==.Application_Owned && app.mode==.Editing)
+    testing.expect(t,script_native_init(&app,"/unavailable/luau-runtime.dylib")==.Application_Owned)
 }
 @(private="file")
 native_runtime_acceptance :: proc(t:^testing.T) {
@@ -35,7 +35,7 @@ native_runtime_acceptance :: proc(t:^testing.T) {
     testing.expect(t,os.write_entire_file(file,source)==nil)
     tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,context.allocator); defer mem.tracking_allocator_destroy(&tracker); context.allocator=mem.tracking_allocator(&tracker)
     app:Authoring; authoring_init(&app); register_test_scene_runtime(&app)
-    testing.expect(t,asset_resources_init(&app,directory,resource_path)==.None); testing.expect(t,scene_runtime_init(&app,RUNTIME_LIBRARY)==.None)
+    testing.expect(t,asset_resources_init(&app,directory,resource_path)==.None); testing.expect(t,script_native_init(&app,LUAU_APP_LIBRARY)==.None); testing.expect(t,physics_select_box3d(&app,BOX3D_LIBRARY)==.None)
     actor:=attach_test_animation(&app); ecs.add_component(&app.world,actor,Scene_Name{strings.clone("Actor")}); ecs.add_component(&app.world,actor,Scene_Transform{km.transform(position={3,0,0})}); ecs.add_component(&app.world,actor,physics_body(Physics_Shape{kind=.Sphere,radius=0.25},.Kinematic)); testing.expect(t,animation_play(&app.world,actor,"Walk",0,true,1)==.None)
     actions:=[2]scene.Event_Action{ {kind=.Play_Animation,target={kind=.Other},clip="Run",fade_seconds=0.25,speed=1,looping=true}, {kind=.Emit,name="activated"} }
     rules:=[1]scene.Trigger_Rule{ {phase=.Enter,has_other=true,other=actor,once=true,actions=actions[:]} }
@@ -60,10 +60,6 @@ native_runtime_acceptance :: proc(t:^testing.T) {
     testing.expect(t,execute_test_simulation(t,&app,.Play)==.None); testing.expect(t,simulation_step(&app,0.1)==.None); ecs.get_component_mut(&app.world,restored_actor,Scene_Transform).local.position={0,0,0}; testing.expect(t,simulation_step(&app,0.1)==.None); testing.expect(t,len(restored_particles.descriptor.burst_queue)==1)
     authoring_destroy(&app); testing.expect(t,len(tracker.allocation_map)==0 && len(tracker.bad_free_array)==0)
 }
-when RUNTIME_LIBRARY!="" {
-@(test)
-test_runtime_native_rapier_trigger_luau_animation_and_stop :: proc(t:^testing.T) { native_runtime_acceptance(t) }
-}
 @(test)
 test_physics_completed_pose_batch_rejection_preserves_every_target :: proc(t:^testing.T) {
     app:Authoring; authoring_init(&app); defer authoring_destroy(&app); register_test_scene_runtime(&app)
@@ -72,4 +68,9 @@ test_physics_completed_pose_batch_rejection_preserves_every_target :: proc(t:^te
     poses:=[2]Physics_Resolved_Pose{ {u64(first),{1,2,3},{0,0,0,1},{1,0,0}}, {u64(second),{4,5,6},{0,0,0,0},{0,0,0}} }
     testing.expect(t,physics_commit_poses(&app,poses[:])==.Invalid_Field_Value); testing.expect(t,ecs.get_component_mut(&app.world,first,Scene_Transform).local.position==km.VEC3_ZERO)
     poses[1].rotation={0,0,0,1}; ecs.remove_component(&app.world,second,Physics_Body); testing.expect(t,physics_commit_poses(&app,poses[:])==.Component_Not_Found); testing.expect(t,ecs.get_component_mut(&app.world,first,Scene_Transform).local.position==km.VEC3_ZERO)
+}
+
+when LUAU_APP_LIBRARY!="" && BOX3D_LIBRARY!="" {
+@(test)
+test_runtime_native_direct_luau_box_trigger_animation_and_stop :: proc(t:^testing.T) { native_runtime_acceptance(t) }
 }

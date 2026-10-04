@@ -3,14 +3,15 @@ package app
 
 import ecs "../ecs"
 import editor "../editor"
+import resources "../resources"
 import "core:mem"
 import "core:strings"
 import "core:encoding/json"
 
 /// Authored recipe origins distinguish installed resources from project-local assets.
-Mesh_Path_Root :: enum { Resource, Project }
+Mesh_Path_Root :: enum { Resource, Project, File }
 /// Generated geometry carries its complete validated descriptor.
-Mesh_Source_Kind :: enum { Empty, Geometry, Recipe }
+Mesh_Source_Kind :: enum { Empty, Geometry, Recipe, Stl }
 /// Owns its origin and descriptor; native resource handles remain external application cache state.
 Mesh_Source :: struct { kind:Mesh_Source_Kind,path:string,geometry:[]byte,root:Mesh_Path_Root }
 /// One authored source and its prepared immutable CPU stream, ready for native upload.
@@ -30,12 +31,19 @@ scene_mesh_clone :: proc(dst,src:rawptr) {
 /// Prepares genuine geometry and clones the source before any entity is allocated.
 scene_mesh_prepare :: proc(app:^Authoring,source:Mesh_Source)->(Scene_Mesh,Mesh_Error) {
     context.allocator=app.world.allocator
+    if source.root>.File || source.kind>.Stl { return {},.Invalid_Geometry }
     geometry:Mesh_Geometry
     switch source.kind {
     case .Empty: geometry.allocator=app.world.allocator
     case .Recipe:
-        roots:=ecs.get_resource_mut(&app.world,Asset_Roots); if roots==nil || !strings.has_suffix(source.path,".katmesh") { return {},.Invalid_Geometry }
-        root:=&roots.resource; if source.root==.Project { root=&roots.project }; mesh,err:=mesh_recipe_load(root,source.path); if err!=.None { return {},err }; geometry=mesh
+        if !strings.has_suffix(source.path,".katmesh") { return {},.Invalid_Geometry }
+        scope,scope_error:=asset_path_scope(app,source.root,source.path); if scope_error!=.None { return {},.Invalid_Geometry }; defer asset_path_scope_destroy(&scope)
+        mesh,err:=mesh_recipe_load(&scope.root,scope.path); if err!=.None { return {},err }; geometry=mesh
+    case .Stl:
+        if !strings.has_suffix(source.path,".stl") { return {},.Invalid_Geometry }
+        scope,scope_error:=asset_path_scope(app,source.root,source.path); if scope_error!=.None { return {},.Invalid_Geometry }; defer asset_path_scope_destroy(&scope)
+        bytes,read_error:=resources.read_bytes(&scope.root,scope.path); if read_error!=.None { return {},.Invalid_Geometry }; defer delete(bytes,app.world.allocator)
+        mesh,err:=stl_decode(bytes,app.world.allocator); if err!=.None { return {},err }; geometry=mesh
     case .Geometry:
         tree,parse_error:=json.parse(source.geometry,spec=.JSON,parse_integers=true,allocator=app.world.allocator)
         if parse_error!=nil { return {},.Invalid_Geometry }; defer json.destroy_value(tree)
@@ -53,8 +61,9 @@ scene_mesh_encode :: proc(state,value:rawptr,allocator:mem.Allocator)->([]byte,b
     switch source.kind {
     case .Empty:
         data,err:=json.marshal(struct { kind:string }{"Empty"},allocator=allocator); return data,err==nil
-    case .Recipe:
-        root:="resource"; if source.root==.Project { root="project" }; data,err:=json.marshal(struct { kind,path,root:string }{"Recipe",source.path,root},allocator=allocator); return data,err==nil
+    case .Recipe,.Stl:
+        kind:="Recipe"; if source.kind==.Stl { kind="Stl" }
+        root:=asset_root_name(source.root); data,err:=json.marshal(struct { kind,path,root:string }{kind,source.path,root},allocator=allocator); return data,err==nil
     case .Geometry:
         tree,parse_error:=json.parse(source.geometry,spec=.JSON,parse_integers=true,allocator=allocator)
         if parse_error!=nil { return nil,false }; defer json.destroy_value(tree)
@@ -73,12 +82,14 @@ scene_mesh_decode :: proc(state:rawptr,data:[]byte,allocator:mem.Allocator)->(ra
     source:Mesh_Source
     switch kind {
     case "Empty": if !recipe_keys(object,{"kind"}) { return result,false }; source.kind=.Empty
-    case "Recipe":
+    case "Recipe","Stl":
         if !recipe_keys(object,{"kind","path","root"}) { return result,false }
         path,is_path:=object["path"].(string); if !is_path { return result,false }; source.kind=.Recipe; source.path=path
+        if kind=="Stl" { source.kind=.Stl }
         if value,present:=object["root"]; present { root,is_root:=value.(string); if !is_root { return result,false }; switch root {
             case "resource": source.root=.Resource
             case "project": source.root=.Project
+            case "file": source.root=.File
             case: return result,false
             } }
     case "Geometry":

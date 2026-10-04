@@ -1,7 +1,9 @@
 # Odin agent and application authoring
 
-`odin/agent` builds on the existing Odin ECS/editor ownership. The remaining
-agent/application migration is tracked in [TODO](../TODO.md#odin-port).
+`odin/agent` implements typed scene calls, the shared mailbox, MCP transports and
+external-host connection over Odin ECS/editor ownership. The current editor is
+`odin/katla`; [agent authoring](agent-authoring.md) and [shared viewport](shared-editor-view.md)
+describe its operating contract. [TODO](../TODO.md) records unresolved work.
 
 ## Scene calls, context and admission
 
@@ -41,26 +43,28 @@ with `agent_response_destroy`, which frees both the correlation string and resul
 using captured allocators. Harness destruction owns all remaining queued requests
 and unread responses.
 
-The CPU tool names are `spawn_entity`, `destroy_entity`, `duplicate_entity`,
+The generic scene tool names include `spawn_entity`, `destroy_entity`, `duplicate_entity`,
 `set_field`, `query_entities`, `list_available_components`, `add_component`,
 `remove_component` and `get_component_attributes`. All reject unknown fields.
 Entity IDs are decimal strings, including IDs larger than JavaScript's exact
 integer range. Overflow, signs, whitespace and numeric JSON IDs are rejected.
 Spawns accept `name` and finite three-element `position`, `rotation` and `scale`
 arrays; scale defaults to one. Application services create canonical SceneName,
-SceneTransform and persistent SceneKey components; rotation is XYZ Euler radians
-composed as Qz*Qy*Qx. Query limits default to 256 and must be 1–256 when supplied.
+SceneTransform and persistent SceneKey components. Public spawn rotation is XYZ
+Euler degrees, converted once to radians and composed as Qz*Qy*Qx. Query limits
+default to 64; omitted/null uses that default and unsigned values clamp to 1–256.
 Duplicate offsets, shapes and parenting are not silently ignored.
 
 The application owner explicitly installs `authoring_services_init` and confined
 asset roots. Typed `material`, `animation`, `simulation`, `behavior`, `trigger`,
 `prefab`, `load_scene`, `save_scene`, `search_assets`, `list_resources` and
-`read_resource` calls validate
+`read_resource`, `create_resource` and `write_resource` calls validate
 before admission, then execute on that same owner. The canonical
-`agent.TOOLS_JSON` owns the sorted 20 schemas; `tools_select` copies only named
+`agent.TOOLS_JSON` owns the sorted 26 schemas; `tools_select` copies only named
 schemas supported by a concrete consumer and rejects unknown/duplicate names.
-Mesh/model instantiation loads the actual confined project source, prepares CPU
-geometry before publication and records the canonical owned undo command. Prefab
+Mesh/model instantiation loads the actual confined Resource, Project or explicit
+File source, prepares CPU/native resources before publication and records the
+canonical owned undo command. Prefab
 capture writes a complete subtree with local document keys; removal retains the
 owned subtree for undo. Load prepares a full replacement before publication,
 then clears history referencing the old world. Save publishes an atomic confined
@@ -109,14 +113,16 @@ pre-existing entity. Captured-allocator tracking is empty after teardown:
 odin run odin/examples/agent_mailbox -out:target/odin-agent-mailbox -vet -strict-style
 ```
 
-Native provider HTTP/TLS/SSE, configuration, conversational orchestration and
-cancellable jobs are implemented in [the provider package](../odin/agent/llm/README.md).
-Their local subprocess acceptance covers actual sockets, verified TLS, streaming
-progress, correlated owner-thread tool results and cancellation. This proves
-the transport and application contract; paid-provider/model behavior and the
-complete desktop application remain separate acceptance boundaries.
+The explicit provider library implements HTTP/TLS/SSE, configuration,
+conversational orchestration and cancellable jobs in [the provider package](../odin/agent/llm/README.md).
+Its local subprocess acceptance covers actual sockets, verified TLS, streaming
+progress, correlated owner-thread tool results and cancellation. The canonical
+Co-Creator uses the selected existing external conversation through
+[`odin/agent/host`](../odin/agent/host/README.md); the provider library remains an
+explicit embedding/validation API, not the native editor default. Local fixtures
+do not establish paid-provider behavior or actual desktop conversation attachment.
 
-## Optional MCP transport
+## MCP scene transport
 
 `odin/agent/mcp` handles [MCP 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic)
 through one existing `Agent_Harness`. Its single protocol caller never receives a
@@ -178,8 +184,8 @@ input/output failure terminates the process promptly; it does not wait forever
 for an input thread whose client left stdin open.
 
 ```sh
-odin build odin/mcp_stdio -out:target/katla-odin-mcp -vet -strict-style
-python3 scripts/validate_odin_mcp.py
+python3 scripts/build_katla_odin.py --output target/katla-agent --tests
+python3 scripts/validate_odin_mcp.py --binary target/katla-agent/bin/katla-mcp-stdio
 odin test odin/agent/mcp -all-packages -out:target/odin-mcp-tests -vet -strict-style
 ```
 
@@ -191,10 +197,11 @@ execution, expire its real monotonic deadline and prove its late reply is
 suppressed while the mutation remains undoable. Captured-allocator tests cover
 pending, cancelled, unread and transferred ownership.
 
-This headless scene transport does not yet attach to the running windowed editor,
-publish viewport PNGs or expose camera/selection observation. The existing [private editor attachment](shared-editor-view.md) remains
-a separate migration requirement; this consumer never replaces a live editor's
-scene or claims viewport/GPU acceptance.
+This CPU stdio owner is independent of the running native editor and has no GPU
+viewport. The current [private editor attachment](shared-editor-view.md) uses
+`katla-mcp-proxy` and the native editor's `View_Service`, sharing its scene,
+selection, camera and completed image/ID captures. Protocol fixtures and native
+viewport journeys validate those separate consumers.
 
 ## Material requests and the application owner
 
@@ -242,7 +249,9 @@ commands must validate all targets before mutation, own their state, release it
 using the captured allocator, and remap stored targets after restoration creates
 fresh entity generations. Material undo/redo preflights all targets and changes
 only the surface component, preserving unrelated position/mesh/texture state.
-Scene restoration decodes all component snapshots before touching the world.
+Scene history restoration prepares owned component clones and validates all
+registered references/native participants before publishing. Prepared history does
+not reload a changed source file or replay transient particle queues.
 Successful undo propagates replacement IDs to earlier command targets, so a
 spawn → material edit → destroy chain can be undone without creating extra
 entities. Registered component codecs explicitly own and remap hierarchy, trigger and joint
@@ -257,20 +266,21 @@ odin run odin/examples/material_authoring -out:target/odin-material-authoring -v
 odin test odin/app -all-packages -out:target/odin-app-tests -vet -strict-style
 ```
 
-This is CPU scene authoring acceptance. It does not establish rendered PBR output,
-native material uploads, inspector controls, live dragging, play simulation or
-complete windowed application integration. Those consumers remain in Rust until
-migration and native validation complete.
+This example is CPU scene authoring acceptance. Rendered PBR output, native
+material uploads, inspector gestures and simulation are implemented by the Odin
+application consumers below; their native acceptance is separate evidence from
+this mailbox example.
 
 ## Native application consumer
 
-`app.Assistant` owns provider configuration, conversation and cancellable jobs;
-its host jobs carry only the shared scene mailbox. `app/window` installs native
-Send/Cancel/New conversation controls and material presets/sliders, using the
-common command history for Undo/Redo. Local HTTP/TLS/SSE acceptance covers the
-service and real native panel, including streaming, cancellation and HTTP 429.
-Paid model behavior and pointer capture outside a dragged slider remain separate
-acceptance boundaries.
+`odin/katla` owns the platform loop and mounts the retained `odin/app/editor`
+shell with real document, preferences, assets, inspector, code and audio services.
+The Co-Creator captures a committed viewport and forwards a question to an
+explicitly selected already loaded external conversation. Connection and approval
+ownership are described in [the shared viewport guide](shared-editor-view.md).
+`app.Assistant` remains an explicitly selected provider-library consumer used by
+its examples and local HTTP/TLS/SSE tests; it is not the native editor's default
+conversation owner. Both consumers submit scene actions through the same mailbox.
 
 `app/render.Native_Consumer` prepares actual World `Scene_Mesh` and `Scene_Model`
 components through the canonical WGSL compiler/adapter and Metal/Vulkan APIs.
@@ -289,45 +299,55 @@ and material edits update object buffers without recreating native pipelines.
 Both metallic/roughness and specular/glossiness workflows render through native
 opaque, masked and blended variants. Winding variants follow the determinant of
 the complete node/entity matrix, and tangent handedness follows its reflection.
-Model alpha phases decode the existing display image into an application-owned
-RGBA16-float attachment, blend linear color, and encode once into the native
-UNORM output. Transparent primitives sort by their actual transformed bounds
-in camera depth. Unlit materials ignore non-base properties. Particle phases
-currently follow the encoded UNORM output and blend authored output RGB there;
-this consumer does not establish a common linear/HDR particle composition path. The [GPU particle consumer](particles_odin.md)
-adds simulation and indirect draws to the same accepted scene submission; readonly
-candidate validation rejects unsupported emitter descriptors before publication.
+Scene meshes/models, particles, lighting, transparent phases and editor overlays
+compose in application-owned linear/HDR attachments. The display transform
+encodes once into the native output; scene composition and UI blending do not
+blend authored sRGB values into an already encoded scene. Directional and point
+lights, cascaded directional shadows, environment lighting, grid, outline and
+postprocessing are ordinary render graph consumers. Independent viewport camera,
+color, depth and picking owners support four editor views. Native image and
+same-submission ID readbacks validate the affected Metal and Vulkan paths; see
+[graphics contracts](graphics_core.md), [GPU particles](particles_odin.md) and
+[shared viewport provenance](shared-editor-view.md).
 
 Actual readbacks verify PBR edits, shared gesture/agent undo and redo, empty-scene
-clear/resume, every staged failure/retry and native model animation on both
-backends. Source models include Box, DamagedHelmet, Fox and Tiger. Native window
-acceptance verifies acquire/present, retina resize and retained pre-resize readback.
-Run [the native application validator](../scripts/validate_odin_render.py):
+clear/resume, staged failure/retry and native model animation on both backends.
+Source models include Box, DamagedHelmet, Fox and Tiger. Native window acceptance
+verifies acquire/present, retina resize and retained pre-resize readback. Run
+[the native application validator](../scripts/validate_odin_render.py):
 
 ```sh
 python3 scripts/validate_odin_render.py --native-metal --native-vulkan \
   --native-surface --sanitize --shader-compiler /path/to/katla-shader-compiler \
-  --vulkan-library /path/to/libvulkan.dylib --vulkan-icd /path/to/icd.json
+  --vulkan-library /path/to/libvulkan.dylib --vulkan-icd /path/to/icd.json \
+  --particles --luau-library /path/to/libkatla_luau.dylib \
+  --box3d-library /path/to/libkatla_box3d.dylib
 ```
 
-The validator snapshots real repository resources into its owned output project,
-builds source-pinned cgltf and PNG/JPEG dependencies with matching sanitizer
-runtimes, and retains actual GPU PNG outputs. Add `--particles --runtime-library`
-with the real scene-runtime library for combined Rapier/Luau/GPU acceptance.
-GPU launches retain ASan address checks and Odin allocation tracking while
-excluding external driver process-exit leak reporting; CPU tests keep leak checks. On Darwin, their only leak suppressions name the
-observed external CFPreferences XPC/ObjC initialization stacks
-(`CFPrefsPlistSource` and `CFPrefsSearchListSource`); application/native parser
-allocation leaks remain visible.
+Use matching sanitizer artifacts for a sanitized run. The validator snapshots
+actual repository resources into its owned output project and builds source-pinned
+parser/image dependencies. Combined physics/script/particle acceptance uses the
+direct Luau ABI 2 and Box3D ABI 8 dependencies; no retired Rust scene-runtime
+library is involved. GPU launches retain ASan address checks and Odin allocation
+tracking while excluding external driver process-exit leak reporting. CPU tests
+retain leak checks. On Darwin, narrow external CFPreferences initialization
+suppressions do not suppress application/native-parser allocation leaks.
 
-The persistent native editor installs the real scene/asset services and exposes
-the supported canonical subset: material, query_entities,
-get_component_attributes, search_assets, list_resources, read_resource,
-save_scene, load_scene and prefab. Its material selection follows authored scene
-keys after generation replacement and disables material controls when no drawable
-is selected. Provider tools and native controls share the same undo/redo history.
-Remaining complete desktop parity, shadows and point lights retain separate
-migration and native acceptance requirements.
+The persistent native editor installs all current tools from
+[`odin/agent/tools.json`](../odin/agent/tools.json), including hierarchy, generic
+component edits, primitives/models, materials, resource creation/replacement,
+scene files, prefabs, animation, triggers, behavior, simulation and committed
+viewport actions. External tools and native controls use the same application
+executor, generational reference remapping and shared undo/redo history. Dirty
+document confirmation, code drafts and native preparation precede accepted edits.
+Use [the source-pinned build/launcher](odin_build.md) and [agent authoring
+journeys](agent-authoring.md) to operate the current editor.
+
+Headless native readbacks, local host fixtures and CPU protocol tests prove their
+specified paths. Complete desktop interaction still requires the actual OS-input
+journeys and their receipts; a compiled shell or screenshot alone does not prove
+all editor flows. Existing desktop conversation attachment and paid-provider
+behavior remain separate host acceptance boundaries.
 
 ## Validation
 
@@ -339,6 +359,7 @@ confined asset reads and exact prepared revision undo. The MCP acceptance script
 uses real process pipes, instantiates a disk mesh, creates/inspects a trigger and
 verifies recovery, EOF draining and output failure. Native Metal/Vulkan render
 acceptance is tracked separately in [graphics](gfx_odin.md); it is not inferred
-from these CPU or provider tests. Rust reference all-target check/Clippy, fmt and
-complete agent/ECS tests remain separate migration evidence. Complete Rust
-consumer removal requires the remaining renderer and desktop application parity.
+from CPU or local provider fixtures. The canonical build supplies pinned native
+parser, image, font, physics and script dependencies. Historical Rust comparison
+results describe migration evidence; the current scene/editor operating path and
+its acceptance use the Odin consumers.

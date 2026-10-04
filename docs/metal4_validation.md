@@ -1,58 +1,100 @@
-# Metal 4 delivery validation
+# Odin native GPU validation
 
-The graphics batch covers issues #31, #32, #33, #35, #36, #53, #54, #55 and #58. The ECS redesign in #138 was delivered first. This report records physical Metal validation and actual Vulkan execution, rather than inferring GPU behavior from compilation.
+Validation runs canonical Odin graph and application consumers. Superseded Rust renderer measurements do not establish this implementation's behavior or performance. Current contracts are [Metal backend](metal_backend.md), [graphics ownership](graphics_core.md), [UI/picking](odin-ui-rendering.md) and [shader reload](odin-shader-reload.md).
 
-## Native acceptance
+## Hardware boundaries
 
-Local Metal runs used Apple M5 (10 CPU and GPU cores, 24 GiB), macOS 27.0 build 26A428, with `MTL_DEBUG_LAYER=1` and `METAL_DEVICE_WRAPPER_TYPE=1` set before process launch. CI targets the explicitly supported `macos-26` runner. Its hosted virtual GPU was observed to lack `MTLGPUFamilyMetal4` support; CI explicitly reports native acceptance BLOCKED on such devices, exercises typed rejection, and retains all 72 Metal CPU/reflection/plan tests alongside the portable graph tests. The portable selection contains 628 runnable tests and nine already ignored Vulkan hardware tests; it filters 110 Metal GPU tests, and the rejection test runs separately. The native output/lifetime evidence below comes from physical M5 hardware, not from that virtual GPU.
+Metal requires macOS Apple Silicon with actual Metal 4 support; texture arrays also require argument-buffer Tier 2. The required CI runner is `macos-26`. A hosted GPU lacking Metal 4 produces **BLOCKED** native acceptance while SDK builds and CPU tests still run. Those results do not become GPU passes.
 
-The complete local workspace library suite passed **2,179 tests** (15 ignored). The Metal contract suite passed all **13 scenarios**, and the application passed all **8 interaction checks** with 13 captures.
+Local Odin acceptance used an Apple M5 with Metal 4 and Vulkan 1.3 through MoltenVK, with native validation enabled on both. Local Vulkan paths were `/usr/local/lib/libvulkan.dylib` and `/usr/local/share/vulkan/icd.d/MoltenVK_icd.json`; verify these files for a new run. Linux/Windows native desktop input requires execution on those operating systems. Cross compilation does not prove it. Current application/UI paired GPU harnesses require macOS Apple Silicon; the generic Vulkan harness also builds outside macOS.
 
-Coverage includes direct and indirect WGSL compute with same-pass visibility; animation matrices across queued slots; a small particle pool with actual native array bounds; imported attachments and undefined-content rejection; placement-heap aliasing; immutable mesh, UI and bindless publication; private texture uploads, sampling and readback; asynchronous pipeline replacement; native archive hits; completion-owned timestamp results; and abort without submission. Picking reads the last committed graph attachment and preserves global nonzero instance IDs across instanced draws. The editor interaction test selects the exact expected object and exercises hierarchy scrolling, preferences, deselection and component changes.
+## Build and CPU acceptance
 
-Linux acceptance used Rust 1.99, Mesa 25 lavapipe and active Khronos synchronization validation in a disposable ARM64 Linux container. The graphics library passed 560 tests (9 ignored), the contract suite passed seven supported scenarios, and both transient aliasing tests passed eight resize cycles with two queued frame slots. The six PBR contract scenarios retain the existing lavapipe driver-crash exclusion; they run on native Metal. Vulkan tests verify that the validation messenger is actually enabled, allocation aliases are physically shared, edge pixels survive resize, and submitted results have the expected extents. Strict production Clippy passed on both platforms.
+From the repository root:
 
-## Reproducible scene observations
+```sh
+python3 scripts/build_katla_odin.py --tests
+python3 scripts/build_katla_odin.py --sanitize --tests
+```
 
-The baseline is commit `40743ce9a565299072b461fe32eb8205559dbc9c`: the delivered ECS implementation with the previous Metal renderer. It was rebuilt separately, using its own shaders. Baseline instrumentation measures entry to native submission, sums all submissions within a frame, and includes the previous global completion wait in the frame duration. Current instrumentation measures completion/residency registration through native queue commit, the exact reused-slot wait, and completed prior-slot GPU timing.
+The builder verifies Odin, builds pinned dependencies from source, packages shader sources and records artifact hashes in `build.json`. Normal/ASan outputs are separate. Native C/C++ instrumentation must match Odin's LLVM major/runtime; the builder selects it. CPU/font/decoder checks retain LeakSanitizer. A documented external CFPreferences suppression, when used by the broader app validator, is limited to its observed initialization stacks and reported by that run.
 
-Both renderers use the default editor scene at 2560 × 1440 for 130 headless frames with API validation. The first five samples are excluded from the summaries. The build profile is development with optimization level 1. Each cache observation is a separate application process; the cold process starts with an empty cache and the warm process uses the resulting archive. There are no pipeline compilations after frame rendering begins.
+## Native core contracts
 
-| Observation | Previous renderer | Metal 4 cold | Metal 4 warm |
-| --- | ---: | ---: | ---: |
-| Whole-frame median | 6.215 ms | 6.986 ms | 6.605 ms |
-| Whole-frame p95 | 7.035 ms | 9.792 ms | 7.997 ms |
-| Aggregate CPU submit median | 11.501 µs | 53.959 µs | 47.875 µs |
-| Reused-slot wait median | Included in frame | 0.387 ms | 0.351 ms |
-| Completed prior-slot GPU median | Not instrumented | 3.926 ms | 3.931 ms |
-| Native submissions per steady frame | 3 | 1 | 1 |
-| Process launch to frame-loop entry | Not instrumented | 2.755 s | 0.360 s |
-| Native archive hit / miss counters | Not instrumented | 7 / 62 | 69 / 0 |
+Metal alone:
 
+```sh
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
+  python3 scripts/validate_odin_gpu.py --native-metal --sanitize
+```
 
+Both backends on the local MoltenVK host:
 
-The warm sequence has median CPU lead/in-flight depth 1 and maximum 2. Native stress tests queue three distinct slots before reuse and validate their independent contents.
+```sh
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
+  python3 scripts/validate_odin_gpu.py \
+  --native-metal --native-vulkan --sanitize \
+  --vulkan-library /usr/local/lib/libvulkan.dylib \
+  --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json \
+  --glslc /usr/local/bin/glslc
+```
 
-Raw samples are in [baseline](benchmarks/metal4-frame-baseline.csv), [cold](benchmarks/metal4-frame-cold.csv), and [warm](benchmarks/metal4-frame-warm.csv). [Environment and provenance](benchmarks/metal4-environment.json) records source and binary hashes, capture hashes, compiler/OS details, validation flags, instrumentation scope and exact compared image regions.
+`--native-surface` adds actual Cocoa Vulkan acquisition, resize and presentation. Use a desktop session with the native window slot available. Explicit dependency paths must name existing files. `--skip-shader-checks` requires an already verified compiler target and omits those checks; it is not a cold-build receipt.
 
-The baseline makes three native submissions per steady frame; the new path makes one. CPU submission cost can increase with explicit resource ownership, residency and feedback registration. The final observed whole-frame duration also increased relative to this baseline; neither throughput nor lower CPU submission cost is an acceptance claim. These short measurements share a busy host, use validation, and contain animation driven by wall-clock time. They demonstrate the changed execution behavior and observed durations; they do not establish an isolated Metal 4 speedup or a production FPS guarantee.
+Core fixtures read actual compute/color/depth/stencil results. They verify direct/indirect work, mesh commands, stencil/blend/scissor/wireframe, formats, pitched D2/D3 copies, mip generation, GPU-produced indirect commands, mixed physical allocation aliases, queued slot ownership, discard, retained source-bound readback, fixed sampled/storage arrays and stale resource rejection. Reverse-Z pairs clear 1/Less with clear 0/Greater, draws farther geometry after nearer geometry, and checks actual nearest color/depth and untouched-clear pixels. Vulkan validation must report zero errors. Typed feature rejection is a capability boundary, not rendered-output acceptance.
 
-## Image comparison
+On a Vulkan device with limited descriptor indexing, first run the same validator
+with `--vulkan-baseline`. This still executes every non-array GPU contract;
+only sampled-array4096 and storage-array2 proofs are excluded. The separate
+`--vulkan-probe-array-capabilities` invocation builds the native fixture and
+prints actual feature/descriptor limits as JSON. Exit 0 permits the complete
+array suite; exit 77 means only that array breadth is **BLOCKED**. Missing
+devices, loader failure, initialization errors or validation failure return
+other failure codes and must fail the job. The probe is capability evidence,
+not rendered-output acceptance. CI must run the actual baseline even when the
+array probe reports Unsupported.
 
-The baseline and current warm process use identical saved editor preferences. Eight checked RGB regions cover static materials, shadows, ground, sky, top toolbar, hierarchy and inspector. All eight regions have zero mean and maximum RGB error.
+## Application, UI and picking
 
-Animated particle overlays, animated poses and the footer's performance values are excluded because they depend on elapsed time. Native upload tests separately prove texel identity, format/subresource handling and direct/bindless sampling after shared versus staged private publication. Windowed limited-frame execution and the complete editor interaction sequence also run under Metal API validation.
+The scene/model validator builds dependencies and exercises real consumer graphs:
 
-## Follow-up scope
+```sh
+python3 scripts/validate_odin_render.py \
+  --native-metal --native-vulkan --native-surface --sanitize \
+  --vulkan-library /usr/local/lib/libvulkan.dylib \
+  --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json
+```
 
-At this delivery, #37 still tracked joining native residency/binding/feedback information into the portable graph-capture bundle, and #93 tracked separating the graphics core from scene/editor features. Neither was counted in this ten-issue batch. The subsequent implementation is described in [graphics core ownership](graphics_core.md) and [render-graph capture](render_graph_capture.md).
+The optional particle scenario requires source-built Luau/Box3D libraries; consult `--help` for `--particles`, `--luau-library` and `--box3d-library`. Selected consumer fixtures are distinct from complete owner-loop acceptance.
 
-## Graphics-core and capture follow-up acceptance
+After the canonical ASan build, reuse its exact dependencies for UI/font/picking:
 
-The follow-up above `144aefd452fea6e342b23f20fb8c20b5847f5612` implements #93 and #37 and cleans ECS/gfx responsibilities. These observations are separate from the preceding ten-issue measurements. Rust 1.99 strict Clippy passes ECS, gfx and app across all targets and features. The full all-feature workspace library suite passes 2,164 tests (23 ignored), and the native Metal contract suite passes all 13 scenarios. Two native app builder tests prove that GraphOnly needs no fonts or scene initialization and that the default ambient-occlusion texture is independent of the font atlas. ECS additionally passes integration/doctests and 48 focused Miri tests.
+```sh
+python3 scripts/validate_odin_ui_gpu.py --sanitize --backend both \
+  --shader-compiler target/katla-odin/darwin-arm64/asan/shader-compiler/debug/katla-shader-compiler \
+  --font-library target/katla-odin/darwin-arm64/asan/deps/fonts/libkatla_font_native.dylib \
+  --image-library target/katla-odin/darwin-arm64/asan/deps/image/libkatla_image.a \
+  --vulkan-loader /usr/local/lib/libvulkan.dylib \
+  --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json
+```
 
-Native Metal regressions cover foreign-renderer acquisition tokens, discarded command allocator reuse, colorless warmup, compute consumers, passive capture equivalence and draining retained readback tickets. Native Vulkan tests cover submission rejection/recovery, post-submit surface outcomes, completed-buffer ownership across fence reuse, headless resize, retained source tickets, actual compute ranges, resource handles and aliasing. The final Linux graphics library passes 553 tests (15 ignored), the supported contract selection passes seven scenarios, and 35 public native resource/render fixtures pass. The existing six lavapipe PBR driver-crash exclusions remain; all corresponding Metal scenarios pass.
+Its retained-context/provider path verifies Swedish preedit/commit, Unicode shaping/fallback, grapheme deletion, visual bidi navigation, actual glyph coverage, clipping, popup order and image batching. Readbacks verify linear alpha, sRGB passthrough, decoded BMP/TIFF sampling, foremost mapped R32Uint IDs and alpha masking. Paired color/ID snapshots keep their submission/entity map across pending work, resize and teardown. This does not prove OS-generated IME or live agent transport.
 
-The final editor executes 130 headless and windowed frames with both Metal validation environment flags. All eight UI interaction checks pass, including exact GPU selection, deselection, theme controls and component addition/removal. The final image has exact RGB equality with the corrected intermediate build in all eight measured static regions. Against the preceding delivery, sky and static editor regions remain identical; material and ground regions intentionally differ because the old default AO index selected the font atlas. The app now supplies an explicit white AO texture, verified by the native builder regression. No throughput or performance improvement is claimed. [Follow-up provenance](benchmarks/graphics-core-environment.json) records source/binary/image hashes, region differences, commands and local receipts.
+Launch the canonical editor through its verified builder/launcher:
 
-Hosted macos-26 native GPU acceptance remains capability-dependent. A successful portable CI job on a virtual device without Metal 4 does not replace the physical M5 acceptance above.
+```sh
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
+  python3 scripts/run_katla_odin.py --sanitize --backend metal -- \
+  --frames 100 --preferences target/native-editor/preferences \
+  --screenshot target/native-editor/editor.png
+```
+
+For Vulkan choose `--backend vulkan --vulkan-loader <existing-loader>` before `--`, and set `VK_ICD_FILENAMES`. `--headless` after `--` selects the actual window-free owner loop. A retained PNG alone does not prove desktop input, clean-close recovery, agent attachment or editing operations; each requires the actual editor/endpoint journey.
+
+## Reproducible receipts
+
+Record exact source/index tree, build manifest, compiler/dependency identity, device/driver/OS, commands, validation flags, exit codes and selected scenarios. Preserve readback hashes/comparisons and lifetime assertions. Report **PASS**, **FAIL** or **BLOCKED** per requested platform/path, including unexecuted Windows/Linux desktop acceptance.
+
+Native GPU processes retain ASan address checks and Odin allocation tracking but use the explicit external CF/ObjC/driver process-exit leak boundary `ASAN_OPTIONS=detect_leaks=0`. CPU-only runs retain `detect_leaks=1`; do not apply the GPU boundary to font, decoder or shader-worker ownership tests. The focused source-reload harness verifies old pending pipelines, failed WGSL/native rejection and repair through exact GPU pixels. Production aggregate acceptance must additionally cover four consumers and future scene/model rebuilding.
+
+Current CI runs Metal core contracts and limited editor frames when its capability probe succeeds, plus generic Vulkan contracts on Linux. Separate UI/picking and complete editor interaction receipts remain distinct from those jobs. Correctness fixtures and the superseded renderer's CSVs establish no performance or 60-FPS guarantee.

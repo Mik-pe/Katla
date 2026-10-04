@@ -15,7 +15,7 @@ model_center_pixel :: proc(data:^gfx.Readback_Data,x,y:int)->[4]int {
     offset:=u64(y)*data.row_pitch+u64(x)*4
     return {int(data.bytes[offset]),int(data.bytes[offset+1]),int(data.bytes[offset+2]),int(data.bytes[offset+3])}
 }
-exercise_model_correctness :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),descriptor:gfx.Graphics_Desc,config:^render.Model_Config(R),backend,output,resource_path:string) {
+exercise_model_correctness :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),descriptor:render.Scene_Pipelines,config:^render.Model_Config(R),backend,output,resource_path:string) {
     for path in ([]string{"models/MirrorNormal.gltf","models/UnlitBlend.gltf","models/TangentUV.gltf","models/BlendDepth.gltf"}) {
         owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
         assert(app.authoring_services_init(&owner)==.None)
@@ -25,6 +25,7 @@ exercise_model_correctness :: proc(renderer:^$R,operations:render.GPU_Ops(R),cap
         consumer:render.Native_Consumer(R)
         assert(render.native_consumer_init(&consumer,&owner,renderer,operations,descriptor,3,256,256,models=config)=={})
         defer { assert(render.native_consumer_destroy(&consumer)==.None) }
+        consumer.active.feature_settings.sky=false; consumer.active.feature_settings.grid=false; consumer.active.feature_settings.postprocess={1,.Linear}
         camera:=render.camera_default(); camera.position={0,0,4}
         frame,frame_error:=render.frame_data(camera,256,256,backend=="vulkan"); assert(frame_error==.None)
         before:=model_pixels(&consumer,capture,frame); defer gfx.readback_data_destroy(&before)
@@ -47,8 +48,7 @@ exercise_model_correctness :: proc(renderer:^$R,operations:render.GPU_Ops(R),cap
             mirrored_path:=fmt.aprintf("%s-MirrorNormal-reflected.png",output); defer delete(mirrored_path); save_pixels(&mirrored,mirrored_path)
             fmt.println("Native mirrored entity/node winding and tangent handedness PASS:",backend,center,actual)
         } else if path=="models/UnlitBlend.gltf" {
-            clear:=[3]f32{9.0/255,10.0/255,13.0/255}
-            background:=km.color_to_array(km.color_to_linear({clear[0],clear[1],clear[2],1}))
+            background:=km.Vec4{0.035,0.04,0.05,1}
             encoded:=km.color_to_array(km.color_to_srgb(km.color_from_array(background*0.5+km.Vec4{0.25,0.25,0.25,0.5})))
             for channel in 0..<3 {
                 expected:=encoded[channel]*255
@@ -62,7 +62,7 @@ exercise_model_correctness :: proc(renderer:^$R,operations:render.GPU_Ops(R),cap
             fmt.println("Native actual UV1 transformed generated tangent and retained authored tangent PASS:",backend,left,right)
         } else {
             assert(len(consumer.active.models.order)==2 && consumer.active.models.order[0]==1 && consumer.active.models.order[1]==0,"same-node transparent primitives must sort by actual camera-space bounds")
-            background:=km.color_to_array(km.color_to_linear({9.0/255,10.0/255,13.0/255,1}))
+            background:=km.Vec4{0.035,0.04,0.05,1}
             encoded:=km.color_to_array(km.color_to_srgb(km.color_from_array(background*0.25+km.Vec4{0.5,0,0.25,0.75})))
             for channel in 0..<3 { assert(abs(f32(center[channel])-encoded[channel]*255)<1.5,"transparent far-blue then near-red must compose in camera-depth order in linear color") }
             fmt.println("Native same-node primitive bounds camera-depth ordering and overlapping linear blend PASS:",backend,center)

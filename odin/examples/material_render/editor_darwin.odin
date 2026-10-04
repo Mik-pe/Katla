@@ -95,7 +95,7 @@ editor_window_render :: proc(ui:^Editor_Window($R),capture_pixels:=false)->gfx.R
     if render_error!={} { ui.surface.abort(ui.native.renderer,target); ui.native.operations.abort(ui.native.renderer,token); fmt.println(render_error); assert(false) }
     source:gfx.Texture_Source; ticket:gfx.Readback_Ticket
     if capture_pixels {
-        source,surface_error=ui.capture.source(ui.native.renderer,submission,ui.native.graph.color); assert(surface_error==.None)
+        source,surface_error=ui.capture.source(ui.native.renderer,submission,ui.native.graph.output); assert(surface_error==.None)
         ticket,surface_error=ui.capture.queue(ui.native.renderer,source,{width=source.desc.width,height=source.desc.height,aspect=.Color,depth=1}); assert(surface_error==.None)
     }
     outcome,present_error:=ui.surface.present(ui.native.renderer,target,submission)
@@ -188,7 +188,7 @@ vulkan_assistant_event :: proc(data:rawptr,action:window.Assistant_Action,prompt
 metal_control_event :: proc(data:rawptr,event:window.Control_Event) { editor_control_event(cast(^Editor_Window(metal.Renderer))data,event) }
 vulkan_control_event :: proc(data:rawptr,event:window.Control_Event) { editor_control_event(cast(^Editor_Window(vulkan.Renderer))data,event) }
 
-exercise_editor :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),surface:Surface_Ops(R),descriptor:gfx.Graphics_Desc,compiler:^shader.Compiler,model_ops:render.Model_GPU_Ops(R),particle_ops:render.Particle_GPU_Ops(R),backend,output,resource_path:string,callback:proc(rawptr,window.Control_Event),assistant_callback:proc(rawptr,window.Assistant_Action,string)) {
+exercise_editor :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),surface:Surface_Ops(R),descriptor:render.Scene_Pipelines,compiler:^shader.Compiler,model_ops:render.Model_GPU_Ops(R),particle_ops:render.Particle_GPU_Ops(R),backend,output,resource_path:string,callback:proc(rawptr,window.Control_Event),assistant_callback:proc(rawptr,window.Assistant_Action,string)) {
     native_window:window.Window; assert(window.window_create(&native_window,"Katla · Material scene",680,440)==.None); defer window.window_destroy(&native_window)
     initial:=window.window_poll(&native_window)
     authoring:app.Authoring; app.authoring_init(&authoring); defer app.authoring_destroy(&authoring); assert(app.authoring_services_init(&authoring)==.None)
@@ -201,11 +201,11 @@ exercise_editor :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Captur
         ecs.spawn(&authoring.world,struct { mesh:app.Scene_Mesh,transform:app.Scene_Transform, surface:app.Surface_Material,key:app.Scene_Key }{meshes[1],{km.transform(position={0.65,0,0},scale={1.4,1.4,1.4})},{km.color_to_linear({0.08,0.2,0.85,1}),true,0,0.4,1},{2}}),
     }
     ecs.get_resource_mut(&authoring.world,app.Scene_Identity).next_entity_id=3
-    model_shader,model_error:=render.model_shader_compile(compiler,descriptor.colors[0].format); assert(model_error==.None); defer render.model_shader_destroy(&model_shader)
+    model_shader,model_error:=render.model_shader_compile(compiler,descriptor.output_format); assert(model_error==.None); defer render.model_shader_destroy(&model_shader)
     models:=render.Model_Config(R){&model_shader,model_ops}
     consumer:render.Native_Consumer(R); assert(render.native_consumer_init(&consumer,&authoring,renderer,operations,descriptor,3,initial.width,initial.height,models=&models)=={})
     particles:render.Particle_Consumer(R)
-    particle_error,particle_shader_error:=render.particle_consumer_init(&particles,&authoring,renderer,particle_ops,compiler,descriptor.colors[0].format,4096,64,3)
+    particle_error,particle_shader_error:=render.particle_consumer_init(&particles,&authoring,renderer,particle_ops,compiler,descriptor.surface.colors[0].format,4096,64,3)
     assert(particle_error=={} && particle_shader_error==.None); defer { assert(render.native_consumer_destroy(&consumer)==.None); assert(render.particle_consumer_destroy(&particles)==.None) }
     assert(render.native_consumer_compose(&consumer,render.particle_composition(&particles))=={})
     assert(surface.attach(renderer,{view=window.window_view(&native_window),width=initial.width,height=initial.height})==.None); defer { assert(surface.detach(renderer)==.None) }

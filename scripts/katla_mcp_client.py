@@ -1,4 +1,4 @@
-"""Small JSONL MCP client for an existing socket or an isolated stdio editor."""
+"""Bounded JSONL MCP client for the canonical Odin scene owner or its proxy."""
 import base64
 import json
 import os
@@ -7,6 +7,11 @@ import select
 import socket
 import subprocess
 import time
+
+META = {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {"name": "katla-authoring", "version": "1"}}
+MAX_REPLY_BYTES = 32 << 20
 
 
 class Client:
@@ -33,10 +38,8 @@ class Client:
         else:
             raise ValueError('Choose an existing socket or explicit stdio command')
         try:
-            self.info = self.rpc('initialize', {
-                'protocolVersion': '2024-11-05', 'capabilities': {},
-                'clientInfo': {'name': 'katla-shared-view-validation', 'version': '1'}})
-            self.write({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
+            self.info = self.rpc('server/discover', {})
+            assert self.info['supportedVersions'] == ['2026-07-28'], self.info
             self.tools = self.rpc('tools/list', {})['tools']
             assert any(t['name'] == 'editor_view' for t in self.tools)
         except BaseException:
@@ -56,6 +59,8 @@ class Client:
             if not chunk:
                 raise ConnectionError('Editor protocol disconnected (EOF)')
             self.buffer.extend(chunk)
+            if len(self.buffer) > MAX_REPLY_BYTES:
+                raise ValueError('Editor reply exceeds the 32 MiB transport bound')
         line, _, rest = self.buffer.partition(b'\n')
         self.buffer = bytearray(rest)
         return json.loads(line)
@@ -63,7 +68,8 @@ class Client:
     def rpc(self, method, params):
         self.sequence += 1
         request_id = self.sequence
-        self.write({'jsonrpc': '2.0', 'id': request_id, 'method': method, 'params': params})
+        self.write({'jsonrpc': '2.0', 'id': request_id, 'method': method,
+                    'params': {**params, '_meta': META}})
         deadline = time.monotonic() + 20
         while True:
             message = self.read(deadline)
@@ -75,24 +81,27 @@ class Client:
         result = self.rpc('tools/call', {'name': name, 'arguments': arguments})
         if not allow_error:
             assert not result.get('isError', False), result
-        text = next(c['text'] for c in result['content'] if c['type'] == 'text')
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            data = {'error': text}
-        if isinstance(data, dict) and 'success' in data:
-            if not allow_error:
-                assert data['success'], data
-            data = data.get('data', data)
-        return data, result
+        if result.get('isError', False):
+            text = next(c['text'] for c in result['content'] if c['type'] == 'text')
+            return {'error': text}, result
+        return result['structuredContent'], result
+
+    def data(self, name, arguments):
+        """Return application data; tool() retains the canonical entity_ids envelope."""
+        return self.tool(name, arguments)[0]['data']
 
     def view(self, action='observe', output=None, **kwargs):
         data, result = self.tool('editor_view', {'action': action, **kwargs})
-        assert 'submission' in data and data['returned_at_frame'] >= data['frame'], data
+        assert all(isinstance(data[key], str) and data[key].isascii()
+                   and data[key].isdecimal() for key in ('frame_id', 'capture_serial', 'submission')), data
+        assert data['gpu_provenance']['submission_id'] == data['submission'], data
         image = next(c for c in result['content'] if c['type'] == 'image')
         assert image['mimeType'] == 'image/png'
         png = base64.b64decode(image['data'], validate=True)
-        assert png.startswith(b'\x89PNG\r\n\x1a\n')
+        assert len(png) >= 33 and png[:8] == b'\x89PNG\r\n\x1a\n' and png[12:16] == b'IHDR'
+        dimensions = [int.from_bytes(png[16:20]), int.from_bytes(png[20:24])]
+        assert dimensions == data['image_size'] == [data['width'], data['height']], data
+        assert 'image_png_base64' not in data
         if output:
             output = Path(output)
             output.parent.mkdir(parents=True, exist_ok=True)

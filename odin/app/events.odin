@@ -14,7 +14,7 @@ Trigger_Rules :: struct { rules:[]scene.Trigger_Rule `inspect:"skip"`,fired:[]bo
 /// Current native overlap identities; the event source remains the completed physics step.
 Trigger_Volume :: struct { overlapping:[dynamic]ecs.Entity_Id `inspect:"skip"` }
 /// A named event contains generational references usable by lossless Luau entity userdata.
-Script_Signal :: struct { name:string,trigger,other:ecs.Entity_Id }
+Script_Signal :: struct { name:string,trigger,other:ecs.Entity_Id,animation_clip:string,animation_loop_count:u32,has_animation:bool }
 Script_Signals :: struct { pending:[dynamic]Script_Signal }
 @(private="package")
 trigger_rules_destroy :: proc(value:rawptr) {
@@ -42,7 +42,7 @@ trigger_volume_destroy :: proc(value:rawptr) { volume:=cast(^Trigger_Volume)valu
 @(private="package")
 trigger_volume_clone :: proc(dst,src:rawptr) { target:=cast(^Trigger_Volume)dst; source:=cast(^Trigger_Volume)src; target.overlapping=slice.clone_to_dynamic(source.overlapping[:]) }
 @(private="package")
-script_signals_destroy :: proc(value:rawptr) { signals:=cast(^Script_Signals)value; for signal in signals.pending { delete(signal.name) }; delete(signals.pending); signals^={} }
+script_signals_destroy :: proc(value:rawptr) { signals:=cast(^Script_Signals)value; for signal in signals.pending { delete(signal.name); delete(signal.animation_clip) }; delete(signals.pending); signals^={} }
 /// Registers explicit owned rule/reference codecs and the deferred signal owner.
 events_register :: proc(app:^Authoring) {
     editor.editor_register(&app.world,&app.registry,"TriggerRules",Trigger_Rules{},ecs.Value_Ops{trigger_rules_destroy,trigger_rules_clone},trigger_rules_map,spawn_default=false)
@@ -84,7 +84,7 @@ events_reset :: proc(app:^Authoring) {
         if rules:=ecs.get_component_mut(&app.world,entity,Trigger_Rules); rules!=nil { for &fired in rules.fired { fired=false }; for error in rules.last_errors { delete(error) }; clear(&rules.last_errors) }
         if volume:=ecs.get_component_mut(&app.world,entity,Trigger_Volume); volume!=nil { clear(&volume.overlapping) }
     }
-    if signals:=ecs.get_resource_mut(&app.world,Script_Signals); signals!=nil { for signal in signals.pending { delete(signal.name) }; clear(&signals.pending) }
+    if signals:=ecs.get_resource_mut(&app.world,Script_Signals); signals!=nil { for signal in signals.pending { delete(signal.name); delete(signal.animation_clip) }; clear(&signals.pending) }
 }
 /// Executes all matching actions in order after native physics, retaining per-action failures.
 events_dispatch :: proc(app:^Authoring,event:Physics_Event) {
@@ -106,7 +106,7 @@ events_dispatch :: proc(app:^Authoring,event:Physics_Event) {
         case .Set_Particles_Active: err=particle_set_active(&app.world,entity,action.active)
         case .Emit:
             signals:=ecs.get_resource_mut(&app.world,Script_Signals)
-            if signals==nil || len(signals.pending)>=4096 { err=.Invalid_Operation } else { append(&signals.pending,Script_Signal{strings.clone(action.name),event.trigger,event.other}) }
+            if signals==nil || len(signals.pending)>=4096 { err=.Invalid_Operation } else { append(&signals.pending,Script_Signal{name=strings.clone(action.name),trigger=event.trigger,other=event.other}) }
         }
         if err!=.None { append(&rules.last_errors,fmt.aprintf("%s: %v",action.clip if action.kind==.Play_Animation else "trigger action",err)) }
     }
@@ -145,10 +145,11 @@ trigger_wire_rules :: proc(rules:[]scene.Trigger_Rule)->json.Value {
         else { output[i]=trigger_json_value(struct {event:string,once:bool,actions:json.Array}{phase,rule.once,actions}) }
     }; return output
 }
-/// Executes fully preflighted trigger authoring through the same reference-aware entity undo.
+/// Admits owned trigger proposals through component-delta history and native scene preparation.
 trigger_execute :: proc(app:^Authoring,op:scene.Trigger_Op)->(editor.Tool_Result,editor.Undo_Group) {
     context.allocator=app.world.allocator; w:=&app.world; result:=error_result(w,.None); undo:editor.Undo_Group
     if op.action!=.Inspect && app.mode!=.Editing { result.error=.Editing_Required; return result,undo }
+    if op.action!=.Inspect { if error:=authoring_before_mutation(app); error!=.None { result.error=error; return result,undo } }
     entity:=op.entity
     if op.action!=.Create_Box {
         if !ecs.entity_exists(w,entity) { result.error=.Entity_Not_Found; return result,undo }; _,hidden:=ecs.get_component(w,entity,Editor_Hidden); if hidden { result.error=.Protected_Entity; return result,undo }
@@ -160,19 +161,31 @@ trigger_execute :: proc(app:^Authoring,op:scene.Trigger_Op)->(editor.Tool_Result
         for size in op.half_extents { if !finite_nonnegative(size) || size<=0 { result.error=.Invalid_Field_Value; return result,undo } }
         ids:=ecs.entity_ids(w); defer delete(ids); for id in ids { name,exists:=ecs.get_component(w,id,Scene_Name); if exists && name.name==op.name { result.error=.Invalid_Operation; return result,undo } }
         reference_error:=trigger_validate_references(app,op.rules,0,false); if reference_error!=.None { result.error=reference_error; return result,undo }
-        edit,edit_error:=editor.entity_edit_begin(w,&app.registry,0,false); if edit_error!=.None { result.error=edit_error; return result,undo }; defer editor.entity_edit_destroy(&edit)
+        identity:=ecs.get_resource_mut(w,Scene_Identity); if identity==nil || identity.next_entity_id==0 || identity.next_entity_id==max(u64) { result.error=.Invalid_Operation; return result,undo }
         owned_rules:Trigger_Rules; source:=Trigger_Rules{rules=op.rules}; trigger_rules_clone(&owned_rules,&source)
         owned_rules.fired=make([]bool,len(op.rules),w.allocator)
-        entity=ecs.create_entity(w); ecs.add_component(w,entity,Scene_Name{strings.clone(op.name)}); ecs.add_component(w,entity,Scene_Transform{km.transform(position=km.Vec3(op.position))})
-        ecs.add_component(w,entity,physics_body(Physics_Shape{kind=.Box,half_extents=op.half_extents},.Kinematic,true)); ecs.add_component(w,entity,Trigger_Volume{}); ecs.add_component(w,entity,owned_rules)
-        undo=editor.entity_edit_finish(&edit,w,entity)
+        proposal:=ecs.create_entity(w); ecs.add_component(w,proposal,Scene_Key{identity.next_entity_id})
+        ecs.add_component(w,proposal,Scene_Name{strings.clone(op.name)}); ecs.add_component(w,proposal,Scene_Transform{km.transform(position=km.Vec3(op.position))})
+        ecs.add_component(w,proposal,physics_body(Physics_Shape{kind=.Box,half_extents=op.half_extents},.Kinematic,true)); ecs.add_component(w,proposal,Trigger_Volume{}); ecs.add_component(w,proposal,owned_rules)
+        command:=scene_action_command_new(app)
+        append(&command.rows,Scene_Action_Row{entity=proposal,after_exists=true,after=editor.entity_components_capture(w,&app.registry,proposal)})
+        ecs.destroy_entity(w,proposal)
+        undo=scene_action_command_group(command)
+        if error:=editor.redo_group(w,&app.registry,&undo); error!=.None { editor.undo_group_destroy(&undo); result.error=error; return result,undo }
+        entity=undo.entities[0]; identity.next_entity_id+=1
     } else if op.action==.Set_Rules {
         body,has_body:=ecs.get_component(w,entity,Physics_Body); _,has_transform:=ecs.get_component(w,entity,Scene_Transform)
         if !has_body || !body.sensor || !has_transform { result.error=.Component_Not_Found; return result,undo }
         reference_error:=trigger_validate_references(app,op.rules,entity,true); if reference_error!=.None { result.error=reference_error; return result,undo }
-        edit,edit_error:=editor.entity_edit_begin(w,&app.registry,entity,true); if edit_error!=.None { result.error=edit_error; return result,undo }; defer editor.entity_edit_destroy(&edit)
-        owned_rules:Trigger_Rules; source:=Trigger_Rules{rules=op.rules}; trigger_rules_clone(&owned_rules,&source); owned_rules.fired=make([]bool,len(op.rules),w.allocator); ecs.add_component(w,entity,owned_rules)
-        undo=editor.entity_edit_finish(&edit,w,entity)
+        before:=editor.entity_components_capture(w,&app.registry,entity)
+        proposal:=scene_action_proposal_clone(app,before[:])
+        owned_rules:Trigger_Rules; source:=Trigger_Rules{rules=op.rules}; trigger_rules_clone(&owned_rules,&source)
+        owned_rules.fired=make([]bool,len(op.rules),w.allocator); ecs.add_component(w,proposal,owned_rules)
+        after:=editor.entity_components_capture(w,&app.registry,proposal); ecs.destroy_entity(w,proposal)
+        command:=scene_action_command_new(app)
+        append(&command.rows,Scene_Action_Row{entity,true,true,before,after})
+        undo=scene_action_command_group(command)
+        if error:=editor.redo_group(w,&app.registry,&undo); error!=.None { editor.undo_group_destroy(&undo); result.error=error; return result,undo }
     }
     rules:=ecs.get_component_mut(w,entity,Trigger_Rules); volume:=ecs.get_component_mut(w,entity,Trigger_Volume); body,has_body:=ecs.get_component(w,entity,Physics_Body)
     if rules==nil || volume==nil || !has_body { result.error=.Component_Not_Found; return result,undo }

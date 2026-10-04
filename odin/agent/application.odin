@@ -24,6 +24,8 @@ decode_application_call :: proc(call:Tool_Call,allocator:mem.Allocator)->(Decode
         decoded,err:=asset.scene_file_decode(call.name,call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; asset.scene_file_destroy(&decoded)
     case "search_assets","list_resources","read_resource":
         decoded,err:=asset.decode(call.name,call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; asset.destroy(&decoded)
+    case "create_resource","write_resource":
+        decoded,err:=asset.resource_write_decode(call.name,call.arguments,allocator); if err!=.None { return {},.Invalid_JSON if err==.Invalid_JSON else .Invalid_Arguments }; asset.resource_write_destroy(&decoded)
     case: return {},.Unknown_Tool
     }
     bytes:=make([]byte,len(call.arguments),allocator); copy(bytes,call.arguments)

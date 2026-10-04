@@ -26,11 +26,11 @@ scene_name_clone :: proc(dst,src:rawptr) { target:=cast(^Scene_Name)dst; source:
 /// Installs owned label, transform and parent codecs for snapshots and application tools.
 scene_components_register :: proc(app:^Authoring) {
     context.allocator=app.world.allocator
-    editor.editor_register(&app.world,&app.registry,"SceneKey",Scene_Key{},spawn_default=false,duplicate=false)
+    editor.editor_register(&app.world,&app.registry,"SceneKey",Scene_Key{},spawn_default=false,duplicate=false,inspector_add=false,inspector_remove=false)
     if _,exists:=ecs.get_resource(&app.world,Scene_Identity); !exists { ecs.insert_resource(&app.world,Scene_Identity{1}) }
     editor.editor_register(&app.world,&app.registry,"SceneName",Scene_Name{},ecs.Value_Ops{scene_name_destroy,scene_name_clone})
     editor.editor_register(&app.world,&app.registry,"SceneTransform",Scene_Transform{km.TRANSFORM_IDENTITY})
-    editor.editor_register(&app.world,&app.registry,"SceneParent",Scene_Parent{},spawn_default=false)
+    editor.editor_register(&app.world,&app.registry,"SceneParent",Scene_Parent{},spawn_default=false,inspector_add=false,inspector_remove=false)
 }
 
 /// Resolves current locals iteratively and rejects stale parents, missing transforms and cycles.

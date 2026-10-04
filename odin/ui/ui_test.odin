@@ -208,3 +208,13 @@ test_ordered_actions_finish_before_next_click_and_dock_input_identity :: proc(t:
     moves:=actions_drain(&ctx,Dock_Action); defer delete(moves); testing.expect(t,len(moves)==2 && moves[0].kind==.Activate && moves[0].tab==2 && moves[1].kind==.Move && moves[1].tab==2 && moves[1].zone==.Right)
     for action in moves { testing.expect(t,dock_apply(&tree,action)==.None) }; leaf,_,present:=dock_find_tab(&tree,2); testing.expect(t,present && tree.nodes[leaf].tabs[0]==2)
 }
+
+@(test)
+test_control_custom_background_is_single_layer_and_survives_hover :: proc(t:^testing.T) {
+    ctx:Context; context_init(&ctx,fixture_fonts()); defer context_destroy(&ctx)
+    button:=Descriptor{key=1,kind=.Button,has_background=true,background={1,0,0,0.5},has_fixed_bounds=true,fixed_bounds={0,0,100,30}}
+    fixture_frame(&ctx,button,{Pointer_Move{position={10,10}}})
+    count:=0
+    for command in ctx.commands { if draw,present:=command.(Rect_Draw); present && draw.bounds==button.fixed_bounds { count+=1; testing.expect(t,draw.color==button.background) } }
+    testing.expect_value(t,count,1)
+}

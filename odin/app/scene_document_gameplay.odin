@@ -3,7 +3,6 @@ package app
 
 import scene "../agent/scene"
 import agent "../agent"
-import ecs "../ecs"
 import editor "../editor"
 import "core:encoding/json"
 import "core:strings"
@@ -25,16 +24,23 @@ scene_gameplay_u32 :: proc(object:json.Object,name:string,target:^u32)->bool { v
 scene_gameplay_shape :: proc(value:json.Value)->(Physics_Shape,bool) {
     kind,payload,variant_valid:=scene_variant(value); if !variant_valid { return {},false }
     if tuple,is_tuple:=payload.(json.Array); is_tuple && len(tuple)==1 { payload=tuple[0] }
-    shape:Physics_Shape
+    shape:Physics_Shape; transferred:=false; defer { if !transferred { delete(shape.heights) } }
     switch kind {
     case "Box": vector,valid:=recipe_vector(payload,3); if !valid { return {},false }; shape.kind=.Box; copy(shape.half_extents[:],vector[:])
     case "Sphere": radius,valid:=recipe_number(payload); if !valid { return {},false }; shape.kind=.Sphere; shape.radius=radius
     case "Capsule": object,valid:=payload.(json.Object); if !valid || !recipe_keys(object,{"radius","half_height"}) || !scene_gameplay_required(object,{"radius","half_height"}) || !scene_gameplay_number(object,"radius",&shape.radius) || !scene_gameplay_number(object,"half_height",&shape.half_height) { return {},false }; shape.kind=.Capsule
+    case "Heightfield":
+        object,valid:=payload.(json.Object)
+        if !valid || !recipe_keys(object,{"rows","cols","heights"}) || !scene_gameplay_required(object,{"rows","cols","heights"}) || !scene_gameplay_u32(object,"rows",&shape.rows) || !scene_gameplay_u32(object,"cols",&shape.cols) { return {},false }
+        heights,is_heights:=object["heights"].(json.Array)
+        if !is_heights || shape.rows<2 || shape.cols<2 || u64(shape.rows)*u64(shape.cols)>1_000_000 || u64(len(heights))!=u64(shape.rows)*u64(shape.cols) { return {},false }
+        shape.kind=.Heightfield; shape.heights=make([]f32,len(heights))
+        for height_value,i in heights { number,finite:=recipe_number(height_value); if !finite { return {},false }; shape.heights[i]=number }
     case "Trimesh": if payload!=nil { return {},false }; shape.kind=.Trimesh
     case "ConvexHull": if payload!=nil { return {},false }; shape.kind=.ConvexHull
     case: return {},false
     }
-    return shape,physics_body_valid(physics_body(shape))
+    if !physics_body_valid(physics_body(shape)) { return {},false }; transferred=true; return shape,true
 }
 @(private="package")
 scene_gameplay_animation :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value)->editor.Scene_Error {
@@ -68,7 +74,8 @@ scene_gameplay_rules :: proc(app:^Authoring,row:^Scene_Entity,value:json.Value)-
 scene_builtin_components_decode :: proc(app:^Authoring,row:^Scene_Entity,fields:json.Object,origin:string="")->editor.Scene_Error {
     context.allocator=app.world.allocator
     if error:=light_scene_decode(app,row,fields); error!=.None { return error }
-    for name in ([3]string{"perspective","audio_emitter","reverb_zone"}) { if _,present:=scene_gameplay_present(fields,name); present { return .Application_Owned } }
+    if error:=audio_scene_decode(app,row,fields,origin); error!=.None { return error }
+    if error:=perspective_scene_decode(app,row,fields); error!=.None { return error }
     if value,present:=scene_gameplay_present(fields,"animation"); present { if err:=scene_gameplay_animation(app,row,value); err!=.None { return err } }
     if value,present:=scene_gameplay_present(fields,"particle_emitter"); present {
         object,is_object:=value.(json.Object); if !is_object { return .Decode_Failed }
@@ -76,14 +83,20 @@ scene_builtin_components_decode :: proc(app:^Authoring,row:^Scene_Entity,fields:
         if shape,has_shape:=object["shape"]; has_shape { kind,payload,valid:=scene_variant(shape); if !valid || payload!=nil { return .Decode_Failed }; normalized["shape"]=kind }
         descriptor,valid:=particle_decode(normalized,app.world.allocator); if !valid { return .Invalid_Field_Value }; defer delete(descriptor.burst_queue)
         if err:=scene_row_component(app,row,"ParticleEmitter",Particle_Emitter{descriptor}); err!=.None { return err }
+        // Loaded legacy documents may explicitly schedule a burst; disk export owns settings only.
+        if len(descriptor.burst_queue)>0 {
+            entry:=app.registry.entries["ParticleEmitter"]; source:=Particle_Emitter{descriptor}; component:=&row.components[len(row.components)-1]
+            component.owned_entry=entry; component.owned_ops=entry.ops; component.owned_value=editor.editor_clone_value(entry,&source,app.world.allocator); component.wire_hash=scene_wire_hash(component.data)
+        }
     }
     if value,present:=scene_gameplay_present(fields,"script"); present {
         object,is_object:=value.(json.Object); if !is_object || !recipe_keys(object,{"path"}) { return .Decode_Failed }
-        path,root,valid:=scene_asset_path(app,object["path"],origin); if !valid || !strings.has_suffix(path,".luau") { delete(path,app.world.allocator); return .Invalid_Field_Value }; defer delete(path,app.world.allocator)
-        if err:=scene_row_component(app,row,"Script",Script_Component{path=path,root=root}); err!=.None { return err }
+        path,root,valid:=scene_asset_path(app,object["path"],origin); if !valid { delete(path,app.world.allocator); return .Invalid_Field_Value }; defer delete(path,app.world.allocator)
+        normalized,valid_name:=script_source_name(path,root,app.world.allocator); if !valid_name { return .Invalid_Field_Value }; defer delete(normalized,app.world.allocator)
+        if err:=scene_row_component(app,row,"Script",Script_Component{path=normalized,root=root}); err!=.None { return err }
     }
     if value,present:=scene_gameplay_present(fields,"joint"); present { if err:=scene_gameplay_joint_decode(app,row,value); err!=.None { return err } }
-    body:=physics_body(Physics_Shape{kind=.None},.Fixed); body.has_rigid_body=false; has_body,has_shape:=false,false
+    body:=physics_body(Physics_Shape{kind=.None},.Fixed); body.has_rigid_body=false; has_body,has_shape:=false,false; defer delete(body.shape.heights)
     if value,present:=scene_gameplay_present(fields,"rigid_body"); present {
         object,is_object:=value.(json.Object); if !is_object || !recipe_keys(object,{"kind","gravity_scale","ccd_enabled","linear_velocity"}) { return .Decode_Failed }
         kind,payload,valid:=scene_variant(object["kind"]); if !valid || payload!=nil { return .Decode_Failed }
@@ -103,7 +116,7 @@ scene_builtin_components_decode :: proc(app:^Authoring,row:^Scene_Entity,fields:
         object,is_object:=value.(json.Object); if !is_object || !recipe_keys(object,{"layers","mask"}) || !scene_gameplay_required(object,{"layers","mask"}) || !scene_gameplay_u32(object,"layers",&body.layers) || !scene_gameplay_u32(object,"mask",&body.mask) { return .Decode_Failed }; has_body=true; body.has_filter=true
     }
     if value,present:=scene_gameplay_present(fields,"trigger_volume"); present { kind,payload,valid:=scene_variant(value); if !valid || kind!="TriggerVolumeDescriptor" || payload!=nil { return .Decode_Failed }; body.sensor=true; has_body=true; if err:=scene_row_component(app,row,"TriggerVolume",Trigger_Volume{}); err!=.None { return err } }
-    if has_body { if !has_shape && (body.has_material || body.has_filter || body.sensor) { return .Invalid_Operation }; if !physics_body_valid(body) { return .Invalid_Field_Value }; if err:=scene_row_component(app,row,"PhysicsBody",body); err!=.None { return err } }
+    if has_body { if !has_shape && body.sensor { return .Invalid_Operation }; if !physics_body_valid(body) { return .Invalid_Field_Value }; if err:=scene_row_component(app,row,"PhysicsBody",body); err!=.None { return err } }
     if value,present:=scene_gameplay_present(fields,"trigger_rules"); present { if err:=scene_gameplay_rules(app,row,value); err!=.None { return err } }
     if value,present:=scene_gameplay_present(fields,"velocity"); present {
         object,is_object:=value.(json.Object); component:Scene_Velocity
@@ -121,6 +134,7 @@ scene_gameplay_shape_encode :: proc(shape:Physics_Shape)->json.Value {
     case .Box: return trigger_json_value(struct {Box:[3]f32}{shape.half_extents})
     case .Sphere: return trigger_json_value(struct {Sphere:f32}{shape.radius})
     case .Capsule: return trigger_json_value(struct {Capsule:struct {half_height,radius:f32}}{ {shape.half_height,shape.radius} })
+    case .Heightfield: return trigger_json_value(struct {Heightfield:struct {rows,cols:u32,heights:[]f32}}{ {shape.rows,shape.cols,shape.heights} })
     case .Trimesh: return strings.clone("Trimesh")
     case .ConvexHull: return strings.clone("ConvexHull")
     case .None: return nil
@@ -150,16 +164,10 @@ scene_builtin_components_encode :: proc(app:^Authoring,row:Scene_Entity,fields:^
             if descriptor==nil { return .Decode_Failed }; scene_gameplay_store(fields,"animation",descriptor)
         case "ParticleEmitter": descriptor:=particle_document((cast(^Particle_Emitter)value).descriptor); if descriptor==nil { return .Decode_Failed }; scene_gameplay_store(fields,"particle_emitter",descriptor)
         case "Script":
-            script:=(cast(^Script_Component)value)^; path:json.Value
-            if script.root==.Resource { path=trigger_json_value(struct {Resource:string}{script.path}) }
-            else {
-                separator:=strings.last_index_byte(origin,'/'); prefix:=""; if separator>=0 { prefix=origin[:separator+1] }
-                if strings.has_prefix(script.path,prefix) { path=trigger_json_value(struct {Scene:string}{script.path[len(prefix):]}) }
-                else { roots:=ecs.get_resource_mut(&app.world,Asset_Roots); if roots==nil { return .Application_Owned }; absolute:=strings.concatenate({roots.project.path,"/",script.path}); defer delete(absolute); path=trigger_json_value(struct {File:string}{absolute}) }
-            }
+            script:=(cast(^Script_Component)value)^; path,valid:=scene_asset_reference(app,script.path,script.root,origin); if !valid { return .Invalid_Operation }
             descriptor:=trigger_json_value(struct {path:json.Value}{path}); json.destroy_value(path); if descriptor==nil { return .Decode_Failed }; scene_gameplay_store(fields,"script",descriptor)
         case "PhysicsBody":
-            body:=(cast(^Physics_Body)value)^; if !physics_body_valid(body) { return .Invalid_Field_Value }; if !body.has_collider && (body.has_material || body.has_filter || body.sensor) { return .Invalid_Operation }; kind:="Dynamic"; if body.body_type==.Kinematic { kind="Kinematic" } else if body.body_type==.Fixed { kind="Static" }
+            body:=(cast(^Physics_Body)value)^; if !physics_body_valid(body) { return .Invalid_Field_Value }; if !body.has_collider && body.sensor { return .Invalid_Operation }; kind:="Dynamic"; if body.body_type==.Kinematic { kind="Kinematic" } else if body.body_type==.Fixed { kind="Static" }
             if body.has_rigid_body { scene_gameplay_store(fields,"rigid_body",trigger_json_value(struct {kind:string,gravity_scale:f32,ccd_enabled:bool,linear_velocity:[3]f32}{kind,body.gravity_scale,body.ccd,body.linear_velocity})) }
             if body.has_collider { scene_gameplay_store(fields,"collider_shape",scene_gameplay_shape_encode(body.shape)) }
             if body.has_material { scene_gameplay_store(fields,"physics_material",trigger_json_value(struct {friction,restitution,density:f32}{body.friction,body.restitution,body.density})) }

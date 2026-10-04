@@ -8,7 +8,7 @@ import "core:testing"
 test_scene_empty_world_replaces_reads_and_recompiles_without_dummy_work :: proc(t:^testing.T) {
     owner:int
     scene:Scene_Graph
-    testing.expect_value(t,scene_graph_init(&scene,{&owner,0,0},3,2,32,24),Scene_Error.None)
+    testing.expect_value(t,scene_graph_init(&scene,{&owner,0,0},{&owner,1,0},3,2,32,24),Scene_Error.None)
     defer scene_graph_destroy(&scene)
     initial_revision:=scene.graph.revision
     testing.expect_value(t,scene_graph_draws(&scene,nil),gfx.Packet_Error.None)

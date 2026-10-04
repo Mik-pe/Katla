@@ -13,6 +13,7 @@ node_layer :: proc(ctx:^Context,node:^Node)->Layer {
     layer:=node.descriptor.layer; current:=node
     for current!=nil {
         layer=max(layer,current.descriptor.layer)
+        if current.descriptor.dock!=nil && current.descriptor.dock_root!=0 { if _,floating:=dock_floating_index(current.descriptor.dock,current.descriptor.dock_root); floating { layer=max(layer,Layer.Overlay) } }
         if current.descriptor.kind==.Modal { layer=max(layer,Layer.Modal) }
         if current.descriptor.kind==.Context_Menu { layer=max(layer,Layer.Popup) }
         if current.descriptor.kind==.Tooltip { layer=max(layer,Layer.Tooltip) }
@@ -45,21 +46,21 @@ paint_node :: proc(ctx:^Context,node:^Node) {
     if !node_visible(ctx,node) { return }
     d:=node.descriptor; b,clip:=node.bounds,node.clip; fg:=ctx.theme.text; bg:=ctx.theme.control
     if d.has_foreground { fg=d.foreground }; if node.input_disabled { fg=ctx.theme.disabled }
-    if d.has_background { paint_rect(ctx,b,clip,d.background,ctx.theme.radius) }
     hovered:=ctx.hovered==node.id; held:=ctx.captured==node.id
-    if hovered { bg=ctx.theme.hover }; if held || d.selected { bg=ctx.theme.active }
+    if d.has_background { bg=d.background } else { if hovered { bg=ctx.theme.hover }; if held || d.selected { bg=ctx.theme.active } }
     _,label_size:=node_font(ctx,node); label_pos:=Vec2{b.x+ctx.theme.padding,b.y+(b.height-label_size)/2}
     #partial switch d.kind {
     case .Button,.Icon_Button,.Menu_Item,.Selectable,.Combo,.Drag_Value,.Text_Input,.Code_Editor,.Numeric_Input:
         paint_rect(ctx,b,clip,bg,ctx.theme.radius)
-    case .Modal,.Context_Menu,.Tooltip: paint_rect(ctx,b,clip,ctx.theme.panel,ctx.theme.radius)
+    case .Modal,.Context_Menu,.Tooltip: paint_rect(ctx,b,clip,d.background if d.has_background else ctx.theme.panel,ctx.theme.radius)
+    case: if d.has_background { paint_rect(ctx,b,clip,d.background,ctx.theme.radius) }
     }
     #partial switch d.kind {
     case .Text: paint_text(ctx,node,d.text,{b.x,b.y},fg,clip,b.width)
     case .Button,.Icon_Button,.Menu_Item,.Selectable,.Tree_Row,.Section:
         if d.kind==.Tree_Row || d.kind==.Section {
             marker:="▸"; if d.expanded { marker="▾" }; if d.kind==.Section || d.has_children { paint_text(ctx,node,marker,label_pos,ctx.theme.muted,clip) }; label_pos.x+=14
-            if d.selected { paint_rect(ctx,b,clip,ctx.theme.active,0) }
+            if d.selected && !d.has_background { paint_rect(ctx,b,clip,ctx.theme.active,0) }
         }
         paint_text(ctx,node,d.text,label_pos,fg,clip)
     case .Checkbox:
@@ -121,7 +122,8 @@ paint_combo_popup :: proc(ctx:^Context,node:^Node,window:Rect) {
 dock_label :: proc(node:^Node,tab:Tab_Id)->string { for item in node.descriptor.dock_tabs { if item.tab==tab { return item.label } }; return "Panel" }
 @(private="package")
 paint_dock :: proc(ctx:^Context,node:^Node) {
-    tree:=node.descriptor.dock; if tree==nil { return }; regions:=dock_bounds(tree,node.bounds,ctx.theme.row_height,4,ctx.allocator); defer delete(regions,ctx.allocator)
+    tree:=node.descriptor.dock; if tree==nil { return }; regions:=dock_subtree_bounds(tree,node.descriptor.dock_root,node.bounds,ctx.theme.row_height,4,ctx.allocator); defer delete(regions,ctx.allocator)
+    if _,floating:=dock_floating_index(tree,node.descriptor.dock_root); floating && !node.descriptor.has_background { paint_rect(ctx,node.bounds,node.clip,ctx.theme.panel,ctx.theme.radius) }
     for region in regions {
         dn:=tree.nodes[region.node]
         if dn.kind==.Split {
@@ -143,8 +145,9 @@ paint_dock :: proc(ctx:^Context,node:^Node) {
 paint_dock_overlay :: proc(ctx:^Context,window:Rect) {
     if !ctx.dock_dragging || ctx.dock_tab==0 { return }; node:=node_get(ctx,ctx.captured)
     if node==nil || node.descriptor.kind!=.Dock_Space || node.descriptor.dock==nil { return }
-    regions:=dock_bounds(node.descriptor.dock,node.bounds,ctx.theme.row_height,4,ctx.allocator); defer delete(regions,ctx.allocator)
-    for region in regions {
+    regions:=dock_bounds(node.descriptor.dock,dock_host_bounds(ctx,node.descriptor.dock),ctx.theme.row_height,4,ctx.allocator); defer delete(regions,ctx.allocator)
+    for i:=len(regions)-1;i>=0;i-=1 {
+        region:=regions[i]
         if node.descriptor.dock.nodes[region.node].kind==.Split || !rect_contains(region.bounds,ctx.pointer) { continue }
         preview:=region.content; local:=ctx.pointer-Vec2{preview.x,preview.y}
         if !rect_contains(region.tab_bar,ctx.pointer) {

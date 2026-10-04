@@ -19,7 +19,7 @@ Surface_Ops :: struct($R:typeid) {
     abort:proc(^R,gfx.Surface_Frame)->gfx.Gpu_Error,
     present:proc(^R,gfx.Surface_Frame,gfx.Submission)->(gfx.Present_Outcome,gfx.Gpu_Error),
 }
-exercise_window :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),surface:Surface_Ops(R),descriptor:gfx.Graphics_Desc,backend:string,output:string) {
+exercise_window :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),surface:Surface_Ops(R),descriptor:render.Scene_Pipelines,backend:string,output:string) {
     native_window:window.Window; assert(window.window_create(&native_window,"Katla Odin materials",520,340)==.None)
     defer window.window_destroy(&native_window)
     initial:=window.window_poll(&native_window)
@@ -65,7 +65,7 @@ exercise_window :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Captur
         submission,render_error:=render.native_scene_render(&native,token,frame,objects[:],draws[:],target.texture)
         if render_error!={} { surface.abort(renderer,target); operations.abort(renderer,token); fmt.println(render_error); assert(false,"window scene submission failed") }
         if index==0 || index==7 {
-            source,source_error:=capture.source(renderer,submission,native.graph.color); assert(source_error==.None)
+            source,source_error:=capture.source(renderer,submission,native.graph.output); assert(source_error==.None)
             queued,queue_error:=capture.queue(renderer,source,{width=source.desc.width,height=source.desc.height,aspect=.Color,depth=1}); assert(queue_error==.None)
             if index==0 { first_source=source; first_ticket=queued } else { newest_source=source; newest_ticket=queued }
         }

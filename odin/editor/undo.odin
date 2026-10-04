@@ -83,42 +83,11 @@ entity_command_apply :: proc(state:rawptr,w:^ecs.World,reg:^Component_Registry,r
     command:=cast(^Entity_Command)state
     exists:=command.before_exists; snapshots:=command.before
     if redo { exists=command.after_exists; snapshots=command.after }
-    if !exists { ecs.destroy_entity(w,command.entity); return .None }
-    context.allocator=w.allocator
-    decoded:=make([]struct { entry:^Editor_Entry, value:rawptr, transferred:bool },len(snapshots),w.allocator)
-    defer {
-        for item in decoded {
-            if item.value!=nil {
-                if !item.transferred && item.entry.ops.destroy!=nil { item.entry.ops.destroy(item.value) }
-                mem.free(item.value,w.allocator)
-            }
-        }
-        delete(decoded,w.allocator)
-    }
-    for snapshot,i in snapshots {
-        entry:=reg.entries[snapshot.name]; if entry==nil { return .Component_Not_Found }; if entry!=snapshot.entry { return .Invalid_Operation }
-        value:=editor_clone_value(entry,snapshot.value,w.allocator)
-        decoded[i].entry=entry; decoded[i].value=value
-    }
-    replacement:Entity_Remap
-    replaced:=false
-    if !ecs.entity_exists(w,command.entity) {
-        old:=command.entity; command.entity=ecs.create_entity(w)
-        replacement={old,command.entity}; replaced=true
-        append(remaps,replacement)
-        mapping:=make(map[ecs.Entity_Id]ecs.Entity_Id,w.allocator); defer delete(mapping)
-        mapping[old]=command.entity
-        for item in decoded {
-            ok:=component_map_references(item.entry,item.value,{mapping,false})
-            assert(ok,"partial reference maps must preserve unmapped IDs")
-        }
-    }
-    for _,entry in reg.entries { ecs.remove_component_type(w,command.entity,entry.T) }
-    for &item in decoded {
-        if !ecs.insert_component_value(w,command.entity,item.entry.T,item.value) { return .Entity_Not_Found }
-        item.transferred=true
-    }
-    if replaced { entity_command_remap(command,replacement); editor_remap_world_references(w,reg,replacement) }
+    rows:=[1]Restoration_Row{{command.entity,exists,snapshots[:]}}
+    offset:=len(remaps)
+    error:=restoration_apply(w,reg,rows[:],remaps)
+    if error!=.None { return error }
+    for replacement in remaps^[offset:] { entity_command_remap(command,replacement) }
     return .None
 }
 

@@ -35,17 +35,19 @@ model_graph_order :: proc(cache:^Native_Model($R),view_projection:km.Mat4,alloca
 model_pass_name :: proc(index:int)->string { return fmt.aprintf("Model surface %d",index) }
 @(private="package")
 model_graph_packet :: proc(cache:^Native_Model($R),scene:^Scene_Graph,pass:gfx.Pass_Id,index:int,replace:bool)->Native_Error {
-    buffers:=[3]gfx.Stage_Buffer_Binding{
+    buffers:=[8]gfx.Stage_Buffer_Binding{
         {0,0,{.Vertex,.Fragment},{cache.frame,{0,cache.frame_desc.size},.Read,.Uniform}},
         {0,1,{.Vertex,.Fragment},{cache.objects,{0,cache.object_desc.size},.Read,.Storage}},
         {0,2,{.Vertex},{cache.geometry,{0,cache.geometry_desc.size},.Read,.Storage}},
+        {},{},{},{},{},
     }
-    colors:=[1]gfx.Color_Attachment{{{cache.linear_color,gfx.image_full_range(cache.linear_desc),.Read_Write,.Color_Attachment},.Load,.Store,{}}}
+    feature_buffers:=feature_material_buffers(scene); for binding,i in feature_buffers { buffers[i+3]=binding }
+    colors:=[1]gfx.Color_Attachment{{{scene.color,gfx.image_full_range(scene.color_desc),.Read_Write,.Color_Attachment},.Load,.Store,{}}}
     depth:=gfx.Depth_Attachment{enabled=true,access={scene.depth,gfx.image_full_range(scene.depth_desc),.Read_Write,.Depth_Attachment},load=.Load,store=.Store,clear_depth=1}
     image_accesses:[5]gfx.Image_Access
-    bindings:[5]gfx.Image_Binding
-    samplers:[5]gfx.Sampler_Binding
-    declared:[7]gfx.Image_Access
+    bindings:[6]gfx.Image_Binding
+    samplers:[6]gfx.Sampler_Binding
+    declared:[8]gfx.Image_Access
     declared[0],declared[1]=colors[0].access,depth.access
     declared_count:=2
     receipt:=cache.receipts[index]
@@ -57,48 +59,52 @@ model_graph_packet :: proc(cache:^Native_Model($R),scene:^Scene_Graph,pass:gfx.P
         duplicate:=false; for access in declared[:declared_count] { if access==image_accesses[role] { duplicate=true; break } }
         if !duplicate { declared[declared_count]=image_accesses[role]; declared_count+=1 }
     }
+    shadow:=feature_material_image(scene)
+    bindings[5]={group=4,slot=1,stages={.Fragment},accesses={shadow}}; samplers[5]={4,2,{.Fragment},scene.features.sampler}
+    declared[declared_count]=shadow; declared_count+=1
     entry:=cache.batch.entries[index]
     draws:=[1]gfx.Draw_Op{gfx.Draw{entry.vertex_count,1,entry.first_vertex,entry.object_index}}
     object_model:=cache.batch.objects[entry.object_index].model
     mirrored:=km.dot(km.cross(km.xyz(object_model[0]),km.xyz(object_model[1])),km.xyz(object_model[2]))<0
     variant:=model_pipeline_variant(entry.material.double_sided,entry.material.alpha_mode==.Blend,mirrored)
-    phases:=[1]gfx.Render_Phase{{pipeline=cache.pipelines[variant],draws=draws[:]}}
+    phases:=[1]gfx.Render_Phase{{pipeline=(cache.reverse_pipelines[variant] if cache.graph.depth_sense==.Reverse else cache.pipelines[variant]),draws=draws[:]}}
     packet:=gfx.Render{colors=colors[:],depth=depth,buffers=buffers[:],images=bindings[:],samplers=samplers[:],phases=phases[:]}
     if replace {
-        reads:=[3]gfx.Buffer_Access{buffers[0].access,buffers[1].access,buffers[2].access}
-        packet_error,graph_error:=gfx.graph_set_commands(&scene.graph,pass,packet,reads[:],declared[:declared_count])
+        reads:[8]gfx.Buffer_Access; for binding,i in buffers { reads[i]=binding.access }
+        packet_error,graph_error:=gfx.graph_set_commands(scene_graph_target(scene),pass,packet,reads[:],declared[:declared_count])
         if packet_error!=.None { return {packet=packet_error} }
         if graph_error!=.None { return {gpu=.Invalid_Graph} }
         return {}
     }
-    return {packet=gfx.graph_set_packet(&scene.graph,pass,packet)}
+    return {packet=gfx.graph_set_packet(scene_graph_target(scene),pass,packet)}
 }
 /// Declares ready images and each material's actual sampled resources on the stationary scene graph.
 model_native_bind_graph :: proc(cache:^Native_Model($R),scene:^Scene_Graph)->Native_Error {
     model_graph_release(cache); cache.graph=scene
     if len(cache.batch.entries)==0 { return {} }
     error:gfx.Graph_Error
-    cache.frame,error=gfx.graph_buffer(&scene.graph,cache.frame_desc,true,false); if error!=.None { return {gpu=.Invalid_Graph} }
-    cache.objects,error=gfx.graph_buffer(&scene.graph,cache.object_desc,true,false); if error!=.None { return {gpu=.Invalid_Graph} }
-    cache.geometry,error=gfx.graph_buffer(&scene.graph,cache.geometry_desc,true,false); if error!=.None { return {gpu=.Invalid_Graph} }
+    cache.frame,error=gfx.graph_buffer(scene_graph_target(scene),cache.frame_desc,true,false); if error!=.None { return {gpu=.Invalid_Graph} }
+    cache.objects,error=gfx.graph_buffer(scene_graph_target(scene),cache.object_desc,true,false); if error!=.None { return {gpu=.Invalid_Graph} }
+    cache.geometry,error=gfx.graph_buffer(scene_graph_target(scene),cache.geometry_desc,true,false); if error!=.None { return {gpu=.Invalid_Graph} }
     cache.image_ids=make([]gfx.Image_Id,len(cache.textures),cache.allocator)
     cache.texture_inputs=make([]gfx.Texture_Input,len(cache.textures),cache.allocator)
     for texture,i in cache.textures {
-        cache.image_ids[i],error=gfx.graph_image(&scene.graph,texture.native.desc,{initial=.Shader_Read,final=.Shader_Read,initialized=true},true,false)
+        cache.image_ids[i],error=gfx.graph_image(scene_graph_target(scene),texture.native.desc,{initial=.Shader_Read,final=.Shader_Read,initialized=true},true,false)
         if error!=.None { return {gpu=.Invalid_Graph} }
         cache.texture_inputs[i]={cache.image_ids[i],texture.native.texture}
     }
-    composite_error:=model_composite_begin(cache,scene); if composite_error!={} { return composite_error }
+    extend_error:=scene_graph_extend(scene); if extend_error!={} { return extend_error }
     cache.passes=make([]gfx.Pass_Id,len(cache.batch.entries),cache.allocator)
     cache.order=model_graph_order(cache,{},cache.allocator)
     for index,i in cache.order {
         name:=model_pass_name(i); defer delete(name)
-        cache.passes[i],error=gfx.graph_pass(&scene.graph,name,.Graphics,nil)
+        cache.passes[i],error=scene_graph_pass(scene,name,.Graphics,nil)
         if error!=.None { return {gpu=.Invalid_Graph} }
         packet_error:=model_graph_packet(cache,scene,cache.passes[i],index,true); if packet_error!={} { return packet_error }
     }
-    composite_error=model_composite_pass(cache,scene,true); if composite_error!={} { return composite_error }
-    replacement,compile_error:=gfx.graph_compile(&scene.graph); if compile_error!=.None { return {gpu=.Invalid_Graph} }
+    final_error:=scene_graph_finalize(scene); if final_error!={} { return final_error }
+    if scene.target!=nil { return {} }
+    replacement,compile_error:=gfx.graph_compile(scene_graph_target(scene)); if compile_error!=.None { return {gpu=.Invalid_Graph} }
     previous:=scene.plan; scene.plan=replacement; gfx.compiled_graph_destroy(&previous)
     return {}
 }
@@ -113,8 +119,8 @@ model_native_prepare :: proc(cache:^Native_Model($R),scene:^Scene_Graph,token:gf
         if error!={} { return {},error }
         cache.order[i]=index
     }
-    if scene.plan.revision!=scene.graph.revision {
-        plan,error:=gfx.graph_compile(&scene.graph); if error!=.None { return {},{gpu=.Invalid_Graph} }
+    if scene.target==nil && scene.plan.revision!=scene_graph_target(scene).revision {
+        plan,error:=gfx.graph_compile(scene_graph_target(scene)); if error!=.None { return {},{gpu=.Invalid_Graph} }
         previous:=scene.plan; scene.plan=plan; gfx.compiled_graph_destroy(&previous)
     }
     slot:=cache.slots[token.slot]
@@ -123,12 +129,5 @@ model_native_prepare :: proc(cache:^Native_Model($R),scene:^Scene_Graph,token:gf
     bytes:=[3][]byte{mem.slice_to_bytes(frames[:]),mem.slice_to_bytes(cache.batch.objects),mem.slice_to_bytes(cache.batch.vertices)}
     for handle,i in handles { error:=cache.operations.gpu.write_buffer(cache.renderer,token,handle,0,bytes[i]); if error!=.None { return {},{gpu=error} } }
     cache.inputs={{cache.frame,slot.frame},{cache.objects,slot.objects},{cache.geometry,slot.geometry}}
-    if len(cache.frame_textures)!=len(cache.texture_inputs)+2 { delete(cache.frame_textures,cache.allocator); cache.frame_textures=make([]gfx.Texture_Input,len(cache.texture_inputs)+2,cache.allocator) }
-    extra_textures:=cache.frame_textures
-    copy(extra_textures,cache.texture_inputs)
-    extra_textures[len(cache.texture_inputs)]={cache.copied_color,slot.copied_color}
-    extra_textures[len(cache.texture_inputs)+1]={cache.linear_color,slot.linear_color}
-    cache.frame_inputs[0]={cache.color_staging,slot.color_staging}
-    for input,i in cache.inputs { cache.frame_inputs[i+1]=input }
-    return {cache.frame_inputs[:],cache.frame_textures},{}
+    return {cache.inputs[:],cache.texture_inputs},{}
 }

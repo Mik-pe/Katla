@@ -9,12 +9,11 @@ import editor "../editor"
 import km "../math"
 
 @(private="file")
-native_chair_mesh_acceptance :: proc(t:^testing.T,use_box3d:bool) {
+native_chair_mesh_acceptance :: proc(t:^testing.T) {
     tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,context.allocator); defer mem.tracking_allocator_destroy(&tracker); context.allocator=mem.tracking_allocator(&tracker)
     owner:Authoring; authoring_init(&owner); register_test_scene_runtime(&owner)
     testing.expect(t,asset_resources_init(&owner,".","resources")==.None)
-    if use_box3d { testing.expect(t,physics_select_box3d(&owner,BOX3D_LIBRARY)==.None) }
-    else { testing.expect(t,scene_runtime_init(&owner,RUNTIME_LIBRARY)==.None) }
+    testing.expect(t,physics_select_box3d(&owner,BOX3D_LIBRARY)==.None)
     result,undo:=asset_authoring_execute(&owner,asset.Prefab_Request{action=.Instantiate,path="resources/prefabs/chair.katprefab",name="Native chair",position={4,0,2},rotation={0,0,0,1},scale={2,1,1}})
     testing.expect(t,result.error==.None && len(result.entities)==3); if result.error!=.None || len(result.entities)!=3 { editor.tool_result_destroy(&result); editor.undo_group_destroy(&undo); authoring_destroy(&owner); return }
     chair:=result.entities[0]; editor.tool_result_destroy(&result); editor.undo_group_destroy(&undo)
@@ -42,9 +41,5 @@ native_chair_mesh_acceptance :: proc(t:^testing.T,use_box3d:bool) {
 }
 when BOX3D_LIBRARY!="" {
 @(test)
-test_native_chair_mesh_box3d_contact_hole_and_play_stop_restore :: proc(t:^testing.T) { native_chair_mesh_acceptance(t,true) }
-}
-when RUNTIME_LIBRARY!="" {
-@(test)
-test_native_chair_mesh_rapier_contact_hole_and_play_stop_restore :: proc(t:^testing.T) { native_chair_mesh_acceptance(t,false) }
+test_native_chair_mesh_box3d_contact_hole_and_play_stop_restore :: proc(t:^testing.T) { native_chair_mesh_acceptance(t) }
 }

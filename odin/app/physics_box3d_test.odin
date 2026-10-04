@@ -9,12 +9,12 @@ import "core:testing"
 
 BOX3D_LIBRARY :: #config(BOX3D_LIBRARY,"")
 @(test)
-test_box3d_missing_dependency_preserves_selection_and_scene :: proc(t:^testing.T) {
+test_box3d_missing_dependency_preserves_scene :: proc(t:^testing.T) {
     app:Authoring; authoring_init(&app); defer authoring_destroy(&app)
     scene_components_register(&app); physics_register(&app)
     entity:=ecs.spawn(&app.world,struct { transform:Scene_Transform }{Scene_Transform{km.TRANSFORM_IDENTITY}})
     testing.expect_value(t,physics_select_box3d(&app,"__katla_missing_box3d_dependency__"),editor.Scene_Error.Application_Owned)
-    testing.expect(t,ecs.entity_exists(&app.world,entity) && !ecs.contains_resource(&app.world,box3d.Backend) && !ecs.contains_resource(&app.world,Physics_Selection))
+    testing.expect(t,ecs.entity_exists(&app.world,entity) && !ecs.contains_resource(&app.world,box3d.Backend))
 }
 when BOX3D_LIBRARY!="" {
 @(test)
@@ -42,7 +42,7 @@ test_box3d_scene_parent_local_commit_contact_and_sensor_transitions :: proc(t:^t
     testing.expect_value(t,len(app.agent.session.actions),0)
 }
 @(test)
-test_box3d_scene_preflight_rejects_whole_batch_and_backend_switch_gate :: proc(t:^testing.T) {
+test_box3d_scene_preflight_rejects_whole_batch_and_native_owner_gate :: proc(t:^testing.T) {
     app:Authoring; authoring_init(&app); defer authoring_destroy(&app)
     scene_components_register(&app); physics_register(&app)
     testing.expect_value(t,physics_select_box3d(&app,BOX3D_LIBRARY),editor.Scene_Error.None)
@@ -57,10 +57,9 @@ test_box3d_scene_preflight_rejects_whole_batch_and_backend_switch_gate :: proc(t
     testing.expect_value(t,physics_box3d_sync(&app),editor.Scene_Error.None)
     testing.expect_value(t,owner.entries[u64(a)].body.position,[3]f32{9,9,9})
     app.mode=.Playing
-    testing.expect_value(t,physics_select_rapier(&app),editor.Scene_Error.Editing_Required)
     testing.expect_value(t,physics_select_box3d(&app,BOX3D_LIBRARY),editor.Scene_Error.Editing_Required)
     app.mode=.Editing
-    testing.expect_value(t,physics_select_rapier(&app),editor.Scene_Error.Application_Owned)
-    selection,_:=ecs.get_resource(&app.world,Physics_Selection); testing.expect_value(t,selection.backend,Physics_Backend.Box3D)
+    testing.expect_value(t,physics_select_box3d(&app,BOX3D_LIBRARY),editor.Scene_Error.Invalid_Operation)
+    testing.expect(t,ecs.contains_resource(&app.world,box3d.Backend))
 }
 }

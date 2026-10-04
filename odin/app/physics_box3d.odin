@@ -1,93 +1,77 @@
-//! Explicit native backend selection shares scene preflight and pose publication.
+//! Native Box3D ownership shares scene preflight and atomic pose publication.
 package app
-
 import box3d "../physics/box3d"
 import ecs "../ecs"
 import editor "../editor"
 
-Physics_Backend :: enum { Rapier, Box3D }
-/// Stores the selected implementation; an unconfigured scene uses the established Rapier backend.
-Physics_Selection :: struct { backend:Physics_Backend }
 @(private="package")
 physics_box3d_destroy :: proc(value:rawptr) {
     owner:=cast(^box3d.Backend)value
-    err:=box3d.backend_destroy(owner); assert(err==.None,"native physics owner must be destroyed on its application thread")
+    error:=box3d.backend_destroy(owner); assert(error==.None,"native physics owner requires its application thread")
 }
-/// Loads and selects actual Box3D only after the complete native ABI has initialized successfully.
-physics_select_box3d :: proc(app:^Authoring,library_path:string)->editor.Scene_Error {
-    if app.mode!=.Editing { return .Editing_Required }
-    if ecs.contains_resource(&app.world,box3d.Backend) { return .Invalid_Operation }
-    owner:box3d.Backend
-    err:=box3d.backend_init(&owner,library_path,app.world.allocator)
-    if err!=.None { return .Application_Owned }
-    if ecs.contains_resource(&app.world,Scene_Runtime) {
-        response:=scene_runtime_call(app,struct {method:string}{"physics_reset"}); defer runtime_response_destroy(&response)
-        if !response.ok { box3d.backend_destroy(&owner); return .Invalid_Operation }
-    }
-    ecs.insert_resource(&app.world,owner,ecs.Value_Ops{destroy=physics_box3d_destroy})
-    ecs.insert_resource(&app.world,Physics_Selection{.Box3D})
+/// Publishes the sole native physics owner after all mandatory ABI entries have initialized.
+physics_select_box3d :: proc(owner:^Authoring,library_path:string)->editor.Scene_Error {
+    if owner.mode!=.Editing { return .Editing_Required }
+    if ecs.contains_resource(&owner.world,box3d.Backend) { return .Invalid_Operation }
+    backend:box3d.Backend
+    if box3d.backend_init(&backend,library_path,owner.world.allocator)!=.None { return .Application_Owned }
+    ecs.insert_resource(&owner.world,backend,ecs.Value_Ops{destroy=physics_box3d_destroy})
     return .None
 }
-/// Selects Rapier on the application thread and releases any previously selected Box3D owner.
-physics_select_rapier :: proc(app:^Authoring)->editor.Scene_Error {
-    if app.mode!=.Editing { return .Editing_Required }
-    if !ecs.contains_resource(&app.world,Scene_Runtime) { return .Application_Owned }
-    response:=scene_runtime_call(app,struct {method:string}{"physics_reset"}); defer runtime_response_destroy(&response)
-    if !response.ok { return .Invalid_Operation }
-    ecs.remove_resource(&app.world,box3d.Backend)
-    ecs.insert_resource(&app.world,Physics_Selection{.Rapier})
+@(private="package")
+physics_unconfigured :: proc(owner:^Authoring)->editor.Scene_Error {
+    bodies,error:=physics_collect(owner); defer physics_collected_destroy(&bodies,owner.world.allocator)
+    if error!=.None { return error }
+    joints,joint_error:=physics_collect_joints(owner); defer delete(joints,owner.world.allocator)
+    if joint_error!=.None { return joint_error }
+    if len(bodies)>0 || len(joints)>0 { return .Application_Owned }
     return .None
 }
-/// Steps the explicitly selected dependency through the same scene ownership and commit contract.
-physics_step :: proc(app:^Authoring,delta_seconds:f32)->Physics_Step_Result {
-    selection,present:=ecs.get_resource(&app.world,Physics_Selection)
-    if present && selection.backend==.Box3D { return physics_box3d_step(app,delta_seconds) }
-    return physics_rapier_step(app,delta_seconds)
+/// Steps real Box3D; authored participants require an initialized native owner.
+physics_step :: proc(owner:^Authoring,delta_seconds:f32)->Physics_Step_Result {
+    if ecs.contains_resource(&owner.world,box3d.Backend) { return physics_box3d_step(owner,delta_seconds) }
+    result:=Physics_Step_Result{events=make([dynamic]Physics_Event,owner.world.allocator),allocator=owner.world.allocator}
+    result.error=.Invalid_Field_Value if !finite_nonnegative(delta_seconds) || delta_seconds>.25 else physics_unconfigured(owner)
+    return result
 }
-/// Prepares native collision participation before play through the selected backend.
-physics_prepare :: proc(app:^Authoring)->editor.Scene_Error {
-    selection,present:=ecs.get_resource(&app.world,Physics_Selection)
-    if present && selection.backend==.Box3D { return physics_box3d_sync(app) }
-    return physics_sync(app)
+/// Prepares every authored body and constraint before entering Play.
+physics_prepare :: proc(owner:^Authoring)->editor.Scene_Error {
+    if ecs.contains_resource(&owner.world,box3d.Backend) { return physics_box3d_sync(owner) }
+    return physics_unconfigured(owner)
 }
-/// Clears transient physics state before restoring authored scene identities.
-physics_reset :: proc(app:^Authoring)->editor.Scene_Error {
-    selection,present:=ecs.get_resource(&app.world,Physics_Selection)
-    if present && selection.backend==.Box3D {
-        owner:=ecs.get_resource_mut(&app.world,box3d.Backend)
-        if owner==nil { return .Application_Owned }
-        if box3d.backend_reset(owner)!=.None { return .Invalid_Operation }
-        return .None
-    }
-    if !ecs.contains_resource(&app.world,Scene_Runtime) {
-        ids:=ecs.entity_ids(&app.world); defer delete(ids)
-        for entity in ids { if body,has_description:=ecs.get_component(&app.world,entity,Physics_Body); has_description && (body.has_rigid_body || body.has_collider) { return .Application_Owned } }
-        return .None
-    }
-    response:=scene_runtime_call(app,struct { method:string }{"physics_reset"}); defer runtime_response_destroy(&response)
-    if !response.ok { return .Invalid_Operation }; return .None
+/// Clears native transient state before restoring the authored baseline.
+physics_reset :: proc(owner:^Authoring)->editor.Scene_Error {
+    backend:=ecs.get_resource_mut(&owner.world,box3d.Backend)
+    if backend==nil { return physics_unconfigured(owner) }
+    if box3d.backend_reset(backend)!=.None { return .Invalid_Operation }
+    return .None
 }
 /// Synchronizes current authoring state through the shared hierarchy/collider preflight.
-physics_box3d_sync :: proc(app:^Authoring)->editor.Scene_Error {
+physics_box3d_sync :: proc(app:^Authoring)->editor.Scene_Error { return physics_box3d_sync_excluding(app,nil) }
+@(private="package")
+physics_box3d_sync_excluding :: proc(app:^Authoring,excluded:[]ecs.Entity_Id)->editor.Scene_Error {
     owner:=ecs.get_resource_mut(&app.world,box3d.Backend)
     if owner==nil { return .Application_Owned }
     joints,joint_error:=physics_collect_joints(app); defer delete(joints,app.world.allocator)
     if joint_error!=.None { return joint_error }
-    native_joints:=make([]box3d.Joint,len(joints),app.world.allocator); defer delete(native_joints,app.world.allocator)
-    for resolved,i in joints { joint:=resolved.joint; native_joints[i]={id=resolved.id,a=u64(joint.a),b=u64(joint.b),kind=cast(box3d.Joint_Kind)joint.kind,has_limits=u32(joint.has_limits),anchor_a=joint.anchor_a,anchor_b=joint.anchor_b,limits=joint.limits} }
+    native_joints:=make([dynamic]box3d.Joint,app.world.allocator); defer delete(native_joints)
+    for resolved in joints { joint:=resolved.joint; skip:=false; for id in excluded { if u64(id)==resolved.id || id==joint.a || id==joint.b { skip=true; break } }; if skip { continue }; append(&native_joints,box3d.Joint{id=resolved.id,a=u64(joint.a),b=u64(joint.b),kind=cast(box3d.Joint_Kind)joint.kind,has_limits=u32(joint.has_limits),anchor_a=joint.anchor_a,anchor_b=joint.anchor_b,limits=joint.limits}) }
     collected,err:=physics_collect(app); defer physics_collected_destroy(&collected,app.world.allocator)
     if err!=.None { return err }
-    bodies:=make([]box3d.Body,len(collected),app.world.allocator); defer delete(bodies,app.world.allocator)
-    for resolved,i in collected {
+    bodies:=make([dynamic]box3d.Body,app.world.allocator); defer delete(bodies)
+    for resolved in collected {
+        skip:=false; for id in excluded { if u64(id)==resolved.id { skip=true; break } }; if skip { continue }
         body:=resolved.body
-        bodies[i]={id=resolved.id,body_type=cast(box3d.Body_Type)body.body_type,shape_kind=cast(box3d.Shape_Kind)body.shape.kind,
+        indices:=resolved.indices; if body.shape.kind!=.Trimesh { indices=nil }
+        append(&bodies,box3d.Body{id=resolved.id,body_type=cast(box3d.Body_Type)body.body_type,shape_kind=cast(box3d.Shape_Kind)body.shape.kind,
             position=resolved.position,rotation=resolved.rotation,linear_velocity=body.linear_velocity,
+            heights=raw_data(body.shape.heights),rows=body.shape.rows,cols=body.shape.cols,height_scale=resolved.height_scale,
             half_extents=body.shape.half_extents,radius=body.shape.radius,half_height=body.shape.half_height,
-            vertices=raw_data(resolved.vertices),indices=raw_data(resolved.indices),vertex_count=u32(len(resolved.vertices)),index_count=u32(len(resolved.indices)),density=body.density,
+            vertices=raw_data(resolved.vertices),indices=raw_data(indices),vertex_count=u32(len(resolved.vertices)),index_count=u32(len(indices)),density=body.density,
             gravity_scale=body.gravity_scale,friction=body.friction,restitution=body.restitution,
-            layers=body.layers,mask=body.mask,sensor=u32(body.sensor),ccd=u32(body.ccd)}
+            layers=body.layers,mask=body.mask,sensor=u32(body.sensor),ccd=u32(body.ccd)})
     }
-    if box3d.backend_sync(owner,bodies,native_joints)!=.None { return .Invalid_Operation }
+    if box3d.backend_sync(owner,bodies[:],native_joints[:])!=.None { return .Invalid_Operation }
     return .None
 }
 /// Publishes validated native world poses atomically and transfers directed native sensor events.

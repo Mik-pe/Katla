@@ -59,7 +59,7 @@ model_batch_prepare_entities :: proc(owner:^app.Authoring,ids:[]ecs.Entity_Id,al
         player:=ecs.get_component_mut(&owner.world,id,app.Animation_Player)
         result.streaming=result.streaming || len(model.animation.clips)>0
         world,world_error:=app.gltf_world_matrices(model,player,allocator); if world_error!=.None { return {},{kind=.Invalid_Scene,scene=world_error} }; defer delete(world,allocator)
-        active,active_error:=model_active_nodes(model,allocator); if active_error.kind!=.None { return {},active_error }; defer delete(active,allocator)
+        active,active_error:=app.gltf_active_nodes(model,allocator); if active_error!=.None { return {},{kind=.Invalid_Scene,scene=active_error} }; defer delete(active,allocator)
         entity_world,entity_error:=app.scene_world_matrix(owner,id); if entity_error!=.None { return {},{kind=.Invalid_Scene,scene=entity_error} }
         surface,surface_present:=ecs.get_component(&owner.world,id,app.Surface_Material); if !surface_present { surface={metallic=1,roughness=1,ao=1} }
         for node,n in model.nodes {

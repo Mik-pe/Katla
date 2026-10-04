@@ -38,7 +38,7 @@ test_physics_joint_document_restore_remaps_and_rejects_invalid_endpoints_atomica
 @(private="file")
 physics_joints_native_acceptance :: proc(t:^testing.T) {
     tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,context.allocator); defer mem.tracking_allocator_destroy(&tracker); context.allocator=mem.tracking_allocator(&tracker)
-    owner:Authoring; authoring_init(&owner); register_test_scene_runtime(&owner); testing.expect(t,scene_runtime_init(&owner,RUNTIME_LIBRARY)==.None)
+    owner:Authoring; authoring_init(&owner); register_test_scene_runtime(&owner); testing.expect(t,physics_select_box3d(&owner,BOX3D_LIBRARY)==.None)
     anchor:=ecs.create_entity(&owner.world); ecs.add_component(&owner.world,anchor,Scene_Transform{km.TRANSFORM_IDENTITY}); ecs.add_component(&owner.world,anchor,physics_body(Physics_Shape{kind=.Sphere,radius=0.1},.Kinematic))
     bob:=ecs.create_entity(&owner.world); ecs.add_component(&owner.world,bob,Scene_Transform{km.transform(position={0,-1,0})}); ecs.add_component(&owner.world,bob,physics_body(Physics_Shape{kind=.Sphere,radius=0.1}))
     joint:=Physics_Joint{kind=.PointToPoint,a=anchor,b=bob,anchor_a={0,-1,0}}; ecs.add_component(&owner.world,bob,joint)
@@ -60,9 +60,9 @@ physics_joints_native_acceptance :: proc(t:^testing.T) {
     restored,error:=physics_collect_joints(&owner); testing.expect(t,error==.None && len(restored)==1 && restored[0].joint.kind==.PointToPoint && restored[0].joint.a!=anchor && restored[0].joint.b!=bob); delete(restored)
     authoring_destroy(&owner); testing.expect(t,len(tracker.allocation_map)==0 && len(tracker.bad_free_array)==0)
 }
-when RUNTIME_LIBRARY!="" {
+when BOX3D_LIBRARY!="" {
 @(test)
-test_physics_native_rapier_joint_constraints_sync_and_play_stop :: proc(t:^testing.T) { physics_joints_native_acceptance(t) }
+test_physics_native_box3d_joint_constraints_sync_and_play_stop :: proc(t:^testing.T) { physics_joints_native_acceptance(t) }
 }
 
 @(test)

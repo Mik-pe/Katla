@@ -29,7 +29,7 @@ Capture_Ops :: struct($R:typeid) {
     poll:proc(^R,gfx.Readback_Ticket)->(gfx.Readback_Data,bool,gfx.Gpu_Error),
 }
 read_pixels :: proc(scene:^render.Native_Scene($R),capture:Capture_Ops(R),submission:gfx.Submission)->gfx.Readback_Data {
-    source,error:=capture.source(scene.renderer,submission,scene.graph.color); assert(error==.None)
+    source,error:=capture.source(scene.renderer,submission,scene.graph.output); assert(error==.None)
     ticket:gfx.Readback_Ticket; ticket,error=capture.queue(scene.renderer,source,{width=source.desc.width,height=source.desc.height,aspect=.Color,depth=1}); assert(error==.None)
     return poll_pixels(scene.renderer,capture,ticket,source)
 }
@@ -64,7 +64,7 @@ save_pixels :: proc(pixels:^gfx.Readback_Data,path:string) {
     filename:=strings.clone_to_cstring(path); defer delete(filename)
     assert(image.write_png(filename,c.int(pixels.region.width),c.int(pixels.region.height),4,raw_data(bytes),c.int(pixels.row_pitch))!=0)
 }
-exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),descriptor:gfx.Graphics_Desc,backend:string,output,resource_path:string) {
+exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),descriptor:render.Scene_Pipelines,backend:string,output,resource_path:string) {
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
     assert(app.authoring_services_init(&owner)==.None)
     assert(app.asset_resources_init(&owner,filepath.dir(resource_path),resource_path)==resources.Error.None)
@@ -144,10 +144,15 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     gesture_redo_pixels:=read_pixels(native,capture,gesture_redone); defer gfx.readback_data_destroy(&gesture_redo_pixels)
     assert(render.native_scene_wait(native,gesture_redone)==.None)
     assert(mem.compare(gesture_pixels.bytes,gesture_redo_pixels.bytes)==0,"grouped gesture redo failed to restore last native image")
+    saved_features:=native.feature_settings
+    native.feature_settings.sky=false; native.feature_settings.grid=false;native.feature_settings.outline=false;native.feature_settings.shadows=false; native.feature_settings.postprocess={1,.Linear}
     empty,empty_error:=render_frame(native,frame,nil,nil); assert(empty_error=={})
     empty_pixels:=read_pixels(native,capture,empty); defer gfx.readback_data_destroy(&empty_pixels)
     assert(render.native_scene_wait(native,empty)==.None)
-    for offset:=0;offset<len(empty_pixels.bytes);offset+=4 { assert(mem.compare(empty_pixels.bytes[offset:offset+4],([]byte{9,10,13,255}))==0,"empty editor world did not clear its real color attachment") }
+    for offset:=0;offset<len(empty_pixels.bytes);offset+=4 {
+        if mem.compare(empty_pixels.bytes[offset:offset+4],([]byte{53,56,63,255}))!=0 { fmt.eprintln("Clear-only first mismatching pixel",offset/4,empty_pixels.bytes[offset:offset+4]);assert(false,"empty editor world did not clear its real color attachment") }
+    }
+    native.feature_settings=saved_features
     resumed,resume_error:=render_frame(native,frame,objects[:],draws[:]); assert(resume_error=={})
     resumed_pixels:=read_pixels(native,capture,resumed); defer gfx.readback_data_destroy(&resumed_pixels)
     assert(render.native_scene_wait(native,resumed)==.None)
@@ -194,23 +199,23 @@ main :: proc() {
     switch os.args[2] {
     case "metal","metal-window","metal-editor","metal-models":
         renderer:metal.Renderer; assert(metal.renderer_init(&renderer)==.None); defer { assert(metal.renderer_destroy(&renderer)==.None) }
-        operations:=render.GPU_Ops(metal.Renderer){metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.create_texture,metal.destroy_texture,metal.acquire,metal.abort,metal.submit,metal.wait,metal.release_graph_exports}
+        operations:=render.GPU_Ops(metal.Renderer){metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.create_texture,metal.destroy_texture,metal.acquire,metal.abort,metal.submit,metal.wait,metal.release_graph_exports,metal.create_pipeline,metal.destroy_pipeline,metal.create_sampler,metal.destroy_sampler}
         capture:=Capture_Ops(metal.Renderer){metal.graph_texture_source,metal.queue_texture_readback,metal.poll_texture_readback}
-        if os.args[2]=="metal-models" { exercise_models(&renderer,operations,capture,surface.descriptor,&compiler,render.Model_GPU_Ops(metal.Renderer){operations,metal.create_sampler,metal.destroy_sampler},"metal",os.args[3],os.args[4]) }
+        if os.args[2]=="metal-models" { exercise_models(&renderer,operations,capture,render.surface_pipelines(&surface),&compiler,render.Model_GPU_Ops(metal.Renderer){operations,metal.create_sampler,metal.destroy_sampler},"metal",os.args[3],os.args[4]) }
         else if windowed {
             surfaces:=Surface_Ops(metal.Renderer){metal.attach_surface,metal.resize_surface,metal.detach_surface,metal.acquire_surface,metal.abort_surface,metal.present_surface}
-            if interactive { exercise_editor(&renderer,operations,capture,surfaces,surface.descriptor,&compiler,render.Model_GPU_Ops(metal.Renderer){operations,metal.create_sampler,metal.destroy_sampler},render.Particle_GPU_Ops(metal.Renderer){metal.create_pipeline,metal.destroy_pipeline,metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.read_buffer},"metal",os.args[3],os.args[4],metal_control_event,metal_assistant_event) } else { exercise_window(&renderer,operations,capture,surfaces,surface.descriptor,"metal",os.args[3]) }
-        } else { exercise(&renderer,operations,capture,surface.descriptor,"metal",os.args[3],os.args[4]) }
+            if interactive { exercise_editor(&renderer,operations,capture,surfaces,render.surface_pipelines(&surface),&compiler,render.Model_GPU_Ops(metal.Renderer){operations,metal.create_sampler,metal.destroy_sampler},render.Particle_GPU_Ops(metal.Renderer){metal.create_pipeline,metal.destroy_pipeline,metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.read_buffer},"metal",os.args[3],os.args[4],metal_control_event,metal_assistant_event) } else { exercise_window(&renderer,operations,capture,surfaces,render.surface_pipelines(&surface),"metal",os.args[3]) }
+        } else { exercise(&renderer,operations,capture,render.surface_pipelines(&surface),"metal",os.args[3],os.args[4]) }
     case "vulkan","vulkan-window","vulkan-editor","vulkan-models":
         loader:=""; if len(os.args)>5 { loader=os.args[5] }
         renderer:vulkan.Renderer; assert(vulkan.renderer_init(&renderer,validation=true,loader_path=loader)==.None); defer { assert(renderer.validation_errors==0); assert(vulkan.renderer_destroy(&renderer)==.None) }
-        operations:=render.GPU_Ops(vulkan.Renderer){vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.create_texture,vulkan.destroy_texture,vulkan.acquire,vulkan.abort,vulkan.submit,vulkan.wait,vulkan.release_graph_exports}
+        operations:=render.GPU_Ops(vulkan.Renderer){vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.create_texture,vulkan.destroy_texture,vulkan.acquire,vulkan.abort,vulkan.submit,vulkan.wait,vulkan.release_graph_exports,vulkan.create_pipeline,vulkan.destroy_pipeline,vulkan.create_sampler,vulkan.destroy_sampler}
         capture:=Capture_Ops(vulkan.Renderer){vulkan.graph_texture_source,vulkan.queue_texture_readback,vulkan.poll_texture_readback}
-        if os.args[2]=="vulkan-models" { exercise_models(&renderer,operations,capture,surface.descriptor,&compiler,render.Model_GPU_Ops(vulkan.Renderer){operations,vulkan.create_sampler,vulkan.destroy_sampler},"vulkan",os.args[3],os.args[4]) }
+        if os.args[2]=="vulkan-models" { exercise_models(&renderer,operations,capture,render.surface_pipelines(&surface),&compiler,render.Model_GPU_Ops(vulkan.Renderer){operations,vulkan.create_sampler,vulkan.destroy_sampler},"vulkan",os.args[3],os.args[4]) }
         else if windowed {
             surfaces:=Surface_Ops(vulkan.Renderer){vulkan.attach_surface,vulkan.resize_surface,vulkan.detach_surface,vulkan.acquire_surface,vulkan.abort_surface,vulkan.present_surface}
-            if interactive { exercise_editor(&renderer,operations,capture,surfaces,surface.descriptor,&compiler,render.Model_GPU_Ops(vulkan.Renderer){operations,vulkan.create_sampler,vulkan.destroy_sampler},render.Particle_GPU_Ops(vulkan.Renderer){vulkan.create_pipeline,vulkan.destroy_pipeline,vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.read_buffer},"vulkan",os.args[3],os.args[4],vulkan_control_event,vulkan_assistant_event) } else { exercise_window(&renderer,operations,capture,surfaces,surface.descriptor,"vulkan",os.args[3]) }
-        } else { exercise(&renderer,operations,capture,surface.descriptor,"vulkan",os.args[3],os.args[4]) }
+            if interactive { exercise_editor(&renderer,operations,capture,surfaces,render.surface_pipelines(&surface),&compiler,render.Model_GPU_Ops(vulkan.Renderer){operations,vulkan.create_sampler,vulkan.destroy_sampler},render.Particle_GPU_Ops(vulkan.Renderer){vulkan.create_pipeline,vulkan.destroy_pipeline,vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.read_buffer},"vulkan",os.args[3],os.args[4],vulkan_control_event,vulkan_assistant_event) } else { exercise_window(&renderer,operations,capture,surfaces,render.surface_pipelines(&surface),"vulkan",os.args[3]) }
+        } else { exercise(&renderer,operations,capture,render.surface_pipelines(&surface),"vulkan",os.args[3],os.args[4]) }
     case: assert(false,"unsupported backend")
     }
 }

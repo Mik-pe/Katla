@@ -11,8 +11,8 @@ import "core:strings"
 /// Distinguishes malformed JSON from semantically invalid arguments.
 Decode_Error :: enum { None, Invalid_JSON, Invalid_Arguments }
 /// Named playback starts at zero; engine assets supply clip duration and poses.
-Animation_Action :: enum { Inspect, Play }
-Animation_Op :: struct { action:Animation_Action, entity:ecs.Entity_Id, clip:string, fade_seconds:f32, looping:bool, speed:f32 }
+Animation_Action :: enum { Inspect, Play, Pause, Resume, Stop, Seek, Speed, Loop, Fade }
+Animation_Op :: struct { action:Animation_Action, entity:ecs.Entity_Id, clip:string, fade_seconds:f32, looping:bool, speed,time_seconds:f32 }
 /// Owns all strings borrowed by the decoded operation.
 Decoded_Animation :: struct { operation:Animation_Op, tree:json.Value, allocator:mem.Allocator }
 /// Releases the operation's transport storage with its captured allocator.
@@ -40,7 +40,7 @@ nonnegative :: proc(value:json.Value)->(f32,bool) {
 }
 /// Rejects unknown fields, stale-shaped IDs and nonfinite timings before mailbox admission.
 decode_animation :: proc(data:[]byte,allocator:=context.allocator)->(Decoded_Animation,Decode_Error) {
-    context.allocator=allocator; tree,err:=json.parse(data,spec=.JSON,parse_integers=true,allocator=allocator)
+    context.allocator=allocator; tree,err:=json.parse(data,spec=.JSON,parse_integers=false,allocator=allocator)
     if err!=nil { return {},.Invalid_JSON }; success:=false; defer { if !success { json.destroy_value(tree) } }
     object,ok:=tree.(json.Object); if !ok { return {},.Invalid_Arguments }
     action,is_action:=object["action"].(string); entity,is_entity:=entity_value(object["entity_id"])
@@ -48,9 +48,27 @@ decode_animation :: proc(data:[]byte,allocator:=context.allocator)->(Decoded_Ani
     op:=Animation_Op{entity=entity,fade_seconds=0.25,looping=true,speed=1}
     switch action {
     case "inspect": if !keys_valid(object,{"action","entity_id"}) { return {},.Invalid_Arguments }; op.action=.Inspect
-    case "play":
+    case "pause","resume","stop":
+        if !keys_valid(object,{"action","entity_id"}) { return {},.Invalid_Arguments }
+        op.action=.Pause if action=="pause" else .Resume if action=="resume" else .Stop
+    case "seek":
+        if !keys_valid(object,{"action","entity_id","time_seconds"}) { return {},.Invalid_Arguments }; op.action=.Seek
+        number:f64
+        #partial switch value in object["time_seconds"] {
+        case json.Integer: number=f64(value)
+        case json.Float: number=f64(value)
+        case: return {},.Invalid_Arguments
+        }
+        op.time_seconds=f32(number); if !finite_number(op.time_seconds) { return {},.Invalid_Arguments }
+    case "speed":
+        if !keys_valid(object,{"action","entity_id","speed"}) { return {},.Invalid_Arguments }; op.action=.Speed
+        valid:bool; op.speed,valid=nonnegative(object["speed"]); if !valid { return {},.Invalid_Arguments }
+    case "loop":
+        if !keys_valid(object,{"action","entity_id","looping"}) { return {},.Invalid_Arguments }; op.action=.Loop
+        valid:bool; op.looping,valid=object["looping"].(bool); if !valid { return {},.Invalid_Arguments }
+    case "play","fade":
         if !keys_valid(object,{"action","entity_id","clip","fade_seconds","looping","speed"}) { return {},.Invalid_Arguments }
-        op.action=.Play; clip,is_clip:=object["clip"].(string); if !is_clip || strings.trim_space(clip)=="" { return {},.Invalid_Arguments }; op.clip=clip
+        op.action=.Fade if action=="fade" else .Play; clip,is_clip:=object["clip"].(string); if !is_clip || strings.trim_space(clip)=="" { return {},.Invalid_Arguments }; op.clip=clip
         if value,present:=object["fade_seconds"]; present { valid:bool; op.fade_seconds,valid=nonnegative(value); if !valid { return {},.Invalid_Arguments } }
         if value,present:=object["speed"]; present { valid:bool; op.speed,valid=nonnegative(value); if !valid { return {},.Invalid_Arguments } }
         if value,present:=object["looping"]; present { valid:bool; op.looping,valid=value.(bool); if !valid { return {},.Invalid_Arguments } }

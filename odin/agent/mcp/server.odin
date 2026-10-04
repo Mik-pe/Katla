@@ -10,7 +10,7 @@ import "core:time"
 import "core:strings"
 
 @(private="package")
-Pending :: struct { id:string, ticket:u64, admitted:time.Duration, abandoned:bool }
+Pending :: struct { id,tool:string, ticket:u64, admitted:time.Duration, abandoned:bool }
 /// Stationary, single-caller protocol state; no World or application pointer crosses here.
 Server :: struct { mailbox:^editor.Agent_Harness, pending:[dynamic]Pending, timeout:time.Duration, closed:bool, allocator:mem.Allocator }
 /// Initializes a ticket-selective adapter over a scene mailbox shared with other producers.
@@ -21,13 +21,13 @@ server_init :: proc(s:^Server,mailbox:^editor.Agent_Harness,allocator:=context.a
 /// Releases this connection and its queued or unread replies without closing other producers.
 /// Join the scene owner before destroying its mailbox; already executing mutations are not undone.
 server_destroy :: proc(s:^Server) {
-    for pending in s.pending { editor.agent_abandon(s.mailbox,pending.ticket); delete(pending.id,s.allocator) }
+    for pending in s.pending { editor.agent_abandon(s.mailbox,pending.ticket); delete(pending.id,s.allocator); delete(pending.tool,s.allocator) }
     delete(s.pending); s^={}
 }
 /// Closes admission while preserving accepted work for normal result draining.
 server_finish :: proc(s:^Server) { s.closed=true }
 @(private="package")
-remove_pending :: proc(s:^Server,index:int) { delete(s.pending[index].id,s.allocator); ordered_remove(&s.pending,index) }
+remove_pending :: proc(s:^Server,index:int) { delete(s.pending[index].id,s.allocator); delete(s.pending[index].tool,s.allocator); ordered_remove(&s.pending,index) }
 @(private="package")
 tool_error :: proc(id,message:string,allocator:mem.Allocator)->string {
     text,err:=json.marshal(message,allocator=allocator); assert(err==nil); defer delete(text,allocator)
@@ -41,8 +41,7 @@ cancel_request :: proc(s:^Server,params:json.Object) {
     if !valid { return }; defer delete(id,s.allocator)
     for &pending,i in s.pending {
         if pending.id!=id { continue }
-        if editor.agent_cancel(s.mailbox,pending.ticket) { remove_pending(s,i) }
-        else { pending.abandoned=true }
+        editor.agent_abandon(s.mailbox,pending.ticket); remove_pending(s,i)
         return
     }
 }
@@ -119,7 +118,7 @@ server_receive :: proc(s:^Server,line:string,now:time.Duration)->string {
         ticket,call_error:=agent.submit_call(s.mailbox,{id,name,bytes})
         switch call_error {
         case .None:
-            append(&s.pending,Pending{id=id,ticket=ticket,admitted=now}); id=""
+            append(&s.pending,Pending{id=id,tool=strings.clone(name,s.allocator),ticket=ticket,admitted=now}); id=""
             return ""
         case .Unknown_Tool: return rpc_error(id,-32602,"Unknown tool",allocator=s.allocator)
         case .Invalid_Arguments: return tool_error(id,"Invalid tool arguments",s.allocator)
@@ -141,12 +140,15 @@ server_poll :: proc(s:^Server,now:time.Duration)->string {
         if !ready { index+=1; continue }
         defer editor.agent_response_destroy(&response)
         ordered_remove(&s.pending,index)
-        defer delete(pending.id,s.allocator)
+        defer { delete(pending.id,s.allocator); delete(pending.tool,s.allocator) }
         if pending.abandoned { continue }
         if response.result.error!=.None {
-            message:=fmt.aprintf("Scene tool failed: %v",response.result.error); defer delete(message)
+            message:=""
+            if pending.tool=="editor_view" { message=view_error_message(response.result.data,s.allocator) }
+            if message=="" { message=fmt.aprintf("Scene tool failed: %v",response.result.error) }; defer delete(message)
             return tool_error(pending.id,message,s.allocator)
         }
+        if pending.tool=="editor_view" { return view_result(pending.id,response.result.data,s.allocator) }
         ids:=make([]string,len(response.result.entities)); defer { for id in ids { delete(id) }; delete(ids) }
         for entity,i in response.result.entities { ids[i]=fmt.aprintf("%d",u64(entity)) }
         entities,err:=json.marshal(ids); assert(err==nil); defer delete(entities)
@@ -160,8 +162,7 @@ server_poll :: proc(s:^Server,now:time.Duration)->string {
     for &pending,i in s.pending {
         if pending.abandoned || now<pending.admitted || now-pending.admitted<s.timeout { continue }
         output:=rpc_error(pending.id,1004,"Scene owner did not complete the request before its deadline",allocator=s.allocator)
-        if editor.agent_cancel(s.mailbox,pending.ticket) { remove_pending(s,i) }
-        else { pending.abandoned=true }
+        editor.agent_abandon(s.mailbox,pending.ticket); remove_pending(s,i)
         return output
     }
     return ""

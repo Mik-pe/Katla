@@ -64,7 +64,17 @@ simulation_step :: proc(app:^Authoring,delta_seconds:f32)->editor.Scene_Error {
     if app.mode!=.Playing || delta_seconds==0 { return .None }
     runtime:=ecs.get_resource_mut(&app.world,Simulation_Runtime); if runtime==nil || !runtime.captured { return .Invalid_Operation }
     if delta_seconds>0.25 { return .Invalid_Field_Value }
+    event_error:=animation_events_preflight(app,delta_seconds)
+    if event_error==.Invalid_Operation {
+        signals:=ecs.get_resource_mut(&app.world,Script_Signals)
+        if signals!=nil && len(signals.pending)>0 {
+            retry_error:=script_step(app,0); if retry_error!=.None { return retry_error }
+            event_error=animation_events_preflight(app,delta_seconds)
+        }
+    }
+    if event_error!=.None { return event_error }
     animation_update(&app.world,delta_seconds)
+    event_error=animation_events_dispatch(app); if event_error!=.None { return event_error }
     physics:=physics_step(app,delta_seconds); defer physics_step_result_destroy(&physics); if physics.error!=.None { return physics.error }
     for event in physics.events { events_dispatch(app,event) }
     script_error:=script_step(app,delta_seconds); if script_error!=.None { return script_error }

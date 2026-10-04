@@ -43,7 +43,7 @@ def run(args):
         query, _ = client.tool('query_entities', {'position': [0, 1.5, -2], 'radius': 12, 'limit': 256})
         entities = query['data']['entities']
         assert {'Dörr vänster', 'Dörr höger', 'Fönster', 'Låg byrå'} <= {e['name'] for e in entities}
-        resources, _ = client.tool('list_resources', {'path': 'resources/models'})
+        resources = client.data('list_resources', {'path': 'resources/models'})
         model_entries = [e for e in resources['entries'] if e['path'].lower().endswith(('.gltf', '.glb'))]
         assert model_entries, resources
         before_ids = {e['entity_id'] for e in entities}

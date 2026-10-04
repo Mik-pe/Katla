@@ -31,6 +31,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native-metal", action="store_true", help="Require Metal4/Tier2 native tests and canonical material arrays")
     parser.add_argument("--native-vulkan", action="store_true", help="Require Vulkan1.3 and Khronos synchronization validation")
+    parser.add_argument("--vulkan-baseline", action="store_true", help="Run every selected Vulkan contract except sampled/storage descriptor-array proofs")
+    parser.add_argument("--vulkan-probe-array-capabilities", action="store_true", help="Only build/probe the native Vulkan fixture; exit77 means array breadth Unsupported, other failures remain failures")
     parser.add_argument("--native-surface", action="store_true", help="Include the Cocoa Vulkan acquire/resize/present fixture")
     parser.add_argument("--sanitize", action="store_true", help="Instrument every Odin test/native executable with AddressSanitizer")
     parser.add_argument("--skip-shader-checks", action="store_true", help="Reuse an already verified Naga library; omit Cargo and shader CPU checks")
@@ -50,11 +52,38 @@ def main():
         parser.error("--native-surface requires --native-vulkan and a macOS arm64 Cocoa session")
     if (args.vulkan_library or args.vulkan_icd) and not args.native_vulkan:
         parser.error("Vulkan loader/ICD options require --native-vulkan")
+    if (args.vulkan_baseline or args.vulkan_probe_array_capabilities) and not args.native_vulkan:
+        parser.error("Vulkan baseline/probe requires --native-vulkan")
+    if args.vulkan_probe_array_capabilities and (args.native_metal or args.native_surface or args.vulkan_baseline):
+        parser.error("The array capability probe is a separate Vulkan-only invocation")
     if args.sanitize and system == "Windows":
         parser.error("This Odin AddressSanitizer acceptance requires Darwin or Linux")
     for option in (args.vulkan_library, args.vulkan_icd):
         if option and not option.is_file():
             parser.error(f"Explicit Vulkan path does not exist: {option}")
+    if args.vulkan_probe_array_capabilities:
+        output = args.output_dir.resolve()
+        output.mkdir(parents=True, exist_ok=True)
+        executable = output / ("vulkan-native.exe" if system == "Windows" else "vulkan-native")
+        flags = ["-vet", "-strict-style"]
+        environment = os.environ.copy()
+        if apple:
+            environment.update(MTL_DEBUG_LAYER="1", METAL_DEVICE_WRAPPER_TYPE="1")
+        if args.vulkan_icd:
+            environment["VK_ICD_FILENAMES"] = str(args.vulkan_icd.resolve())
+        if args.sanitize:
+            flags.extend(["-debug", "-sanitize:address"])
+            environment = asan_environment(environment, False)
+            print("Probe ASan uses the native GPU external-driver leak boundary; address checks and Odin ownership tracking remain enabled.", flush=True)
+        run([args.odin, "build", "odin/gfx_vulkan_native", f"-out:{executable}", *flags])
+        default_loader = {"Darwin": "libvulkan.dylib", "Windows": "vulkan-1.dll"}.get(system, "libvulkan.so.1")
+        loader = args.vulkan_library.resolve() if args.vulkan_library else default_loader
+        command = [str(executable), "--probe-array-capabilities", str(loader)]
+        print("Running:", shlex.join(command), flush=True)
+        result = subprocess.run(command, cwd=ROOT, env=environment, check=False, timeout=60)
+        if result.returncode:
+            raise SystemExit(result.returncode)
+        return
     library_name = {"Darwin": "katla-shader-compiler", "Linux": "katla-shader-compiler", "Windows": "katla-shader-compiler.exe"}.get(system)
     if library_name is None:
         parser.error(f"Unsupported Naga library platform: {system}")
@@ -94,7 +123,7 @@ def main():
         executable = output / (name + extension)
         command = [args.odin, "build", package, f"-out:{executable}", *flags]
         if tests:
-            command.extend(["-build-mode:test", "-all-packages", "-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true"])
+            command.extend(["-build-mode:test", "-all-packages", "-define:ODIN_TEST_THREADS=1", "-define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true"])
         run([*command, *extra])
         return executable
 
@@ -119,7 +148,7 @@ def main():
             "fill": "odin/gfx_native/shaders/fill.comp",
             "params": "odin/gfx_native/shaders/params.comp",
             **{name: f"odin/gfx_vulkan_native/shaders/{name}.{stage}" for name, stage in
-               (("triangle", "vert"), ("color", "frag"), ("mesh", "vert"), ("tint", "frag"),
+               (("triangle", "vert"), ("color", "frag"), ("mesh", "vert"), ("depth_sense", "vert"), ("tint", "frag"),
                 ("sample", "frag"), ("image", "comp"), ("volume", "comp"))},
         }
         for name, source in sources.items():
@@ -135,14 +164,20 @@ def main():
         command = [executable, *(binaries[name] for name in ("fill", "params", "triangle", "color")), loader,
                    "--volume", binaries["volume"], "--images", binaries["sample"], binaries["image"],
                    "--mesh", binaries["mesh"], binaries["tint"], "--arrays", binaries["array"],
-                   "--storage-arrays", binaries["storage_array"]]
+                   "--storage-arrays", binaries["storage_array"], "--depth-sense", binaries["depth_sense"], binaries["tint"]]
         if args.native_surface:
             command.append("--surface")
+        if args.vulkan_baseline:
+            command.append("--baseline")
+            print("Vulkan baseline executes all non-array contracts; sampled4096/storage2 native proofs are explicitly excluded.", flush=True)
         run(command, env=gpu_env, timeout=60)
     if args.native_metal and args.native_vulkan:
         executable = build("odin/gfx_shader_native", "shader-native-reload")
         run([executable, library, loader], env=gpu_env, timeout=60)
-    print("Odin GPU validation passed for the explicitly selected checks and backends.", flush=True)
+    if args.vulkan_baseline:
+        print("Odin GPU validation passed for the selected non-array Vulkan baseline; native descriptor-array proofs were not run.", flush=True)
+    else:
+        print("Odin GPU validation passed for the explicitly selected checks and backends.", flush=True)
 
 
 if __name__ == "__main__":

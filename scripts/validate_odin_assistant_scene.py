@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
 import threading
 
 from validate_odin_llm import LocalServer, Provider, ROOT
+
+from build_katla_odin import cpu_test_environment
+from odin_validation_manifest import validation_manifest
 
 
 class SceneProvider(Provider):
@@ -51,7 +55,7 @@ class SceneProvider(Provider):
             send(text="Scene restored with fresh IDs.")
 
 
-def validate(binary: pathlib.Path):
+def validate(binary: pathlib.Path, environment=None):
     SceneProvider.calls = {}
     SceneProvider.failures = []
     server = LocalServer(("127.0.0.1", 0), SceneProvider)
@@ -68,7 +72,7 @@ def validate(binary: pathlib.Path):
                 config = root / "llm.toml"
                 config.write_text(f'provider="open_ai_compatible"\napi="{api}"\napi_key="local-transport-test"\nbase_url="http://127.0.0.1:{server.server_port}/scene/v1"\nmodel="explicit-test-model"\nrate_limit_min_interval_ms=0\ntimeout_ms=3000\n')
                 config.chmod(0o600)
-                result = subprocess.run([str(binary), str(config), str(project), str(resources)], cwd=ROOT, capture_output=True, text=True, timeout=12)
+                result = subprocess.run([str(binary), str(config), str(project), str(resources)], cwd=ROOT, env=environment, capture_output=True, text=True, timeout=12)
                 assert result.returncode == 0, (api, result.stderr, result.stdout, SceneProvider.failures)
                 assert "local-transport-test" not in result.stdout + result.stderr
                 actual = json.loads(result.stdout)
@@ -90,14 +94,21 @@ def main():
     parser.add_argument("--binary", type=pathlib.Path, default=ROOT / "target/odin-assistant-scene")
     parser.add_argument("--sanitize", action="store_true")
     parser.add_argument("--no-build", action="store_true")
+    parser.add_argument("--build-manifest", type=pathlib.Path, help="Reuse verified canonical dependency paths, compiler and sanitizer mode")
     args = parser.parse_args()
+    manifest = validation_manifest(parser, args.build_manifest, args.sanitize, [])
     binary = args.binary.resolve()
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    environment = cpu_test_environment(os.environ, binary.parent, args.sanitize)
+    odin = manifest["odin"] if manifest else "odin"
     if not args.no_build:
-        command = ["odin", "build", "odin/examples/assistant_scene", f"-out:{binary}", "-vet", "-strict-style"]
+        command = [odin, "build", "odin/examples/assistant_scene", f"-out:{binary}", "-vet", "-strict-style"]
+        if manifest:
+            command += manifest["foreign_defines"]
         if args.sanitize:
             command += ["-sanitize:address", "-debug"]
-        subprocess.run(command, cwd=ROOT, check=True)
-    validate(binary)
+        subprocess.run(command, cwd=ROOT, env=environment, check=True)
+    validate(binary, environment)
 
 
 if __name__ == "__main__":

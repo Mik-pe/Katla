@@ -1,155 +1,168 @@
-# Scene and material authoring for agents
+# Agent scene authoring
 
-Connect to the running editor using [shared editor MCP](shared-editor-view.md).
-Author in edit mode; use `simulation` for gameplay verification. `editor_view` returns a committed viewport PNG;
-use it before editing and again to verify the result. Native Vulkan/Metal output
-is the visual authority. Geometry queries alone cannot establish occlusion.
+The Odin editor exposes scene actions through one application owner. MCP clients,
+editor panels and the Co-Creator use the same registered components, validated
+asset services and undo history. The complete tool schemas live in
+[`odin/agent/tools.json`](../odin/agent/tools.json); read `tools/list` from the
+running owner before issuing requests. The [shared viewport guide](shared-editor-view.md)
+explains launch, transport and image provenance.
 
-For an authored example, launch `cargo run -- --scene assets/scenes/material-studio.katla`.
-Select a material sphere to explore presets and live surface controls alongside
-a small furnished lounge.
+## Start a disposable editor
 
-## Find things first
+Build and launch through the [canonical Odin scripts](odin_build.md). For a
+shared-room session on macOS or Linux:
 
-Use `query_entities` with `name_filter`, `component_filter` or a world-space
-`position` and `radius`. Returned generational IDs are **decimal strings**: retain
-them verbatim. `get_scene_hierarchy` gives parent relationships;
-`list_available_components` and `get_component_attributes` expose editable fields.
-
-`search_assets` searches recursively under the discovered resource root. All
-whitespace-separated words must match the relative path, case-insensitively.
-Results are sorted and include `total` and `truncated`; the default limit is 64,
-maximum 256. Symlinks are skipped. Search before choosing a model filename:
-
-```json
-{"query":"chair", "extensions":["glb", "gltf"], "limit":32}
+```sh
+python3 scripts/build_katla_odin.py --output target/katla-authoring
+katla_socket_dir=$(mktemp -d "${TMPDIR:-/tmp}/katla-editor.XXXXXX")
+chmod 700 "$katla_socket_dir"
+python3 scripts/run_katla_odin.py --build-dir target/katla-authoring --no-build -- \
+  --scene assets/scenes/shared-room.katla --gpu-validation \
+  --mcp-socket "$katla_socket_dir/editor.sock"
 ```
 
-Pass the returned path directly to `spawn_model`, for example
-`{"path":"models/Lantern.glb", "position":[1,0,-2]}`. Model paths are relative
-to the resource root, independent of the editor's working directory. Absolute
-paths and parent traversal are rejected. An empty search query lists assets. `assets` paths are resource-relative for
-`spawn_model` and script attachment. `project_paths` include the resource-root
-directory and are ready for the project-relative `prefab` tool.
-Use `list_resources`/`read_resource` for project files such as scene documents.
+The launcher supplies built native dependencies and enables Metal validation on
+macOS. The endpoint requires an owner-only parent directory and mode 0600;
+existing endpoints are rejected. Run scripts from another terminal against that
+same socket. Loading a scene replaces the current document and clears history,
+so use a disposable editor for the validation journeys below.
 
-## Edit surfaces without touching GPU handles
+## Discover before editing
 
-The `material` tool and Inspector → Material edit the same per-object PBR factors.
-They preserve model textures, mesh geometry and GPU material handles. Presets
-are flat PBR tints, rather than scanned wood, concrete or fabric textures.
+`search_assets` searches the installed resource tree, including its prefab/mesh
+assets. Its result includes resource-relative `assets`, project-relative
+`project_paths` for those same discovered files, `total`, `truncated`, `root` and `path_contract`. Query matching
+uses Unicode lowercase matching and all whitespace-separated words. Extension filters
+accept a leading dot. An omitted/null limit defaults to 64; unsigned limits clamp
+to 1–256.
+
+`list_resources` and `read_resource` use the project root. For example, list
+`resources/models` for the default project layout. An omitted/null list path means
+the project root; `filter` is an optional extension. `create_resource` and
+`write_resource` also write project-relative paths through retained root
+handles. Creation is exclusive; replacement is atomic. A failed validation does
+not overwrite an existing file. Templates and explicit text content use the same
+service as the asset browser.
+
+`spawn_model` accepts supported GLTF/GLB, STL and `.katmesh` sources. Relative model
+paths use the installed resource root. An intentionally supplied absolute path
+creates a confined File capability for that source and its validated dependencies;
+it is not permission to read arbitrary sibling files. Prefabs use `prefab`
+`instantiate`. See [scene assets and File capabilities](scene_format.md) and
+[prefab authoring](prefabs.md).
+
+## Construct and inspect
+
+Use `spawn_entity` for named primitives, with optional world position, XYZ Euler
+rotation in degrees and scale. Scene coordinates are meters, Y up. Supported
+shapes are cube, sphere, plane, cylinder, torus and cone. A cube's geometry has unit
+size before its transform scale. A successful scene reply is the canonical
+`{entity_ids, data}` envelope. Entity IDs are decimal strings retaining the full
+generational u64 value; zero can be a valid entity ID.
+
+`query_entities` supplies names, components, parents, positions and drawable
+bounds. `get_scene_hierarchy`, `list_available_components` and
+`get_component_attributes` expose the current registered application data. Do not
+infer component names or fields from the old engine. For a transform, read
+`SceneTransform`, modify its `local` value, then submit that complete field:
 
 ```json
-{"action":"presets"}
+{"entity_id":"4294967302","component":"SceneTransform","field":"local","value":{"position":[0,1,0],"rotation":[0,0,0,1],"scale":[1.5,1,1]}}
 ```
 
-```json
-{"action":"inspect", "entity_id":"4294967302"}
-```
+This is a `set_field` argument object. Preserve the other values obtained from the
+attribute query when changing one axis. `set_parent` validates the entire
+relationship before publishing; null/omitted `parent_id` detaches. Duplicate,
+destroy, component edits and native renderer preparation share atomic application
+history. Undo/redo can recreate entities with fresh IDs and remap references;
+query again after recreation or scene replacement.
 
-```json
-{"action":"set", "entity_ids":["4294967302","4294967303"],
- "preset":"plaster", "base_color":[0.88,0.85,0.79,1.0], "roughness":0.85}
-```
+`material` supports `presets`, `inspect` and `set`. A set accepts 1–256 unique
+`entity_ids`, an optional preset and optional color/metallic/roughness/occlusion
+patches. All targets and values are validated before any target changes. The
+presets are plaster, oak, concrete, ceramic, brushed_metal and fabric. Material tool colors
+are sRGB RGBA; particle colors are linear RGBA.
 
-Available presets: `plaster`, `oak`, `concrete`, `ceramic`, `brushed_metal`, `fabric`.
-Explicit fields override the preset. Omitting the preset patches only supplied
-fields. `base_color` is sRGB RGBA; `metallic`, `roughness` and `ao` are linear
-factors. Every number must be finite and in 0..=1. Batch edits accept 1–256
-distinct mesh IDs and preflight every target before changing any object.
-One batch is one agent undo step. Inspector sliders preview continuously and
-group a pointer gesture into one editor undo step. Undo and redo restore the
-exact linear color, including an originally absent tint.
+## Room recipes
 
-Base color multiplies the existing texture. Alpha edits the tint factor; it
-does not switch the object's pipeline to transparent rendering. Emission and
-texture replacement are outside this per-object factor editor.
+The [room builder](../scripts/author_room.py) emits a reviewable plan without
+connecting:
 
-## Build rooms with usable dimensions
-
-Katla uses meters, Y up, box centers for positions, and degrees for spawn-tool
-Euler rotations. A unit cube scaled `[6,0.15,8]` is a 6 × 0.15 × 8 meter slab.
-Name parts by room and function, e.g. `Study / Floor`, so name search is useful.
-
-The room helper adds a floor and walls around a usable interior with a centered
-door opening in the front (+Z) wall. It leaves the current scene in place:
-
-```bash
+```sh
 python3 scripts/author_room.py --dry-run --name Study --size 6 3 8
-python3 scripts/author_room.py --socket /tmp/katla-editor.sock \
-  --name Study --size 6 3 8 --origin 0 0 -4 --output /tmp/study-receipt.json
 ```
 
-`--size` is width, height, depth. `--doorway` is width, height; `--ceiling` adds a
-ceiling. The receipt lists every part's ID, bounds recipe, preset and undo count.
-On an operation failure, the helper undoes its successful edits in reverse order.
-Use it while no other author is concurrently editing the scene, because rollback
-uses the editor's shared agent history. No physics colliders are generated.
+Apply that plan to the selected editor:
 
-Place props using `spawn_model` or named primitives. Query nearby bounds before
-placing furniture and leave space for door approaches and circulation. Observe
-from inside the room and from above. `editor_view focus` can fit a particular
-object; `set_camera` takes world-space position and target.
-
-## Connect prefab behavior
-
-Start with `prefab describe` to obtain complete mesh and prefab JSON examples.
-Write referenced `.katmesh` recipes first, then `.katprefab` composition; validate
-before writing and instantiate for a native preview. Instantiation returns named
-`nodes` with lossless IDs, parents and scene keys. Pick the specific child by its
-role rather than assuming a template ID survives instantiation. Mesh parts with
-one material/lifecycle combine into one geometry stream; independent materials
-or behaviors belong on separate child entities. See [prefabs](prefabs.md).
-
-`behavior describe` returns the actual complete particle descriptor and a sample
-script using `on_spawn` for one-time subscriptions. These operations are shared by MCP and the co-creator:
-
-```json
-{"action":"set_script","entity_id":"4294967302","path":"scripts/prefab-effect.luau"}
+```sh
+python3 scripts/author_room.py --socket "$katla_socket_dir/editor.sock" \
+  --name Study --size 6 3 8 --origin 20 0 -4
 ```
 
-`set_script` requires an existing resource-relative `.luau` file below the scripts
-root. It compiles before replacing the attachment. `set_particles` requires a
-`document` matching the scene particle descriptor, validated before mutation;
-use the example returned by `describe`. It replaces authored configuration while
-preserving a live native emitter handle. Both edits have agent undo/redo. Explicit
-`path: null` or `document: null` detaches; omitting the field is an error.
-`inspect` reports the current script, full particle descriptor and world position.
-Particle colors use linear RGBA; material tool colors use sRGB.
+The floor, walls and optional ceiling are real cube entities. Walls sit outside
+the usable interior and the front (+Z) wall leaves a centered doorway. Materials
+are applied in validated batches. A failed operation unwinds only the successful
+edits made by this invocation. Run the recipe without concurrent edits: rollback uses the shared chronological
+history. The script leaves the document unsaved unless
+`--save DESTINATION.katla` is supplied.
 
-Create a sensor using `trigger create_box` with empty rules, parent it under the
-prefab root, attach particles/script, then `set_rules`. Ordered trigger actions
-support animations, `set_particles_active`, `burst_particles` and named Luau
-`emit` events. `behavior burst` previews 1–100,000 particles on an active emitter;
-`set_active` is undoable during authoring and transient during simulation.
-The shipped `scripts/prefab-effect.luau` listens to `prefab_activated`, filters by
-its own trigger identity, activates its emitter and queues a burst. Include the
-sensor and referenced visitor in the same captured subtree; external references
-reject capture instead of binding to an unrelated object.
+[`furnish_shared_room.py`](../scripts/furnish_shared_room.py) loads the prepared
+room, adds the 15 unit-cube proxies from `teen-room-plan.json`, checks their bounds,
+undoes them, and places them again. It preserves the base room, doors, window and
+cabinet. Clearance checks describe a central passage and door approaches; they do
+not prove navigation or door swing. These are explicit geometric proxies, not
+claims that furniture models were discovered.
 
-Use `simulation play`, inspect trigger diagnostics and `behavior inspect`, then
-`editor_view observe` for native output. Pause and resume are explicit; `play`
-while already paused leaves it paused. Stop reconstructs the authored snapshot,
-replaces runtime IDs and clears history. Query fresh IDs afterward. Script/particle
-attachment authoring and prefab instantiate/capture/remove require edit mode;
-bursts/toggles can preview at runtime. Capture after Stop persists authored
-behavior, not transient gameplay state. Particle simulation continues visually
-while paused; the pause gate applies to gameplay scripts and physics.
+## Behavior, preview and persistence
 
-The [native prefab acceptance script](../scripts/validate_prefabs.py) drives this
-complete workflow in a disposable editor and writes PNGs plus a receipt.
+`behavior describe` returns the actual particle descriptor and shipped script
+path. `set_script` compiles the selected source before replacing an attachment;
+bare resource names normalize below `scripts` and extensions normalize to
+`.luau`. Explicit File scripts are admitted only through the selected scene,
+prefab or source capability. `set_particles` validates its complete document.
+Explicit null `path`/`document` detaches; omission is an error. Attachments and
+emitter configuration share authoring history. `burst` previews 1–100,000 particles
+on an active emitter; consumed bursts are transient and do not replay on undo/redo.
 
-## Verify and persist
+`trigger` creates sensors and edits ordered rules. Rules can play animations,
+change emitter activity, burst particles or emit named Luau events. Use the
+[scene event contract](scene-events.md) for targets, dependencies and delivery
+order. Capture requires internal references to stay inside the captured subtree.
 
-Use `material inspect`, scene queries, then `editor_view observe` to check actual
-appearance. `simulation inspect` also reports whole-scene completed GPU particle
-counters with source submission, so they can lag the current frame.
-`editor_view undo` reverses the latest agent edit. Scene saves preserve
-base color, metallic, roughness and occlusion through the existing v3 format.
-`save_scene` writes to the explicit destination you supply; loading a scene
-replaces the current document and clears its history.
+`simulation` supplies explicit inspect/play/pause/resume/stop transitions. Pause
+retains preview state. Stop restores the authored snapshot with fresh runtime IDs
+and resets history. Attachments, hierarchy and prefab mutations require Editing;
+`editor_view observe` remains available during Play/Pause.
 
-`scripts/validate_authoring.py` exercises asset discovery, room geometry, batch
-material preflight, committed pixel changes, undo and scene save/reload in a
-disposable editor (requires ImageMagick). Its output describes native engine behavior; it is not a
-semantic evaluation of an external model.
+`save_scene` accepts an explicit destination, or omitted/null path for the current
+bound document. An unbound document needs a destination. `load_scene` accepts a
+project-relative or intentional absolute `.katla` path. Complete decode, asset
+loading, reference validation and native preparation precede publication. A failed
+load leaves the previous world, document baseline and native owners intact. See
+[scene persistence](scene_format.md).
+
+## Validation
+
+Run the native journeys against a disposable socket owner:
+
+```sh
+python3 scripts/validate_shared_view.py "$katla_socket_dir/editor.sock"
+python3 scripts/furnish_shared_room.py --socket "$katla_socket_dir/editor.sock"
+python3 scripts/validate_authoring.py --socket "$katla_socket_dir/editor.sock"
+python3 scripts/validate_prefabs.py --socket "$katla_socket_dir/editor.sock"
+```
+
+The authoring journey compares exact captured RGB pixels with a bounded stdlib
+reader for the editor's native PNG output. For an isolated project/resource copy,
+pass its project directory as `--project` to
+the prefab validator. These scripts produce PNGs, exact frame/submission metadata
+and receipts. The prefab journey verifies actual mesh writes, rejected replacement,
+Capture/Instantiate/Remove, fresh-ID undo/redo, preview gating and saved hierarchy.
+Particle/Luau delivery and allocation-failure rollback also have dedicated native
+application tests; this script does not manufacture GPU counters.
+
+Protocol fixtures run with
+`python3 -m unittest discover -s scripts -p test_katla_mcp_client.py -v`.
+They test transport envelopes and recovery independently of native rendering.
+Neither deterministic recipes nor local host fixtures certify a live model's room
+understanding, OS interaction or attachment to a user's existing conversation.

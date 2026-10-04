@@ -23,7 +23,7 @@ def view(action, label=None, **kwargs):
     return client.view(action, output=out / label if label and save else None, **kwargs)
 
 info = client.info
-print('MCP initialize/tools/list:', info['serverInfo'], len(client.tools), flush=True)
+print('MCP discover/tools/list:', info['supportedVersions'], len(client.tools), flush=True)
 tool('load_scene', {'path':str(Path(__file__).resolve().parents[1]/'assets/scenes/shared-room.katla')})
 view('set_camera',position=[0,1.6,1],target=[0,1.2,-6])
 room=view('select','room',entity_id=None)
@@ -37,7 +37,7 @@ limited=view('observe',limit=1)
 assert limited['truncated'] and len(limited['candidates'])==1 and limited['candidate_count']>1
 near,_=tool('query_entities',{'position':[0,1.6,1],'radius':15})
 assert any(e['name']=='Föremål bakom kameran' for e in near['data']['entities'])
-resources,_=tool('list_resources',{'path':'resources','filter':'gltf'})
+resources=client.data('list_resources',{'path':'resources/models','filter':'gltf'})
 assert resources['entries'],resources
 print('Room without selection:',len(room['candidates']),'candidates; behind-camera object excluded; spatial query includes it',flush=True)
 focused=view('focus','focused-left',entity_id=left['entity_id'],select=False)
@@ -45,9 +45,10 @@ assert focused['selected_entity_id'] is None
 assert focused['center_pick']==left['entity_id'],focused
 selected=view('select','selected-left',entity_id=left['entity_id'])
 assert selected['selected_entity_id']==left['entity_id']
-attrs,_=tool('get_component_attributes',{'entity_id':left['entity_id'],'component':'TransformComponent'})
-baseline=next(f['value'] for f in attrs['data']['fields'] if f['name']=='scale_x')
-tool('set_field',{'entity_id':left['entity_id'],'component':'TransformComponent','field':'scale_x','value':baseline*1.5})
+attrs=client.data('get_component_attributes',{'entity_id':left['entity_id'],'component':'SceneTransform'})
+local=attrs['local']
+local['scale'][0]*=1.5
+tool('set_field',{'entity_id':left['entity_id'],'component':'SceneTransform','field':'local','value':local})
 changed=view('observe','widened-left')
 wide=next(c for c in changed['candidates'] if c['entity_id']==left['entity_id'])
 assert abs(wide['world_bounds']['extent'][0]-left['world_bounds']['extent'][0]*1.5)<.001

@@ -14,23 +14,19 @@ model_native_bind_prepare :: proc(cache:^Native_Model($R),scene:^Scene_Graph)->(
     token.candidate.graph=nil; token.candidate.image_ids=nil; token.candidate.passes=nil; token.candidate.order=nil; token.candidate.texture_inputs=nil
     token.candidate.slots=make([]Model_Slot,len(cache.slots),cache.allocator)
     copy(token.candidate.slots,cache.slots)
-    for &slot in token.candidate.slots { slot.copied_color={}; slot.linear_color={}; slot.color_staging={} }
-    error:=model_composite_slots_prepare(&token.candidate,scene)
-    if error=={} { error=model_native_bind_graph(&token.candidate,scene) }
+    error:=model_native_bind_graph(&token.candidate,scene)
     if error!={} { model_native_bind_abort(token); return nil,error }
     return token,{}
 }
 /// Discards only the candidate graph arrays; borrowed native/source owners remain published.
 model_native_bind_abort :: proc(token:^Model_Binding($R)) {
     if token==nil { return }
-    allocator:=token.allocator; model_graph_release(&token.candidate); model_composite_slots_destroy(&token.candidate); delete(token.candidate.slots,allocator); delete(token.candidate.batch.entries,allocator); free(token,allocator)
+    allocator:=token.allocator; model_graph_release(&token.candidate); delete(token.candidate.slots,allocator); delete(token.candidate.batch.entries,allocator); free(token,allocator)
 }
 /// Publishes independent graph metadata and consumes the candidate exactly once.
 model_native_bind_commit :: proc(cache:^Native_Model($R),token:^Model_Binding(R)) {
     model_graph_release(cache)
-    model_composite_slots_destroy(cache); delete(cache.slots,cache.allocator); cache.slots=token.candidate.slots
-    cache.copied_color=token.candidate.copied_color; cache.linear_color=token.candidate.linear_color; cache.color_staging=token.candidate.color_staging
-    cache.copied_desc=token.candidate.copied_desc; cache.linear_desc=token.candidate.linear_desc; cache.staging_desc=token.candidate.staging_desc
+    delete(cache.slots,cache.allocator); cache.slots=token.candidate.slots
     cache.graph=token.candidate.graph
     cache.frame=token.candidate.frame; cache.objects=token.candidate.objects; cache.geometry=token.candidate.geometry
     cache.image_ids=token.candidate.image_ids; cache.passes=token.candidate.passes; cache.order=token.candidate.order; cache.texture_inputs=token.candidate.texture_inputs

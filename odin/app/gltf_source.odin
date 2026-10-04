@@ -119,6 +119,9 @@ gltf_extract_images :: proc(root:^resources.Root,path:string,data:^cgltf.data,mo
             encoded,uri_mime,error:=gltf_uri_bytes(root,path,string(image.uri),budget)
             if error!=.None { return error }; target.encoded=encoded
             if mime=="" { mime=uri_mime }
+            if !strings.has_prefix(string(image.uri),"data:") {
+                source_path,path_error:=gltf_dependency_path(path,string(image.uri)); if path_error!=.None { return path_error }; target.source_path=source_path
+            }
         } else { return .Invalid_Data }
         bytes:=target.encoded
         actual:=""

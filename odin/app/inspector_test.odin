@@ -51,8 +51,25 @@ test_inspector_material_gesture_cancel_invalid_batch_and_history_conflict :: pro
     testing.expect_value(t,material_gesture_cancel(&app,&gesture),editor.Scene_Error.Component_Not_Found)
     after,_:=ecs.get_component(&app.world,a,Surface_Material); testing.expect_value(t,after.ao,f32(0.2))
     ecs.add_component(&app.world,b,other)
-    app.agent.session.next_id+=1
     testing.expect_value(t,material_gesture_finish(&app,&gesture),editor.Scene_Error.Invalid_Operation)
+}
+
+@(test)
+test_material_readonly_observation_preserves_drag_and_shared_history :: proc(t:^testing.T) {
+    owner:Authoring; authoring_init(&owner); defer authoring_destroy(&owner)
+    id:=ecs.spawn(&owner.world,struct{surface:Surface_Material}{Surface_Material{roughness=.5,ao=1}})
+    gesture:Material_Gesture; defer material_gesture_destroy(&gesture)
+    testing.expect_value(t,material_gesture_begin(&owner,&gesture,{id}),editor.Scene_Error.None)
+    testing.expect_value(t,material_gesture_preview(&owner,&gesture,{.Roughness},{roughness=.3}),editor.Scene_Error.None)
+    query:=editor.Scene_Op{kind=.Query_Entities}
+    result,group:=editor.scene_execute(&owner.world,&owner.registry,query); editor.agent_record_action(&owner.agent.session,query,&result,&group)
+    testing.expect(t,gesture.active && !editor.agent_can_undo(&owner.agent.session))
+    testing.expect_value(t,material_gesture_preview(&owner,&gesture,{.Roughness},{roughness=.1}),editor.Scene_Error.None)
+    testing.expect_value(t,material_gesture_finish(&owner,&gesture),editor.Scene_Error.None)
+    testing.expect_value(t,authoring_undo_last(&owner),editor.Scene_Error.None)
+    testing.expect_value(t,ecs.get_component_mut(&owner.world,id,Surface_Material).roughness,f32(.5))
+    testing.expect_value(t,authoring_redo_last(&owner),editor.Scene_Error.None)
+    testing.expect_value(t,ecs.get_component_mut(&owner.world,id,Surface_Material).roughness,f32(.1))
 }
 
 @(test)

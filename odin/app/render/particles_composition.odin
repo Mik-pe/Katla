@@ -17,9 +17,17 @@ particle_prepare_callback :: proc($R:typeid)->proc(rawptr,^Native_Scene(R),gfx.F
         consumer:=cast(^Particle_Consumer(R))state
         buffers,error:=particle_prepare(consumer,&scene.graph,token,frame,consumer.delta_time)
         if error!={} {
-            if error.gpu!=.None || error.packet!=.None { return {},{gpu=error.gpu,packet=error.packet} }
-            return {},{scene=.Invalid_Geometry}
+            if error.gpu==.Busy {
+                if !consumer.preparation_busy_warned { log.warn("Particle frame preparation deferred",error) }
+                consumer.preparation_busy_warned=true
+            } else {
+                consumer.preparation_busy_warned=false
+                log.error("Particle frame preparation rejected",error,"slot",token.slot,"previous",consumer.previous_slot)
+            }
+            if error.gpu!=.None || error.packet!=.None { return {},{gpu=error.gpu,packet=error.packet,particle=error.code} }
+            return {},{scene=.Invalid_Geometry,particle=error.code}
         }
+        consumer.preparation_busy_warned=false
         return {buffers=buffers},{}
     }
 }
@@ -36,7 +44,7 @@ particle_aborted_callback :: proc($R:typeid)->proc(rawptr) { return proc(state:r
 particle_validate_callback :: proc($R:typeid)->proc(rawptr,Particle_Owner,Particle_Selection)->Native_Error {
     return proc(state:rawptr,owner:Particle_Owner,entities:Particle_Selection)->Native_Error {
         error:=particle_scene_validate(cast(^Particle_Consumer(R))state,owner,entities)
-        if error!={} { return {gpu=error.gpu,packet=error.packet,scene=.Invalid_Geometry} }
+        if error!={} { return {gpu=error.gpu,packet=error.packet,scene=.Invalid_Geometry,particle=error.code} }
         return {}
     }
 }

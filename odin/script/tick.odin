@@ -23,10 +23,16 @@ call_hook :: proc(owner:^Runtime,instance:^Instance,snapshot:^Snapshot,name:cstr
 push_event :: proc(owner:^Runtime,event:Event) {
     vm:=&owner.vm
     if event.payload>0 { luau.get_reference(vm,event.payload); return }
-    vm.api.create_table(vm.state,0,4); push_entity(owner,event.trigger); vm.api.set_field(vm.state,-2,"trigger"); push_entity(owner,event.other); vm.api.set_field(vm.state,-2,"other")
+    vm.api.create_table(vm.state,0,8); push_entity(owner,event.trigger); vm.api.set_field(vm.state,-2,"trigger"); push_entity(owner,event.other); vm.api.set_field(vm.state,-2,"other")
     trigger:=fmt.aprintf("%d",event.trigger); other:=fmt.aprintf("%d",event.other); defer { delete(trigger); delete(other) }
     luau.push_string(vm,trigger); vm.api.set_field(vm.state,-2,"trigger_entity")
     luau.push_string(vm,other); vm.api.set_field(vm.state,-2,"other_entity")
+    if event.has_animation {
+        push_entity(owner,event.trigger); vm.api.set_field(vm.state,-2,"entity")
+        luau.push_string(vm,trigger); vm.api.set_field(vm.state,-2,"entity_id")
+        luau.push_string(vm,event.animation_clip); vm.api.set_field(vm.state,-2,"clip_name")
+        vm.api.push_number(vm.state,f64(event.animation_loop_count)); vm.api.set_field(vm.state,-2,"loop_count")
+    }
 }
 /// Executes deterministic entity order, then transfers commands for host processing after every script.
 tick :: proc(owner:^Runtime,delta:f32,entities:[]Entity_State,events:[]Event=nil,input:Input={},queries:Query_Results={})->(output:Output,error:string) {
@@ -35,7 +41,7 @@ tick :: proc(owner:^Runtime,delta:f32,entities:[]Entity_State,events:[]Event=nil
     if math.is_nan(delta) || math.is_inf(delta) || delta<0 || len(entities)>100_000 || len(events)>4096 || len(events)+len(owner.deferred_events)>8192 { return output,strings.clone("Invalid bounded script tick") }
     seen:=make(map[u64]bool,owner.allocator); defer delete(seen)
     for entity in entities { if seen[entity.id] || !finite_vector(entity.transform.position) || !finite_vector(entity.transform.scale) || !finite_vector(entity.velocity) { return output,strings.clone("Invalid entity snapshot") }; seen[entity.id]=true }
-    for event in events { if len(strings.trim_space(event.name))==0 || len(event.name)>128 { return output,strings.clone("Invalid event name") } }
+    for event in events { if (event.has_animation && (event.payload>0 || len(event.animation_clip)==0 || len(event.animation_clip)>1<<20)) || len(strings.trim_space(event.name))==0 || len(event.name)>128 { return output,strings.clone("Invalid event name") } }
     for value in input.mouse_delta { if math.is_nan(value) || math.is_inf(value) { return output,strings.clone("Invalid input snapshot") } }; if math.is_nan(input.mouse_wheel) || math.is_inf(input.mouse_wheel) || len(input.actions)>256 || len(input.keys)>256 { return output,strings.clone("Invalid input snapshot") }
     if owner.tick_serial==max(u64) { return output,strings.clone("Script tick identity exhausted") }; owner.tick_serial+=1
     snapshot:=snapshot_create(owner,entities,input,queries); defer snapshot_release(snapshot)
@@ -44,8 +50,8 @@ tick :: proc(owner:^Runtime,delta:f32,entities:[]Entity_State,events:[]Event=nil
     for id,_ in owner.instances { if !seen[id] { append(&stale,id) } else { append(&ids,id) } }; slice.sort(stale[:]); slice.sort(ids[:])
     for id in stale { instance:=owner.instances[id]; path:=strings.clone(instance.path); failure:=instance_destroy(owner,instance); if failure!="" { append(&output.diagnostics,Diagnostic{id,path,failure}) } else { delete(path) }; delete_key(&owner.instances,id) }
     delivery:=owner.deferred_events; owner.deferred_events=make([dynamic]Event,owner.allocator)
-    defer { for event in delivery { delete(event.name); if event.payload>0 { owner.vm.api.unreference(owner.vm.state,event.payload) } }; delete(delivery) }
-    for event in events { copy:=event; copy.name=strings.clone(event.name); if event.payload>0 { luau.get_reference(&owner.vm,event.payload); copy.payload=owner.vm.api.reference(owner.vm.state,-1); luau.pop(&owner.vm) }; append(&delivery,copy) }
+    defer { for event in delivery { delete(event.name); delete(event.animation_clip); if event.payload>0 { owner.vm.api.unreference(owner.vm.state,event.payload) } }; delete(delivery) }
+    for event in events { copy:=event; copy.name=strings.clone(event.name); copy.animation_clip=strings.clone(event.animation_clip); if event.payload>0 { luau.get_reference(&owner.vm,event.payload); copy.payload=owner.vm.api.reference(owner.vm.state,-1); luau.pop(&owner.vm) }; append(&delivery,copy) }
     for id in ids {
         instance:=owner.instances[id]; failed:=false; owner.current_entity=id
         if !instance.disabled {
@@ -64,7 +70,7 @@ tick :: proc(owner:^Runtime,delta:f32,entities:[]Entity_State,events:[]Event=nil
     output.commands=owner.commands; owner.commands=make([dynamic]Command,owner.allocator)
     output.logs=owner.logs; owner.logs=make([dynamic]Log,owner.allocator); owner.current_entity=0
     for command in output.commands { if command.kind==.Emit {
-        event:=Event{strings.clone(command.name),command.owner,command.owner,-1}; if command.payload>0 { luau.get_reference(&owner.vm,command.payload); event.payload=owner.vm.api.reference(owner.vm.state,-1); luau.pop(&owner.vm) }; append(&owner.deferred_events,event)
+        event:=Event{name=strings.clone(command.name),trigger=command.owner,other=command.owner,payload=-1}; if command.payload>0 { luau.get_reference(&owner.vm,command.payload); event.payload=owner.vm.api.reference(owner.vm.state,-1); luau.pop(&owner.vm) }; append(&owner.deferred_events,event)
     } }
     return output,""
 }

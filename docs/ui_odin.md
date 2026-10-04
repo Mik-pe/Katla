@@ -77,7 +77,7 @@ and preserve capture outside bounds. Scroll descendants receive inherited clips.
 
 Drawing and hit testing use matching content/overlay/popup/modal/tooltip layers.
 Hidden or dormant ancestors exclude descendants. Disabled ancestors block input.
-Popup backgrounds cover lower controls and scrollbars. The outside click that
+Explicit descriptor control backgrounds override theme state colors and are drawn once, including translucent backgrounds. Popup backgrounds cover lower controls and scrollbars. The outside click that
 closes a popup is consumed. Modal input traps focus and blocks outside pointer
 and keyboard delivery. Popup menu arrows and Tab move within menu focus scopes;
 modal Tab wraps within the modal. `Dismiss_Action` asks the app to hide the menu
@@ -116,7 +116,7 @@ capture and nested clipping, exact tab migration/reopening, snapshot rollback,
 stale dock IDs, drag/click distinction, blur submission after removal, ordered finish/click and actual dock drag input, disabled
 ancestors and capture retirement. Tests use explicitly named deterministic font
 fixtures to isolate CPU layout/input contracts; they do not claim native shaping.
-All fourteen pass with ASan and zero outstanding tracked allocations.
+All seventeen pass with ASan and zero outstanding tracked allocations.
 
 The source migration fixtures preserve assertions in the former
 `katla_ui/src/declarative/layout.rs` tests for padding, flex width changes, grid
@@ -132,3 +132,26 @@ duplicate tabs, malformed structure and invalid IDs cannot partly publish. Ratio
 zero and one from legacy snapshots remain supported. UI splitter dragging keeps
 an interactive 0.05–0.95 range. `dock_apply` and `dock_open` are the canonical
 mutation APIs; applications do not mutate node maps or tab arrays directly.
+
+Floating panels remain roots in the same `Dock_Tree` node registry. Its owned
+`floating` array defines bottom-to-top order and logical rectangles. `Undock`,
+`Float_Bounds` and `Raise` are typed transactional actions; closing or redocking
+the last tab removes its empty floating root. Scoped `Dock_Space` descriptors
+select `dock_root`; the application mounts each active panel under its stable
+key in matching order. Container ancestry carries the overlay layer and raises
+the owning floating root when clicked. Popups and modals retain their higher
+input/draw layers. Per-command clipping still follows the actual window.
+
+Dragging a tab outside all dock leaves emits `Undock`. Floating title space
+moves the whole panel, and every edge/corner resizes it through retained capture,
+including motion outside its prior bounds. Minimum floating dimensions are
+120×60 logical pixels. Applications apply the ordered action drain after frame
+completion and rebuild descriptors from the accepted layout. `dock_bounds`
+returns main and floating regions; `dock_subtree_bounds` returns one scope.
+Version-two snapshots retain the main tree, floating trees, rectangle and z order,
+while root-only layouts continue using the established tagged schema. Restore
+validates duplicates across every root and rejects invalid rectangles before
+replacing any active node. ASan tests prove exact tab migration, split floating
+roots, restore/rollback, complete redocking cleanup and captured move/resize
+input. Real editor mounting and native desktop input are separate acceptance
+owned by the application shell.

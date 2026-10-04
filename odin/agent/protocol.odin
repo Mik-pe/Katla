@@ -53,27 +53,33 @@ vector_argument :: proc(value:json.Value)->([3]f32,bool) {
 }
 /// Accepts the owner-supported scene and application tools with typed pre-admission validation.
 decode_call :: proc(call:Tool_Call,allocator:=context.allocator)->(Decoded_Call,Call_Error) {
+    if call.name=="editor_view" { return decode_view_call(call,allocator) }
     switch call.name {
-    case "material","animation","simulation","behavior","trigger","prefab","search_assets","list_resources","read_resource","load_scene","save_scene":
+    case "material","animation","simulation","behavior","trigger","prefab","search_assets","list_resources","read_resource","load_scene","save_scene","create_resource","write_resource":
         return decode_application_call(call,allocator)
     }
     kind:editor.Scene_Op_Kind
     allowed:[]string
     needs_entity,needs_component:bool
     switch call.name {
-    case "spawn_entity": kind=.Spawn; allowed={"name","position","rotation","scale"}
+    case "spawn_entity": kind=.Spawn; allowed={"name","position","rotation","scale","shape"}
     case "destroy_entity": kind=.Destroy; allowed={"entity_id"}; needs_entity=true
-    case "duplicate_entity": kind=.Duplicate; allowed={"entity_id"}; needs_entity=true
+    case "duplicate_entity": kind=.Duplicate; allowed={"entity_id","position_offset"}; needs_entity=true
     case "set_field": kind=.Set_Field; allowed={"entity_id","component","field","value"}; needs_entity=true; needs_component=true
     case "add_component": kind=.Add_Component; allowed={"entity_id","component"}; needs_entity=true; needs_component=true
     case "remove_component": kind=.Remove_Component; allowed={"entity_id","component"}; needs_entity=true; needs_component=true
     case "get_component_attributes": kind=.Get_Attributes; allowed={"entity_id","component"}; needs_entity=true; needs_component=true
-    case "query_entities": kind=.Query_Entities; allowed={"component_filter","limit"}
+    case "set_parent": kind=.Set_Parent; allowed={"entity_id","parent_id"}; needs_entity=true
+    case "spawn_model": kind=.Spawn_Model; allowed={"path","position","default_animation"}
+    case "get_scene_hierarchy": kind=.Get_Hierarchy
+    case "query_entities": kind=.Query_Entities; allowed={"component_filter","limit","name_filter","position","radius"}
     case "list_available_components": kind=.List_Components
     case: return {},.Unknown_Tool
     }
     context.allocator=allocator
-    tree,err:=json.parse(call.arguments,spec=.JSON,parse_integers=true,allocator=allocator)
+    query_limit:=64
+    if kind==.Query_Entities { validation:Call_Error; query_limit,validation=query_arguments_validate(call.arguments,allocator); if validation!=.None { return {},validation } }
+    tree,err:=json.parse(call.arguments,spec=.JSON,parse_integers=kind!=.Query_Entities,allocator=allocator)
     if err!=nil { return {},.Invalid_JSON }
     result:=Decoded_Call{operation={kind=kind,scale={1,1,1}},tree=tree,allocator=allocator}
     success:=false
@@ -109,30 +115,78 @@ decode_call :: proc(call:Tool_Call,allocator:=context.allocator)->(Decoded_Call,
     }
     if kind==.Spawn {
         if value,present:=object["name"]; present {
-            text,valid:=value.(string); if !valid { return {},.Invalid_Arguments }
-            result.operation.name=text
+            if _,is_null:=value.(json.Null); !is_null {
+                text,valid:=value.(string); if !valid { return {},.Invalid_Arguments }
+                result.operation.name=text
+            }
         }
         for key,i in ([3]string{"position","rotation","scale"}) {
             if value,present:=object[key]; present {
+                if _,is_null:=value.(json.Null); is_null && key!="position" { continue }
                 vector,valid:=vector_argument(value); if !valid { return {},.Invalid_Arguments }
                 switch i {
                 case 0: result.operation.position=vector
-                case 1: result.operation.rotation=vector
+                case 1: for axis,j in vector { result.operation.rotation[j]=axis*0.017453292519943295 }
                 case 2: result.operation.scale=vector
                 }
             }
         }
     }
-    if kind==.Query_Entities {
-        if _,present:=object["component_filter"]; present {
-            text,valid:=required_string(object,"component_filter"); if !valid { return {},.Invalid_Arguments }
-            result.operation.component=text
+    if kind==.Spawn {
+        if value,present:=object["shape"]; present {
+            if _,null:=value.(json.Null); !null {
+                shape,valid:=value.(string); if !valid { return {},.Invalid_Arguments }
+                if shape!="cube" && shape!="sphere" && shape!="plane" && shape!="cylinder" && shape!="torus" && shape!="cone" { return {},.Invalid_Arguments }
+                result.operation.shape=shape
+            }
         }
-        if value,present:=object["limit"]; present {
-            limit,valid:=value.(json.Integer)
-            if !valid || limit<1 || limit>256 { return {},.Invalid_Arguments }
-            result.operation.limit=int(limit)
-        } else { result.operation.limit=256 }
+    }
+    if kind==.Duplicate {
+        if value,present:=object["position_offset"]; present {
+            if _,null:=value.(json.Null); !null {
+                vector,valid:=vector_argument(value); if !valid { return {},.Invalid_Arguments }
+                result.operation.position_offset=vector; result.operation.has_position_offset=true
+            }
+        }
+    }
+    if kind==.Set_Parent {
+        if value,present:=object["parent_id"]; present {
+            if _,null:=value.(json.Null); !null {
+                text,valid:=value.(string); if !valid { return {},.Invalid_Arguments }
+                result.operation.parent,valid=parse_entity_id(text); if !valid { return {},.Invalid_Arguments }; result.operation.has_parent=true
+            }
+        }
+    }
+    if kind==.Spawn_Model {
+        path,valid:=required_string(object,"path"); if !valid { return {},.Invalid_Arguments }; result.operation.path=path
+        if value,present:=object["position"]; present { if _,is_null:=value.(json.Null); !is_null { vector,argument_valid:=vector_argument(value); if !argument_valid { return {},.Invalid_Arguments }; result.operation.position=vector } }
+        if value,present:=object["default_animation"]; present {
+            if _,null:=value.(json.Null); !null { text,argument_valid:=value.(string); if !argument_valid { return {},.Invalid_Arguments }; result.operation.default_animation=text }
+        }
+    }
+    if kind==.Query_Entities {
+        if value,present:=object["name_filter"]; present {
+            if _,is_null:=value.(json.Null); !is_null { text,valid:=value.(string); if !valid { return {},.Invalid_Arguments }; result.operation.name_filter=text; result.operation.has_name_filter=true }
+        }
+        if value,present:=object["position"]; present {
+            if _,is_null:=value.(json.Null); !is_null { vector,valid:=vector_argument(value); if !valid { return {},.Invalid_Arguments }; result.operation.position=vector; result.operation.has_query_position=true }
+        }
+        if value,present:=object["radius"]; present {
+            if _,is_null:=value.(json.Null); !is_null {
+                number:f64
+                #partial switch n in value {
+                case json.Integer: number=f64(n)
+                case json.Float: number=f64(n)
+                case: return {},.Invalid_Arguments
+                }
+                if !(number>=0 && number<=f64(max(f32))) { return {},.Invalid_Arguments }; result.operation.radius=f32(number); result.operation.has_radius=true
+            }
+        }
+        if result.operation.has_radius!=result.operation.has_query_position { return {},.Invalid_Arguments }
+        if value,present:=object["component_filter"]; present {
+            if _,is_null:=value.(json.Null); !is_null { text,valid:=required_string(object,"component_filter"); if !valid { return {},.Invalid_Arguments }; result.operation.component=text }
+        }
+        result.operation.limit=query_limit
     }
     success=true
     return result,.None

@@ -24,17 +24,16 @@ scene_model_clone :: proc(dst,src:rawptr) {
 /// Loads all resources, geometry, skins and clips before any entity or native owner changes.
 scene_model_prepare :: proc(app:^Authoring,source:Gltf_Source)->(Scene_Model,Gltf_Error) {
     context.allocator=app.world.allocator
-    roots:=ecs.get_resource_mut(&app.world,Asset_Roots)
-    if roots==nil || (!strings.has_suffix(source.path,".glb") && !strings.has_suffix(source.path,".gltf")) { return {},.Invalid_Path }
-    root:=&roots.resource; if source.root==.Project { root=&roots.project }
-    model,error:=gltf_load(root,source.path,app.world.allocator)
+    if (!strings.has_suffix(source.path,".glb") && !strings.has_suffix(source.path,".gltf")) { return {},.Invalid_Path }
+    scope,scope_error:=asset_path_scope(app,source.root,source.path); if scope_error!=.None { return {},.Invalid_Path }; defer asset_path_scope_destroy(&scope)
+    model,error:=gltf_load(&scope.root,scope.path,app.world.allocator)
     if error!=.None { return {},error }
     return {source={path=strings.clone(source.path),root=source.root},model=model},.None
 }
 @(private="package")
 scene_model_encode :: proc(state,value:rawptr,allocator:mem.Allocator)->([]byte,bool) {
     source:=(cast(^Scene_Model)value).source
-    root:="resource"; if source.root==.Project { root="project" }
+    root:=asset_root_name(source.root)
     bytes,error:=json.marshal(struct {path,root:string}{source.path,root},allocator=allocator)
     return bytes,error==nil
 }
@@ -53,6 +52,7 @@ scene_model_decode :: proc(state:rawptr,bytes:[]byte,allocator:mem.Allocator)->(
         switch root {
         case "resource": source.root=.Resource
         case "project": source.root=.Project
+        case "file": source.root=.File
         case: return result,false
         }
     }

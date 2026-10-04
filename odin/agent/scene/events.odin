@@ -83,7 +83,7 @@ trigger_rules_decode :: proc(raw_value:json.Value,allocator:mem.Allocator)->([]T
 }
 /// Fully validates nested lists, decimal IDs and animation parameters before authoring admission.
 decode_trigger :: proc(data:[]byte,allocator:=context.allocator)->(Decoded_Trigger,Decode_Error) {
-    context.allocator=allocator; tree,err:=json.parse(data,spec=.JSON,parse_integers=true,allocator=allocator); if err!=nil { return {},.Invalid_JSON }
+    context.allocator=allocator; tree,err:=bounded_scene_parse(data,allocator); if err!=nil { return {},.Invalid_JSON }
     decoded:=Decoded_Trigger{tree=tree,allocator=allocator}; success:=false; defer { if !success { decoded_trigger_destroy(&decoded) } }
     object,is_object:=tree.(json.Object); if !is_object { return {},.Invalid_Arguments }; action,is_action:=object["action"].(string); if !is_action { return {},.Invalid_Arguments }
     switch action {

@@ -6,6 +6,7 @@ import ecs "../../ecs"
 import editor "../../editor"
 import resources "../../resources"
 import "core:strings"
+import "core:path/filepath"
 
 @(private="package")
 clear_pending :: proc(document:^State) { delete(document.pending.path,document.allocator); document.pending={}; document.has_pending=false }
@@ -29,7 +30,7 @@ execute :: proc(document:^State,action:Action)->editor.Scene_Error {
 /// Requests New, Open or Quit, retaining the current document until any unsaved decision completes.
 request :: proc(document:^State,action:Action)->editor.Scene_Error {
     if document.owner==nil { return .Invalid_Operation }; if document.owner.mode!=.Editing { return fail(document,.Editing_Required) }
-    if action.kind==.Open && (!resources.valid_relative_path(action.path) || !strings.has_suffix(action.path,".katla")) { return fail(document,.Invalid_Operation) }
+    if action.kind==.Open && !app.asset_document_path_valid(action.path) { return fail(document,.Invalid_Operation) }
     if dirty(document) { clear_pending(document); document.pending={action.kind,strings.clone(action.path,document.allocator)}; document.has_pending=true; document.dialog=.Unsaved; return .None }
     return execute(document,action)
 }
@@ -51,12 +52,13 @@ save :: proc(document:^State,path:string="")->editor.Scene_Error {
 /// Submits a confined scene path; replacing an existing destination requires Overwrite.
 submit_path :: proc(document:^State,text:string)->editor.Scene_Error {
     path:=strings.trim_space(text); if len(path)==0 { return .None }
-    if !resources.valid_relative_path(path) || !strings.has_suffix(path,".katla") { return fail(document,.Invalid_Operation) }
+    if !app.asset_document_path_valid(path) { return fail(document,.Invalid_Operation) }
     mode:=document.dialog
     if mode==.Open { document.dialog=.None; return request(document,{kind=.Open,path=path}) }
     if mode!=.Save_As { return .Invalid_Operation }
-    roots:=ecs.get_resource_mut(&document.owner.world,app.Asset_Roots); if roots==nil { return fail(document,.Invalid_Operation) }
-    bytes,error:=resources.read_bytes(&roots.project,path,0); delete(bytes,document.allocator)
+    kind:app.Mesh_Path_Root=.Project; if filepath.is_abs(path) { kind=.File }
+    scope,scope_error:=app.asset_path_scope(document.owner,kind,path); if scope_error!=.None { return fail(document,.Invalid_Operation) }; defer app.asset_path_scope_destroy(&scope)
+    bytes,error:=resources.read_bytes(&scope.root,scope.path,0); delete(bytes,document.allocator)
     if error==.None || error==.Limit { set_path(document,path); document.dialog=.Overwrite; return .None }
     return save(document,path)
 }

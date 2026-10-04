@@ -12,16 +12,21 @@ load_spirv :: proc(filename:string)->[]u32 {
     return mem.slice_data_cast([]u32,bytes)
 }
 main :: proc() {
+    code:=run_native();if code!=0 { os.exit(code) }
+}
+run_native :: proc()->int {
     backing:=context.allocator
     tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,backing)
     defer { context.allocator=backing; assert(len(tracker.allocation_map)==0,"native owner leaked Odin allocations"); mem.tracking_allocator_destroy(&tracker) }
     context.allocator=mem.tracking_allocator(&tracker)
+    if len(os.args)==3 && os.args[1]=="--probe-array-capabilities" { return probe_array_capabilities(os.args[2]) }
     assert(len(os.args)>=5,"Pass fill.spv, params.spv, triangle.spv, color.spv paths, optionally a Vulkan loader path")
     fill_code:=load_spirv(os.args[1]); defer delete(fill_code)
     param_code:=load_spirv(os.args[2]); defer delete(param_code)
     renderer:gpu.Renderer
     loader:=""
     if len(os.args)>=6 { loader=os.args[5] }
+    baseline:=false;if len(os.args)>6 { for option in os.args[6:] { if option=="--baseline" { baseline=true } } }
     assert(gpu.renderer_init(&renderer,validation=true,loader_path=loader)==.None,"Vulkan 1.3 + validation required")
     defer { assert(gpu.renderer_destroy(&renderer)==.None) }
     api:=acceptance.API(gpu.Renderer){create_buffer=gpu.create_buffer,create_buffer_with_data=gpu.create_buffer_with_data,destroy_buffer=gpu.destroy_buffer,create_pipeline=gpu.create_pipeline,destroy_pipeline=gpu.destroy_pipeline,read_buffer=gpu.read_buffer,write_buffer=gpu.write_buffer,acquire=gpu.acquire,abort=gpu.abort,submit=gpu.submit,wait=gpu.wait,poll=gpu.poll}
@@ -39,10 +44,13 @@ main :: proc() {
     run_subresources(&renderer); run_aliases(&renderer)
     for i:=6; i<len(os.args); {
         switch os.args[i] {
+        case "--baseline": i+=1
+        case "--depth-sense":
+            assert(i+2<len(os.args)); code:=load_spirv(os.args[i+1]); tint:=load_spirv(os.args[i+2]);run_depth_sense(&renderer,code,tint);delete(code);delete(tint);i+=3
         case "--storage-arrays":
-            assert(i+1<len(os.args)); code:=load_spirv(os.args[i+1]); run_storage_arrays(&renderer,code); delete(code); i+=2
+            assert(i+1<len(os.args));if !baseline { code:=load_spirv(os.args[i+1]); run_storage_arrays(&renderer,code); delete(code) };i+=2
         case "--arrays":
-            assert(i+1<len(os.args)); code:=load_spirv(os.args[i+1]); run_arrays(&renderer,vertex_code,code); delete(code); i+=2
+            assert(i+1<len(os.args));if !baseline { code:=load_spirv(os.args[i+1]); run_arrays(&renderer,vertex_code,code); delete(code) };i+=2
         case "--surface": run_window(&renderer); i+=1
         case "--volume":
             assert(i+1<len(os.args)); code:=load_spirv(os.args[i+1]); run_volume(&renderer,code); delete(code); i+=2
@@ -62,4 +70,5 @@ main :: proc() {
         }
     }
     assert(gpu.validation_error_count(&renderer)==0)
+    return 0
 }

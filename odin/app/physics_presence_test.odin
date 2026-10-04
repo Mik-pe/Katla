@@ -22,10 +22,10 @@ test_physics_metadata_remains_owned_without_native_participation :: proc(t:^test
     testing.expect(t,found && !ecs.entity_exists(&owner.world,entity))
 }
 @(private="file")
-physics_optional_native_acceptance :: proc(t:^testing.T,box:bool) {
+physics_optional_native_acceptance :: proc(t:^testing.T) {
     tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,context.allocator); defer mem.tracking_allocator_destroy(&tracker); context.allocator=mem.tracking_allocator(&tracker)
     owner:Authoring; authoring_init(&owner); register_test_scene_runtime(&owner)
-    if box { testing.expect(t,physics_select_box3d(&owner,BOX3D_LIBRARY)==.None) } else { testing.expect(t,scene_runtime_init(&owner,RUNTIME_LIBRARY)==.None) }
+    testing.expect(t,physics_select_box3d(&owner,BOX3D_LIBRARY)==.None)
     floor_body:=physics_body(Physics_Shape{kind=.Box,half_extents={5,0.1,5}},.Dynamic); floor_body.has_rigid_body=false
     floor:=ecs.create_entity(&owner.world); ecs.add_component(&owner.world,floor,Scene_Transform{km.transform(position={0,-0.1,0})}); ecs.add_component(&owner.world,floor,floor_body)
     body:=physics_body(Physics_Shape{kind=.None}); body.linear_velocity={0.1,0,0}
@@ -46,11 +46,7 @@ physics_optional_native_acceptance :: proc(t:^testing.T,box:bool) {
     testing.expect(t,found_body && found_floor && !ecs.entity_exists(&owner.world,ball) && !ecs.entity_exists(&owner.world,floor))
     authoring_destroy(&owner); testing.expect(t,len(tracker.allocation_map)==0 && len(tracker.bad_free_array)==0)
 }
-when RUNTIME_LIBRARY!="" {
-@(test)
-test_physics_native_rapier_optional_collider_presence_and_restore :: proc(t:^testing.T) { physics_optional_native_acceptance(t,false) }
-}
 when BOX3D_LIBRARY!="" {
 @(test)
-test_physics_native_box3d_optional_collider_presence_and_restore :: proc(t:^testing.T) { physics_optional_native_acceptance(t,true) }
+test_physics_native_box3d_optional_collider_presence_and_restore :: proc(t:^testing.T) { physics_optional_native_acceptance(t) }
 }

@@ -87,7 +87,7 @@ reset :: proc(owner:^Runtime)->[dynamic]Diagnostic {
     if luau.owner_error(&owner.vm)!=.None { append(&diagnostics,Diagnostic{error=strings.clone("Script runtime thread mismatch")}); return diagnostics }
     ids:=make([dynamic]u64,owner.allocator); defer delete(ids); for id,_ in owner.instances { append(&ids,id) }; slice.sort(ids[:])
     for id in ids { instance:=owner.instances[id]; path:=strings.clone(instance.path); failure:=instance_destroy(owner,instance); if failure!="" { append(&diagnostics,Diagnostic{id,path,failure}) } else { delete(path) } }; clear(&owner.instances)
-    for event in owner.deferred_events { delete(event.name); if event.payload>0 { owner.vm.api.unreference(owner.vm.state,event.payload) } }; clear(&owner.deferred_events)
+    for event in owner.deferred_events { delete(event.name); delete(event.animation_clip); if event.payload>0 { owner.vm.api.unreference(owner.vm.state,event.payload) } }; clear(&owner.deferred_events)
     for &command in owner.commands { command_destroy(owner,&command) }; clear(&owner.commands); return diagnostics
 }
 /// Destroys callbacks and the VM before releasing their captured Odin allocator state.

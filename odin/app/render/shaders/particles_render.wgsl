@@ -34,5 +34,6 @@ struct ParticleVertex {
     let distance=length(vertex.uv);
     if distance>1.0 { discard; }
     let falloff=1.0-smoothstep(0.3,1.0,distance);
-    return vec4f(vertex.color.rgb,vertex.color.a*falloff);
+    let rgb=select(pow((vertex.color.rgb+0.055)/1.055,vec3f(2.4)),vertex.color.rgb/12.92,vertex.color.rgb<=vec3f(0.04045));
+    return vec4f(rgb,vertex.color.a*falloff);
 }

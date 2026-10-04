@@ -2,7 +2,9 @@
 """Exercise the optional Odin MCP subprocess over actual stdin/stdout pipes."""
 import argparse
 import json
+import os
 from pathlib import Path
+from build_katla_odin import output_path
 import queue
 import subprocess
 import threading
@@ -89,9 +91,11 @@ def acceptance(binary):
         client.send(request(0, "tools/list"))
         tools = client.read()["result"]["tools"]
         names = [tool["name"] for tool in tools]
-        assert names == sorted(names) and len(set(names)) == 20
+        expected = {"add_component", "animation", "behavior", "create_resource", "destroy_entity", "duplicate_entity", "editor_view", "get_component_attributes", "get_scene_hierarchy", "list_available_components", "list_resources", "load_scene", "material", "prefab", "query_entities", "read_resource", "remove_component", "save_scene", "search_assets", "set_field", "set_parent", "simulation", "spawn_entity", "spawn_model", "trigger", "write_resource"}
+        assert names == sorted(expected)
         assert all(tool["inputSchema"]["type"] == "object" for tool in tools)
-        assert "editor_view" not in names and "spawn_model" not in names
+        client.send(request("no-render-owner", "tools/call", name="editor_view", arguments={"action": "observe"}))
+        assert client.read()["result"]["isError"]
         # Fragment a real frame at arbitrary byte boundaries, including UTF-8.
         spawn = request(9007199254740993, "tools/call", name="spawn_entity",
                         arguments={"name": "Study / stol 🪑", "position": [1, 2, 3]})
@@ -106,6 +110,9 @@ def acceptance(binary):
         name = client.call("name", "get_component_attributes", entity_id=entity, component="SceneName")
         assert name["data"]["name"] == "Study / stol 🪑"
         # The actual application service changes and reads the same component.
+        initial_surface = client.call("initial-surface", "get_component_attributes", entity_id=entity, component="SurfaceMaterial")
+        assert initial_surface["data"]["roughness"] == 0.5
+        client.call("remove-surface", "remove_component", entity_id=entity, component="SurfaceMaterial")
         client.call("surface", "add_component", entity_id=entity, component="SurfaceMaterial")
         edited = client.call("material", "material", action="set", entity_ids=[entity], preset="oak", roughness=0.27)
         assert abs(edited["data"]["materials"][0]["values"]["roughness"] - 0.27) < 1e-6
@@ -118,12 +125,12 @@ def acceptance(binary):
         replies = [client.read() for _ in pipeline]
         assert {(type(reply["id"]), reply["id"]) for reply in replies} == {(type(message["id"]), message["id"]) for message in pipeline}
         assert all(not reply["result"]["isError"] for reply in replies)
-        client.send(request("invalid", "tools/call", name="spawn_entity", arguments={"shape": "cube"}))
+        client.send(request("invalid", "tools/call", name="spawn_entity", arguments={"shape": "unknown_shape"}))
         assert client.read()["result"]["isError"]
         client.send(request("stale", "tools/call", name="destroy_entity", arguments={"entity_id": "18446744073709551615"}))
         assert client.read()["result"]["isError"]
         client.send(request("missing", "tools/call", name="spawn_model"))
-        assert client.read()["error"]["code"] == -32602
+        assert client.read()["result"]["isError"]
         client.raw(b'{"jsonrpc":"2.0","id":3,"method":"ping","params":{}}\n')
         assert client.read()["error"]["code"] == -32602
         wrong = request(4, "ping")
@@ -236,12 +243,12 @@ def acceptance(binary):
         process.wait(timeout=5)
         process.stdin.close()
         process.stderr.close()
-    print("Odin MCP: discovery, 20 tool schemas, actual scene/material edits, typed IDs, pipelining, bounded input, recovery and EOF/output failure passed")
+    print("Odin MCP: discovery, 26 canonical tool schemas, actual scene/material edits, typed IDs, pipelining, bounded input, recovery and EOF/output failure passed")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--binary", type=Path, default=ROOT / "target/katla-odin-mcp")
+    parser.add_argument("--binary", type=Path, default=output_path() / "bin" / ("katla-mcp-stdio.exe" if os.name == "nt" else "katla-mcp-stdio"))
     args = parser.parse_args()
     acceptance(args.binary.resolve())
 

@@ -13,9 +13,9 @@ Model_GPU_Ops :: struct($R:typeid) {
 }
 Model_Config :: struct($R:typeid) { shader:^Model_Shader, operations:Model_GPU_Ops(R) }
 @(private="package")
-Model_Slot :: struct { frame,objects,geometry,color_staging:gfx.Buffer_Handle, copied_color,linear_color:gfx.Texture_Handle }
+Model_Slot :: struct { frame,objects,geometry:gfx.Buffer_Handle }
 @(private="package")
-Model_Texture :: struct { entity:ecs.Entity_Id,image:i32,srgb:bool,native:Native_Texture }
+Model_Texture :: struct { entity:ecs.Entity_Id,image:i32,srgb:bool,native:Native_Texture, encoded:[]byte }
 @(private="package")
 Model_Sampler :: struct { desc:gfx.Sampler_Desc,handle:gfx.Sampler_Handle }
 @(private="package")
@@ -23,14 +23,11 @@ Model_Receipt :: struct { textures,samplers:[5]int }
 /// A candidate owns decoded uploads and mutable geometry for every native slot before publication.
 Native_Model :: struct($R:typeid) {
     renderer:^R,operations:Model_GPU_Ops(R),batch:Model_Batch,
-    compositors:[2]gfx.Graphics_Pipeline_Handle,
-    pipelines:[8]gfx.Graphics_Pipeline_Handle,slots:[]Model_Slot,
+    pipelines,reverse_pipelines:[8]gfx.Graphics_Pipeline_Handle,slots:[]Model_Slot,
     textures:[dynamic]Model_Texture,samplers:[dynamic]Model_Sampler,receipts:[]Model_Receipt,
     frame_desc,object_desc,geometry_desc:gfx.Buffer_Desc,
-    graph:^Scene_Graph,frame,objects,geometry,color_staging:gfx.Resource_Id,
-    copied_color,linear_color:gfx.Image_Id, copied_desc,linear_desc:gfx.Texture_Desc,staging_desc:gfx.Buffer_Desc,
+    graph:^Scene_Graph,frame,objects,geometry:gfx.Resource_Id,
     image_ids:[]gfx.Image_Id,passes:[]gfx.Pass_Id,order:[]int,
-    frame_inputs:[4]gfx.Buffer_Input,frame_textures:[]gfx.Texture_Input,
     inputs:[3]gfx.Buffer_Input,texture_inputs:[]gfx.Texture_Input,
     allocator:mem.Allocator,
 }
@@ -48,18 +45,23 @@ model_texture_prepare :: proc(cache:^Native_Model($R),owner:^app.Authoring,entry
     }
     for item,i in cache.textures { if item.entity==entity && item.image==image && item.srgb==srgb { return i,{} } }
     decoded:Texture_Image
+    encoded:[]byte
+    retain_encoded:=false; defer { if !retain_encoded { delete(encoded,cache.allocator) } }
     if image<0 {
         pixels:=make([]byte,4,cache.allocator); copy(pixels,([]byte{128,128,255,255} if image== -2 else []byte{255,255,255,255}))
         decoded={1,1,pixels,cache.allocator}
     } else {
         error:Texture_Image_Error
-        decoded,error=texture_image_decode(source.model.images[image].encoded,cache.allocator)
+        encoded_error:app.Gltf_Error
+        encoded,encoded_error=app.scene_model_image_read(owner,source,int(image),cache.allocator)
+        if encoded_error!=.None { return 0,{scene=.Invalid_Material} }
+        decoded,error=texture_image_decode(encoded,cache.allocator)
         if error!=.None { return 0,{scene=.Invalid_Material} }
     }
     defer texture_image_destroy(&decoded)
     native,error:=native_texture_upload(cache.renderer,cache.operations.gpu,&decoded,srgb,cache.allocator)
     if error!={} { return 0,error }
-    index:=len(cache.textures); append(&cache.textures,Model_Texture{entity,image,srgb,native}); return index,{}
+    index:=len(cache.textures); append(&cache.textures,Model_Texture{entity,image,srgb,native,encoded}); retain_encoded=true; return index,{}
 }
 @(private="package")
 model_sampler_prepare :: proc(cache:^Native_Model($R),owner:^app.Authoring,entry:Model_Entry,role,texture:int)->(int,Native_Error) {
@@ -88,7 +90,7 @@ model_native_init :: proc(cache:^Native_Model($R),owner:^app.Authoring,ids:[]ecs
     if batch_error.kind!=.None { return {scene=.Invalid_Geometry} }
     if len(cache.batch.entries)==0 { success=true; return {} }
     for &pipeline,i in cache.pipelines { error:gfx.Gpu_Error; pipeline,error=cache.operations.gpu.create_pipeline(renderer,config.shader.descriptors[i]); if error!=.None { return {gpu=error} } }
-    for &pipeline,i in cache.compositors { error:gfx.Gpu_Error; pipeline,error=cache.operations.gpu.create_pipeline(renderer,config.shader.compositor.mappings[i].descriptor); if error!=.None { return {gpu=error} } }
+    for &pipeline,i in cache.reverse_pipelines { error:gfx.Gpu_Error; pipeline,error=cache.operations.gpu.create_pipeline(renderer,depth_descriptor(config.shader.descriptors[i],.Reverse)); if error!=.None { return {gpu=error} } }
     cache.frame_desc={size=u64(size_of(Frame_Data)),usage={.Uniform},memory=.CPU_Visible}
     cache.object_desc={size=u64(len(cache.batch.objects))*u64(size_of(Model_Object)),usage={.Storage},memory=.CPU_Visible}
     cache.geometry_desc={size=u64(len(cache.batch.vertices))*u64(size_of(Model_Vertex)),usage={.Storage},memory=.CPU_Visible}
@@ -114,14 +116,13 @@ model_native_init :: proc(cache:^Native_Model($R),owner:^app.Authoring,ids:[]ecs
 model_native_destroy :: proc(cache:^Native_Model($R))->gfx.Gpu_Error {
     error:=gfx.Gpu_Error.None
     if cache.renderer!=nil {
-        model_composite_slots_destroy(cache)
-        for pipeline in cache.compositors { if pipeline.owner!=nil { e:=cache.operations.gpu.destroy_pipeline(cache.renderer,pipeline); if e!=.None { error=e } } }
         for slot in cache.slots { for handle in ([3]gfx.Buffer_Handle{slot.frame,slot.objects,slot.geometry}) { if handle.owner!=nil { e:=cache.operations.gpu.destroy_buffer(cache.renderer,handle); if e!=.None { error=e } } } }
         for pipeline in cache.pipelines { if pipeline.owner!=nil { e:=cache.operations.gpu.destroy_pipeline(cache.renderer,pipeline); if e!=.None { error=e } } }
+        for pipeline in cache.reverse_pipelines { if pipeline.owner!=nil { e:=cache.operations.gpu.destroy_pipeline(cache.renderer,pipeline); if e!=.None { error=e } } }
         for texture in cache.textures { e:=cache.operations.gpu.destroy_texture(cache.renderer,texture.native.texture); if e!=.None { error=e } }
         for sampler in cache.samplers { e:=cache.operations.destroy_sampler(cache.renderer,sampler.handle); if e!=.None { error=e } }
     }
-    delete(cache.frame_textures,cache.allocator)
+    for texture in cache.textures { delete(texture.encoded,cache.allocator) }
     model_batch_destroy(&cache.batch)
     delete(cache.slots,cache.allocator); delete(cache.textures); delete(cache.samplers); delete(cache.receipts,cache.allocator)
     model_graph_release(cache); cache^={}; return error

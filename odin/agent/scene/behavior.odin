@@ -12,7 +12,7 @@ Decoded_Behavior :: struct { operation:Behavior_Op,tree:json.Value,allocator:mem
 decoded_behavior_destroy :: proc(decoded:^Decoded_Behavior) { context.allocator=decoded.allocator; json.destroy_value(decoded.tree); decoded^={} }
 /// Requires explicit null for detach and rejects fields belonging to another action.
 decode_behavior :: proc(data:[]byte,allocator:=context.allocator)->(Decoded_Behavior,Decode_Error) {
-    context.allocator=allocator; tree,err:=json.parse(data,spec=.JSON,parse_integers=true,allocator=allocator); if err!=nil { return {},.Invalid_JSON }
+    context.allocator=allocator; tree,err:=bounded_scene_parse(data,allocator); if err!=nil { return {},.Invalid_JSON }
     success:=false; defer { if !success { json.destroy_value(tree) } }
     object,ok:=tree.(json.Object); if !ok { return {},.Invalid_Arguments }; action,is_action:=object["action"].(string); if !is_action { return {},.Invalid_Arguments }
     op:Behavior_Op

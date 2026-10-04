@@ -10,6 +10,7 @@ import subprocess
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1] / "tools/box3d"))
 from planar_hulls import prepare as prepare_planar_hulls
+from joint_ranges import prepare as prepare_joint_ranges
 
 ROOT = Path(__file__).resolve().parents[1]
 REVISION = "8441b4a06d6d09dcfb0b0f704df4d847d1437b92"
@@ -65,7 +66,8 @@ def main():
         output = args.output.resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
     adapted_hull = prepare_planar_hulls(source,output.parent / f"{output.stem}-source")
-    sources = [str(adapted_hull) if Path(item).name == "hull.c" else item for item in sources]
+    adapted_joints = prepare_joint_ranges(source,output.parent / f"{output.stem}-source")
+    sources = [str(adapted_joints.get(Path(item).name,adapted_hull if Path(item).name == "hull.c" else item)) for item in sources]
     command = [compiler(args.sanitize), "-std=c17", "-O1" if args.sanitize else "-O2",
                *([] if host == "Windows" else ["-fPIC"]), "-ffp-contract=off", "-DBOX3D_VALIDATE",
                "-Dbox3d_EXPORTS", "-I", str(source / "include"), "-I", str(source / "src"),

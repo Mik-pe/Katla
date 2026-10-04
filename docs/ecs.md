@@ -1,183 +1,106 @@
 # ECS ownership and system authoring
 
-Katla stores components in per-type paged sparse sets (1024-entry pages). Queries select the smallest column and preserve its dense order. Entity IDs contain an index and
-its generation. Clearing a world invalidates its live IDs without resetting
-generations; exhausting a generation retires the slot. Sparse lookups compare
-the complete ID, so a stale handle cannot address a replacement entity.
+[odin/ecs](../odin/ecs) is the canonical CPU ECS. It owns generational identities,
+paged sparse component columns, resources, event logs, prepared typed queries,
+structural commands and scheduling. It imports no graphics, application, script
+VM or editor policy. Optional reflection/tool/history support lives in
+[odin/editor](../odin/editor); application authority lives in
+[odin/app](../odin/app). The complete API and ownership rules are in
+[Odin ECS](ecs_odin.md).
 
-## Decision: typed parallel access and exclusive World access
+## Identity, storage and value ownership
 
-A worker never receives `World`, a storage registry, or a resource registry.
-`TypedSystem::Params` is the only source of its access metadata. Engine-owned,
-sealed parameter implementations derive read/write claims and registration
-rejects conflicting claims within a system, including across separate queries.
+An `Entity_Id` contains a 32-bit slot and 32-bit generation. Lookups compare the
+complete identity. Clearing/destroying entities invalidates live generations;
+exhausted slots retire permanently. Each component type owns a paged sparse set
+with 1024-entry pages and dense swap removal. Queries start from the smallest
+participating column and preserve its dense order.
 
-Before dispatch, the caller thread resolves independently borrowed component
-and resource entries. The registries are frozen until every prepared job has
-returned. Component entries use independent interior-mutable cells rather than
-repeated exclusive borrows of a shared map. Resource parameters require `Sync`
-for shared access and `Send` for mutable ownership transfer. Non-send resources
-can be used by exclusive systems on the caller thread.
+Insertion transfers ownership. Owned strings, arrays and nested allocations need
+registered `Value_Ops` destroy/deep-clone callbacks before insertion. The same
+rule applies to owned resources, events, deferred values and persistent local
+state. Plain numeric components and non-owning handles need no such hooks.
+Keep `World` and its worker pool stationary through destruction, and use a
+thread-safe allocator when parallel execution is enabled.
 
-Full-World systems implement `System` and register through the explicitly
-exclusive path. The script VM, physics synchronization, and transform hierarchy
-use this path. They are barriers in the same schedule as typed systems and are
-never transferred to Rayon. This preserves thread affinity without an unsafe
-exception to worker access rules.
+## Typed work and exclusive authority
 
-Manually declared access was rejected because an omitted or incorrect claim
-could allow data races. A global World mutex was rejected because it serializes
-independent systems. Duplicating World into worker snapshots was rejected because
-it changes resource, event, and entity identity semantics and adds merge costs.
-Archetype storage is a separate measured decision; see [benchmarks](ecs_benchmarks.md).
+`register_typed_system` derives access claims from the parameter struct. Queries
+compose `Read(T)`/`Write(T)` with structural filters; parameters can also contain
+required/optional resources, local state, event readers/writers and commands.
+Duplicate writes and read/write aliases reject registration. Component,
+resource and event claim namespaces remain separate.
 
-## A typed system
+Before a batch starts, the caller resolves rows and resource entries and freezes
+structural registries. Workers receive only their prepared parameters and owned
+system state. They must not capture `World`, registries, caller-thread VM owners
+or unrelated mutable state. `register_exclusive_system` is the caller-thread
+barrier for full-World operations, scene hierarchy, physics and script authority.
 
-```rust
-use katla_ecs::{Component, Query, Read, SystemExecutionOrder, SystemParam,
-                TypedSystem, World, Write};
+Odin does not enforce Rust lifetimes or `Send`/`Sync`. Read copies can contain
+shallow nested pointers, so callers must preserve read-only semantics. Borrowed
+rows, resource pointers and event slices expire at the end of preparation or
+before structural/log mutation. End direct queries before mutating structure.
+All chunk workers join before their preparation scope ends.
 
-#[derive(Component)]
-struct Position(f32);
-#[derive(Component)]
-struct Velocity(f32);
-struct Movement;
+## Scheduling, visibility and failure
 
-impl TypedSystem for Movement {
-    type Params = Query<(Write<Position>, Read<Velocity>)>;
+Execution-order tiers are strict barriers. Conflicting equal-order systems run
+in registration order; independent equal-order typed systems may run in parallel.
+The default pool threshold is 32,768 estimated entity-system visits; smaller
+work runs on the caller. Explicit query chunking is useful only when per-row
+work justifies it.
 
-    fn run(&mut self, mut query: <Self::Params as SystemParam>::Item<'_>, dt: f32) {
-        for (_entity, (position, velocity)) in query.iter_mut() {
-            position.0 += velocity.0 * dt;
-        }
-    }
-}
+Each system owns a FIFO structural command queue. After borrowed data is
+released, queues apply in registration order and then enqueue order. The next
+batch sees changes; the same batch observes its initial structure. Spawn IDs
+become live when commands apply. Stale command targets are ignored.
 
-let mut world = World::new();
-world.spawn((Position(0.0), Velocity(1.0)));
-world.register_typed_system(Movement, SystemExecutionOrder::NORMAL);
-world.update_parallel(0.016);
+A recoverable `System_Error` joins workers and discards the failed batch's
+unapplied commands. Earlier completed batches and component writes remain;
+`world_update` is not a transaction. An Odin panic terminates rather than
+unwinding and restoring execution. Do not describe panic recovery as an API
+contract.
+
+Query membership caches follow the structural epoch, but allocation addresses
+are freshly resolved. Typed writes mark matched rows changed; direct mutable
+queries conservatively mark entire columns. Changed-query combinations use union
+semantics. Change tracking means mutable access or insertion, not value comparison.
+Per-tick lifecycle/change state clears only after successful updates.
+
+## Application and history boundaries
+
+`Scene_Transform` stores parent-local TRS and `Scene_Parent` identifies its parent.
+The application resolver supplies exact column-major world matrices, including
+hierarchy-induced shear, to rendering, bounds, lights, audio, particles and
+physics. Hierarchy validation/reparenting is application policy, not ECS storage.
+
+The reflected registry must outlive its snapshots and Undo groups. History owns
+cloned component values and mandatory apply/destroy/remap callbacks. Restoring a
+destroyed entity allocates a fresh generation and remaps registered references
+and history; it does not revive stale IDs. UI gestures and agent mutations share
+one application action history. Persistent source codecs remain separate from
+exact owned Undo snapshots. See [agent/application authority](agent_odin.md) and
+[editor ownership](odin_editor.md).
+
+## Author and verify
+
+The runnable [movement example](../odin/examples/movement) composes typed math
+components with the scheduler. [Odin ECS](ecs_odin.md) includes a complete system
+example and API mapping. Run the independent ownership/scheduler checks with:
+
+```sh
+odin test odin/ecs -vet -strict-style
+odin test odin/editor -all-packages -vet -strict-style \
+  -sanitize:address -define:ODIN_TEST_THREADS=1 \
+  -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
+python3 scripts/build_katla_odin.py --tests
 ```
 
-Compose parameters as tuples. `Res<T>` and `ResMut<T>` require the resource to
-exist; `Option<Res<T>>` and `Option<ResMut<T>>` permit absence while preserving
-the same scheduling claim. `Local<T>` is persistent, isolated system state.
-`Commands` queues structural work. Event readers and writers are typed resource
-claims, so dependent readers run after writers. Each reader has its own cursor;
-clear the typed event log after consumers finish a retention interval. Sequence
-numbers preserve subsequent events, and replacing a log resets readers. Camera and animation systems
-provide complete application examples.
-
-Query descriptors support tuples through arity eight, mixed read/write access,
-and disjoint `With<T>` / `Without<T>` filters. Query membership and dense offsets are cached until
-structural changes invalidate the world epoch. Allocation bases are resolved
-for each batch, so vector reallocation, replacement, removal and slot reuse
-cannot leave a cached address pointing at old data. Returned component references
-borrow their query view; retaining them prevents a second mutable view borrow.
-
-`par_for_each_mut(chunk_size, callback)` partitions unique matched rows and joins
-before returning. It never changes the shared storage metadata from chunk
-workers. Typed mutable queries conservatively mark matched entities changed
-before dispatch, including rows a callback only reads. Direct mutable World
-queries mark their entire mutable columns before lazy iteration, including
-entities excluded by the join or filter. Selecting an entire column uses a
-constant-time dirty flag. Change detection means
-“mutable access requested or inserted,” rather than comparison of values.
-Multi-component changed queries retain union semantics.
-
-## Scheduling and structural visibility
-
-Execution order values are strict barriers. Equal-order systems preserve
-registration order for conflicts. Independent equal-order typed systems may run
-concurrently. Sequential and parallel updates consume the same schedule, with
-small workloads executed on the calling thread. The default cutoff is 32,768
-estimated entity-system visits per batch; `set_parallel_work_threshold` allows
-applications to tune it to their work. Query chunk parallelism is explicit, so
-use sequential iteration when per-row work is small.
-
-Each system has its own FIFO command queue. After a batch releases all borrowed
-data, queues apply in registration order, then enqueue order within each queue.
-The next batch sees the changes; systems in the same batch see the pre-batch
-structure. Spawn allocates its ID when applied, rather than exposing a reserved
-entity as live to another worker. Commands targeting stale IDs have no effect.
-
-A panic aborts the tick and propagates to the caller after workers join. Systems
-are restored, unapplied batch commands are discarded, and earlier completed
-batches are not rolled back. Component mutations completed before the panic are
-retained; the tick is not transactional.
-
-## Lifecycle and editor behavior
-
-Direct World operations and applied commands share one lifecycle path. Creation
-emits `Spawned`; insertion emits `Added`, including replacement; removal emits
-`Removed` only when present. Destruction removes components and invalidates the
-entity before emitting `Destroyed`, with one `Removed` per removed component.
-The per-frame entity/component event arrays are visible during the tick and clear
-after a successful update, as before. Component values are unavailable after
-removal. External-resource cleanup payloads and post-update lifecycle event
-retention remain separate items in the ECS roadmap.
-
-Editor inspection, scene tools, serialization, scripts and physics continue to
-use the same generational World component API. Exclusive systems can perform
-structural changes directly because no typed batch overlaps them. Clearing systems
-during exclusive execution stops the remaining schedule and invokes shutdown once
-at the boundary.
-
-## Implementation boundaries
-
-World owns identity, lifecycle events and the storage registries. Private modules
-separate query construction, resource access, system execution and integrity
-validation without changing the World API. Typed parameter families separate
-resource borrows, local state, structural commands and event logs; shared access
-validation and tuple composition remain together. Registration, query alias checks
-and scheduling use the same read/write conflict rule: identical types conflict when
-either access writes. Component and resource claims remain separate namespaces.
-
-## Unsafe boundaries and verification
-
-The remaining unsafe operations resolve independently claimed storage cells,
-borrow preselected component addresses, and construct lifetime-bound views.
-The outer World storage cell keeps a filtered iterator's registry pointer valid
-while its query borrows disjoint component columns. Removing that cell without
-changing query preparation invalidates the pointer under Miri. These operations
-do not create multiple exclusive references to World. Sealed descriptors
-and parameter implementations keep pointer preparation unavailable to safe game
-code. Every mutable row is unique and all references end before structural work.
-
-CPU tests cover held query rows, duplicate claims, filtered access, cache churn,
-commands, resource access, ordering, panics, events, change tracking and stale IDs.
-Miri exercises the pointer and lifetime boundaries, including retained mutable
-filtered rows and dense removal across sparse pages. Unit tests assert bulk
-lifecycle and change-tracking results; performance belongs in benchmarks rather
-than elapsed-time thresholds. Native app tests cover the
-migrated camera/animation behavior and exclusive script thread affinity. See
-[CI](ci.md) and [benchmarks](ecs_benchmarks.md) for reproducible validation.
-
-## Migration
-
-Use `TypedSystem` with `Params` for bounded component/resource work and register
-it with `with_typed_system` or `register_typed_system`. Use `System` only for
-full-World operations and register with `with_exclusive_system` or
-`register_exclusive_system`. The old builder registration and manual static/dynamic
-access declarations have been removed. Both runtime loops use the same scheduler.
-
-## Application transform hierarchy
-
-`TransformComponent` stores parent-local TRS; `Parent` is the authoritative link.
-The app's iterative `resolve_world_transforms` resolves current locals in O(N),
-without recursion or dependence on cached component update order. It preserves
-exact composed matrices including shear. `TransformHierarchySystem` publishes
-those matrices and accumulated rotation/scale as `WorldTransform`; direct local
-edits, new entities and reparenting refresh even without dirty markers. Invalid
-runtime cycles terminate with warnings and local poses; scene validation rejects
-them before loading. Rendering, bounds, lights, audio, particles and physics use
-the same resolver, including newly instantiated prefabs before the next ECS tick.
-`TransformOptimization` avoids rewriting unchanged cached poses; it does not make
-hierarchy traversal O(D). Incremental topology and dirty-root work remain in TODO.
-
-## Odin port experiment
-
-The standalone CPU port and compilation comparison live in `odin/ecs` and
-`odin/editor`. See [Odin ECS](ecs_odin.md) for API mapping, dependency replacements,
-ownership differences and reproducible measurements. The Rust engine continues
-to use this crate.
+Tests cover stale IDs, page/dense churn, alias rejection, change tracking,
+command order, recoverable failures, actual worker overlap, exclusive thread
+identity, events, deep ownership and fresh-reference Undo/Redo. Configured app
+checks prove native physics/script consumers. Rendering needs separate native
+GPU acceptance. [Benchmark records](ecs_benchmarks.md) describe measured storage
+and compilation experiments; historical Rust measurements are not current
+engine build commands.

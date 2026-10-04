@@ -54,6 +54,7 @@ animation_player_clone :: proc(dst,src:rawptr) {
 }
 /// Registers deep ownership; application spawn chooses whether either component is present.
 animation_register :: proc(w:^ecs.World,reg:^editor.Component_Registry) {
+    animation_events_init(w)
     editor.editor_register(w,reg,"AnimationModel",Animation_Model{},ecs.Value_Ops{animation_model_destroy,animation_model_clone},spawn_default=false)
     editor.editor_register(w,reg,"AnimationPlayer",animation_player_stopped(),ecs.Value_Ops{animation_player_destroy,animation_player_clone},spawn_default=false)
 }
@@ -157,17 +158,20 @@ animation_events_destroy :: proc(events:^[dynamic]Animation_Event,allocator:=con
 animation_execute :: proc(app:^Authoring,op:scene.Animation_Op)->(editor.Tool_Result,editor.Undo_Group) {
     w:=&app.world; context.allocator=w.allocator; result:=error_result(w,.None)
     if !ecs.entity_exists(w,op.entity) { result.error=.Entity_Not_Found; return result,{} }; _,hidden:=ecs.get_component(w,op.entity,Editor_Hidden); if hidden { result.error=.Protected_Entity; return result,{} }
-    if op.action==.Play { result.error=animation_play(w,op.entity,op.clip,op.fade_seconds,op.looping,op.speed); if result.error!=.None { return result,{} } }
+    before_speed:f32; before_loop:bool
+    if before:=ecs.get_component_mut(w,op.entity,Animation_Player);before!=nil {before_speed=before.speed;before_loop=before.looping}
+    if op.action!=.Inspect { result.error=animation_control(w,op); if result.error!=.None { return result,{} } }
     model:=ecs.get_component_mut(w,op.entity,Animation_Model); if model==nil { result.error=.Component_Not_Found; return result,{} }
     player:=ecs.get_component_mut(w,op.entity,Animation_Player)
     clip_names:=make([]struct {name:string,duration_seconds:f32},len(model.clips),w.allocator); defer delete(clip_names)
     for clip,i in model.clips { clip_names[i]={clip.name,clip.duration} }
+    for i in 1..<len(clip_names) { cursor:=i; for cursor>0&&clip_names[cursor].name<clip_names[cursor-1].name { clip_names[cursor],clip_names[cursor-1]=clip_names[cursor-1],clip_names[cursor]; cursor-=1 } }
     playback:json.Value=json.Null{}; if player!=nil {
         transition:json.Value=json.Null{}; if player.blending { transition=trigger_json_value(struct {target_clip:string,target_time_seconds:f32,target_looping:bool,duration_seconds,elapsed_seconds,progress:f32}{player.target_clip,player.target_time,player.target_looping,player.blend_duration,player.blend_time,1-player.blend_weight}) }; defer json.destroy_value(transition)
         current_clip:json.Value=json.Null{}; if player.clip!="" || player.clip_present { current_clip=player.clip }
-        playback=trigger_json_value(struct {clip:json.Value,time_seconds:f32,playing,looping:bool,speed:f32,transition:json.Value}{current_clip,player.time,player.playing,player.looping,player.speed,transition})
+        playback=trigger_json_value(struct {clip:json.Value,duration_seconds,time_seconds:f32,playing,looping,completed:bool,speed:f32,loop_count:u32,transition:json.Value}{current_clip,player.duration,player.time,player.playing,player.looping,player.completed,player.speed,player.loop_count,transition})
     }; defer json.destroy_value(playback)
     entity_text:=fmt.aprintf("%d",u64(op.entity)); defer delete(entity_text)
     data,err:=json.marshal(struct {entity_id:string,clips:[]struct {name:string,duration_seconds:f32},playback:json.Value}{entity_text,clip_names,playback},allocator=w.allocator)
-    if err!=nil { result.error=.Decode_Failed } else { result.data=data; append(&result.entities,op.entity) }; return result,{}
+    if err!=nil { result.error=.Decode_Failed;return result,{} };result.data=data;append(&result.entities,op.entity);return result,animation_setting_history(app,op,before_speed,before_loop)
 }

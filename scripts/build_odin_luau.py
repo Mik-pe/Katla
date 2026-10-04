@@ -7,6 +7,7 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import subprocess
 from build_box3d import compiler
 
@@ -39,6 +40,14 @@ def main():
         sources.extend(source / name for name in re.findall(r"[\w/]+\.cpp", files))
     sources.extend([ROOT / "tools/luau_native/bridge.cpp", ROOT / "tools/luau_native/protected.cpp"])
     executable = shlex.split(os.environ.get("CXX", compiler(options.sanitize)))
+    if "CXX" not in os.environ:
+        cxx_name = Path(executable[0]).name.replace("clang", "clang++", 1)
+        adjacent = Path(executable[0]).with_name(cxx_name)
+        candidate = str(adjacent) if adjacent.is_file() else shutil.which(cxx_name)
+        if candidate:
+            executable[0] = candidate
+        elif host == "Windows":
+            raise SystemExit("Windows Luau requires the C++ Clang driver; set CXX to clang++ with the installed Windows SDK")
     directory = output.parent / ("luau-objects-asan" if options.sanitize else "luau-objects")
     directory.mkdir(exist_ok=True)
     flags = ["-x", "c++", "-std=c++17", "-O1" if options.sanitize else "-O2", "-g",
@@ -56,8 +65,10 @@ def main():
         return output
     with ThreadPoolExecutor(max_workers=4) as pool:
         objects = list(pool.map(build, sources))
+    cxx_driver = any("++" in Path(part).name for part in executable)
     command = [*executable, "-dynamiclib" if suffix == "dylib" else "-shared", *objects,
-               *([] if host == "Windows" else ["-lstdc++" if suffix == "so" else "-lc++", "-pthread"]),
+               *([] if host == "Windows" or cxx_driver else ["-lstdc++" if suffix == "so" else "-lc++"]),
+               *([] if host == "Windows" else ["-pthread"]),
                *(["-fuse-ld=lld"] if host == "Windows" else []), "-o", output]
     if options.sanitize:
         command.append("-fsanitize=address")

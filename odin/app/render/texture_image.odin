@@ -19,15 +19,19 @@ texture_image_decode :: proc(encoded:[]byte,allocator:mem.Allocator=context.allo
     if len(encoded)>TEXTURE_IMAGE_MAX_ENCODED_BYTES { return {},.Limit }
     png:=len(encoded)>=8 && string(encoded[:8])=="\x89PNG\r\n\x1a\n"
     jpeg:=len(encoded)>=2 && encoded[0]==0xff && encoded[1]==0xd8
-    if !png && !jpeg { return {},.Unsupported }
+    bmp:=len(encoded)>=2 && string(encoded[:2])=="BM"
+    tiff:=len(encoded)>=4 && (string(encoded[:4])=="II\x2a\x00" || string(encoded[:4])=="MM\x00\x2a" || string(encoded[:4])=="II\x2b\x00" || string(encoded[:4])=="MM\x00\x2b")
+    if !png && !jpeg && !bmp && !tiff { return {},.Unsupported }
     width,height,channels:c.int
-    if image.info_from_memory(raw_data(encoded),c.int(len(encoded)),&width,&height,&channels)==0 { return {},.Invalid_Data }
+    info:=image.info_from_memory(raw_data(encoded),c.int(len(encoded)),&width,&height,&channels)
+    if info==-2 { return {},.Limit }; if info!=1 { return {},.Invalid_Data }
     if width<=0 || height<=0 || channels<1 || channels>4 { return {},.Invalid_Data }
     pixels:=u64(width)*u64(height)
     if width>TEXTURE_IMAGE_MAX_DIMENSION || height>TEXTURE_IMAGE_MAX_DIMENSION || pixels>TEXTURE_IMAGE_MAX_PIXELS || pixels*4>TEXTURE_IMAGE_MAX_BYTES { return {},.Limit }
     validation:Texture_Image_Error
     if png { validation=texture_png_validate(encoded,u32(width),u32(height),allocator) }
-    else { validation=texture_jpeg_validate(encoded,u32(width),u32(height)) }
+    else if jpeg { validation=texture_jpeg_validate(encoded,u32(width),u32(height)) }
+    else if bmp { validation=texture_bmp_validate(encoded,u32(width),u32(height)) }
     if validation!=.None { return {},validation }
     image.set_flip_vertically_on_load_thread(false)
     decoded_width,decoded_height,decoded_channels:c.int

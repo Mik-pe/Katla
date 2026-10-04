@@ -1,6 +1,6 @@
 # Box3D dependency
 
-Katla's Odin scene can explicitly select the actual C17 Box3D backend. The
+Katla's canonical Odin physics owner uses the actual C17 Box3D backend. The
 dependency is Box3D v0.1.0, pinned to
 `8441b4a06d6d09dcfb0b0f704df4d847d1437b92` from
 [the upstream repository](https://github.com/erincatto/box3d).
@@ -13,7 +13,7 @@ source and build output remain in `target/`; upstream uses the MIT license.
 body map, whole-batch preflight, deterministic event ordering, application
 hierarchy conversion and pose publication. No ECS, app or renderer pointer
 crosses into C. The ABI uses explicit single-precision fields and lossless u64
-identities. Revision-seven Body is 168 bytes, Pose is 48 bytes, Joint is 64 bytes, Contact
+identities. Revision-eight Body is 168 bytes, Pose is 48 bytes, Joint is 64 bytes, Contact
 is 48 bytes and Edge is 24 bytes on supported 64-bit targets. Borrowed mesh
 and row-major height streams are copied into native geometry and independently
 retained by Odin before caller storage is released.
@@ -49,7 +49,7 @@ body with no shape or fabricated mass. This dependency gives shapeless bodies
 zero inverse mass, so gravity does not accelerate them; authored velocity and
 pose remain native body state. Collider removal/addition preserves completed
 motion, and ignored collider metadata never creates geometry or sensor overlap.
-ABI seven loads all 22 required symbols and rejects earlier libraries before
+ABI eight loads all 22 required symbols and rejects earlier libraries before
 creating any dependency owner.
 
 Primitive boxes, spheres and Y capsules, filters, gravity, authored velocities,
@@ -75,11 +75,23 @@ and damping 0.5. The adapter converts these physical coefficients to Box3D's
 frequency and damping ratio using native effective mass, including world inverse
 inertia and the anchor lever arms, and refreshes the conversion before each step.
 It never adds mass or integrates a replacement force outside the dependency.
-Box3D v0.1.0 admits hinge bounds only within `[-0.99π, 0.99π]` and distance rest
-lengths at least `0.005`. The broader scene descriptions remain valid for Rapier;
-Box3D returns `Unsupported` before altering any bodies instead of accepting
-upstream's silent clamping. Heightfields and exact native spatial queries are
-supported as described below.
+All finite ordered hinge limits describe a periodic angular interval. Intervals
+narrower than a full turn rotate the native reference frame to their center and
+constrain the principal angle to half their width on either side. This supports
+intervals crossing π and intervals entirely outside ±π without requiring a
+multi-turn counter. Widths of at least 2π leave rotation free. Authored values
+remain unchanged. Double-precision center/width arithmetic avoids overflow for
+finite f32 endpoints. The native angular axis and both local anchors remain exact.
+
+`tools/box3d/joint_ranges.py` generates bounded source adaptations at build time:
+it removes upstream's ±0.99π angular clamps and minimum distance rest length.
+The pinned dependency checkout stays clean. Distance springs use the exact finite
+signed midpoint, including zero and values below 0.005, without changing their
+physical stiffness or damping. Midpoints use double arithmetic to avoid overflow.
+The native regression reads back exact configured rest lengths and the Odin
+solver test reaches zero/sub-slop equilibria with sleeping explicitly prevented
+by a zero-force wake command. Normal simulation retains native sleep behavior.
+Heightfields and exact native spatial queries are supported as described below.
 
 Whole-body and joint admission precedes native mutation. New native body owners
 and constraints are prepared and published before old owners are retired; unchanged
@@ -91,10 +103,10 @@ the native C regression checks both cleanup orders. Successful swaps retire
 constraints before their body owners.
 Reset and destruction follow the same constraint-before-body order.
 
-The established
-Rapier backend remains the default. Backend selection is explicit and allowed
-only while editing; missing libraries return failure without changing the
-scene or selecting a substitute backend.
+The application initializes the canonical Box3D owner through
+`physics_select_box3d` while editing. Missing or incompatible libraries return
+failure without changing the scene or selecting a substitute engine. The
+superseded Rust/Rapier scene bridge is not an application runtime dependency.
 
 The native query ABI returns exact u64 entity identities and closest-hit points,
 normals and distances from Box3D geometry. Rays include sensors by default;

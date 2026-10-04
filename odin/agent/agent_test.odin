@@ -43,11 +43,11 @@ test_protocol_rejection_and_lossless_ids :: proc(t:^testing.T) {
     for text in ([]string{"","-1","+1","1.0","1e3","18446744073709551616"," 1"}) { _,ok:=parse_entity_id(text); testing.expect(t,!ok) }
     cases:=[]struct { name,args:string, error:Call_Error }{
         {"unknown","{}",.Unknown_Tool}, {"spawn_entity","{",.Invalid_JSON},
-        {"spawn_entity","[]",.Invalid_Arguments}, {"spawn_entity",`{"shape":"cube"}`,.Invalid_Arguments},
+        {"spawn_entity","[]",.Invalid_Arguments}, {"spawn_entity",`{"shape":"unsupported"}`,.Invalid_Arguments},
         {"spawn_entity",`{"position":[1,2]}`,.Invalid_Arguments}, {"spawn_entity",`{"scale":[1,"2",3]}`,.Invalid_Arguments},
         {"destroy_entity",`{"entity_id":9007199254740993}`,.Invalid_Arguments},
         {"set_field",`{"entity_id":"0","component":"Position","field":"x"}`,.Invalid_Arguments},
-        {"query_entities",`{"limit":0}`,.Invalid_Arguments}, {"query_entities",`{"limit":257}`,.Invalid_Arguments},
+        {"query_entities",`{"limit":"0"}`,.Invalid_Arguments}, {"query_entities",`{"limit":-1}`,.Invalid_Arguments},
     }
     h:editor.Agent_Harness; editor.agent_harness_init(&h); defer editor.agent_harness_destroy(&h)
     for c in cases {

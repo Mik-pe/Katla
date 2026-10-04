@@ -38,12 +38,13 @@ particle_snapshot :: proc(renderer:^$R,operations:render.Particle_GPU_Ops(R),par
     }
     return bytes
 }
-exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:render.Particle_GPU_Ops(R),capture:Capture_Ops(R),compiler:^shader.Compiler,descriptor:gfx.Graphics_Desc,backend:string) {
+exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:render.Particle_GPU_Ops(R),capture:Capture_Ops(R),compiler:^shader.Compiler,descriptor:render.Scene_Pipelines,backend:string) {
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
     assert(app.authoring_services_init(&owner)==.None)
-    resource_root:=fmt.aprintf("%s/resources",os.args[4]); defer delete(resource_root)
-    assert(app.asset_resources_init(&owner,os.args[4],resource_root)==.None)
-    assert(app.scene_runtime_init(&owner,os.args[3])==.None)
+    resource_root:=fmt.aprintf("%s/resources",os.args[5]); defer delete(resource_root)
+    assert(app.asset_resources_init(&owner,os.args[5],resource_root)==.None)
+    assert(app.script_native_init(&owner,os.args[3])==.None)
+    assert(app.physics_select_box3d(&owner,os.args[4])==.None)
     descriptor_particle:=app.particle_defaults(); descriptor_particle.emit_rate=0; descriptor_particle.velocity_magnitude=0; descriptor_particle.velocity_cone_angle=0; descriptor_particle.lifetime_variation=0; descriptor_particle.base_scale=0.75; descriptor_particle.scale_variation=0; descriptor_particle.color={0,1,0,1}; descriptor_particle.color_end=descriptor_particle.color; descriptor_particle.color_variation=0; descriptor_particle.gravity=0
     descriptor_particle.active=false
     actor:=ecs.spawn(&owner.world,struct {transform:app.Scene_Transform,body:app.Physics_Body}{{km.transform(position={3,0,0})},app.physics_body({kind=.Sphere,radius=0.25},.Kinematic)})
@@ -60,18 +61,22 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:render.P
     assert(app.simulation_step(&owner,0.1)==.None)
     queued:=ecs.get_component_mut(&owner.world,entity,app.Particle_Emitter)
     assert(queued.descriptor.active && len(queued.descriptor.burst_queue)==1 && queued.descriptor.burst_queue[0]==32)
+    queued.descriptor.has_timed_emission=true; queued.descriptor.timed_emission=.5
     scene:render.Native_Scene(R); geometry:=render.Geometry{}
     assert(render.native_scene_init(&scene,renderer,operations,descriptor,&geometry,0,3,128,128)=={}); defer { assert(render.native_scene_destroy(&scene)==.None) }
     particles:render.Particle_Consumer(R)
-    error,shader_error:=render.particle_consumer_init(&particles,&owner,renderer,particle_ops,compiler,.RGBA8_Unorm,64,4,3,true)
+    error,shader_error:=render.particle_consumer_init(&particles,&owner,renderer,particle_ops,compiler,.RGBA16_Float,64,4,3,true)
     fmt.println("Particle native preparation",backend,error,shader_error); assert(error=={} && shader_error==.None)
     defer { assert(render.particle_consumer_destroy(&particles)==.None) }
+    scene.feature_settings.sky=false; scene.feature_settings.grid=false; scene.feature_settings.shadows=false; scene.feature_settings.outline=false
     scene.composition=render.particle_composition(&particles); assert(render.particle_frame_delta(&particles,0.25)=={})
     frame:=render.Frame_Data{view_projection=km.identity(km.Mat4),ambient={0,0,0,1}}
     token,acquire_error:=render.native_scene_acquire(&scene); assert(acquire_error==.None)
     submission,submit_error:=render.native_scene_render(&scene,token,frame,nil,nil); fmt.println("Particle submit",submit_error); assert(submit_error=={})
     emitter:=ecs.get_component_mut(&owner.world,entity,app.Particle_Emitter); assert(len(emitter.descriptor.burst_queue)==0)
-    source,source_error:=capture.source(renderer,submission,scene.graph.color); assert(source_error==.None)
+    status,found_status:=render.particle_emitter_status(&particles,entity); assert(found_status && status.timed && status.remaining_duration==.25 && status.sequence==particles.sequence)
+    assert(emitter.descriptor.has_timed_emission && emitter.descriptor.timed_emission==.5 && emitter.descriptor.active,"accepted native clock mutated authored duration/active")
+    source,source_error:=capture.source(renderer,submission,scene.graph.output); assert(source_error==.None)
     ticket,ticket_error:=capture.queue(renderer,source,{width=128,height=128,depth=1,aspect=.Color}); assert(ticket_error==.None)
     assert(render.native_scene_wait(&scene,submission)==.None)
     bytes:=particle_snapshot(renderer,particle_ops,&particles,token,32,4.75); defer delete(bytes)
@@ -79,8 +84,12 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:render.P
     for !captured {
         data,done,poll_error:=capture.poll(renderer,ticket); assert(poll_error==.None)
         if done {
-            center:=int(64*data.row_pitch+64*4); assert(data.bytes[center]==0 && data.bytes[center+1]==255 && data.bytes[center+2]==0 && data.bytes[center+3]==255)
-            corner:=int(4*data.row_pitch+4*4); assert(data.bytes[corner+1]<20)
+            center:=int(64*data.row_pitch+64*4)
+            linear:=scene.feature_settings.postprocess.exposure
+            aces:=clamp(linear*(2.51*linear+.03)/(linear*(2.43*linear+.59)+.14),0,1)
+            expected:=(12.92*aces if aces<=.0031308 else 1.055*math.pow(aces,1/f32(2.4))-.055)*255
+            assert(data.bytes[center]==0 && abs(f32(data.bytes[center+1])-expected)<1.6 && data.bytes[center+2]==0 && data.bytes[center+3]==255,"authored green particle must pass through linear HDR, ACES and exactly one sRGB transfer")
+            corner:=int(4*data.row_pitch+4*4); assert(f32(data.bytes[corner+1])<expected*.25,"particle rasterization covered a background corner")
             gfx.readback_data_destroy(&data); captured=true
         } else { assert(time.tick_since(started)<10*time.Second); time.sleep(time.Millisecond) }
     }
@@ -120,9 +129,9 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:render.P
     killed_submission,killed_error:=render.native_scene_render(&scene,killed_token,frame,nil,nil); assert(killed_error=={})
     assert(render.native_scene_wait(&scene,killed_submission)==.None)
     killed_bytes:=particle_snapshot(renderer,particle_ops,&particles,killed_token,0,0); delete(killed_bytes)
-    fmt.println("Particle GPU PASS",backend,"actual Rapier enter → Luau 32 → GPU 192 vertices/pixels; failed-frame queue retention, deferred 33 burst, survivor rollover, death, slot reuse, resize and kill-on-disable")
+    fmt.println("Particle GPU PASS",backend,"actual Box3D enter → Luau 32 → GPU 192 vertices/pixels; failed-frame queue retention, deferred 33 burst, survivor rollover, death, slot reuse, resize and kill-on-disable")
 }
-exercise_queued :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:render.Particle_GPU_Ops(R),compiler:^shader.Compiler,descriptor:gfx.Graphics_Desc,backend:string) {
+exercise_queued :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:render.Particle_GPU_Ops(R),compiler:^shader.Compiler,descriptor:render.Scene_Pipelines,backend:string) {
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
     app.scene_components_register(&owner); app.particle_register(&owner.world,&owner.registry)
     config:=app.particle_defaults(); config.emit_rate=0; config.velocity_direction={1,0,0}; config.velocity_magnitude=1; config.velocity_cone_angle=0; config.lifetime_variation=0; config.base_scale=0.75; config.scale_variation=0; config.color={1,0,0,1}; config.color_end=config.color; config.color_variation=0; config.gravity=-2
@@ -133,8 +142,9 @@ exercise_queued :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:r
     scene:render.Native_Scene(R); geometry:=render.Geometry{}
     assert(render.native_scene_init(&scene,renderer,operations,descriptor,&geometry,0,3,64,64)=={}); defer { assert(render.native_scene_destroy(&scene)==.None) }
     particles:render.Particle_Consumer(R)
-    error,shader_error:=render.particle_consumer_init(&particles,&owner,renderer,particle_ops,compiler,.RGBA8_Unorm,512,4,3,true)
+    error,shader_error:=render.particle_consumer_init(&particles,&owner,renderer,particle_ops,compiler,.RGBA16_Float,512,4,3,true)
     assert(error=={} && shader_error==.None); defer { assert(render.particle_consumer_destroy(&particles)==.None) }
+    scene.feature_settings.sky=false; scene.feature_settings.grid=false; scene.feature_settings.shadows=false; scene.feature_settings.outline=false
     scene.composition=render.particle_composition(&particles); assert(render.particle_frame_delta(&particles,0.25)=={})
     frame:=render.Frame_Data{view_projection=km.identity(km.Mat4),ambient={0,0,0,1}}
     submissions:[3]gfx.Submission
@@ -213,7 +223,7 @@ exercise_queued :: proc(renderer:^$R,operations:render.GPU_Ops(R),particle_ops:r
     fmt.println("Queued particle GPU PASS",backend,"three concurrent slots; exact 300+150+62 spawns, multiple native workgroups, previous-frame captures, gravity/bounds at 512 capacity; delete/recreate preserves old red configuration until GPU death then safely reclaims")
 }
 main :: proc() {
-    assert(len(os.args)==5,"usage: particles_render <naga-library> <vulkan-loader> <runtime-library> <project-root>")
+    assert(len(os.args)==6,"usage: particles_render <shader-compiler> <vulkan-loader> <luau-library> <box3d-library> <project-root>")
     _=NS.scoped_autoreleasepool()
     backing:=context.allocator; tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,backing)
     defer { context.allocator=backing; assert(len(tracker.allocation_map)==0 && len(tracker.bad_free_array)==0,"particle owner leaked"); mem.tracking_allocator_destroy(&tracker) }; context.allocator=mem.tracking_allocator(&tracker)
@@ -221,16 +231,16 @@ main :: proc() {
     surface,error:=render.surface_shader_compile(&compiler,.RGBA8_Unorm); assert(error==.None); defer render.surface_shader_destroy(&surface)
     {
         renderer:metal.Renderer; assert(metal.renderer_init(&renderer)==.None); defer { assert(metal.renderer_destroy(&renderer)==.None) }
-        operations:=render.GPU_Ops(metal.Renderer){metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.create_texture,metal.destroy_texture,metal.acquire,metal.abort,metal.submit,metal.wait,metal.release_graph_exports}
+        operations:=render.GPU_Ops(metal.Renderer){metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.create_texture,metal.destroy_texture,metal.acquire,metal.abort,metal.submit,metal.wait,metal.release_graph_exports,metal.create_pipeline,metal.destroy_pipeline,metal.create_sampler,metal.destroy_sampler}
         particle_ops:=render.Particle_GPU_Ops(metal.Renderer){metal.create_pipeline,metal.destroy_pipeline,metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.read_buffer}
-        exercise(&renderer,operations,particle_ops,Capture_Ops(metal.Renderer){metal.graph_texture_source,metal.queue_texture_readback,metal.poll_texture_readback},&compiler,surface.descriptor,"Metal4")
-        exercise_queued(&renderer,operations,particle_ops,&compiler,surface.descriptor,"Metal4")
+        exercise(&renderer,operations,particle_ops,Capture_Ops(metal.Renderer){metal.graph_texture_source,metal.queue_texture_readback,metal.poll_texture_readback},&compiler,render.surface_pipelines(&surface),"Metal4")
+        exercise_queued(&renderer,operations,particle_ops,&compiler,render.surface_pipelines(&surface),"Metal4")
     }
     {
         renderer:vulkan.Renderer; assert(vulkan.renderer_init(&renderer,validation=true,loader_path=os.args[2])==.None); defer { assert(vulkan.validation_error_count(&renderer)==0); assert(vulkan.renderer_destroy(&renderer)==.None) }
-        operations:=render.GPU_Ops(vulkan.Renderer){vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.create_texture,vulkan.destroy_texture,vulkan.acquire,vulkan.abort,vulkan.submit,vulkan.wait,vulkan.release_graph_exports}
+        operations:=render.GPU_Ops(vulkan.Renderer){vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.create_texture,vulkan.destroy_texture,vulkan.acquire,vulkan.abort,vulkan.submit,vulkan.wait,vulkan.release_graph_exports,vulkan.create_pipeline,vulkan.destroy_pipeline,vulkan.create_sampler,vulkan.destroy_sampler}
         particle_ops:=render.Particle_GPU_Ops(vulkan.Renderer){vulkan.create_pipeline,vulkan.destroy_pipeline,vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.read_buffer}
-        exercise(&renderer,operations,particle_ops,Capture_Ops(vulkan.Renderer){vulkan.graph_texture_source,vulkan.queue_texture_readback,vulkan.poll_texture_readback},&compiler,surface.descriptor,"Vulkan1.3")
-        exercise_queued(&renderer,operations,particle_ops,&compiler,surface.descriptor,"Vulkan1.3")
+        exercise(&renderer,operations,particle_ops,Capture_Ops(vulkan.Renderer){vulkan.graph_texture_source,vulkan.queue_texture_readback,vulkan.poll_texture_readback},&compiler,render.surface_pipelines(&surface),"Vulkan1.3")
+        exercise_queued(&renderer,operations,particle_ops,&compiler,render.surface_pipelines(&surface),"Vulkan1.3")
     }
 }

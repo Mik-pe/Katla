@@ -143,15 +143,17 @@ agent_run_sync :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry,sta
 scene_op_clone :: proc(op:Scene_Op,allocator:mem.Allocator)->Scene_Op {
     cloned:=op
     cloned.component=strings.clone(op.component,allocator); cloned.field=strings.clone(op.field,allocator)
+    cloned.name_filter=strings.clone(op.name_filter,allocator)
     cloned.name=strings.clone(op.name,allocator); cloned.path=strings.clone(op.path,allocator)
     cloned.tool_name=strings.clone(op.tool_name,allocator)
+    cloned.shape=strings.clone(op.shape,allocator); cloned.default_animation=strings.clone(op.default_animation,allocator)
     cloned.value=make([]byte,len(op.value),allocator); copy(cloned.value,op.value)
     return cloned
 }
 @(private="package")
 scene_op_destroy :: proc(op:^Scene_Op,allocator:mem.Allocator) {
-    delete(op.component,allocator); delete(op.field,allocator); delete(op.name,allocator)
-    delete(op.path,allocator); delete(op.tool_name,allocator); delete(op.value,allocator); op^={}
+    delete(op.name_filter,allocator); delete(op.component,allocator); delete(op.field,allocator); delete(op.name,allocator)
+    delete(op.path,allocator); delete(op.tool_name,allocator); delete(op.shape,allocator); delete(op.default_animation,allocator); delete(op.value,allocator); op^={}
 }
 @(private="package")
 tool_result_clone :: proc(result:Tool_Result,allocator:mem.Allocator)->Tool_Result {

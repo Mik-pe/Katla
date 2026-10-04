@@ -88,13 +88,14 @@ renderer_init :: proc(r:^Renderer,validation:=false,loader_path:string="",alloca
     if enumerate_extensions==nil || enumerate_extensions(nil,&available_count,nil)!=.SUCCESS { return .Unsupported }
     available_extensions:=make([]vk.ExtensionProperties,int(available_count),allocator); defer delete(available_extensions,allocator)
     if enumerate_extensions(nil,&available_count,raw_data(available_extensions))!=.SUCCESS { return .Unsupported }
-    surface_extensions_found:int
+    surface_base_found:bool
+    platform_extensions_found:int
     for requested in native_surface_extensions() {
         for &extension in available_extensions {
-            if string(cast(cstring)raw_data(extension.extensionName[:]))==string(requested) { extensions[extension_count]=requested; extension_count+=1; surface_extensions_found+=1; break }
+            if string(cast(cstring)raw_data(extension.extensionName[:]))==string(requested) { extensions[extension_count]=requested; extension_count+=1; if string(requested)=="VK_KHR_surface" { surface_base_found=true } else { platform_extensions_found+=1 }; break }
         }
     }
-    r.surface_supported=surface_extensions_found==2
+    r.surface_supported=surface_base_found && platform_extensions_found>0
     if validation { extensions[extension_count]="VK_EXT_debug_utils"; extension_count+=1; extensions[extension_count]="VK_EXT_validation_features"; extension_count+=1; info.enabledLayerCount=1; info.ppEnabledLayerNames=raw_data(layers[:]); info.pNext=&validation_features }
     info.enabledExtensionCount=extension_count; info.ppEnabledExtensionNames=raw_data(extensions[:])
     result:=create_instance(&info,nil,&r.instance)

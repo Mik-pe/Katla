@@ -13,7 +13,7 @@ Native_Consumer :: struct($R:typeid) {
     authoring:^app.Authoring,
     renderer:^R,
     operations:GPU_Ops(R),
-    descriptor:gfx.Graphics_Desc,
+    descriptor:Scene_Pipelines,
     composition:Scene_Composition(R),
     model_config:Model_Config(R),
     active:^Native_Scene(R),
@@ -47,6 +47,8 @@ consumer_prepare :: proc(consumer:^Native_Consumer($R),owner:^app.Authoring,enti
         for id in all { excluded:=false; for removed in entities { if id==removed { excluded=true; break } }; if !excluded { append(&remaining,id) } }
         selected=remaining[:]
     }
+    _,light_error:=lighting_collect_entities(owner,selected)
+    if light_error!=.None { consumer.last_error={scene=light_error}; return nil,.Invalid_Operation }
     if consumer.composition.validate!=nil {
         error:=consumer.composition.validate(consumer.composition.state,owner,selected)
         if error!={} { consumer.last_error=error; return nil,.Invalid_Operation }
@@ -61,9 +63,16 @@ consumer_prepare :: proc(consumer:^Native_Consumer($R),owner:^app.Authoring,enti
     token.batch^,batch_error=scene_batch_prepare_entities(owner,mesh_ids[:],consumer.allocator)
     token.batch.models_supported=consumer.model_config.shader!=nil
     if batch_error!={} { consumer.last_error={scene=.Invalid_Geometry}; if batch_error.scene!=.None { return nil,batch_error.scene }; return nil,.Invalid_Operation }
-    error:=native_scene_init(token.scene,consumer.renderer,consumer.operations,consumer.descriptor,&token.batch.geometry,len(token.batch.objects),consumer.slots,consumer.width,consumer.height,consumer.allocator)
+    settings:=FEATURE_SETTINGS_DEFAULT
+    if consumer.active!=nil { settings=consumer.active.feature_settings }
+    error:=native_scene_init(token.scene,consumer.renderer,consumer.operations,consumer.descriptor,&token.batch.geometry,len(token.batch.objects),consumer.slots,consumer.width,consumer.height,consumer.allocator,settings)
     if error!={} { consumer.last_error=error; return nil,.Invalid_Operation }
-    token.scene.composition=consumer.composition
+    token.scene.composition=consumer.composition; token.scene.authoring=owner; token.scene.batch=token.batch
+    if consumer.active!=nil {
+        retained:=make([dynamic]ecs.Entity_Id,consumer.allocator); defer delete(retained)
+        for id in consumer.active.selected { for candidate in selected { if id==candidate { append(&retained,id); break } } }
+        selection_error:=native_scene_select(token.scene,retained[:]); if selection_error!={} { consumer.last_error=selection_error; return nil,.Invalid_Operation }
+    }
     if consumer.model_config.shader!=nil {
         token.scene.models=new(Native_Model(R),consumer.allocator)
         model_error:=model_native_init(token.scene.models,owner,selected,consumer.renderer,consumer.model_config,consumer.slots,consumer.allocator)
@@ -102,15 +111,15 @@ consumer_finish_callback :: proc($R:typeid)->proc(rawptr,rawptr,bool) {
     return proc(state,token:rawptr,commit:bool) { consumer_finish(cast(^Native_Consumer(R))state,cast(^Consumer_Preparation(R))token,commit) }
 }
 /// Prepares the existing world before installing genuine GPU staging on the stationary owner.
-native_consumer_init :: proc(consumer:^Native_Consumer($R),owner:^app.Authoring,renderer:^R,operations:GPU_Ops(R),descriptor:gfx.Graphics_Desc,slots:int,width,height:u32,allocator:mem.Allocator=context.allocator,models:^Model_Config(R)=nil)->Native_Error {
+native_consumer_init :: proc(consumer:^Native_Consumer($R),owner:^app.Authoring,renderer:^R,operations:GPU_Ops(R),descriptor:Scene_Pipelines,slots:int,width,height:u32,allocator:mem.Allocator=context.allocator,models:^Model_Config(R)=nil,install_participant:bool=true)->Native_Error {
     if consumer.authoring!=nil || owner==nil || renderer==nil { return {scene=.Invalid_Geometry} }
-    if _,installed:=ecs.get_resource(&owner.world,app.Scene_Participant); installed { return {scene=.Invalid_Geometry} }
+    if install_participant { if _,installed:=ecs.get_resource(&owner.world,app.Scene_Participant); installed { return {scene=.Invalid_Geometry} } }
     consumer^={authoring=owner,renderer=renderer,operations=operations,descriptor=descriptor,slots=slots,width=width,height=height,allocator=allocator}
     if models!=nil { consumer.model_config=models^ }
     token,error:=consumer_prepare(consumer,owner,nil,.Insert)
     if error!=.None { result:=consumer.last_error; consumer^={}; return result }
     consumer_finish(consumer,cast(^Consumer_Preparation(R))token,true)
-    ecs.insert_resource(&owner.world,app.Scene_Participant{consumer,consumer_prepare_callback(R),consumer_finish_callback(R)})
+    if install_participant { ecs.insert_resource(&owner.world,app.Scene_Participant{consumer,consumer_prepare_callback(R),consumer_finish_callback(R)}) }
     return {}
 }
 /// Refreshes placement/material or rebuilds native storage after actual mesh revision changes.
@@ -123,7 +132,10 @@ native_consumer_refresh :: proc(consumer:^Native_Consumer($R))->Native_Error {
         token,error:=consumer_prepare(consumer,consumer.authoring,nil,.Insert)
         if error!=.None { return consumer.last_error }
         consumer_finish(consumer,cast(^Consumer_Preparation(R))token,true)
-    } else if batch_error!={} || model_error.kind!=.None { return {scene=.Invalid_Geometry} }
+    } else if batch_error!={} || model_error.kind!=.None {
+        log.error("Native scene refresh rejected current geometry",batch_error,model_error)
+        return {scene=.Invalid_Geometry}
+    }
     return {}
 }
 /// Installs one application composition before its first accepted scene work.
@@ -151,3 +163,8 @@ native_consumer_destroy :: proc(consumer:^Native_Consumer($R))->gfx.Gpu_Error {
     if consumer.batch!=nil { scene_batch_destroy(consumer.batch); free(consumer.batch,consumer.allocator) }
     consumer^={}; return error
 }
+
+/// Prepares a genuine candidate without installing a participant or publishing its resources.
+native_consumer_prepare :: proc(consumer:^Native_Consumer($R),owner:^app.Authoring,entities:[]ecs.Entity_Id,mode:app.Scene_Preparation_Mode)->(rawptr,editor.Scene_Error) { return consumer_prepare(consumer,owner,entities,mode) }
+/// Consumes the candidate after the host's entire participant set accepts or rejects the transaction.
+native_consumer_finish :: proc(consumer:^Native_Consumer($R),token:rawptr,commit:bool) { consumer_finish(consumer,cast(^Consumer_Preparation(R))token,commit) }

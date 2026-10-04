@@ -1,9 +1,8 @@
 # Odin leaf packages: icons and audio DSP
 
-The next standalone packages after ECS and math live in `odin/icons` and
-`odin/audio/dsp`. Neither depends on a renderer, ECS or Katla math. Their scope
-is complete icon data and the audio effect layer; they do not provide an Odin
-audio engine. [The shared Odin tree](../odin/README.md) is the entry point.
+The independent packages `odin/icons` and `odin/audio/dsp` provide editor icon
+data and audio effects. The complete [audio engine](audio_odin.md) owns codecs,
+streams, voices, native device output and the editor mixer.
 
 ## Icons
 
@@ -26,10 +25,10 @@ Odin's constant arrays are values; copy a catalogue into a variable for runtime
 indexing or slicing. `ALL_ICONS` enables enumeration without reflection or a
 parallel manually maintained Rust fixture.
 
-`scripts/check_icon_port.py` builds and executes the Odin consumer, then compares
-every name/value pair, catalogue order and precache entry against the Rust
-exports. Native tests check the private-use range, uniqueness, catalogue membership
-and real UTF-8 encode/decode round trips.
+Native tests check the private-use range, uniqueness, catalogue membership and
+real UTF-8 encode/decode round trips. The actual retained UI and editor overlay
+fixtures shape and render the matching ForkAwesome glyphs through the native
+font pipeline.
 
 ## Audio DSP
 
@@ -104,42 +103,21 @@ complete-frame validation, preallocation and explicit ownership are intentional
 Odin API changes. Allocation exhaustion during initialization follows the Odin
 runtime allocator behavior; processing offers no growth fallback.
 
-## Validation and current boundary
-
-From the repository root:
+## Validation
 
 ```sh
-python3 scripts/validate_odin.py
+odin test odin/icons -vet -strict-style -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
 odin test odin/audio/dsp -out:target/odin-dsp-asan -sanitize:address -debug -vet -strict-style
-odin test odin/audio/dsp -out:target/odin-dsp-release -o:speed -vet -strict-style
-python3 scripts/compare_audio_dsp.py --report docs/benchmarks/audio-odin-parity.json
-cargo test -p katla_icons -p katla_audio --locked
-cargo check -p katla_icons -p katla_audio --all-targets --locked
-cargo clippy -p katla_icons -p katla_audio --all-targets --locked -- -D warnings
+python3 scripts/validate_odin_audio.py
 ```
 
-The two icon and ten DSP tests cover DC filter response, stereo isolation, chunked
-history continuity, reverb tail/reset, low-rate delays, invalid-input immutability,
-effect order/capacity, aux summing/return, zone silence/smoothing, real-thread
-atomic publication, gain conversion and owner cleanup. A tracking allocator
-verifies zero allocations over 64 full filter/reverb/aux processing blocks and
-zero remaining owner allocations after cleanup. Native AddressSanitizer and
-optimized tests pass on arm64; x86 `linux_amd64` typechecking also passes.
+DSP tests cover filter response, stereo isolation, chunked history, reverb
+reset, low-rate delays, invalid-input immutability, effect ordering/capacity,
+aux sends/return, zone smoothing and real-thread atomic controls. Allocation
+tracking verifies no allocation during processing and no remaining owned memory.
+Native clip/stream/device acceptance is described in [audio](audio_odin.md).
 
-The offline consumer matches Rust at 44.1, 48 and 96 kHz in mono and stereo,
-including live cutoff and reverb parameter changes, ordered chains, aux sends and
-gain helpers. Each dev/release profile compares 960 DSP blocks plus 41 gain rows:
-1,001 records and 92,283 scalar values. Numeric differences were zero at the
-printed precision (nine decimal places in scientific notation) on this host. Tolerances remain 2e-5 absolute and
-5e-5 relative. [The receipt](benchmarks/audio-odin-parity.json) records versions,
-source and output hashes and both results. Zone reverb is private in the Rust
-crate and is validated by the independent Odin tests rather than the public
-Rust consumer. Rust audio/icons pass 43 library tests and one audio doctest;
-two icon doctests are ignored, and strict check/Clippy pass.
-
-`odin/audio` currently contains DSP only. PCM buffer loading, WAV/OGG/MP3/FLAC
-codecs and metadata, voice/resampling/pooling, full category mixer, audio clock,
-scheduling/cues/streaming and native device output still belong to the Rust
-engine. No audio device is opened during these tests, and no audible playback,
-callback deadline, thread-priority or hardware-output acceptance is claimed.
-See [remaining Odin work](../TODO.md#odin-port) before composing an audio engine.
+[The historical migration receipt](benchmarks/audio-odin-parity.json) retains
+source hashes and paired dev/release outputs at 44.1, 48 and 96 kHz: 1,001 rows
+and 92,283 scalar values per profile. The retired Rust reference is historical
+evidence; current checks execute the Odin DSP and actual native audio consumers.

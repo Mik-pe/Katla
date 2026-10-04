@@ -37,11 +37,11 @@ Particle_GPU_Ops :: struct($R:typeid) {
 Particle_Error_Code :: enum { None, Invalid_Configuration, Emitter_Capacity, Particle_Capacity, Invalid_Frame, Invalid_Graph, Queue_Changed }
 Particle_Error :: struct { code:Particle_Error_Code,gpu:gfx.Gpu_Error,packet:gfx.Packet_Error }
 @(private="package")
-Particle_Emitter_State :: struct { entity:ecs.Entity_Id,config:Particle_Config,accumulator:f64,active,kill_on_destroy:bool }
+Particle_Emitter_State :: struct { entity:ecs.Entity_Id,config:Particle_Config,accumulator:f64,active,kill_on_destroy:bool,remaining_duration,configured_duration:f32,clock_initialized,configured_active,configured_timed:bool,emission_revision:u64 }
 @(private="package")
 Particle_Burst :: struct { entity:ecs.Entity_Id,counts:[]u32 }
 @(private="package")
-Particle_Preparation :: struct { token:gfx.Frame_Token,states:[]Particle_Emitter_State,bursts:[]Particle_Burst,indices:[]u32,requested,burst_count:u32,ready,deferred:bool,delta:f32 }
+Particle_Preparation :: struct { token:gfx.Frame_Token,states:[]Particle_Emitter_State,bursts:[]Particle_Burst,indices:[]u32,requested,burst_count:u32,ready,deferred,reset:bool,delta:f32,reset_data,reset_dead,reset_counters:gfx.Buffer_Handle }
 @(private="package")
 Particle_Slot :: struct { alive,working,counters,indirect,dispatch,frame,configs,indices,camera,readback:gfx.Buffer_Handle,sequence:u64 }
 @(private="package")
@@ -55,10 +55,11 @@ Particle_Allocator :: mem.Allocator
 /// Shader generation and all mutable uploads are explicit owners of their acquired frame slot.
 Particle_Consumer :: struct($R:typeid) {
     owner:Particle_Owner,renderer:^R,operations:Particle_GPU_Ops(R),
-    shaders:Particle_Shader,pipelines:[4]gfx.Pipeline_Handle,pipeline:gfx.Graphics_Pipeline_Handle,
-    data,dead,initial_counters:gfx.Buffer_Handle,slots:[]Particle_Slot,
+    shaders:Particle_Shader,pipelines:[4]gfx.Pipeline_Handle,pipeline,reverse_pipeline:gfx.Graphics_Pipeline_Handle,
+    data,dead,rollover_alive,rollover_counters:gfx.Buffer_Handle,slots:[]Particle_Slot,
     states:[]Particle_Emitter_State,pending:Particle_Preparation,records:[dynamic]Particle_Record,
-    previous_slot:int,has_previous:bool,capacity,emitter_capacity:u32,
+    previous_slot:int,capacity,emitter_capacity:u32,
+    reset_requested,preparation_busy_warned:bool,
     sequence,observed_sequence:u64,observed_alive,alive_upper:u32,capture_state:bool,delta_time:f32,
     graph:^Scene_Graph,resources:Particle_Resources,
     inputs:[dynamic]gfx.Buffer_Input,allocator:Particle_Allocator,

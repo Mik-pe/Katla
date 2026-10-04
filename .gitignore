@@ -26,3 +26,9 @@ debug_output.txt
 .sisyphus
 .cargo/
 llm.toml
+
+# Python/native validation artifacts
+__pycache__/
+/editor
+
+*.dSYM/
