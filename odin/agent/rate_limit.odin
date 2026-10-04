@@ -12,8 +12,8 @@ Rate_Limiter :: struct {
     interval:time.Duration,
     maximum:int,
     timestamps:[dynamic]time.Duration,
-    last_clock:time.Duration,
-    has_clock:bool,
+    last_clock,last_admitted:time.Duration,
+    has_clock,has_admitted:bool,
 }
 /// Initializes a limiter with capacity for its full rolling window.
 rate_limiter_init :: proc(l:^Rate_Limiter,interval:time.Duration,maximum:int,allocator:=context.allocator) {
@@ -34,10 +34,11 @@ rate_admit :: proc(l:^Rate_Limiter,now:time.Duration)->(Rate_Decision,time.Durat
         resize(&l.timestamps,len(l.timestamps)-expired)
     }
     if len(l.timestamps)>=l.maximum { return .Exceeded,time.Minute-(now-l.timestamps[0]) }
-    if len(l.timestamps)>0 {
-        elapsed:=now-l.timestamps[len(l.timestamps)-1]
+    if l.has_admitted {
+        elapsed:=now-l.last_admitted
         if elapsed<l.interval { return .Wait,l.interval-elapsed }
     }
     append(&l.timestamps,now)
+    l.last_admitted=now; l.has_admitted=true
     return .Allowed,0
 }
