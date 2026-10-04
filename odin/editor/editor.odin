@@ -25,6 +25,13 @@ Editor_Entry :: struct {
     name:string, T:typeid, default_value:rawptr, ops:ecs.Value_Ops,
     fields:[dynamic]Field_Info,
     decode:proc([]byte,mem.Allocator)->(rawptr,bool),
+    value_state:rawptr,
+    encode_owned:proc(rawptr,rawptr,mem.Allocator)->([]byte,bool),
+    decode_owned:proc(rawptr,[]byte,mem.Allocator)->(rawptr,bool),
+    reference_map:proc(rawptr,Reference_Map)->bool,
+    has_references:bool,
+    spawn_default:bool,
+    duplicate:bool,
 }
 /// Maps application-selected component names to reflected operations.
 Component_Registry :: struct { entries:map[string]^Editor_Entry, allocator:mem.Allocator }
@@ -46,27 +53,39 @@ editor_registry_destroy :: proc(reg:^Component_Registry) {
 owns_memory :: proc(T:typeid)->bool {
     ti:=reflect.type_info_base(type_info_of(T))
     #partial switch info in ti.variant {
-    case runtime.Type_Info_String,runtime.Type_Info_Dynamic_Array,runtime.Type_Info_Map: return true
+    case runtime.Type_Info_String,runtime.Type_Info_Dynamic_Array,runtime.Type_Info_Slice,runtime.Type_Info_Map: return true
     case runtime.Type_Info_Array: return owns_memory(info.elem.id)
+    case runtime.Type_Info_Union: for variant in info.variants { if owns_memory(variant.id) { return true } }
     case runtime.Type_Info_Struct:
         for i in 0..<int(info.field_count) { if owns_memory(info.types[i].id) { return true } }
     }
     return false
 }
 /// Replaces the Component derive with RTTI and inspect tags; registry owns default_value.
-editor_register :: proc(w:^ecs.World,reg:^Component_Registry,name:string,default_value:$T,ops:=ecs.Value_Ops{}) {
+editor_register :: proc(w:^ecs.World,reg:^Component_Registry,name:string,default_value:$T,ops:=ecs.Value_Ops{},reference_map:proc(rawptr,Reference_Map)->bool=nil,spawn_default:=true,duplicate:=true) {
     assert(reg.entries[name]==nil)
     if owns_memory(T) { assert(ops.clone!=nil && ops.destroy!=nil,"owned editor values require ownership hooks") }
     existing,registered:=ecs.component_ops(w,T)
     if !registered { ecs.register_component(w,T,ops) }
     else { assert(existing.destroy==ops.destroy && existing.clone==ops.clone) }
     entry:=new(Editor_Entry,reg.allocator)
-    entry.name=strings.clone(name,reg.allocator); entry.T=T; entry.ops=ops
+    entry.name=strings.clone(name,reg.allocator); entry.T=T; entry.ops=ops; entry.reference_map=reference_map; entry.has_references=reference_map!=nil || reference_type_contains(T); entry.spawn_default=spawn_default; entry.duplicate=duplicate
     entry.default_value=allocate(size_of(T),align_of(T),reg.allocator)
     owned:=default_value
     mem.copy(entry.default_value,rawptr(&owned),size_of(T))
     entry.fields=make([dynamic]Field_Info,reg.allocator)
-    for f in reflect.struct_fields_zipped(T) {
+    editor_collect_fields(entry)
+    entry.decode=proc(data:[]byte,allocator:mem.Allocator)->(rawptr,bool) {
+        context.allocator=allocator
+        value:=new(T,allocator)
+        err:=json.unmarshal(data,value,spec=.JSON,allocator=allocator)
+        return value,err==nil
+    }
+    reg.entries[entry.name]=entry
+}
+@(private="package")
+editor_collect_fields :: proc(entry:^Editor_Entry) {
+    for f in reflect.struct_fields_zipped(entry.T) {
         metadata:=Field_Info{name=f.name,display_name=f.name,T=f.type.id}
         tag:=reflect.struct_tag_get(f.tag,"inspect")
         metadata.constraints.skip=strings.contains(tag,"skip")
@@ -88,13 +107,6 @@ editor_register :: proc(w:^ecs.World,reg:^Component_Registry,name:string,default
         if f.type.id==ecs.Entity_Id || strings.contains(tag,"entity_ref") { metadata.kind=.Entity_Ref }
         append(&entry.fields,metadata)
     }
-    entry.decode=proc(data:[]byte,allocator:mem.Allocator)->(rawptr,bool) {
-        context.allocator=allocator
-        value:=new(T,allocator)
-        err:=json.unmarshal(data,value,spec=.JSON,allocator=allocator)
-        return value,err==nil
-    }
-    reg.entries[entry.name]=entry
 }
 /// Returns borrowed field metadata and an owned, sorted list of registered names.
 editor_fields :: proc(reg:^Component_Registry,name:string)->[]Field_Info {
@@ -105,7 +117,7 @@ editor_type_names :: proc(reg:^Component_Registry)->[dynamic]string {
     for name,_ in reg.entries { append(&names,name) }
     slice.sort(names[:]); return names
 }
-@(private="package")
+/// Installs an owned clone of a registered default on a valid application-created entity.
 editor_add_default :: proc(w:^ecs.World,id:ecs.Entity_Id,entry:^Editor_Entry) {
     context.allocator=w.allocator
     ti:=type_info_of(entry.T)
@@ -118,14 +130,14 @@ editor_add_default :: proc(w:^ecs.World,id:ecs.Entity_Id,entry:^Editor_Entry) {
 editor_component_json :: proc(w:^ecs.World,id:ecs.Entity_Id,entry:^Editor_Entry)->([]byte,Scene_Error) {
     p:=ecs.component_address(w,id,entry.T)
     if p==nil { return nil,.Component_Not_Found }
-    data,err:=json.marshal(any{p,entry.T},allocator=w.allocator)
-    if err!=nil { return nil,.Decode_Failed }
+    data,ok:=editor_encode_value(entry,p,w.allocator)
+    if !ok { return nil,.Decode_Failed }
     return data,.None
 }
 @(private="package")
 editor_restore :: proc(w:^ecs.World,id:ecs.Entity_Id,entry:^Editor_Entry,data:[]byte)->Scene_Error {
     context.allocator=w.allocator
-    value,ok:=entry.decode(data,w.allocator)
+    value,ok:=editor_decode_value(entry,data,w.allocator)
     defer mem.free(value,w.allocator)
     if !ok {
         if entry.ops.destroy!=nil { entry.ops.destroy(value) }
@@ -171,7 +183,7 @@ Scene_Op :: struct {
     position,rotation:[3]f32, scale:[3]f32,
     limit:int,
 }
-Component_Snapshot :: struct { name:string, data:[]byte }
+Component_Snapshot :: struct { name:string, entry:^Editor_Entry, value:rawptr }
 /// Owns affected IDs, JSON output and its allocation policy.
 Tool_Result :: struct { error:Scene_Error, entities:[dynamic]ecs.Entity_Id, data:[]byte, allocator:mem.Allocator }
 tool_result_destroy :: proc(result:^Tool_Result) {
@@ -184,8 +196,9 @@ snapshot_entity :: proc(w:^ecs.World,reg:^Component_Registry,id:ecs.Entity_Id)->
     snapshots:=make([dynamic]Component_Snapshot,w.allocator)
     names:=editor_type_names(reg); defer delete(names)
     for name in names {
-        data,err:=editor_component_json(w,id,reg.entries[name])
-        if err==.None { append(&snapshots,Component_Snapshot{name,data}) }
+        entry:=reg.entries[name]
+        value:=ecs.component_address(w,id,entry.T)
+        if value!=nil { append(&snapshots,Component_Snapshot{name,entry,editor_clone_value(entry,value,w.allocator)}) }
     }
     return snapshots
 }
@@ -193,7 +206,7 @@ snapshot_entity :: proc(w:^ecs.World,reg:^Component_Registry,id:ecs.Entity_Id)->
 scene_execute :: proc(w:^ecs.World,reg:^Component_Registry,op:Scene_Op)->(Tool_Result,Undo_Group) {
     context.allocator=w.allocator
     result:=Tool_Result{entities=make([dynamic]ecs.Entity_Id,w.allocator),allocator=w.allocator}
-    command:=Entity_Command{entity=op.entity,allocator=w.allocator}
+    command:=Entity_Command{entity=op.entity,registry=reg,allocator=w.allocator}
     group:Undo_Group
     mutation:=op.kind in bit_set[Scene_Op_Kind]{.Spawn,.Destroy,.Set_Field,.Duplicate,.Add_Component,.Remove_Component,.Set_Parent}
     if op.kind in (bit_set[Scene_Op_Kind]{.Spawn_Model,.Set_Parent,.Application}) {
@@ -208,6 +221,7 @@ scene_execute :: proc(w:^ecs.World,reg:^Component_Registry,op:Scene_Op)->(Tool_R
     case .Spawn:
         command.entity=ecs.create_entity(w)
         for _,entry in reg.entries {
+            if !entry.spawn_default { continue }
             editor_add_default(w,command.entity,entry)
             for axis,i in ([3]string{"x","y","z"}) {
                 data,_:=json.marshal(op.position[i]); editor_set_field(w,reg,command.entity,entry.name,axis,data); delete(data)
@@ -226,9 +240,16 @@ scene_execute :: proc(w:^ecs.World,reg:^Component_Registry,op:Scene_Op)->(Tool_R
     case .Set_Field: result.error=editor_set_field(w,reg,op.entity,op.component,op.field,op.value)
     case .Duplicate:
         snapshots:=snapshot_entity(w,reg,op.entity)
-        defer { for s in snapshots { delete(s.data) }; delete(snapshots) }
+        defer { component_snapshots_destroy(snapshots,w.allocator) }
         command.entity=ecs.create_entity(w)
-        for s in snapshots { err:=editor_restore(w,command.entity,reg.entries[s.name],s.data); if err!=.None { result.error=err; break } }
+        for snapshot in snapshots {
+            if !snapshot.entry.duplicate { continue }
+            value:=editor_clone_value(snapshot.entry,snapshot.value,w.allocator)
+            inserted:=ecs.insert_component_value(w,command.entity,snapshot.entry.T,value)
+            if !inserted && snapshot.entry.ops.destroy!=nil { snapshot.entry.ops.destroy(value) }
+            mem.free(value,w.allocator)
+            if !inserted { result.error=.Entity_Not_Found; break }
+        }
     case .Add_Component,.Remove_Component:
         entry:=reg.entries[op.component]
         if entry==nil { result.error=.Component_Not_Found; break }
@@ -269,3 +290,32 @@ allocate :: proc(size,alignment:int,allocator:mem.Allocator)->rawptr {
 }
 @(private="package")
 address :: proc(p:rawptr,offset:int)->rawptr { return rawptr(uintptr(p)+uintptr(offset)) }
+
+/// Decodes one registered wire value through its application codec or the reflected default.
+editor_decode_value :: proc(entry:^Editor_Entry,data:[]byte,allocator:mem.Allocator)->(rawptr,bool) {
+    if entry.decode_owned!=nil { return entry.decode_owned(entry.value_state,data,allocator) }
+    return entry.decode(data,allocator)
+}
+/// Encodes application state without serializing native handles or transient CPU cache ownership.
+editor_encode_value :: proc(entry:^Editor_Entry,value:rawptr,allocator:mem.Allocator)->([]byte,bool) {
+    if entry.encode_owned!=nil { return entry.encode_owned(entry.value_state,value,allocator) }
+    data,error:=json.marshal(any{value,entry.T},allocator=allocator)
+    return data,error==nil
+}
+
+@(private="package")
+editor_clone_value :: proc(entry:^Editor_Entry,value:rawptr,allocator:mem.Allocator)->rawptr {
+    context.allocator=allocator
+    ti:=type_info_of(entry.T); clone:=allocate(ti.size,ti.align,allocator)
+    if entry.ops.clone!=nil { entry.ops.clone(clone,value) } else { mem.copy(clone,value,ti.size) }
+    return clone
+}
+@(private="package")
+component_snapshots_destroy :: proc(snapshots:[dynamic]Component_Snapshot,allocator:mem.Allocator) {
+    context.allocator=allocator
+    for snapshot in snapshots {
+        if snapshot.entry.ops.destroy!=nil { snapshot.entry.ops.destroy(snapshot.value) }
+        mem.free(snapshot.value,allocator)
+    }
+    delete(snapshots)
+}

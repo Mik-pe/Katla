@@ -108,13 +108,17 @@ owns its default value and metadata. Scene results, undo groups, observations
 and sessions have explicit destruction functions. The registry must outlive
 its undo groups, because component snapshot names refer to registry metadata.
 `Undo_Group` owns a command and its affected `entities` array, with mandatory
-apply/destroy/target-remap callbacks. Built-in scene commands own JSON snapshots;
+apply/destroy/target-remap callbacks. Built-in scene commands own component clones;
 application material commands own a validated numeric batch. All scene snapshots
-decode before restoration mutates World. The registry must remain alive until
+preflight registry/type ownership before restoration mutates World. Persistent
+scene documents use explicit encode/decode callbacks; undo preserves prepared
+values without loading a later file revision. The registry must remain alive until
 history is released. Undo of destruction allocates a fresh generation; use the
 group's resulting identity rather than reviving an old handle. Agent history
-remaps earlier command targets after restoration; references inside arbitrary
-serialized payloads still require application-specific ownership.
+remaps both live registered components and snapshots in undo/redo histories.
+Typed references in structs and ordinary arrays/slices are mapped recursively;
+union/map reference payloads require an explicit component mapper. Applications
+can provide source-only document codecs without changing exact undo ownership.
 
 Already applied owner-thread previews can enter that same history with
 `agent_record_action`. It consumes and zeroes the owned result/undo command,

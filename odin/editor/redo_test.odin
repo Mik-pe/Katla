@@ -3,7 +3,6 @@ package editor
 
 import ecs "../ecs"
 import "core:testing"
-import "core:strings"
 
 @(test)
 test_session_redo_retargets_fresh_generations_and_invalidates_branch :: proc(t:^testing.T) {
@@ -35,18 +34,19 @@ test_session_redo_retargets_fresh_generations_and_invalidates_branch :: proc(t:^
 }
 
 @(test)
-test_session_redo_decode_failure_preserves_both_histories :: proc(t:^testing.T) {
+test_session_redo_registry_failure_preserves_both_histories :: proc(t:^testing.T) {
     w:ecs.World; ecs.world_init(&w); defer ecs.world_destroy(&w)
     reg:Component_Registry; editor_registry_init(&reg); defer editor_registry_destroy(&reg)
     editor_register(&w,&reg,"Position",Editor_Test_Component{1,100,false})
     s:Agent_Session; agent_session_init(&s); defer agent_session_destroy(&s)
     id:=ecs.create_entity(&w); editor_add_default(&w,id,reg.entries["Position"])
-    a:=agent_execute(&s,&w,&reg,{kind=.Set_Field,entity=id,component="Position",field="health",value=transmute([]byte)string("42")})
-    command:=cast(^Entity_Command)a.undo.state
+    agent_execute(&s,&w,&reg,{kind=.Set_Field,entity=id,component="Position",field="health",value=transmute([]byte)string("42")})
     testing.expect_value(t,agent_undo_last(&s,&w,&reg),Scene_Error.None)
-    delete(command.after[0].data,command.allocator)
-    command.after[0].data=transmute([]byte)strings.clone(`{"health":"invalid"}`,command.allocator)
-    testing.expect_value(t,agent_redo_last(&s,&w,&reg),Scene_Error.Decode_Failed)
+    entry:=reg.entries["Position"]; delete_key(&reg.entries,"Position")
+    testing.expect_value(t,agent_redo_last(&s,&w,&reg),Scene_Error.Component_Not_Found)
+    reg.entries["Position"]=entry
     value,_:=ecs.get_component(&w,id,Editor_Test_Component)
     testing.expect(t,value.health==100 && len(s.actions)==0 && len(s.redo_actions)==1 && s.redo_actions[0].id==0 && s.next_id==1)
+    testing.expect_value(t,agent_redo_last(&s,&w,&reg),Scene_Error.None)
+    value,_=ecs.get_component(&w,id,Editor_Test_Component); testing.expect_value(t,value.health,i32(42))
 }

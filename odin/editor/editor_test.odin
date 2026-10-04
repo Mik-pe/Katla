@@ -39,17 +39,16 @@ test_scene_set_field_undo_redo :: proc(t:^testing.T) {
     b,_:=ecs.get_component(&w,id,Editor_Test_Component); testing.expect_value(t,b.health,i32(42))
 }
 @(test)
-test_undo_decode_preflight_preserves_world_and_history :: proc(t:^testing.T) {
+test_undo_registry_preflight_preserves_world_and_history :: proc(t:^testing.T) {
     w:ecs.World; ecs.world_init(&w); defer ecs.world_destroy(&w)
     reg:Component_Registry; editor_registry_init(&reg); defer editor_registry_destroy(&reg)
     editor_register(&w,&reg,"Position",Editor_Test_Component{1,100,false})
     session:Agent_Session; agent_session_init(&session); defer agent_session_destroy(&session)
     id:=ecs.create_entity(&w); editor_add_default(&w,id,reg.entries["Position"])
-    action:=agent_execute(&session,&w,&reg,{kind=.Set_Field,entity=id,component="Position",field="health",value=transmute([]byte)string("42")})
-    command:=cast(^Entity_Command)action.undo.state
-    delete(command.before[0].data,command.allocator)
-    command.before[0].data=transmute([]byte)strings.clone(`{"health":"invalid"}`,command.allocator)
-    testing.expect_value(t,agent_undo_last(&session,&w,&reg),Scene_Error.Decode_Failed)
+    agent_execute(&session,&w,&reg,{kind=.Set_Field,entity=id,component="Position",field="health",value=transmute([]byte)string("42")})
+    entry:=reg.entries["Position"]; delete_key(&reg.entries,"Position")
+    testing.expect_value(t,agent_undo_last(&session,&w,&reg),Scene_Error.Component_Not_Found)
+    reg.entries["Position"]=entry
     value,_:=ecs.get_component(&w,id,Editor_Test_Component)
     testing.expect(t,value.health==42 && w.live_count==1 && len(session.actions)==1 && session.next_id==1)
 }

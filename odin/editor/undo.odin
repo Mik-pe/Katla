@@ -48,14 +48,15 @@ redo_group :: proc(w:^ecs.World,reg:^Component_Registry,group:^Undo_Group)->Scen
 @(private="package")
 Entity_Command :: struct {
     entity:ecs.Entity_Id,
+    registry:^Component_Registry,
     before_exists,after_exists:bool,
     before,after:[dynamic]Component_Snapshot,
     allocator:mem.Allocator,
 }
 @(private="package")
 entity_snapshots_destroy :: proc(command:^Entity_Command) {
-    for s in command.before { delete(s.data,command.allocator) }; for s in command.after { delete(s.data,command.allocator) }
-    delete(command.before); delete(command.after)
+    component_snapshots_destroy(command.before,command.allocator)
+    component_snapshots_destroy(command.after,command.allocator)
 }
 @(private="package")
 entity_command_destroy :: proc(state:rawptr,allocator:mem.Allocator) {
@@ -65,6 +66,17 @@ entity_command_destroy :: proc(state:rawptr,allocator:mem.Allocator) {
 entity_command_remap :: proc(state:rawptr,remap:Entity_Remap) {
     command:=cast(^Entity_Command)state
     if command.entity==remap.before { command.entity=remap.after }
+    context.allocator=command.allocator
+    mapping:=make(map[ecs.Entity_Id]ecs.Entity_Id,command.allocator); defer delete(mapping)
+    mapping[remap.before]=remap.after
+    snapshot_lists:=[2][]Component_Snapshot{command.before[:],command.after[:]}
+    for snapshots in snapshot_lists {
+        for &snapshot in snapshots {
+            if !snapshot.entry.has_references { continue }
+            mapped:=component_map_references(snapshot.entry,snapshot.value,{mapping,false})
+            assert(mapped,"partial reference maps must preserve unmapped IDs")
+        }
+    }
 }
 @(private="package")
 entity_command_apply :: proc(state:rawptr,w:^ecs.World,reg:^Component_Registry,redo:bool,remaps:^[dynamic]Entity_Remap)->Scene_Error {
@@ -84,19 +96,52 @@ entity_command_apply :: proc(state:rawptr,w:^ecs.World,reg:^Component_Registry,r
         delete(decoded,w.allocator)
     }
     for snapshot,i in snapshots {
-        entry:=reg.entries[snapshot.name]; if entry==nil { return .Component_Not_Found }
-        value,ok:=entry.decode(snapshot.data,w.allocator)
+        entry:=reg.entries[snapshot.name]; if entry==nil { return .Component_Not_Found }; if entry!=snapshot.entry { return .Invalid_Operation }
+        value:=editor_clone_value(entry,snapshot.value,w.allocator)
         decoded[i].entry=entry; decoded[i].value=value
-        if !ok { return .Decode_Failed }
     }
+    replacement:Entity_Remap
+    replaced:=false
     if !ecs.entity_exists(w,command.entity) {
         old:=command.entity; command.entity=ecs.create_entity(w)
-        append(remaps,Entity_Remap{old,command.entity})
+        replacement={old,command.entity}; replaced=true
+        append(remaps,replacement)
+        mapping:=make(map[ecs.Entity_Id]ecs.Entity_Id,w.allocator); defer delete(mapping)
+        mapping[old]=command.entity
+        for item in decoded {
+            ok:=component_map_references(item.entry,item.value,{mapping,false})
+            assert(ok,"partial reference maps must preserve unmapped IDs")
+        }
     }
     for _,entry in reg.entries { ecs.remove_component_type(w,command.entity,entry.T) }
     for &item in decoded {
         if !ecs.insert_component_value(w,command.entity,item.entry.T,item.value) { return .Entity_Not_Found }
         item.transferred=true
     }
+    if replaced { entity_command_remap(command,replacement); editor_remap_world_references(w,reg,replacement) }
     return .None
+}
+
+/// Owns the state captured before one application-authorized entity edit.
+Entity_Edit :: struct { state:rawptr,allocator:mem.Allocator }
+/// Captures all registered components before a mutation; creation records an explicitly absent predecessor.
+entity_edit_begin :: proc(w:^ecs.World,reg:^Component_Registry,id:ecs.Entity_Id,existed:bool)->(Entity_Edit,Scene_Error) {
+    if existed && !ecs.entity_exists(w,id) { return {},.Entity_Not_Found }
+    command:=new(Entity_Command,w.allocator)
+    command^={entity=id,registry=reg,before_exists=existed,allocator=w.allocator}
+    if existed { command.before=snapshot_entity(w,reg,id) }
+    return {command,w.allocator},.None
+}
+/// Cancels recording without changing the world; use on a failed application mutation.
+entity_edit_destroy :: proc(edit:^Entity_Edit) {
+    if edit.state!=nil { entity_command_destroy(edit.state,edit.allocator) }; edit^={}
+}
+/// Captures post-edit state and transfers both sides into the canonical reference-aware command.
+entity_edit_finish :: proc(edit:^Entity_Edit,w:^ecs.World,id:ecs.Entity_Id)->Undo_Group {
+    assert(edit.state!=nil)
+    command:=cast(^Entity_Command)edit.state; command.entity=id
+    command.after_exists=ecs.entity_exists(w,id)
+    if command.after_exists { command.after=snapshot_entity(w,command.registry,id) }
+    group:=undo_group_create(command,{entity_command_apply,entity_command_destroy,entity_command_remap},{id},edit.allocator)
+    edit^={}; return group
 }
