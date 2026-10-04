@@ -9,10 +9,10 @@ import "core:mem"
 
 /// Identity changes trigger explicit native preparation; handles never enter persistent components.
 Batch_Entry :: struct { entity:ecs.Entity_Id, vertices,indices:rawptr, vertex_count,index_count:int }
-Batch_Error_Kind :: enum { None, Rebuild_Required, Invalid_Geometry, Invalid_Scene }
+Batch_Error_Kind :: enum { None, Rebuild_Required, Invalid_Geometry, Invalid_Scene, Unsupported_Model }
 Batch_Error :: struct { kind:Batch_Error_Kind, scene:editor.Scene_Error }
 /// Owns flattened real triangle streams, object slots and draw ranges for the authored world.
-Scene_Batch :: struct { geometry:Geometry, entries:[]Batch_Entry, objects:[]Object_Data, draws:[]gfx.Draw_Op, allocator:mem.Allocator }
+Scene_Batch :: struct { geometry:Geometry, entries:[]Batch_Entry, objects:[]Object_Data, draws:[]gfx.Draw_Op, allocator:mem.Allocator, models_supported:bool }
 /// Prepares all visible authored meshes atomically; empty mesh sources produce no draw work.
 scene_batch_prepare :: proc(owner:^app.Authoring,allocator:=context.allocator)->(Scene_Batch,Batch_Error) {
     ids:=ecs.entity_ids(&owner.world); defer delete(ids)
@@ -26,8 +26,11 @@ scene_batch_prepare_entities :: proc(owner:^app.Authoring,ids:[]ecs.Entity_Id,al
     vertices:=make([dynamic]Vertex,allocator); defer delete(vertices)
     objects:=make([dynamic]Object_Data,0,len(ids),allocator); defer delete(objects)
     draws:=make([dynamic]gfx.Draw_Op,0,len(ids),allocator); defer delete(draws)
-    for id in ids {
+    for id,i in ids {
+        if !ecs.entity_exists(&owner.world,id) { return {},{.Invalid_Scene,.Entity_Not_Found} }
+        for previous in ids[:i] { if previous==id { return {},{.Invalid_Scene,.Invalid_Operation} } }
         if _,hidden:=ecs.get_component(&owner.world,id,app.Editor_Hidden); hidden { continue }
+        if _,model:=ecs.get_component(&owner.world,id,app.Scene_Model); model { return {},{kind=.Unsupported_Model} }
         mesh,present:=ecs.get_component(&owner.world,id,app.Scene_Mesh); if !present || mesh.source.kind==.Empty { continue }
         object,scene_error:=scene_object_data(owner,id); if scene_error!=.None { return {},{.Invalid_Scene,scene_error} }
         geometry,geometry_error:=geometry_from_mesh(&mesh.geometry,allocator)
@@ -50,6 +53,7 @@ scene_batch_refresh :: proc(batch:^Scene_Batch,owner:^app.Authoring)->Batch_Erro
     ids:=ecs.entity_ids(&owner.world); defer delete(ids)
     for id in ids {
         if _,hidden:=ecs.get_component(&owner.world,id,app.Editor_Hidden); hidden { continue }
+        if _,model:=ecs.get_component(&owner.world,id,app.Scene_Model); model { if batch.models_supported { continue }; return {kind=.Unsupported_Model} }
         mesh,present:=ecs.get_component(&owner.world,id,app.Scene_Mesh)
         if present && mesh.source.kind!=.Empty { count+=1 }
     }

@@ -32,3 +32,17 @@ test_world_mesh_batch_preserves_material_edits_and_detects_geometry_replacement 
     testing.expect_value(t,len(cleared.draws),0)
     testing.expect_value(t,len(cleared.geometry.vertices),0)
 }
+
+@(test)
+test_world_batch_rejects_stale_duplicate_and_unrendered_model_candidates :: proc(t:^testing.T) {
+    owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
+    id:=ecs.spawn(&owner.world,struct { value:i32 }{})
+    candidate,error:=scene_batch_prepare_entities(&owner,{id,id}); defer scene_batch_destroy(&candidate)
+    testing.expect_value(t,error.kind,Batch_Error_Kind.Invalid_Scene)
+    ecs.destroy_entity(&owner.world,id)
+    candidate,error=scene_batch_prepare_entities(&owner,{id})
+    testing.expect_value(t,error.kind,Batch_Error_Kind.Invalid_Scene)
+    model:=ecs.spawn(&owner.world,struct { model:app.Scene_Model }{})
+    candidate,error=scene_batch_prepare_entities(&owner,{model})
+    testing.expect_value(t,error.kind,Batch_Error_Kind.Unsupported_Model)
+}

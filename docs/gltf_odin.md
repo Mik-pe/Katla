@@ -72,3 +72,14 @@ rejection use the same production importer. These CPU checks do not replace
 native rendering validation of the affected app path.
 
 The format's authoritative contract is the [Khronos glTF 2.0 specification](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html).
+
+Normal-map tangent generation selects the normal texture's UV set, including
+KHR_texture_transform coordinate overrides, rotation and scale. Explicit source
+tangents remain authoritative. The importer preserves canonical geometry UV0
+separately from the transformed tangent coordinates. `models/TangentUV.gltf`
+is a reproducible real asset with embedded PNG normal data, shared eight-vertex
+accessors and two distinct indexed primitives. It proves authored tangent
+retention and transformed UV1 generation. Renderer primitive bounds are computed
+from referenced deformed triangle vertices, so shared accessors do not conflate
+transparent primitive centers. Perspective camera depth is clip W at that
+world-space center, independent of node origin and clip-Y adaptation.

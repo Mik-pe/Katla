@@ -272,17 +272,62 @@ service and real native panel, including streaming, cancellation and HTTP 429.
 Paid model behavior and pointer capture outside a dragged slider remain separate
 acceptance boundaries.
 
-`app/render.Native_Consumer` prepares World SceneMesh geometry through the
-canonical WGSL compiler/adapter and Metal/Vulkan APIs. Its native stage participant
-prepares uploads before asset publication: allocation failure retains the old
-World, native cache and pixels, and releases partial prepared GPU owners. A
-successful prefab insertion publishes its prepared resources; undo and cache
-refresh restore the prior complete image. Actual PBR readbacks verify selected
-material edits, shared agent/gesture undo+redo and empty-scene clear/resume on
-both backends. Native window acceptance verifies acquire/present, retina resize
-and retained pre-resize readback. These checks cover the current mesh/material
-consumer; textured models, GPU particles and remaining full editor flows still
-require their own migration and native acceptance.
+`app/render.Native_Consumer` prepares actual World `Scene_Mesh` and `Scene_Model`
+components through the canonical WGSL compiler/adapter and Metal/Vulkan APIs.
+Its native stage participant prepares complete candidate mesh/model resources
+before scene or asset publication. Failed GPU allocation preserves the old
+World, generations, identity, cache and pixels, and releases partial candidates.
+Save/load, captured prefab insertion/removal, undo and redo exercise the same
+participant; a successful load publishes prepared resources with fresh entity IDs.
+
+Model batches select the active glTF scene and retain exact authored matrices,
+primitive material factors, vertex colors and five transformed UV sets. Native
+uploads decode the actual bounded PNG/JPEG bytes, distinguish sRGB color textures
+from linear data textures, generate mip chains and retain authored sampler state.
+Per-frame acquired-slot geometry streams sampled morph/skin vertices; transforms
+and material edits update object buffers without recreating native pipelines.
+Both metallic/roughness and specular/glossiness workflows render through native
+opaque, masked and blended variants. Winding variants follow the determinant of
+the complete node/entity matrix, and tangent handedness follows its reflection.
+Model alpha phases decode the existing display image into an application-owned
+RGBA16-float attachment, blend linear color, and encode once into the native
+UNORM output. Transparent primitives sort by their actual transformed bounds
+in camera depth. Unlit materials ignore non-base properties. Particle phases
+currently follow the encoded UNORM output and blend authored output RGB there;
+this consumer does not establish a common linear/HDR particle composition path. The [GPU particle consumer](particles_odin.md)
+adds simulation and indirect draws to the same accepted scene submission; readonly
+candidate validation rejects unsupported emitter descriptors before publication.
+
+Actual readbacks verify PBR edits, shared gesture/agent undo and redo, empty-scene
+clear/resume, every staged failure/retry and native model animation on both
+backends. Source models include Box, DamagedHelmet, Fox and Tiger. Native window
+acceptance verifies acquire/present, retina resize and retained pre-resize readback.
+Run [the native application validator](../scripts/validate_odin_render.py):
+
+```sh
+python3 scripts/validate_odin_render.py --native-metal --native-vulkan \
+  --native-surface --sanitize --naga-library /path/to/libkatla_naga_compiler.dylib \
+  --vulkan-library /path/to/libvulkan.dylib --vulkan-icd /path/to/icd.json
+```
+
+The validator snapshots real repository resources into its owned output project,
+builds source-pinned cgltf and PNG/JPEG dependencies with matching sanitizer
+runtimes, and retains actual GPU PNG outputs. Add `--particles --runtime-library`
+with the real scene-runtime library for combined Rapier/Luau/GPU acceptance.
+GPU launches retain ASan address checks and Odin allocation tracking while
+excluding external driver process-exit leak reporting; CPU tests keep leak checks. On Darwin, their only leak suppressions name the
+observed external CFPreferences XPC/ObjC initialization stacks
+(`CFPrefsPlistSource` and `CFPrefsSearchListSource`); application/native parser
+allocation leaks remain visible.
+
+The persistent native editor installs the real scene/asset services and exposes
+the supported canonical subset: material, query_entities,
+get_component_attributes, search_assets, list_resources, read_resource,
+save_scene, load_scene and prefab. Its material selection follows authored scene
+keys after generation replacement and disables material controls when no drawable
+is selected. Provider tools and native controls share the same undo/redo history.
+Remaining complete desktop parity, shadows and point lights retain separate
+migration and native acceptance requirements.
 
 ## Validation
 

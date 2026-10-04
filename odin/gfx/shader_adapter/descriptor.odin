@@ -66,11 +66,11 @@ binding_native_valid :: proc(binding:shader.Binding)->Error {
     if binding.array_count==0 { return .Invalid_Interface }
     if binding.kind!=.Texture {
         if binding.array_count!=1 { return .Unsupported_Array }
-        if binding.metal_kind!=binding.kind { return .Invalid_Interface }
+        if binding.metal_kind!=binding.kind || binding.metal_minimum_size!=binding.minimum_size { return .Invalid_Interface }
         return .None
     }
     if binding.metal_kind==.Texture {
-        if binding.array_count!=1 { return .Invalid_Interface }
+        if binding.array_count!=1 || binding.metal_minimum_size!=0 { return .Invalid_Interface }
         return .None
     }
     if binding.metal_kind!=.Buffer || binding.metal_minimum_size!=u64(binding.array_count)*8 { return .Invalid_Interface }

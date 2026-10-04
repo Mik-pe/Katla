@@ -29,6 +29,12 @@ gltf_vec3 :: proc(accessor:^cgltf.accessor,count:int)->([]km.Vec3,Gltf_Error) {
     for &vector,i in result { vector={values[i*3],values[i*3+1],values[i*3+2]} }
     return result,.None
 }
+/// Applies the authored texture transform to a selected texture-coordinate set.
+gltf_texture_uv :: proc(view:Gltf_Texture_View,uv:km.Vec2)->km.Vec2 {
+    scaled:=uv*view.uv_scale
+    sine,cosine:=math.sin(view.rotation),math.cos(view.rotation)
+    return view.offset+km.Vec2{cosine*scaled[0]-sine*scaled[1],sine*scaled[0]+cosine*scaled[1]}
+}
 @(private="package")
 gltf_primitive :: proc(data:^cgltf.data,source:^cgltf.primitive,target:^Gltf_Primitive)->Gltf_Error {
     if source.has_draco_mesh_compression { return .Unsupported }
@@ -69,8 +75,18 @@ gltf_primitive :: proc(data:^cgltf.data,source:^cgltf.primitive,target:^Gltf_Pri
         resize(&indices,len(converted)); copy(indices[:],converted[:])
     }
     uvs:[]km.Vec2; if len(target.uv_sets)>0 { uvs=target.uv_sets[0] }
-    geometry,geometry_error:=mesh_triangles(positions,indices[:],normals,uvs)
+    tangent_uvs:=uvs
+    transformed_uvs:[]km.Vec2; defer delete(transformed_uvs)
+    if source.material!=nil && source.material.normal_texture.texture!=nil && gltf_attribute(source.attributes,.tangent)==nil {
+        view,view_error:=gltf_texture_view(data,source.material.normal_texture); if view_error!=.None { return view_error }
+        if view.texcoord<0 || int(view.texcoord)>=len(target.uv_sets) || len(target.uv_sets[view.texcoord])!=count { return .Invalid_Accessor }
+        transformed_uvs=make([]km.Vec2,count)
+        for uv,i in target.uv_sets[view.texcoord] { transformed_uvs[i]=gltf_texture_uv(view,uv) }
+        tangent_uvs=transformed_uvs
+    }
+    geometry,geometry_error:=mesh_triangles(positions,indices[:],normals,tangent_uvs)
     if geometry_error!=.None { return .Limit if geometry_error==.Limit else .Invalid_Geometry }; target.geometry=geometry
+    for &vertex,i in target.geometry.vertices { vertex.uv={}; if len(uvs)>0 { vertex.uv=uvs[i] } }
     if source.material!=nil { target.material=i32(cgltf.material_index(data,source.material)) }
     if accessor:=gltf_attribute(source.attributes,.tangent); accessor!=nil {
         values,error:=gltf_floats(accessor,4); if error!=.None { return error }; defer delete(values)

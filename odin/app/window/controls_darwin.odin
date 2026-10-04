@@ -93,6 +93,7 @@ controls_create :: proc(owner:^Controls,state:rawptr,callback:proc(rawptr,Contro
     owner.callback=callback; owner.state=state; owner.callback_context=context
     success:=false; defer { if !success { controls_destroy(owner) } }
     error:=window_create(&owner.window,"Material · Selected sphere",304,480); if error!=.None { return error }
+    send(nil,owner.window.native,"setContentMinSize:",NS.Size{304,480})
     owner.target=control_target(owner); if owner.target==nil { return .Native_Failure }
     name:=NS.String.alloc()->initWithOdinString("NSAppearanceNameDarkAqua"); if name!=nil { defer name->release(); appearance:=send(^NS.Object,cast(^NS.Object)NS.objc_lookUpClass("NSAppearance"),"appearanceNamed:",name); if appearance!=nil { send(nil,owner.window.native,"setAppearance:",appearance) } }
     if control_label(owner,"Material",{{16,437},{272,26}},18)==nil { return .Native_Failure }
@@ -129,6 +130,10 @@ controls_create :: proc(owner:^Controls,state:rawptr,callback:proc(rawptr,Contro
 controls_set :: proc(owner:^Controls,values:[7]f32,can_undo,can_redo:bool,status:string) {
     for value,i in values { send(nil,owner.fields[Control_Field(i)],"setDoubleValue:",f64(value)); control_value_label(owner,Control_Field(i),value) }
     send(nil,owner.fields[.Undo],"setEnabled:",NS.BOOL(can_undo)); send(nil,owner.fields[.Redo],"setEnabled:",NS.BOOL(can_redo)); control_string(owner.status,"setStringValue:",status)
+}
+/// Empty selections keep history available while disabling material edits.
+controls_selection :: proc(owner:^Controls,available:bool) {
+    for field in Control_Field { if field!=.Undo && field!=.Redo { send(nil,owner.fields[field],"setEnabled:",NS.BOOL(available)) } }
 }
 @(private="package")
 controls_event :: proc(data:rawptr,event:^NS.Event) {

@@ -66,8 +66,7 @@ save_pixels :: proc(pixels:^gfx.Readback_Data,path:string) {
 }
 exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R),descriptor:gfx.Graphics_Desc,backend:string,output,resource_path:string) {
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
-    app.scene_components_register(&owner)
-    app.scene_mesh_register(&owner)
+    assert(app.authoring_services_init(&owner)==.None)
     assert(app.asset_resources_init(&owner,filepath.dir(resource_path),resource_path)==resources.Error.None)
     prepared_mesh,prepare_error:=app.scene_mesh_prepare(&owner,{kind=.Recipe,path="meshes/chair-frame.katmesh"}); assert(prepare_error==.None)
     sphere_descriptor:=transmute([]byte)string(`{"kind":"sphere","radius":0.5,"segments":48,"rings":24}`)
@@ -176,6 +175,7 @@ exercise :: proc(renderer:^$R,operations:render.GPU_Ops(R),capture:Capture_Ops(R
     asset_undo_pixels:=read_pixels(native,capture,asset_undone); defer gfx.readback_data_destroy(&asset_undo_pixels)
     assert(render.native_scene_wait(native,asset_undone)==.None)
     assert(mem.compare(gesture_pixels.bytes,asset_undo_pixels.bytes)==0,"asset undo did not restore old native geometry pixels")
+    exercise_asset_documents(&consumer,&owner,capture,frame,resource_path)
     save_pixels(&changed_pixels,output)
     fmt.printf("%s real PBR: left %.1f/%.1f/%.1f -> %.1f/%.1f/%.1f; right unchanged, agent/gesture undo+redo restored every pixel; %s\n",backend,left_before[0],left_before[1],left_before[2],left_after[0],left_after[1],left_after[2],output)
 }
@@ -192,22 +192,24 @@ main :: proc() {
     format:=gfx.Texture_Format.BGRA8_Unorm if windowed else .RGBA8_Unorm
     surface,compile_error:=render.surface_shader_compile(&compiler,format); assert(compile_error==.None); defer render.surface_shader_destroy(&surface)
     switch os.args[2] {
-    case "metal","metal-window","metal-editor":
+    case "metal","metal-window","metal-editor","metal-models":
         renderer:metal.Renderer; assert(metal.renderer_init(&renderer)==.None); defer { assert(metal.renderer_destroy(&renderer)==.None) }
         operations:=render.GPU_Ops(metal.Renderer){metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.create_texture,metal.destroy_texture,metal.acquire,metal.abort,metal.submit,metal.wait,metal.release_graph_exports}
         capture:=Capture_Ops(metal.Renderer){metal.graph_texture_source,metal.queue_texture_readback,metal.poll_texture_readback}
-        if windowed {
+        if os.args[2]=="metal-models" { exercise_models(&renderer,operations,capture,surface.descriptor,&compiler,render.Model_GPU_Ops(metal.Renderer){operations,metal.create_sampler,metal.destroy_sampler},"metal",os.args[3],os.args[4]) }
+        else if windowed {
             surfaces:=Surface_Ops(metal.Renderer){metal.attach_surface,metal.resize_surface,metal.detach_surface,metal.acquire_surface,metal.abort_surface,metal.present_surface}
-            if interactive { exercise_editor(&renderer,operations,capture,surfaces,surface.descriptor,"metal",os.args[3],metal_control_event,metal_assistant_event) } else { exercise_window(&renderer,operations,capture,surfaces,surface.descriptor,"metal",os.args[3]) }
+            if interactive { exercise_editor(&renderer,operations,capture,surfaces,surface.descriptor,&compiler,render.Model_GPU_Ops(metal.Renderer){operations,metal.create_sampler,metal.destroy_sampler},render.Particle_GPU_Ops(metal.Renderer){metal.create_pipeline,metal.destroy_pipeline,metal.create_graphics_pipeline,metal.destroy_graphics_pipeline,metal.create_buffer_with_data,metal.destroy_buffer,metal.write_buffer,metal.read_buffer},"metal",os.args[3],os.args[4],metal_control_event,metal_assistant_event) } else { exercise_window(&renderer,operations,capture,surfaces,surface.descriptor,"metal",os.args[3]) }
         } else { exercise(&renderer,operations,capture,surface.descriptor,"metal",os.args[3],os.args[4]) }
-    case "vulkan","vulkan-window","vulkan-editor":
+    case "vulkan","vulkan-window","vulkan-editor","vulkan-models":
         loader:=""; if len(os.args)>5 { loader=os.args[5] }
         renderer:vulkan.Renderer; assert(vulkan.renderer_init(&renderer,validation=true,loader_path=loader)==.None); defer { assert(renderer.validation_errors==0); assert(vulkan.renderer_destroy(&renderer)==.None) }
         operations:=render.GPU_Ops(vulkan.Renderer){vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.create_texture,vulkan.destroy_texture,vulkan.acquire,vulkan.abort,vulkan.submit,vulkan.wait,vulkan.release_graph_exports}
         capture:=Capture_Ops(vulkan.Renderer){vulkan.graph_texture_source,vulkan.queue_texture_readback,vulkan.poll_texture_readback}
-        if windowed {
+        if os.args[2]=="vulkan-models" { exercise_models(&renderer,operations,capture,surface.descriptor,&compiler,render.Model_GPU_Ops(vulkan.Renderer){operations,vulkan.create_sampler,vulkan.destroy_sampler},"vulkan",os.args[3],os.args[4]) }
+        else if windowed {
             surfaces:=Surface_Ops(vulkan.Renderer){vulkan.attach_surface,vulkan.resize_surface,vulkan.detach_surface,vulkan.acquire_surface,vulkan.abort_surface,vulkan.present_surface}
-            if interactive { exercise_editor(&renderer,operations,capture,surfaces,surface.descriptor,"vulkan",os.args[3],vulkan_control_event,vulkan_assistant_event) } else { exercise_window(&renderer,operations,capture,surfaces,surface.descriptor,"vulkan",os.args[3]) }
+            if interactive { exercise_editor(&renderer,operations,capture,surfaces,surface.descriptor,&compiler,render.Model_GPU_Ops(vulkan.Renderer){operations,vulkan.create_sampler,vulkan.destroy_sampler},render.Particle_GPU_Ops(vulkan.Renderer){vulkan.create_pipeline,vulkan.destroy_pipeline,vulkan.create_graphics_pipeline,vulkan.destroy_graphics_pipeline,vulkan.create_buffer_with_data,vulkan.destroy_buffer,vulkan.write_buffer,vulkan.read_buffer},"vulkan",os.args[3],os.args[4],vulkan_control_event,vulkan_assistant_event) } else { exercise_window(&renderer,operations,capture,surfaces,surface.descriptor,"vulkan",os.args[3]) }
         } else { exercise(&renderer,operations,capture,surface.descriptor,"vulkan",os.args[3],os.args[4]) }
     case: assert(false,"unsupported backend")
     }

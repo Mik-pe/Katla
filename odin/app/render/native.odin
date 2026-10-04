@@ -3,6 +3,8 @@ package render
 
 import gfx "../../gfx"
 import "core:mem"
+import app ".."
+import ecs "../../ecs"
 
 /// Generic GPU operations are explicit; scene/material policy stays in this application owner.
 GPU_Ops :: struct($Renderer:typeid) {
@@ -21,6 +23,18 @@ GPU_Ops :: struct($Renderer:typeid) {
 }
 /// One application-owned allocation for every mutable resource in every native frame slot.
 Native_Slot :: struct { frame,objects:gfx.Buffer_Handle, color,depth:gfx.Texture_Handle }
+/// Additional application passes supply borrowed inputs to the same acquired submission.
+Scene_Inputs :: struct { buffers:[]gfx.Buffer_Input, textures:[]gfx.Texture_Input }
+Scene_Authoring :: ^app.Authoring
+Scene_Entities :: []ecs.Entity_Id
+/// Optional installed effects prepare atomically and publish only after native acceptance.
+Scene_Composition :: struct($Renderer:typeid) {
+    state:rawptr,
+    prepare:proc(rawptr,^Native_Scene(Renderer),gfx.Frame_Token,Frame_Data)->(Scene_Inputs,Native_Error),
+    accepted:proc(rawptr,gfx.Submission),
+    aborted:proc(rawptr),
+    validate:proc(rawptr,Scene_Authoring,Scene_Entities)->Native_Error,
+}
 /// A stationary, exclusive scene consumer retains native resources and accepted submission order.
 Native_Scene :: struct($Renderer:typeid) {
     renderer:^Renderer,
@@ -30,6 +44,8 @@ Native_Scene :: struct($Renderer:typeid) {
     geometry:gfx.Buffer_Handle,
     pipeline:gfx.Graphics_Pipeline_Handle,
     pending:[dynamic]gfx.Submission,
+    composition:Scene_Composition(Renderer),
+    models:^Native_Model(Renderer),
     allocator:mem.Allocator,
 }
 /// Keeps GPU, graph and CPU input failures distinct for host diagnostics.
@@ -98,10 +114,29 @@ native_scene_render :: proc(scene:^Native_Scene($R),token:gfx.Frame_Token,frame:
     }
     color:=slot.color; if color_override.owner!=nil { color=color_override }
     textures:=scene_graph_textures(&scene.graph,color,slot.depth)
+    all_buffers:=make([dynamic]gfx.Buffer_Input,0,len(inputs),scene.allocator); defer delete(all_buffers)
+    all_textures:=make([dynamic]gfx.Texture_Input,0,len(textures),scene.allocator); defer delete(all_textures)
+    append(&all_buffers,..inputs); append(&all_textures,..textures[:])
+    if scene.models!=nil {
+        extra,model_error:=model_native_prepare(scene.models,&scene.graph,token,frame)
+        if model_error!={} { return {},model_error }
+        append(&all_buffers,..extra.buffers); append(&all_textures,..extra.textures)
+    }
+    prepared:=false; accepted:=false
+    defer { if prepared && !accepted { scene.composition.aborted(scene.composition.state) } }
+    if scene.composition.prepare!=nil {
+        if scene.composition.state==nil || scene.composition.accepted==nil || scene.composition.aborted==nil { return {},{gpu=.Unsupported} }
+        prepared=true
+        extra,composition_error:=scene.composition.prepare(scene.composition.state,scene,token,frame)
+        if composition_error!={} { return {},composition_error }
+        append(&all_buffers,..extra.buffers); append(&all_textures,..extra.textures)
+    }
     submission:gfx.Submission
-    submission,error,packet_error=scene.operations.submit(scene.renderer,token,&scene.graph.graph,&scene.graph.plan,inputs,textures[:])
+    submission,error,packet_error=scene.operations.submit(scene.renderer,token,&scene.graph.graph,&scene.graph.plan,all_buffers[:],all_textures[:])
     if error!=.None || packet_error!=.None { return {},{gpu=error,packet=packet_error} }
     append(&scene.pending,submission)
+    accepted=true
+    if prepared { scene.composition.accepted(scene.composition.state,submission) }
     return submission,{}
 }
 /// Drains accepted work before releasing scene-owned handles; the native renderer remains caller-owned.
@@ -112,6 +147,7 @@ native_scene_destroy :: proc(scene:^Native_Scene($R))->gfx.Gpu_Error {
             wait_error:=native_scene_wait(scene,scene.pending[0]); if wait_error!=.None { error=wait_error; break }
         }
         if scene.operations.release_exports!=nil { release_error:=scene.operations.release_exports(scene.renderer,&scene.graph.graph); if release_error!=.None { error=release_error } }
+        if scene.models!=nil { model_error:=model_native_destroy(scene.models); if model_error!=.None { error=model_error }; free(scene.models,scene.allocator); scene.models=nil }
         for slot in scene.slots {
             if slot.frame.owner!=nil { destroy_error:=scene.operations.destroy_buffer(scene.renderer,slot.frame); if destroy_error!=.None { error=destroy_error } }
             if slot.objects.owner!=nil { destroy_error:=scene.operations.destroy_buffer(scene.renderer,slot.objects); if destroy_error!=.None { error=destroy_error } }
@@ -136,7 +172,7 @@ native_scene_resize :: proc(scene:^Native_Scene($R),width,height:u32)->Native_Er
     installed:=false; defer {
         if !installed {
             for pair in replacements {
-                for handle in pair { if handle.owner!=nil { scene.operations.destroy_texture(scene.renderer,handle) } }
+                for handle in pair { if handle.owner!=nil { consumer_cleanup_error(scene.operations.destroy_texture(scene.renderer,handle)) } }
             }
         }
     }
@@ -145,15 +181,34 @@ native_scene_resize :: proc(scene:^Native_Scene($R),width,height:u32)->Native_Er
         pair[0],error=scene.operations.create_texture(scene.renderer,color_desc); if error!=.None { return {gpu=error} }
         pair[1],error=scene.operations.create_texture(scene.renderer,depth_desc); if error!=.None { return {gpu=error} }
     }
-    vertex_count:=int(scene.graph.geometry_desc.size/u64(size_of(Vertex)))
-    object_count:=int(scene.graph.object_desc.size/u64(size_of(Object_Data)))
-    release_error:=scene.operations.release_exports(scene.renderer,&scene.graph.graph); if release_error!=.None { return {gpu=release_error} }
-    scene_graph_destroy(&scene.graph)
+    previous_graph:=scene.graph
+    scene.graph={}
+    graph_installed:=false
+    defer {
+        if !graph_installed {
+            scene_graph_destroy(&scene.graph)
+            scene.graph=previous_graph
+        }
+    }
+    vertex_count:=int(previous_graph.geometry_desc.size/u64(size_of(Vertex)))
+    object_count:=int(previous_graph.object_desc.size/u64(size_of(Object_Data)))
     scene_error:=scene_graph_init(&scene.graph,scene.pipeline,vertex_count,object_count,width,height,color_desc.format,allocator)
     if scene_error!=.None { return {scene=scene_error} }
+    binding:^Model_Binding(R)
+    defer { if binding!=nil { model_native_bind_abort(binding) } }
+    if scene.models!=nil {
+        model_error:Native_Error
+        binding,model_error=model_native_bind_prepare(scene.models,&scene.graph)
+        if model_error!={} { return model_error }
+    }
+    release_error:=scene.operations.release_exports(scene.renderer,&scene.graph.graph)
+    if release_error!=.None { return {gpu=release_error} }
+    if binding!=nil { model_native_bind_commit(scene.models,binding); binding=nil }
     for &slot,i in scene.slots {
-        scene.operations.destroy_texture(scene.renderer,slot.color); scene.operations.destroy_texture(scene.renderer,slot.depth)
+        consumer_cleanup_error(scene.operations.destroy_texture(scene.renderer,slot.color))
+        consumer_cleanup_error(scene.operations.destroy_texture(scene.renderer,slot.depth))
         slot.color,slot.depth=replacements[i][0],replacements[i][1]
     }
-    installed=true; return {}
+    scene_graph_destroy(&previous_graph)
+    graph_installed=true; installed=true; return {}
 }

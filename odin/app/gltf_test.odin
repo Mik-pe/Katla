@@ -180,3 +180,22 @@ test_gltf_exact_affine_matrices_survive_static_and_animated_nodes :: proc(t:^tes
     rejected,rejected_error:=gltf_load(&root,"model.gltf"); defer gltf_model_destroy(&rejected)
     testing.expect_value(t,rejected_error,Gltf_Error.Invalid_Animation)
 }
+
+@(test)
+test_gltf_normal_texture_tangents_use_selected_transformed_uv_and_retain_authored :: proc(t:^testing.T) {
+    root,root_error:=resources.root_open(GLTF_RESOURCE_ROOT); testing.expect_value(t,root_error,resources.Error.None); if root_error!=.None { return }; defer resources.root_destroy(&root)
+    model,error:=gltf_load(&root,"models/TangentUV.gltf"); defer gltf_model_destroy(&model)
+    testing.expect_value(t,error,Gltf_Error.None); if error!=.None { return }
+    testing.expect_value(t,len(model.primitives),2)
+    generated:=model.primitives[0]; authored:=model.primitives[1]
+    testing.expect_value(t,model.materials[0].normal_texture.texcoord,i32(1))
+    for index in generated.geometry.indices {
+        vertex:=generated.geometry.vertices[index]
+        testing.expect(t,km.length_squared(km.xyz(vertex.tangent)-km.Vec3{-1,0,0})<0.000001)
+        testing.expect_value(t,vertex.tangent[3],f32(1))
+    }
+    for vertex,i in generated.geometry.vertices { testing.expect_value(t,vertex.uv,generated.uv_sets[0][i]) }
+    for vertex in authored.geometry.vertices { testing.expect_value(t,vertex.tangent,km.Vec4{0,1,0,1}) }
+    transformed:=gltf_texture_uv(model.materials[0].normal_texture,generated.uv_sets[1][1])
+    testing.expect(t,km.length_squared(transformed-km.Vec2{-2.8,0.3})<0.000001)
+}

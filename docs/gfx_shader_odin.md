@@ -34,8 +34,7 @@ interfaces before accepting descriptors.
 The current native descriptor model accepts individual D2/D3 images, including
 arrayed/depth D2 images, and individual samplers. The adapter explicitly rejects
 buffer/sampler binding arrays, other image dimensions and multisampled shader
-images. Fixed sampled and storage
-texture arrays preserve selected counts, including one-element arrays. Their
+images. Fixed sampled and storage texture arrays preserve selected counts, including one-element arrays. Their
 Metal namespace is explicitly `Argument_Buffer`, independent of logical count;
 the exact pointer-wrapper ABI carries one eight-byte resource ID per element.
 Storage image formats map RGBA8 Unorm, RGBA16 Float, R32 Uint and R32 Float. Other formats
