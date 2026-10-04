@@ -65,15 +65,24 @@ agent_session_remap :: proc(s:^Agent_Session,remap:Entity_Remap) {
 }
 /// Transfers a successfully restored action to redo history; failure preserves both histories.
 agent_undo_last :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry)->Scene_Error {
-    if len(s.actions)==0 { return .None }
-    a:=&s.actions[len(s.actions)-1]
+    index:=-1
+    for i:=len(s.actions)-1;i>=0;i-=1 { if s.actions[i].undo.state!=nil { index=i; break } }
+    if index<0 { return .None }
+    a:=&s.actions[index]
     err:=undo_group(w,reg,&a.undo)
     if err!=.None { return err }
     for remap in a.undo.remaps { agent_session_remap(s,remap) }
     append(&s.redo_actions,a^)
-    resize(&s.actions,len(s.actions)-1)
+    ordered_remove(&s.actions,index)
     return .None
 }
+/// Reports whether history contains a reversible command, excluding read-only and failed calls.
+agent_can_undo :: proc(s:^Agent_Session)->bool {
+    for action in s.actions { if action.undo.state!=nil { return true } }
+    return false
+}
+/// Reports whether a previously undone command can be reapplied.
+agent_can_redo :: proc(s:^Agent_Session)->bool { return len(s.redo_actions)>0 }
 /// Reapplies the most recently undone command without executing its tool again or allocating an ID.
 agent_redo_last :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry)->Scene_Error {
     if len(s.redo_actions)==0 { return .None }
@@ -87,7 +96,7 @@ agent_redo_last :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry)->
 }
 /// Restores session mutations in reverse action order.
 agent_undo_all :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry)->Scene_Error {
-    for len(s.actions)>0 { err:=agent_undo_last(s,w,reg); if err!=.None { return err } }
+    for agent_can_undo(s) { err:=agent_undo_last(s,w,reg); if err!=.None { return err } }
     return .None
 }
 /// Returns an owned snapshot of entity count and available component names.
@@ -108,8 +117,10 @@ agent_execute :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry,op:S
 /// Borrowed operation data is cloned; previews can group one exact before/after command here.
 agent_record_action :: proc(s:^Agent_Session,op:Scene_Op,result:^Tool_Result,undo:^Undo_Group)->^Agent_Action {
     assert(s.next_id<max(u64))
-    for &action in s.redo_actions { agent_action_destroy(&action,s.allocator) }
-    clear(&s.redo_actions)
+    if undo.state!=nil {
+        for &action in s.redo_actions { agent_action_destroy(&action,s.allocator) }
+        clear(&s.redo_actions)
+    }
     append(&s.actions,Agent_Action{s.next_id,scene_op_clone(op,s.allocator),result^,undo^})
     result^={}; undo^={}; s.next_id+=1
     return &s.actions[len(s.actions)-1]

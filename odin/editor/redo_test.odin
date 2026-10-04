@@ -50,3 +50,22 @@ test_session_redo_registry_failure_preserves_both_histories :: proc(t:^testing.T
     testing.expect_value(t,agent_redo_last(&s,&w,&reg),Scene_Error.None)
     value,_=ecs.get_component(&w,id,Editor_Test_Component); testing.expect_value(t,value.health,i32(42))
 }
+
+@(test)
+test_read_only_and_failed_calls_preserve_redo_and_skip_undo :: proc(t:^testing.T) {
+    w:ecs.World; ecs.world_init(&w); defer ecs.world_destroy(&w)
+    reg:Component_Registry; editor_registry_init(&reg); defer editor_registry_destroy(&reg)
+    s:Agent_Session; agent_session_init(&s); defer agent_session_destroy(&s)
+    spawned:=agent_execute(&s,&w,&reg,{kind=.Spawn}).result.entities[0]
+    agent_execute(&s,&w,&reg,{kind=.Query_Entities})
+    agent_execute(&s,&w,&reg,{kind=.Set_Field,entity=spawned,component="Missing",field="x",value=transmute([]byte)string("1")})
+    testing.expect(t,agent_can_undo(&s) && !agent_can_redo(&s))
+    testing.expect_value(t,agent_undo_last(&s,&w,&reg),Scene_Error.None)
+    testing.expect(t,w.live_count==0 && !agent_can_undo(&s) && agent_can_redo(&s) && len(s.actions)==2)
+    agent_execute(&s,&w,&reg,{kind=.Query_Entities})
+    testing.expect(t,agent_can_redo(&s) && !agent_can_undo(&s))
+    testing.expect_value(t,agent_redo_last(&s,&w,&reg),Scene_Error.None)
+    testing.expect(t,w.live_count==1 && agent_can_undo(&s) && !agent_can_redo(&s))
+    testing.expect_value(t,agent_undo_all(&s,&w,&reg),Scene_Error.None)
+    testing.expect(t,w.live_count==0 && !agent_can_undo(&s) && len(s.actions)==3)
+}
