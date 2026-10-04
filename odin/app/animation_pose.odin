@@ -39,9 +39,8 @@ animation_sample_clip :: proc(clip:^Animation_Clip,time:f32,pose:[]km.Transform)
 animation_sample_pose :: proc(model:^Animation_Model,player:^Animation_Player,allocator:=context.allocator)->([]km.Transform,editor.Scene_Error) {
     if !animation_model_valid(model) || !animation_sample_state_valid(player) { return nil,.Invalid_Operation }
     pose:=slice.clone(model.bind_pose,allocator)
-    if player==nil || player.clip=="" { return pose,.None }
-    source:=animation_clip(model,player.clip); if source==nil { delete(pose,allocator); return nil,.Invalid_Operation }
-    animation_sample_clip(source,player.time,pose)
+    if player==nil { return pose,.None }
+    if player.clip!="" { source:=animation_clip(model,player.clip); if source==nil { delete(pose,allocator); return nil,.Invalid_Operation }; animation_sample_clip(source,player.time,pose) }
     if player.blending {
         target:=animation_clip(model,player.target_clip); if target==nil { delete(pose,allocator); return nil,.Invalid_Operation }
         target_pose:=slice.clone(model.bind_pose,allocator); defer delete(target_pose,allocator); animation_sample_clip(target,player.target_time,target_pose)
@@ -87,8 +86,8 @@ animation_sample_weights :: proc(model:^Animation_Model,player:^Animation_Player
     if !animation_model_valid(model) || !animation_sample_state_valid(player) || int(node)>=len(model.bind_pose) { return nil,.Invalid_Operation }
     for weight in bind_weights { if !finite_nonnegative(abs(weight)) { return nil,.Invalid_Field_Value } }
     weights:=slice.clone(bind_weights,allocator)
-    if player==nil || player.clip=="" { return weights,.None }
-    source:=animation_clip(model,player.clip); if source==nil { delete(weights,allocator); return nil,.Invalid_Operation }
+    if player==nil { return weights,.None }
+    source:=animation_clip(model,player.clip); if source==nil && player.clip!="" { delete(weights,allocator); return nil,.Invalid_Operation }
     source_channel:=animation_weight_channel(source,node)
     if source_channel!=nil { if len(weights)!=int(source_channel.weight_count) { delete(weights,allocator); return nil,.Invalid_Operation }; animation_sample_weight_channel(source_channel,player.time,weights) }
     if player.blending {

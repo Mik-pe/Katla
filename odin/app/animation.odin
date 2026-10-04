@@ -23,6 +23,7 @@ Animation_Event_Kind :: enum { Completed, Looped }
 Animation_Event :: struct { kind:Animation_Event_Kind, clip:string, loop_count:u32 }
 /// Source weight reaches zero at transition completion, then resets to one for the target.
 Animation_Player :: struct {
+    clip_present,target_clip_present:bool `inspect:"skip"`,
     clip:string `inspect:"skip"`, duration,time:f32 `inspect:"skip"`, playing,looping:bool `inspect:"skip"`, speed:f32 `inspect:"skip"`,
     target_clip:string `inspect:"skip"`, target_duration,target_time:f32 `inspect:"skip"`, target_looping:bool `inspect:"skip"`,
     blend_duration,blend_time,blend_weight:f32 `inspect:"skip"`, blending,completed,target_completed:bool `inspect:"skip"`,
@@ -96,7 +97,7 @@ animation_model_valid :: proc(model:^Animation_Model)->bool {
 }
 @(private="package")
 animation_clear_transition :: proc(player:^Animation_Player) {
-    delete(player.target_clip); player.target_clip=""; player.target_duration=0; player.target_time=0; player.target_completed=false; player.target_looping=false; player.target_loop_count=0; player.blend_duration=0; player.blend_time=0; player.blending=false; player.blend_weight=1
+    delete(player.target_clip); player.target_clip=""; player.target_clip_present=false; player.target_duration=0; player.target_time=0; player.target_completed=false; player.target_looping=false; player.target_loop_count=0; player.blend_duration=0; player.blend_time=0; player.blending=false; player.blend_weight=1
 }
 /// Preflights every referenced clip and timing parameter before replacing playback state.
 animation_play :: proc(w:^ecs.World,entity:ecs.Entity_Id,name:string,fade_seconds:f32,looping:bool,speed:f32)->editor.Scene_Error {
@@ -114,9 +115,9 @@ animation_play :: proc(w:^ecs.World,entity:ecs.Entity_Id,name:string,fade_second
     if player==nil { ecs.add_component(w,entity,animation_player_stopped()); player=ecs.get_component_mut(w,entity,Animation_Player) }
     owned_name:=strings.clone(name)
     if fade_seconds==0 || player.clip=="" {
-        delete(player.clip); player.clip=owned_name; player.duration=clip.duration; player.time=0; player.completed=false; player.loop_count=0; player.looping=looping; animation_clear_transition(player)
+        delete(player.clip); player.clip=owned_name; player.clip_present=true; player.duration=clip.duration; player.time=0; player.completed=false; player.loop_count=0; player.looping=looping; animation_clear_transition(player)
     } else {
-        player.target_clip=owned_name; player.target_duration=clip.duration; player.target_time=0; player.target_completed=false; player.target_loop_count=0; player.target_looping=looping; player.blend_duration=fade_seconds; player.blend_time=0; player.blend_weight=1; player.blending=true
+        player.target_clip=owned_name; player.target_clip_present=true; player.target_duration=clip.duration; player.target_time=0; player.target_completed=false; player.target_loop_count=0; player.target_looping=looping; player.blend_duration=fade_seconds; player.blend_time=0; player.blend_weight=1; player.blending=true
     }
     player.speed=speed; player.playing=true; return .None
 }
@@ -142,7 +143,7 @@ animation_update :: proc(w:^ecs.World,delta_seconds:f32) {
             animation_advance_clock(player.target_clip,&player.target_time,player.target_duration,player.target_looping,&player.target_completed,&player.target_loop_count,advance,&player.events)
             player.blend_time=f32(min(f64(player.blend_time)+f64(delta_seconds),f64(player.blend_duration)))
             if player.blend_time>=player.blend_duration {
-                delete(player.clip); player.clip=player.target_clip; player.target_clip=""; player.duration=player.target_duration; player.time=player.target_time; player.completed=player.target_completed; player.looping=player.target_looping; player.loop_count=player.target_loop_count; animation_clear_transition(player)
+                delete(player.clip); player.clip=player.target_clip; player.clip_present=player.target_clip_present; player.target_clip=""; player.duration=player.target_duration; player.time=player.target_time; player.completed=player.target_completed; player.looping=player.target_looping; player.loop_count=player.target_loop_count; animation_clear_transition(player)
             } else { player.blend_weight=1-player.blend_time/player.blend_duration }
         }
         if !player.blending && player.completed { player.playing=false }
@@ -163,7 +164,7 @@ animation_execute :: proc(app:^Authoring,op:scene.Animation_Op)->(editor.Tool_Re
     for clip,i in model.clips { clip_names[i]={clip.name,clip.duration} }
     playback:json.Value=json.Null{}; if player!=nil {
         transition:json.Value=json.Null{}; if player.blending { transition=trigger_json_value(struct {target_clip:string,target_time_seconds:f32,target_looping:bool,duration_seconds,elapsed_seconds,progress:f32}{player.target_clip,player.target_time,player.target_looping,player.blend_duration,player.blend_time,1-player.blend_weight}) }; defer json.destroy_value(transition)
-        current_clip:json.Value=json.Null{}; if player.clip!="" { current_clip=player.clip }
+        current_clip:json.Value=json.Null{}; if player.clip!="" || player.clip_present { current_clip=player.clip }
         playback=trigger_json_value(struct {clip:json.Value,time_seconds:f32,playing,looping:bool,speed:f32,transition:json.Value}{current_clip,player.time,player.playing,player.looping,player.speed,transition})
     }; defer json.destroy_value(playback)
     entity_text:=fmt.aprintf("%d",u64(op.entity)); defer delete(entity_text)

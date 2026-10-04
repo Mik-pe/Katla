@@ -86,3 +86,14 @@ test_animation_arbitrary_morph_weights_cubic_and_bind_crossfade :: proc(t:^testi
     channel.weight_values[0]=transmute(f32)u32(0x7fc00000); weights,err=animation_sample_weights(&model,&player,0,bind[:]); testing.expect(t,weights==nil && err==.Invalid_Operation)
     animation_model_destroy(&model); testing.expect(t,len(tracker.allocation_map)==0 && len(tracker.bad_free_array)==0)
 }
+
+@(test)
+test_animation_restore_crossfade_from_bind_without_source_clip :: proc(t:^testing.T) {
+    model:=make_test_animation_model(); defer animation_model_destroy(&model); model.bind_pose[0]=km.TRANSFORM_IDENTITY; model.parents[0]=-1
+    model.clips[0]={name=strings.clone("Move"),duration=1,channels=make([]Animation_Channel,2)}; model.clips[1]={name=strings.clone("Rest"),duration=1}
+    position:=Animation_Channel{node=0,path=.Translation,interpolation=.Linear,times=make([]f32,1),values=make([][4]f32,1)}; position.values[0]={4,8,12,0}; model.clips[0].channels[0]=position
+    weights:=Animation_Channel{node=0,path=.Weights,interpolation=.Linear,times=make([]f32,1),weight_count=2,weight_values=make([]f32,2)}; weights.weight_values[0]=1; weights.weight_values[1]=2; model.clips[0].channels[1]=weights
+    player:=animation_player_stopped(); player.blending=true; player.target_clip="Move"; player.blend_weight=0.25
+    pose,error:=animation_sample_pose(&model,&player); defer delete(pose); testing.expect(t,error==.None && pose[0].position==km.Vec3{3,6,9})
+    bind:=[2]f32{0,0}; sampled,weight_error:=animation_sample_weights(&model,&player,0,bind[:]); defer delete(sampled); testing.expect(t,weight_error==.None && sampled[0]==0.75 && sampled[1]==1.5)
+}

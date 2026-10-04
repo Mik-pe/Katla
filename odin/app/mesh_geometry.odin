@@ -48,7 +48,7 @@ mesh_triangles :: proc(positions:[]km.Vec3,indices:[]u32,normals:[]km.Vec3=nil,u
         ia,ib,ic:=indices[triangle],indices[triangle+1],indices[triangle+2]
         a,b,c:=positions[ia],positions[ib],positions[ic]
         weighted:=km.cross(b-a,c-a)
-        if km.length_squared(weighted)<0.000000000001 { return {},.Invalid_Geometry }
+        if km.length_squared(weighted)==0 { return {},.Invalid_Geometry }
         if normals==nil { mesh.vertices[ia].normal+=weighted; mesh.vertices[ib].normal+=weighted; mesh.vertices[ic].normal+=weighted }
         if uvs!=nil {
             uv1,uv2:=uvs[ib]-uvs[ia],uvs[ic]-uvs[ia]
@@ -61,7 +61,7 @@ mesh_triangles :: proc(positions:[]km.Vec3,indices:[]u32,normals:[]km.Vec3=nil,u
         }
     }
     for &vertex,i in mesh.vertices {
-        if km.length_squared(vertex.normal)<0.000000000001 { return {},.Invalid_Geometry }
+        if km.length_squared(vertex.normal)==0 { return {},.Invalid_Geometry }
         vertex.normal=km.normalize(vertex.normal); vertex.tangent=mesh_tangent(vertex.normal)
         tangent:=tangents[i]-vertex.normal*km.dot(vertex.normal,tangents[i])
         if km.length_squared(tangent)>0.000000000001 {
