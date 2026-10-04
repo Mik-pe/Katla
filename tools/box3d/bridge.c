@@ -32,7 +32,7 @@ static void lifecycle_lock(void) {
 static void lifecycle_unlock(void) { atomic_flag_clear_explicit(&world_lifecycle_lock,memory_order_release); }
 _Static_assert(sizeof(KatlaBodySpec) == 136, "Body ABI");
 _Static_assert(sizeof(KatlaPose) == 48, "Pose ABI");
-KATLA_API uint32_t katla_box3d_abi(void) { return b3IsDoublePrecision() ? 0 : 2; }
+KATLA_API uint32_t katla_box3d_abi(void) { return b3IsDoublePrecision() ? 0 : 3; }
 KATLA_API int64_t katla_box3d_bytes(void) { return b3GetByteCount(); }
 KATLA_API void* katla_box3d_create(void) {
     KatlaWorld* world = malloc(sizeof(*world));
@@ -53,6 +53,7 @@ static b3BodyType body_type(uint32_t type) {
 }
 static b3ShapeId create_shape(KatlaBody* body) {
     const KatlaBodySpec* s = &body->spec;
+    if (s->shape == 5) return (b3ShapeId){0};
     b3ShapeDef def = b3DefaultShapeDef();
     def.userData = body; def.density = s->density;
     def.baseMaterial.friction = s->friction; def.baseMaterial.restitution = s->restitution;
@@ -68,11 +69,13 @@ static b3ShapeId create_shape(KatlaBody* body) {
         b3Sphere sphere = {.center = {0,0,0}, .radius = s->radius};
         return b3CreateSphereShape(body->id,&def,&sphere);
     }
+    if (s->shape != 2) return (b3ShapeId){0};
     b3Capsule capsule = {.center1 = {0,-s->half_height,0}, .center2 = {0,s->half_height,0}, .radius = s->radius};
     return b3CreateCapsuleShape(body->id,&def,&capsule);
 }
 KATLA_API void* katla_box3d_body_create(void* owner, const KatlaBodySpec* spec) {
     KatlaWorld* world = owner;
+    if (!world || !spec || spec->type > 2 || spec->shape > 5) return NULL;
     KatlaBody* body = calloc(1,sizeof(*body));
     if (!body) return NULL;
     body->spec = *spec;
@@ -96,8 +99,10 @@ KATLA_API void* katla_box3d_body_create(void* owner, const KatlaBodySpec* spec) 
     def.gravityScale = spec->gravity_scale; def.isBullet = spec->ccd != 0;
     body->id = b3CreateBody(world->id,&def);
     if (B3_IS_NULL(body->id)) { if (body->mesh) b3DestroyMesh(body->mesh); if (body->hull) b3DestroyHull(body->hull); free(body); return NULL; }
-    body->shape = create_shape(body);
-    if (B3_IS_NULL(body->shape)) { b3DestroyBody(body->id); if (body->mesh) b3DestroyMesh(body->mesh); if (body->hull) b3DestroyHull(body->hull); free(body); return NULL; }
+    if (spec->shape != 5) {
+        body->shape = create_shape(body);
+        if (B3_IS_NULL(body->shape)) { b3DestroyBody(body->id); if (body->mesh) b3DestroyMesh(body->mesh); if (body->hull) b3DestroyHull(body->hull); free(body); return NULL; }
+    }
     return body;
 }
 KATLA_API void katla_box3d_body_destroy(void* owner) {
@@ -117,12 +122,14 @@ KATLA_API void katla_box3d_body_update(void* owner, const KatlaBodySpec* next) {
         b3Body_SetLinearVelocity(body->id,(b3Vec3){next->velocity[0],next->velocity[1],next->velocity[2]});
     if (old->gravity_scale != next->gravity_scale) b3Body_SetGravityScale(body->id,next->gravity_scale);
     if (old->ccd != next->ccd) b3Body_SetBullet(body->id,next->ccd != 0);
-    if (old->density != next->density) b3Shape_SetDensity(body->shape,next->density,true);
-    if (old->friction != next->friction) b3Shape_SetFriction(body->shape,next->friction);
-    if (old->restitution != next->restitution) b3Shape_SetRestitution(body->shape,next->restitution);
-    if (old->layers != next->layers || old->mask != next->mask) {
-        b3Filter filter = b3DefaultFilter(); filter.categoryBits = next->layers; filter.maskBits = next->mask;
-        b3Shape_SetFilter(body->shape,filter,false);
+    if (!B3_IS_NULL(body->shape)) {
+        if (old->density != next->density) b3Shape_SetDensity(body->shape,next->density,true);
+        if (old->friction != next->friction) b3Shape_SetFriction(body->shape,next->friction);
+        if (old->restitution != next->restitution) b3Shape_SetRestitution(body->shape,next->restitution);
+        if (old->layers != next->layers || old->mask != next->mask) {
+            b3Filter filter = b3DefaultFilter(); filter.categoryBits = next->layers; filter.maskBits = next->mask;
+            b3Shape_SetFilter(body->shape,filter,false);
+        }
     }
     body->spec = *next;
 }
@@ -135,7 +142,7 @@ KATLA_API void katla_box3d_pose(void* owner, KatlaPose* out) {
 }
 KATLA_API int32_t katla_box3d_overlaps(void* owner, uint64_t* ids, int32_t capacity) {
     KatlaBody* body = owner;
-    if (!body->spec.sensor) return 0;
+    if (!body->spec.sensor || B3_IS_NULL(body->shape)) return 0;
     int count = b3Shape_GetSensorCapacity(body->shape);
     if (capacity < count || !ids) return count;
     if (count == 0) return 0;

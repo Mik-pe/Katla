@@ -23,7 +23,9 @@ body_destroy :: proc(body:Body,allocator:mem.Allocator) {
 }
 @(private="package")
 geometry_equal :: proc(a,b:Body)->bool {
-    if a.shape_kind!=b.shape_kind || a.sensor!=b.sensor || a.half_extents!=b.half_extents || a.radius!=b.radius || a.half_height!=b.half_height || a.vertex_count!=b.vertex_count || a.index_count!=b.index_count { return false }
+    if a.shape_kind!=b.shape_kind { return false }
+    if a.shape_kind==.None { return true }
+    if a.sensor!=b.sensor || a.half_extents!=b.half_extents || a.radius!=b.radius || a.half_height!=b.half_height || a.vertex_count!=b.vertex_count || a.index_count!=b.index_count { return false }
     for i in 0..<int(a.vertex_count) { if a.vertices[i]!=b.vertices[i] { return false } }
     for i in 0..<int(a.index_count) { if a.indices[i]!=b.indices[i] { return false } }
     return true
@@ -34,4 +36,13 @@ body_equal :: proc(a,b:Body)->bool {
     left,right:=a,b
     left.vertices=nil; right.vertices=nil; left.indices=nil; right.indices=nil
     return left==right
+}
+
+@(private="package")
+preserve_motion :: proc(b:^Backend,entry:Entry,body:Body)->Body {
+    result:=body
+    pose:Pose; b.pose(entry.native,&pose)
+    if entry.body.position==body.position && entry.body.rotation==body.rotation { result.position=pose.position; result.rotation=pose.rotation }
+    if entry.body.linear_velocity==body.linear_velocity { result.linear_velocity=pose.linear_velocity }
+    return result
 }

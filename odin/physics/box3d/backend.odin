@@ -9,8 +9,9 @@ import "core:sync"
 
 Error :: enum { None, Invalid, Budget, Library, ABI, Native, Wrong_Thread, Uninitialized }
 Body_Type :: enum u32 { Dynamic, Kinematic, Fixed }
-Shape_Kind :: enum u32 { Box, Sphere, Capsule, Trimesh, ConvexHull }
-/// One complete world-space body description; unchanged sync preserves native motion.
+Shape_Kind :: enum u32 { Box, Sphere, Capsule, Trimesh, ConvexHull, None }
+#assert(u32(Shape_Kind.None)==5)
+/// One complete world-space body description; None creates a body without geometry or added mass.
 Body :: struct {
     id:u64, body_type:Body_Type, shape_kind:Shape_Kind,
     position:[3]f32,rotation:[4]f32,linear_velocity:[3]f32,half_extents:[3]f32,
@@ -44,7 +45,7 @@ owner_error :: proc(b:^Backend)->Error {
     if b.owner_thread!=sync.current_thread_id() { return .Wrong_Thread }
     return .None
 }
-/// Loads the complete revision-two single-precision ABI before creating a native owner.
+/// Loads the complete revision-three single-precision ABI before creating a native owner.
 backend_init :: proc(b:^Backend,path:string,allocator:=context.allocator)->Error {
     if b.instance!=nil { return .Invalid }
     b.allocator=allocator; b.owner_thread=sync.current_thread_id()
@@ -54,7 +55,7 @@ backend_init :: proc(b:^Backend,path:string,allocator:=context.allocator)->Error
     names:=[10]string{"katla_box3d_abi","katla_box3d_create","katla_box3d_destroy","katla_box3d_body_create","katla_box3d_body_destroy","katla_box3d_body_update","katla_box3d_step","katla_box3d_pose","katla_box3d_overlaps","katla_box3d_bytes"}
     addresses:[10]rawptr
     for name,i in names { found:bool; addresses[i],found=dynlib.symbol_address(b.library,name,allocator=allocator); if !found { return .ABI } }
-    abi:=cast(proc "c"()->u32)addresses[0]; if abi()!=2 { return .ABI }
+    abi:=cast(proc "c"()->u32)addresses[0]; if abi()!=3 { return .ABI }
     create:=cast(proc "c"()->rawptr)addresses[1]
     b.destroy=cast(proc "c"(rawptr))addresses[2]; b.create_body=cast(proc "c"(rawptr,^Body)->rawptr)addresses[3]
     b.destroy_body=cast(proc "c"(rawptr))addresses[4]; b.update_body=cast(proc "c"(rawptr,^Body))addresses[5]
@@ -96,9 +97,7 @@ backend_sync :: proc(b:^Backend,bodies:[]Body)->Error {
         native_body:=body
         if old,exists:=b.entries[id]; exists {
             if geometry_equal(old.body,body) { continue }
-            pose:Pose; b.pose(old.native,&pose)
-            if old.body.position==body.position && old.body.rotation==body.rotation { native_body.position=pose.position; native_body.rotation=pose.rotation }
-            if old.body.linear_velocity==body.linear_velocity { native_body.linear_velocity=pose.linear_velocity }
+            native_body=preserve_motion(b,old,body)
         }
         native:=b.create_body(b.instance,&native_body); if native==nil { return .Native }
         created[id]={body_clone(body,b.allocator),native}
@@ -113,7 +112,7 @@ backend_sync :: proc(b:^Backend,bodies:[]Body)->Error {
         }
         entry:=b.entries[id]
         if !body_equal(entry.body,body) {
-            owned:=body; b.update_body(entry.native,&owned)
+            owned:=preserve_motion(b,entry,body); b.update_body(entry.native,&owned)
             body_destroy(entry.body,b.allocator); entry.body=body_clone(body,b.allocator); b.entries[id]=entry
         }
     }
@@ -131,7 +130,7 @@ backend_step :: proc(b:^Backend,delta:f32)->Step {
     visitors:=make([dynamic]u64,b.allocator); defer delete(visitors)
     for id,entry in b.entries {
         pose:Pose; b.pose(entry.native,&pose); append(&result.poses,pose)
-        if entry.body.sensor==0 { continue }
+        if entry.body.sensor==0 || entry.body.shape_kind==.None { continue }
         count:=b.overlap_ids(entry.native,nil,0)
         if count<0 || count>100_000 || len(current)+int(count)>1_000_000 { result.error=.Budget; return result }
         resize(&visitors,int(count)); written:=b.overlap_ids(entry.native,raw_data(visitors),count)
@@ -151,8 +150,8 @@ backend_step :: proc(b:^Backend,delta:f32)->Step {
 }
 /// Rejects malformed enums, nonfinite values and invalid collider dimensions before native admission.
 body_valid :: proc(body:Body)->bool {
-    if body.body_type>Body_Type.Fixed || body.shape_kind>Shape_Kind.ConvexHull || body.sensor>1 || body.ccd>1 { return false }
-    if body.shape_kind<.Trimesh && (body.vertex_count!=0 || body.index_count!=0 || body.vertices!=nil || body.indices!=nil) { return false }
+    if body.body_type>Body_Type.Fixed || body.shape_kind>Shape_Kind.None || body.sensor>1 || body.ccd>1 { return false }
+    if (body.shape_kind<.Trimesh || body.shape_kind==.None) && (body.vertex_count!=0 || body.index_count!=0 || body.vertices!=nil || body.indices!=nil) { return false }
     if body.shape_kind==.ConvexHull && (body.index_count!=0 || body.indices!=nil) { return false }
     owned:=body
     vectors:=[4][]f32{owned.position[:],owned.rotation[:],owned.linear_velocity[:],owned.half_extents[:]}
@@ -162,6 +161,7 @@ body_valid :: proc(body:Body)->bool {
     norm:f32; for value in body.rotation { norm+=value*value }
     if abs(norm-1)>1e-4 || body.density<0 || body.friction<0 || body.restitution<0 || body.restitution>1 { return false }
     switch body.shape_kind {
+    case .None:
     case .Box: for half in body.half_extents { if half<=0 { return false } }
     case .Sphere: if body.radius<=0 { return false }
     case .Capsule: if body.radius<=0 || body.half_height<0 { return false }

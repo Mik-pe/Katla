@@ -27,6 +27,19 @@ test_native_mesh_floor_owned_hull_geometry_and_atomic_failed_replacement :: proc
     testing.expect_value(t,len(b.entries),2)
     testing.expect_value(t,backend_sync(&b,{ground,cube}),Error.None)
     testing.expect(t,b.entries[max(u64)].native==prior)
+    completed:Pose; b.pose(prior,&completed)
+    naked:=cube; naked.shape_kind=.None; naked.vertices=nil; naked.vertex_count=0; naked.radius=0
+    testing.expect_value(t,backend_sync(&b,{ground,naked}),Error.None)
+    shapeless:=b.entries[max(u64)].native
+    testing.expect(t,b.entries[max(u64)].body.vertices==nil && b.entries[max(u64)].body.vertex_count==0)
+    pose:Pose; b.pose(shapeless,&pose); testing.expect(t,pose.position==completed.position && pose.linear_velocity==completed.linear_velocity)
+    malformed.id=3
+    testing.expect_value(t,backend_sync(&b,{ground,naked,malformed}),Error.Native)
+    testing.expect(t,len(b.entries)==2 && b.entries[max(u64)].native==shapeless)
+    testing.expect_value(t,backend_sync(&b,{ground,cube}),Error.None)
+    b.pose(b.entries[max(u64)].native,&pose)
+    testing.expect(t,pose.position==completed.position && pose.linear_velocity==completed.linear_velocity)
+    testing.expect(t,b.entries[max(u64)].body.vertices!=nil && b.entries[max(u64)].body.vertices!=cube.vertices)
 }
 }
 

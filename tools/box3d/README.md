@@ -12,7 +12,7 @@ source and build output remain in `target/`; upstream uses the MIT license.
 body map, whole-batch preflight, deterministic event ordering, application
 hierarchy conversion and pose publication. No ECS, app or renderer pointer
 crosses into C. The ABI uses explicit single-precision fields and lossless u64
-identities. Revision-two Body is 136 bytes and Pose is 48 bytes on the supported
+identities. Revision-three Body is 136 bytes and Pose is 48 bytes on the supported
 64-bit targets; borrowed mesh pointer/count fields are copied before native use.
 Body and world wrappers have explicit destructors; the dependency
 library remains loaded until they have been released. Global world creation and
@@ -34,6 +34,13 @@ of that major version, or accepts an explicit `CC`. Portable Linux/Windows Odin
 checks confirm type checking; native dependency execution was proven on macOS
 arm64. The build driver supports Darwin and Linux; Windows needs a native C17
 dependency build before runtime acceptance can be claimed.
+
+Body-only descriptions use shape kind `None = 5`: Box3D creates an actual native
+body with no shape or fabricated mass. This dependency gives shapeless bodies
+zero inverse mass, so gravity does not accelerate them; authored velocity and
+pose remain native body state. Collider removal/addition preserves completed
+motion, and ignored collider metadata never creates geometry or sensor overlap.
+ABI three rejects older libraries that would interpret kind five as a capsule.
 
 Primitive boxes, spheres and Y capsules, filters, gravity, authored velocities,
 CCD, density and material factors are supported. Static triangle meshes retain
