@@ -82,7 +82,14 @@ agent_execute :: proc(s:^Agent_Session,w:^ecs.World,reg:^Component_Registry,op:S
     result:Tool_Result; group:Undo_Group
     if application.execute!=nil { result,group=application.execute(application.state,w,reg,op) }
     else { result,group=scene_execute(w,reg,op) }
-    append(&s.actions,Agent_Action{s.next_id,scene_op_clone(op,s.allocator),result,group}); s.next_id+=1
+    return agent_record_action(s,op,&result,&group)
+}
+/// Records an already applied owner-thread action, consuming and zeroing its result/undo owners.
+/// Borrowed operation data is cloned; previews can group one exact before/after command here.
+agent_record_action :: proc(s:^Agent_Session,op:Scene_Op,result:^Tool_Result,undo:^Undo_Group)->^Agent_Action {
+    assert(s.next_id<max(u64))
+    append(&s.actions,Agent_Action{s.next_id,scene_op_clone(op,s.allocator),result^,undo^})
+    result^={}; undo^={}; s.next_id+=1
     return &s.actions[len(s.actions)-1]
 }
 /// Synchronous agents observe, decide and receive each action result on the caller thread.

@@ -116,6 +116,11 @@ group's resulting identity rather than reviving an old handle. Agent history
 remaps earlier command targets after restoration; references inside arbitrary
 serialized payloads still require application-specific ownership.
 
+Already applied owner-thread previews can enter that same history with
+`agent_record_action`. It consumes and zeroes the owned result/undo command,
+clones borrowed operation data and assigns one monotonic action ID without
+reexecuting the mutation. `agent_execute` uses the same recording path.
+
 Owner-thread execution can supply an `Application_Executor` to scene sessions and
 mailbox ticks. The mailbox reserves capacity until its correlated reply is taken,
 rejects full/closed admission and allows queued cancellation. Session action IDs
