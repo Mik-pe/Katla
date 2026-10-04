@@ -20,7 +20,7 @@ Assistant :: struct {
     state:Assistant_State,
     error:llm.Error,
     revision:u64,
-    initialized:bool,
+    initialized,context_changed:bool,
     allocator:mem.Allocator,
 }
 /// Captures the explicit provider choice and only the tools supported by this consumer.
@@ -59,6 +59,11 @@ assistant_start :: proc(owner:^Assistant,prompt:string)->llm.Error {
     if owner.job.worker!=nil || owner.conversation.pending!=0 { return .Busy }
     if owner.state==.Failed { return owner.error }
     if strings.trim_space(prompt)=="" { return .Config }
+    if owner.context_changed {
+        error:=llm.conversation_context_snapshot(&owner.conversation,owner.system_prompt)
+        if error!=.None { return error }
+        owner.context_changed=false
+    }
     error:=llm.job_start(&owner.job,&owner.conversation,prompt,64,owner.allocator)
     if error!=.None { return error }
     clear(&owner.output); owner.state=.Running; owner.error=.None; owner.revision+=1
@@ -101,6 +106,16 @@ assistant_cancel :: proc(owner:^Assistant) {
     if owner.job.worker==nil { return }
     llm.job_cancel(&owner.job); owner.state=.Cancelling; owner.revision+=1
 }
+/// Captures changed scene context for the next turn without touching the active worker or prior messages.
+assistant_context_refresh :: proc(owner:^Assistant,system_prompt:string)->llm.Error {
+    if !owner.initialized { return .Config }
+    if len(system_prompt)>llm.MAX_TEXT_BYTES { return .Limit }
+    if owner.system_prompt==system_prompt { return .None }
+    updated:=strings.clone(system_prompt,owner.allocator)
+    delete(owner.system_prompt,owner.allocator); owner.system_prompt=updated
+    owner.context_changed=true; owner.revision+=1
+    return .None
+}
 /// Explicitly clears provider history after failure or when the user chooses a new conversation.
 assistant_reset :: proc(owner:^Assistant)->llm.Error {
     if !owner.initialized { return .Config }
@@ -110,6 +125,7 @@ assistant_reset :: proc(owner:^Assistant)->llm.Error {
     llm.conversation_destroy(&owner.conversation)
     error:=llm.conversation_init(&owner.conversation,&owner.runtime,&owner.config,owner.mailbox,owner.schemas,owner.system_prompt,owner.allocator)
     owner.error=error; owner.state=.Idle if error==.None else .Failed; clear(&owner.output); owner.revision+=1
+    if error==.None { owner.context_changed=false }
     return error
 }
 /// Cancels and joins before releasing owned provider state; a late executing ticket stays mailbox-owned.

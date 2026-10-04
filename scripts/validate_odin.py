@@ -29,6 +29,15 @@ def main():
     if args.native_surface and not args.native_vulkan:
         parser.error("--native-surface requires --native-vulkan")
     (ROOT / "target").mkdir(exist_ok=True)
+    cpu_env = os.environ.copy()
+    if args.sanitize:
+        from validate_odin_gpu import asan_environment
+        cpu_env = asan_environment(cpu_env, True)
+        if platform.system() == "Darwin":
+            suppression = ROOT / "target/odin-cpu-cfprefs.lsan"
+            suppression.write_text("leak:CFPrefsPlistSource\n")
+            cpu_env["LSAN_OPTIONS"] = f"suppressions={suppression}:print_suppressions=0"
+            print("CPU leak checks remain enabled; only the verified Apple CFPrefsPlistSource process cache is suppressed.", flush=True)
     commands = [
         [sys.executable, "scripts/build_odin_gltf.py"],
         [sys.executable, "scripts/build_odin_image.py"],
@@ -49,7 +58,7 @@ def main():
         ["odin", "test", "odin/math", "-out:target/odin-math-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/icons", "-out:target/odin-icons-tests", "-vet", "-strict-style"],
         ["odin", "test", "odin/audio/dsp", "-out:target/odin-audio-dsp-tests", "-vet", "-strict-style"],
-        ["odin", "run", "odin/examples/movement", "-out:target/odin-movement", "-vet", "-strict-style"],
+        ["odin", "run", "odin/examples/movement", "-out:target/odin-movement", "-vet", "-strict-style", "-thread-count:1"],
         [sys.executable, "scripts/compare_math_port.py"],
         [sys.executable, "scripts/check_icon_port.py"],
         [sys.executable, "scripts/compare_audio_dsp.py"],
@@ -64,7 +73,7 @@ def main():
         if args.sanitize and command[0]=="odin":
             command.extend(["-sanitize:address", "-define:CGLTF_LIBRARY=../../../target/odin-cgltf-asan/libcgltf.a", "-define:STB_IMAGE_LIBRARY=../../../target/odin-stb-image-asan/libkatla_image.a"])
         print("Running:", " ".join(command), flush=True)
-        subprocess.run(command, cwd=ROOT, check=True)
+        subprocess.run(command, cwd=ROOT, env=cpu_env, check=True)
 
     if args.native_physics:
         subprocess.run([sys.executable, "scripts/validate_odin_box3d.py"], cwd=ROOT, check=True)

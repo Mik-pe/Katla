@@ -86,6 +86,14 @@ conversation_init :: proc(s:^Conversation,r:^Runtime,c:^Config,mailbox:^editor.A
     if init_error!=.None { conversation_destroy(s) }
     return init_error
 }
+/// Appends a fresh owned context snapshot between turns while retaining every earlier message.
+conversation_context_snapshot :: proc(s:^Conversation,system_prompt:string)->Error {
+    if len(system_prompt)>MAX_TEXT_BYTES { return .Limit }
+    if !sync.mutex_try_lock(&s.mutex) { return .Busy }; defer sync.mutex_unlock(&s.mutex)
+    if s.runtime==nil { return .Config }
+    if s.failed || s.pending!=0 { return .Tool }
+    return append_history(s,text_message("system",system_prompt,s.allocator))
+}
 /// Attempts to release an abandoned accepted reply; false means its owner is still executing.
 conversation_reap :: proc(s:^Conversation)->bool {
     if s.pending==0 { return true }
