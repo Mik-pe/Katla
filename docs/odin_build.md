@@ -21,7 +21,8 @@ Windows needs Clang/LLVM and a configured Windows SDK. Native dependencies are
 compiled directly by the Odin build tool. Python, CMake, Ninja and make are not
 build or launch dependencies. Extended QA drivers run through the same Odin command.
 Git keeps source files in LF form on every host so pinned checksums remain
-identical even with Windows `core.autocrlf`. Source-pinned upstream checkouts\nalso explicitly disable automatic CRLF conversion.
+identical even with Windows `core.autocrlf`. Source-pinned upstream checkouts
+also explicitly disable automatic CRLF conversion.
 
 Font sources and licensed fallback fonts are retrieved from pinned revisions;
 all source checkouts must retain their exact clean revision.
