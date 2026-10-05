@@ -30,7 +30,7 @@ log = "0.4"
 naga = { version = "29.0.1", features = ["wgsl-in", "spv-out", "msl-out"] }
 notify = "8.2"
 rayon = "1.12"
-rapier3d = "0.32"
+rapier3d = "0.36"
 png = "0.18"
 proc-macro2 = "1.0"
 quote = "1.0"

@@ -108,6 +108,7 @@ impl PhysicsWorld {
             &mut self.colliders,
             &mut self.impulse_joints,
             &mut self.multibody_joints,
+            &mut SoftBodySet::new(),
             &mut self.ccd_solver,
             &(),
             &(),
@@ -193,7 +194,7 @@ impl PhysicsWorld {
                 .map(|c| c.position())
                 .map(|p| Vec3::new(p.translation.x, p.translation.y, p.translation.z));
 
-            for manifold in &pair.manifolds {
+            for manifold in pair.manifolds() {
                 let normal = Vec3::new(
                     manifold.data.normal.x,
                     manifold.data.normal.y,
@@ -362,22 +363,34 @@ impl PhysicsWorld {
 
     /// Remove a dynamic body and its attached collider.
     pub fn remove_body(&mut self, body: RigidBodyHandle, collider: ColliderHandle) {
-        self.colliders
-            .remove(collider, &mut self.islands, &mut self.bodies, true);
+        let mut soft_bodies = SoftBodySet::new();
+        self.colliders.remove(
+            collider,
+            &mut self.islands,
+            &mut self.bodies,
+            &mut soft_bodies,
+            true,
+        );
         self.bodies.remove(
             body,
             &mut self.islands,
             &mut self.colliders,
             &mut self.impulse_joints,
             &mut self.multibody_joints,
+            &mut soft_bodies,
             true,
         );
     }
 
     /// Remove a static collider.
     pub fn remove_static_collider(&mut self, collider: ColliderHandle) {
-        self.colliders
-            .remove(collider, &mut self.islands, &mut self.bodies, true);
+        self.colliders.remove(
+            collider,
+            &mut self.islands,
+            &mut self.bodies,
+            &mut SoftBodySet::new(),
+            true,
+        );
     }
 
     /// Find colliders whose entity no longer has a `RigidBody` component in ECS.
