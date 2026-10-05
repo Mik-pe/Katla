@@ -402,8 +402,8 @@ mod tests {
 
         // Near corners should all be at the same distance from camera
         let near_dist = (corners[0] - camera).length();
-        for i in 1..4 {
-            let dist = (corners[i] - camera).length();
+        for (i, corner) in corners.iter().enumerate().take(4).skip(1) {
+            let dist = (*corner - camera).length();
             assert!(
                 (dist - near_dist).abs() < 0.1,
                 "Near corner {i} at distance {dist}, expected ~{near_dist}"
@@ -412,8 +412,8 @@ mod tests {
 
         // Far corners should all be at the same distance from camera
         let far_dist = (corners[4] - camera).length();
-        for i in 5..8 {
-            let dist = (corners[i] - camera).length();
+        for (i, corner) in corners.iter().enumerate().skip(5) {
+            let dist = (*corner - camera).length();
             assert!(
                 (dist - far_dist).abs() < 1.0,
                 "Far corner {i} at distance {dist}, expected ~{far_dist}"
@@ -567,8 +567,8 @@ mod tests {
         );
 
         // Far corners should be at approximately the specified far distance from near plane
-        for i in 4..8 {
-            let dist_from_camera = (corners_fixed[i] - camera).length();
+        for (i, corner) in corners_fixed.iter().enumerate().skip(4) {
+            let dist_from_camera = (*corner - camera).length();
             assert!(
                 dist_from_camera > 50.0,
                 "Far corner {i} at dist {dist_from_camera} should be far from camera"
@@ -1284,7 +1284,7 @@ mod tests {
         );
         let ground_ndc_z = ground_clip.z() / ground_clip.w();
         assert!(
-            ground_ndc_z >= 0.0 && ground_ndc_z <= 1.0,
+            (0.0..=1.0).contains(&ground_ndc_z),
             "Ground center NDC z should be in [0,1] for reverse-Z, got z={}",
             ground_ndc_z
         );

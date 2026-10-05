@@ -291,3 +291,29 @@ fn test_slerp_long_path() {
     // Midpoint should be roughly halfway in rotation
     assert!(mid.is_normalized());
 }
+
+#[test]
+fn test_euler_authoring_round_trip_preserves_each_axis_and_mixed_rotations() {
+    for angles in [
+        (0.4, 0.0, 0.0),
+        (0.0, 0.6, 0.0),
+        (0.0, 0.0, -0.8),
+        (0.4, -0.7, 1.2),
+        (-0.8, 2.1, -1.7),
+    ] {
+        let q = Quat::from_euler(angles.0, angles.1, angles.2);
+        let recovered = q.to_euler();
+        assert!((recovered.0 - angles.0).abs() < 0.00001);
+        assert!((recovered.1 - angles.1).abs() < 0.00001);
+        assert!((recovered.2 - angles.2).abs() < 0.00001);
+    }
+    for pitch in [-std::f32::consts::FRAC_PI_2, std::f32::consts::FRAC_PI_2] {
+        let q = Quat::from_euler(pitch, 0.4, -0.6);
+        let e = q.to_euler();
+        let restored = Quat::from_euler(e.0, e.1, e.2);
+        let a = q.xyzw();
+        let b = restored.xyzw();
+        let dot = a.0 * b.0 + a.1 * b.1 + a.2 * b.2 + a.3 * b.3;
+        assert!((dot.abs() - 1.0).abs() < 0.00001);
+    }
+}

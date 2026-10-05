@@ -320,30 +320,23 @@ impl Quat {
         yaw_rotation * pitch_rotation * roll_rotation
     }
 
+    /// Recover X pitch, Y yaw and Z roll in the Y * X * Z composition order.
+    #[inline]
     pub fn to_euler(self) -> (f32, f32, f32) {
-        let x = self[0];
-        let y = self[1];
-        let z = self[2];
-        let w = self[3];
-
-        // Roll (x-axis rotation)
-        let sinr_cosp = 2.0 * (w * x + y * z);
-        let cosr_cosp = 1.0 - 2.0 * (x * x + y * y);
-        let roll = f32::atan2(sinr_cosp, cosr_cosp);
-
-        // Pitch (y-axis rotation)
-        let sinp = 2.0 * (w * y - z * x);
-        let pitch = if f32::abs(sinp) >= 1.0 {
-            core::f32::consts::PI / 2.0 * sinp.copysign(1.0)
+        let (x, y, z, w) = (self[0], self[1], self[2], self[3]);
+        let sin_pitch = (2.0 * (w * x - y * z)).clamp(-1.0, 1.0);
+        let pitch = sin_pitch.asin();
+        let (yaw, roll) = if sin_pitch.abs() > 0.999999 {
+            (
+                (2.0 * (w * y - x * z)).atan2(1.0 - 2.0 * (y * y + z * z)),
+                0.0,
+            )
         } else {
-            f32::asin(sinp)
+            (
+                (2.0 * (x * z + w * y)).atan2(1.0 - 2.0 * (x * x + y * y)),
+                (2.0 * (x * y + w * z)).atan2(1.0 - 2.0 * (x * x + z * z)),
+            )
         };
-
-        // Yaw (z-axis rotation)
-        let siny_cosp = 2.0 * (w * z + x * y);
-        let cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
-        let yaw = f32::atan2(siny_cosp, cosy_cosp);
-
         (pitch, yaw, roll)
     }
 }

@@ -81,6 +81,9 @@ replacement; older documents migrate through isolated readers. See the
 Mat4 stores four Vec4 columns: m[col][row], with m[0] denoting column zero.
 This is the Vulkan/GLSL convention; do not transpose it for Metal. Transform
 stores position, rotation and scale and composes them through make_mat4().
+Quaternion Euler authoring uses X pitch, Y yaw, Z roll in Y * X * Z order;
+`from_euler` and `to_euler` share that order. At pitch gimbal lock, roll is zero
+and yaw carries the equivalent combined rotation.
 Application hierarchy resolution multiplies these matrices exactly; rendering
 and bounds retain shear instead of recomposing an approximate world TRS.
 Vec2/Vec3 are scalar; Vec4/Mat4/Quat use SSE on x86/x86_64. Hot operations are
