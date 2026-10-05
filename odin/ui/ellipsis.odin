@@ -33,11 +33,14 @@ paint_text_tooltip :: proc(ctx:^Context,window:Rect) {
     blocker:=hit_node(ctx,ctx.pointer)
     for i:=len(ctx.order)-1;i>=0;i-=1 {
         node:=node_get(ctx,ctx.order[i]); d:=node.descriptor
-        if d.kind!=.Text || d.text_max_width<=0 || !node_visible(ctx,node) || !rect_contains(node.clip,ctx.pointer) { continue }
+        icon_hint:=d.kind==.Icon_Button && d.text!=""
+        if (!icon_hint && (d.kind!=.Text || d.text_max_width<=0)) || !node_visible(ctx,node) || !rect_contains(node.clip,ctx.pointer) || !rect_contains(node.bounds,ctx.pointer) { continue }
         if ctx.modal.key!=0 && !node_descends(ctx,node,ctx.modal) { continue }
         if blocker!=nil && node_layer(ctx,blocker)>node_layer(ctx,node) { continue }
-        label,shortened:=text_ellipsize(ctx,node,min(d.text_max_width,node.bounds.width))
-        if !shortened { continue }; delete(label,ctx.allocator)
+        if !icon_hint {
+            label,shortened:=text_ellipsize(ctx,node,min(d.text_max_width,node.bounds.width))
+            if !shortened { continue }; delete(label,ctx.allocator)
+        }
         font,size:=node_font(ctx,node); padding:=ctx.theme.padding
         wrap:=max(0,window.width-4*padding); if wrap<=0 { return }
         measured:=ctx.fonts.measure(ctx.fonts.state,font,d.text,size,wrap)

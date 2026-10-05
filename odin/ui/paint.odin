@@ -43,6 +43,12 @@ node_number :: proc(ctx:^Context,node:^Node)->f32 { if value,ok:=state_get(ctx,n
 @(private="package")
 node_boolean :: proc(ctx:^Context,node:^Node)->bool { if value,ok:=state_get(ctx,node.descriptor.state,bool); ok { return value }; return node.descriptor.selected }
 @(private="package")
+paint_icon :: proc(ctx:^Context,node:^Node,position:Vec2,color:Color,clip:Rect) {
+    icon_node:=node^; icon_node.descriptor.font=node.descriptor.icon_font
+    label:=fmt.aprintf("%c",node.descriptor.icon,allocator=ctx.allocator); defer delete(label,ctx.allocator)
+    paint_text(ctx,&icon_node,label,position,color,clip)
+}
+@(private="package")
 paint_node :: proc(ctx:^Context,node:^Node) {
     if !node_visible(ctx,node) { return }
     d:=node.descriptor; b,clip:=node.bounds,node.clip; fg:=ctx.theme.text; bg:=ctx.theme.control
@@ -51,7 +57,17 @@ paint_node :: proc(ctx:^Context,node:^Node) {
     if d.has_background { bg=d.background } else { if hovered { bg=ctx.theme.hover }; if held || d.selected { bg=ctx.theme.active } }
     _,label_size:=node_font(ctx,node); label_pos:=Vec2{b.x+ctx.theme.padding,b.y+(b.height-label_size)/2}
     #partial switch d.kind {
-    case .Button,.Icon_Button,.Menu_Item,.Selectable,.Combo,.Drag_Value,.Text_Input,.Code_Editor,.Numeric_Input:
+    case .Button,.Icon_Button,.Menu_Item:
+        if d.button_style==.Primary && !node.input_disabled {
+            bg=ctx.theme.accent; if held { bg=ctx.theme.active }
+            fg=ctx.theme.canvas
+        }
+        if d.button_style!=.Quiet || hovered || held || d.selected { paint_rect(ctx,b,clip,bg,ctx.theme.radius) }
+    case .Selectable,.Combo,.Drag_Value,.Text_Input,.Code_Editor,.Numeric_Input:
+        if d.kind==.Selectable && !d.has_background {
+            if d.selected { bg=ctx.theme.selection; bg.a=.18 }
+            else if !hovered && !held { bg.a=0 }
+        }
         paint_rect(ctx,b,clip,bg,ctx.theme.radius)
     case .Modal,.Context_Menu,.Tooltip: paint_rect(ctx,b,clip,d.background if d.has_background else ctx.theme.panel,ctx.theme.radius)
     case: if d.has_background { paint_rect(ctx,b,clip,d.background,ctx.theme.radius) }
@@ -65,10 +81,24 @@ paint_node :: proc(ctx:^Context,node:^Node) {
         } else { paint_text(ctx,node,d.text,{b.x,b.y},fg,clip,b.width) }
     case .Button,.Icon_Button,.Menu_Item,.Selectable,.Tree_Row,.Section:
         if d.kind==.Tree_Row || d.kind==.Section {
+            label_pos.x+=d.layout.padding.left
+            if !d.has_background && (d.selected || hovered) { color:=ctx.theme.hover; if d.selected { color=ctx.theme.selection; color.a=.18 }; paint_rect(ctx,b,clip,color,ctx.theme.radius) }
             marker:="▸"; if d.expanded { marker="▾" }; if d.kind==.Section || d.has_children { paint_text(ctx,node,marker,label_pos,ctx.theme.muted,clip) }; label_pos.x+=14
-            if d.selected && !d.has_background { paint_rect(ctx,b,clip,ctx.theme.active,0) }
         }
-        paint_text(ctx,node,d.text,label_pos,fg,clip)
+        if d.kind==.Button || d.kind==.Icon_Button {
+            font,size:=node_font(ctx,node); width:=ctx.fonts.measure(ctx.fonts.state,font,d.text,size,0).x
+            if d.icon!=0 { width+=size+6 }; if d.kind==.Icon_Button { width=size }
+            label_pos.x=b.x+max(ctx.theme.padding,(b.width-width)/2)
+        }
+        if d.icon!=0 {
+            paint_icon(ctx,node,label_pos,fg,clip); label_pos.x+=label_size+6
+        }
+        if d.kind!=.Icon_Button {
+            font,size:=node_font(ctx,node); shortcut_width:=ctx.fonts.measure(ctx.fonts.state,font,d.shortcut,size,0).x
+            label,shortened:=text_ellipsize(ctx,node,max(0,b.x+b.width-ctx.theme.padding-label_pos.x-shortcut_width-(12 if d.shortcut!="" else 0)))
+            paint_text(ctx,node,label,label_pos,fg,clip); if shortened { delete(label,ctx.allocator) }
+            if d.shortcut!="" { paint_text(ctx,node,d.shortcut,{b.x+b.width-ctx.theme.padding-shortcut_width,label_pos.y},ctx.theme.muted if !node.input_disabled else fg,clip) }
+        }
     case .Checkbox:
         box:=Rect{b.x+ctx.theme.padding,b.y+(b.height-14)/2,14,14}; paint_rect(ctx,box,clip,bg,3)
         if node_boolean(ctx,node) { paint_rect(ctx,rect_inset(box,3),clip,ctx.theme.accent,1) }; label_pos.x+=20; paint_text(ctx,node,d.text,label_pos,fg,clip)
@@ -85,7 +115,11 @@ paint_node :: proc(ctx:^Context,node:^Node) {
         paint_rect(ctx,{track.x,track.y,track.width*ratio,track.height},clip,ctx.theme.accent,2)
         paint_rect(ctx,{track.x+track.width*ratio-4,track.y-5,8,14},clip,ctx.theme.accent,3)
     case .Drag_Value:
-        text:=fmt.aprintf("%s %g",d.text,node_number(ctx,node)); defer delete(text); paint_text(ctx,node,text,label_pos,fg,clip)
+        label_clip:=rect_intersection(clip,{b.x,b.y,b.width*.55,b.height})
+        paint_text(ctx,node,d.text,label_pos,ctx.theme.muted if !node.input_disabled else fg,label_clip)
+        number:=fmt.aprintf("%.5g",node_number(ctx,node)); defer delete(number)
+        font,size:=node_font(ctx,node); width:=ctx.fonts.measure(ctx.fonts.state,font,number,size,0).x
+        paint_text(ctx,node,number,{max(b.x+ctx.theme.padding,b.x+b.width-ctx.theme.padding-width),label_pos.y},fg,clip)
     case .Text_Input,.Code_Editor,.Numeric_Input:
         text:=node_text(ctx,node); inset:=text_inner(ctx,node); text_clip:=rect_intersection(clip,inset)
         position:=Vec2{inset.x-node.text_offset.x,inset.y-node.text_offset.y}; font,size:=node_font(ctx,node); wrap:=text_wrap(node,inset.width)
@@ -108,7 +142,9 @@ paint_node :: proc(ctx:^Context,node:^Node) {
         paint_rect(ctx,b,clip,ctx.theme.hover,ctx.theme.radius); paint_rect(ctx,{b.x,b.y,b.width*clamp(d.value,0,1),b.height},clip,ctx.theme.accent,ctx.theme.radius)
     case .Splitter: paint_rect(ctx,b,clip,ctx.theme.accent if held else ctx.theme.hover)
     case .Combo:
-        index:=int(node_number(ctx,node)); text:=d.text; if index>=0 && index<len(d.options) { text=d.options[index] }; paint_text(ctx,node,text,label_pos,fg,clip)
+        index:=int(node_number(ctx,node)); text:=d.text; if index>=0 && index<len(d.options) { text=d.options[index] }
+        paint_text(ctx,node,text,label_pos,fg,rect_intersection(clip,{b.x,b.y,max(0,b.width-24),b.height}))
+        paint_text(ctx,node,"▾",{b.x+b.width-18,label_pos.y},ctx.theme.muted,clip)
     case .Tabs:
         x:=b.x; selected:=int(node_number(ctx,node))
         for option,i in d.options { font,size:=node_font(ctx,node); width:=ctx.fonts.measure(ctx.fonts.state,font,option,size,0).x+ctx.theme.padding*2; rect:=Rect{x,b.y,width,b.height}; if i==selected { paint_rect(ctx,rect,clip,ctx.theme.active,ctx.theme.radius) }; paint_text(ctx,node,option,{x+ctx.theme.padding,label_pos.y},fg,clip); x+=width }
@@ -142,14 +178,16 @@ paint_dock :: proc(ctx:^Context,node:^Node) {
         if dn.kind==.Split {
             split:=region.bounds
             if dn.direction==.Horizontal { split.x+=max(0,split.width-4)*dn.ratio; split.width=4 } else { split.y+=max(0,split.height-4)*dn.ratio; split.height=4 }
-            paint_rect(ctx,split,node.clip,ctx.theme.hover); continue
+            paint_rect(ctx,split,node.clip,ctx.theme.canvas); continue
         }
         paint_rect(ctx,region.tab_bar,node.clip,ctx.theme.panel)
         x:=region.tab_bar.x
         for tab in dn.tabs {
             label:=dock_label(node,tab); font,size:=node_font(ctx,node); width:=ctx.fonts.measure(ctx.fonts.state,font,label,size,0).x+2*ctx.theme.padding
-            rect:=Rect{x,region.tab_bar.y,width,region.tab_bar.height}; if tab==region.active { paint_rect(ctx,rect,node.clip,ctx.theme.active,ctx.theme.radius) }
-            paint_text(ctx,node,label,{x+ctx.theme.padding,rect.y+ctx.theme.padding},ctx.theme.text,node.clip); x+=width
+            rect:=Rect{x,region.tab_bar.y,width,region.tab_bar.height}
+            active:=tab==region.active
+            if active && len(dn.tabs)>1 { paint_rect(ctx,{rect.x+ctx.theme.padding,rect.y+rect.height-2,max(0,width-2*ctx.theme.padding),2},node.clip,ctx.theme.accent,1) }
+            paint_text(ctx,node,label,{x+ctx.theme.padding,rect.y+(rect.height-size)/2},ctx.theme.text if active else ctx.theme.muted,rect_intersection(node.clip,region.tab_bar)); x+=width
         }
     }
 }

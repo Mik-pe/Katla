@@ -4,9 +4,9 @@ package ui
 @(private="package")
 scrollbar :: proc(ctx:^Context,node:^Node,horizontal:bool)->(Rect,Rect,bool) {
     viewport:=rect_inset(node.bounds,1); track:=Rect{viewport.x+viewport.width-8,viewport.y,8,viewport.height}
-    extent:=node.content.height; visible:=viewport.height; offset:=node.scroll.y
-    if horizontal { track={viewport.x,viewport.y+viewport.height-8,viewport.width,8}; extent=node.content.width; visible=viewport.width; offset=node.scroll.x }
-    if extent<=visible || visible<=0 { return {},{},false }
+    extent:=node.content.height; visible:=node.bounds.height; offset:=node.scroll.y
+    if horizontal { track={viewport.x,viewport.y+viewport.height-8,viewport.width,8}; extent=node.content.width; visible=node.bounds.width; offset=node.scroll.x }
+    if extent<=visible+.5 || visible<=0 { return {},{},false }
     thumb_size:=max(16,visible*visible/extent); fraction:=clamp(offset/max(1,extent-visible),0,1); thumb:=track
     if horizontal { thumb.x+=fraction*max(0,visible-thumb_size); thumb.width=min(visible,thumb_size) } else { thumb.y+=fraction*max(0,visible-thumb_size); thumb.height=min(visible,thumb_size) }
     _=ctx; return track,thumb,true

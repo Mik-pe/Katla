@@ -46,7 +46,7 @@ font_scale = 2`,`theme = "unterminated`}) {
 test_preferences_actual_atomic_file_and_invalid_dock_preserves_previous_layout :: proc(t:^testing.T) {
     directory,error:=os.make_directory_temp("","katla-prefs-*",context.allocator); testing.expect(t,error==nil); if error!=nil { return }; defer { os.remove_all(directory); delete(directory) }
     store:Store; testing.expect_value(t,store_init(&store,directory),Error.None); defer store_destroy(&store)
-    defaults_value,missing_error:=load(&store); defer destroy(&defaults_value); testing.expect_value(t,missing_error,Error.IO); testing.expect_value(t,defaults_value.theme,"dark")
+    defaults_value,missing_error:=load(&store); defer destroy(&defaults_value); testing.expect_value(t,missing_error,Error.IO); testing.expect_value(t,defaults_value.theme,"rcp")
     value:=defaults(); defer destroy(&value); set_theme(&value,"dracula"); set_connection(&value,"/tmp/åäö \"quoted\" \\socket.sock","old\nthread\tID")
     value.editor={false,75,0.5}; value.audio={0.8,0.6,0.5,0.7}
     published,save_error:=save(&store,&value); testing.expect(t,published && save_error==.None)

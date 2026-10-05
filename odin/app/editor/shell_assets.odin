@@ -1,6 +1,8 @@
 //! Confined browser paths drive real selection, preview, insertion and confirmed file operations.
 package editor_app
 import assets "../assets"
+import icons "../../icons"
+import render "../render"
 import app ".."
 import ui "../../ui"
 import editor "../../editor"
@@ -19,28 +21,28 @@ shell_assets :: proc(shell:^Shell)->ui.Descriptor {
     if browser==nil { append(&children,text(50,"Asset roots are unavailable")) }
     else {
         root_key:=key(50,"root"); root_state:=ui.state(shell.ctx,root_key,0,f32(browser.root)); if shell.ctx.captured.key!=root_key { ui.state_set(shell.ctx,root_state,f32(browser.root)) }
-        append(&children,ui.Descriptor{key=root_key,kind=.Combo,options=ASSET_ROOT_OPTIONS[:],state=root_state,action=u64(Action.Asset_Root),layout={height=ui.pixels(30),width=ui.percent(1)}})
+        root_choice:=ui.Descriptor{key=root_key,kind=.Combo,options=ASSET_ROOT_OPTIONS[:],state=root_state,action=u64(Action.Asset_Root),layout={height=ui.pixels(30),width=ui.pixels(116)}}
         search_key:=key(50,"search")
         search:=ui.Descriptor{key=search_key,kind=.Text_Input,placeholder="Search assets",state=ui.state(shell.ctx,search_key,0,browser.search),action=u64(Action.Asset_Search),layout={height=ui.pixels(30),grow=1}}
-        tools:=nodes(shell,{button("Back",.Asset_Back,!assets.can_back(browser)),button("Forward",.Asset_Forward,!assets.can_forward(browser)),button("Parent",.Asset_Parent,browser.directory==""),button("Refresh",.Asset_Refresh),button("New Folder",.Asset_New_Folder),button("Delete",.Asset_Delete,len(browser.selected_paths)==0),search})
-        append(&children,ui.Descriptor{key=key(50,"tools"),kind=.Row,layout={gap={6,0},wrap=true},children=tools})
+        tools:=nodes(shell,{root_choice,icon_button("Back",.Asset_Back,icons.CHEVRON_LEFT,!assets.can_back(browser)),icon_button("Forward",.Asset_Forward,icons.CHEVRON_RIGHT,!assets.can_forward(browser)),icon_button("Parent",.Asset_Parent,icons.ARROW_UP,browser.directory==""),icon_button("Refresh",.Asset_Refresh,icons.REFRESH),icon_button("New Folder",.Asset_New_Folder,icons.FOLDER),icon_button("Delete",.Asset_Delete,icons.TRASH_ALT,len(browser.selected_paths)==0),search})
+        append(&children,ui.Descriptor{key=key(50,"tools"),kind=.Row,layout={gap={6,0},wrap=true,no_shrink=true},children=tools})
         append(&children,shell_asset_breadcrumbs(shell))
         entries:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(entries)
         for entry,i in browser.entries {
             selected:=false; for path in browser.selected_paths { if path==entry.path { selected=true; break } }
-            row:=ui.Descriptor{key=key(51,entry.path,u64(browser.root)),kind=.Selectable,draggable=entry.kind!=.Folder,text=entry.name,action=u64(Action.Asset_Select),payload=u64(i+1),selected=selected,layout={height=ui.pixels(30),width=ui.percent(1)}}
+            row:=ui.Descriptor{key=key(51,entry.path,u64(browser.root)),kind=.Selectable,draggable=entry.kind!=.Folder,text=entry.name,action=u64(Action.Asset_Select),payload=u64(i+1),selected=selected,icon=icons.FOLDER if entry.kind==.Folder else icons.FILE,icon_font=render.UI_FONT_ICONS,layout={height=ui.pixels(30),width=ui.percent(1)}}
             if entry.kind==.Image { row=shell_asset_image(shell,entry,row) }
             append(&entries,row)
         }
         list:=ui.Descriptor{key=key(50,"list"),kind=.Column,layout={width=ui.percent(1)},children=nodes(shell,entries[:])}
         append(&children,ui.Descriptor{key=key(50,"entries"),kind=.Scroll_Area,layout={grow=1,width=ui.percent(1)},children=nodes(shell,{list})})
-        append(&children,ui.Descriptor{key=key(50,"selected-tools"),kind=.Row,layout={gap={6,0},wrap=true},children=nodes(shell,{button("Open selected asset",.Asset_Open,browser.selected==""),button("Reveal in file manager",.Asset_Reveal,browser.selected=="")})})
+        append(&children,ui.Descriptor{key=key(50,"selected-tools"),kind=.Row,layout={gap={6,0},wrap=true,no_shrink=true},children=nodes(shell,{quiet_button("Open selected asset",.Asset_Open,browser.selected==""),quiet_button("Reveal in file manager",.Asset_Reveal,browser.selected=="")})})
     }
     return {key=key(50,"panel"),kind=.Column,layout={padding={8,8,8,8},gap={0,6}},children=nodes(shell,children[:])}
 }
 @(private="package")
 shell_asset_image :: proc(shell:^Shell,entry:assets.Entry,row:ui.Descriptor)->ui.Descriptor {
-    result:=row; result.text=""; result.layout.height=ui.pixels(68); result.layout.padding={6,8,6,8}
+    result:=row; result.text=""; result.icon=0; result.layout.height=ui.pixels(68); result.layout.padding={6,8,6,8}
     visual:=ui.Descriptor{key=key(55,entry.path,u64(shell.browser.root)),kind=.Text,text="Image",layout={width=ui.pixels(56),height=ui.pixels(56)},has_foreground=true,foreground=shell.ctx.theme.muted}
     if entry.thumbnail_texture!=0 && entry.thumbnail_width>0 && entry.thumbnail_height>0 {
         scale:=f32(56)/f32(max(entry.thumbnail_width,entry.thumbnail_height))
@@ -107,13 +109,13 @@ shell_asset_dialog :: proc(shell:^Shell,size:ui.Vec2)->ui.Descriptor {
 @(private="package")
 shell_asset_breadcrumbs :: proc(shell:^Shell)->ui.Descriptor {
     browser:=shell.browser; controls:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(controls)
-    root:=button("Resources" if browser.root==.Resource else "Project",.Asset_Breadcrumb,browser.directory==""); root.key=key(54,"root",u64(browser.root)); root.payload=0; append(&controls,root)
+    root:=quiet_button("Resources" if browser.root==.Resource else "Project",.Asset_Breadcrumb,browser.directory==""); root.key=key(54,"root",u64(browser.root)); root.payload=0; append(&controls,root)
     remaining:=browser.directory; length:=0; index:=0
     for segment in strings.split_iterator(&remaining,"/") {
         if segment=="" { break }; length+=len(segment); index+=1
-        control:=button(segment,.Asset_Breadcrumb,length==len(browser.directory)); control.key=key(54,browser.directory[:length],u64(browser.root)); control.payload=u64(index); append(&controls,control); length+=1
+        control:=quiet_button(segment,.Asset_Breadcrumb,length==len(browser.directory)); control.key=key(54,browser.directory[:length],u64(browser.root)); control.payload=u64(index); append(&controls,control); length+=1
     }
-    return {key=key(54,"breadcrumbs"),kind=.Row,layout={gap={4,0},wrap=true},children=nodes(shell,controls[:])}
+    return {key=key(54,"breadcrumbs"),kind=.Row,layout={gap={4,0},wrap=true,no_shrink=true},children=nodes(shell,controls[:])}
 }
 @(private="package")
 shell_asset_navigation_click :: proc(shell:^Shell,event:ui.Click_Action)->bool {

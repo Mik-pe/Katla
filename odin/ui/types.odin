@@ -23,10 +23,14 @@ Layout :: struct {
     columns:u32,cell_size:Vec2,
 }
 Theme :: struct { canvas,panel,control,hover,active,text,muted,disabled,accent,selection:Color,font:Font_Id,font_size,row_height,padding,radius:f32 }
+/// Quiet controls expose their surface on interaction; primary controls identify the region's main action.
+Button_Style :: enum { Standard,Quiet,Primary }
 /// Descriptor strings and children are borrowed only during frame reconciliation.
 Descriptor :: struct {
     key:u64,kind:Widget_Kind,layout:Layout,children:[]Descriptor,
-    text,placeholder:string,font:Font_Id,font_size:f32,
+    text,placeholder,shortcut:string,font:Font_Id,font_size:f32,
+    /// Icons use the consumer's matching font; text remains the control's descriptive label.
+    icon:rune,icon_font:Font_Id,button_style:Button_Style,
     /// Positive widths keep text on one shaped line and reveal overflow on hover.
     text_max_width:f32,
     state:State_Id,action,payload:u64,

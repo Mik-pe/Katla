@@ -15,7 +15,7 @@ overlay_screen_basis :: proc(frame:Frame_Data,point:km.Vec3,width,height:u32)->(
     inverse,ok:=km.inverse(frame.view_projection); if !ok { return {},{},false }
     clip:=km.matrix_vector(frame.view_projection,km.vec4(point,1)); if abs(clip[3])<1e-6 { return {},{},false }
     ndc:=clip/clip[3]
-    a:=km.matrix_vector(inverse,ndc); b:=km.matrix_vector(inverse,ndc+km.Vec4{2/f32(width),0,0,0}); c:=km.matrix_vector(inverse,ndc+km.Vec4{0,2/f32(height),0,0})
+    a:=km.matrix_vector(inverse,ndc); b:=km.matrix_vector(inverse,ndc+km.Vec4{2/f32(width),0,0,0}); c:=km.matrix_vector(inverse,ndc+km.Vec4{0,-2/f32(height),0,0})
     if abs(a[3])<1e-6 || abs(b[3])<1e-6 || abs(c[3])<1e-6 { return {},{},false }
     return km.xyz(b/b[3]-a/a[3]),km.xyz(c/c[3]-a/a[3]),true
 }

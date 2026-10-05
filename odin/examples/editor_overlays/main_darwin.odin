@@ -30,7 +30,7 @@ changed_pixels :: proc(a,b:^gfx.Readback_Data,threshold:int)->int {
 }
 spawn_mesh :: proc(owner:^app.Authoring,source:string,position:km.Vec3,color:km.Color)->ecs.Entity_Id {
     mesh,error:=app.scene_mesh_prepare(owner,{kind=.Geometry,geometry=transmute([]byte)source}); assert(error==.None)
-    return ecs.spawn(&owner.world,struct {transform:app.Scene_Transform,mesh:app.Scene_Mesh,material:app.Surface_Material}{{km.transform(position=position)},mesh,{color,true,0,0.7,1}})
+    return ecs.spawn(&owner.world,struct {transform:app.Scene_Transform,mesh:app.Scene_Mesh,material:app.Surface_Material}{{km.transform(position=position)},mesh,{linear_color=color,has_tint=true,metallic=0,roughness=0.7,ao=1}})
 }
 exercise :: proc(renderer:^$R,ops:render.GPU_Ops(R),overlay_ops:render.UI_GPU_Ops(R),captures:Capture(R),pipelines:render.Scene_Pipelines,backend:string,compiled:^render.Overlay_Shader,fonts:^render.UI_Font_System,pick_shader:^render.Picking_Shader,box_library:string) {
     owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner); assert(app.authoring_services_init(&owner)==.None)
@@ -139,6 +139,17 @@ exercise :: proc(renderer:^$R,ops:render.GPU_Ops(R),overlay_ops:render.UI_GPU_Op
                 words:=mem.slice_data_cast([]u32,identifiers.bytes); counts:[3]int
                 for word in words { assert(word==0 || word==2 || word==3 || word==4,"billboard encodedID lost exact per-entity map"); if word>0 { counts[word-2]+=1 } }
                 assert(counts[0]>20 && counts[1]>20 && counts[2]>20 && counts[0]+counts[1]+counts[2]<3000,"glyph alpha mask picking became full billboard quad or disappeared")
+                if i<2 {
+                top,bottom:=192,0
+                for word,pixel in words { if word==2 { top=min(top,pixel/256); bottom=max(bottom,pixel/256) } }
+                upper,lower:=0,0; third:=max(1,(bottom-top+1)/3)
+                for word,pixel in words { if word==2 {
+                    row:=pixel/256
+                    if row<top+third { upper+=1 }; if row>bottom-third { lower+=1 }
+                } }
+                fmt.println("Upright lightbulb pixels:",backend,i,upper,lower)
+                assert(upper>lower+10,"lightbulb must show its broad bulb above its narrow socket in native pixels")
+                }
                 hdr:=capture(&view,captures,submission,view.graph.color); defer gfx.readback_data_destroy(&hdr)
                 expected:=km.color_to_array(km.color_to_linear({.5,.25,.75,1})); matched:=0
                 for word,pixel in words { if word==authored_codes[i] {

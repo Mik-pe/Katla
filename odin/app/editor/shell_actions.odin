@@ -79,7 +79,7 @@ shell_actions :: proc(shell:^Shell) {
     for action in events {
         switch event in action {
         case ui.Click_Action: click(shell,event)
-        case ui.Expand_Action: if Action(event.action)==.Select { shell.state.expanded[ecs.Entity_Id(event.payload)]=event.expanded } else if Action(event.action)==.Material_Expand || Action(event.action)==.Material_Texture_Expand { ui.state_set(shell.ctx,{node=event.node,slot=0},event.expanded) }
+        case ui.Expand_Action: if Action(event.action)==.Select { shell.state.expanded[ecs.Entity_Id(event.payload)]=event.expanded } else if Action(event.action)==.Expand || Action(event.action)==.Material_Expand || Action(event.action)==.Material_Texture_Expand { ui.state_set(shell.ctx,{node=event.node,slot=0},event.expanded) }
         case ui.Text_Action:
             value:=ui.action_text(shell.ctx,event)
             if shell_script_text(shell,event,value) { continue }
@@ -143,6 +143,7 @@ shell_shortcut :: proc(shell:^Shell,event:ui.Key_Action) {
         case .S: action=.Save_As if shift else .Save
         case .O: action=.Open
         case .N: action=.New
+        case .Q: action=.Quit
         case .Z: action=.Redo if shift else .Undo
         case .Y: action=.Redo
         case .D: shell_selection_command(shell,.Duplicate)

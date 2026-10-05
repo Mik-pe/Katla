@@ -2,6 +2,10 @@
 package editor_app
 
 import ui "../../ui"
+import app ".."
+import ecs "../../ecs"
+import icons "../../icons"
+import "core:strings"
 import "core:encoding/json"
 import "core:strconv"
 import "core:fmt"
@@ -22,18 +26,32 @@ shell_field_label :: proc(shell:^Shell,component:string,field:^Inspector_Field)-
 @(private="package")
 shell_inspector :: proc(shell:^Shell,particle_only:bool=false,scope:u64=30)->ui.Descriptor {
     content:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(content)
-    if !shell.inspector.has_entity { append(&content,text(scope+0,"Select an entity to inspect its components")) }
+    if !shell.inspector.has_entity {
+        heading:=text(scope,"Nothing selected"); heading.font_size=14
+        detail:=text(scope,"Select an object in the scene or hierarchy to edit its properties."); detail.layout.height={}; detail.has_foreground=true; detail.foreground=shell.ctx.theme.muted
+        append(&content,ui.Descriptor{key=key(scope,"empty"),kind=.Column,layout={padding={24,4,0,4},gap={0,8}},children=nodes(shell,{heading,detail})})
+    } else {
+        name,present:=ecs.get_component(&shell.state.owner.world,shell.inspector.entity,app.Scene_Name)
+        title:=text(scope,"Selected object"); if present && name.name!="" { title.text=name.name }
+        title.key=key(scope,"selection-title"); title.font_size=16; title.text_max_width=max(1,shell_panel_width(shell)-24)
+        detail:=text(scope,"Object properties"); detail.key=key(scope,"selection-detail"); detail.has_foreground=true; detail.foreground=shell.ctx.theme.muted; detail.font_size=11
+        append(&content,title,detail)
+    }
     for &component,index in shell.inspector.components {
         if particle_only && component.name!="ParticleEmitter" { continue }
         if component.name=="MaterialTextures" { continue }
         if component.name=="Script" { append(&content,shell_script(shell)) }
         if component.name=="SurfaceMaterial" { append(&content,shell_material(shell),shell_material_textures(shell)); continue }
-        header:=text(scope+1,component.name); header.key=key(scope+1,component.name)
+        header_key:=key(scope+1,component.name)
+        expanded_state:=ui.state(shell.ctx,header_key,0,true); expanded,_:=ui.state_get(shell.ctx,expanded_state,bool)
+        header:=ui.Descriptor{key=header_key,kind=.Section,text=shell_component_label(shell,component.name),expanded=expanded,state=expanded_state,action=u64(Action.Expand),focusable=true,layout={height=ui.pixels(30),grow=1}}
         if component.removable {
-            remove:=button("Remove",.Remove_Component,shell.state.owner.mode!=.Editing); remove.key=key(scope+2,component.name); remove.payload=u64(index+1)
-            header={key=key(scope+3,component.name),kind=.Row,layout={gap={8,0},padding={16,0,0,0}},children=nodes(shell,{header,remove})}
-        }
+            remove:=icon_button("Remove component",.Remove_Component,icons.TRASH_ALT,shell.state.owner.mode!=.Editing); remove.key=key(scope+2,component.name); remove.payload=u64(index+1)
+            header={key=key(scope+3,component.name),kind=.Row,layout={gap={4,0},margin={12,0,0,0}},children=nodes(shell,{header,remove})}
+        } else { header.layout.margin.top=12 }
         append(&content,header)
+        if !expanded { continue }
+        fields:=make([dynamic]ui.Descriptor,shell.allocator)
         for &field in component.fields {
             append(&shell.bindings,Field_Binding{component=component.name,field=&field})
             field_key:=key(key(scope+4,component.name),field.path,u64(shell.inspector.entity))
@@ -49,7 +67,7 @@ shell_inspector :: proc(shell:^Shell,particle_only:bool=false,scope:u64=30)->ui.
                     if integer_valid { for variant,i in field.variant_values { if variant==integer { current=f32(i);break } } }
                     control.state=ui.state(shell.ctx,field_key,0,current)
                     if shell.ctx.focused.key!=field_key { ui.state_set(shell.ctx,control.state,current) }
-                    json.destroy_value(value);append(&content,control);continue
+                    json.destroy_value(value);append(&fields,control);continue
                 }
                 control.kind=.Drag_Value
                 control.minimum=-100000; control.maximum=100000; control.step=0.01
@@ -76,12 +94,51 @@ shell_inspector :: proc(shell:^Shell,particle_only:bool=false,scope:u64=30)->ui.
             case json.Object: control.kind=.Text; control.text=""
             }
             json.destroy_value(value)
-            append(&content,control)
+            append(&fields,control)
         }
+        if component.name=="SceneTransform" { append(&content,shell_transform_fields(shell,fields[:],scope)) }
+        else { append(&content,..fields[:]) }
+        delete(fields)
     }
     if shell.inspector.has_entity && len(shell.inspector.available)>0 && !particle_only {
         add_key:=key(scope+0,"add-component",u64(shell.inspector.entity))
-        append(&content,ui.Descriptor{key=add_key,kind=.Combo,text="Add component",action=u64(Action.Add_Component),options=shell.inspector.available[:],state=ui.state(shell.ctx,add_key,0,f32(-1)),disabled=shell.state.owner.mode!=.Editing,layout={height=ui.pixels(30),width=ui.percent(1)}})
+        append(&content,ui.Descriptor{key=add_key,kind=.Combo,text="Add component…",action=u64(Action.Add_Component),options=shell.inspector.available[:],state=ui.state(shell.ctx,add_key,0,f32(-1)),disabled=shell.state.owner.mode!=.Editing,layout={height=ui.pixels(30),width=ui.percent(1),margin={16,0,0,0}}})
     }
     return {key=key(scope+0,"panel"),kind=.Scroll_Area,children=nodes(shell,{ui.Descriptor{key=key(scope+0,"content"),kind=.Column,layout={padding={12,12,12,12},gap={0,6},width=ui.percent(1)},children=nodes(shell,content[:])}})}
+}
+
+@(private="package")
+shell_component_label :: proc(shell:^Shell,name:string)->string {
+    switch name {
+    case "SceneTransform":return "Transform"
+    case "SceneName":return "Identity"
+    case "SceneMesh":return "Geometry"
+    case "SceneModel":return "Model"
+    case:
+    }
+    bytes:=make([dynamic]byte,shell.allocator); defer delete(bytes)
+    for byte,index in transmute([]byte)name {
+        if byte=='_' { append(&bytes,u8(' ')); continue }
+        if index>0 && byte>='A' && byte<='Z' && name[index-1]>='a' && name[index-1]<='z' { append(&bytes,u8(' ')) }
+        append(&bytes,byte)
+    }
+    label:=strings.clone(string(bytes[:]),shell.allocator); append(&shell.texts,label); return label
+}
+@(private="package")
+shell_transform_fields :: proc(shell:^Shell,fields:[]ui.Descriptor,scope:u64)->ui.Descriptor {
+    groups:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(groups)
+    for name in ([3]string{"Position","Rotation quaternion","Scale"}) {
+        axes:=make([dynamic]ui.Descriptor,shell.allocator)
+        for field in fields {
+            if !strings.has_prefix(field.text,name) { continue }
+            axis:=field; axis.text=field.text[len(field.text)-1:]; axis.layout.width=ui.percent(1); axis.layout.grow=1
+            append(&axes,axis)
+        }
+        if len(axes)==0 { delete(axes); continue }
+        for &axis in axes { axis.layout.width=ui.pixels(max(1,(shell_panel_width(shell)-24-4*f32(len(axes)-1))/f32(len(axes)))); axis.layout.grow=0 }
+        label:=text(scope,name); label.key=key(scope,"transform-label",key(scope,name)); label.has_foreground=true; label.foreground=shell.ctx.theme.muted; label.font_size=11; label.layout.height=ui.pixels(18)
+        row:=ui.Descriptor{key=key(scope,"transform-row",key(scope,name)),kind=.Row,layout={gap={4,0},height=ui.pixels(30),width=ui.percent(1)},children=nodes(shell,axes[:])}
+        append(&groups,label,row); delete(axes)
+    }
+    return {key=key(scope,"transform-fields"),kind=.Column,layout={width=ui.percent(1),gap={0,4}},children=nodes(shell,groups[:])}
 }

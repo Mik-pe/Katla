@@ -49,6 +49,8 @@ measure_node :: proc(ctx:^Context,node:^Node,available:Vec2,constrain_self:bool=
         wrap:f32=0; if s.width.kind!=.Auto || d.multiline || d.kind==.Text { wrap=inside.x }
         if d.text_max_width>0 { wrap=0 }
         intrinsic=ctx.fonts.measure(ctx.fonts.state,font,node_text(ctx,node),size,wrap)
+        if d.kind==.Icon_Button { intrinsic={size,size} }
+        else if d.icon!=0 { intrinsic.x+=size+6 }
         if d.text_max_width>0 { intrinsic.x=min(intrinsic.x,d.text_max_width); intrinsic.y=size }
         #partial switch d.kind {
         case .Button,.Icon_Button,.Menu_Item,.Text_Input,.Code_Editor,.Numeric_Input,.Checkbox,.Combo,.Tree_Row,.Selectable,.Slider,.Drag_Value,.Tabs:

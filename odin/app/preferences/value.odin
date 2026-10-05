@@ -19,7 +19,7 @@ Value :: struct {
 Error :: enum { None,Invalid_TOML,Invalid_Value,IO,Invalid_Path }
 /// Returns owned default settings, independent of a scene or renderer.
 defaults :: proc(allocator:=context.allocator)->Value {
-    return {theme=strings.clone("dark",allocator),show_grid=true,show_stats=true,font_scale=1,editor={true,50,1},audio={1,1,1,1},allocator=allocator}
+    return {theme=strings.clone("rcp",allocator),show_grid=true,show_stats=false,font_scale=1,editor={true,50,1},audio={1,1,1,1},allocator=allocator}
 }
 /// Releases every preference-owned string.
 destroy :: proc(value:^Value) {

@@ -4,7 +4,7 @@ import "core:mem"
 
 /// Dark editor tokens are display colors; renderers preserve the declared UI color convention.
 theme_default :: proc(font:Font_Id=1)->Theme {
-    return {canvas={0.11,0.11,0.12,1},panel={0.15,0.15,0.16,1},control={0.18,0.18,0.19,1},hover={0.23,0.23,0.24,1},active={0.28,0.28,0.29,1},text={1,1,1,1},muted={0.56,0.56,0.58,1},disabled={0.43,0.43,0.45,1},accent={0.97,0.58,0.27,1},selection={0.35,0.78,0.98,1},font=font,font_size=12,row_height=30,padding=6,radius=6}
+    return {canvas={0.10,0.10,0.11,1},panel={0.145,0.145,0.155,1},control={0.19,0.19,0.205,1},hover={0.24,0.24,0.255,1},active={0.29,0.29,0.305,1},text={0.94,0.94,0.96,1},muted={0.66,0.66,0.69,1},disabled={0.43,0.43,0.45,1},accent={0.97,0.58,0.27,1},selection={0.35,0.78,0.98,1},font=font,font_size=12,row_height=30,padding=8,radius=6}
 }
 /// Font services must describe real shaped text; a missing provider never invents glyph metrics.
 context_init :: proc(ctx:^Context,fonts:Font_Provider,theme:Theme={},allocator:mem.Allocator=context.allocator)->Frame_Error {

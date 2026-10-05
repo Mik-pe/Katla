@@ -5,7 +5,7 @@ import "core:strings"
 
 @(private="package")
 descriptor_destroy :: proc(descriptor:^Descriptor,allocator:mem.Allocator) {
-    delete(descriptor.text,allocator); delete(descriptor.placeholder,allocator)
+    delete(descriptor.text,allocator); delete(descriptor.placeholder,allocator); delete(descriptor.shortcut,allocator)
     for option in descriptor.options { delete(option,allocator) }; delete(descriptor.options,allocator)
     for tab in descriptor.dock_tabs { delete(tab.label,allocator) }; delete(descriptor.dock_tabs,allocator)
     delete(descriptor.syntax,allocator)
@@ -15,6 +15,7 @@ descriptor_destroy :: proc(descriptor:^Descriptor,allocator:mem.Allocator) {
 descriptor_clone :: proc(source:Descriptor,allocator:mem.Allocator)->Descriptor {
     result:=source; result.children=nil
     result.text=strings.clone(source.text,allocator); result.placeholder=strings.clone(source.placeholder,allocator)
+    result.shortcut=strings.clone(source.shortcut,allocator)
     result.options=make([]string,len(source.options),allocator)
     for option,i in source.options { result.options[i]=strings.clone(option,allocator) }
     result.syntax=make([]Text_Run,len(source.syntax),allocator); copy(result.syntax,source.syntax)
@@ -25,6 +26,7 @@ descriptor_clone :: proc(source:Descriptor,allocator:mem.Allocator)->Descriptor 
 @(private="package")
 descriptor_validate :: proc(ctx:^Context,descriptor:Descriptor,keys:^map[u64]bool,depth:int)->Frame_Error {
     if int(descriptor.kind)<0 || int(descriptor.kind)>int(Widget_Kind.Timeline) || int(descriptor.layer)<0 || int(descriptor.layer)>int(Layer.Tooltip) { return .Invalid_Descriptor }
+    if int(descriptor.button_style)<0 || int(descriptor.button_style)>int(Button_Style.Primary) || (descriptor.icon!=0 && descriptor.icon_font==0) { return .Invalid_Descriptor }
     for color in ([]Color{descriptor.background,descriptor.foreground}) { for value in color { if !finite(value) { return .Invalid_Descriptor } } }
     if depth>128 || len(keys^)>65536 || descriptor.key==0 { return .Invalid_Descriptor }
     if keys^[descriptor.key] { return .Duplicate_Key }; keys^[descriptor.key]=true

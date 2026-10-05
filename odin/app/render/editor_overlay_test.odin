@@ -6,6 +6,7 @@ import app ".."
 import ecs "../../ecs"
 import km "../../math"
 import "core:testing"
+import "core:fmt"
 
 @(test)
 test_overlay_gizmo_modes_keep_screen_size_and_exact_triangle_hit :: proc(t:^testing.T) {
@@ -81,4 +82,23 @@ test_overlay_authored_billboard_tint_size_and_invalid_descriptor :: proc(t:^test
     ecs.get_component_mut(&owner.world,entity,app.Scene_Billboard).size=0
     rejected,reject_error:=overlay_mesh_prepare(&owner,{billboards=true},frame,640,480)
     testing.expect(t,reject_error!=.None && len(rejected.vertices)==0 && len(rejected.triangles)==0,"invalid descriptor returned partial geometry")
+}
+
+@(test)
+test_overlay_billboard_texture_top_stays_above_bottom :: proc(t:^testing.T) {
+    owner:app.Authoring; app.authoring_init(&owner); defer app.authoring_destroy(&owner)
+    _=ecs.spawn(&owner.world,struct {transform:app.Scene_Transform,light:app.Scene_Point_Light}{{km.transform()},app.point_light_default()})
+    for position in ([3]km.Vec3{{0,0,5},{4,3,5},{0,5,.01}}) {
+        camera:=camera_default(); camera.position=position; camera.target={0,0,0}
+        for clip_y_down in ([2]bool{false,true}) {
+            frame,error:=frame_data(camera,640,480,clip_y_down); testing.expect_value(t,error,Scene_Error.None)
+            mesh,mesh_error:=overlay_mesh_prepare(&owner,{billboards=true},frame,640,480); testing.expect(t,mesh_error==.None); defer overlay_mesh_destroy(&mesh)
+            for vertex in mesh.vertices {
+                clip:=km.matrix_vector(frame.view_projection,vertex.position)
+                native_y:=clip[1]/clip[3]*frame.ambient[3]
+                screen_y:=(native_y+1)*240 if clip_y_down else (1-native_y)*240
+                testing.expect(t,abs(screen_y-(220+vertex.uv[1]*40))<.05,fmt.tprintf("glyph rows must increase from top to bottom: y=%g v=%g camera=%v",screen_y,vertex.uv[1],position))
+            }
+        }
+    }
 }

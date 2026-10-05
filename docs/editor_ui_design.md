@@ -10,7 +10,7 @@ Two accent colors used in ~3% of pixel area. Most of the UI is neutral dark. Pre
 - **Base**: Neutral dark `#1E1E1E`–`#2A2A2A`, very slightly cool
 - **Primary accent**: Orange `#F79545` — for add actions, active elements, CTAs
 - **Secondary accent**: Cyan `#5AC8FA` — for 3D selection gizmos, live/active states
-- **Text**: White `#FFFFFF` (values), `#8E8E93` (labels), `#6E6E72` (disabled)
+- **Text**: White `#FFFFFF` (values), `#A8A8B0` (labels), `#6E6E72` (disabled)
 
 ### 2. Generous Spacing
 - Inspector rows: ~28-32px height
@@ -34,7 +34,7 @@ Two accent colors used in ~3% of pixel area. Most of the UI is neutral dark. Pre
 ### 5. Typography
 - Font: Roboto (Katla's current font) at SF Pro quality
 - Section headers: 12-13px, semibold, white, with disclosure chevron
-- Field labels: 11px, regular, `#8E8E93` muted
+- Field labels: 11px, regular, `#A8A8B0` muted
 - Field values: 11px, regular, white, tabular/monospace figures
 - Unit suffixes: 10px, `#6E6E72`, dimmer than values
 
@@ -72,6 +72,39 @@ The reference uses SF Pro, green selection and blue secondary controls. Katla's
 chosen identity uses Roboto, orange actions and cyan selection. Reference details
 include 4pt spacing increments, 6px field gaps, 12px panel padding and 6–10px corner
 radii. Borders should be subtle rather than form a grid around every control.
+
+## Workspace chrome
+
+The default workspace opens Assets in the bottom dock, with Console and Mixer
+available as sibling tabs. The bottom dock occupies 26% of the central stack;
+the viewport receives 74%. Existing saved dock layouts retain their chosen tabs
+and split ratios. Hierarchy and Inspector remain independent side docks.
+
+File, Edit and View use quiet text controls in a compact top toolbar. Undo/Redo
+and Play/Pause/Stop use the existing ForkAwesome icon catalogue and its native
+font, with descriptive hover tips and retained keyboard focus. File/Edit menus
+show the actual platform shortcuts. Menu items use 28px rows, tonal hover fills
+and separators; long menus scroll inside the window. The top toolbar hides
+history controls in narrow windows, where Undo/Redo remain in Edit.
+
+Standard buttons, quiet toolbar controls and the region's primary action have
+distinct semantic styles. Hierarchy and asset selection use restrained cyan
+fills. Single-panel dock headers stay plain; multi-tab docks indicate their
+active tab with a small orange underline. Splitter gaps use the canvas tone.
+Scrollbars appear only when content extends past the actual viewport.
+
+The default appearance is the neutral `rcp` theme, with frame statistics off;
+existing preferences retain their chosen theme and diagnostics. The `dark`
+preset uses the same neutral editor palette. Primary text is `#F0F0F5`, secondary
+text `#A8A8B0`; panel, control and hover surfaces are `#252528`, `#303034` and
+`#3D3D41`. Orange identifies actions, cyan identifies scene selection.
+
+Inspector starts with the selected object's name, then collapsible named
+component sections. Transform groups position and scale into X/Y/Z rows;
+rotation preserves explicit X/Y/Z/W quaternion semantics. Numeric values align
+opposite their labels and keep captured drags and shared Undo/Redo. Component
+removal uses a labelled icon control. Empty selection provides a short
+instruction rather than a raw technical message.
 
 ## Responsive panel layout
 

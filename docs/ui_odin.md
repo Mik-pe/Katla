@@ -168,3 +168,17 @@ Numeric text commits quantize in double precision. A minimum outside the
 representable step grid uses a zero anchor, so full-range finite controls retain
 small signed values rather than overflowing during quantization. Ordinary bounded
 controls keep their declared minimum as the step origin.
+
+## Control presentation
+
+`Descriptor.button_style` selects standard, quiet or primary button treatment.
+Quiet controls reveal their surface on hover, capture or selection. Primary
+controls use the accent with a contrasting canvas foreground. `icon` and
+`icon_font` use a consumer-supplied matching font; Icon_Button preserves `text`
+as its descriptive hover label without painting that label in the control.
+Icon identities do not use the regular text face. Optional `shortcut` text is
+owned through reconciliation and painted at the trailing edge of menu items.
+Invalid styles and icons without an explicit font are rejected before mounting.
+
+Scrollbars compare content extent with the full scroll viewport. The inset
+used to draw the track cannot create false overflow for full-width content.

@@ -7,8 +7,8 @@ import prefs "../preferences"
 import app ".."
 import render "../render"
 import ui "../../ui"
-import editor "../../editor"
 import ecs "../../ecs"
+import icons "../../icons"
 import "core:mem"
 
 Action :: enum u64 {
@@ -67,10 +67,13 @@ shell_init :: proc(shell:^Shell,state:^State,ctx:^ui.Context,document:^doc.State
     error=ui.dock_apply(&shell.dock,{kind=.Move,source=center,target=center,tab=ui.Tab_Id(Panel.Assets),zone=.Bottom})
     if error!=.None { return error }
     bottom:=dock_leaf(shell,.Assets)
-    for tab in ([2]Panel{.Console,.Mixer}) { source:=dock_leaf(shell,tab); error=ui.dock_apply(&shell.dock,{kind=.Move,source=source,target=bottom,tab=ui.Tab_Id(tab),zone=.Center}); if error!=.None { return error } }
+    for tab in ([2]Panel{.Console,.Mixer}) { source:=dock_leaf(shell,tab); error=ui.dock_apply(&shell.dock,{kind=.Move,source=source,target=bottom,tab=ui.Tab_Id(tab),zone=.Center,index=3}); if error!=.None { return error } }
     // Ratios are local to their splits: left hierarchy, dominant viewport, right inspector.
     root_node:=shell.dock.nodes[shell.dock.root]; root_node.ratio=0.77
     left:=shell.dock.nodes[root_node.children[0]]; left.ratio=0.21
+    center_node:=shell.dock.nodes[left.children[1]]; center_node.ratio=.74
+    error=ui.dock_apply(&shell.dock,{kind=.Activate,source=bottom,tab=ui.Tab_Id(Panel.Assets)})
+    if error!=.None { return error }
     return .None
 }
 @(private="package")
@@ -100,12 +103,12 @@ shell_build :: proc(shell:^Shell,size:ui.Vec2)->ui.Descriptor {
     if inspector.has_entity { info,info_error:=app.material_inspector_read(shell.state.owner,inspector.entity);if info_error==.None {shell.material_info=info;shell.material_info_ready=true} }
     toolbar:=shell_toolbar(shell,size)
     scale:=shell_scale(shell)
-    dock_bounds:=ui.Rect{0,40*scale,size[0],max(0,size[1]-64*scale)}
-    bounds:=ui.dock_bounds(&shell.dock,dock_bounds,allocator=shell.allocator); defer delete(bounds,shell.allocator)
+    dock_bounds:=ui.Rect{6*scale,48*scale,max(0,size[0]-12*scale),max(0,size[1]-72*scale)}
+    bounds:=ui.dock_bounds(&shell.dock,dock_bounds,tab_height=shell.ctx.theme.row_height,allocator=shell.allocator); defer delete(bounds,shell.allocator)
     dock:=shell_dock_descriptor(shell,bounds,0,dock_bounds)
     for tab in shell.tabs { if !panel_active(bounds,tab.tab) { ui.retain(shell.ctx,panel_key(Panel(tab.tab))) } }
     status:="Editing"; if shell.state.owner.mode==.Playing { status="Playing" } else if shell.state.owner.mode==.Paused { status="Paused" }
-    label:=text(3,shell_status(shell,status)); label.has_fixed_bounds=true; label.fixed_bounds={8,max(0,size[1]-22*scale),size[0]-16,22*scale}
+    label:=text(3,shell_status(shell,status)); label.has_foreground=true; label.foreground=shell.ctx.theme.muted; label.font_size=11; label.has_fixed_bounds=true; label.fixed_bounds={12*scale,max(0,size[1]-18*scale),max(0,size[0]-24*scale),18*scale}
     children:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(children); append(&children,toolbar,dock,label)
     for floating in shell.dock.floating { append(&children,shell_dock_descriptor(shell,bounds,floating.root,floating.bounds)) }
     if shell.code.dialog!=.None { append(&children,shell_code_dialog(shell,size)) }
@@ -143,63 +146,22 @@ shell_dock_descriptor :: proc(shell:^Shell,bounds:[]ui.Dock_Bounds,root:ui.Dock_
 @(private="package")
 shell_panel_width :: proc(shell:^Shell)->f32 { return max(1,(shell.panel_size.x if shell.panel_size.x>0 else shell.ctx.logical_size.x if shell.ctx.logical_size.x>0 else 400)/shell_scale(shell)) }
 @(private="package")
-shell_toolbar :: proc(shell:^Shell,size:ui.Vec2)->ui.Descriptor {
-    owner:=shell.state.owner
-    title:="Katla"
-    if shell.document!=nil { title=doc.title(shell.document); append(&shell.texts,title) }
-    controls:=nodes(shell,{
-        button("File",.Menu_File),button("Edit",.Menu_Edit),button("View",.Menu_View),
-        button("Undo",.Undo,owner.mode!=.Editing || !editor.agent_can_undo(&owner.agent.session)),
-        button("Redo",.Redo,owner.mode!=.Editing || !editor.agent_can_redo(&owner.agent.session)),
-        button("Play",.Play,owner.mode!=.Editing),button("Resume" if owner.mode==.Paused else "Pause",.Pause,owner.mode==.Editing),button("Stop",.Stop,owner.mode==.Editing),
-        ui.Descriptor{key=key(1,"title"),kind=.Text,text=title,layout={grow=1,align=.End}},
-    })
-    scale:=shell_scale(shell);used:f32=16
-    for control in controls[:len(controls)-1] { used+=shell.ctx.fonts.measure(shell.ctx.fonts.state,shell.ctx.theme.font,control.text,shell.ctx.theme.font_size,0).x/scale+16+6 }
-    available:=max(0,size[0]/scale-used)
-    controls[len(controls)-1].hidden=available<32;controls[len(controls)-1].text_max_width=max(1,available)
-    return {key=key(1,"toolbar"),kind=.Row,has_fixed_bounds=true,fixed_bounds={8,4,max(0,size[0]-16),32*scale},layout={gap={6,0},align=.Center},children=controls}
-}
-@(private="package")
-shell_menu :: proc(shell:^Shell)->ui.Descriptor {
-    items:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(items)
-    x:f32=8
-    #partial switch shell.menu {
-    case .Menu_File:
-        for item in ([]struct{name:string,action:Action}{{"New Scene",.New},{"Open Scene…",.Open},{"Save",.Save},{"Save As…",.Save_As},{"Quit",.Quit}}) { append(&items,button(item.name,item.action,shell.state.owner.mode!=.Editing)) }
-    case .Menu_Edit:
-        x=64; append(&items,button("Undo",.Undo,!editor.agent_can_undo(&shell.state.owner.agent.session)),button("Redo",.Redo,!editor.agent_can_redo(&shell.state.owner.agent.session)))
-    case .Menu_Create:
-        x=8
-        for name,i in ([6]string{"Cube","Sphere","Plane","Cylinder","Cone","Torus"}) { item:=button(name,.Create_Primitive); item.payload=u64(i); append(&items,item) }
-    case .Menu_Hierarchy:
-        x=clamp(shell.ctx.pointer[0],0,max(0,shell.ctx.logical_size[0]-220))
-        append(&items,button("Duplicate",.Duplicate_Entity),button("Delete",.Delete_Entity))
-    case .Menu_View:
-        x=120
-        labels:=[4]string{"Single","Two columns","Two rows","Four views"}
-        for label,index in labels { item:=button(label,.Layout); item.payload=u64(index); item.key=key(4,label); append(&items,item) }
-        for tab in shell.tabs { item:=button(tab.label,.Panel_Open); item.payload=u64(tab.tab); append(&items,item) }
-    case:
-    }
-    for &item in items { item.key=key(4,item.text,u64(item.action)) }
-    list:=ui.Descriptor{key=key(1,"menu-items"),kind=.Column,layout={width=ui.percent(1),gap={0,4},padding={6,6,6,6}},children=nodes(shell,items[:])}
-    return {key=key(1,"menu"),kind=.Context_Menu,action=u64(shell.menu),layer=.Popup,has_fixed_bounds=true,fixed_bounds={x,38,220,f32(len(items))*34+12},children=nodes(shell,{list})}
-}
-@(private="package")
 shell_hierarchy :: proc(shell:^Shell)->ui.Descriptor {
     search_key:=key(10,"search")
     search:=ui.Descriptor{key=search_key,kind=.Text_Input,placeholder="Search entities",state=ui.state(shell.ctx,search_key,0,shell.state.search),action=u64(Action.Search),layout={height=ui.pixels(30),width=ui.percent(1)}}
     rows:=make([]ui.Descriptor,len(shell.state.rows),shell.allocator); defer delete(rows,shell.allocator)
     for row,i in shell.state.rows {
-        rows[i]={key=key(10,"entity",u64(row.entity)),kind=.Tree_Row,draggable=true,text=row.name,action=u64(Action.Select),payload=u64(row.entity),selected=row.selected,expanded=row.expanded,has_children=row.has_children,layout={height=ui.pixels(30),width=ui.percent(1),padding={0,0,0,f32(row.depth)*14}}}
+        glyph:=icons.CUBE
+        if ecs.get_component_mut(&shell.state.owner.world,row.entity,app.Scene_Point_Light)!=nil || ecs.get_component_mut(&shell.state.owner.world,row.entity,app.Scene_Directional_Light)!=nil { glyph=icons.LIGHTBULB }
+        else if ecs.get_component_mut(&shell.state.owner.world,row.entity,app.Particle_Emitter)!=nil { glyph=icons.MAGIC }
+        rows[i]={key=key(10,"entity",u64(row.entity)),kind=.Tree_Row,draggable=true,text=row.name,icon=glyph,icon_font=render.UI_FONT_ICONS,action=u64(Action.Select),payload=u64(row.entity),selected=row.selected,expanded=row.expanded,has_children=row.has_children,layout={height=ui.pixels(28),width=ui.percent(1),padding={0,0,0,f32(row.depth)*14}}}
     }
     scroll:=ui.Descriptor{key=key(10,"rows"),kind=.Scroll_Area,layout={grow=1,width=ui.percent(1)},children=nodes(shell,{ui.Descriptor{key=key(10,"list"),kind=.Column,layout={width=ui.percent(1)},children=nodes(shell,rows)}})}
-    return {key=key(10,"panel"),kind=.Column,layout={padding={8,8,8,8},gap={0,8}},children=nodes(shell,{ui.Descriptor{key=key(10,"tools"),kind=.Row,layout={gap={6,0}},children=nodes(shell,{button("Create",.Menu_Create,shell.state.owner.mode!=.Editing),button("Duplicate",.Duplicate_Entity,!shell.state.selection.has_primary || shell.state.owner.mode!=.Editing),button("Delete",.Delete_Entity,!shell.state.selection.has_primary || shell.state.owner.mode!=.Editing)})},search,scroll})}
+    return {key=key(10,"panel"),kind=.Column,layout={padding={8,8,8,8},gap={0,8}},children=nodes(shell,{ui.Descriptor{key=key(10,"tools"),kind=.Row,layout={gap={4,0}},children=nodes(shell,{icon_button("Create",.Menu_Create,icons.PLUS,shell.state.owner.mode!=.Editing),icon_button("Duplicate",.Duplicate_Entity,icons.COPY,!shell.state.selection.has_primary || shell.state.owner.mode!=.Editing),icon_button("Delete",.Delete_Entity,icons.TRASH_ALT,!shell.state.selection.has_primary || shell.state.owner.mode!=.Editing)})},search,scroll})}
 }
 @(private="package")
 shell_viewports :: proc(shell:^Shell,bounds:ui.Rect)->ui.Descriptor {
-    toolbar_height:=34*shell_scale(shell)
+    toolbar_height:=40*shell_scale(shell)
     viewport_grid_layout(&shell.viewports,{bounds.x,bounds.y+toolbar_height,bounds.width,max(0,bounds.height-toolbar_height)})
     children:=make([]ui.Descriptor,viewport_count(shell.viewports.layout),shell.allocator); defer delete(children,shell.allocator)
     for &slot,index in shell.viewports.slots[:len(children)] {
@@ -207,9 +169,11 @@ shell_viewports :: proc(shell:^Shell,bounds:ui.Rect)->ui.Descriptor {
     }
     panels:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(panels); append(&panels,..children)
     tools:=make([dynamic]ui.Descriptor,shell.allocator); defer delete(tools)
-    for label,index in ([3]string{"Move (W)","Rotate (E)","Scale (R)"}) { control:=button(label,.Gizmo_Mode,shell.state.owner.mode!=.Editing); control.key=key(21,label); control.payload=u64(index); control.has_background=true; control.background=shell.ctx.theme.active if render.Overlay_Mode(index)==shell.gizmo_mode else shell.ctx.theme.control; append(&tools,control) }
-    append(&tools,button("Local" if shell.gizmo_local else "World",.Gizmo_Space),button("Snap on" if shell.preferences!=nil && shell.preferences.editor.snap_to_grid else "Snap off",.Gizmo_Snap))
-    append(&panels,ui.Descriptor{key=key(21,"tools"),kind=.Row,has_fixed_bounds=true,fixed_bounds={bounds.x+4,bounds.y+2,max(0,bounds.width-8),30*shell_scale(shell)},layout={gap={4,0}},children=nodes(shell,tools[:])})
+    for label,index in ([3]string{"Move (W)","Rotate (E)","Scale (R)"}) { glyphs:=[3]rune{icons.CROSSHAIRS,icons.REFRESH,icons.EXPAND}; control:=icon_button(label,.Gizmo_Mode,glyphs[index],shell.state.owner.mode!=.Editing); control.key=key(21,label); control.payload=u64(index); control.selected=render.Overlay_Mode(index)==shell.gizmo_mode; append(&tools,control) }
+    space:=quiet_button("Local" if shell.gizmo_local else "World",.Gizmo_Space); space.layout.margin.left=8
+    snap:=quiet_button("Snap",.Gizmo_Snap); snap.selected=shell.preferences!=nil && shell.preferences.editor.snap_to_grid
+    append(&tools,space,snap)
+    append(&panels,ui.Descriptor{key=key(21,"tools"),kind=.Row,has_fixed_bounds=true,fixed_bounds={bounds.x+8*shell_scale(shell),bounds.y+4*shell_scale(shell),max(0,bounds.width-16*shell_scale(shell)),30*shell_scale(shell)},layout={gap={4,0}},children=nodes(shell,tools[:])})
     return {key=key(20,"panel"),kind=.Stack,children=nodes(shell,panels[:])}
 }
 
