@@ -3,7 +3,6 @@ package render
 
 import app ".."
 import resources "../../resources"
-import image "../../deps/stb_image"
 import "core:testing"
 import "core:mem"
 import "core:hash"
@@ -19,7 +18,6 @@ TEXTURE_TEST_RESOURCE_ROOT :: #config(TEXTURE_IMAGE_RESOURCE_ROOT,"resources")
 test_texture_image_rgba_orientation_alpha_and_allocator_ownership :: proc(t:^testing.T) {
     backing:=context.allocator; tracker:mem.Tracking_Allocator; mem.tracking_allocator_init(&tracker,backing); defer mem.tracking_allocator_destroy(&tracker)
     captured:=mem.tracking_allocator(&tracker)
-    image.set_flip_vertically_on_load_thread(true)
     decoded,error:=texture_image_decode(TEXTURE_TEST_RGBA,captured)
     testing.expect_value(t,error,Texture_Image_Error.None)
     testing.expect(t,decoded.width==2 && decoded.height==2 && len(decoded.pixels)==16)
@@ -105,20 +103,19 @@ test_texture_image_actual_gltf_embedded_png_and_jpeg :: proc(t:^testing.T) {
     testing.expect(t,len(tracker.allocation_map)==0 && len(tracker.bad_free_array)==0)
 }
 @(private="package")
-Texture_Thread_Test :: struct { success:bool, flip:bool }
+Texture_Thread_Test :: struct { success:bool }
 @(private="package")
 texture_test_worker :: proc(worker:^thread.Thread) {
     state:=cast(^Texture_Thread_Test)worker.data; state.success=true
     for _ in 0..<64 {
-        image.set_flip_vertically_on_load_thread(b32(state.flip))
         decoded,error:=texture_image_decode(TEXTURE_TEST_RGBA)
         state.success=state.success && error==.None && len(decoded.pixels)==16 && decoded.pixels[0]==255 && decoded.pixels[8]==0 && decoded.pixels[10]==255
         texture_image_destroy(&decoded)
     }
 }
 @(test)
-test_texture_image_parallel_orientation_is_thread_local :: proc(t:^testing.T) {
-    states:=[2]Texture_Thread_Test{{flip=true},{flip=false}}; workers:[2]^thread.Thread
+test_texture_image_parallel_orientation_is_consistent :: proc(t:^testing.T) {
+    states:[2]Texture_Thread_Test; workers:[2]^thread.Thread
     for &state,i in states { workers[i]=thread.create(texture_test_worker); workers[i].data=&state; thread.start(workers[i]) }
     for worker,i in workers { thread.join(worker); thread.destroy(worker); testing.expect(t,states[i].success) }
 }

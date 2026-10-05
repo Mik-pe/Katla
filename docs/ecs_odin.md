@@ -186,7 +186,7 @@ operations and respect these rules:
 ```sh
 odin test odin/ecs -vet -strict-style -define:ODIN_TEST_THREADS=1 -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
 odin test odin/editor -vet -strict-style -define:ODIN_TEST_THREADS=1 -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
-python3 scripts/build_katla_odin.py --sanitize --tests
+odin run tools/build -- --sanitize --tests
 ```
 
 Actual application tests cover shared history, generational remapping, failed

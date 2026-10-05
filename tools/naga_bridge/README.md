@@ -9,7 +9,7 @@ Build reproducibly with the helper's lockfile and an independent target director
 
 ```sh
 cargo build --locked --manifest-path tools/naga_bridge/Cargo.toml --target-dir target/odin-naga-compiler
-python3 scripts/validate_odin_shader.py --sanitize
+odin run tools/build -- validate shader --sanitize
 ```
 
 The build produces `katla-shader-compiler` (`.exe` on Windows) under the target

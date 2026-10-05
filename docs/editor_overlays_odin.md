@@ -20,7 +20,6 @@ Build with the explicit source-built image library when selecting ASan dependenc
 
 ```sh
 odin build odin/examples/editor_overlays -vet -strict-style -sanitize:address \
-  -define:STB_IMAGE_LIBRARY=../../../target/odin-stb-image-tiff-asan/libkatla_image.a \
   -out:/tmp/katla-editor-overlays-asan
 ```
 

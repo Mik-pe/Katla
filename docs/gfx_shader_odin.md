@@ -77,14 +77,14 @@ submitted pipeline alive until GPU completion. Registry destruction returns
 Run compiler, reflection, adapter, queue and publication ownership acceptance:
 
 ```sh
-python3 scripts/validate_odin_shader.py --sanitize
+odin run tools/build -- validate shader --sanitize
 ```
 
 On Darwin arm64 with Metal 4 and an available Vulkan loader/ICD, execute real
 dual-backend rendering and pipeline replacement under native validation:
 
 ```sh
-python3 scripts/validate_odin_shader.py --native --sanitize \
+odin run tools/build -- validate shader --native --native-metal --native-vulkan --sanitize \
   --vulkan-library /usr/local/lib/libvulkan.dylib \
   --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json
 ```
@@ -109,7 +109,7 @@ Export reproducible selected-entry native fixtures after building the independen
 compiler dependency:
 
 ```sh
-python3 scripts/compile_odin_shader.py odin/gfx_shader_native/shaders/array.wgsl \
+odin run tools/build -- shader-export --source odin/gfx_shader_native/shaders/array.wgsl \
   --compiler /path/to/katla-shader-compiler --entry main --stage Fragment \
   --output /tmp/katla-array4096
 ```

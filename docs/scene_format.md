@@ -213,11 +213,11 @@ Portable documents contain source descriptors rather than pixels or GPU owners.
 | `odin/app/scene_action*.odin`, `odin/editor` | Shared mutation/restoration history |
 | `odin/app/simulation.odin` | Preview capture and restore |
 
-`python3 scripts/build_katla_odin.py --tests --sanitize` builds pinned native
+`odin run tools/build -- --tests --sanitize` builds pinned native
 dependencies and runs the configured CPU ownership suites. Actual regressions
 cover older files, unknown payloads, full-width keys, external origins, script/audio/
 model admission, Save As metadata, failed native preparation, captured subtrees and
 corrupt-source Undo/Redo. Rendering acceptance additionally uses
-[`validate_odin_render.py`](../scripts/validate_odin_render.py) with explicit native
+[`tools/build validate render`](../tools/build/validation.odin) with explicit native
 adapters. Windows retained-root/junction and installed absolute-script tests run on
 the native Windows CI host; cross typechecks do not prove their runtime behavior.

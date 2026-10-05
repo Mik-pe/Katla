@@ -125,12 +125,12 @@ pre-play scene. These policies are application composition, not a second event b
 
 ## Verification and bounds
 
-`python3 scripts/build_katla_odin.py --tests --sanitize` runs configured native
-CPU suites. [`validate_odin_box3d.py`](../scripts/validate_odin_box3d.py) exercises
+`odin run tools/build -- --tests --sanitize` runs configured native
+CPU suites. [`tools/build validate physics`](../tools/build/validation.odin) exercises
 real sensor transitions/body combinations and native hierarchy/mesh/joint owners;
-[`validate_odin_luau.py`](../scripts/validate_odin_luau.py) exercises actual protected
+[`tools/build validate luau`](../tools/build/validation.odin) exercises actual protected
 VM calls and event/deferred command lifecycle. Combined particle/render acceptance
-uses `validate_odin_render.py --particles` with both adapters and explicit Luau,
+uses `tools/build validate render --particles` with both adapters and explicit Luau,
 Box3D and Vulkan dependencies.
 
 Tests cover once/reset, filtering, action failure, generational reference rejection,

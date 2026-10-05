@@ -1,10 +1,8 @@
 //! PNG framing, integrity and fixed-output inflation prevent compressed payloads exceeding their header.
-package image
+package katla_image
 
-import image "../deps/stb_image"
 import "core:mem"
 import "core:hash"
-import "core:c"
 
 @(private="package")
 texture_be32 :: proc(data:[]byte)->u32 { return u32(data[0])<<24|u32(data[1])<<16|u32(data[2])<<8|u32(data[3]) }
@@ -70,8 +68,7 @@ texture_png_validate :: proc(encoded:[]byte,width,height:u32,allocator:mem.Alloc
     }
     filtered,filter_error:=mem.make([]byte,int(scanline_bytes),allocator)
     if filter_error!=nil || raw_data(filtered)==nil { return .Allocation }; defer delete(filtered,allocator)
-    written:=image.zlib_decode_buffer(raw_data(filtered),c.int(len(filtered)),raw_data(compressed),c.int(len(compressed)))
-    if written!=c.int(len(filtered)) { return .Invalid_Data }
+    if failure:=texture_inflate(compressed,filtered); failure!=.None { return failure }
     if hash.adler32(filtered)!=texture_be32(compressed[len(compressed)-4:]) { return .Invalid_Data }
     return .None
 }

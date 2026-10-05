@@ -4,7 +4,7 @@ The application shapes Roboto and ForkAwesome from `resources/fonts` using a
 direct C ABI over source-pinned FreeType, HarfBuzz, SheenBidi and libunibreak.
 The font dependency contains no engine, UI, ECS or Rust bridge.
 
-`python3 tools/font_native/build.py` produces a dynamic library and the licensed
+`odin run tools/build -- --dependency fonts --output target/font-native` produces a dynamic library and the licensed
 Noto fallback fonts in `target/font-native`. The build uses Clang directly and
 records exact source commits. Fallback fonts come from one pinned Google Fonts
 commit and each font is checked against its committed SHA256 before use. Fonts
@@ -38,8 +38,8 @@ full color emoji font rasterization is not implemented.
 Run all font CPU checks plus actual native UI/picking acceptance:
 
 ```sh
-python3 scripts/validate_odin_ui_gpu.py \
-  --shader-compiler /path/to/katla-shader-compiler \
+odin run tools/build -- validate ui --native-metal --native-vulkan \
+  --build-manifest target/katla-odin/darwin-arm64/normal/build.json \
   --vulkan-loader /path/to/libvulkan.dylib \
   --vulkan-icd /path/to/MoltenVK_icd.json
 ```
@@ -50,12 +50,8 @@ current paired native harness requires macOS on Apple Silicon and reports
 other hosts as unavailable instead of passing unexecuted GPU checks.
 
 For `--sanitize`, use C/C++ compilers with the **same ASan runtime as Odin**.
-For Homebrew Odin linked to LLVM 22, add:
-
-```sh
---sanitize --cc /opt/homebrew/opt/llvm@22/bin/clang \
---cxx /opt/homebrew/opt/llvm@22/bin/clang++
-```
+The canonical builder selects matching Clang/Clang++ automatically; explicit
+CC/CXX environment overrides are checked against Odin's reported LLVM major.
 
 CPU tests run with LeakSanitizer enabled. Only actual GPU executables disable
 process-global leak detection at the external CF/ObjC ownership boundary;

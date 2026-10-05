@@ -1,6 +1,6 @@
 # Build and run Katla in Odin
 
-The canonical source build is `scripts/build_katla_odin.py`. It compiles the
+The canonical source build is `tools/build`. It compiles the
 Odin editor, the MCP stdio/proxy programs and their native dependencies.
 Linux and Windows also build the pinned SDL3 window/input dependency. It does
 not build or load any Rust engine crate. Cargo builds only the locked,
@@ -8,33 +8,33 @@ standalone offline WGSL compiler in `tools/naga_bridge`; that executable is a
 build tool invoked by the shader cache, not a runtime FFI library.
 
 ```sh
-python3 scripts/build_katla_odin.py --tests
-python3 scripts/run_katla_odin.py --no-build
+odin run tools/build -- --tests
+odin run tools/build -- run --no-build
 ```
 
 Normal builds use Odin's speed optimization and retain debug symbols. Sanitized
 builds remain unoptimized by default; add `--optimize` to instrument an optimized
 editor as well.
 
-Python 3.12+, Odin, Git, a native C/C++ compiler, an archiver and Cargo are
-required. Unix TIFF builds also require make and system zlib development
-headers; Windows requires Clang/LLVM, a configured Windows SDK, CMake and
-Ninja. Font builds download pinned source archives and fallback fonts. No
-preinstalled engine library, Cargo engine target or generated shader binary is
-required.
+Odin, Git, curl, a native C/C++ compiler, an archiver and Cargo are required.
+Windows needs Clang/LLVM and a configured Windows SDK. Native dependencies are
+compiled directly by the Odin build tool. Python, CMake, Ninja and make are not
+build or launch dependencies. Extended QA drivers run through the same Odin command.
+Font sources and licensed fallback fonts are retrieved from pinned revisions;
+all source checkouts must retain their exact clean revision.
 
-For a verified compiler installation:
+Install the verified `dev-2026-09` compiler before invoking the build tool:
 
 ```sh
-python3 scripts/build_katla_odin.py --install-odin target/odin-toolchain
+scripts/install_odin.sh target/odin-toolchain
+# Add the printed executable's parent directory to PATH.
 ```
 
-This downloads the host's `dev-2026-09` release from the
-[Odin release](https://github.com/odin-lang/Odin/releases/tag/dev-2026-09),
-checks its repository-recorded SHA-256 and preserves the compiler's core/vendor
-collections. Add the printed executable's parent directory to PATH, or supply
-`--odin /absolute/path/to/odin`. Changing the compiler pin requires changing
-all corresponding archive digests together.
+Windows uses `./scripts/install_odin.ps1 target/odin-toolchain`. Both bootstrap
+scripts verify the host archive against `scripts/odin-releases.sha256`, preserve
+Odin's core/vendor collections and need no Python. Alternatively install Odin
+normally and select its executable with `--odin FILE` or `ODIN`. Updating the
+compiler release requires updating every corresponding archive digest.
 
 The output is `target/katla-odin/<host>-<arch>/<normal|asan>`. Each directory owns
 its native libraries, fonts, compiler executable, binaries, canonical WGSL
@@ -43,7 +43,7 @@ sources in `shaders/` and `build.json`. Shader sources come exclusively from
 the same manifest as native artifacts. The launcher supplies `--shader-root`
 with that shipped directory. The old Rust shader asset directory is not used.
 The manifest is published only after every requested build/test succeeds; a
-failed rebuild removes the previous successful manifest. `run_katla_odin.py`
+failed rebuild removes the previous successful manifest. `tools/build run`
 checks the host, architecture, checkout, sanitizer mode and every recorded
 artifact hash before launching. `--no-build` explicitly reuses compiled source;
 run the build again after source changes. The launcher normally rebuilds first.
@@ -53,7 +53,7 @@ A bounded validated Metal run with actual retained viewport GPU readback is:
 
 ```sh
 mkdir -p target/odin-editor-proof
-python3 scripts/run_katla_odin.py --no-build -- \
+odin run tools/build -- run --no-build -- \
   --frames 100 --preferences target/odin-editor-proof/preferences \
   --screenshot target/odin-editor-proof/editor.png
 ```
@@ -66,7 +66,7 @@ application's confined project/file resolver. Pass application arguments after
 `--`. Native `--help` lists current application options.
 
 ```sh
-python3 scripts/run_katla_odin.py --no-build --backend vulkan \
+odin run tools/build -- run --no-build --backend vulkan \
   --vulkan-loader /absolute/path/to/libvulkan.dylib -- --frames 100
 ```
 
@@ -82,12 +82,12 @@ and Clang++ on PATH or set CC/CXX explicitly. Normal and ASan libraries and
 object directories are isolated.
 
 ```sh
-python3 scripts/build_katla_odin.py --sanitize --tests
-python3 scripts/run_katla_odin.py --no-build --sanitize -- --frames 100
+odin run tools/build -- --sanitize --tests
+odin run tools/build -- run --no-build --sanitize -- --frames 100
 ```
 
 CPU suites run serially with bad-memory failures enabled, including real
-native decoder, physics, Luau, shader-process and font consumers. Explicit
+Odin decoder, physics, Luau, shader-process and font consumers. Explicit
 package runs cover app, app/render, app/editor, gfx, shader tests, script,
 audio, UI, precise image codecs, resources, agent/host and native fonts. Their ASan
 processes always enable leak detection, even if the invoking environment sets
@@ -98,8 +98,8 @@ checked. This CPU policy does not change native GPU or audio-driver validation
 environments. Native GPU and audio-device validation remain explicit:
 
 ```sh
-python3 scripts/validate_odin_gpu.py --native-metal --sanitize
-python3 scripts/validate_odin_audio.py --native --switch-default
+odin run tools/build -- validate gpu --native-metal --sanitize
+odin run tools/build -- validate audio --native --switch-default
 ```
 
 Native GPU ASan launches check addresses and Odin ownership while excluding
@@ -108,23 +108,28 @@ boundary only to native launches; CPU processes retain leak detection. Audio
 device validation has its own explicit boundary documented in
 [audio_odin.md](audio_odin.md).
 
-On Linux, use `validate_odin_gpu.py --native-vulkan --vulkan-library
+On Linux, use `odin run tools/build -- validate gpu --native-vulkan --vulkan-library
 /usr/lib/x86_64-linux-gnu/libvulkan.so.1 --vulkan-icd /path/to/lvp_icd.json`,
 substituting the host's actual loader file and ICD manifest. Vulkan validation must be
 available. Resource-array fixtures require actual descriptor-indexing features;
 an unsupported device does not establish array acceptance.
 
-| Dependency | Canonical builder/source pin |
+| Dependency | Canonical source/owner |
 |---|---|
 | WGSL compiler | Locked `tools/naga_bridge/Cargo.toml` and Cargo.lock; Naga 29.0.1 |
-| Physics | `scripts/build_box3d.py`; Box3D v0.1.0 commit `8441b4a06d6d09dcfb0b0f704df4d847d1437b92` |
-| Script VM | `scripts/build_odin_luau.py`; Luau 0.709 commit `b968ef742741bb2b703afc3b3c53f06608c87481` |
-| Audio | `scripts/build_odin_audio.py`; miniaudio 0.11.25 and verified repository stb_vorbis |
-| glTF | `scripts/build_odin_gltf.py`; repository-pinned cgltf C source |
-| Image codecs | `scripts/build_odin_image.py`; repository stb_image, SHA-256 pinned IJG 9f/TIFF 4.7.2; Windows also [pinned zlib 1.3.2](https://zlib.net/) |
-| Typography | `tools/font_native/build.py`; exact FreeType/HarfBuzz/SheenBidi/Unibreak commits and hashed fallback fonts |
-| Window/input | `tools/window_native/build.py`; SDL3 3.2.28 commit `7f3ae3d57459e59943a4ecfefc8f6277ec6bf540` on Linux/Windows |
-| Preferences | `scripts/build_odin_toml.py`; repository-pinned tomlc17 C source |
+| Physics | `tools/build/native.odin`; Box3D v0.1.0 commit `8441b4a06d6d09dcfb0b0f704df4d847d1437b92`; bounded adaptations in `box_adaptations.odin` |
+| Script VM | `tools/build/native.odin`; Luau 0.709 commit `b968ef742741bb2b703afc3b3c53f06608c87481` |
+| Audio | `tools/build/native.odin`; miniaudio 0.11.25 and hashed repository stb_vorbis |
+| glTF | `tools/build/native.odin`; repository-pinned cgltf C source |
+| Image codecs | `odin/image`; Odin PNG/BMP, sequential/progressive JPEG, Classic/BigTIFF and fixed-output Deflate; no native image library |
+| Typography | `tools/build/fonts.odin`; exact FreeType/HarfBuzz/SheenBidi/Unibreak commits and hashed fallback fonts |
+| Window/input | `tools/build/window_desktop.odin`; SDL3 3.2.28 commit `7f3ae3d57459e59943a4ecfefc8f6277ec6bf540`, direct compilation and explicit host configuration |
+| Preferences | `tools/build/native.odin`; repository-pinned tomlc17 C source |
+
+Box3D and Luau source manifests are explicit Odin constants tied to their pinned revisions; no build generator is executed. SDL has a checked-in host configuration for the exact
+pinned revision. Linux generates native Wayland protocol code with
+`wayland-scanner`, links both X11 and Wayland and retains IBus/Fcitx IME.
+Disabled SDL subsystems are owned by Katla's audio and graphics packages.
 
 The canonical `.github/workflows/odin.yml` cold-builds dependencies and CPU
 consumers on macOS, Linux and Windows. macOS uses exactly `macos-26` on Apple Silicon,
@@ -141,7 +146,7 @@ not a receipt of a completed CI run.
 
 The desktop entrypoint uses Cocoa on macOS arm64 and the pinned SDL3 bridge
 with Vulkan on Linux/Windows. Linux source builds require X11 and Wayland
-development packages, xkbcommon, wayland-protocols, D-Bus, IBus and pkg-config;
+development packages, xkbcommon, EGL, D-Bus, IBus, wayland-scanner and pkg-config;
 both native drivers and actual SDL IBus/Fcitx IME support are mandatory. On
 Windows configure the SDK developer environment before building. The launcher
 retains the SDL DLL dependency directory on PATH.
@@ -161,12 +166,12 @@ metric. `--dump-layout[-file]` and `--dump-render-graph[-file]` export the actua
 retained UI tree and compiled frame plan as JSON.
 
 ```sh
-python3 scripts/run_katla_odin.py --no-build -- \
+odin run tools/build -- run --no-build -- \
   --headless --frames 100 --camera 25,-15,8 \
   --dump-layout-file target/odin-editor-proof/layout.json \
   --dump-render-graph-file target/odin-editor-proof/graph.json \
   --screenshot target/odin-editor-proof/headless.png
-python3 scripts/run_katla_odin.py --no-build -- \
+odin run tools/build -- run --no-build -- \
   --interaction-test target/odin-editor-proof/interaction
 ```
 

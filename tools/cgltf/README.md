@@ -10,7 +10,7 @@ cgltf's unconstrained file loader.
 Build from the checked-in source, independent of installed vendor libraries:
 
 ```sh
-python3 scripts/build_odin_gltf.py
+odin run tools/build -- --dependency gltf --output target/odin-cgltf
 odin test odin/app -all-packages -vet -strict-style
 ```
 
@@ -29,7 +29,7 @@ whose AddressSanitizer runtime ABI matches Odin. On the tested macOS host this
 is upstream LLVM 21.1.8; Apple Clang 21 has a distinct incompatible runtime:
 
 ```sh
-CC=/path/to/llvm/clang python3 scripts/build_odin_gltf.py --sanitize
+CC=/path/to/llvm/clang odin run tools/build -- --dependency gltf --output target/odin-cgltf --sanitize
 odin test odin/app -all-packages -vet -strict-style -sanitize:address \
   -define:CGLTF_LIBRARY=../../../target/odin-cgltf-asan/libcgltf.a \
   -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true

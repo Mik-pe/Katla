@@ -78,14 +78,14 @@ geometry/joint properties.
 ## Build and validate
 
 ```sh
-python3 scripts/build_katla_odin.py --tests
-python3 scripts/validate_odin_box3d.py
-python3 scripts/validate_odin_luau.py
+odin run tools/build -- --tests
+odin run tools/build -- validate physics
+odin run tools/build -- validate luau
 ```
 
 The Box3D validator builds actual pinned normal/ASan dependencies, executes
 native rollback tests, Odin dependency tests and application physics consumers,
-then checks portable targets. Use `build_box3d.py --output` for an isolated
+then checks portable targets. Use `odin run tools/build -- --dependency box --output` for an isolated
 matching native artifact; ASan requires the same LLVM major as Odin. Current
 ABI8 libraries reject earlier revisions before constructing an owner.
 

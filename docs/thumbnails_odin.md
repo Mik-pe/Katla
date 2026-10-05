@@ -39,7 +39,7 @@ cache removal. It runs real UI triangle composition and readback on both native
 adapters, with address checks and zero tracked allocation residue.
 
 ```sh
-python3 scripts/validate_odin_ui_gpu.py \
+odin run tools/build -- validate ui \
   --build-manifest /absolute/path/to/asan/build.json --sanitize \
   --backend both --vulkan-loader /absolute/path/to/libvulkan.dylib \
   --vulkan-icd /absolute/path/to/MoltenVK_icd.json

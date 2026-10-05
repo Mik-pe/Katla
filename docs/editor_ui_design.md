@@ -133,7 +133,7 @@ the effective surface to a project `.katmat`; Apply material copies the entire
 surface as one undo step. Double-clicking a `.katmat` in the browser applies it
 to the selected mesh. Invalid edits show the existing error dialog.
 
-`python3 scripts/run_katla_odin.py -- --interaction-test /tmp/katla-interactions` drives real UI
+`odin run tools/build -- run -- --interaction-test /tmp/katla-interactions` drives real UI
 hit testing and native viewport picking. The walkthrough clicks presets, drags
 material sliders outside their rows, uses Edit menu undo/redo, and collapses the
 material section to add and remove a component. It then drags an image onto a

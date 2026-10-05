@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install verified Odin release
         run: |
-          odin_exe="$(python3 scripts/build_katla_odin.py --install-odin target/odin-toolchain)"
+          odin_exe="$(scripts/install_odin.sh target/odin-toolchain)"
           dirname "$odin_exe" >> "$GITHUB_PATH"
       - name: Install native build tools
         run: |
@@ -34,18 +34,18 @@ jobs:
           rustup default stable
           llvm_major="$(odin report | sed -nE 's/.*Backend:.*LLVM ([0-9]+).*/\1/p')"
           test -n "$llvm_major"
-          brew install "llvm@$llvm_major" cmake ninja
+          brew install "llvm@$llvm_major"
       - name: Cold build and serial CPU acceptance
         run: |
           mkdir -p target/odin-ci-build
-          python3 scripts/build_katla_odin.py --tests 2>&1 | tee target/odin-ci-build/normal.log
+          odin run tools/build -- --tests 2>&1 | tee target/odin-ci-build/normal.log
       - name: Cold ASan build and serial CPU acceptance
         run: |
           mkdir -p target/odin-ci-build
-          python3 scripts/build_katla_odin.py --sanitize --tests 2>&1 | tee target/odin-ci-build/asan.log
+          odin run tools/build -- --sanitize --tests 2>&1 | tee target/odin-ci-build/asan.log
       - name: Actual MCP and HTTP/TLS assistant process acceptance
         run: |
-          python3 scripts/validate_odin.py --sanitize \
+          odin run tools/build -- validate processes --sanitize \
             --build-manifest target/katla-odin/darwin-arm64/asan/build.json \
             2>&1 | tee target/odin-ci-build/processes.log
       - name: Probe actual Metal 4 support
@@ -60,8 +60,8 @@ jobs:
       - name: Run genuine Metal shader and graph contracts
         if: steps.metal.outputs.supported == 'true'
         run: |
-          python3 scripts/validate_odin_gpu.py --native-metal --sanitize \
-            --target-dir target/katla-odin/darwin-arm64/asan/shader-compiler \
+          odin run tools/build -- validate gpu --native-metal --sanitize \
+            --build-manifest target/katla-odin/darwin-arm64/asan/build.json \
             --output-dir target/odin-ci-metal
         env:
           MTL_DEBUG_LAYER: "1"
@@ -70,7 +70,7 @@ jobs:
         if: steps.metal.outputs.supported == 'true'
         run: |
           mkdir -p target/odin-ci-ui
-          python3 scripts/validate_odin_ui_gpu.py --backend metal --sanitize \
+          odin run tools/build -- validate ui --native-metal --sanitize \
             --skip-font-checks \
             --build-manifest target/katla-odin/darwin-arm64/asan/build.json \
             2>&1 | tee target/odin-ci-ui/native.log
@@ -80,7 +80,7 @@ jobs:
       - name: Run actual Metal scene and textured model consumers
         if: steps.metal.outputs.supported == 'true'
         run: |
-          python3 scripts/validate_odin_render.py --native-metal --sanitize \
+          odin run tools/build -- validate render --native-metal --sanitize \
             --skip-cpu-tests \
             --build-manifest target/katla-odin/darwin-arm64/asan/build.json \
             --output-dir target/odin-ci-render
@@ -91,7 +91,7 @@ jobs:
         if: steps.metal.outputs.supported == 'true'
         run: |
           mkdir -p target/odin-ci-editor
-          python3 scripts/run_katla_odin.py --no-build --sanitize -- \
+          odin run tools/build -- run --no-build --sanitize -- \
             --frames 100 --preferences target/odin-ci-editor/preferences \
             --screenshot target/odin-ci-editor/editor.png
         env:
@@ -123,17 +123,17 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install verified Odin release
         run: |
-          odin_exe="$(python3 scripts/build_katla_odin.py --install-odin target/odin-toolchain)"
+          odin_exe="$(scripts/install_odin.sh target/odin-toolchain)"
           dirname "$odin_exe" >> "$GITHUB_PATH"
       - name: Install native build and Vulkan dependencies
         run: |
           sudo rm -f /etc/apt/sources.list.d/google-chrome*
           sudo apt-get update
-          sudo apt-get install -y clang lld llvm cmake ninja-build zlib1g-dev \
+          sudo apt-get install -y clang lld llvm \
             libasound2-dev libvulkan1 mesa-vulkan-drivers vulkan-tools \
             libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
             libxi-dev libxss-dev libwayland-dev libxkbcommon-dev \
-            wayland-protocols libdecor-0-dev libdbus-1-dev libibus-1.0-dev pkg-config xvfb \
+            libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev pkg-config xvfb \
             vulkan-validationlayers glslc
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
@@ -141,46 +141,27 @@ jobs:
       - name: Cold native dependencies, editor build and CPU acceptance
         run: |
           mkdir -p target/odin-ci-build
-          python3 scripts/build_katla_odin.py --tests 2>&1 | tee target/odin-ci-build/normal.log
+          odin run tools/build -- --tests 2>&1 | tee target/odin-ci-build/normal.log
       - name: Native Vulkan baseline contracts with validation
         run: |
           icd="$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)"
           test -n "$icd"
-          loader="$(python3 - <<'PY'
-          import ctypes.util, pathlib, shutil, subprocess
-          name = ctypes.util.find_library('vulkan')
-          if not name:
-              raise SystemExit('Installed Vulkan loader was not found')
-          candidates = [pathlib.Path(name)]
-          ldconfig = shutil.which('ldconfig')
-          if ldconfig:
-              cache = subprocess.check_output([ldconfig, '-p'], text=True)
-              for line in cache.splitlines():
-                  fields = line.strip().split(maxsplit=1)
-                  if fields and fields[0] == name and '=>' in line:
-                      candidates.append(pathlib.Path(line.partition('=>')[2].strip()))
-          for root in ('/usr/lib', '/lib'):
-              candidates.extend(pathlib.Path(root).glob('*/' + name))
-          for candidate in candidates:
-              if candidate.is_file():
-                  print(candidate.resolve())
-                  break
-          else:
-              raise SystemExit('Vulkan soname has no existing resolved library path')
-          PY
-          )"
+          loader="$(ldconfig -p | awk '$1 == "libvulkan.so.1" {print $NF; exit}')"
+          test -n "$loader" && test -f "$loader"
+          loader="$(readlink -f "$loader")"
           echo "KATLA_CI_VULKAN_LOADER=$loader" >> "$GITHUB_ENV"
           echo "KATLA_CI_VULKAN_ICD=$icd" >> "$GITHUB_ENV"
-          python3 scripts/validate_odin_gpu.py --native-vulkan --vulkan-baseline \
+          odin run tools/build -- validate gpu --native-vulkan --vulkan-baseline \
             --vulkan-library "$loader" --vulkan-icd "$icd" \
-            --target-dir target/katla-odin/linux-amd64/normal/shader-compiler \
+            --build-manifest target/katla-odin/linux-amd64/normal/build.json \
             --output-dir target/odin-ci-vulkan
       - name: Probe native Vulkan resource-array breadth
         id: vulkan_arrays
         run: |
           set +e
-          python3 scripts/validate_odin_gpu.py --native-vulkan \
+          odin run tools/build -- validate gpu --native-vulkan \
             --vulkan-probe-array-capabilities \
+            --build-manifest target/katla-odin/linux-amd64/normal/build.json \
             --vulkan-library "$KATLA_CI_VULKAN_LOADER" \
             --vulkan-icd "$KATLA_CI_VULKAN_ICD" \
             --output-dir target/odin-ci-vulkan \
@@ -200,10 +181,10 @@ jobs:
       - name: Native Vulkan resource-array contracts with validation
         if: steps.vulkan_arrays.outputs.supported == 'true'
         run: |
-          python3 scripts/validate_odin_gpu.py --native-vulkan --skip-shader-checks \
+          odin run tools/build -- validate gpu --native-vulkan --skip-shader-checks \
             --vulkan-library "$KATLA_CI_VULKAN_LOADER" \
             --vulkan-icd "$KATLA_CI_VULKAN_ICD" \
-            --target-dir target/katla-odin/linux-amd64/normal/shader-compiler \
+            --build-manifest target/katla-odin/linux-amd64/normal/build.json \
             --output-dir target/odin-ci-vulkan-arrays
       - name: Record editor platform boundary
         run: echo "Odin Linux editor and source-pinned SDL X11/Wayland build here. Vulkan graph validation is separate from desktop input acceptance." >> "$GITHUB_STEP_SUMMARY"
@@ -229,34 +210,32 @@ jobs:
       - name: Install verified Odin release
         shell: pwsh
         run: |
-          $odinExe = python scripts/build_katla_odin.py --install-odin target/odin-toolchain
+          $odinExe = ./scripts/install_odin.ps1 target/odin-toolchain
           Split-Path $odinExe | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Select Windows SDK and native compiler
         shell: pwsh
         run: |
-          @'
-          import os, pathlib, subprocess
-          locator = pathlib.Path(os.environ['ProgramFiles(x86)']) / 'Microsoft Visual Studio/Installer/vswhere.exe'
-          install = subprocess.check_output([str(locator), '-latest', '-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64', '-property', 'installationPath'], text=True).strip()
-          setup = pathlib.Path(install) / 'Common7/Tools/VsDevCmd.bat'
-          values = subprocess.check_output(['cmd', '/d', '/s', '/c', f'""{setup}" -arch=amd64 -host_arch=amd64 >nul && set"'], text=True)
-          keep = {'PATH','INCLUDE','LIB','LIBPATH','WindowsSdkDir','WindowsSDKVersion','VCToolsInstallDir','VCINSTALLDIR'}
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as output:
-              for line in values.splitlines():
-                  name, separator, value = line.partition('=')
-                  if separator and name in keep:
-                      output.write(f'{name}={value}\n')
-          '@ | python -
+          $locator = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $install = & $locator -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $install) { throw 'Visual Studio SDK unavailable.' }
+          $setup = Join-Path $install 'Common7/Tools/VsDevCmd.bat'
+          $values = & cmd /d /s /c "`"`"$setup`" -arch=amd64 -host_arch=amd64 >nul && set`""
+          if ($LASTEXITCODE -ne 0) { throw 'SDK setup failed.' }
+          $keep = @('PATH','INCLUDE','LIB','LIBPATH','WindowsSdkDir','WindowsSDKVersion','VCToolsInstallDir','VCINSTALLDIR')
+          foreach ($line in $values) {
+              $parts = $line.Split('=', 2)
+              if ($parts.Count -eq 2 -and $keep -contains $parts[0]) {
+                  Add-Content $env:GITHUB_ENV "$($parts[0])=$($parts[1])"
+              }
+          }
           rustup toolchain install stable --profile minimal
           rustup default stable
           clang --version
-          cmake --version
-          ninja --version
       - name: Cold native source build, editor build and CPU acceptance
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force target/odin-ci-build | Out-Null
-          python scripts/build_katla_odin.py --tests 2>&1 | Tee-Object target/odin-ci-build/normal.log
+          odin run tools/build -- --tests 2>&1 | Tee-Object target/odin-ci-build/normal.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         env:
           CC: clang

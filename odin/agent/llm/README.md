@@ -85,8 +85,8 @@ Destroy the conversation, runtime/config and harness only after their users join
 
 ```sh
 odin test odin/agent/llm -out:target/odin-llm-tests -vet -strict-style
-python3 scripts/validate_odin_llm.py
-python3 scripts/validate_odin_llm.py --sanitize --binary target/odin-llm-authoring-asan
+odin run tools/build -- validate http
+odin run tools/build -- validate http --sanitize
 ```
 
 The real `odin/examples/llm_authoring` consumer joins provider workers, executes

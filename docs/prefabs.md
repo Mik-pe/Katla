@@ -133,14 +133,14 @@ preparation; there is no separate legacy prefab engine.
 
 ## Verification
 
-`python3 scripts/build_katla_odin.py --tests --sanitize` builds real pinned
+`odin run tools/build -- --tests --sanitize` builds real pinned
 native dependencies and runs CPU ownership/admission/history tests. Tests cover
 geometry budgets/transforms, actual recipes, custom/reference remapping, absolute
 model/template batches, capability rollback, consumed bursts, external joint/rule
 cleanup and corrupt-source Undo/Redo.
 
 Native Metal/Vulkan acceptance in
-[`validate_odin_render.py`](../scripts/validate_odin_render.py) uses actual mesh/
+[`tools/build validate render`](../tools/build/validation.odin) uses actual mesh/
 model entities and retained readback. Its asset fixture exercises Save/Load,
 Capture/Instantiate/Remove, native preparation rejection and restored pixels/cache
 owners. Enable `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1` before Metal launches

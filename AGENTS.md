@@ -32,10 +32,10 @@ publication and delivery history; TODO.md tracks unresolved engineering work.
 
 Use strict Odin checks and tests for the affected packages. Build configured
 native dependencies and run the canonical suite with
-`python3 scripts/build_katla_odin.py --tests`; add `--sanitize` for combined
+`odin run tools/build -- --tests`; add `--sanitize` for combined
 C/C++/Odin address checks with a matching LLVM compiler.
-GPU contracts: `python3 scripts/validate_odin_gpu.py --native-metal`.
-Windowed Metal validation: `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 python3 scripts/run_katla_odin.py -- --frames 100`.
+GPU contracts: `odin run tools/build -- validate gpu --native-metal`.
+Windowed Metal validation: `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 odin run tools/build -- run -- --frames 100`.
 Cargo checks apply only to the isolated offline compiler under `tools/naga_bridge`.
 
 Test before committing. One logical change per commit; use an imperative 50–72

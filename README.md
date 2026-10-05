@@ -13,14 +13,14 @@ same application owner through MCP and receive frame-bound viewport context.
 
 ## Build and run
 
-Install Odin, Python 3, Cargo, CMake and a C/C++ compiler. Cargo builds the
+Install Odin, Cargo, Git, curl and a C/C++ compiler with an archiver. Cargo builds the
 isolated offline Naga shader compiler; the editor and engine runtime use Odin
 and explicitly pinned C/C++ dependencies. Platform prerequisites and verified
 Odin installation are documented in [Build and launch](docs/odin_build.md).
 
 ```sh
-python3 scripts/build_katla_odin.py --tests
-python3 scripts/run_katla_odin.py --no-build
+odin run tools/build -- --tests
+odin run tools/build -- run --no-build
 ```
 
 The launcher selects Metal on macOS and Vulkan elsewhere, sets Metal API
@@ -29,9 +29,9 @@ Use `--backend vulkan --vulkan-loader /path/to/libvulkan` to select Vulkan
 explicitly. Application arguments follow `--`:
 
 ```sh
-python3 scripts/run_katla_odin.py --no-build -- --frames 100
-python3 scripts/run_katla_odin.py --no-build -- --headless --frames 3 --screenshot /tmp/katla.png
-python3 scripts/run_katla_odin.py --no-build -- --scene assets/scenes/default.katla
+odin run tools/build -- run --no-build -- --frames 100
+odin run tools/build -- run --no-build -- --headless --frames 3 --screenshot /tmp/katla.png
+odin run tools/build -- run --no-build -- --scene assets/scenes/default.katla
 ```
 
 Shader sources ship with the build. Runtime freshness checks request compilation
@@ -46,10 +46,12 @@ runtime or layout bridge.
 [CI policy](docs/ci.md). Git and GitHub record delivery; [TODO](TODO.md) records
 unresolved work.
 
+Katla tooling is native Odin; all build, launch, validation and authoring commands run in Odin.
+
 ```sh
-python3 scripts/validate_odin.py --sanitize
-python3 scripts/validate_odin.py --native-metal --native-physics
-python3 scripts/validate_odin_gpu.py --native-vulkan --vulkan-library /path/to/libvulkan
+odin run tools/build -- validate processes --sanitize
+odin run tools/build -- validate gpu --native-metal
+odin run tools/build -- validate gpu --native-vulkan --vulkan-library /path/to/libvulkan
 ```
 
 Native rendering requires the actual device and driver. CPU tests and screenshots

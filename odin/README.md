@@ -23,9 +23,9 @@ scene policy belongs to the application and generic GPU execution belongs to gfx
 Build and run from the repository root:
 
 ```sh
-python3 scripts/build_katla_odin.py --tests
-python3 scripts/run_katla_odin.py --no-build
-python3 scripts/validate_odin.py --sanitize
+odin run tools/build -- --tests
+odin run tools/build -- run --no-build
+odin run tools/build -- validate processes --sanitize
 ```
 
 Packages use relative imports, compiler `core`, and explicit native dependency

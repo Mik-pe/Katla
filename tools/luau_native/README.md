@@ -1,6 +1,6 @@
 # Direct Luau dependency
 
-`python3 scripts/build_odin_luau.py` retrieves Luau 0.709 at
+`odin run tools/build -- --dependency luau --output target/libkatla_luau.dylib` retrieves Luau 0.709 at
 `b968ef742741bb2b703afc3b3c53f06608c87481`, verifies the source revision,
 and compiles its Common, Ast, Compiler and VM targets. Source comes from the
 upstream repository, independently of Cargo or a preinstalled Lua runtime.
@@ -32,7 +32,7 @@ raises it. All access, reset and destruction require the creating thread.
 Run real language/runtime tests with:
 
 ```sh
-python3 scripts/build_odin_luau.py --sanitize
+odin run tools/build -- --dependency luau --output target/libkatla_luau.dylib --sanitize
 odin test odin/script -all-packages -vet -strict-style -sanitize:address \
   -define:LUAU_LIBRARY=target/libkatla_luau_asan.dylib
 ```

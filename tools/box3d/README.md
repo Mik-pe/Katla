@@ -4,7 +4,7 @@ Katla's canonical Odin physics owner uses the actual C17 Box3D backend. The
 dependency is Box3D v0.1.0, pinned to
 `8441b4a06d6d09dcfb0b0f704df4d847d1437b92` from
 [the upstream repository](https://github.com/erincatto/box3d).
-`scripts/build_box3d.py` verifies the exact clean checkout and compiles the source
+`tools/build/native.odin` verifies the exact clean checkout and compiles the source
 list declared by upstream, with the reproducible planar-hull extension below,
 native validation and SIMD enabled. Dependency
 source and build output remain in `target/`; upstream uses the MIT license.
@@ -23,7 +23,7 @@ destruction are serialized because Box3D allocates world IDs globally. Separate
 created worlds can step concurrently on their respective owner threads.
 
 ```sh
-python3 scripts/validate_odin_box3d.py
+odin run tools/build -- validate physics
 ```
 
 This runs actual fall/contact, unchanged-body sync, directed sensor transitions,
@@ -83,7 +83,7 @@ multi-turn counter. Widths of at least 2π leave rotation free. Authored values
 remain unchanged. Double-precision center/width arithmetic avoids overflow for
 finite f32 endpoints. The native angular axis and both local anchors remain exact.
 
-`tools/box3d/joint_ranges.py` generates bounded source adaptations at build time:
+`tools/build/box_adaptations.odin` generates bounded source adaptations at build time:
 it removes upstream's ±0.99π angular clamps and minimum distance rest length.
 The pinned dependency checkout stays clean. Distance springs use the exact finite
 signed midpoint, including zero and values below 0.005, without changing their
@@ -176,7 +176,7 @@ restoration. Normal and matching-LLVM C/Odin AddressSanitizer runs pass all
 heap assertions run with `ODIN_TEST_THREADS=1`; concurrent app tests must not
 compare a process-wide counter while other worlds are alive.
 
-`planar_hulls.py` generates one adapted `hull.c` next to each isolated artifact,
+`tools/build/box_adaptations.odin` generates one adapted `hull.c` next to each isolated artifact,
 while the pinned upstream checkout remains clean. The extension admits only
 the exact three-vertex, six-half-edge, two-face zero-volume triangle topology,
 preserves native twin/face validation, and provides exact triangle ray tests

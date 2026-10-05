@@ -27,8 +27,16 @@ debug_output.txt
 .cargo/
 llm.toml
 
-# Python/native validation artifacts
-__pycache__/
+# Native validation artifacts
 /editor
 
 *.dSYM/
+
+# Odin build command executable
+/build
+
+# Odin standalone development tools
+/author
+/provider
+/fixtures
+/native_host

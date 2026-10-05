@@ -108,7 +108,7 @@ runtime allocator behavior; processing offers no growth fallback.
 ```sh
 odin test odin/icons -vet -strict-style -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
 odin test odin/audio/dsp -out:target/odin-dsp-asan -sanitize:address -debug -vet -strict-style
-python3 scripts/validate_odin_audio.py
+odin run tools/build -- validate audio
 ```
 
 DSP tests cover filter response, stereo isolation, chunked history, reverb

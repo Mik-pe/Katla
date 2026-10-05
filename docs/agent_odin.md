@@ -185,8 +185,8 @@ input/output failure terminates the process promptly; it does not wait forever
 for an input thread whose client left stdin open.
 
 ```sh
-python3 scripts/build_katla_odin.py --output target/katla-agent --tests
-python3 scripts/validate_odin_mcp.py --binary target/katla-agent/bin/katla-mcp-stdio
+odin run tools/build -- --output target/katla-agent --tests
+odin run tools/build -- validate mcp
 odin test odin/agent/mcp -all-packages -out:target/odin-mcp-tests -vet -strict-style
 ```
 
@@ -352,14 +352,13 @@ Actual readbacks verify PBR edits, shared gesture/agent undo and redo, empty-sce
 clear/resume, staged failure/retry and native model animation on both backends.
 Source models include Box, DamagedHelmet, Fox and Tiger. Native window acceptance
 verifies acquire/present, retina resize and retained pre-resize readback. Run
-[the native application validator](../scripts/validate_odin_render.py):
+[the native application validator](../tools/build/validation.odin):
 
 ```sh
-python3 scripts/validate_odin_render.py --native-metal --native-vulkan \
-  --native-surface --sanitize --shader-compiler /path/to/katla-shader-compiler \
+odin run tools/build -- validate render --native-metal --native-vulkan \
+  --native-surface --sanitize \
   --vulkan-library /path/to/libvulkan.dylib --vulkan-icd /path/to/icd.json \
-  --particles --luau-library /path/to/libkatla_luau.dylib \
-  --box3d-library /path/to/libkatla_box3d.dylib
+  --particles --build-manifest target/katla-odin/darwin-arm64/asan/build.json
 ```
 
 Use matching sanitizer artifacts for a sanitized run. The validator snapshots

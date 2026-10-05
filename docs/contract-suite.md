@@ -12,15 +12,15 @@ UI, picking and editor captures. See [graphics ownership](graphics_core.md) and
 From the repository root, build dependencies and run configured CPU consumers:
 
 ```sh
-python3 scripts/build_katla_odin.py --tests
-python3 scripts/build_katla_odin.py --sanitize --tests
+odin run tools/build -- --tests
+odin run tools/build -- --sanitize --tests
 ```
 
 Require the affected native adapter explicitly:
 
 ```sh
-python3 scripts/validate_odin_gpu.py --native-metal --sanitize
-python3 scripts/validate_odin_gpu.py --native-vulkan --sanitize \
+odin run tools/build -- validate gpu --native-metal --sanitize
+odin run tools/build -- validate gpu --native-vulkan --sanitize \
   --vulkan-library /absolute/path/to/libvulkan \
   --vulkan-icd /absolute/path/to/driver_icd.json
 ```
@@ -36,10 +36,10 @@ establish window or GPU execution on those hosts.
 Application rasterization and transactional resource behavior use:
 
 ```sh
-python3 scripts/validate_odin_render.py --native-metal --native-vulkan \
+odin run tools/build -- validate render --native-metal --native-vulkan \
   --sanitize --vulkan-library /absolute/path/to/libvulkan \
   --vulkan-icd /absolute/path/to/driver_icd.json
-python3 scripts/validate_odin_ui_gpu.py --sanitize --backend both \
+odin run tools/build -- validate ui --sanitize --backend both \
   --vulkan-loader /absolute/path/to/libvulkan \
   --vulkan-icd /absolute/path/to/driver_icd.json
 ```
@@ -48,7 +48,7 @@ These paired application fixtures currently require Darwin arm64. Add
 `--native-surface` to the applicable GPU/render driver for real windowed
 acquire/resize/present checks. Surface acceptance requires a desktop session.
 Script/physics-backed particle acceptance uses the render driver's `--particles`
-with explicit `--luau-library` and `--box3d-library`. See each driver's `--help`
+with the verified canonical `--build-manifest`. See each driver's `--help`
 and [build/launch instructions](odin_build.md) for isolated outputs and native
 dependency paths.
 

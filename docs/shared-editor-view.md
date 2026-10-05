@@ -10,10 +10,10 @@ and replies after their accepted native color/object-ID capture completes.
 Use the [canonical build and launcher](odin_build.md):
 
 ```sh
-python3 scripts/build_katla_odin.py --output target/katla-shared-view
+odin run tools/build -- --output target/katla-shared-view
 katla_socket_dir=$(mktemp -d "${TMPDIR:-/tmp}/katla-editor.XXXXXX")
 chmod 700 "$katla_socket_dir"
-python3 scripts/run_katla_odin.py --build-dir target/katla-shared-view --no-build -- \
+odin run tools/build -- run --build-dir target/katla-shared-view --no-build -- \
   --scene assets/scenes/shared-room.katla --gpu-validation \
   --mcp-socket "$katla_socket_dir/editor.sock"
 ```
@@ -48,7 +48,7 @@ The protocol uses `server/discover`, `tools/list` and `tools/call`, with version
 schemas are [`odin/agent/tools.json`](../odin/agent/tools.json). Ordinary successful
 tool replies expose `{entity_ids, data}` as `structuredContent`; view replies
 instead expose the committed metadata directly plus separate PNG image content.
-The [Python client](../scripts/katla_mcp_client.py) implements that contract.
+The [Odin client](../tools/wire/wire.odin) implements that contract.
 
 ## View actions and provenance
 
@@ -97,7 +97,7 @@ image and for entities without drawable bounds.
 
 `assets/scenes/shared-room.katla` contains two doors, walls, a window, a low cabinet
 and an object behind the initial camera. Start inside at `[0,1.6,1]`, looking at
-`[0,1.2,-6]`, without selection. `validate_shared_view.py` checks selection-free
+`[0,1.2,-6]`, without selection. `tools/author shared-view` checks selection-free
 observation, truncation, off-camera spatial queries, resource discovery, focus and
 GPU center picking. It widens the left door through `SceneTransform.local`, checks
 captured bounds and undoes the edit; it also places and undoes a primitive. It
@@ -133,7 +133,7 @@ host; Katla does not answer them. The host conversation's MCP tool configuration
 must separately point to `katla-mcp-proxy` for this running editor. Question
 transport and scene-tool transport use distinct endpoints and responsibilities.
 
-`python3 scripts/validate_odin_host.py --sanitize` exercises local private-socket
+`odin run tools/build -- validate host --sanitize` exercises local private-socket
 fixtures for loaded-thread identity, idle start, active steer, progress, attention,
 interrupt, EOF and cancellation. These fixtures do not prove attachment to the
 user's actual desktop conversation, paid-provider behavior or multi-client

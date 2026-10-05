@@ -1,30 +1,30 @@
 # Native window dependency
 
 The Linux/Windows editor uses the direct C ABI in `bridge.h`, backed by SDL
-3.2.28 at commit `7f3ae3d57459e59943a4ecfefc8f6277ec6bf540`. The source archive
-SHA-256 is `7a8347c770b90b33daac2352858ca03f9c9a2ccc8ce711054870361d1a6b32e5`.
-The builder downloads and checks that exact source; it never selects a system
+3.2.28 at commit `7f3ae3d57459e59943a4ecfefc8f6277ec6bf540`.
+The builder fetches and verifies that exact clean Git revision; it never selects a system
 SDL installation. SDL's zlib license is retained in the output as
 `SDL-LICENSE.txt`. The bridge has no Rust dependency.
 
 ```sh
-python3 tools/window_native/build.py --output target/window-native --build-smoke
+odin run tools/build -- --dependency window --output target/window-native
 ```
 
-Use `--cc` to select the compiler, `--cmake` for the CMake executable, and
-`--sanitize` for matching AddressSanitizer instrumentation. Windows defaults
-to the Ninja generator; `--generator` overrides it. Pass the produced library
+Set `CC`, `CXX` and `AR` to select the native compiler and archiver. Use
+`--sanitize` for matching AddressSanitizer instrumentation. The Odin tool
+compiles the pinned source directly with checked-in host configurations;
+Python, CMake and Ninja are not build dependencies. Pass the produced library
 to the editor's `--window-library` argument. The SDL runtime library must remain
 beside the bridge. Output names are `libkatla_window_native.so`,
-`katla_window_native.dll`, or `libkatla_window_native.dylib`.
+or `katla_window_native.dll`. macOS uses Katla's Cocoa window backend.
 
 Linux requires development packages for **both** X11 and Wayland. On Debian/
 Ubuntu these include `libx11-dev libxext-dev libxrandr-dev libxcursor-dev
 libxfixes-dev libxi-dev libxss-dev libwayland-dev libxkbcommon-dev
-wayland-protocols libdbus-1-dev libibus-1.0-dev pkg-config cmake ninja-build`.
+libdbus-1-dev libibus-1.0-dev libegl1-mesa-dev pkg-config`.
 The source build fails if either native video driver or the D-Bus/IBus/Fcitx
-IME paths were omitted. Optional
-`libdecor-0-dev` enables decorated Wayland windows on applicable compositors.
+IME paths were omitted. Wayland protocol sources come from the pinned SDL tree
+and are generated with `wayland-scanner` from `libwayland-dev`.
 
 The bridge creates Vulkan-capable, resizable windows and exposes borrowed
 Xlib, Wayland or Win32 native handles. The generic GPU surface descriptor
@@ -64,11 +64,7 @@ prove operating-system IME interaction. It asserts zero SDL-owned allocations
 after final shutdown. An unavailable native display/Vulkan loader returns 77;
 that is unavailable hardware, not a passing acceptance run.
 
-Validation on the implementation host includes strict full-editor type checks
-for Darwin, Linux amd64 and Windows amd64, plus UTF-8/key CPU tests with ASan and
-LeakSanitizer. Actual Linux/Windows source linking, IME, clipboard and input
-interaction require their native CI/desktop hosts. The Cocoa dependency smoke
-is an additional source/ABI/lifecycle check. Its AddressSanitizer run uses an
-explicit external AppKit/QuartzCore/RunningBoard process-global leak boundary;
-the zero SDL allocation assertion remains active. Font and ordinary CPU tests
-retain full leak detection.
+Strict full-editor checks for Linux and Windows verify their typed platform
+boundaries. Source linking requires the target SDK and libraries; window/input
+acceptance additionally requires a native desktop or Xvfb with a Vulkan ICD.
+Configured CPU ASan suites retain leak detection.

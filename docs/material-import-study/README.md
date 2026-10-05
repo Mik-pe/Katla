@@ -52,19 +52,8 @@ image lifetime and scene sharing. The optional headless MCP service reports EOF
 when no client initializes its stdio transport; this is outside timing intervals
 and is not a GPU validation result. Physical Metal measurements remain unavailable.
 
-To reproduce, make a detached baseline and copy only the benchmark stimulus:
-
-```bash
-git worktree add --detach /tmp/katla-material-import-baseline a162c360
-cp katla_app/src/application/spawning/import_benchmark.rs /tmp/katla-material-import-baseline/katla_app/src/application/spawning/
-```
-
-Add `#[path = "import_benchmark.rs"] mod import_benchmark;` to the baseline's
-`material_tests.rs`, then run from the current checkout:
-
-```bash
-python3 scripts/measure_material_imports.py --baseline /tmp/katla-material-import-baseline --iterations 5 --output /tmp/katla-material-import-results
-```
-
-The script builds both fixtures, runs their native test binaries serially,
-checks matching output texels, and writes metadata, logs and median values.
+These measurements used the historical Rust implementation and its archived
+benchmark driver. The baseline is `a162c360`; retrieve the stimulus and driver
+from the corresponding Git revision when auditing these recorded results. The
+current Odin checkout uses the native acceptance tools in
+[Odin development tools](../odin_tools.md); it does not carry this old runner.

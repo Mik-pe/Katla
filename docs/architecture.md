@@ -34,8 +34,8 @@ execute generic frames without interpreting editor policy.
 
 Native dependencies cross explicit bounded C ABIs. Builds pin their sources and
 compile artifacts for the selected host and instrumentation mode. Luau, Box3D,
-miniaudio, image/font codecs, TOML and portable window services are explicit
-dependencies. The standalone Naga compiler is a separate build process, never
+miniaudio, font codecs, TOML and portable window services are explicit
+dependencies. Image codecs and decompression are Odin packages. The standalone Naga compiler is a separate build process, never
 linked into the running editor. The runtime has no Rust engine or layout FFI.
 
 ## Scene and publication ownership

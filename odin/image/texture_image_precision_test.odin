@@ -1,4 +1,4 @@
-package image
+package katla_image
 import "core:testing"
 import "core:math"
 import "core:fmt"

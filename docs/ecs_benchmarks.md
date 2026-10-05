@@ -13,11 +13,9 @@ not automatically faster.
 
 ## Reproduce
 
-Run on an otherwise idle macOS host with Rust and Python 3 installed:
-
-```sh
-python3 katla_ecs/benches/run_comparison.py --sample-ms 50
-```
+The original reproduction harness belongs to the historical Rust source at
+commit `8d3ceb142fe5c2f7eb421bfea3eda2f6be2c0247`. It is no longer shipped as a
+Katla tool. Use the archived source to reproduce these historical measurements.
 
 The script exports the original commit
 `8d3ceb142fe5c2f7eb421bfea3eda2f6be2c0247` to a temporary directory, copies the

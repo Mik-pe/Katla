@@ -94,7 +94,7 @@ odin test odin/ecs -vet -strict-style
 odin test odin/editor -all-packages -vet -strict-style \
   -sanitize:address -define:ODIN_TEST_THREADS=1 \
   -define:ODIN_TEST_FAIL_ON_BAD_MEMORY=true
-python3 scripts/build_katla_odin.py --tests
+odin run tools/build -- --tests
 ```
 
 Tests cover stale IDs, page/dense churn, alias rejection, change tracking,

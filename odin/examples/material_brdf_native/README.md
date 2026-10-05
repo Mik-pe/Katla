@@ -35,7 +35,7 @@ acceptance. Missing normal maps at scale zero and one must be bit-identical in
 all twelve transform/geometry combinations. Both matrices also compare accepted
 Metal and Vulkan half-float values directly.
 
-Run through `scripts/validate_odin_render.py --native-metal --native-vulkan` with
+Run through `odin run tools/build -- validate render --native-metal --native-vulkan` with
 explicit compiler and Vulkan paths, or build this package with `-vet
 -strict-style` and pass the compiler executable and Vulkan loader as its two
 arguments. Set `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1` before launch.

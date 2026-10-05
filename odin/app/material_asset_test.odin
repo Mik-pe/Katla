@@ -25,7 +25,6 @@ material_asset_test_entity :: proc(owner:^Authoring,key:u64)->ecs.Entity_Id {
 }
 @(test)
 test_material_asset_real_image_independent_copy_history_and_scene_origin :: proc(t:^testing.T) {
-    if !MATERIAL_ASSET_TEST_NATIVE_IMAGE { return }
     directory,error:=os.make_directory_temp("","katla-material-asset-*",context.allocator); if !testing.expect(t,error==nil) { return }; defer { os.remove_all(directory); delete(directory) }
     root:=strings.concatenate({directory,"/resources"}); defer delete(root); testing.expect_value(t,os.make_directory(root),os.Error(nil))
     for folder in ([1]string{"images"}) { name:=strings.concatenate({root,"/",folder}); testing.expect_value(t,os.make_directory(name),os.Error(nil)); delete(name) }
@@ -69,7 +68,6 @@ test_material_asset_real_image_independent_copy_history_and_scene_origin :: proc
     testing.expect_value(t,scene_snapshot_restore(&owner,&read),editor.Scene_Error.None)
 }
 
-MATERIAL_ASSET_TEST_NATIVE_IMAGE :: #config(STB_IMAGE_LIBRARY,"")!=""
 @(test)
 test_material_asset_strict_document_and_sampler_failures :: proc(t:^testing.T) {
     owner:Authoring; authoring_init(&owner); defer authoring_destroy(&owner)

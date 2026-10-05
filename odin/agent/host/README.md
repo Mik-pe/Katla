@@ -37,7 +37,7 @@ and relative paths fail. Windows reports unsupported transport.
 socket/thread preferences. A missing selection remains disconnected. Connection
 is a separate UI action; storing an offline endpoint does not contact it.
 
-Run `python3 scripts/validate_odin_host.py --sanitize` for real Unix API fixtures:
+Run `odin run tools/build -- validate host --sanitize` for real Unix API fixtures:
 loaded pagination, resume identity, idle start, active steer, turn/item filtering,
 host attention, explicit interrupt, EOF, malformed integer overflow, missing
 thread, wrong resume identity and cancellation of a stalled API read. These are

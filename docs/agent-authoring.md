@@ -13,10 +13,10 @@ Build and launch through the [canonical Odin scripts](odin_build.md). For a
 shared-room session on macOS or Linux:
 
 ```sh
-python3 scripts/build_katla_odin.py --output target/katla-authoring
+odin run tools/build -- --output target/katla-authoring
 katla_socket_dir=$(mktemp -d "${TMPDIR:-/tmp}/katla-editor.XXXXXX")
 chmod 700 "$katla_socket_dir"
-python3 scripts/run_katla_odin.py --build-dir target/katla-authoring --no-build -- \
+odin run tools/build -- run --build-dir target/katla-authoring --no-build -- \
   --scene assets/scenes/shared-room.katla --gpu-validation \
   --mcp-socket "$katla_socket_dir/editor.sock"
 ```
@@ -223,17 +223,18 @@ or replacing a file does not automatically reassign live objects. Reusable mater
 
 ## Room recipes
 
-The [room builder](../scripts/author_room.py) emits a reviewable plan without
+The [room builder](../tools/author/main.odin) emits a reviewable plan without
 connecting:
 
 ```sh
-python3 scripts/author_room.py --dry-run --name Study --size 6 3 8
+odin run tools/author -- room --dry-run --name Study --size 6 3 8
 ```
 
-Apply that plan to the selected editor:
+Apply that plan to the selected editor. Set `katla_proxy` to the verified build's
+`bin/katla-mcp-proxy` executable:
 
 ```sh
-python3 scripts/author_room.py --socket "$katla_socket_dir/editor.sock" \
+odin run tools/author -- room --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock" \
   --name Study --size 6 3 8 --origin 20 0 -4
 ```
 
@@ -241,10 +242,10 @@ The floor, walls and optional ceiling are real cube entities. Walls sit outside
 the usable interior and the front (+Z) wall leaves a centered doorway. Materials
 are applied in validated batches. A failed operation unwinds only the successful
 edits made by this invocation. Run the recipe without concurrent edits: rollback uses the shared chronological
-history. The script leaves the document unsaved unless
+history. The tool leaves the document unsaved unless
 `--save DESTINATION.katla` is supplied.
 
-[`furnish_shared_room.py`](../scripts/furnish_shared_room.py) loads the prepared
+[`tools/author furnish`](../tools/author/journeys.odin) loads the prepared
 room, adds the 15 unit-cube proxies from `teen-room-plan.json`, checks their bounds,
 undoes them, and places them again. It preserves the base room, doors, window and
 cabinet. Clearance checks describe a central passage and door approaches; they do
@@ -284,23 +285,23 @@ load leaves the previous world, document baseline and native owners intact. See
 Run the native journeys against a disposable socket owner:
 
 ```sh
-python3 scripts/validate_shared_view.py "$katla_socket_dir/editor.sock"
-python3 scripts/furnish_shared_room.py --socket "$katla_socket_dir/editor.sock"
-python3 scripts/validate_authoring.py --socket "$katla_socket_dir/editor.sock"
-python3 scripts/validate_prefabs.py --socket "$katla_socket_dir/editor.sock"
+odin run tools/author -- shared-view --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock"
+odin run tools/author -- furnish --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock"
+odin run tools/author -- validate --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock"
+odin run tools/author -- prefabs --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock"
 ```
 
 The authoring journey compares exact captured RGB pixels with a bounded stdlib
 reader for the editor's native PNG output. For an isolated project/resource copy,
 pass its project directory as `--project` to
-the prefab validator. These scripts produce PNGs, exact frame/submission metadata
+the prefab validator. These Odin tools produce PNGs, exact frame/submission metadata
 and receipts. The prefab journey verifies actual mesh writes, rejected replacement,
 Capture/Instantiate/Remove, fresh-ID undo/redo, preview gating and saved hierarchy.
 Particle/Luau delivery and allocation-failure rollback also have dedicated native
 application tests; this script does not manufacture GPU counters.
 
 Protocol fixtures run with
-`python3 -m unittest discover -s scripts -p test_katla_mcp_client.py -v`.
+`odin test tools/author -vet -strict-style` and `odin run tools/build -- validate processes`.
 They test transport envelopes and recovery independently of native rendering.
 Neither deterministic recipes nor local host fixtures certify a live model's room
 understanding, OS interaction or attachment to a user's existing conversation.

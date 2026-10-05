@@ -59,7 +59,7 @@ preview has its own explicit stop action.
 
 ## Reproducible validation
 
-Run `python3 scripts/validate_odin_audio.py --native --switch-default` for the CPU,
+Run `odin run tools/build -- validate audio --native --switch-default` for the CPU,
 ASan and actual hardware checks. CPU suites keep LSan enabled and fail owned
 allocation leaks; macOS suppresses only the observed `CFPrefsPlistSource` and `CFPrefsSearchListSource`
 initialization stacks on the external XPC thread.

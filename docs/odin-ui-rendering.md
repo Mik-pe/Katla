@@ -87,7 +87,7 @@ discard removed logical IDs before declaring replacement graph roles.
 
 ## Actual native acceptance
 
-`scripts/validate_odin_ui_gpu.py` builds CPU graph/font tests with LeakSanitizer
+`odin run tools/build -- validate ui` builds CPU graph/font tests with LeakSanitizer
 and a paired native Metal/Vulkan harness. The harness renders a real retained
 text input through its production font provider, Swedish preedit/commit and
 whole-grapheme deletion, visual RTL movement, shaped Unicode fallback glyphs,

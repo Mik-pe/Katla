@@ -93,8 +93,8 @@ application behavior, including trigger-driven particle commands.
 Use [the canonical build](odin_build.md) for complete dependency setup:
 
 ```sh
-python3 scripts/build_katla_odin.py --tests
-python3 scripts/validate_odin_luau.py
+odin run tools/build -- --tests
+odin run tools/build -- validate luau
 ```
 
 The script validator builds pinned VM, Box3D and audio dependencies, then runs
@@ -102,7 +102,7 @@ actual language/runtime and application consumers in normal and ASan modes.
 The dependency builder also supports isolated outputs:
 
 ```sh
-python3 scripts/build_odin_luau.py --sanitize --output /absolute/path/to/libkatla_luau_asan
+odin run tools/build -- --dependency luau --output target/libkatla_luau.dylib --sanitize --output /absolute/path/to/libkatla_luau_asan
 ```
 
 Choose the host's `.dylib`, `.so` or `.dll` filename. Tests require the matching

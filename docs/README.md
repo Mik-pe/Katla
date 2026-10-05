@@ -6,7 +6,7 @@ manifests define the current API. Git/GitHub record delivery and CI;
 
 | Task | Start here | Related contracts |
 | --- | --- | --- |
-| Build, run and CI | [Build and launch](odin_build.md), [CI](ci.md) | [Editor completion](odin_editor.md) |
+| Build, run and CI | [Build and launch](odin_build.md), [Odin tools](odin_tools.md), [CI](ci.md) | [Editor completion](odin_editor.md) |
 | Package boundaries and ownership | [Architecture](architecture.md) | [Odin packages](../odin/README.md) |
 | Scene documents, migration and save/load | [Scene format](scene_format.md) | [Prefabs](prefabs.md), [editor](odin_editor.md) |
 | ECS, registry and shared history | [ECS](ecs_odin.md) | [Ownership](ecs.md), [measured storage](ecs_benchmarks.md) |
@@ -18,6 +18,7 @@ manifests define the current API. Git/GitHub record delivery and CI;
 | Audio, streams, DSP and mixer | [Audio](audio_odin.md) | [Pinned native dependency](../tools/audio_native/README.md) |
 | Luau gameplay | [Runtime contracts](katla_script_architecture.md) | [Scene events](scene-events.md), [editor lifecycle](odin_editor.md) |
 | Physics, joints and queries | [Physics ownership](physics-engine-adr.md) | [Box3D native contract](../tools/box3d/README.md) |
+| Image decoding and precision | [Odin images](image_odin.md) | [Build](odin_build.md), [thumbnails](thumbnails_odin.md) |
 | Assets, mesh and prefab authoring | [Prefabs](prefabs.md), [models](gltf_odin.md) | [Confined resources](../odin/resources/README.md), [image thumbnails](thumbnails_odin.md) |
 | Agent tools and live room authoring | [Agent ownership](agent_odin.md), [authoring guide](agent-authoring.md) | [MCP viewport sharing](shared-editor-view.md) |
 | Material authoring and assets | [Material actions](material_contracts.md) | [Scene/native ownership](odin_material_scene.md) |

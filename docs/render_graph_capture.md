@@ -33,10 +33,10 @@ postprocessing, picking and UI composition.
 
 ```sh
 MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
-python3 scripts/run_katla_odin.py -- --headless --frames 2 \
+odin run tools/build -- run -- --headless --frames 2 \
   --dump-render-graph-file /tmp/metal-capture.json
 
-python3 scripts/run_katla_odin.py --backend vulkan -- --headless --frames 2 \
+odin run tools/build -- run --backend vulkan -- --headless --frames 2 \
   --dump-render-graph-file /tmp/vulkan-capture.dot
 ```
 

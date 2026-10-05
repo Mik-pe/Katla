@@ -244,8 +244,8 @@ CPU tests and compilation alone do not establish GPU behavior. Linux/Windows
 Vulkan typechecks are separate from native hardware evidence.
 
 ```sh
-python3 scripts/validate_odin.py
-python3 scripts/validate_odin.py --native-metal --native-vulkan \
+odin run tools/build -- validate processes
+odin run tools/build -- validate processes --native-metal --native-vulkan \
   --vulkan-library /usr/local/lib/libvulkan.dylib \
   --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json
 ```

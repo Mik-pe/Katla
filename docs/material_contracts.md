@@ -65,7 +65,7 @@ image upload, sampler, coverage or lighting validation on Vulkan and Metal.
 Viewport PNG/picking evidence remains bound to the same accepted GPU submission;
 frustum candidate metadata does not establish occlusion visibility.
 
-The offline protocol consumer is `scripts/validate_odin_mcp.py`. It retains the
+The offline protocol consumer is `odin run tools/build -- validate mcp`. It retains the
 existing process/EOF/cancellation tests and exercises complete material factors,
 role sampling, actual PNG assignment, atomic failure, capture/read/validate/write/
 apply, independent copied revisions and scene reload through real stdio calls.

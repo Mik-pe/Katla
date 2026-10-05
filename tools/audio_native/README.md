@@ -29,7 +29,7 @@ backed by the current physical output and switches the real default output.
 The test restores the original default and destroys the aggregate through
 explicit cleanup. It is not part of the engine's production API.
 
-Build reproducibly with `python3 scripts/build_odin_audio.py`. `CC` and `AR` may
+Build reproducibly with `odin run tools/build -- --dependency audio --output target/odin-audio`. `CC` and `AR` may
 select native compiler/archive tools. The ASan build resolves Clang matching the
 installed Odin LLVM backend through the existing Box3D compiler resolver. The
 builder verifies both pinned source hashes. The archive is a generated target

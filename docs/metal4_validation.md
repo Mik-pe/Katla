@@ -13,8 +13,8 @@ Local Odin acceptance used an Apple M5 with Metal 4 and Vulkan 1.3 through Molte
 From the repository root:
 
 ```sh
-python3 scripts/build_katla_odin.py --tests
-python3 scripts/build_katla_odin.py --sanitize --tests
+odin run tools/build -- --tests
+odin run tools/build -- --sanitize --tests
 ```
 
 The builder verifies Odin, builds pinned dependencies from source, packages shader sources and records artifact hashes in `build.json`. Normal/ASan outputs are separate. Native C/C++ instrumentation must match Odin's LLVM major/runtime; the builder selects it. CPU/font/decoder checks retain LeakSanitizer. A documented external CFPreferences suppression, when used by the broader app validator, is limited to its observed initialization stacks and reported by that run.
@@ -25,14 +25,14 @@ Metal alone:
 
 ```sh
 MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
-  python3 scripts/validate_odin_gpu.py --native-metal --sanitize
+  odin run tools/build -- validate gpu --native-metal --sanitize
 ```
 
 Both backends on the local MoltenVK host:
 
 ```sh
 MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
-  python3 scripts/validate_odin_gpu.py \
+  odin run tools/build -- validate gpu \
   --native-metal --native-vulkan --sanitize \
   --vulkan-library /usr/local/lib/libvulkan.dylib \
   --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json \
@@ -59,20 +59,19 @@ array probe reports Unsupported.
 The scene/model validator builds dependencies and exercises real consumer graphs:
 
 ```sh
-python3 scripts/validate_odin_render.py \
+odin run tools/build -- validate render \
   --native-metal --native-vulkan --native-surface --sanitize \
   --vulkan-library /usr/local/lib/libvulkan.dylib \
   --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json
 ```
 
-The optional particle scenario requires source-built Luau/Box3D libraries; consult `--help` for `--particles`, `--luau-library` and `--box3d-library`. Selected consumer fixtures are distinct from complete owner-loop acceptance.
+The optional particle scenario requires source-built Luau/Box3D libraries; use `--particles` and the verified canonical `--build-manifest`. Selected consumer fixtures are distinct from complete owner-loop acceptance.
 
 After the canonical ASan build, reuse its exact dependencies for UI/font/picking:
 
 ```sh
-python3 scripts/validate_odin_ui_gpu.py --sanitize --backend both \
-  --shader-compiler target/katla-odin/darwin-arm64/asan/shader-compiler/debug/katla-shader-compiler \
-  --font-library target/katla-odin/darwin-arm64/asan/deps/fonts/libkatla_font_native.dylib \
+odin run tools/build -- validate ui --sanitize --backend both \
+  --build-manifest target/katla-odin/darwin-arm64/asan/build.json \
   --image-library target/katla-odin/darwin-arm64/asan/deps/image/libkatla_image.a \
   --vulkan-loader /usr/local/lib/libvulkan.dylib \
   --vulkan-icd /usr/local/share/vulkan/icd.d/MoltenVK_icd.json
@@ -84,7 +83,7 @@ Launch the canonical editor through its verified builder/launcher:
 
 ```sh
 MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
-  python3 scripts/run_katla_odin.py --sanitize --backend metal -- \
+  odin run tools/build -- run --sanitize --backend metal -- \
   --frames 100 --preferences target/native-editor/preferences \
   --screenshot target/native-editor/editor.png
 ```

@@ -1,5 +1,5 @@
 //! Preview conversion is explicit and never replaces precise material image ownership.
-package image
+package katla_image
 import "core:mem"
 import "core:math"
 

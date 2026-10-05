@@ -3,7 +3,10 @@
 The canonical workflow is [.github/workflows/odin.yml](../.github/workflows/odin.yml).
 It builds the actual Odin editor and its source-pinned native dependencies;
 CPU suites run serially with strict vet/style and bad-memory checks.
-Cargo is used only for the isolated offline Naga compiler.
+Cargo is used only for the isolated offline Naga compiler. Builds and launches
+run `tools/build` in Odin; validation and authoring also use Odin.
+Native compilation calls Clang/Clang++ and the archiver directly, without CMake
+or make. Image decoding has no C library or platform-specific build.
 
 | Platform | Explicit runner | Acceptance |
 | --- | --- | --- |
@@ -46,12 +49,12 @@ retain leak checks.
 ## Local equivalents
 
 ```sh
-python3 scripts/build_katla_odin.py --tests
-python3 scripts/build_katla_odin.py --sanitize --tests
-python3 scripts/validate_odin.py --native-physics
-python3 scripts/validate_odin_gpu.py --native-metal --sanitize
-python3 scripts/validate_odin_gpu.py --native-vulkan --vulkan-library /path/to/libvulkan --sanitize
-MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 python3 scripts/run_katla_odin.py -- --frames 100
+odin run tools/build -- --tests
+odin run tools/build -- --sanitize --tests
+odin run tools/build -- validate physics
+odin run tools/build -- validate gpu --native-metal --sanitize
+odin run tools/build -- validate gpu --native-vulkan --vulkan-library /path/to/libvulkan --sanitize
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 odin run tools/build -- run -- --frames 100
 ```
 
 Application composition adds [render validation](render_features_odin.md),
