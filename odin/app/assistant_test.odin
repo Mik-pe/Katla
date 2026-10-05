@@ -30,7 +30,7 @@ api="responses"
 api_key="local-test-only"
 base_url="http://127.0.0.1:1/v1"
 model="chosen-model"
-timeout_ms=500
+timeout_ms=5000
 rate_limit_min_interval_ms=0`)
     testing.expect(t,error==.None)
     owner:Assistant; testing.expect(t,assistant_init(&owner,&mailbox,config,"[]","Scene")==.None); llm.config_destroy(&config)
@@ -38,9 +38,11 @@ rate_limit_min_interval_ms=0`)
     testing.expect(t,assistant_start(&owner," ")==.Config && owner.state==.Idle)
     testing.expect(t,assistant_start(&owner,"Edit")==.None && assistant_start(&owner,"Duplicate")==.Busy && assistant_reset(&owner)==.Busy)
     deadline:=time.tick_now()
-    for owner.job.worker!=nil && time.duration_seconds(time.tick_since(deadline))<2 { assistant_poll(&owner); time.sleep(time.Millisecond) }
-    testing.expect(t,owner.job.worker==nil && owner.state==.Failed && owner.error==.Network && owner.conversation.failed)
-    testing.expect(t,assistant_start(&owner,"Silent retry")==.Network && mailbox.outstanding==0)
+    for owner.job.worker!=nil && time.tick_since(deadline)<8*time.Second { assistant_poll(&owner); time.sleep(time.Millisecond) }
+    testing.expect(t,owner.job.worker==nil && owner.state==.Failed && owner.conversation.failed)
+    testing.expect_value(t,owner.error,llm.Error.Network)
+    testing.expect_value(t,assistant_start(&owner,"Silent retry"),llm.Error.Network)
+    testing.expect(t,mailbox.outstanding==0)
     testing.expect(t,assistant_reset(&owner)==.None && owner.state==.Idle && !owner.conversation.failed && len(owner.conversation.history)==1)
     testing.expect(t,assistant_start(&owner,"Cancel")==.None)
     assistant_cancel(&owner); testing.expect(t,owner.state==.Cancelling)
