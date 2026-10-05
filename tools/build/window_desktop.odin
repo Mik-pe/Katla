@@ -10,7 +10,7 @@ build_window :: proc(folder:string)->string {
         config:=join(folder,"config"); mkdir(config)
         copy_file(join(config,"SDL_build_config.h"),join(root,"tools/window_native/config","windows.h" if ODIN_OS==.Windows else "linux.h"))
         mkdir(join(config,"SDL3")); write(join(config,"SDL3/SDL_revision.h"),`#define SDL_REVISION "release-3.2.28-7f3ae3d"`+"\n")
-        flags:=native_flags(); append(&flags,"-std=c11","-DSDL_BUILD_MAJOR_VERSION=3","-DSDL_BUILD_MINOR_VERSION=2","-DSDL_BUILD_MICRO_VERSION=28","-DSDL_MAIN_HANDLED","-I",config,"-I",join(upstream,"include"),"-I",join(upstream,"src"),"-I",join(upstream,"include/build_config"))
+        flags:=native_flags(); append(&flags,"-std=c11","-DSDL_BUILD_MAJOR_VERSION=3","-DSDL_BUILD_MINOR_VERSION=2","-DSDL_BUILD_MICRO_VERSION=28","-I",config,"-I",join(upstream,"include"),"-I",join(upstream,"src"),"-I",join(upstream,"include/build_config"))
         sources:=make([dynamic]string)
         for directory in ([]string{"","atomic","audio","audio/dummy","camera","camera/dummy","core","cpuinfo","dialog","dynapi","events","io","io/generic","filesystem","gpu","joystick","joystick/dummy","haptic","haptic/dummy","hidapi","locale","main","misc","power","process","render","sensor","sensor/dummy","stdlib","storage","thread","time","timer","tray","video","video/yuv2rgb","libm","video/dummy","storage/generic"}) {
             append(&sources,..files(join(upstream,"src",directory),".c",false))
@@ -36,7 +36,7 @@ build_window :: proc(folder:string)->string {
         objects:=make([dynamic]string)
         for file,i in sources { object:=join(folder,"objects",fmt.aprintf("%d-%s.o",i,filepath.stem(file))); compile(cc,file,object,flags[:]); append(&objects,object) }
         sdl:=join(folder,"SDL3.dll" if ODIN_OS==.Windows else "libSDL3.so.0"); shared(cc,sdl,objects[:],link_flags[:])
-        bridge_flags:=native_flags(); append(&bridge_flags,"-std=c11","-Wall","-Wextra","-Werror","-I",join(upstream,"include"))
+        bridge_flags:=native_flags(); append(&bridge_flags,"-std=c11","-DSDL_MAIN_HANDLED","-Wall","-Wextra","-Werror","-I",join(upstream,"include"))
         object:=join(folder,"bridge.o"); compile(cc,join(root,"tools/window_native/bridge.c"),object,bridge_flags[:])
         bridge_link:=native_flags(); append(&bridge_link,sdl if ODIN_OS==.Linux else join(folder,"SDL3.lib"))
         when ODIN_OS==.Linux { append(&bridge_link,"-Wl,-rpath,$ORIGIN") }
