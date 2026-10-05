@@ -1,0 +1,259 @@
+//! UI render pass template.
+//!
+//! Renders 2D UI geometry with alpha blending.
+
+use std::collections::{HashMap, HashSet};
+
+use crate::handle::MaterialHandle;
+use crate::render_graph::access::{
+    ImageAccess, ImageSubresourceRange, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
+};
+use crate::render_graph::builder::{InternalPassBuilder, PassBuilder};
+use crate::render_graph::pass::{PassKind, PassType};
+use crate::render_graph::resource::GraphResourceHandle;
+use crate::render_pass::{AttachmentOps, LoadOp};
+
+/// UI render pass template.
+///
+/// Renders 2D UI geometry with alpha blending and optional clipping.
+///
+#[derive(Debug, Clone)]
+pub struct UIPass {
+    /// Pass name for debugging.
+    name: String,
+    /// Color attachment output.
+    color_output: Option<ColorOutput>,
+    /// Resources read by this pass.
+    reads: Vec<String>,
+    /// UI material handle for rendering.
+    material: Option<MaterialHandle>,
+}
+
+/// Describes a color attachment output for UI.
+#[derive(Debug, Clone)]
+struct ColorOutput {
+    /// Resource name.
+    name: String,
+    ops: AttachmentOps,
+}
+
+impl UIPass {
+    /// Create a new UI pass.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Pass name for debugging and execution context reference.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            color_output: None,
+            reads: Vec::new(),
+            material: None,
+        }
+    }
+
+    /// Set the UI material for this pass.
+    ///
+    /// # Arguments
+    ///
+    /// * `material` - Material handle for UI rendering.
+    pub fn material(mut self, material: MaterialHandle) -> Self {
+        self.material = Some(material);
+        self
+    }
+
+    /// Write to a color attachment.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Resource name for graph reference.
+    pub fn write(mut self, name: impl Into<String>) -> Self {
+        self.color_output = Some(ColorOutput {
+            name: name.into(),
+            ops: AttachmentOps::load(),
+        });
+        self
+    }
+
+    /// Write a UI target with explicit load/store/clear operations.
+    pub fn write_ops(mut self, name: impl Into<String>, ops: AttachmentOps) -> Self {
+        self.color_output = Some(ColorOutput {
+            name: name.into(),
+            ops,
+        });
+        self
+    }
+
+    /// Read from a resource (e.g., font atlas texture).
+    ///
+    /// Can be called multiple times to add multiple read dependencies.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Resource name to read from.
+    pub fn read(mut self, name: impl Into<String>) -> Self {
+        self.reads.push(name.into());
+        self
+    }
+
+    /// Get the pass name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the read dependencies.
+    pub fn reads(&self) -> &[String] {
+        &self.reads
+    }
+}
+
+impl PassBuilder for UIPass {
+    fn as_builder(self) -> InternalPassBuilder {
+        // Collect write resource names
+        let writes: Vec<String> = self.color_output.iter().map(|o| o.name.clone()).collect();
+
+        // UI alpha-composites over the existing target contents.
+        let mut reads = self.reads.clone();
+        if let Some(output) = &self.color_output
+            && output.ops.load == LoadOp::Load
+            && !reads.contains(&output.name)
+        {
+            reads.push(output.name.clone());
+        }
+
+        // Hand-declared typed accesses: UI composites into its target
+        // (read-write color attachment); declared reads (viewport textures,
+        // font atlases) are sampled.
+        let write_set = writes.iter().cloned().collect::<HashSet<_>>();
+        let image_accesses = self
+            .reads
+            .iter()
+            .filter(|name| !write_set.contains(*name))
+            .map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    ResourceAccessMode::Read,
+                    ResourceAccessUsage::Sampled,
+                    ResourceAccessStage::FragmentShader,
+                    ImageAccess::WHOLE_RESOURCE,
+                )
+            })
+            .chain(writes.iter().map(|name| {
+                super::named_image_access(
+                    name.clone(),
+                    if self
+                        .color_output
+                        .as_ref()
+                        .is_some_and(|output| output.ops.load == LoadOp::Load)
+                    {
+                        ResourceAccessMode::ReadWrite
+                    } else {
+                        ResourceAccessMode::Write
+                    },
+                    ResourceAccessUsage::ColorAttachment,
+                    ResourceAccessStage::ColorAttachmentOutput,
+                    ImageSubresourceRange::WHOLE_COLOR,
+                )
+            }))
+            .collect();
+
+        // Clone material handle
+        let material = self.material;
+
+        InternalPassBuilder {
+            name: self.name,
+            pass_type: PassType::Graphics,
+            reads,
+            writes,
+            image_accesses,
+            buffer_accesses: Vec::new(),
+            material,
+            output_format: None,
+            build_fn: Box::new(
+                move |_resource_map: &HashMap<String, GraphResourceHandle>| Ok(Box::new(())),
+            ),
+            uses_depth: false,
+            depth_target: None,
+            // UI alpha-composites over the existing target contents.
+            color_attachments: self
+                .color_output
+                .iter()
+                .map(|o| (o.name.clone(), o.ops))
+                .collect(),
+            depth_attachment: None,
+            kind: Some(PassKind::Ui),
+            side_effect: false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ui_pass_build_fn_resolution() {
+        let pass = UIPass::new("ui").write("color").read("font_atlas");
+
+        let builder = pass.as_builder();
+
+        let mut resource_map = HashMap::new();
+        resource_map.insert("color".to_string(), GraphResourceHandle::new(0));
+        resource_map.insert("font_atlas".to_string(), GraphResourceHandle::new(1));
+
+        let result = (builder.build_fn)(&resource_map);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn ui_output_declares_read_dependency_for_compositing() {
+        let builder = UIPass::new("ui").write("backbuffer").as_builder();
+        assert_eq!(builder.reads, vec!["backbuffer"]);
+        assert_eq!(builder.writes, vec!["backbuffer"]);
+    }
+
+    #[test]
+    fn ui_pass_declares_typed_accesses() {
+        use crate::render_graph::access::{
+            ImageSubresourceRange, NamedImageAccess, ResourceAccessMode, ResourceAccessStage,
+            ResourceAccessUsage,
+        };
+
+        let builder = UIPass::new("ui")
+            .write("backbuffer")
+            .read("viewport_0")
+            .as_builder();
+
+        assert_eq!(
+            builder.image_accesses,
+            vec![
+                NamedImageAccess {
+                    resource: "viewport_0".to_string(),
+                    mode: ResourceAccessMode::Read,
+                    usage: ResourceAccessUsage::Sampled,
+                    stage: ResourceAccessStage::FragmentShader,
+                    range: ImageAccess::WHOLE_RESOURCE,
+                },
+                NamedImageAccess {
+                    resource: "backbuffer".to_string(),
+                    mode: ResourceAccessMode::ReadWrite,
+                    usage: ResourceAccessUsage::ColorAttachment,
+                    stage: ResourceAccessStage::ColorAttachmentOutput,
+                    range: ImageSubresourceRange::WHOLE_COLOR,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_ui_pass_build_fn_empty_resources() {
+        let pass = UIPass::new("ui").write("color");
+        let builder = pass.as_builder();
+        let resource_map = HashMap::new();
+
+        // UIPass build_fn doesn't validate resources
+        let result = (builder.build_fn)(&resource_map);
+        assert!(result.is_ok());
+    }
+}

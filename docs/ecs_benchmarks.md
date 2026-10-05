@@ -1,9 +1,4 @@
-# Historical ECS storage and scheduling measurements
-
-These source-hashed Rust measurements describe the retired implementation.
-Current ownership and checks are in [Odin ECS](ecs_odin.md). Reproduction requires
-the recorded historical Git source; these are not current build instructions.
-
+# ECS storage and scheduling measurements
 
 The production ECS keeps one sparse-set component store. The benchmark-only
 archetype implementation evaluates a storage alternative; it is not a second
@@ -13,9 +8,11 @@ not automatically faster.
 
 ## Reproduce
 
-The original reproduction harness belongs to the historical Rust source at
-commit `8d3ceb142fe5c2f7eb421bfea3eda2f6be2c0247`. It is no longer shipped as a
-Katla tool. Use the archived source to reproduce these historical measurements.
+Run on an otherwise idle macOS host with Rust and Python 3 installed:
+
+```sh
+python3 katla_ecs/benches/run_comparison.py --sample-ms 50
+```
 
 The script exports the original commit
 `8d3ceb142fe5c2f7eb421bfea3eda2f6be2c0247` to a temporary directory, copies the
@@ -222,12 +219,3 @@ Cached matching, generations, structural filters, lifecycle events, change
 tracking and editor access remain on one production implementation. These
 observations support retaining sparse storage; they do not establish a blanket
 engine speedup or an idle-host thread-scaling curve.
-
-## Rust and Odin compilation
-
-The separate [Odin port report](ecs_odin.md#validation-and-compilation-measurements)
-compares complete ECS consumer build/typecheck times, with and without editor
-functionality. It does not time ECS runtime throughput or the full engine build.
-Raw compiler samples and source/toolchain receipts are in
-[ecs-odin-compile.csv](benchmarks/ecs-odin-compile.csv) and
-[ecs-odin-compile.json](benchmarks/ecs-odin-compile.json).

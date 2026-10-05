@@ -1,1 +1,0 @@
-@group(1) @binding(0) var images:binding_array<texture_storage_2d<rgba8unorm,write>,2>; @compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id:vec3u) {textureStore(images[id.x],vec2i(0),select(vec4f(1,0,0,1),vec4f(0,0,1,1),id.x==1u));}

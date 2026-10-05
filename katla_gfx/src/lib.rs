@@ -1,0 +1,402 @@
+//! Katla Graphics Library
+//!
+//! This is the graphics API layer for the Katla engine. It provides a
+//! cross-backend rendering system supporting Vulkan and Metal, with a focus
+//! on ergonomics and performance.
+//!
+//! # Backend Selection
+//!
+//! The crate supports two rendering backends:
+//! - **Vulkan** — via `ash`, available on all platforms
+//! - **Metal** — via `objc2-metal`, native on macOS (`cfg(target_os = "macos")`)
+//!
+//! Use [`AnyRenderer`] for runtime backend selection, or use `VulkanRenderer` /
+//! `MetalRenderer` directly for compile-time backend commitment.
+//!
+//! # Portable API vs Native Escape Hatches
+//!
+//! The crate root is the portable API: descriptors, handles, the
+//! [`GpuRenderer`] trait, and the render graph build and run identically on
+//! both backends. Native access is confined to explicitly named escape
+//! hatches — [`VulkanRenderer`] / [`MetalRenderer`], [`VulkanContext`], and
+//! the `vulkan_native` module (validation feature) — each of which commits
+//! the caller to one backend and its native object model.
+//!
+//! # Getting Started
+//!
+//! ## Creating the Renderer
+//!
+//! ```ignore
+//! // Vulkan backend
+//! let renderer = AnyRenderer::new_vulkan(
+//!     &display, &window, Size2D::new(1280, 720),
+//!     ValidationMode::Enabled,
+//!     CString::new("My App").unwrap(),
+//!     CString::new("Katla Engine").unwrap(),
+//! )?;
+//!
+//! // Metal backend (macOS only)
+//! let renderer = AnyRenderer::new_metal(
+//!     &display, &window,
+//!     ValidationMode::Enabled,
+//!     CString::new("My App").unwrap(),
+//!     CString::new("Katla Engine").unwrap(),
+//! )?;
+//! ```
+//!
+//! ## Creating Materials
+//!
+//! See [`material::API`](material/API.html) for complete material creation guide.
+//!
+//! ```ignore
+//! use katla_gfx::{GpuRenderer, PipelineDescriptor};
+//!
+//! // Via GpuRenderer trait (backend-agnostic)
+//! let descriptor = PipelineDescriptor::pbr("shaders/pbr.wgsl")
+//!     .with_color_format(ImageFormat::R16G16B16A16Sfloat);
+//! let material = renderer.compile_material(&descriptor)?;
+//! ```
+//!
+//! ## Building Frame Graphs
+//!
+//! See [`render_graph::API`](render_graph/API.html) for frame graph usage guide.
+//!
+//! Build passes with [`FrameGraphBuilder`] and supply their ordinary resource
+//! bindings before encoding. Acquire a [`FrameToken`] through
+//! [`GpuRenderer::acquire_frame`], pass it to `render`, and consume it through
+//! [`GpuRenderer::present`] or [`GpuRenderer::abort`]. Write mutable frame data
+//! only into the acquired slot's buffers.
+//!
+//! The executable `tests/backend_neutral_api.rs` example creates a custom
+//! shader material, supplies inline bindings, executes the graph and verifies
+//! exported pixels through core readback. Scene and editor services belong to
+//! `katla_app`; constructing a renderer does not initialize them.
+//!
+//! # Bindless Texture System
+//!
+//! The renderer uses a bindless texture system where all textures are stored in a single
+//! descriptor array accessed by index. This eliminates per-material descriptor bindings
+//! and enables efficient texture management.
+//!
+//! ## Querying Bindless Texture Information
+//!
+//! For advanced use cases such as debugging and texture inspection tools, the API provides
+//! methods to query bindless texture slot information:
+//!
+//! ```ignore
+//! use katla_gfx::{VulkanRenderer, TextureHandle};
+//!
+//! // Get the bindless slot index for a texture handle
+//! if let Some(slot) = renderer.get_bindless_slot(texture_handle) {
+//!     println!("Texture is at bindless slot {}", slot);
+//! }
+//!
+//! // Get the texture handle at a specific slot
+//! if let Some(handle) = renderer.get_texture_at_slot(10) {
+//!     println!("Texture at slot 10: {:?}", handle);
+//! }
+//!
+//! // Iterate over all registered textures with their slots
+//! for (handle, slot) in renderer.iter_bindless_textures() {
+//!     println!("Texture {:?} is at slot {}", handle, slot);
+//! }
+//!
+//! // Get bindless slot utilization statistics
+//! let (occupied, available, total) = renderer.get_bindless_stats();
+//! println!("Bindless slots: {}/{} used", occupied, total);
+//!
+//! ```
+//!
+//! ## Advanced: Direct Bindless Access
+//!
+//! For low-level rendering code, bindless texture queries are available through
+//! the `GpuRenderer` trait (backend-agnostic) or directly on backend renderers:
+//!
+//! - [`GpuRenderer::get_bindless_slot()`] - Get slot index for a texture
+//! - [`GpuRenderer::get_texture_at_slot()`] - Reverse lookup: slot → texture
+//! - [`GpuRenderer::get_texture_bindless_index()`] - Get slot index (returns 0 when unregistered)
+//!
+//! # API Organization
+//!
+//! ## Core Types
+//!
+//! - [`AnyRenderer`] - Runtime backend dispatch (Vulkan | Metal)
+//! - [`GpuRenderer`] - Backend-agnostic renderer trait
+//! - [`VulkanRenderer`] / [`MetalRenderer`] - Backend-specific renderers
+//! - [`MaterialHandle`] / [`MeshHandle`] / [`TextureHandle`] - Opaque resource handles
+//! - [`RendererError`] - Error type for renderer operations
+//!
+//! ## Material System
+//!
+//! - [`GpuRenderer::compile_material()`] - Create materials from shaders (backend-agnostic)
+//! - [`PipelineDescriptor`] - Portable material/pipeline state (blend, depth, layout, format)
+//!
+//! ## Frame Graph
+//!
+//! - [`AnyFrameGraph`] - Compiled render pipeline (runtime backend dispatch)
+//! - [`FrameGraphBuilder`] - Builder for creating frame graphs
+//! - [`GeometryPass`] - 3D geometry rendering
+//! - [`FullscreenPass`] - Post-processing effects
+//! - [`render_graph::UIPass`] - 2D UI rendering
+//! - [`ShadowPass`] - Shadow map generation
+//!
+//! # Documentation Guides
+//!
+//! - [Material API Guide](material/API.html) - Creating and using materials
+//! - [Frame Graph API Guide](render_graph/API.html) - Building render pipelines
+//!
+//! # Module Organization
+//!
+//! The library is organized into:
+//!
+//! - **Public API** - [`renderer`], [`render_graph`], [`material`], [`texture`]
+//! - **Backends** - `vulkan` and `metal` are internal; native Vulkan types are
+//!   reachable only through [`vulkan_native`] (validation feature) and the
+//!   explicitly named [`VulkanRenderer`] / [`MetalRenderer`] / [`VulkanContext`]
+//! - **Internal** - `pipeline`, `sync`, `animation`, `shadow` (implementation details)
+//!
+//! # Resource Handles
+//!
+//! Most resources use opaque handles for type safety and flexibility:
+//! - [`MeshHandle`] - Created via [`VulkanRenderer::create_mesh()`]
+//! - [`MaterialHandle`] - Created via [`VulkanRenderer::compile_material()`]
+//! - [`TextureHandle`] - Created via [`VulkanRenderer::create_texture()`]
+//! - [`SkeletonHandle`] - Created via [`VulkanRenderer::create_skeleton()`]
+//!
+
+// Public modules
+pub mod error;
+pub mod handle;
+pub mod material;
+pub mod particles;
+pub mod render_pass;
+pub mod renderer;
+pub mod texture;
+pub mod vertex;
+
+// Internal modules (pipeline state is implementation detail)
+pub(crate) mod backend;
+pub(crate) mod pipeline;
+
+// Portable pipeline-state vocabulary (PipelineDescriptor field types)
+pub use pipeline::{CompareOp, CullMode, FrontFace};
+
+// Primitive mesh generators — use primitives::create_cube() etc. for backend-agnostic mesh creation
+pub mod primitives;
+
+// Render graph system
+pub mod compute;
+pub mod render_graph;
+
+// Animation module — always available. Internal Vulkan implementations are self-gated.
+pub mod animation;
+
+// Lighting — Vulkan-specific internals
+
+// Shadow module — always available. Internal Vulkan implementations are self-gated.
+pub mod shadow;
+
+// Sync — Vulkan-specific
+#[cfg(feature = "validation")]
+pub mod sync;
+#[cfg(not(feature = "validation"))]
+pub(crate) mod sync;
+
+pub(crate) mod vulkan;
+
+#[cfg(target_os = "macos")]
+pub(crate) mod metal;
+
+// Re-export animation types — shared data types always available
+pub use animation::{AnimChannelInfo, AnimClipHeader, JointInfo, SkeletonAnimParams};
+pub use animation::{AnimationBufferUploader, AnimationUpload};
+
+// Re-export types used by katla_app
+pub use renderer::PointLightGPU;
+pub use shadow::cascade::CascadeParams;
+
+// Internal modules (implementation details)
+pub(crate) mod barrier;
+
+// Explicit Vulkan-native escape hatch for validation examples and tools.
+//
+// Everything in this module commits to the Vulkan backend and to the native
+// ash object model: command buffers are valid only within their recording
+// scope, and pipelines/shader caches own GPU objects freed by their `Drop`.
+// The portable API lives at the crate root; this module is not covered by
+// cross-backend guarantees.
+#[cfg(feature = "validation")]
+pub mod vulkan_native {
+    pub use crate::vulkan::commandbuffer::CommandBuffer;
+    pub use crate::vulkan::material::builder::{Pipeline, PipelineBuilder};
+    pub use crate::vulkan::material::compute_pipeline::{ComputePipeline, ComputePipelineBuilder};
+    pub use crate::vulkan::material::shadermodule::ShaderCache;
+    pub use crate::vulkan::vertexbinding::VertexFormat;
+}
+
+// Size type (Katla-native)
+mod size;
+
+pub use crate::size::Size2D;
+
+// Rect type
+mod rect;
+
+pub use crate::rect::Rect;
+
+// Error handling
+pub use error::RendererError;
+pub use error::ValidationMode;
+
+// Handles
+pub use handle::{
+    BufferHandle, EmitterHandle, Handle, MaterialHandle, MeshHandle, SkeletonHandle, TextureHandle,
+};
+
+// Material system
+pub use material::MaterialDomain;
+
+// Texture management
+pub use texture::{
+    ImageFormat, TextureDescriptor, TextureUploadBudget, TextureUploadLayout, TextureUploadMetrics,
+    TextureUploadRegion, TextureUsage,
+};
+
+// Vertex types (public module for discoverability and extensibility)
+pub use vertex::{
+    UNIT_QUAD_INDICES, UNIT_QUAD_VERTICES, Vertex, VertexAttributeFormat, VertexLayout, VertexPBR,
+    VertexPBRSkinned, VertexPosition, VertexPositionColor, VertexPositionNormal,
+    VertexPositionNormalUV, VertexUI, VertexUIInstance, VertexUIQuad,
+};
+
+// SOA vertex attribute types (shared enum definition)
+pub use vertex::AttributeType;
+
+// Render pass system
+pub use render_pass::{
+    AttachmentInfo, AttachmentOps, BarrierKind, ClearValue, DepthStencilAttachmentOps, LoadOp,
+    StoreOp,
+};
+
+// UI rendering types
+pub use renderer::{UIDrawList, UiDrawCommand};
+
+// Renderer types (backend-agnostic)
+pub use renderer::registry::MaterialTextures;
+pub use renderer::registry::MeshIndexElement;
+pub use renderer::registry::{
+    MeshDescriptor, MeshMemoryClass, MeshMemoryReport, MeshUsage, PrimitiveTopology,
+    validate_dynamic_update,
+};
+pub use renderer::{
+    DrawCall, DrawList, GpuCapabilities, GpuTimestamp, GpuVendor, InstanceData, PreparedDrawCounts,
+    PreparedDraws,
+};
+
+// Backend-neutral resource metadata
+pub use backend::command::IndexType;
+
+// Renderer (Vulkan-specific)
+pub use renderer::VulkanRenderer;
+pub use renderer::retirement::RetirementSnapshot;
+
+// Renderer (Metal-specific)
+#[cfg(target_os = "macos")]
+pub use metal::metal_renderer::MetalRenderer;
+
+// Backend-agnostic renderer trait
+pub use backend::command::ShaderStages;
+pub use renderer::features::RendererFeature;
+pub use renderer::frame_bindings::{
+    BufferBinding, ConstantBinding, ImageBinding, PassBindings, PassDraw, PassDrawPhase,
+    PassPipeline, SamplerBinding, SamplingMode,
+};
+pub use renderer::frame_scope::{FrameAcquisition, FrameToken, PresentOutcome, SurfaceStatus};
+pub use renderer::gpu_renderer::GpuRenderer;
+pub use renderer::pipeline_descriptor::{BlendMode, DepthState, PipelineDescriptor};
+pub use renderer::pipeline_variant::PipelineVariantKey;
+pub use renderer::texture_readback::{
+    GraphTextureSource, TextureReadbackData, TextureReadbackRegion, TextureReadbackTicket,
+};
+
+// Enum-based renderer dispatch (both backends)
+pub use renderer::any_renderer::AnyRenderer;
+
+/// Retained Metal texture handle (opaque, platform-specific).
+/// Only available on macOS.
+#[cfg(target_os = "macos")]
+pub type MetalTextureRetained =
+    objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLTexture>>;
+
+// Enum-based frame graph dispatch
+pub use render_graph::any_frame::AnyFrame;
+pub use render_graph::any_frame_graph::AnyFrameGraph;
+
+// Modern particle system — shared config types always available
+pub use particles::EmitterConfig;
+pub use particles::particle_drive::ParticleEmitterDriver;
+
+// Render graph system — pass types and descriptors are backend-agnostic
+pub use render_graph::Frame;
+pub use render_graph::{
+    BufferAccess, BufferByteRange, BufferDesc, BufferMemoryPolicy, BufferUsage, BufferUsages,
+    FullscreenPass, GeometryPass, GraphBufferDesc, GraphResourceDesc, GraphResourceType,
+    ImageAccess, ImageAspects, ImageSubresourceRange, ImportedImageContract, OutlinePass,
+    OverlayPass, ParticlePass, RenderGraphError, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage, ShadowPass, StencilIndicatorPass,
+};
+pub use render_graph::{FrameGraphBuilder, RenderGraphBackend};
+
+/// Low-level Vulkan context - an escape hatch for advanced Vulkan-specific use cases.
+///
+/// For cross-backend code, prefer using [`GpuRenderer`] trait methods instead.
+/// `VulkanContext` provides direct access to Vulkan device, allocator, and other
+/// low-level resources. Use this only when the high-level API is insufficient
+/// and you specifically need Vulkan internals.
+///
+/// # When to use the high-level API instead
+///
+/// Most operations should use [`GpuRenderer`] trait methods:
+/// - [`GpuRenderer::create_mesh()`] for mesh creation
+/// - [`GpuRenderer::compile_material()`] for material compilation
+/// - [`GpuRenderer::create_texture()`] for texture operations
+/// - [`FrameGraphBuilder`] for graph-owned render targets
+///
+/// These work identically on both Vulkan and Metal backends.
+///
+/// # When to use VulkanContext (escape hatch)
+///
+/// - Implementing custom render passes not covered by the high-level API
+/// - Direct GPU memory allocation for specialized buffers
+/// - Accessing Vulkan physical device properties and limits
+/// - Integrating with external Vulkan libraries
+///
+/// # Example: Custom pipeline state
+///
+/// If you need pipeline state configuration beyond what `create_pbr_material()` provides,
+/// you can use the low-level Vulkan context:
+///
+/// ```ignore
+/// use katla_gfx::VulkanContext;
+/// use ash::vk;
+///
+/// // Get the context (escape hatch)
+/// let context = renderer.context();
+/// let device = context.device();
+///
+/// // Create custom pipeline state with specific blend modes
+/// let blend_state = vk::PipelineColorBlendAttachmentState::default()
+///     .blend_enable(true)
+///     .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+///     .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+///     .color_blend_op(vk::BlendOp::ADD);
+///
+/// // ... use with Vulkan API directly
+/// ```
+///
+/// [`VulkanRenderer`]: renderer::VulkanRenderer
+/// [`VulkanRenderer::compile_material()`]: renderer::VulkanRenderer::compile_material
+/// [`VulkanRenderer::create_mesh()`]: renderer::VulkanRenderer::create_mesh
+/// [`VulkanRenderer::create_texture()`]: renderer::VulkanRenderer::create_texture
+/// [`VulkanRenderer::create_skeleton()`]: renderer::VulkanRenderer::create_skeleton
+pub use vulkan::context::{ValidationLevel, VulkanContext};

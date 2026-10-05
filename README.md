@@ -1,60 +1,86 @@
-# Katla
+# Katla ✨🎮
 
 ![Katla](assets/katla-logo.svg)
 
-Katla is a game engine and scene editor written in Odin, with native Metal 4
-and Vulkan rendering. Its application owns one ECS world, scene documents,
-shared undo history, gameplay and editor composition.
+A Vulkan/Metal render engine in Rust. A playground for graphics experiments and game development. 🐒
 
-The editor includes dockable and floating panels, component and material
-inspection, transform gizmos, asset and prefab authoring, skeletal animation,
-GPU particles, Luau scripting, Box3D physics and native audio. Agents use the
-same application owner through MCP and receive frame-bound viewport context.
+## What's Inside 📦
 
-## Build and run
+- **Vulkan 1.3 and native Metal 4** 🔺 - Compiled render graphs, explicit synchronization, frame ownership and bindless resources
+- **Custom ECS** 🧩 - Sparse set storage, query system, component derive macros
+- **Render graph** 📊 - Resource lifetime management, automatic barrier insertion
+- **PBR materials** 💎 - Hot reload support, template-based definitions
+- **WGSL shaders** ✨ - Compiled via naga at runtime
+- **GLTF support** 🦊 - Skeletal animation, PBR materials, background loading
+- **Editor UI** 🖼️ - Declarative dockable panels, asset browser, entity inspector, transform gizmos, CodeEditor with syntect highlighting
+- **Bindless textures** 🎨 - Single texture array for UI rendering, texture switching via vertex indices, no push descriptor overhead
+- **Text pipeline** 🔤 - cosmic-text with HarfBuzz shaping, BiDi, CJK, word wrapping, font fallback; swash rasterization, etagere atlas packing, subpixel positioning
+- **GPU-instanced UI** ⚡ - Instanced rendering (shared unit quad + per-instance data) replaces per-quad vertex emission; incremental Taffy layout caching via dirty flags
 
-Install Odin, Cargo, Git, curl and a C/C++ compiler with an archiver. Cargo builds the
-isolated offline Naga shader compiler; the editor and engine runtime use Odin
-and explicitly pinned C/C++ dependencies. Platform prerequisites and verified
-Odin installation are documented in [Build and launch](docs/odin_build.md).
+## Crates 📚
 
-```sh
-odin run tools/build -- --tests
-odin run tools/build -- run --no-build
+| Crate | Description |
+|-------|-------------|
+| `katla_gfx` | Vulkan/Metal GPU core, render graph, materials |
+| `katla_ecs` | Entity component system |
+| `katla_math` | SIMD math library |
+| `katla_ui` | Declarative UI system — Widget trait, focus chains, dockable panels, cosmic-text pipeline, GPU-instanced rendering, CodeEditor |
+| `katla_app` | Application framework, components, systems |
+
+## Documentation
+
+Start with the [task-oriented documentation index](docs/README.md). Read
+[architecture](docs/architecture.md) for crate boundaries and ownership,
+[ECS](docs/ecs.md) for systems, [graphics composition](docs/graphics_core.md) for
+rendering, and [editor visual design](docs/editor_ui_design.md) for UI work.
+[CI policy](docs/ci.md) and [native Metal evidence](docs/metal4_validation.md)
+separate portable checks from physical GPU acceptance. Git/GitHub track delivery
+history; [TODO](TODO.md) tracks remaining engineering work.
+
+## Running 🏃
+
+```bash
+cargo run        # Run the demo 🎮
+cargo run -- -s  # Limited frames (validation) ✅
+cargo test       # Run tests 🧪
 ```
 
-The launcher selects Metal on macOS and Vulkan elsewhere, sets Metal API
-validation, and loads the native dependencies from the verified build manifest.
-Use `--backend vulkan --vulkan-loader /path/to/libvulkan` to select Vulkan
-explicitly. Application arguments follow `--`:
+The `-s` / `--single-frame` flag runs **100 frames**, then exits automatically.
+On Arch Linux, install `vulkan-validation-layers` with pacman to enable Khronos
+validation in normal runs. Use `cargo run -- -s -v` for GPU-assisted validation.
 
-```sh
-odin run tools/build -- run --no-build -- --frames 100
-odin run tools/build -- run --no-build -- --headless --frames 3 --screenshot /tmp/katla.png
-odin run tools/build -- run --no-build -- --scene assets/scenes/default.katla
+Vulkan startup requires a Vulkan 1.3 device with graphics and compute on the
+same queue, bindless descriptor features, buffer device addresses, and push
+descriptors. Windowed rendering also requires swapchain and presentation
+support. Selection checks these requirements before ranking devices; if none
+qualify, the initialization error lists the rejected devices and their missing
+requirements.
+
+## Headless captures
+
+Render the scene and editor without a window (Vulkan on Linux, Metal on macOS):
+
+```bash
+cargo run -p game -- --headless -s --screenshot /tmp/katla.png
+cargo run -p game -- --ui-test /tmp/katla-ui
+cargo run -p game -- --headless -s --scene assets/scenes/playground.katla --screenshot /tmp/playground.png
 ```
 
-Shader sources ship with the build. Runtime freshness checks request compilation
-only when source, options or compiler identity change; failed compilation retains
-the last accepted pipelines. UI layout runs in Odin. The engine has no Rust
-runtime or layout bridge.
+Captures are 2560×1440 PNGs with a 1280×720 logical UI. The UI test captures
+five states, including entity selection and Preferences. A Vulkan device and
+its driver are required on Linux; no display server is needed. Install the
+Khronos validation layer to include Vulkan API checks.
 
-## Validation and documentation
+The GPU submission/readback regression test is opt-in:
 
-[Documentation](docs/README.md) is organized by task. Start with
-[architecture](docs/architecture.md), [editor behavior](docs/odin_editor.md) and
-[CI policy](docs/ci.md). Git and GitHub record delivery; [TODO](TODO.md) records
-unresolved work.
-
-Katla tooling is native Odin; all build, launch, validation and authoring commands run in Odin.
-
-```sh
-odin run tools/build -- validate processes --sanitize
-odin run tools/build -- validate gpu --native-metal
-odin run tools/build -- validate gpu --native-vulkan --vulkan-library /path/to/libvulkan
+```bash
+cargo test -p katla_gfx --test headless_render -- --ignored
 ```
 
-Native rendering requires the actual device and driver. CPU tests and screenshots
-have distinct scopes; [CI policy](docs/ci.md) explains hardware boundaries and
-sanitizer evidence. Live scene construction and material editing use the
-[agent authoring guide](docs/agent-authoring.md).
+## Is this vibecoded? 🤖
+**It sure is, I ain't got time to write all of this**  
+This repo has become my playground for vibecoding to see how good or bad it can be.
+
+For live scene construction, asset search and PBR material editing, start with
+the [agent authoring guide](docs/agent-authoring.md). Preview a room recipe with
+`python3 scripts/author_room.py --dry-run`; apply it to a running editor over MCP.

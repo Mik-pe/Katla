@@ -1,0 +1,976 @@
+use std::any::TypeId;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
+
+use katla_ecs::events::{ComponentEvent, EntityEvent};
+use katla_ecs::{EntityId, System, World};
+use katla_math::Transform;
+use log::{debug, error, info};
+
+use crate::ScriptError;
+use crate::bindings::script_world::{InputSnapshot, ScriptWorldProxy, SharedWorldData};
+use crate::bindings::world::ScriptCommand;
+use crate::component::{ScriptComponent, ScriptInstanceHandle};
+use crate::engine::ScriptEngine;
+use crate::event_bus::EventBus;
+
+mod events;
+use crate::watcher::ScriptWatcher;
+
+/// Maximum number of consecutive errors before a script instance is disabled.
+/// Prevents spamming the log with errors from broken scripts.
+const MAX_SCRIPT_ERRORS: u32 = 10;
+
+type TransformProvider = Box<dyn FnMut(&World) -> Vec<(EntityId, Transform)>>;
+type VelocityProvider = Box<dyn FnMut(&World) -> Vec<(EntityId, katla_math::Vec3)>>;
+type CommandConsumer = Box<dyn FnMut(&mut World, &[ScriptCommand])>;
+type InputProvider = Box<dyn FnMut(&World) -> InputSnapshot>;
+type ComponentEntitiesProvider =
+    Box<dyn FnMut(&World) -> std::collections::HashMap<String, Vec<EntityId>>>;
+
+/// Resource that controls whether scripts execute their `on_update` hooks.
+/// Insert into the ECS World to signal play mode. Defaults to `false` (suspended).
+///
+/// When `ScriptsActive(false)` (default), scripts only process spawn/destroy events.
+/// When `ScriptsActive(true)` is inserted, scripts run their `on_update` hooks each frame.
+#[derive(Debug, Clone, Copy)]
+pub struct ScriptsActive(pub bool);
+
+/// Resource holding audio commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()` and forwards to `AudioSystem`.
+///
+/// Contains commands like `PlaySound`, `PlaySoundAt`, `PlaySoundCue`.
+#[derive(Default)]
+pub struct PendingAudioCommands(pub Vec<ScriptCommand>);
+
+/// Resource holding raycast results from the previous frame.
+/// Scripts call `world:raycast()` to queue a command, then `world:get_raycast_result()`
+/// on the next frame to retrieve the result.
+///
+/// The results are indexed by the return value from `world:raycast()`.
+#[derive(Default)]
+pub struct PendingRaycastResults(
+    pub std::collections::HashMap<usize, crate::bindings::script_world::RaycastResult>,
+);
+
+/// Resource holding raycast commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()`, executes raycasts against
+/// `PhysicsWorld`, and stores results in `PendingRaycastResults`.
+#[derive(Default)]
+pub struct PendingRaycastCommands(pub Vec<crate::bindings::world::ScriptCommand>);
+
+/// Resource holding physics force/impulse commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()` and applies them to `PhysicsWorld`.
+#[derive(Default)]
+pub struct PendingPhysicsForceCommands(pub Vec<crate::bindings::world::ScriptCommand>);
+
+/// Resource holding velocity commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()` and applies them to `PhysicsWorld`.
+#[derive(Default)]
+pub struct PendingVelocityCommands(pub Vec<crate::bindings::world::ScriptCommand>);
+
+/// Resource holding trigger overlap query results from the previous frame.
+/// Scripts call `world:query_trigger_overlaps()` to queue a query, then
+/// `world:get_trigger_overlaps()` on the next frame to retrieve the result.
+#[derive(Default)]
+pub struct PendingTriggerQueryResults(
+    pub std::collections::HashMap<usize, crate::bindings::script_world::TriggerOverlapResult>,
+);
+
+/// Resource holding trigger overlap query commands queued by scripts during the last ECS update.
+/// `katla_app` drains this after `world.update()`, queries `PhysicsWorld` for current
+/// trigger overlaps, and stores results in `PendingTriggerQueryResults`.
+#[derive(Default)]
+pub struct PendingTriggerQueryCommands(pub Vec<crate::bindings::world::ScriptCommand>);
+
+/// Particle commands consumed by the app after the ECS script tick.
+#[derive(Default)]
+pub struct PendingParticleCommands(pub Vec<ScriptCommand>);
+
+/// A collision event from the physics system.
+///
+/// Dispatched to scripts as `"collision_enter"` or `"collision_exit"` events.
+#[derive(Debug, Clone)]
+pub struct PhysicsCollisionEvent {
+    /// Type of collision event.
+    pub event_type: PhysicsCollisionEventType,
+    /// First entity involved in the collision (raw entity ID).
+    pub entity_a: u64,
+    /// Second entity involved in the collision (raw entity ID).
+    pub entity_b: u64,
+}
+
+/// Type of physics collision event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PhysicsCollisionEventType {
+    /// Two entities have started colliding.
+    CollisionEnter,
+    /// Two entities have stopped colliding.
+    CollisionExit,
+    /// Named signal from an authored trigger rule, delivered through the same event bus.
+    TriggerSignal(String),
+}
+
+/// Resource holding collision events produced by the physics system each frame.
+/// `ScriptSystem` drains these and dispatches them as script events
+/// (`"collision_enter"`, `"collision_exit"`).
+#[derive(Default)]
+pub struct PendingPhysicsEvents(pub Vec<PhysicsCollisionEvent>);
+
+/// A single entity's script variable snapshot for the inspector.
+/// Contains entity ID, script path, and variable name-value pairs.
+type ScriptVarEntry = (
+    katla_ecs::EntityId,
+    String,
+    Vec<(String, crate::engine::ScriptVarValue)>,
+);
+
+/// Resource holding script variable snapshots for the editor inspector.
+/// `ScriptSystem` populates this each frame during editing mode.
+///
+/// The inspector UI can read this to display and edit script variables.
+#[derive(Default)]
+pub struct ScriptInspectorData {
+    /// Per-entity script variable snapshots: (entity_id, script_path, vars)
+    /// Each var is a (name, value) pair where value is Number, Boolean, or String.
+    pub entries: Vec<ScriptVarEntry>,
+}
+
+/// Resource telling the script system whether to populate inspector data.
+///
+/// Set to `PopulateScriptInspector(true)` to enable inspector data collection.
+#[derive(Default)]
+pub struct PopulateScriptInspector(pub bool);
+
+/// Resource holding pending script variable edits from the editor inspector.
+/// `katla_app` pushes edits, `ScriptSystem` applies them each frame.
+///
+/// Each edit is a tuple of (entity_id, variable_name, new_value).
+#[derive(Default)]
+pub struct PendingScriptVarEdits(
+    pub Vec<(katla_ecs::EntityId, String, crate::engine::ScriptVarValue)>,
+);
+
+/// The ECS system that manages script execution.
+///
+/// This system:
+/// - Creates script instances for entities with `ScriptComponent`
+/// - Executes script `on_update` hooks each frame (when `ScriptsActive(true)`)
+/// - Processes script commands (transforms, spawning, audio, etc.)
+/// - Handles hot-reloading of changed scripts
+/// - Dispatches events between scripts
+/// - Manages physics collision events
+///
+/// # Setup
+///
+/// Use the builder methods to configure the system before adding to the ECS world:
+///
+/// ```ignore
+/// let script_system = ScriptSystem::new()
+///     .with_scripts_dir("resources/scripts")
+///     .with_transform_provider(|world| { ... })
+///     .with_command_consumer(|world, commands| { ... });
+/// ```
+///
+/// # Thread Safety
+///
+/// **Warning:** `ScriptSystem` is NOT thread-safe (`!Send + !Sync`).
+/// Register it with `World::register_exclusive_system`; the scheduler executes it
+/// on the calling thread and separates it from parallel typed systems.
+pub struct ScriptSystem {
+    engine: ScriptEngine,
+    event_bus: EventBus,
+    watcher: Option<ScriptWatcher>,
+    transform_provider: Option<TransformProvider>,
+    velocity_provider: Option<VelocityProvider>,
+    command_consumer: Option<CommandConsumer>,
+    input_provider: Option<InputProvider>,
+    component_entities_provider: Option<ComponentEntitiesProvider>,
+    /// Reusable event bus shared with script proxies across frames.
+    shared_event_bus: Rc<RefCell<crate::bindings::script_world::SharedEventBus>>,
+}
+
+impl ScriptSystem {
+    pub fn new() -> Result<Self, ScriptError> {
+        Ok(Self {
+            engine: ScriptEngine::new()?,
+            event_bus: EventBus::new(),
+            watcher: None,
+            transform_provider: None,
+            velocity_provider: None,
+            command_consumer: None,
+            input_provider: None,
+            component_entities_provider: None,
+            shared_event_bus: Rc::new(RefCell::new(
+                crate::bindings::script_world::SharedEventBus::default(),
+            )),
+        })
+    }
+
+    /// Set the base directory for resolving bare script names.
+    ///
+    /// Called by the app bridge to configure where scripts live on disk.
+    pub fn with_scripts_dir(mut self, dir: impl Into<String>) -> Self {
+        let dir_str = dir.into();
+        self.engine.set_scripts_dir(&dir_str);
+
+        // Also start the file watcher for hot reload
+        match ScriptWatcher::new(&dir_str) {
+            Ok(watcher) => self.watcher = Some(watcher),
+            Err(e) => error!("Failed to start script watcher: {e}"),
+        }
+
+        self
+    }
+
+    /// Set the transform snapshot provider. Called by the app bridge.
+    ///
+    /// The closure is invoked each frame to gather `(EntityId, Transform)` pairs
+    /// from the world, which scripts can then read via `world:get_transform()`.
+    pub fn with_transform_provider<F>(mut self, f: F) -> Self
+    where
+        F: FnMut(&World) -> Vec<(EntityId, Transform)> + 'static,
+    {
+        self.transform_provider = Some(Box::new(f));
+        self
+    }
+
+    /// Set the velocity snapshot provider. Called by the app bridge.
+    ///
+    /// The closure is invoked each frame to gather `(EntityId, Vec3)` pairs
+    /// from the world, which scripts can then read via `world:get_velocity()`.
+    pub fn with_velocity_provider<F>(mut self, f: F) -> Self
+    where
+        F: FnMut(&World) -> Vec<(EntityId, katla_math::Vec3)> + 'static,
+    {
+        self.velocity_provider = Some(Box::new(f));
+        self
+    }
+
+    /// Set the command consumer. Called by the app bridge after scripts run.
+    ///
+    /// The closure receives mutable world access and the script commands,
+    /// allowing it to apply `SetTransform`/`SetPosition` back to ECS components.
+    pub fn with_command_consumer<F>(mut self, f: F) -> Self
+    where
+        F: FnMut(&mut World, &[ScriptCommand]) + 'static,
+    {
+        self.command_consumer = Some(Box::new(f));
+        self
+    }
+
+    /// Set the input snapshot provider. Called each frame before scripts run.
+    ///
+    /// The closure gathers input state from the world so scripts can query
+    /// actions via `world:is_action_pressed()`, mouse delta, and mouse wheel.
+    pub fn with_input_provider<F>(mut self, f: F) -> Self
+    where
+        F: FnMut(&World) -> InputSnapshot + 'static,
+    {
+        self.input_provider = Some(Box::new(f));
+        self
+    }
+
+    pub fn with_component_entities_provider<F>(mut self, f: F) -> Self
+    where
+        F: FnMut(&World) -> std::collections::HashMap<String, Vec<EntityId>> + 'static,
+    {
+        self.component_entities_provider = Some(Box::new(f));
+        self
+    }
+
+    /// Set the per-call script execution timeout.
+    ///
+    /// Scripts that exceed this duration are aborted.
+    pub fn with_timeout(self, timeout: Duration) -> Self {
+        self.engine.set_timeout(timeout);
+        self
+    }
+
+    fn process_spawns(&mut self, world: &mut World) {
+        let spawned: Vec<EntityId> = world
+            .entity_events()
+            .iter()
+            .filter_map(|event| match event {
+                EntityEvent::Spawned(id) => Some(*id),
+                _ => None,
+            })
+            .collect();
+
+        let script_type_id = TypeId::of::<ScriptComponent>();
+        let component_added: Vec<EntityId> = world
+            .component_events()
+            .iter()
+            .filter_map(|event| match event {
+                ComponentEvent::Added(id, tid) if *tid == script_type_id => Some(*id),
+                _ => None,
+            })
+            .collect();
+
+        let all_new: std::collections::HashSet<EntityId> =
+            spawned.into_iter().chain(component_added).collect();
+
+        for entity_id in all_new {
+            let path = match world.get_component::<ScriptComponent>(entity_id) {
+                Some(script) if script.instance_handle.is_none() => script.script_path.clone(),
+                _ => continue,
+            };
+
+            match self.engine.create_instance(entity_id, &path) {
+                Ok(handle) => {
+                    if let Some(comp) = world.get_component_mut::<ScriptComponent>(entity_id) {
+                        comp.instance_handle = Some(handle);
+                    }
+                    debug!("Created script instance for entity {entity_id}: {path}");
+                }
+                Err(e) => {
+                    error!("Failed to create script instance for entity {entity_id}: {e}");
+                }
+            }
+        }
+    }
+
+    fn build_shared_data(&mut self, world: &World) -> SharedWorldData {
+        let transforms = match self.transform_provider.as_mut() {
+            Some(provider) => provider(world),
+            None => Vec::new(),
+        };
+
+        let velocities = match self.velocity_provider.as_mut() {
+            Some(provider) => provider(world),
+            None => Vec::new(),
+        };
+
+        let input = match self.input_provider.as_mut() {
+            Some(provider) => provider(world),
+            None => InputSnapshot::default(),
+        };
+
+        let component_entities = match self.component_entities_provider.as_mut() {
+            Some(provider) => provider(world),
+            None => std::collections::HashMap::new(),
+        };
+
+        let live_entities = world.entity_ids().collect();
+
+        let raycast_results = world
+            .get_resource::<PendingRaycastResults>()
+            .map(|r| r.0.clone())
+            .unwrap_or_default();
+
+        let trigger_overlap_results = world
+            .get_resource::<PendingTriggerQueryResults>()
+            .map(|r| r.0.clone())
+            .unwrap_or_default();
+
+        SharedWorldData {
+            transforms: transforms.into_iter().collect(),
+            velocities: velocities.into_iter().collect(),
+            live_entities,
+            component_entities,
+            input_state: input,
+            raycast_results,
+            trigger_overlap_results,
+        }
+    }
+
+    fn apply_commands(&mut self, commands: Vec<ScriptCommand>, world: &mut World) {
+        let mut audio_cmds = Vec::new();
+        let mut raycast_cmds = Vec::new();
+        let mut force_cmds = Vec::new();
+        let mut velocity_cmds = Vec::new();
+        let mut trigger_query_cmds = Vec::new();
+        let mut particle_cmds = Vec::new();
+        let mut core_cmds = Vec::new();
+        for cmd in commands {
+            match &cmd {
+                ScriptCommand::PlaySound { .. }
+                | ScriptCommand::PlaySoundAt { .. }
+                | ScriptCommand::PlaySoundCue { .. } => {
+                    audio_cmds.push(cmd);
+                }
+                ScriptCommand::Raycast { .. } => {
+                    raycast_cmds.push(cmd);
+                }
+                ScriptCommand::ApplyForce { .. } | ScriptCommand::ApplyImpulse { .. } => {
+                    force_cmds.push(cmd);
+                }
+                ScriptCommand::SetVelocity { .. } => {
+                    velocity_cmds.push(cmd);
+                }
+                ScriptCommand::QueryTriggerOverlaps { .. } => {
+                    trigger_query_cmds.push(cmd);
+                }
+                ScriptCommand::BurstParticles { .. } | ScriptCommand::SetParticlesActive { .. } => {
+                    particle_cmds.push(cmd);
+                }
+                _ => core_cmds.push(cmd),
+            }
+        }
+
+        if !particle_cmds.is_empty() {
+            world
+                .get_resource_mut_or_insert_with::<PendingParticleCommands>()
+                .0
+                .extend(particle_cmds);
+        }
+        if !audio_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingAudioCommands>()
+        {
+            pending.0.extend(audio_cmds);
+        }
+
+        if !raycast_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingRaycastCommands>()
+        {
+            pending.0.extend(raycast_cmds);
+        }
+
+        if !force_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingPhysicsForceCommands>()
+        {
+            pending.0.extend(force_cmds);
+        }
+
+        if !velocity_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingVelocityCommands>()
+        {
+            pending.0.extend(velocity_cmds);
+        }
+
+        if !trigger_query_cmds.is_empty()
+            && let Some(pending) = world.get_resource_mut::<PendingTriggerQueryCommands>()
+        {
+            pending.0.extend(trigger_query_cmds);
+        }
+
+        if let Some(consumer) = self.command_consumer.as_mut() {
+            consumer(world, &core_cmds);
+            for cmd in &core_cmds {
+                match cmd {
+                    ScriptCommand::SpawnEntity { return_index: _ } => {
+                        let id = world.create_entity();
+                        debug!("Script spawned entity {id}");
+                    }
+                    ScriptCommand::DestroyEntity(entity) => {
+                        debug!("Script destroying entity {entity}");
+                        world.destroy_entity(*entity);
+                    }
+                    _ => {}
+                }
+            }
+        } else {
+            for cmd in core_cmds {
+                match cmd {
+                    ScriptCommand::SetTransform(entity, _transform) => {
+                        debug!("Script set_transform for entity {entity} (no consumer)");
+                    }
+                    ScriptCommand::SetPosition(entity, _position) => {
+                        debug!("Script set_position for entity {entity} (no consumer)");
+                    }
+                    ScriptCommand::SpawnEntity { return_index: _ } => {
+                        let id = world.create_entity();
+                        debug!("Script spawned entity {id}");
+                    }
+                    ScriptCommand::DestroyEntity(entity) => {
+                        debug!("Script destroying entity {entity}");
+                        world.destroy_entity(entity);
+                    }
+                    ScriptCommand::PlaySound { .. }
+                    | ScriptCommand::PlaySoundAt { .. }
+                    | ScriptCommand::PlaySoundCue { .. }
+                    | ScriptCommand::Raycast { .. }
+                    | ScriptCommand::ApplyForce { .. }
+                    | ScriptCommand::ApplyImpulse { .. }
+                    | ScriptCommand::SetVelocity { .. }
+                    | ScriptCommand::QueryTriggerOverlaps { .. }
+                    | ScriptCommand::BurstParticles { .. }
+                    | ScriptCommand::SetParticlesActive { .. } => {}
+                }
+            }
+        }
+    }
+
+    fn process_destroyed(&mut self, world: &World) {
+        let destroyed: Vec<_> = self
+            .engine
+            .instances
+            .iter()
+            .enumerate()
+            .filter_map(|(index, instance)| {
+                let instance = instance.as_ref()?;
+                let handle = ScriptInstanceHandle {
+                    index: index as u32,
+                    generation: instance.generation,
+                };
+                let current = world
+                    .get_component::<ScriptComponent>(instance.entity)
+                    .and_then(|script| script.instance_handle);
+                (current != Some(handle)).then_some((handle, instance.entity))
+            })
+            .collect();
+        for (handle, entity) in destroyed {
+            self.engine.call_on_destroy(handle, entity).ok();
+            self.engine.remove_instance(handle);
+            self.event_bus.remove_owner(entity);
+            debug!("Destroyed script instance for entity {entity}");
+        }
+    }
+
+    /// Poll the file watcher and hot-reload any changed scripts.
+    fn process_hot_reload(&mut self, world: &mut World) {
+        let changed_scripts = match self.watcher.as_mut() {
+            Some(watcher) => watcher.poll_changes(),
+            None => return,
+        };
+
+        for script_path in changed_scripts {
+            info!("Hot reloading script: {script_path}");
+
+            if let Err(e) = self.engine.reload_script(&script_path) {
+                error!("Failed to reload script '{script_path}': {e}");
+                continue;
+            }
+
+            for instance in self
+                .engine
+                .instances
+                .iter()
+                .flatten()
+                .filter(|instance| instance.script_path == script_path)
+            {
+                self.event_bus.remove_owner(instance.entity);
+            }
+            let reloaded_handles = self.engine.hot_reload_instances(&script_path);
+
+            // Update ScriptComponent handles in the ECS world since
+            // hot_reload_instances removes old instances and creates new ones
+            for handle in &reloaded_handles {
+                let entity = self
+                    .engine
+                    .instances
+                    .get(handle.index as usize)
+                    .and_then(|opt| opt.as_ref())
+                    .map(|inst| inst.entity);
+                if let Some(entity) = entity
+                    && let Some(comp) = world.get_component_mut::<ScriptComponent>(entity)
+                {
+                    comp.instance_handle = Some(*handle);
+                }
+            }
+        }
+    }
+}
+
+impl System for ScriptSystem {
+    fn update(&mut self, world: &mut World, delta_time: f32) {
+        self.process_destroyed(world);
+        self.process_hot_reload(world);
+        self.process_spawns(world);
+
+        let active = world
+            .get_resource::<ScriptsActive>()
+            .map(|s| s.0)
+            .unwrap_or(false);
+
+        if !active {
+            self.event_bus.discard_pending();
+            if let Some(pending) = world.get_resource_mut::<PendingPhysicsEvents>() {
+                pending.0.clear();
+            }
+            self.process_destroyed(world);
+            return;
+        }
+
+        let shared = Rc::new(self.build_shared_data(world));
+
+        // Collect active handles in a single pass
+        let active: Vec<(ScriptInstanceHandle, EntityId)> = self
+            .engine
+            .instances
+            .iter()
+            .enumerate()
+            .filter_map(|(i, opt)| {
+                opt.as_ref().map(|inst| {
+                    (
+                        ScriptInstanceHandle {
+                            index: i as u32,
+                            generation: inst.generation,
+                        },
+                        inst.entity,
+                    )
+                })
+            })
+            .collect();
+
+        let mut all_commands = Vec::with_capacity(active.len());
+
+        for (handle, entity) in active {
+            let call_spawn = self
+                .engine
+                .instances
+                .get_mut(handle.index as usize)
+                .and_then(Option::as_mut)
+                .filter(|instance| {
+                    instance.generation == handle.generation && !instance.spawn_called
+                })
+                .is_some_and(|instance| {
+                    instance.spawn_called = true;
+                    true
+                });
+            if call_spawn {
+                let mut proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
+                proxy.with_event_bus(Rc::clone(&self.shared_event_bus), entity, handle);
+                match self.engine.execute_on_spawn(handle, entity, proxy) {
+                    Ok(commands) => all_commands.extend(commands),
+                    Err(error) => error!("Entity {entity} on_spawn failed: {error}"),
+                }
+            }
+            let mut proxy = ScriptWorldProxy::from_shared(Rc::clone(&shared));
+            proxy.with_event_bus(Rc::clone(&self.shared_event_bus), entity, handle);
+            match self
+                .engine
+                .execute_on_update(handle, entity, proxy, delta_time)
+            {
+                Ok(commands) => {
+                    all_commands.extend(commands);
+                }
+                Err(e) => {
+                    error!("Entity {entity}: {e}");
+                    if let Some(Some(inst)) = self.engine.instances.get(handle.index as usize)
+                        && inst.generation == handle.generation
+                        && inst.error_count >= MAX_SCRIPT_ERRORS
+                    {
+                        log::warn!(
+                            "Disabling script for entity {entity} after {MAX_SCRIPT_ERRORS} errors"
+                        );
+                        self.engine.remove_instance(handle);
+                        self.event_bus.remove_owner(entity);
+                    }
+                }
+            }
+        }
+
+        // Flush all pending events from scripts in a single batch
+        let event_bus = Rc::clone(&self.shared_event_bus);
+        self.flush_script_events(&event_bus, world);
+
+        self.apply_commands(all_commands, world);
+
+        self.dispatch_physics_events(world);
+        self.process_events(world);
+        // Callback emissions are queued for the next tick, never recursively dispatched.
+        self.flush_script_events(&event_bus, world);
+        self.process_destroyed(world);
+        self.apply_script_var_edits(world);
+        self.populate_inspector_data(world);
+    }
+}
+
+impl ScriptSystem {
+    /// Apply pending script variable edits from the editor inspector.
+    fn apply_script_var_edits(&mut self, world: &mut World) {
+        let edits: Vec<(katla_ecs::EntityId, String, crate::engine::ScriptVarValue)> = world
+            .get_resource_mut::<PendingScriptVarEdits>()
+            .map(|r| std::mem::take(&mut r.0))
+            .unwrap_or_default();
+
+        for (entity, var_name, value) in edits {
+            let handle = match world.get_component::<ScriptComponent>(entity) {
+                Some(comp) => comp.instance_handle,
+                None => continue,
+            };
+            let Some(handle) = handle else { continue };
+            if let Err(e) = self.engine.set_instance_var(handle, &var_name, value) {
+                debug!("Failed to set script var '{var_name}' on entity {entity}: {e}");
+            }
+        }
+    }
+
+    /// Populate ScriptInspectorData for the editor if requested.
+    fn populate_inspector_data(&mut self, world: &mut World) {
+        let should_populate = world
+            .get_resource::<PopulateScriptInspector>()
+            .map(|p| p.0)
+            .unwrap_or(false);
+        if !should_populate {
+            return;
+        }
+
+        let mut entries = Vec::new();
+        for (idx, instance) in self.engine.instances.iter().enumerate() {
+            let Some(inst) = instance else { continue };
+            let handle = ScriptInstanceHandle {
+                index: idx as u32,
+                generation: inst.generation,
+            };
+            if let Ok(vars) = self.engine.inspect_instance_vars(handle) {
+                entries.push((inst.entity, inst.script_path.clone(), vars));
+            }
+        }
+
+        if let Some(inspector) = world.get_resource_mut::<ScriptInspectorData>() {
+            inspector.entries = entries;
+        }
+    }
+}
+
+#[cfg(test)]
+mod scheduler_tests {
+    use super::*;
+    use katla_ecs::SystemExecutionOrder;
+    use std::cell::Cell;
+
+    #[test]
+    fn test_script_exclusive_scheduler_preserves_thread_and_play_gate() {
+        let owner = std::thread::current().id();
+        let calls = Rc::new(Cell::new(0));
+        let captured = Rc::clone(&calls);
+        let scripts = ScriptSystem::new()
+            .unwrap()
+            .with_transform_provider(move |_| {
+                assert_eq!(std::thread::current().id(), owner);
+                captured.set(captured.get() + 1);
+                Vec::new()
+            });
+        let mut world = World::new();
+        world.register_exclusive_system(Box::new(scripts), SystemExecutionOrder::NORMAL);
+        world.update_parallel(0.016);
+        assert_eq!(calls.get(), 0);
+        world.insert_resource(ScriptsActive(true));
+        world.update_parallel(0.016);
+        world.update(0.016);
+        assert_eq!(calls.get(), 2);
+    }
+    #[test]
+    fn test_spawn_hook_waits_for_play_runs_once_and_restarts_after_attachment_replacement() {
+        let directory =
+            std::env::temp_dir().join(format!("katla-spawn-hook-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            directory.join("spawn.luau"),
+            r#"
+            function on_spawn(entity, world)
+                world:set_position(entity, Vec3.new(7, 0, 0))
+            end
+            function on_update(entity, world, dt)
+                world:set_position(entity, Vec3.new(8, 0, 0))
+            end
+        "#,
+        )
+        .unwrap();
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let captured = Rc::clone(&received);
+        let mut scripts = ScriptSystem::new()
+            .unwrap()
+            .with_scripts_dir(directory.to_string_lossy())
+            .with_command_consumer(move |_, commands| {
+                captured.borrow_mut().extend_from_slice(commands)
+            });
+        let mut world = World::new();
+        world.insert_resource(ScriptsActive(false));
+        let entity = world.spawn((ScriptComponent::new("spawn"),));
+        scripts.update(&mut world, 0.016);
+        assert!(received.borrow().is_empty());
+        world.insert_resource(ScriptsActive(true));
+        scripts.update(&mut world, 0.016);
+        let commands = std::mem::take(&mut *received.borrow_mut());
+        assert_eq!(commands.len(), 2);
+        assert!(
+            matches!(&commands[0], ScriptCommand::SetPosition(id, p) if *id == entity && p.x() == 7.0)
+        );
+        assert!(
+            matches!(&commands[1], ScriptCommand::SetPosition(id, p) if *id == entity && p.x() == 8.0)
+        );
+        scripts.update(&mut world, 0.016);
+        assert_eq!(std::mem::take(&mut *received.borrow_mut()).len(), 1);
+        world.insert_resource(ScriptsActive(false));
+        scripts.update(&mut world, 0.016);
+        assert!(received.borrow().is_empty());
+        world.insert_resource(ScriptsActive(true));
+        scripts.update(&mut world, 0.016);
+        assert_eq!(std::mem::take(&mut *received.borrow_mut()).len(), 1);
+        world.add_component(entity, ScriptComponent::new("spawn"));
+        scripts.update(&mut world, 0.016);
+        assert_eq!(received.borrow().len(), 2);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn test_trigger_signal_callbacks_apply_commands_defer_emits_and_expire() {
+        let directory = std::env::temp_dir().join(format!(
+            "katla-event-script-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::write(
+            directory.join("events.luau"),
+            r#"
+            local subscribed = false
+            function on_destroy(entity)
+                host_destroyed()
+            end
+            function on_update(entity, world, dt)
+                if subscribed then return end
+                subscribed = true
+                world:on_event("race_started", function(name, data, current_world)
+                    assert(data.trigger_entity == 42 and data.other_entity == 43)
+                    current_world:set_position(entity, Vec3.new(9, 0, 0))
+                    current_world:emit("followup", {})
+                end)
+                world:on_event("followup", function(name, data, current_world)
+                    current_world:set_position(entity, Vec3.new(12, 0, 0))
+                end)
+            end
+        "#,
+        )
+        .unwrap();
+        let commands = Rc::new(RefCell::new(Vec::new()));
+        let captured = Rc::clone(&commands);
+        let mut scripts = ScriptSystem::new()
+            .unwrap()
+            .with_scripts_dir(directory.to_str().unwrap())
+            .with_command_consumer(move |_, batch| captured.borrow_mut().extend_from_slice(batch));
+        let destroy_calls = Rc::new(Cell::new(0));
+        let captured = Rc::clone(&destroy_calls);
+        let callback = scripts
+            .engine
+            .vm
+            .create_function(move |_, ()| {
+                captured.set(captured.get() + 1);
+                Ok(())
+            })
+            .unwrap();
+        scripts
+            .engine
+            .vm
+            .globals()
+            .set("host_destroyed", callback)
+            .unwrap();
+        let mut world = World::new();
+        world.insert_resource(ScriptsActive(true));
+        world.insert_resource(PendingPhysicsEvents(vec![PhysicsCollisionEvent {
+            event_type: PhysicsCollisionEventType::TriggerSignal("race_started".into()),
+            entity_a: 42,
+            entity_b: 43,
+        }]));
+        let entity = world.spawn((ScriptComponent::new("events"),));
+        scripts.update(&mut world, 0.016);
+        assert!(
+            matches!(&commands.borrow()[0], ScriptCommand::SetPosition(id, position) if *id == entity && position.x() == 9.0)
+        );
+        assert_eq!(commands.borrow().len(), 1);
+        scripts.update(&mut world, 0.016);
+        assert!(
+            matches!(&commands.borrow()[1], ScriptCommand::SetPosition(id, position) if *id == entity && position.x() == 12.0)
+        );
+        // Destroyed components are unavailable; instance ownership must still remove callbacks.
+        world.destroy_entity(entity);
+        world
+            .get_resource_mut::<PendingPhysicsEvents>()
+            .unwrap()
+            .0
+            .push(PhysicsCollisionEvent {
+                event_type: PhysicsCollisionEventType::TriggerSignal("race_started".into()),
+                entity_a: 42,
+                entity_b: 43,
+            });
+        scripts.update(&mut world, 0.016);
+        assert_eq!(commands.borrow().len(), 2);
+        assert_eq!(destroy_calls.get(), 1);
+        scripts.update(&mut world, 0.016);
+        assert_eq!(destroy_calls.get(), 1);
+        assert!(scripts.event_bus.handlers("race_started").is_empty());
+        assert!(scripts.engine.instances.iter().all(Option::is_none));
+        drop(scripts);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn test_failed_event_callbacks_disable_without_resurrecting_subscriptions() {
+        let mut scripts = ScriptSystem::new().unwrap();
+        let mut world = World::new();
+        let owner = world.spawn((ScriptComponent::new("inline"),));
+        let function = scripts
+            .engine
+            .vm
+            .load(
+                r#"
+            local subscribed = false
+            function on_update(entity, world, dt)
+                if subscribed then return end
+                subscribed = true
+                world:on_event("bad", function(name, data, current_world)
+                    current_world:on_event("ghost", function() end)
+                    error("intentional callback failure")
+                end)
+            end
+        "#,
+            )
+            .into_function()
+            .unwrap();
+        let key = scripts.engine.vm.create_registry_value(function).unwrap();
+        scripts.engine.loaded_scripts.insert("inline".into(), key);
+        world.insert_resource(ScriptsActive(true));
+        for _ in 0..MAX_SCRIPT_ERRORS {
+            world.insert_resource(PendingPhysicsEvents(vec![PhysicsCollisionEvent {
+                event_type: PhysicsCollisionEventType::TriggerSignal("bad".into()),
+                entity_a: 1,
+                entity_b: 2,
+            }]));
+            scripts.update(&mut world, 0.016);
+        }
+        assert!(scripts.engine.instances.iter().all(Option::is_none));
+        assert!(scripts.event_bus.handlers("bad").is_empty());
+        assert!(scripts.event_bus.handlers("ghost").is_empty());
+        assert!(world.get_component::<ScriptComponent>(owner).is_some());
+    }
+    #[test]
+    fn test_replaced_script_cannot_resubscribe_through_its_destroy_hook() {
+        let mut scripts = ScriptSystem::new().unwrap();
+        let function = scripts
+            .engine
+            .vm
+            .load(
+                r#"
+            local cached_world = nil
+            function on_update(entity, world, dt)
+                if cached_world then return end
+                cached_world = world
+                world:on_event("alive", function() end)
+            end
+            function on_destroy(entity)
+                cached_world:on_event("ghost", function() end)
+            end
+        "#,
+            )
+            .into_function()
+            .unwrap();
+        let key = scripts.engine.vm.create_registry_value(function).unwrap();
+        scripts.engine.loaded_scripts.insert("inline".into(), key);
+        let mut world = World::new();
+        world.insert_resource(ScriptsActive(true));
+        let owner = world.spawn((ScriptComponent::new("inline"),));
+        scripts.update(&mut world, 0.016);
+        let previous = world
+            .get_component::<ScriptComponent>(owner)
+            .unwrap()
+            .instance_handle;
+        assert_eq!(scripts.event_bus.handlers("alive").len(), 1);
+        world.add_component(owner, ScriptComponent::new("inline"));
+        scripts.update(&mut world, 0.016);
+        assert_ne!(
+            world
+                .get_component::<ScriptComponent>(owner)
+                .unwrap()
+                .instance_handle,
+            previous
+        );
+        assert_eq!(scripts.event_bus.handlers("alive").len(), 1);
+        assert!(scripts.event_bus.handlers("ghost").is_empty());
+    }
+}

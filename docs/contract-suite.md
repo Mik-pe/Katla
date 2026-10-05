@@ -1,93 +1,104 @@
-# Cross-backend graphics acceptance
+# Cross-Backend Graphics Contract Suite
 
-[odin/gfx_conformance](../odin/gfx_conformance) defines shared observable
-contracts and receives actual native operations from Metal and Vulkan. Native
-entrypoints and backend tests exercise the same generic graph/resource API.
-Application suites separately prove real consumers such as models, particles,
-UI, picking and editor captures. See [graphics ownership](graphics_core.md) and
-[the detailed GPU contracts](gfx_odin.md).
+One suite asserts the contracts Katla promises **above** the backend boundary.
+It lives in `katla_gfx/tests/contract/` and runs the same scenarios against
+whichever backend the platform provides: Vulkan on Linux, Metal on macOS. CI
+runs it in both jobs; failures name the divergent contract, not a backend
+struct.
 
-## Run the current suite
+## Why
 
-From the repository root, build dependencies and run configured CPU consumers:
+Backend-specific suites (`dynamic_mesh_updates.rs`, `attachment_semantics.rs`,
+…) prove each backend against its own expectations. The contract suite proves
+the promise app code actually builds on: the same scenario must render the
+same pixels, enforce the same resource-lifetime rules, and fail with the same
+typed errors everywhere. Backend-specific suites stay; this is the layer
+above them, not a replacement.
 
-```sh
-odin run tools/build -- --tests
-odin run tools/build -- --sanitize --tests
+## Running
+
+```bash
+cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1
 ```
 
-Require the affected native adapter explicitly:
+The scenarios need a graphics device, so they are `#[ignore]`d like the other
+device suites. On macOS, enable Metal API validation the way CI does:
 
-```sh
-odin run tools/build -- validate gpu --native-metal --sanitize
-odin run tools/build -- validate gpu --native-vulkan --sanitize \
-  --vulkan-library /absolute/path/to/libvulkan \
-  --vulkan-icd /absolute/path/to/driver_icd.json
+```bash
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
+    cargo test -p katla_gfx --test contract --locked -- --ignored --test-threads=1
 ```
 
-The Metal lane requires macOS arm64 and real Metal 4/Tier2 support. It sets
-`MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1` before launch. Vulkan initializes
-Khronos synchronization validation and checks its collected errors. Linux
-Vulkan execution requires an actual loader/device; descriptor-array acceptance
-also requires the advertised native indexing features. Unsupported hardware is
-not a successful native run. Windows/Linux typechecks and object builds do not
-establish window or GPU execution on those hosts.
+Select a scenario with a Cargo filter, for example:
 
-Application rasterization and transactional resource behavior use:
-
-```sh
-odin run tools/build -- validate render --native-metal --native-vulkan \
-  --sanitize --vulkan-library /absolute/path/to/libvulkan \
-  --vulkan-icd /absolute/path/to/driver_icd.json
-odin run tools/build -- validate ui --sanitize --backend both \
-  --vulkan-loader /absolute/path/to/libvulkan \
-  --vulkan-icd /absolute/path/to/driver_icd.json
+```bash
+cargo test -p katla_gfx --test contract test_contract_instanced --locked -- --ignored --test-threads=1
 ```
 
-These paired application fixtures currently require Darwin arm64. Add
-`--native-surface` to the applicable GPU/render driver for real windowed
-acquire/resize/present checks. Surface acceptance requires a desktop session.
-Script/physics-backed particle acceptance uses the render driver's `--particles`
-with the verified canonical `--build-manifest`. See each driver's `--help`
-and [build/launch instructions](odin_build.md) for isolated outputs and native
-dependency paths.
+CI runs Linux scenarios on lavapipe with `--skip graphics::pbr`, because that
+software driver's PBR compilation path crashes. Physical Vulkan acceptance runs
+the full suite. The macOS job runs native scenarios only when its default GPU
+supports Metal 4; unsupported hosted GPUs still run portable library tests and
+typed capability rejection, and report native acceptance as blocked.
 
-## Required observations
+## Adding a scenario
 
-Shared GPU scenarios verify actual compute values, color/depth pixels, immutable
-bindings, busy slot behavior, exact out-of-order retirement, alias handoffs and
-retained copies after public owner removal. Backend scenarios additionally
-exercise mesh and indirect draws, stencil/blend/raster state, 3D pitched copies,
-filtered mip chains, compressed formats and fixed material descriptor arrays.
+1. Open a renderer with `ContractRenderer::open` (API-validation capture) or
+   `ContractRenderer::open_without_api_validation`.
+   PBR-material scenarios **must** use the latter: compiling a PBR pipeline
+   under the Khronos validation layer segfaults the Intel driver on the
+   canonical Linux machine. UI-material scenarios capture validation errors
+   and `finish()` asserts the log stays empty.
+2. Write the scenario against `renderer.gfx()` — the backend-neutral
+   `AnyRenderer` and the `GpuRenderer` trait — plus `harness::build_graph`,
+   `render_frame`, and `pass_id`. Pass resources, constants, samplers, draw or
+   dispatch phases and explicit color/depth targets belong to graph declarations
+   and binding packets. Renderer construction supplies device/frame/resource
+   primitives; the harness supplies scenario data. Never name `VulkanRenderer` or
+   `MetalRenderer` in a scenario.
+3. Assert observable results only: readback pixels (BGRA, row 0 = top on both
+   backends), typed `RendererError` variants, or public query methods.
+   Prefer probes that survive a vertical flip — center pixels, left/right
+   splits, whole-frame scans — so one expectation holds on both backends.
+4. If the backends legitimately differ, extend `harness::Capabilities` and
+   branch on the capability. Never branch on `cfg!(target_os)` inside a
+   scenario; platform `#[cfg]` belongs to the harness alone.
+5. Tear down with `harness::cleanup_graph(graph)` and then
+   `renderer.finish()`.
 
-Application acceptance must check its own useful output and failure behavior.
-Examples include linear model composition, native physics contact overlays,
-GPU particle state/draws, source-frame picking, UI clips/textures/font shaping,
-transactional resize and texture replacement. A build or a successful empty
-submission cannot replace these observations.
+## Conventions
 
-Readback must come from an exact committed graph export and retained ticket,
-with actual row/slice pitches and format taken into account. Rejected candidates
-must preserve previous live owners, commands and accepted state. Teardown must
-release tracked Odin allocations and native owners. Native ASan address checks
-are distinct from process-exit audits of external driver/framework caches;
-[shader validation](gfx_shader_odin.md) documents that boundary.
+- Test names start with `test_contract_`, prefixed by the scenario module
+  (`graphics`, `resources`, `errors`).
+- Scenario failures must be actionable: the assertion message names the
+  contract that broke ("the recycled slot's new owner must be resolvable"),
+  not the pixel that mismatched.
+- The suite stays cheap enough for PR CI (small targets, few frames, one
+  test binary); heavy stress lives in the backend-specific validation tier.
+- When extending the public gfx API, ask: which of these promises does the
+  new API touch, and does the suite already pin it? If not, add the scenario
+  in the same PR.
 
-## Add or extend a contract
+## Covered contracts
 
-1. Keep shared scenarios backend-neutral: supply native function inputs and
-   author ordinary graph declarations/packets. Backend adapters own capability
-   admission and native setup.
-2. Assert observable bytes, pixels, typed failures or public ownership behavior.
-   Include rejection and retry when publication or lifetime is involved.
-3. Preserve command order, exact frame identities and source generations.
-   Never manufacture completion, initialized content or a ready native handle.
-4. Express legitimate differences as capability rejection. An unsupported path
-   must not silently emit no work or omit required validation.
-5. Run the affected native path on each supported adapter before delivery.
-   Report the exact hardware/backend, sanitizer mode and unavailable coverage.
+Graphics scenarios assert indexed widths, object transforms, direct/instanced
+draw equivalence, dynamic mesh lifecycle, material rendering across graph
+configurations, emitted attachment contracts and load/clear behavior. Resource
+scenarios exercise stale texture generations, idempotent destruction, retirement
+after frame drain and independent frame slots; error
+scenarios assert typed rejection without disturbing live resources or producing
+validation errors.
 
-Use small targets and bounded waits. Performance and stress checks belong to
-separate measured fixtures; ordinary contract tests should diagnose which
-promise broke. [CI policy](ci.md) distinguishes source checks, configured CPU
-acceptance and required native device evidence.
+The harness acquires a frame token, installs explicit graphics data, renders the
+graph and consumes the token at present. It reads the committed graph export
+through a retained texture source and readback ticket, rather than a renderer
+scene attachment. Capabilities describe legitimate backend differences; optional
+API details stay in the harness.
+
+Native backend capture regressions complement this suite with actual encoder,
+synchronization scope, binding, residency and submission observations. They
+compare capture disabled/enabled GPU outputs and write plan/execution artifacts
+on divergence. Portable diagnostic fixtures cover deterministic JSON, text and
+DOT, culling/allocation identities and deliberate mismatch detection. See
+[render-graph capture](render_graph_capture.md) and [CI](ci.md) for those commands
+and the native-device boundary.

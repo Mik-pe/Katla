@@ -1,89 +1,41 @@
-# Agent scene authoring
+# Scene and material authoring for agents
 
-The Odin editor exposes scene actions through one application owner. MCP clients,
-editor panels and the Co-Creator use the same registered components, validated
-asset services and undo history. The complete tool schemas live in
-[`odin/agent/tools.json`](../odin/agent/tools.json); read `tools/list` from the
-running owner before issuing requests. The [shared viewport guide](shared-editor-view.md)
-explains launch, transport and image provenance.
+Connect to the running editor using [shared editor MCP](shared-editor-view.md).
+Author in edit mode; use `simulation` for gameplay verification. `editor_view` returns a committed viewport PNG;
+use it before editing and again to verify the result. Native Vulkan/Metal output
+is the visual authority. Geometry queries alone cannot establish occlusion.
 
-## Start a disposable editor
+For an authored example, launch `cargo run -- --scene assets/scenes/material-studio.katla`.
+Select a material sphere to explore presets and live surface controls alongside
+a small furnished lounge.
 
-Build and launch through the [canonical Odin scripts](odin_build.md). For a
-shared-room session on macOS or Linux:
+## Find things first
 
-```sh
-odin run tools/build -- --output target/katla-authoring
-katla_socket_dir=$(mktemp -d "${TMPDIR:-/tmp}/katla-editor.XXXXXX")
-chmod 700 "$katla_socket_dir"
-odin run tools/build -- run --build-dir target/katla-authoring --no-build -- \
-  --scene assets/scenes/shared-room.katla --gpu-validation \
-  --mcp-socket "$katla_socket_dir/editor.sock"
-```
+Use `query_entities` with `name_filter`, `component_filter` or a world-space
+`position` and `radius`. Returned generational IDs are **decimal strings**: retain
+them verbatim. `get_scene_hierarchy` gives parent relationships;
+`list_available_components` and `get_component_attributes` expose editable fields.
 
-The launcher supplies built native dependencies and enables Metal validation on
-macOS. The endpoint requires an owner-only parent directory and mode 0600;
-existing endpoints are rejected. Run scripts from another terminal against that
-same socket. Loading a scene replaces the current document and clears history,
-so use a disposable editor for the validation journeys below.
-
-## Discover before editing
-
-`search_assets` searches the installed resource tree, including its prefab/mesh
-assets. Its result includes resource-relative `assets`, project-relative
-`project_paths` for those same discovered files, `total`, `truncated`, `root` and `path_contract`. Query matching
-uses Unicode lowercase matching and all whitespace-separated words. Extension filters
-accept a leading dot. An omitted/null limit defaults to 64; unsigned limits clamp
-to 1–256.
-
-`list_resources` and `read_resource` use the project root. For example, list
-`resources/models` for the default project layout. An omitted/null list path means
-the project root; `filter` is an optional extension. `create_resource` and
-`write_resource` also write project-relative paths through retained root
-handles. Creation is exclusive; replacement is atomic. A failed validation does
-not overwrite an existing file. Templates and explicit text content use the same
-service as the asset browser.
-
-`spawn_model` accepts supported GLTF/GLB, STL and `.katmesh` sources. Relative model
-paths use the installed resource root. An intentionally supplied absolute path
-creates a confined File capability for that source and its validated dependencies;
-it is not permission to read arbitrary sibling files. Prefabs use `prefab`
-`instantiate`. See [scene assets and File capabilities](scene_format.md) and
-[prefab authoring](prefabs.md).
-
-## Construct and inspect
-
-Use `spawn_entity` for named primitives, with optional world position, XYZ Euler
-rotation in degrees and scale. Scene coordinates are meters, Y up. Supported
-shapes are cube, sphere, plane, cylinder, torus and cone. A cube's geometry has unit
-size before its transform scale. A successful scene reply is the canonical
-`{entity_ids, data}` envelope. Entity IDs are decimal strings retaining the full
-generational u64 value; zero can be a valid entity ID.
-
-`query_entities` supplies names, components, parents, positions and drawable
-bounds. `get_scene_hierarchy`, `list_available_components` and
-`get_component_attributes` expose the current registered application data. Do not
-infer component names or fields from the old engine. For a transform, read
-`SceneTransform`, modify its `local` value, then submit that complete field:
+`search_assets` searches recursively under the discovered resource root. All
+whitespace-separated words must match the relative path, case-insensitively.
+Results are sorted and include `total` and `truncated`; the default limit is 64,
+maximum 256. Symlinks are skipped. Search before choosing a model filename:
 
 ```json
-{"entity_id":"4294967302","component":"SceneTransform","field":"local","value":{"position":[0,1,0],"rotation":[0,0,0,1],"scale":[1.5,1,1]}}
+{"query":"chair", "extensions":["glb", "gltf"], "limit":32}
 ```
 
-This is a `set_field` argument object. Preserve the other values obtained from the
-attribute query when changing one axis. `set_parent` validates the entire
-relationship before publishing; null/omitted `parent_id` detaches. Duplicate,
-destroy, component edits and native renderer preparation share atomic application
-history. Undo/redo can recreate entities with fresh IDs and remap references;
-query again after recreation or scene replacement.
+Pass the returned path directly to `spawn_model`, for example
+`{"path":"models/Lantern.glb", "position":[1,0,-2]}`. Model paths are relative
+to the resource root, independent of the editor's working directory. Absolute
+paths and parent traversal are rejected. An empty search query lists assets. `assets` paths are resource-relative for
+`spawn_model` and script attachment. `project_paths` include the resource-root
+directory and are ready for the project-relative `prefab` tool.
+Use `list_resources`/`read_resource` for project files such as scene documents.
 
 ## Edit surfaces without touching GPU handles
 
 The `material` tool and Inspector → Material edit the same per-object PBR factors.
-Inspector → Texture images and sampling uses the same validated role image and
-sampling edits. Its Save material/Apply material buttons use `material_asset`
-capture/apply; image drags, discrete edits and continuous gestures share editor
-undo semantics. Agent history remains separately available through `agent_undo`.
 They preserve model textures, mesh geometry and GPU material handles. Presets
 are flat PBR tints, rather than scanned wood, concrete or fabric textures.
 
@@ -101,207 +53,103 @@ are flat PBR tints, rather than scanned wood, concrete or fabric textures.
 ```
 
 Available presets: `plaster`, `oak`, `concrete`, `ceramic`, `brushed_metal`, `fabric`.
-Preset discovery and inspection return `capabilities`, including alpha's current
-effect, supported surface factors, named texture roles and the batch contract. Presets supply
-isotropic scalar factors; `brushed_metal` installs no directional brushing.
 Explicit fields override the preset. Omitting the preset patches only supplied
-fields. `base_color` is sRGB RGB with linear alpha; `metallic`, `roughness` and `ao` are linear
-factors within 0..=1. `emissive_factor` is nonnegative linear RGB and accepts values
-above one for HDR self-illumination, including materials without an emissive texture.
-`normal_scale` is finite and multiplies the decoded normal map's X/Y components; zero flattens it and negative values invert both tangent axes.
-`alpha_mode` selects `opaque`, `mask`, or `blend`; changing base alpha alone keeps
-that mode. `alpha_cutoff` is finite and nonnegative (default 0.5); values above
-one hide masked surfaces. `double_sided` enables both faces with reversed
-back-face shading normals. Blended surfaces draw after opaque geometry from
-far to near, test scene depth without writing it, and do not cast binary
-shadow-map shadows. Nonzero-alpha blended fragments remain pickable through
-independent picking depth; zero-alpha fragments are discarded. Presets start
-with opaque, single-sided coverage. These controls share inspector editing,
-undo/redo and scene persistence.
-
-`occlusion_strength` is within 0..=1 and blends the occlusion texture's influence on
-ambient lighting. Zero ignores that texture. Every number must be finite. Receipts
-name base-color and emissive color spaces separately. These factors share inspector
-preview, undo and scene persistence. Batch edits accept 1–256
+fields. `base_color` is sRGB RGBA; `metallic`, `roughness` and `ao` are linear
+factors. Every number must be finite and in 0..=1. Batch edits accept 1–256
 distinct mesh IDs and preflight every target before changing any object.
 One batch is one agent undo step. Inspector sliders preview continuously and
 group a pointer gesture into one editor undo step. Undo and redo restore the
 exact linear color, including an originally absent tint.
 
-Base color multiplies the effective image. Alpha mode explicitly selects coverage;
-changing the alpha factor preserves that mode. `set_texture` replaces only the
-selected image; `set` changes surface factors.
+Base color multiplies the existing texture. Alpha edits the tint factor; it
+does not switch the object's pipeline to transparent rendering. Emission and
+texture replacement are outside this per-object factor editor.
 
-### Reusable surfaces
+## Build rooms with usable dimensions
 
-Use `material_asset describe` for a complete JSON example or `capture` with one
-mesh `entity_id` and a project-relative `.katmat` path. Capture writes effective
-factors, all five image choices, and independent UV/sampler policies. Imported
-images become explicit glTF-image references; missing/fallback images become
-neutral. Reusable definitions reject `inherit`, so applying to a different mesh
-does not silently substitute its original maps. Omitted `textures` means five
-neutral roles; a provided object must specify every role.
+Katla uses meters, Y up, box centers for positions, and degrees for spawn-tool
+Euler rotations. A unit cube scaled `[6,0.15,8]` is a 6 × 0.15 × 8 meter slab.
+Name parts by room and function, e.g. `Study / Floor`, so name search is useful.
 
-`read` returns JSON. Edit it, then `validate` and `write` with `path` and
-`document`. Validation decodes images and checks formats/limits without GPU
-uploads. Writes publish atomically and preserve existing live copies. Image
-Resource roots use the resource directory; Scene roots use the **material file's
-directory**; File references remain intentionally absolute. Capture prefers
-portable Resource/Scene references where possible. Keep referenced images/glTF
-files with the material when moving an asset bundle.
+The room helper adds a floor and walls around a usable interior with a centered
+door opening in the front (+Z) wall. It leaves the current scene in place:
 
-`apply` takes `path` and 1..256 distinct mesh `entity_ids`. It preflights every
-target's required UV sets before replacing complete factors, sampling and image
-choices as one undoable batch. Geometry, transforms and pipelines stay owned by
-their original objects. Copies remain independently editable and share immutable
-image generations; file writes do not change them. Reapply to read a revision,
-inspect through `material`, observe through `editor_view`, and save the scene to
-persist the copied surface. Search resource materials using extension `katmat`;
-`project_paths` can be passed directly to `material_asset`.
+```bash
+python3 scripts/author_room.py --dry-run --name Study --size 6 3 8
+python3 scripts/author_room.py --socket /tmp/katla-editor.sock \
+  --name Study --size 6 3 8 --origin 0 0 -4 --output /tmp/study-receipt.json
+```
 
-## Inspect and edit texture sampling
+`--size` is width, height, depth. `--doorway` is width, height; `--ceiling` adds a
+ceiling. The receipt lists every part's ID, bounds recipe, preset and undo count.
+On an operation failure, the helper undoes its successful edits in reverse order.
+Use it while no other author is concurrently editing the scene, because rollback
+uses the editor's shared agent history. No physics colliders are generated.
 
-`material inspect` reports the five named roles (`albedo`, `normal`,
-`metallic_roughness`, `occlusion`, `emission`), their UV transforms and sampler
-settings, and `uv_sets` availability for the mesh. `provenance.imported_textures`
-identifies each imported image by portable asset reference and image index,
-dimensions, mip count, decoded format, source color space and fallback status.
-Sampling returns linear values to the shader; color images decode sRGB, while
-normal/MR/occlusion images are linear data. The tangent-basis receipt distinguishes
-provided tangents, original MikkTSpace coordinates and reconstruction after a
-normal-coordinate edit. Procedural materials report no imported images.
+Place props using `spawn_model` or named primitives. Query nearby bounds before
+placing furniture and leave space for door approaches and circulation. Observe
+from inside the room and from above. `editor_view focus` can fit a particular
+object; `set_camera` takes world-space position and target.
+
+## Connect prefab behavior
+
+Start with `prefab describe` to obtain complete mesh and prefab JSON examples.
+Write referenced `.katmesh` recipes first, then `.katprefab` composition; validate
+before writing and instantiate for a native preview. Instantiation returns named
+`nodes` with lossless IDs, parents and scene keys. Pick the specific child by its
+role rather than assuming a template ID survives instantiation. Mesh parts with
+one material/lifecycle combine into one geometry stream; independent materials
+or behaviors belong on separate child entities. See [prefabs](prefabs.md).
+
+`behavior describe` returns the actual complete particle descriptor and a sample
+script using `on_spawn` for one-time subscriptions. These operations are shared by MCP and the co-creator:
 
 ```json
-{"action":"set_sampling", "entity_ids":["4294967302"], "role":"albedo",
- "patch":{"scale":[2.0,2.0], "offset":[0.25,0.0], "wrap_u":"repeat",
-          "minification":"linear_mipmap_linear", "magnification":"linear"}}
+{"action":"set_script","entity_id":"4294967302","path":"scripts/prefab-effect.luau"}
 ```
 
-Patches preserve omitted properties, other roles, image bindings and PBR factors.
-Scale applies before rotation, then offset; rotation is in **radians**. UV0 and
-UV1 are selectable only when available on every target. Negative scale mirrors
-an axis; zero scale is legal. Minification accepts `nearest`, `linear`,
-`nearest_mipmap_nearest`, `linear_mipmap_nearest`, `nearest_mipmap_linear` and
-`linear_mipmap_linear`. Without a mip suffix it uses level zero. Magnification
-accepts `nearest` or `linear`; wrapping accepts `repeat`, `clamp_to_edge` or
-`mirrored_repeat`. Anisotropy is 1–16, requires linear min/mag filters above one,
-and is clamped to the native device maximum. Every numeric value must be finite.
+`set_script` requires an existing resource-relative `.luau` file below the scripts
+root. It compiles before replacing the attachment. `set_particles` requires a
+`document` matching the scene particle descriptor, validated before mutation;
+use the example returned by `describe`. It replaces authored configuration while
+preserving a live native emitter handle. Both edits have agent undo/redo. Explicit
+`path: null` or `document: null` detaches; omitting the field is an error.
+`inspect` reports the current script, full particle descriptor and world position.
+Particle colors use linear RGBA; material tool colors use sRGB.
 
-The batch preflights all targets and sampling policies before changing any
-object. One successful call is one agent undo step; failure changes none of the
-targets. Scene saving persists sampling separately from surface factors.
-Omitting scene sampling retains the imported glTF settings; unavailable
-coordinates required by a referenced image reject scene staging atomically.
-Image assignment uses `set_texture`, independently of sampling and factors:
+Create a sensor using `trigger create_box` with empty rules, parent it under the
+prefab root, attach particles/script, then `set_rules`. Ordered trigger actions
+support animations, `set_particles_active`, `burst_particles` and named Luau
+`emit` events. `behavior burst` previews 1–100,000 particles on an active emitter;
+`set_active` is undoable during authoring and transient during simulation.
+The shipped `scripts/prefab-effect.luau` listens to `prefab_activated`, filters by
+its own trigger identity, activates its emitter and queues a burst. Include the
+sensor and referenced visitor in the same captured subtree; external references
+reject capture instead of binding to an unrelated object.
 
-```json
-{"action":"set_texture", "entity_ids":["4294967302"], "role":"albedo",
- "source":{"kind":"file", "asset":{"Resource":"textures/wood.png"}}}
-```
+Use `simulation play`, inspect trigger diagnostics and `behavior inspect`, then
+`editor_view observe` for native output. Pause and resume are explicit; `play`
+while already paused leaves it paused. Stop reconstructs the authored snapshot,
+replaces runtime IDs and clears history. Query fresh IDs afterward. Script/particle
+attachment authoring and prefab instantiate/capture/remove require edit mode;
+bursts/toggles can preview at runtime. Capture after Stop persists authored
+behavior, not transient gameplay state. Particle simulation continues visually
+while paused; the pause gate applies to gameplay scripts and physics.
 
-An asset reference explicitly selects `Resource` (resource-relative), `Scene`
-(relative to the opened scene file) or `File` (absolute). `kind: gltf_image` also
-requires `image_index`, allowing embedded glTF images reported by inspection to
-be reused. `kind: neutral` selects the role's neutral image; `kind: inherit`
-restores the mesh source's original binding. All target/UV validation precedes
-image preparation and mutation. Failed decoding/upload changes no target.
-Successful assignment is one image-only undo step and preserves sampling,
-factors, other roles, mesh and shared material state. Color roles decode integer
-sRGB; data roles remain linear. Precision/HDR limits match glTF image uploads.
-Identical authored uploads share immutable image generations; modifying a file
-and assigning it again creates a new generation without changing earlier live
-assignments. History retains the exact old generation until discarded. Scene
-reload reads referenced files again; save does not embed images.
+The [native prefab acceptance script](../scripts/validate_prefabs.py) drives this
+complete workflow in a disposable editor and writes PNGs plus a receipt.
 
-Inspection distinguishes original `imported_textures` (with `active` flags) from
-`authored_textures`; each image source object can be reused in `set_texture`.
-`original_generation_uv` describes the stored generated basis and
-`current_normal_uv` the normal coordinates used for current shading. Scene Save As
-rebases assigned image references along with model/script/audio assets. Writing
-or replacing a file does not automatically reassign live objects. Reusable material assets use the complete capture/apply contract above.
+## Verify and persist
 
+Use `material inspect`, scene queries, then `editor_view observe` to check actual
+appearance. `simulation inspect` also reports whole-scene completed GPU particle
+counters with source submission, so they can lag the current frame.
+`editor_view undo` reverses the latest agent edit. Scene saves preserve
+base color, metallic, roughness and occlusion through the existing v3 format.
+`save_scene` writes to the explicit destination you supply; loading a scene
+replaces the current document and clears its history.
 
-## Room recipes
-
-The [room builder](../tools/author/main.odin) emits a reviewable plan without
-connecting:
-
-```sh
-odin run tools/author -- room --dry-run --name Study --size 6 3 8
-```
-
-Apply that plan to the selected editor. Set `katla_proxy` to the verified build's
-`bin/katla-mcp-proxy` executable:
-
-```sh
-odin run tools/author -- room --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock" \
-  --name Study --size 6 3 8 --origin 20 0 -4
-```
-
-The floor, walls and optional ceiling are real cube entities. Walls sit outside
-the usable interior and the front (+Z) wall leaves a centered doorway. Materials
-are applied in validated batches. A failed operation unwinds only the successful
-edits made by this invocation. Run the recipe without concurrent edits: rollback uses the shared chronological
-history. The tool leaves the document unsaved unless
-`--save DESTINATION.katla` is supplied.
-
-[`tools/author furnish`](../tools/author/journeys.odin) loads the prepared
-room, adds the 15 unit-cube proxies from `teen-room-plan.json`, checks their bounds,
-undoes them, and places them again. It preserves the base room, doors, window and
-cabinet. Clearance checks describe a central passage and door approaches; they do
-not prove navigation or door swing. These are explicit geometric proxies, not
-claims that furniture models were discovered.
-
-## Behavior, preview and persistence
-
-`behavior describe` returns the actual particle descriptor and shipped script
-path. `set_script` compiles the selected source before replacing an attachment;
-bare resource names normalize below `scripts` and extensions normalize to
-`.luau`. Explicit File scripts are admitted only through the selected scene,
-prefab or source capability. `set_particles` validates its complete document.
-Explicit null `path`/`document` detaches; omission is an error. Attachments and
-emitter configuration share authoring history. `burst` previews 1–100,000 particles
-on an active emitter; consumed bursts are transient and do not replay on undo/redo.
-
-`trigger` creates sensors and edits ordered rules. Rules can play animations,
-change emitter activity, burst particles or emit named Luau events. Use the
-[scene event contract](scene-events.md) for targets, dependencies and delivery
-order. Capture requires internal references to stay inside the captured subtree.
-
-`simulation` supplies explicit inspect/play/pause/resume/stop transitions. Pause
-retains preview state. Stop restores the authored snapshot with fresh runtime IDs
-and resets history. Attachments, hierarchy and prefab mutations require Editing;
-`editor_view observe` remains available during Play/Pause.
-
-`save_scene` accepts an explicit destination, or omitted/null path for the current
-bound document. An unbound document needs a destination. `load_scene` accepts a
-project-relative or intentional absolute `.katla` path. Complete decode, asset
-loading, reference validation and native preparation precede publication. A failed
-load leaves the previous world, document baseline and native owners intact. See
-[scene persistence](scene_format.md).
-
-## Validation
-
-Run the native journeys against a disposable socket owner:
-
-```sh
-odin run tools/author -- shared-view --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock"
-odin run tools/author -- furnish --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock"
-odin run tools/author -- validate --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock"
-odin run tools/author -- prefabs --proxy "$katla_proxy" --socket "$katla_socket_dir/editor.sock"
-```
-
-The authoring journey compares exact captured RGB pixels with a bounded stdlib
-reader for the editor's native PNG output. For an isolated project/resource copy,
-pass its project directory as `--project` to
-the prefab validator. These Odin tools produce PNGs, exact frame/submission metadata
-and receipts. The prefab journey verifies actual mesh writes, rejected replacement,
-Capture/Instantiate/Remove, fresh-ID undo/redo, preview gating and saved hierarchy.
-Particle/Luau delivery and allocation-failure rollback also have dedicated native
-application tests; this script does not manufacture GPU counters.
-
-Protocol fixtures run with
-`odin test tools/author -vet -strict-style` and `odin run tools/build -- validate processes`.
-They test transport envelopes and recovery independently of native rendering.
-Neither deterministic recipes nor local host fixtures certify a live model's room
-understanding, OS interaction or attachment to a user's existing conversation.
+`scripts/validate_authoring.py` exercises asset discovery, room geometry, batch
+material preflight, committed pixel changes, undo and scene save/reload in a
+disposable editor (requires ImageMagick). Its output describes native engine behavior; it is not a
+semantic evaluation of an external model.

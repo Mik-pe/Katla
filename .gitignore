@@ -26,17 +26,3 @@ debug_output.txt
 .sisyphus
 .cargo/
 llm.toml
-
-# Native validation artifacts
-/editor
-
-*.dSYM/
-
-# Odin build command executable
-/build
-
-# Odin standalone development tools
-/author
-/provider
-/fixtures
-/native_host

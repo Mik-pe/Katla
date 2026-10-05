@@ -1,0 +1,1213 @@
+//! Frame rendering implementation.
+//!
+//! This module implements frame rendering using the FrameGraph API
+//! and the new FrameContext for automatic instance allocation.
+
+use super::Application;
+use crate::rendering::FrameContext;
+use crate::rendering::FrameUniforms;
+use katla_gfx::GpuRenderer;
+#[cfg(not(target_os = "macos"))]
+use katla_gfx::renderer::UIDrawList;
+use katla_gfx::renderer::frame_scope::{FrameToken, PresentOutcome, SurfaceStatus};
+
+// Shared backend-agnostic helper methods used by both Vulkan and Metal paths.
+impl Application {
+    fn render_graph_only(
+        &mut self,
+        ui_draw_list: Option<katla_gfx::renderer::UIDrawList>,
+        delta_time: f32,
+        frame_count: usize,
+    ) {
+        use katla_gfx::renderer::frame_scope::FrameAcquisition;
+
+        let _ = (delta_time, frame_count);
+        let ui_pass = self.pass_ids.ui;
+
+        let frame_token = match self.renderer.acquire_frame() {
+            Ok(FrameAcquisition::Ready(token)) => token,
+            Ok(FrameAcquisition::Unavailable) => return,
+            Ok(FrameAcquisition::OutOfDate) => {
+                self.needs_swapchain_recreate = true;
+                return;
+            }
+            Err(error) => {
+                log::error!("Failed to acquire frame: {error}");
+                return;
+            }
+        };
+
+        if let Err(error) = self
+            .renderer
+            .render(&frame_token, &mut self.frame_graph, |frame| {
+                if let (Some(pass_id), Some(ui_list)) = (ui_pass, ui_draw_list.as_ref()) {
+                    frame.submit_ui(pass_id, ui_list);
+                }
+            })
+        {
+            log::error!("Application-owned frame graph failed: {error}");
+            if GpuRenderer::abort(&mut self.renderer, frame_token).is_err() {
+                log::error!("Failed to abort frame after render failure");
+            }
+            return;
+        }
+
+        self.finish_frame(frame_token);
+    }
+
+    fn finish_frame(&mut self, frame: FrameToken) {
+        let result = self.renderer.present(frame);
+        match commit_frame_submission(result, || {
+            if let Some(features) = &mut self.scene_features {
+                features.particles.committed(&frame);
+            }
+            #[cfg(feature = "editor")]
+            if self.frame_graph_runtime.uses_katla_scene() {
+                self.capture_picking_entities();
+                #[cfg(feature = "mcp")]
+                super::editor::mcp::capture_requested_view(self);
+            }
+        }) {
+            Ok(SurfaceStatus::Presented) => {}
+            Ok(SurfaceStatus::RecreateRequired) => {
+                self.needs_swapchain_recreate = true;
+            }
+            Err(error) => log::error!("Frame present failed: {error}"),
+        }
+    }
+
+    fn update_recreated_transient_bindings(&mut self, textures: &[(String, u32)]) {
+        for (name, slot) in textures {
+            if self.frame_graph_bindings.resources.viewport.as_deref() == Some(name.as_str()) {
+                self.on_viewport_texture_recreated(*slot);
+            }
+        }
+    }
+
+    /// Also populates entity_instance_map for GPU picking resolution.
+    pub(crate) fn collect_draws_with_context(
+        &mut self,
+        frame: &mut FrameContext,
+        frustum: &katla_math::Frustum,
+    ) {
+        use crate::components::{DrawableComponent, TransformComponent};
+
+        let poses = crate::systems::resolve_world_transforms(&self.world);
+        let entity_count = self.world.entity_count();
+        let mut drawable_count = 0;
+        let mut culled_count = 0;
+        #[cfg(feature = "editor")]
+        self.editor.draw_entity_map_entries.clear();
+
+        for (_entity_id, drawable, _local) in self
+            .world
+            .query::<(&DrawableComponent, &TransformComponent)>()
+        {
+            let Some(pose) = poses.get(&_entity_id) else {
+                continue;
+            };
+            let mesh_handle = drawable.mesh_handle;
+            if mesh_handle.is_none() {
+                continue;
+            }
+
+            let material_handle = drawable.material_handle;
+            if material_handle.is_none() {
+                continue;
+            }
+
+            if let Some(local_bounds) = drawable.bounds {
+                let world_mat = pose.matrix;
+                let world_bounds = local_bounds.transform(&world_mat);
+                if !frustum.intersects_aabb(&world_bounds) {
+                    culled_count += 1;
+                    continue;
+                }
+            }
+
+            if drawable.skeleton_handle.is_some() {
+                // Skeleton matrices are computed on the GPU via the animation
+                // pose evaluation compute pass and copied to the per-entity
+                // SkeletonBuffer. No CPU upload needed.
+            }
+
+            let mut draw = frame
+                .draw(mesh_handle, material_handle)
+                .with_transform(pose.matrix.to_array());
+
+            // Skeleton for skinned meshes
+            if drawable.skeleton_handle.is_some() {
+                draw = draw.with_skeleton(drawable.skeleton_handle);
+            }
+
+            if let Some(color) = drawable.color {
+                draw = draw.with_color(color.to_array());
+            }
+
+            draw = draw.with_pbr(drawable.metallic, drawable.roughness, drawable.ao);
+
+            draw = draw.with_emission(drawable.emission);
+
+            #[cfg(feature = "editor")]
+            {
+                let slot = draw.submit();
+                self.editor.draw_entity_map_entries.push((slot, _entity_id));
+            }
+
+            #[cfg(not(feature = "editor"))]
+            {
+                draw.submit();
+            }
+
+            drawable_count += 1;
+        }
+
+        if culled_count > 0 {
+            log::debug!(
+                "Submitted {} draw calls, culled {} off-screen ({} total entities)",
+                drawable_count,
+                culled_count,
+                entity_count
+            );
+        } else {
+            log::debug!(
+                "Submitted {} draw calls from {} entities",
+                drawable_count,
+                entity_count
+            );
+        }
+
+        #[cfg(feature = "editor")]
+        {
+            let entries = std::mem::take(&mut self.editor.draw_entity_map_entries);
+            self.build_entity_instance_map(entries);
+        }
+    }
+
+    /// Get the viewport size in pixels.
+    #[cfg(feature = "editor")]
+    pub(crate) fn viewport_size(&self) -> (u32, u32) {
+        self.editor.editor_ui.viewport_size()
+    }
+
+    #[cfg(not(feature = "editor"))]
+    pub(crate) fn viewport_size(&self) -> (u32, u32) {
+        let extent = self.renderer.swapchain_extent();
+        (extent.width, extent.height)
+    }
+
+    /// Build entity_instance_map and entity_to_instance_indices from collected draw entries.
+    #[cfg(feature = "editor")]
+    pub(crate) fn build_entity_instance_map(&mut self, entries: Vec<(u32, katla_ecs::EntityId)>) {
+        self.editor.entity_instance_map.clear();
+        self.editor.entity_to_instance_indices.clear();
+        for (idx, entity_id) in entries {
+            self.editor.entity_instance_map.insert(idx, entity_id);
+            self.editor
+                .entity_to_instance_indices
+                .entry(entity_id)
+                .or_default()
+                .push(idx);
+        }
+    }
+
+    #[cfg(not(feature = "editor"))]
+    pub(crate) fn build_entity_instance_map(&mut self, _entries: Vec<(u32, katla_ecs::EntityId)>) {}
+
+    /// Prepare draw lists: shadow filtering, outline selection, billboard generation.
+    #[cfg(feature = "editor")]
+    pub(crate) fn prepare_draw_lists(
+        &mut self,
+        draw_list: &mut katla_gfx::renderer::DrawList,
+    ) -> (
+        katla_gfx::renderer::DrawList,
+        Option<katla_gfx::renderer::DrawList>,
+    ) {
+        self.collect_billboard_draw_calls(draw_list);
+        self.prepare_editor_draw_lists(draw_list)
+    }
+
+    #[cfg(not(feature = "editor"))]
+    pub(crate) fn prepare_draw_lists(
+        &mut self,
+        draw_list: &mut katla_gfx::renderer::DrawList,
+    ) -> (
+        katla_gfx::renderer::DrawList,
+        Option<katla_gfx::renderer::DrawList>,
+    ) {
+        (draw_list.clone(), None)
+    }
+
+    /// Recreate the 3D-scene render targets (depth, HDR, tonemap-output, picking)
+    /// at the current viewport panel size. The scene is composed for the panel's
+    /// aspect ratio, so its render targets must be panel-sized — not swapchain-
+    /// sized — or the scene gets stretched across the full drawable and the
+    /// post-tonemap blit crops the wrong slice. No-op when the panel size hasn't
+    /// changed since the last call (or is still zero before the first layout).
+    pub(crate) fn recreate_panel_rt_resources(&mut self) {
+        #[cfg(feature = "editor")]
+        {
+            if !self.frame_graph_runtime.uses_katla_scene() {
+                return;
+            }
+
+            let vp = self.editor.editor_ui.last_viewport_bounds;
+            let sf = self.scale_factor;
+            let w = (vp.width() * sf) as u32;
+            let h = (vp.height() * sf) as u32;
+            if w == 0 || h == 0 {
+                return;
+            }
+            let new_size = katla_gfx::Size2D::new(w, h);
+            if new_size == self.panel_rt_size {
+                return;
+            }
+            log::debug!(
+                "Recreating panel-sized render targets at {}x{} (panel {}x{} @ {}x)",
+                w,
+                h,
+                vp.width(),
+                vp.height(),
+                sf
+            );
+
+            self.renderer.wait_for_device();
+
+            if let Ok(textures) =
+                self.frame_graph
+                    .recreate_transient_textures(&mut self.renderer, w, h)
+            {
+                self.update_recreated_transient_bindings(&textures);
+                self.panel_rt_size = new_size;
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+impl Application {
+    /// Render a single frame using the frame graph.
+    ///
+    /// Uses FrameContext for draw submission with automatic instance allocation.
+    pub fn render_frame(
+        &mut self,
+        ui_draw_list: Option<UIDrawList>,
+        delta_time: f32,
+        frame_count: usize,
+    ) {
+        // If the swapchain was signaled as out-of-date on the previous frame,
+        // recreate it before rendering. This handles the common macOS/MoltenVK
+        // case where the first few frames return VK_SUBOPTIMAL_KHR or
+        // VK_ERROR_OUT_OF_DATE_KHR until the CAMetalLayer.drawableSize settles.
+        if self.needs_swapchain_recreate {
+            self.needs_swapchain_recreate = false;
+            self.recreate_swapchain_resources();
+            log::info!("=== Resize complete ===");
+        }
+
+        // Size the 3D-scene render targets to the viewport panel (after UI
+        // layout populated the bounds). No-op when unchanged.
+        self.recreate_panel_rt_resources();
+
+        if !self.frame_graph_runtime.uses_katla_scene() {
+            self.render_graph_only(ui_draw_list, delta_time, frame_count);
+            return;
+        }
+
+        // Note: viewport bindless index is updated BEFORE generate_ui_draw_list()
+        // in the RedrawRequested handler to ensure the UI samples from the
+        // correct per-frame transient texture.
+
+        let (viewport_width, viewport_height) = self.viewport_size();
+        let viewport_aspect = if viewport_height > 0 {
+            viewport_width as f32 / viewport_height as f32
+        } else {
+            16.0 / 9.0 // Fallback to default aspect ratio
+        };
+        self.camera
+            .aspect_ratio_changed(&mut self.world, viewport_aspect);
+
+        let mut frame = FrameContext::new();
+
+        let view_mat = self.camera.get_view_mat(&self.world);
+        let proj_mat = self.camera.get_proj_mat(&self.world);
+        let frustum = katla_math::Frustum::from_proj_and_view(&proj_mat, &view_mat);
+        let camera_entity = self.camera.entity;
+
+        use crate::components::TransformComponent;
+        let cam_pos = if let Some(transform) = self
+            .world
+            .get_component::<TransformComponent>(camera_entity)
+        {
+            [
+                transform.transform.position.x(),
+                transform.transform.position.y(),
+                transform.transform.position.z(),
+                1.0,
+            ]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        };
+
+        let inv_view_proj = {
+            use katla_math::Mat4;
+            (proj_mat * view_mat)
+                .inverse()
+                .unwrap_or_else(Mat4::identity)
+        };
+
+        // Acquire the frame: this waits for the slot's previous GPU submission
+        // to complete before any writes to per-frame storage buffers.
+        use katla_gfx::renderer::frame_scope::FrameAcquisition;
+        if let Some(features) = &mut self.scene_features {
+            let size = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+                self.panel_rt_size
+            } else {
+                self.renderer.swapchain_extent()
+            };
+            if let Err(error) =
+                features
+                    .lights
+                    .resize(&mut self.renderer, &mut self.frame_graph, size)
+            {
+                log::error!("Scene light resize failed: {error}");
+                return;
+            }
+        }
+        let frame_token = match self.renderer.acquire_frame() {
+            Ok(FrameAcquisition::Ready(token)) => token,
+            Ok(FrameAcquisition::Unavailable) => return,
+            Ok(FrameAcquisition::OutOfDate) => {
+                self.needs_swapchain_recreate = true;
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to acquire frame: {}", e);
+                return;
+            }
+        };
+
+        // Tile grid dimensions for Forward+ light culling.
+        // Tile grid must match the panel-sized scene render targets (set in
+        // recreate_panel_rt_resources). Fall back to the swapchain extent before
+        // the first layout runs.
+        let scene_extent = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+            self.panel_rt_size
+        } else {
+            self.renderer.swapchain_extent()
+        };
+        let tiles_x = scene_extent.width.div_ceil(16);
+        let tiles_y = scene_extent.height.div_ceil(16);
+
+        let frame_uniforms = FrameUniforms {
+            view_matrix: view_mat.to_array(),
+            proj_matrix: proj_mat.to_array(),
+            inv_view_proj_matrix: inv_view_proj.to_array(),
+            camera_position: cam_pos,
+            // Sunlight defaults
+            light_direction: [0.3, 1.0, 0.2, 0.0],
+            light_color: [1.0, 0.98, 0.95, 0.0],
+            light_intensity: [
+                4.0,
+                self.frame_graph
+                    .transient_texture_bindless_slot("scene_depth", frame_token.slot())
+                    .unwrap_or(0) as f32,
+                0.0,
+                0.0,
+            ],
+            tiles: [tiles_x, tiles_y, 0, 0],
+            tonemap: [1.0, 2.2, 0.0, 0.0],
+            overlay: [0.0, 0.0, 0.0, 0.0],
+            compositing: [0.0, 0.0, 0.0, 0.0],
+        };
+        frame.set_frame_uniforms(frame_uniforms);
+
+        // Collect draw calls from ECS world using FrameContext
+        self.collect_draws_with_context(&mut frame, &frustum);
+
+        // Collect point lights for Forward+ culling
+        self.collect_lights();
+        let mut draw_list = frame.take_draw_list();
+        self.last_draw_call_count = draw_list.len();
+        draw_list.sort_by_material();
+
+        let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
+
+        if let Err(error) =
+            self.prepare_scene_gpu(&frame_token, delta_time, &frame_uniforms, &draw_list)
+        {
+            log::error!("Scene GPU preparation failed: {error}");
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
+
+        if let Err(e) = self.renderer.execute_draw_calls(&frame_token, &draw_list) {
+            log::error!("Failed to execute draw calls: {}", e);
+            let _ = self.renderer.abort(frame_token);
+            return; // Skip rendering this frame
+        }
+
+        log::debug!(
+            "About to submit {} draw calls to geometry pass",
+            draw_list.len()
+        );
+
+        // One frame-owned copy of each prepared list: every pass submission
+        // shares the same reference-counted data instead of deep-cloning.
+        let draw_list = std::rc::Rc::new(draw_list);
+        let shadow_draw_list = std::rc::Rc::new(shadow_draw_list);
+        let outline_draw_list = outline_draw_list.map(std::rc::Rc::new);
+
+        match self
+            .renderer
+            .render(&frame_token, &mut self.frame_graph, |frame| {
+                log::debug!(
+                    "Inside render closure: submitting {} draw calls to geometry pass",
+                    draw_list.len()
+                );
+
+                let ids = &self.pass_ids;
+
+                if !draw_list.is_empty() {
+                    if let Some(pass_id) = ids.depth_prepass {
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
+                    }
+                    if let Some(pass_id) = ids.geometry {
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
+                    }
+                    if let Some(pass_id) = ids.picking
+                        && Some(pass_id) != ids.depth_prepass
+                        && Some(pass_id) != ids.geometry
+                    {
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
+                    }
+                    if let Some(pass_id) = ids.shadow {
+                        frame.submit(pass_id, std::rc::Rc::clone(&shadow_draw_list));
+                    }
+                }
+
+                if let Some(ref outline_dl) = outline_draw_list
+                    && !outline_dl.is_empty()
+                {
+                    if let Some(pass_id) = ids.outline {
+                        frame.submit(pass_id, std::rc::Rc::clone(outline_dl));
+                    }
+                    if let Some(pass_id) = ids.stencil_indicator {
+                        frame.submit(pass_id, std::rc::Rc::clone(outline_dl));
+                    }
+                }
+
+                if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {
+                    log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
+                    frame.submit_ui(pass_id, ui_list);
+                }
+            }) {
+            Err(e) => {
+                log::error!("Frame render failed, skipping frame: {}", e);
+                let _ = self.renderer.abort(frame_token);
+            }
+            Ok(()) => self.finish_frame(frame_token),
+        }
+    }
+
+    /// Collect point lights from the ECS world for Forward+ tile-based light
+    /// culling. Scene features upload them into the acquired slot.
+    fn collect_lights(&mut self) {
+        use crate::components::{PointLight, TransformComponent};
+        use katla_gfx::PointLightGPU;
+
+        let poses = crate::systems::resolve_world_transforms(&self.world);
+        self.point_lights_buffer.clear();
+        for (entity, point_light, _local) in
+            self.world.query::<(&PointLight, &TransformComponent)>()
+        {
+            let Some(pose) = poses.get(&entity) else {
+                continue;
+            };
+            let pos = pose.transform.position;
+            self.point_lights_buffer.push(PointLightGPU {
+                position: [pos.x(), pos.y(), pos.z()],
+                range: point_light.range,
+                color: point_light.color,
+                intensity: point_light.intensity,
+            });
+        }
+    }
+
+    /// Recreate the swapchain and update all dependent resources.
+    ///
+    /// This is called when:
+    /// - The window is resized (`WindowEvent::Resized`)
+    /// - The window is unoccluded (`WindowEvent::Occluded(false)`)
+    /// - `acquire_next_image` or `queue_present` returns `VK_SUBOPTIMAL_KHR` / `VK_ERROR_OUT_OF_DATE_KHR`
+    pub(crate) fn recreate_swapchain_resources(&mut self) {
+        let Some(window) = &self.window else {
+            return;
+        };
+        let size = window.inner_size();
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
+        if let Err(e) = self.renderer.resize(size.width, size.height) {
+            log::error!("Failed to recreate swapchain: {}", e);
+            return;
+        }
+
+        let extent = self.renderer.swapchain_extent();
+
+        if let Ok(recreated_textures) = self.frame_graph.recreate_transient_textures(
+            &mut self.renderer,
+            extent.width,
+            extent.height,
+        ) {
+            self.update_recreated_transient_bindings(&recreated_textures);
+            self.panel_rt_size = katla_gfx::Size2D::new(0, 0);
+        }
+
+        let aspect = extent.width as f32 / extent.height as f32;
+        self.camera.aspect_ratio_changed(&mut self.world, aspect);
+    }
+}
+
+#[cfg(feature = "editor")]
+impl Application {
+    /// Prepare editor draw lists: gizmo draws, physics debug, shadow filtering, outline selection.
+    fn prepare_editor_draw_lists(
+        &mut self,
+        draw_list: &mut katla_gfx::renderer::DrawList,
+    ) -> (
+        katla_gfx::renderer::DrawList,
+        Option<katla_gfx::renderer::DrawList>,
+    ) {
+        self.collect_gizmo_draw_calls(draw_list);
+        self.collect_grid_draw_calls(draw_list);
+        self.collect_physics_debug_draw_calls(draw_list);
+        self.collect_reverb_debug_draw_calls(draw_list);
+
+        // Editor overlays (billboard icons, move/rotate/scale gizmos, debug
+        // wireframes) must not cast shadows: their materials are unlit
+        // overlay-only materials, and the shadow vertex shaders have no
+        // billboarding math anyway.
+        let overlay_materials = [
+            self.editor.billboard_resources.material,
+            self.editor.gizmo_resources.material,
+            self.editor.physics_debug_resources.material,
+            self.editor.grid_resources.material,
+        ];
+        let shadow_draw_list = {
+            let draws = draw_list
+                .iter()
+                .filter(|dc| !overlay_materials.contains(&dc.material))
+                .cloned()
+                .collect::<Vec<_>>();
+            katla_gfx::renderer::DrawList::from_draws(draws)
+        };
+
+        let selected_outline_indices = self
+            .editor
+            .editor_ui
+            .selected_entity
+            .map(|entity| self.collect_selected_instance_indices(entity));
+
+        let outline_draw_list = selected_outline_indices.as_ref().map(|indices| {
+            let draws = draw_list
+                .iter()
+                .filter(|dc| indices.contains(&dc.base_object_slot()))
+                .cloned()
+                .collect::<Vec<_>>();
+            katla_gfx::renderer::DrawList::from_draws(draws)
+        });
+
+        (shadow_draw_list, outline_draw_list)
+    }
+
+    /// Collect instance indices for the selected entity and all its children.
+    ///
+    /// Used to build the filtered draw list for the outline pass.
+    pub(crate) fn collect_selected_instance_indices(
+        &self,
+        root_entity: katla_ecs::EntityId,
+    ) -> Vec<u32> {
+        use crate::components::Children;
+
+        let mut entity_set = std::collections::HashSet::new();
+        entity_set.insert(root_entity);
+
+        let mut queue = vec![root_entity];
+        while let Some(entity) = queue.pop() {
+            if let Some(children) = self.world.get_component::<Children>(entity) {
+                for &child in &children.children {
+                    if entity_set.insert(child) {
+                        queue.push(child);
+                    }
+                }
+            }
+        }
+
+        let mut indices = Vec::new();
+        for entity_id in &entity_set {
+            if let Some(entity_indices) = self.editor.entity_to_instance_indices.get(entity_id) {
+                indices.extend_from_slice(entity_indices);
+            }
+        }
+        indices
+    }
+
+    /// Generate gizmo draw calls and append them to the main draw list.
+    fn collect_gizmo_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        use crate::components::{PerspectiveComponent, TransformComponent};
+        use crate::gizmo::*;
+
+        let Some(entity_id) = self.editor.editor_ui.selected_entity else {
+            self.editor.gizmo_state.clear_entity();
+            return;
+        };
+
+        let Some(_local) = self.world.get_component::<TransformComponent>(entity_id) else {
+            self.editor.gizmo_state.clear_entity();
+            return;
+        };
+
+        if !self.editor.gizmo_resources.initialized {
+            return;
+        }
+
+        let poses = crate::systems::resolve_world_transforms(&self.world);
+        let Some(pose) = poses.get(&entity_id) else {
+            return;
+        };
+        let position = pose.transform.position;
+        self.editor.gizmo_state.set_entity(entity_id, position);
+
+        // Get camera FOV and viewport height for screen-space scaling
+        let fov = if let Some(proj) = self
+            .world
+            .get_component::<PerspectiveComponent>(self.camera.entity)
+        {
+            proj.fov
+        } else {
+            60.0
+        };
+
+        let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
+        let cam_pos = if let Some(t) = self
+            .world
+            .get_component::<TransformComponent>(self.camera.entity)
+        {
+            t.transform.position
+        } else {
+            katla_math::Vec3::new(0.0, 2.0, 10.0)
+        };
+
+        let fov_rad = fov.to_radians();
+        let gizmo_scale = compute_gizmo_scale(
+            cam_pos,
+            position,
+            fov_rad,
+            viewport_height,
+            GIZMO_SCREEN_SIZE,
+        );
+
+        let gizmo_draws = match self.editor.gizmo_state.mode {
+            GizmoMode::Translate => generate_translate_draw_calls(
+                &self.editor.gizmo_resources,
+                position,
+                gizmo_scale,
+                self.editor.gizmo_state.hovered_handle,
+                self.editor.gizmo_state.active_handle,
+            ),
+            GizmoMode::Rotate => generate_rotate_draw_calls(
+                &self.editor.gizmo_resources,
+                position,
+                gizmo_scale,
+                self.editor.gizmo_state.hovered_handle,
+                self.editor.gizmo_state.active_handle,
+            ),
+            GizmoMode::Scale => generate_scale_draw_calls(
+                &self.editor.gizmo_resources,
+                position,
+                gizmo_scale,
+                self.editor.gizmo_state.hovered_handle,
+                self.editor.gizmo_state.active_handle,
+            ),
+        };
+
+        for draw in gizmo_draws {
+            draw_list.push(draw);
+        }
+    }
+
+    /// Generate reference grid draw calls if the grid is enabled.
+    fn collect_grid_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        if !self.editor.editor_ui.show_grid || !self.editor.grid_resources.initialized {
+            return;
+        }
+
+        let ground_height = self.ground_height();
+        for draw in
+            crate::rendering::grid::generate_grid_draws(&self.editor.grid_resources, ground_height)
+        {
+            draw_list.push(draw);
+        }
+    }
+
+    /// Height of the scene's ground plane, so the grid lies on the floor
+    /// instead of floating above or below it. Falls back to world zero, the
+    /// conventional editor ground level, when the scene has no ground plane.
+    fn ground_height(&mut self) -> f32 {
+        use crate::components::TransformComponent;
+        use crate::scene::EntitySource;
+
+        self.world
+            .query::<(&EntitySource, &TransformComponent)>()
+            .filter_map(|(_, source, transform)| {
+                matches!(source, EntitySource::Plane { .. })
+                    .then_some(transform.transform.position.y())
+            })
+            .reduce(f32::max)
+            .unwrap_or(0.0)
+    }
+
+    /// Generate physics debug wireframe draw calls if the overlay is enabled.
+    fn collect_physics_debug_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        if !self.editor.editor_ui.show_physics_debug
+            || !self.editor.physics_debug_resources.initialized
+        {
+            return;
+        }
+
+        use crate::rendering::physics_debug;
+
+        let debug_draws = physics_debug::generate_collider_wireframe(
+            &mut self.world,
+            &self.editor.physics_debug_resources,
+        );
+
+        for draw in debug_draws {
+            draw_list.push(draw);
+        }
+
+        if let Some(physics) = self.world.get_resource::<katla_physics::PhysicsWorld>() {
+            let contact_draws =
+                physics_debug::generate_contact_vis(&self.editor.physics_debug_resources, physics);
+            for draw in contact_draws {
+                draw_list.push(draw);
+            }
+        }
+    }
+
+    /// Generate reverb zone wireframe draw calls if the overlay is enabled.
+    fn collect_reverb_debug_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        if !self.editor.editor_ui.show_reverb_debug
+            || !self.editor.physics_debug_resources.initialized
+        {
+            return;
+        }
+
+        use crate::rendering::reverb_debug;
+
+        let debug_draws = reverb_debug::generate_reverb_zone_wireframe(
+            &mut self.world,
+            &self.editor.physics_debug_resources,
+        );
+
+        for draw in debug_draws {
+            draw_list.push(draw);
+        }
+    }
+
+    /// Generate billboard draw calls for entities with BillboardComponent.
+    fn collect_billboard_draw_calls(&mut self, draw_list: &mut katla_gfx::renderer::DrawList) {
+        use crate::components::{
+            BillboardComponent, EditorHidden, PerspectiveComponent, TransformComponent,
+        };
+        use crate::gizmo::compute_gizmo_scale;
+        use katla_gfx::renderer::DrawCall;
+        use katla_math::Mat4;
+
+        if !self.editor.billboard_resources.initialized {
+            return;
+        }
+
+        let cam_entity = self.camera.entity;
+
+        let (cam_pos, fov) = {
+            let cam_pos = self
+                .world
+                .get_component::<TransformComponent>(cam_entity)
+                .map(|t| t.transform.position)
+                .unwrap_or(katla_math::Vec3::new(0.0, 2.0, 10.0));
+            let fov = self
+                .world
+                .get_component::<PerspectiveComponent>(cam_entity)
+                .map(|p| p.fov)
+                .unwrap_or(60.0);
+            (cam_pos, fov)
+        };
+
+        let viewport_height = self.editor.editor_ui.viewport_size().1 as f32;
+        let fov_rad = fov.to_radians();
+
+        for (entity_id, billboard) in self.world.query_ref::<&BillboardComponent>() {
+            if self
+                .world
+                .get_component::<EditorHidden>(entity_id)
+                .is_some()
+            {
+                continue;
+            }
+
+            let Some(transform) = self.world.get_component::<TransformComponent>(entity_id) else {
+                continue;
+            };
+
+            let position = transform.transform.position;
+
+            let Some(texture_handle) = self
+                .editor
+                .billboard_resources
+                .icon_textures
+                .get(&billboard.icon)
+            else {
+                continue;
+            };
+
+            let desired_screen_size = 40.0 * billboard.size;
+            let world_scale = compute_gizmo_scale(
+                cam_pos,
+                position,
+                fov_rad,
+                viewport_height,
+                desired_screen_size,
+            );
+
+            let transform_mat = Mat4::from_translation([position.x(), position.y(), position.z()])
+                * Mat4::from_scale(katla_math::Vec3::new(world_scale, world_scale, world_scale));
+
+            let color = billboard.color.to_linear();
+
+            let draw = DrawCall::new(
+                self.editor.billboard_resources.mesh,
+                self.editor.billboard_resources.material,
+            )
+            .with_transform(transform_mat.to_array())
+            .with_color(color.to_array())
+            .with_emission(*texture_handle)
+            .with_billboard();
+
+            let idx = draw_list.push(draw);
+
+            self.editor.entity_instance_map.insert(idx, entity_id);
+            self.editor
+                .entity_to_instance_indices
+                .entry(entity_id)
+                .or_default()
+                .push(idx);
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Application {
+    pub fn render_frame(
+        &mut self,
+        ui_draw_list: Option<katla_gfx::renderer::UIDrawList>,
+        delta_time: f32,
+        frame_count: usize,
+    ) {
+        if self.needs_swapchain_recreate {
+            self.needs_swapchain_recreate = false;
+            if let Some(ref window) = self.window {
+                let inner = window.inner_size();
+                let w = (inner.width as f32 / self.scale_factor) as u32;
+                let h = (inner.height as f32 / self.scale_factor) as u32;
+                if w > 0 && h > 0 {
+                    self.renderer.wait_for_device();
+                    if let Err(e) = self.renderer.resize(w, h) {
+                        log::error!("Failed to resize Metal renderer: {}", e);
+                    }
+
+                    let phys = self.renderer.swapchain_extent();
+                    if let Ok(textures) = self.frame_graph.recreate_transient_textures(
+                        &mut self.renderer,
+                        phys.width,
+                        phys.height,
+                    ) {
+                        self.update_recreated_transient_bindings(&textures);
+                        self.panel_rt_size = katla_gfx::Size2D::new(0, 0);
+                    }
+                }
+            }
+        }
+
+        if !self.frame_graph_runtime.uses_katla_scene() {
+            self.render_graph_only(ui_draw_list, delta_time, frame_count);
+            return;
+        }
+
+        self.recreate_panel_rt_resources();
+
+        let (viewport_width, viewport_height) = self.viewport_size();
+        let viewport_aspect = if viewport_height > 0 {
+            viewport_width as f32 / viewport_height as f32
+        } else {
+            16.0 / 9.0
+        };
+        self.camera
+            .aspect_ratio_changed(&mut self.world, viewport_aspect);
+
+        let mut frame = FrameContext::new();
+
+        let view_mat = self.camera.get_view_mat(&self.world);
+        let proj_mat = self.camera.get_proj_mat(&self.world);
+        let frustum = katla_math::Frustum::from_proj_and_view(&proj_mat, &view_mat);
+        let camera_entity = self.camera.entity;
+
+        use crate::components::TransformComponent;
+        let cam_pos = if let Some(transform) = self
+            .world
+            .get_component::<TransformComponent>(camera_entity)
+        {
+            [
+                transform.transform.position.x(),
+                transform.transform.position.y(),
+                transform.transform.position.z(),
+                1.0,
+            ]
+        } else {
+            [0.0, 0.0, 0.0, 1.0]
+        };
+
+        let inv_view_proj = {
+            use katla_math::Mat4;
+            (proj_mat * view_mat)
+                .inverse()
+                .unwrap_or_else(Mat4::identity)
+        };
+
+        // Acquire the frame: waits for the slot's previous submission (and the
+        // prior drawable) to complete before any per-frame CPU writes.
+        use katla_gfx::renderer::frame_scope::FrameAcquisition;
+        if let Some(features) = &mut self.scene_features {
+            let size = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+                self.panel_rt_size
+            } else {
+                self.renderer.swapchain_extent()
+            };
+            if let Err(error) =
+                features
+                    .lights
+                    .resize(&mut self.renderer, &mut self.frame_graph, size)
+            {
+                log::error!("Scene light resize failed: {error}");
+                return;
+            }
+        }
+        let frame_token = match self.renderer.acquire_frame() {
+            Ok(FrameAcquisition::Ready(token)) => token,
+            Ok(FrameAcquisition::Unavailable) => return,
+            Ok(FrameAcquisition::OutOfDate) => {
+                self.needs_swapchain_recreate = true;
+                return;
+            }
+            Err(e) => {
+                log::error!("Failed to acquire frame: {}", e);
+                return;
+            }
+        };
+
+        // Tile grid must match the panel-sized scene render targets (set in
+        // recreate_panel_rt_resources). Fall back to the swapchain extent before
+        // the first layout runs.
+        let scene_extent = if self.panel_rt_size.width > 0 && self.panel_rt_size.height > 0 {
+            self.panel_rt_size
+        } else {
+            self.renderer.swapchain_extent()
+        };
+        let tiles_x = scene_extent.width.div_ceil(16);
+        let tiles_y = scene_extent.height.div_ceil(16);
+
+        let frame_uniforms = FrameUniforms {
+            view_matrix: view_mat.to_array(),
+            proj_matrix: proj_mat.to_array(),
+            inv_view_proj_matrix: inv_view_proj.to_array(),
+            camera_position: cam_pos,
+            light_direction: [0.3, 1.0, 0.2, 0.0],
+            light_color: [1.0, 0.98, 0.95, 0.0],
+            light_intensity: [
+                4.0,
+                self.frame_graph
+                    .transient_texture_bindless_slot("scene_depth", frame_token.slot())
+                    .unwrap_or(0) as f32,
+                0.0,
+                0.0,
+            ],
+            tiles: [tiles_x, tiles_y, 0, 0],
+            tonemap: [1.0, 2.2, 0.0, 0.0],
+            overlay: [0.0, 0.0, 0.0, 0.0],
+            compositing: [0.0, 0.0, 0.0, 0.0],
+        };
+        frame.set_frame_uniforms(frame_uniforms);
+
+        self.collect_draws_with_context(&mut frame, &frustum);
+
+        self.collect_lights();
+        let mut draw_list = frame.take_draw_list();
+        self.last_draw_call_count = draw_list.len();
+        draw_list.sort_by_material();
+
+        // Selection and editor overlays append gizmo/debug draws with fresh instance
+        // indices. Prepare them before uploading object uniforms so every submitted
+        // draw references initialized GPU data.
+        let (shadow_draw_list, outline_draw_list) = self.prepare_draw_lists(&mut draw_list);
+
+        if let Err(error) =
+            self.prepare_scene_gpu(&frame_token, delta_time, &frame_uniforms, &draw_list)
+        {
+            log::error!("Scene GPU preparation failed: {error}");
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
+
+        if let Err(e) = self.renderer.execute_draw_calls(&frame_token, &draw_list) {
+            log::error!("Failed to execute draw calls: {}", e);
+            let _ = self.renderer.abort(frame_token);
+            return;
+        }
+
+        log::debug!(
+            "About to submit {} draw calls to Metal renderer",
+            draw_list.len()
+        );
+
+        // One frame-owned copy of each prepared list: every pass submission
+        // shares the same reference-counted data instead of deep-cloning.
+        let draw_list = std::rc::Rc::new(draw_list);
+        let shadow_draw_list = std::rc::Rc::new(shadow_draw_list);
+        let outline_draw_list = outline_draw_list.map(std::rc::Rc::new);
+
+        match self
+            .renderer
+            .render(&frame_token, &mut self.frame_graph, |frame| {
+                let ids = &self.pass_ids;
+
+                if !draw_list.is_empty() {
+                    if let Some(pass_id) = ids.geometry {
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
+                    }
+                    if let Some(pass_id) = ids.picking
+                        && Some(pass_id) != ids.depth_prepass
+                        && Some(pass_id) != ids.geometry
+                    {
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
+                    }
+                    if let Some(pass_id) = ids.shadow {
+                        frame.submit(pass_id, std::rc::Rc::clone(&shadow_draw_list));
+                    }
+                    if let Some(pass_id) = ids.depth_prepass {
+                        frame.submit(pass_id, std::rc::Rc::clone(&draw_list));
+                    }
+                }
+
+                if let Some(outline_dl) = &outline_draw_list
+                    && !outline_dl.is_empty()
+                    && let Some(pass_id) = ids.outline
+                {
+                    frame.submit(pass_id, std::rc::Rc::clone(outline_dl));
+                }
+
+                if let (Some(pass_id), Some(ui_list)) = (ids.ui, ui_draw_list.as_ref()) {
+                    log::debug!("Submitting {} UI draw commands", ui_list.commands.len());
+                    frame.submit_ui(pass_id, ui_list);
+                }
+            }) {
+            Err(e) => {
+                log::error!("Metal frame render failed: {}", e);
+                let _ = self.renderer.abort(frame_token);
+            }
+            Ok(()) => self.finish_frame(frame_token),
+        }
+    }
+
+    fn collect_lights(&mut self) {
+        use crate::components::{PointLight, TransformComponent};
+        use katla_gfx::PointLightGPU;
+
+        let poses = crate::systems::resolve_world_transforms(&self.world);
+        self.point_lights_buffer.clear();
+        for (entity, point_light, _local) in
+            self.world.query::<(&PointLight, &TransformComponent)>()
+        {
+            let Some(pose) = poses.get(&entity) else {
+                continue;
+            };
+            let pos = pose.transform.position;
+            self.point_lights_buffer.push(PointLightGPU {
+                position: [pos.x(), pos.y(), pos.z()],
+                range: point_light.range,
+                color: point_light.color,
+                intensity: point_light.intensity,
+            });
+        }
+    }
+}
+
+pub(super) fn commit_frame_submission(
+    result: Result<PresentOutcome, katla_gfx::RendererError>,
+    committed: impl FnOnce(),
+) -> Result<SurfaceStatus, katla_gfx::RendererError> {
+    let outcome = result?;
+    committed();
+    outcome.surface
+}
+
+#[cfg(test)]
+mod submission_tests {
+    use std::cell::Cell;
+
+    use super::*;
+
+    #[test]
+    fn test_submitted_frame_commits_when_surface_requires_recreation() {
+        let committed = Cell::new(false);
+        let result = commit_frame_submission(
+            Ok(PresentOutcome {
+                surface: Ok(SurfaceStatus::RecreateRequired),
+            }),
+            || committed.set(true),
+        );
+        assert!(committed.get());
+        assert!(matches!(result, Ok(SurfaceStatus::RecreateRequired)));
+    }
+
+    #[test]
+    fn test_submitted_frame_commits_before_reporting_surface_failure() {
+        let committed = Cell::new(false);
+        let result = commit_frame_submission(
+            Ok(PresentOutcome {
+                surface: Err(katla_gfx::RendererError::SwapchainError(
+                    "surface lost".into(),
+                )),
+            }),
+            || committed.set(true),
+        );
+        assert!(committed.get());
+        assert!(matches!(
+            result,
+            Err(katla_gfx::RendererError::SwapchainError(_))
+        ));
+    }
+
+    #[test]
+    fn test_rejected_submission_does_not_commit_frame_state() {
+        let committed = Cell::new(false);
+        let result = commit_frame_submission(
+            Err(katla_gfx::RendererError::InvalidOperation(
+                "submission rejected".into(),
+            )),
+            || committed.set(true),
+        );
+        assert!(!committed.get());
+        assert!(result.is_err());
+    }
+}

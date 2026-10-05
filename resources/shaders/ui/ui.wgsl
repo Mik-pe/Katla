@@ -1,0 +1,143 @@
+// UI shader for screen-space rendering using bindless textures
+//
+// Two rendering modes:
+// 1. Instanced: unit quad + per-instance data for simple rects/textured quads
+// 2. Non-instanced: per-vertex data for complex geometry (circles, rounded rects, gradients)
+//
+// ndc_y_flip: 1.0 for Vulkan (Y-down), -1.0 for Metal (Y-up).
+
+struct UiVertex {
+    @location(0) position: vec2f,
+    @location(1) uv: vec2f,
+    @location(2) color: vec4f,
+    @location(3) texture_index: u32,
+}
+
+struct UnitQuadVertex {
+    @location(0) local_pos: vec2f,
+}
+
+// Must match the Rust VertexUIInstance layout exactly (56 bytes, alignment 8).
+// Uses vec2f (align 8) and u32/f32 (align 4) — no vec4f to avoid 16-byte padding.
+// clip_rect is split into two vec2f to avoid vec4f alignment requirements.
+struct InstanceData {
+    position: vec2f,
+    size: vec2f,
+    uv_min: vec2f,
+    uv_max: vec2f,
+    packed_color: u32,
+    texture_index: u32,
+    clip_rect_xy: vec2f,
+    clip_rect_wh: vec2f,
+}
+
+struct VertexOutput {
+    @builtin(position) clip_position: vec4f,
+    @location(0) uv: vec2f,
+    @location(1) color: vec4f,
+    @location(2) @interpolate(flat) texture_index: u32,
+}
+
+// xy: screen size in logical pixels, z: ndc_y_flip (1.0 Vulkan, -1.0 Metal),
+// w: unused. Both backends bind the same vec4 layout.
+struct UiUniforms {
+    params: vec4f,
+}
+
+@group(0) @binding(1) var font_sampler: sampler;
+@group(0) @binding(3) var<uniform> uniforms: UiUniforms;
+
+@group(1) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 4096>;
+
+// Instance data buffer at binding 4
+@group(0) @binding(4) var<storage, read> instance_data: array<InstanceData>;
+
+fn srgb_to_linear(c: f32) -> f32 {
+    if c <= 0.04045 {
+        return c / 12.92;
+    }
+    return pow((c + 0.055) / 1.055, 2.4);
+}
+
+// Decode a packed u32 color (RGBA as u8) into a vec4f
+fn decode_color(packed: u32) -> vec4f {
+    let r = f32(packed & 0xFFu) / 255.0;
+    let g = f32((packed >> 8u) & 0xFFu) / 255.0;
+    let b = f32((packed >> 16u) & 0xFFu) / 255.0;
+    let a = f32((packed >> 24u) & 0xFFu) / 255.0;
+    return vec4f(r, g, b, a);
+}
+
+// Instanced vertex shader for simple quads
+@vertex
+fn vs_instanced(
+    in: UnitQuadVertex,
+    @builtin(instance_index) instance_idx: u32,
+) -> VertexOutput {
+    var out: VertexOutput;
+
+    let inst = instance_data[instance_idx];
+
+    // Transform unit quad: screen_pos = position + local_pos * size
+    let screen_pos = inst.position + in.local_pos * inst.size;
+
+    let screen_size = uniforms.params.xy;
+    let ndc_x = (screen_pos.x / screen_size.x) * 2.0 - 1.0;
+    let ndc_y = ((screen_pos.y / screen_size.y) * 2.0 - 1.0) * uniforms.params.z;
+
+    out.clip_position = vec4f(ndc_x, ndc_y, 0.0, 1.0);
+
+    // Remap UV from unit quad [0,1] to instance UV range
+    out.uv = inst.uv_min + in.local_pos * (inst.uv_max - inst.uv_min);
+
+    // Decode color from packed u32 and apply sRGB to linear
+    let raw_color = decode_color(inst.packed_color);
+    out.color = vec4f(
+        srgb_to_linear(raw_color.r),
+        srgb_to_linear(raw_color.g),
+        srgb_to_linear(raw_color.b),
+        raw_color.a,
+    );
+
+    out.texture_index = inst.texture_index;
+
+    return out;
+}
+
+// Non-instanced vertex shader for complex geometry
+@vertex
+fn vs_main(in: UiVertex) -> VertexOutput {
+    var out: VertexOutput;
+
+    let screen_size = uniforms.params.xy;
+    let ndc_x = (in.position.x / screen_size.x) * 2.0 - 1.0;
+    let ndc_y = ((in.position.y / screen_size.y) * 2.0 - 1.0) * uniforms.params.z;
+
+    out.clip_position = vec4f(ndc_x, ndc_y, 0.0, 1.0);
+    out.uv = in.uv;
+    out.color = vec4f(
+        srgb_to_linear(in.color.r),
+        srgb_to_linear(in.color.g),
+        srgb_to_linear(in.color.b),
+        in.color.a,
+    );
+    out.texture_index = in.texture_index;
+
+    return out;
+}
+
+// Shared fragment shader
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    let texture = bindless_textures[in.texture_index];
+    let tex_color = textureSample(texture, font_sampler, in.uv);
+    return in.color * tex_color;
+}
+
+// Fragment shader for instanced draws — clipping is handled by GPU scissor rect
+@fragment
+fn fs_instanced(in: VertexOutput) -> @location(0) vec4f {
+    let texture = bindless_textures[in.texture_index];
+    let tex_color = textureSample(texture, font_sampler, in.uv);
+    return in.color * tex_color;
+}

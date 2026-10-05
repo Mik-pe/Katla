@@ -1,0 +1,229 @@
+use std::rc::Rc;
+
+use ash::{
+    khr::surface::Instance as Surface,
+    khr::swapchain::Device as SwapchainDevice,
+    vk::{self, PhysicalDevice},
+};
+
+use crate::error::RendererError;
+
+pub struct SwapchainInfo {
+    pub surface_caps: vk::SurfaceCapabilitiesKHR,
+    pub surface_formats: Vec<vk::SurfaceFormatKHR>,
+    pub present_modes: Vec<vk::PresentModeKHR>,
+}
+
+pub struct Swapchain {
+    pub swapchain_loader: Rc<SwapchainDevice>,
+    pub swapchain: vk::SwapchainKHR,
+    pub format: vk::SurfaceFormatKHR,
+    extent: vk::Extent2D,
+    _native_device: Rc<super::context::native_lifetime::NativeDevice>,
+}
+
+impl Swapchain {
+    pub(crate) fn create_swapchain(
+        native_device: Rc<super::context::native_lifetime::NativeDevice>,
+        swapchain_loader: Rc<SwapchainDevice>,
+        surface_loader: &Surface,
+        physical_device: PhysicalDevice,
+        surface: vk::SurfaceKHR,
+        old_swapchain: Option<vk::SwapchainKHR>,
+        requested_extent: vk::Extent2D,
+    ) -> Result<Self, RendererError> {
+        let swapchain_info =
+            SwapchainInfo::query_swapchain_support(surface_loader, physical_device, surface)?;
+
+        let surface_caps = &swapchain_info.surface_caps;
+        let format = swapchain_info.choose_surface_format().ok_or_else(|| {
+            RendererError::SwapchainError("No surface formats available".to_string())
+        })?;
+
+        let present_mode = swapchain_info.choose_present_mode();
+        let extent = swapchain_info.choose_extent(requested_extent);
+        log::info!("Creating swapchain at {}x{}", extent.width, extent.height);
+
+        let frames_in_flight: u32 = 2;
+        let mut image_count = surface_caps.min_image_count.max(frames_in_flight);
+
+        if surface_caps.max_image_count > 0 && image_count > surface_caps.max_image_count {
+            image_count = surface_caps.max_image_count;
+        }
+        let old_swapchain = old_swapchain.unwrap_or(vk::SwapchainKHR::null());
+        let create_info = vk::SwapchainCreateInfoKHR::default()
+            .surface(surface)
+            .min_image_count(image_count)
+            .image_format(format.format)
+            .image_color_space(format.color_space)
+            .image_extent(extent)
+            .image_array_layers(1)
+            .image_usage(
+                vk::ImageUsageFlags::COLOR_ATTACHMENT
+                    | vk::ImageUsageFlags::TRANSFER_DST
+                    | vk::ImageUsageFlags::TRANSFER_SRC,
+            )
+            .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .pre_transform(surface_caps.current_transform)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(present_mode)
+            .clipped(true)
+            .old_swapchain(old_swapchain);
+        let swapchain =
+            unsafe { swapchain_loader.create_swapchain(&create_info, None) }.map_err(|e| {
+                RendererError::SwapchainError(format!("Failed to create swapchain: {:?}", e))
+            })?;
+
+        Ok(Self {
+            swapchain_loader,
+            swapchain,
+            format,
+            extent,
+            _native_device: native_device,
+        })
+    }
+
+    pub fn get_swapchain_images(&self) -> Result<Vec<vk::Image>, RendererError> {
+        unsafe { self.swapchain_loader.get_swapchain_images(self.swapchain) }.map_err(|e| {
+            RendererError::SwapchainError(format!("Failed to get swapchain images: {:?}", e))
+        })
+    }
+
+    pub fn get_extent(&self) -> vk::Extent2D {
+        self.extent
+    }
+}
+
+impl Drop for Swapchain {
+    fn drop(&mut self) {
+        unsafe {
+            self.swapchain_loader
+                .destroy_swapchain(self.swapchain, None)
+        };
+    }
+}
+
+impl SwapchainInfo {
+    fn choose_extent(&self, requested: vk::Extent2D) -> vk::Extent2D {
+        let caps = &self.surface_caps;
+        if caps.current_extent.width != u32::MAX {
+            return caps.current_extent;
+        }
+        vk::Extent2D {
+            width: requested
+                .width
+                .clamp(caps.min_image_extent.width, caps.max_image_extent.width),
+            height: requested
+                .height
+                .clamp(caps.min_image_extent.height, caps.max_image_extent.height),
+        }
+    }
+
+    pub fn choose_present_mode(&self) -> vk::PresentModeKHR {
+        self.present_modes
+            .iter()
+            .find(|format| matches!(**format, vk::PresentModeKHR::MAILBOX))
+            .cloned()
+            .unwrap_or(vk::PresentModeKHR::FIFO)
+    }
+
+    pub fn choose_surface_format(&self) -> Option<vk::SurfaceFormatKHR> {
+        if self.surface_formats.is_empty() {
+            None
+        } else {
+            for surface_format in &self.surface_formats {
+                if surface_format.format == vk::Format::B8G8R8A8_SRGB
+                    && surface_format.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+                {
+                    return Some(*surface_format);
+                }
+            }
+
+            Some(self.surface_formats[0])
+        }
+    }
+
+    pub fn query_swapchain_support(
+        surface_loader: &Surface,
+        physical_device: vk::PhysicalDevice,
+        surface: vk::SurfaceKHR,
+    ) -> Result<SwapchainInfo, RendererError> {
+        unsafe {
+            let surface_caps = surface_loader
+                .get_physical_device_surface_capabilities(physical_device, surface)
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!(
+                        "Failed to get surface capabilities: {:?}",
+                        e
+                    ))
+                })?;
+            let surface_formats = surface_loader
+                .get_physical_device_surface_formats(physical_device, surface)
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!("Failed to get surface formats: {:?}", e))
+                })?;
+            let present_modes = surface_loader
+                .get_physical_device_surface_present_modes(physical_device, surface)
+                .map_err(|e| {
+                    RendererError::SwapchainError(format!("Failed to get present modes: {:?}", e))
+                })?;
+
+            Ok(SwapchainInfo {
+                surface_caps,
+                surface_formats,
+                present_modes,
+            })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_surface_extent_selection() {
+        let mut info = SwapchainInfo {
+            surface_caps: vk::SurfaceCapabilitiesKHR {
+                current_extent: vk::Extent2D {
+                    width: u32::MAX,
+                    height: u32::MAX,
+                },
+                min_image_extent: vk::Extent2D {
+                    width: 1,
+                    height: 1,
+                },
+                max_image_extent: vk::Extent2D {
+                    width: 4096,
+                    height: 4096,
+                },
+                ..Default::default()
+            },
+            surface_formats: vec![],
+            present_modes: vec![],
+        };
+        let requested = vk::Extent2D {
+            width: 1280,
+            height: 720,
+        };
+        assert_eq!(info.choose_extent(requested), requested);
+        assert_eq!(
+            info.choose_extent(vk::Extent2D {
+                width: 8000,
+                height: 0
+            }),
+            vk::Extent2D {
+                width: 4096,
+                height: 1
+            }
+        );
+        info.surface_caps.current_extent = vk::Extent2D {
+            width: 800,
+            height: 600,
+        };
+        assert_eq!(
+            info.choose_extent(requested),
+            info.surface_caps.current_extent
+        );
+    }
+}

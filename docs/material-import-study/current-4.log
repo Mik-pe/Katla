@@ -1,8 +1,0 @@
-
-running 1 test
-KATLA_MATERIAL_IMPORT {"asset":"/home/mikpe/Work/Katla/resources/models/DamagedHelmet.glb","asset_bytes":3773916,"decode_us":222228,"first_cpu_us":406604,"first_ready_us":412222,"image_bytes":62914560,"image_extents":[[2048,2048],[2048,2048],[2048,2048],[2048,2048],[2048,2048]],"index_count":46356,"instances":8,"native_rgba16f_texel":[5,56,187,56,228,56,0,60],"unique_texture_handles":5,"validation_enabled":false,"vertex_count":46356,"warm_cpu_us":15448,"warm_ready_us":16128}
-test application::spawning::material_tests::import_benchmark::test_native_full_material_asset_import_measurements ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 426 filtered out; finished in 0.70s
-
-[2026-10-03T14:24:08Z ERROR katla_agent::mcp] MCP server error: connection closed: initialize request

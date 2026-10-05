@@ -1,14 +1,16 @@
 # Trigger rules and gameplay events
 
-`odin/app` owns authored rules and ordered action dispatch. Native Box3D owns
-completed sensor intersections; `odin/script` owns Luau instances/subscriptions
-and typed deferred world commands. The GPU core has no gameplay policy. MCP and
-the editor share one trigger service and shared mutation history.
+The app owns gameplay rules. `katla_physics` owns overlap detection;
+`katla_script` owns Luau subscriptions and deferred commands. The graphics core
+has no event or gameplay policy. MCP and the editor agent share the `trigger`
+operation and its validation. This is a small declarative event → visitor filter
+→ ordered actions model, suitable for agent authoring and later editor controls.
 
-## Authoring
+## Agent authoring
 
-Find current generational entity IDs through scene queries and use `animation`
-inspection for clip names. Tool IDs are full decimal strings:
+Use the existing scene query tools to find entity IDs and `animation.inspect`
+to discover clip names. Trigger tool inputs and inspection results use decimal
+strings for complete generational entity IDs, preserving every bit in JSON clients. Call the `trigger` tool with, for example:
 
 ```json
 {
@@ -16,73 +18,108 @@ inspection for clip names. Tool IDs are full decimal strings:
   "name": "Entrance",
   "position": [0, 1, 0],
   "half_extents": [2, 1, 2],
-  "rules": [{
-    "event": "enter",
-    "other_entity": "42",
-    "once": false,
-    "actions": [
-      {"action":"play_animation","target":{"kind":"other"},"clip":"Run","fade_seconds":0.25},
-      {"action":"emit","name":"entered_entrance"}
-    ]
-  }]
+  "rules": [
+    {
+      "event": "enter",
+      "other_entity": "42",
+      "once": false,
+      "actions": [
+        {
+          "action": "play_animation",
+          "target": {"kind": "other"},
+          "clip": "Run",
+          "fade_seconds": 0.25
+        },
+        {"action": "emit", "name": "entered_entrance"}
+      ]
+    }
+  ]
 }
 ```
 
-Omit `other_entity` to accept any intersecting visitor; an exit rule uses
-`"event":"exit"`. Collision layer/mask settings control native pair admission.
-`once` defaults false; true consumes a matching rule once in the play session.
+`other_entity` is optional: omit it to accept any colliding visitor. Existing
+`CollisionFilter` layer/mask fields control which pairs Rapier considers.
+`once` defaults false; true consumes the rule on its first matching transition
+in a play session. An exit rule uses `"event": "exit"`.
 
-Action targets are the trigger, visitor (`other`) or an explicit live entity.
-`play_animation` shares [animation playback/fade semantics](animation_odin.md),
-with looping true, speed 1 and a 0.25-second default fade. An incompatible active
-fade fails explicitly; zero fade requests an intentional cut. Actions after a
-failed action still execute, and inspection retains the errors.
+`play_animation` targets the trigger, visitor (`other`), or a specific live
+entity (`{"kind":"entity","entity":"99"}`). Fade, looping and speed use the
+[same playback contract](animation-transitions.md) as direct animation commands.
+Defaults are 0.25 seconds, looping true, speed 1. An active fade rejects another
+positive fade. There is no automatic retry; use a zero fade for an intentional
+cut or design the rule to wait through scripted state. Actions after a failure
+still execute, and inspect exposes the failure.
 
-`burst_particles` requires an active emitter and count 1–100,000. Activate an
-emitter with `set_particles_active` earlier in the same rule when needed.
-Explicit particle targets must already have the component. A trigger targeting
-itself needs that attachment before rules are installed; create it with empty
-rules first. Queues hold at most 1,024 bursts and the renderer consumes only the
-queue prefix accepted with its GPU submission.
+`burst_particles` accepts a target and `count` in 1–100,000. The emitter must
+already be active; use `set_particles_active` with `active: true` earlier in the
+same rule to activate it. `behavior set_particles` attaches and configures the
+emitter. Explicit particle targets must have an emitter. A trigger targeting
+itself needs its attachment before `set_rules`; create it with empty rules first.
+Particle queues hold at most 1,024 bursts. Action failures remain visible through
+`inspect` and do not stop later actions.
 
-`create_box` validates the complete request before creating a kinematic sensor
-with `Scene_Transform`, `Physics_Body`, `Trigger_Volume` and `Trigger_Rules`.
-There is no drawable allocation. Half extents are positive local dimensions and
-position is finite. Transform edits move the sensor through native preparation.
-`set_rules` replaces the entire list and resets once state; an empty list removes
-behavior. `inspect` returns current rule data, simulation state, directed overlaps,
-consumed rule indices and the latest activation errors.
+`create_box` validates the complete request before spawning. It creates a
+kinematic sensor with a transform and no drawable/GPU resources. The box can
+move through ordinary transform edits. Half extents are finite positive local
+sizes; position is finite. An existing trigger can replace its entire rule list:
 
-There are at most 64 rules and 32 actions per rule. Types live in
-`odin/agent/scene/events.odin`; owned application components and dispatch live in
-`odin/app/events.odin`. Changes require editing mode and go through the same
-atomic history/native admission as inspector and hierarchy mutations.
+```json
+{"action":"set_rules","entity_id":"17","rules":[]}
+```
 
-## Completed-step semantics
+An empty list removes all behaviors. Replacement resets once-only state. Inspect
+returns name, position, shape, simulation state, rules, current overlapping IDs,
+consumed rule indices and the most recent
+activation's errors:
 
-While Playing, `simulation_step` advances animation, dispatches animation signals,
-steps native physics, dispatches sensor actions and then runs scripts. Pairs come
-from actual completed Box3D sensor intersections and are sorted by complete entity
-identity. Exits precede enters. The sensor is always `trigger`; two sensors emit
-both directed transitions. A sustained overlap emits one enter. Removing a
-visitor yields an exit at the next completed step; deleting the trigger removes
-its actions. Sensor admission includes fixed/kinematic pairs.
+```json
+{"action":"inspect","entity_id":"17"}
+```
 
-Actions run in authored order after physics releases its native state. They do
-not recursively step physics. An animation started by a rule advances its clock
-on the following tick. Pause freezes execution; Resume continues the same preview
-entities. Beginning/restoring a play session resets transient overlap, once and
-error state. Invalid delta time is rejected and zero delta does not produce a new
-physics transition.
+There are at most 64 rules per trigger and 32 actions per rule. Rules are pure data
+in `katla_agent::events`; `katla_app::events::TriggerRules` owns transient state.
+A Rust app registers `RapierPhysicsSystem`; it dispatches authored actions after
+each completed step. The existing application builders install physics and
+script pending resources. The game registers physics before `ScriptSystem`.
 
-Named emissions use the bounded `Script_Signals` owner. Native script dispatch
-uses lossless entity userdata in `data.trigger` and `data.other`; diagnostic
-`trigger_entity`/`other_entity` are decimal strings, not rounded numbers. Script
-callbacks may emit arbitrary typed payloads with `world:emit`.
+## Execution and overlap semantics
 
-## Luau callbacks
+Physics runs only under `PhysicsActive(true)`. Each completed Rapier step samples
+actual intersecting sensor pairs, compares them with the previous set and emits
+one directed transition per pair. The sensor is always `trigger_entity`. Two
+sensors emit both directions. Pairs are ordered by complete entity ID; exits run
+before enters. An overlap lasting many frames emits one enter. Removing a
+visitor produces exit on the next step, even though its native collider is gone.
+Destroying the trigger removes its rules, so it cannot act on its own removal.
+Zero, negative or nonfinite delta time produces no new transition.
 
-Subscribe once and use the callback's current world argument:
+Sensor detection enables all body-type combinations, including fixed/kinematic
+pairs; ordinary solids retain their existing policy. This follows Rapier's
+[active collision type contract](https://www.rapier.rs/docs/user_guides/rust/colliders/).
+The sorted overlap set costs O(k log k) for k directed intersecting pairs per
+step and avoids dependence on callback ordering or dead collider lookups.
+This is a correctness-oriented baseline; large overlap workloads need measured
+profiling before changing representation.
+
+Actions run in rule/list order after simulation releases its borrows. They do
+not recursively step physics. Animation actions call the shared playback helper
+without building an unused JSON inspection response. Simulation pause clears
+once-only state, cached overlaps and undelivered physics signals; resuming starts
+fresh enter detection. The current game advances animation before physics, so
+the new playback clock advances on the next tick.
+
+`PendingPhysicsEvents` retains only the latest physics batch until consumed by
+`ScriptSystem`; no script consumer can leave an unbounded multi-frame backlog.
+Named signals and `collision_enter`/`collision_exit` use the existing Luau event
+bus. Signals contain lossless `trigger` and `other` entity userdata for world
+commands and instance filtering (`data.trigger == entity`). Numeric
+`trigger_entity` and `other_entity` remain available for diagnostics; the collision payload's
+`entity_a`/`entity_b` fields identify the same pair. Lua can still emit arbitrary
+script events with `world:emit(name, data)`.
+
+## Custom behavior in Luau
+
+Subscribe once, then use the callback's fresh `world` argument for commands:
 
 ```lua
 local subscribed = false
@@ -97,46 +134,45 @@ function on_update(entity, world, dt)
 end
 ```
 
-Callbacks receive `(name, data, world)`. Commands use typed native host operations
-and application admission. Events emitted during dispatch wait for the next script
-tick, avoiding recursive cascades. Subscriptions belong to an instance and are
-released on destruction, replacement, hot reload or repeated-error disablement.
-Use the fresh callback world for mutations; a previously captured proxy describes
-an earlier snapshot. See [script runtime contracts](katla_script_architecture.md).
+Callbacks receive `(name, data, world)`. Commands use the same deferred app bridge
+as update hooks. Callbacks emitted during dispatch wait until the next script
+tick; no recursive event cascade runs in the current tick. Subscriptions belong
+to the entity's script instance and are released on destruction, component
+replacement, hot reload or disabling after repeated errors. An old captured
+world proxy is a snapshot; use the current callback argument for mutations.
+`ScriptsActive(false)` discards undelivered signals.
 
-## Persistence and deletion
+## Persistence and validation
 
-Scene v3 stores document-local keys for visitors and explicit action targets.
-Capture maps live generational references; staging maps them after all entities
-exist. Duplicate/renamed/absent labels do not redirect rules. Runtime overlaps,
-once consumption and diagnostics are reconstructed, rather than saved.
+Scene version 3 uses stable document-local keys for visitor filters and explicit
+animation/particle targets. Saving maps complete live generational IDs to those keys;
+loading resolves keys after every entity has spawned. Names may be duplicated,
+changed or absent without redirecting a rule. Runtime overlaps, consumed once
+rules and diagnostics reset rather than entering the scene file.
 
-The v0/v1/v2 reader converts legacy name-based references. Missing or ambiguous
-names fail migration; absent rules are empty. Document admission validates sizes,
-action values, component dependencies and references before publication. A stale
-reference rejects capture/Save/Play instead of binding to a replacement entity.
-See [scene format](scene_format.md).
+Version 2 introduced the sensor-only `Trigger` source and name-based references.
+The legacy reader migrates v0/v1/v2 into the current schema; a missing or ambiguous
+legacy target rejects migration. Absent `trigger_rules` default empty.
 
-Authored deletion prunes incoming visitor filters, explicit actions and overlaps
-in the same command, including prefab removal. Native rejection leaves all
-references intact. Undo restores fresh IDs and remaps surviving rules/joints.
-Runtime deletion retains authored stale targets for diagnostics; Stop restores the
-pre-play scene. These policies are application composition, not a second event bus.
+Loading validates rule sizes, action parameters, component dependencies and all
+references before preparing the new scene. A stale or non-serializable live target
+rejects capture, Play snapshots and file saving before replacing the saved file.
+It cannot silently bind to a replacement entity. See the
+[scene format contract](../katla_app/src/scene/README.md).
 
-## Verification and bounds
+## Validation and remaining scope
 
-`odin run tools/build -- --tests --sanitize` runs configured native
-CPU suites. [`tools/build validate physics`](../tools/build/validation.odin) exercises
-real sensor transitions/body combinations and native hierarchy/mesh/joint owners;
-[`tools/build validate luau`](../tools/build/validation.odin) exercises actual protected
-VM calls and event/deferred command lifecycle. Combined particle/render acceptance
-uses `tools/build validate render --particles` with both adapters and explicit Luau,
-Box3D and Vulkan dependencies.
+CPU tests exercise actual Rapier box transitions, orientation/body combinations,
+visitor filtering, once/reset, deletion, stale generation rejection, action
+failure, animation fades and Luau command/next-tick dispatch. A native app fixture
+saves/loads rules, asserts new entity IDs and executes the restored trigger.
+A shared native fade fixture also drives an agent-authored box through real
+Rapier enter detection to GPU joint matrices at source, midpoint and target.
+Linux and the existing `macos-26` workflow run the portable tests; native scene
+construction runs where the graphics device supports the required backend.
 
-Tests cover once/reset, filtering, action failure, generational reference rejection,
-deleted visitors, persistent rules, restored IDs and native GPU particle/animation
-consumers. Cross typechecks do not prove unavailable native devices or OS behavior.
-
-Rules describe enter/exit transitions; they do not imply swept sensor detection,
-stay/timer events or arbitrary smooth fade interruption. Stateful predicates can
-use Luau. Keep new actions typed and bounded when a concrete use case needs them.
+This does not yet provide a visual rule editor, tag/predicate language, timers,
+spatial stay events, arbitrary smooth interruption of animation fades, or
+swept sensor detection for visitors crossing a whole box between two steps.
+Custom state/conditions live in Luau. Extend typed actions when a concrete use
+case needs them rather than adding an unbounded node graph or a second event bus.

@@ -1,0 +1,155 @@
+//! Animation system for skeletal and transform-based animations.
+//!
+//! This module provides:
+//! - Animation clip loading from GLTF files
+//! - Skeletal animation with skinning
+//! - Transform animation (translation, rotation, scale)
+//! - Animation playback control (play, pause, loop, speed)
+//! - Animation blending between multiple clips
+//! - Animation events (completion, loop)
+//!
+//! # Example
+//!
+//! ```ignore
+//! // Load an animated model
+//! let model = load_animated_gltf("Fox.glb", &mut world);
+//!
+//! // Play an animation
+//! world.add_component(entity, AnimationPlayer::new("Walk").looping());
+//!
+//! // Crossfade to another animation
+//! if let Some(player) = world.get_component_mut::<AnimationPlayer>(entity) {
+//!     player.crossfade_to("Run", 1.5, 0.5)?;
+//! }
+//!
+//! // Check for animation events
+//! if let Some(player) = world.get_component_mut::<AnimationPlayer>(entity) {
+//!     for event in player.take_events() {
+//!         match event {
+//!             AnimationEvent::Completed { clip_name } => println!("{} finished", clip_name),
+//!             AnimationEvent::Looped { clip_name, loop_count } => println!("{} loop {}", clip_name, loop_count),
+//!         }
+//!     }
+//! }
+//! ```
+
+pub mod clips;
+pub mod components;
+pub(crate) mod control;
+pub mod gltf_loader;
+pub(crate) mod gpu_clip_loader;
+pub mod samplers;
+pub mod skin;
+pub mod systems;
+
+#[cfg(test)]
+mod native_transition_tests;
+#[cfg(test)]
+mod tests;
+
+pub use clips::{
+    AnimationChannel, AnimationClip, AnimationSampler, ChannelPath, SampleBuffer, SampledValue,
+};
+pub use components::{
+    AnimatedModel, AnimationEvent, AnimationPlayer, JointTransform, MorphTargetWeights,
+};
+pub use samplers::{CachedSampler, Interpolation};
+pub use skin::{JointWeights, Skeleton, Skin};
+pub use systems::{AnimationUpdateSystem, MorphTargetSystem};
+
+use crate::util::gltf_parser::AttributeParser;
+use katla_ecs::World;
+
+/// Animation system manager
+///
+/// High-level API for loading and managing animated models.
+pub struct AnimationManager;
+
+impl AnimationManager {
+    /// Set up an animated model entity with all required components for skeletal animation.
+    ///
+    /// This loads animations and skins onto the given entity, making it ready for
+    /// playback with `SkeletalAnimationSystem`.
+    ///
+    /// # Arguments
+    /// * `world` - The ECS world
+    /// * `entity` - The entity to add components to (usually the model entity)
+    /// * `model` - The GLTF model containing animations and skins
+    /// * `default_animation` - Optional name of animation to play by default
+    ///
+    /// # Returns
+    /// `true` if animation data was loaded, `false` if model has no animations
+    pub fn setup_animated_model(
+        world: &mut World,
+        entity: katla_ecs::EntityId,
+        model: &crate::util::GLTFModel,
+        default_animation: Option<&str>,
+    ) -> bool {
+        let document = &model.document;
+
+        // Check if model has animations
+        let animations: Vec<_> = document.animations().collect();
+        if animations.is_empty() {
+            log::debug!("Model has no animations, skipping animation setup");
+            return false;
+        }
+
+        // Load animations into AnimatedModel component
+        let parser = AttributeParser::new(&model.buffers);
+        let mut animated_model = AnimatedModel {
+            animations: std::collections::HashMap::new(),
+            sequences: std::collections::HashMap::new(),
+        };
+
+        for (index, gltf_animation) in animations.iter().enumerate() {
+            let name = gltf_animation
+                .name()
+                .unwrap_or(&format!("Animation_{}", index))
+                .to_string();
+
+            log::debug!("Loading animation '{}' for entity {:?}", name, entity);
+
+            let clip = gltf_loader::load_animation_clip(&parser, gltf_animation);
+            animated_model.animations.insert(name, clip);
+        }
+
+        world.add_component(entity, animated_model);
+
+        // Load skins into Skin component
+        let skins: Vec<_> = document.skins().collect();
+        if let Some(gltf_skin) = skins.first() {
+            let joints: Vec<usize> = gltf_skin.joints().map(|node| node.index()).collect();
+            let inverse_bind_matrices = if let Some(accessor) = gltf_skin.inverse_bind_matrices() {
+                gltf_loader::parse_mat4_from_accessor(&model.buffers, accessor)
+            } else {
+                vec![katla_math::Mat4::identity(); joints.len()]
+            };
+
+            let skin = Skin::new(
+                "main_skin".to_string(),
+                joints.clone(),
+                inverse_bind_matrices,
+            );
+            world.add_component(entity, skin);
+
+            // Build skeleton with parent hierarchy and rest pose transforms
+            let parent_indices = gltf_loader::build_skeleton_parents(&joints, document);
+            let local_transforms = gltf_loader::build_skeleton_local_transforms(&joints, document);
+            let skeleton = Skeleton::with_rest_pose("skeleton", parent_indices, local_transforms);
+            world.add_component(entity, skeleton);
+        }
+
+        // Add AnimationPlayer if default animation specified
+        if let Some(anim_name) = default_animation {
+            let player = AnimationPlayer::new(anim_name).looping();
+            world.add_component(entity, player);
+            log::debug!(
+                "Started playing animation '{}' on entity {:?}",
+                anim_name,
+                entity
+            );
+        }
+
+        true
+    }
+}

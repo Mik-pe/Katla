@@ -1,92 +1,130 @@
-# Capturing and comparing Odin render graphs
+# Capturing and Comparing Render-Graph Diagnostics
 
-The passive recording joins the compiled graph with facts observed at actual native
-allocation, encoding, synchronization and binding sites. Enabling capture does not
-introduce a GPU wait or change scheduling. Enable it before the submission to inspect.
+The passive capture joins a compiled graph, physical allocations, pass execution,
+and native encoder/synchronization/binding observations. It neither waits for GPU
+completion nor changes scheduling, synchronization, allocation, or encoding.
+Enable tracing before rendering the frame you want to inspect.
 
-```odin
-metal.capture_enable(&renderer, true)
-// Submit the ordinary application graph.
-capture, found := metal.capture_snapshot(&renderer, submission.id)
-if found {
-    defer gfx.capture_snapshot_destroy(&capture)
-    findings := gfx.capture_compare(&capture)
-    defer delete(findings)
-    text := gfx.capture_text(&capture)
-    defer delete(text)
-    fmt.print(text)
+```rust
+use katla_gfx::GpuRenderer;
+
+graph.set_execution_trace(true);
+renderer.render(&token, &mut graph, |frame| { /* submissions */ })?;
+renderer.present(token)?;
+let capture = graph.capture()?;
+println!("{capture}");
+for divergence in &capture.comparison {
+    eprintln!("{divergence}");
 }
 ```
 
-Vulkan exposes the same capture API. A snapshot owns its data independently of the
-graph, renderer, resource handles and reusable frame slot. Its submission ID, slot
-and acquisition generation identify exact accepted work. Actual completion owners
-update Pending/Completed/Failed feedback; obtaining a snapshot never waits for GPU
-completion. Rejected recordings preserve previous accepted captures. Each renderer
-retains the latest 16 submissions, while caller-owned clones have independent lives.
+The stored submission snapshot describes the state observed during encoding. Its
+feedback is normally `pending` before `present`. A caller may replace
+`capture.backend_execution.frame` with the renderer's passive
+`capture_submission_snapshot()` after presentation to observe newer feedback.
+`pending`, `completed`, and `failed` are explicit states; capture never forces one
+by waiting. Feedback identity combines the reusable frame slot and its acquisition
+generation. The command allocator ordinal identifies its bounded frame owner.
 
-## Editor exports
+## Local Vulkan and Metal capture
 
-The canonical editor enables capture for its dump flags and exports the first
-accepted aggregate submission. The graph includes actual scene, lighting, particles,
-postprocessing, picking and UI composition.
+The application dump flags enable tracing and export the joined frame. Vulkan
+runs on Linux; Metal runs on macOS with a Metal 4 capable physical GPU. Both use
+the same application graph. Headless mode replaces the surface with offscreen
+outputs and retains the selected application graph/runtime.
 
-```sh
+```bash
+# Vulkan: Linux with an available Vulkan driver.
+cargo run -p game --release -- --headless -s \
+    --dump-render-graph-file /tmp/vulkan-capture.json
+
+# Metal: enable native API validation before process launch.
 MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 \
-odin run tools/build -- run -- --headless --frames 2 \
-  --dump-render-graph-file /tmp/metal-capture.json
-
-odin run tools/build -- run --backend vulkan -- --headless --frames 2 \
-  --dump-render-graph-file /tmp/vulkan-capture.dot
+cargo run -p game --release -- --headless -s \
+    --dump-render-graph-file /tmp/metal-capture.json
 ```
 
-`.json` exports the complete `{capture, comparison}` bundle. `.dot` exports graph
-and physical allocation/native encoder nodes. Other extensions select text;
-`--dump-render-graph` prints text. Backend library/ICD arguments are described in
-[build and offline validation](odin_build.md).
+A `.json` destination selects the machine-readable bundle; `.dot` selects Graphviz,
+and other extensions select text. `--dump-render-graph` prints text. Each native
+encoder is recorded at the actual encoder opening, and each synchronization
+observation at the native translation/emission site. An operation that needs no
+native barrier carries `emitted: false` and its explicit backend reason. Extra
+backend ownership barriers are labelled separately from compiler operations.
 
-## Owned schema
+The comparison checks live/unknown passes, encoded pass order, color/depth targets,
+attachment operations, native encoder/pass order, undeclared bound resources and
+exact range-specific synchronization coverage and native stage/access/layout scopes against the canonical backend translator. Missing, duplicate, changed or
+unexpected synchronization produces a concrete failure. `SyncScopeMismatch` names required and observed native scopes; every emitted subresource barrier retains its actual range. A skipped empty pass is
+recorded, and does not count as an emitted encoder. Auxiliary native encoders can
+have no graph pass; their stable labels and positions remain visible.
 
-Schema 1 is the Odin contract. Passes retain their declaration names, kinds, access
-ranges, actual live order and liveness reasons: side-effect root, exported producer,
-required predecessor or not required. Resources retain descriptors, import/export
-contracts and actual first/last live positions. Dependencies identify exact producer
-and consumer pass/access indices and their byte or mip/layer/aspect ranges. These
-indices describe the actual compiler, rather than inventing a second scheduler.
+## Schema and formats
 
-Native events retain physical allocation size, heap placement and actual native
-memory choices, encoded command ownership and logical pass spans, pipeline/binding
-and argument table/layout identities, real residency membership, attachment
-load/store/clear operations and exact emitted synchronization scopes. Vulkan records
-one actual command buffer and distinct logical pass spans. Metal records actual
-native encoders and its global queue-stage visibility barriers; those barriers are
-not fabricated into per-range native calls. Alias events join compiler handoffs
-with the real native ownership ordering. Auxiliary allocations have explicit
-resource kind and negative logical indices.
+Schema 13 adds the joined capture and explicit liveness reasons. `graph` retains
+the standalone `RenderGraphDiagnostics` snapshot, including typed image accesses
+(aspects, mip/layer ranges, access mode, usage and stage) and typed buffer accesses
+(byte ranges, usage and stage). Every compiled image/buffer transition includes
+producer/consumer access, source/destination state, resource version, hazard reason
+and encoder/queue boundary. A version identifies the preceding range-specific
+access frontier (`rN.access.P`) or imported/undefined initial state (`rN.initial`);
+it is diagnostic identity, not an additional scheduling mechanism.
 
-Stable encounter ordinals identify native objects only within a recording. Exports
-contain no native handles, pointers, GPU addresses or private filesystem paths.
-Physical facts can differ across backends; allocation byte counts are observations,
-not bandwidth measurements or inferred savings.
+Resources report live/cull state and deterministic cull reasons. Passes identify
+side-effect roots, exported producers, required predecessors or unreachable work.
+Logical transient lifetimes and compatibility classes join physical allocation
+ordinals, frame slots, alias predecessor/successor order and saved bytes. Native
+records distinguish actual storage choices from compiler estimates. Tile-local
+storage requires whole-resource attachment use and discard stores throughout the
+live lifetime; exporting, sampling, storage or transfers disqualify it. Bandwidth
+savings remain unknown without hardware counters.
 
-`gfx.capture_graph_snapshot` provides an owned compiler projection before any GPU
-execution. It reports `native_captured=false` and backend None. Accepted native
-captures report `native_captured=true`; pure compiler snapshots cannot claim native
-completion or trigger missing-native-execution comparisons.
+Metal bindings include stable argument-table identity, reflected layout identity,
+immutable snapshot generation and residency membership. IDs follow stable
+encounter order. No native object pointers, driver handles, GPU addresses or user
+paths are exported. Native counts, storage decisions and observed feedback may
+legitimately differ across backends or capture times; the compiler contract is the
+portable comparison target. Deterministic ordering does not imply identical
+hardware facts.
 
-## Comparison and validation
+| Export | Method | Meaning |
+|--------|--------|---------|
+| JSON | `capture.to_json_pretty()` | Complete joined machine-readable bundle |
+| Text | `Display` | Logical/physical plan plus native execution and divergences |
+| DOT | `capture.to_dot()` | Logical resource ellipses, physical allocation nodes, native encoder hexagons |
 
-`gfx.capture_compare` returns typed findings with concrete pass, resource, expected
-and observed event indices. It checks live pass order and scope, encoder ownership,
-resource declaration/range coverage, pipeline/table/residency scopes and independently
-translated expected synchronization. Missing, duplicate, unexpected and changed
-native scopes/ranges remain distinct findings. Direct vertex/index/indirect bindings
-have explicit paths and do not pretend to use descriptor tables.
+`graph.diagnostics()` remains useful before any GPU allocation or frame execution.
+It exports the pure compiler projection; it does not claim native execution.
+Capture with tracing disabled explicitly reports that native execution was not
+captured.
 
-Pure CPU tests inject changed scope/range, missing/duplicate observations, unknown
-resources, undeclared bindings and stale table/residency identities. Ownership tests
-mutate declarations, reject candidates, reuse slots and evict recordings while a
-cloned snapshot remains valid. Native backend tests exercise the actual instrumentation
-with API validation and allocation tracking. Rendering validation follows
-[the gfx contracts](gfx_odin.md). The former Rust schema and its delivery records
-remain [historical evidence](archive/rust-render_graph_capture.md).
+## Comparison and failure artifacts
+
+```bash
+diff -u /tmp/before.json /tmp/after.json
+dot -Tsvg /tmp/metal-capture.dot -o /tmp/metal-capture.svg
+```
+
+Read compiler changes separately from native changes. A changed access, lifetime,
+order, synchronization requirement or physical slot belongs to the graph/compiler
+contract. A changed native observation with an unchanged contract belongs to its
+backend translation. The `comparison` list records those contract violations.
+Different schema versions require an intentional format migration.
+
+`katla_gfx/tests/goldens/` covers both standalone graph exports and a representative
+joined capture with render/compute/blit encoder kinds, frame ownership, feedback,
+argument-table layout, residency, and buffer synchronization. The fixture is a
+serialization/contract test; native tests separately exercise actual GPU encoding.
+Focused tests inject order/resource/synchronization divergence, duplicate barriers,
+missing coverage and unexplained no-ops.
+
+```bash
+cargo test -p katla_gfx --lib render_graph::diagnostics
+KATLA_BLESS_GOLDENS=1 cargo test -p katla_gfx --lib render_graph::diagnostics
+```
+
+Review blessed JSON/text/DOT diffs like code. Failed golden checks write actual
+exports under `$CARGO_TARGET_DIR/render-graph-diagnostics` (the workspace `target`
+directory when unset). CI uploads graph/plan/execution artifacts on failures with
+read-only repository permissions. Native validation failures can write their
+joined capture to the same directory, preserving both the compiled contract and
+actual observations for review.

@@ -1,0 +1,82 @@
+//! Pass templates for render graph construction.
+//!
+//! This module provides user-friendly pass templates that implement the
+//! [`PassBuilder`][crate::render_graph::PassBuilder] trait:
+//!
+//! - [`GeometryPass`] - Renders 3D geometry with color and depth outputs
+//! - [`FullscreenPass`] - Post-processing and compute-like fullscreen effects
+//! - [`ShadowPass`] - Cascaded shadow mapping for directional lights
+//! - [`UIPass`] - 2D UI rendering with alpha blending
+//! - [`CompositePass`] - Multi-viewport compositing with positioning
+//!
+//! # Example
+//!
+//! ```ignore
+//! use katla_gfx::render_graph::{FrameGraph, GeometryPass, UIPass};
+//!
+//! let graph = FrameGraph::builder()
+//!     .add_pass(GeometryPass::new("geometry")
+//!         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+//!         .write_depth("depth", ImageFormat::D32Sfloat))
+//!     .add_pass(UIPass::new("ui")
+//!         .write("color"))  // Composited on top
+//!     .build(&renderer)?;
+//!
+//! graph.execute(&renderer, |ctx| {
+//!     ctx.pass("ui").draw_ui(&ui_draw_list);
+//! })?;
+//! ```
+//!
+//! Each pass template uses string-based resource names for convenience.
+//! Names are resolved to handles at graph build time with zero runtime overhead.
+//!
+//! Templates hand-declare their typed image accesses; the coarse read/write
+//! sets are derived from them at graph build.
+
+use crate::render_graph::access::{
+    ImageSubresourceRange, NamedImageAccess, ResourceAccessMode, ResourceAccessStage,
+    ResourceAccessUsage,
+};
+
+/// Declare one typed image access by resource name.
+///
+/// The builder-level counterpart of the typed `ImageAccess` constructors: the
+/// name is resolved to a `ResourceId` when the frame graph is built.
+pub(crate) fn named_image_access(
+    resource: impl Into<String>,
+    mode: ResourceAccessMode,
+    usage: ResourceAccessUsage,
+    stage: ResourceAccessStage,
+    range: ImageSubresourceRange,
+) -> NamedImageAccess {
+    NamedImageAccess {
+        resource: resource.into(),
+        mode,
+        usage,
+        stage,
+        range,
+    }
+}
+
+mod composite;
+pub(crate) mod depth_prepass;
+mod fullscreen;
+pub(crate) mod geometry;
+mod outline;
+mod particles;
+mod shadow;
+mod ui;
+mod viewport;
+
+pub use composite::{CompositePass, CompositePassData, ViewportRect};
+pub use depth_prepass::DepthPrepass;
+pub use fullscreen::{FullscreenPass, OverlayPass};
+pub use geometry::GeometryPass;
+pub use outline::{OutlinePass, StencilIndicatorPass};
+pub use particles::ParticlePass;
+pub use shadow::ShadowPass;
+pub use ui::UIPass;
+pub use viewport::ViewportPass;
+
+mod compute;
+pub use compute::ComputePass;

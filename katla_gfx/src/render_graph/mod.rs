@@ -1,0 +1,140 @@
+//! Render graph API for frame rendering.
+//!
+//! This module provides a frame graph implementation for managing render passes,
+//! resources, and dependencies with automatic barrier generation.
+//!
+//! The render graph has three layers:
+//!
+//! - **Layer 1 (Graph Structure)**: `FrameGraphBuilder`, `PassBuilder`, `PassDesc`,
+//!   `GraphCompiler`, `ExecutionPlan` — pure data and dependency analysis, no GPU types.
+//! - **Layer 2 (Backend Interface)**: `RenderGraphBackend` trait — defines how the
+//!   render graph interacts with a specific GPU backend.
+//! - **Layer 3 (Backend Implementation)**: `VulkanRenderGraph` / `MetalRenderGraph` —
+//!   concrete implementations for each backend.
+//!
+//! # Overview
+//!
+//! - [`FrameGraph`] - Executable render graph (build once, execute every frame)
+//! - [`Frame`] - Context for submitting work during frame execution
+//! - [`GeometryPass`] - Geometry render pass template
+//! - [`FullscreenPass`] - Fullscreen/compute pass template
+//! - [`ShadowPass`] - Shadow mapping pass template
+//!
+//! # Example
+//!
+//! ```ignore
+//! // Build once at startup
+//! let frame_graph = renderer.create_frame_graph()
+//!     .add_pass(GeometryPass::new("geometry")
+//!         .write_color("color", ImageFormat::R16G16B16A16Sfloat)
+//!         .write_depth("depth", ImageFormat::D32Sfloat))
+//!     .add_pass(FullscreenPass::new("tonemap")
+//!         .read("color")
+//!         .write_backbuffer())
+//!     .build()?;
+//!
+//! // Execute every frame
+//! renderer.render(&frame_graph, |frame| {
+//!     frame.submit(geometry_pass_id, std::rc::Rc::new(draw_list));
+//! });
+//! ```
+
+// Layer 1: Backend-agnostic graph structure (no GPU types)
+pub mod access;
+mod allocation_plan;
+mod buffer_history;
+mod builder;
+pub mod capture;
+pub(crate) use buffer_history::BufferExecutionHistory;
+mod compiler;
+mod compute;
+#[cfg(test)]
+mod compute_tests;
+mod diagnostics;
+mod error;
+mod execution_plan_diagnostics;
+mod frame_graph;
+mod handles;
+#[cfg(test)]
+mod native_compute_tests;
+mod pass;
+mod pass_bindings;
+mod passes;
+mod resource;
+mod sync_plan;
+mod trace;
+
+// Layer 2: Backend interface trait
+mod backend;
+
+// Layer 3: Backend-specific execution
+pub mod any_frame;
+pub mod any_frame_graph;
+mod frame;
+#[cfg(target_os = "macos")]
+mod metal_backend;
+pub(crate) mod transient_buffer;
+mod transient_texture;
+pub(crate) use transient_texture::ImageLayoutJournal;
+mod vulkan_backend;
+pub(crate) use vulkan_backend::vk_buffer_usages;
+pub(crate) mod vulkan_compute;
+
+// Public API
+pub use access::{
+    BufferAccess, BufferByteRange, BufferUsage, ImageAccess, ImageAspects, ImageSubresourceRange,
+    ResourceAccessMode, ResourceAccessStage, ResourceAccessUsage,
+};
+pub use backend::{
+    NativeTransientAllocation, RenderGraphBackend, ResolvedGraphBuffer, TransientSlotPolicy,
+};
+pub use builder::{PassBuilder, SimplePass};
+pub use compute::{
+    ComputeBinding, ComputeBindingLayout, ComputeCommand, ComputeDispatch, ComputeDispatchSize,
+    ComputeInterface, ComputePipelineDesc,
+};
+pub use diagnostics::{
+    RENDER_GRAPH_DIAGNOSTICS_SCHEMA_VERSION, RenderGraphDiagnosticAllocationSlot,
+    RenderGraphDiagnosticBufferAccess, RenderGraphDiagnosticBufferByteRange,
+    RenderGraphDiagnosticBufferDescriptor, RenderGraphDiagnosticBufferMemory,
+    RenderGraphDiagnosticBufferSyncOp, RenderGraphDiagnosticBufferUsage,
+    RenderGraphDiagnosticCompatibilityClass, RenderGraphDiagnosticDependency,
+    RenderGraphDiagnosticExternalProducer, RenderGraphDiagnosticHazard,
+    RenderGraphDiagnosticImageAccess, RenderGraphDiagnosticImageStage,
+    RenderGraphDiagnosticImageSubresourceRange, RenderGraphDiagnosticImportedContract,
+    RenderGraphDiagnosticPass, RenderGraphDiagnosticPassType, RenderGraphDiagnosticResource,
+    RenderGraphDiagnosticResourceAccessMode, RenderGraphDiagnosticResourceAccessUsage,
+    RenderGraphDiagnosticResourceLifetime, RenderGraphDiagnosticResourceOrigin,
+    RenderGraphDiagnosticResourceRef, RenderGraphDiagnosticSummary,
+    RenderGraphDiagnosticSyncReason, RenderGraphDiagnosticSyncState,
+    RenderGraphDiagnosticTransition, RenderGraphDiagnostics, RenderGraphHazardKind,
+};
+pub use error::{GraphValidationError, RenderGraphError};
+pub use frame::Frame;
+#[cfg(target_os = "macos")]
+pub(crate) use frame::PassExecutionData;
+pub(crate) use frame::state_layout;
+pub use frame_graph::{FrameGraph, FrameGraphBuilder};
+pub use handles::{PassId, ResourceId};
+pub use pass::{PassDesc, PassKind, PassType};
+pub use passes::{
+    CompositePass, ComputePass, DepthPrepass, FullscreenPass, GeometryPass, OutlinePass,
+    OverlayPass, ParticlePass, ShadowPass, StencilIndicatorPass, UIPass, ViewportPass,
+    ViewportRect,
+};
+pub use resource::{
+    BufferDesc, BufferMemoryPolicy, BufferUsages, GraphBufferDesc, GraphResourceDesc,
+    GraphResourceHandle, GraphResourceType, ImportedImageContract, ResourceState,
+};
+pub use sync_plan::{
+    BufferSyncOp, BufferSyncState, EncoderKind, ExternalImageProducer, PassBoundary, QueueClass,
+};
+pub(crate) use sync_plan::{ImageSyncOp, ImageSyncState, ResourceHazardKind, SyncPlan, SyncReason};
+pub use trace::{
+    EmittedPassOutcome, ResourceExecutionTrace, ResourceExecutionTraceEntry, TraceDivergence,
+    compare_with_compiled,
+};
+pub use transient_texture::TransientTexture;
+
+/// Special resource name for the swapchain backbuffer.
+pub const BACKBUFFER_NAME: &str = "backbuffer";
