@@ -2,8 +2,8 @@ use std::boxed::Box;
 
 use katla_math::Color;
 use katla_ui::declarative::{
-    Alignment, Build, BuildContext, StateId, Widget, WidgetBox, hstack, image_button, menu_entry,
-    menu_group, menubar, text, zstack,
+    Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, hstack, image_button,
+    menu_entry, menu_group, menubar, text, zstack,
 };
 use katla_ui::{FontSize, ForkAwesome};
 
@@ -26,6 +26,7 @@ pub(crate) struct ToolbarDrawCtx {
     pub scene_title: String,
     pub can_undo: bool,
     pub can_redo: bool,
+    pub available_width: f32,
 }
 
 /// Actions emitted by the declarative toolbar.
@@ -78,13 +79,30 @@ impl Build for ToolbarView {
             menu_group("View", view_open_id, view_menu),
             menu_group("Create", create_open_id, create_menu),
         ])
-        .menubar_height(TOOLBAR_HEIGHT);
+        .menubar_height(TOOLBAR_HEIGHT)
+        .compact();
 
-        let title = build_title(&draw_ctx);
+        let chrome = hstack([
+            text("Katla")
+                .font_size(FontSize::Large)
+                .color(draw_ctx.highlight)
+                .boxed(),
+            bar.boxed(),
+        ])
+        .spacing(16.0)
+        .padding(Padding::horizontal(12.0))
+        .align(Alignment::Middle)
+        .flex_height(TOOLBAR_HEIGHT)
+        .boxed();
+        let title = if draw_ctx.available_width >= 720.0 {
+            build_title(&draw_ctx)
+        } else {
+            katla_ui::declarative::empty().boxed()
+        };
         let controls = build_controls(ctx, &draw_ctx);
 
         zstack([
-            (Alignment::TopLeading, bar.boxed()),
+            (Alignment::TopLeading, chrome),
             (Alignment::Center, title),
             (Alignment::TopTrailing, controls),
         ])
@@ -208,18 +226,18 @@ fn build_create_menu(ctx: &mut BuildContext) -> Vec<katla_ui::declarative::MenuE
 
 fn build_title(draw_ctx: &ToolbarDrawCtx) -> Box<dyn Widget> {
     let title = if draw_ctx.is_playing && !draw_ctx.is_paused {
-        "Katla Engine — Playing"
+        " · Playing"
     } else if draw_ctx.is_paused {
-        "Katla Engine — Paused"
+        " · Paused"
     } else {
-        "Katla Engine"
+        ""
     };
     let title_color = if draw_ctx.is_playing || draw_ctx.is_paused {
         draw_ctx.highlight
     } else {
         draw_ctx.text_muted
     };
-    text(format!("{} — {title}", draw_ctx.scene_title))
+    text(format!("{}{title}", draw_ctx.scene_title))
         .color(title_color)
         .font_size(FontSize::Medium)
         .boxed()
@@ -260,6 +278,7 @@ fn build_controls(ctx: &mut BuildContext, draw_ctx: &ToolbarDrawCtx) -> Box<dyn 
 
     let primary = image_button(primary_icon)
         .fill(primary_fill)
+        .icon_color(Color::from_rgb_hex(0x1A1A1C))
         .tooltip(primary_tip)
         .on_click(ctx.on_click(move |actions| {
             actions.emit(primary_action());

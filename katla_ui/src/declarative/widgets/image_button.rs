@@ -86,7 +86,7 @@ impl Widget for ImageButton {
         let bg = if hovered {
             ctx.style().button_hovered
         } else {
-            ctx.style().button_normal
+            Color::TRANSPARENT
         };
         let bg = self.fill_color.unwrap_or(bg);
         let bg = animation.apply_to_color(bg);

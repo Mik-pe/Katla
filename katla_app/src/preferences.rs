@@ -81,9 +81,9 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
-            theme: "dark".to_string(),
+            theme: "rcp".to_string(),
             show_grid: true,
-            show_stats: true,
+            show_stats: false,
             show_physics_debug: false,
             show_reverb_debug: false,
             font_scale: 1.0,

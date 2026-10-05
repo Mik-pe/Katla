@@ -7,17 +7,17 @@ These are design targets for editor UI work, not a claim that every current scre
 ### 1. Restraint of Color
 Two accent colors used in ~3% of pixel area. Most of the UI is neutral dark. Premium UIs are defined by what they DON'T use.
 
-- **Base**: Neutral dark `#1E1E1E`–`#2A2A2A`, very slightly cool
+- **Base**: Neutral dark `#1A1A1C`–`#303034`, very slightly cool
 - **Primary accent**: Orange `#F79545` — for add actions, active elements, CTAs
 - **Secondary accent**: Cyan `#5AC8FA` — for 3D selection gizmos, live/active states
-- **Text**: White `#FFFFFF` (values), `#8E8E93` (labels), `#6E6E72` (disabled)
+- **Text**: `#F0F0F5` (values), `#A8A8B0` (labels), `#888890` (muted)
 
 ### 2. Generous Spacing
 - Inspector rows: ~28-32px height
 - Section spacing: 16px vertical air
 - Panel padding: 12px
 - Between fields: 6px
-- The viewport dominates (~60-65% of window) — content over chrome
+- The viewport occupies the central column above Assets — content over chrome
 
 ### 3. Depth Through Layers, Not Borders
 - Panel backgrounds are 3-5% lighter than canvas — "rooms within rooms"
@@ -64,9 +64,22 @@ Two accent colors used in ~3% of pixel area. Most of the UI is neutral dark. Pre
 Reality Composer Pro inspires restraint, spacing, layered surfaces and a dominant
 viewport. Katla keeps its own general-purpose engine identity and Vulkan/Metal
 rendering, with independently dockable panels rather than a fixed four-panel DCC.
-A useful reference balance is hierarchy 16%, viewport 60–65%, inspector 22%, with
-a bottom project/timeline area around 25% height. Treat these as visual reference
-ratios, not mandatory panel geometry.
+The supplied Nova3D image refines this into full-height hierarchy and inspector
+panels around a central column, with Assets below the viewport. Katla starts with
+hierarchy 16.5%, inspector 22%, and Assets at 28% of the central column height.
+Assets is the selected tab; Console and Mixer remain available beside it.
+Docking still lets users change this arrangement.
+
+The 38px top bar shows Katla, four compact menus, the scene title and play controls.
+The title hides below 720px to preserve menu and play-control space. Menu painting
+and click regions share measured glyph widths; separators occupy 8px and consume
+clicks without passing them through to the scene. Icon actions use quiet surfaces
+until hovered. Dark and Reality Composer Pro share Katla's neutral surface palette,
+orange actions and cyan selection/focus. Fresh preferences select this palette and
+hide viewport statistics. Inspector ordering puts Transform before Material, then
+other components; material properties precede presets. Panel focus follows the
+active dock leaf, including the full-height sidebars. Viewport light/emitter icons
+use a restrained 24px screen-space size before user scaling.
 
 The reference uses SF Pro, green selection and blue secondary controls. Katla's
 chosen identity uses Roboto, orange actions and cyan selection. Reference details

@@ -756,6 +756,10 @@ mod tests {
         );
         let root = tree.root().unwrap();
         let children = tree.get(root).unwrap().children.clone();
+        tree.get(children[0])
+            .unwrap()
+            .widget
+            .layout_style(&|_, _, _| Vec2::new(26.0, 12.0));
         let mut bounds = HashMap::from([(root, Rect2D::new(Vec2::ZERO, Vec2::new(400.0, 300.0)))]);
         bounds.insert(children[0], Rect2D::new(Vec2::ZERO, Vec2::new(400.0, 28.0)));
         bounds.insert(

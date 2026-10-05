@@ -2,7 +2,7 @@
 //! UI hit-testing pipeline and the viewport GPU-picking path, capturing a
 //! screenshot at each state plus programmatic checks.
 //!
-//! Scene and dock click coordinates use the 1280x720 default layout. Inspector
+//! Scene and dock click coordinates use the 1280x720 default layout. Inspector and menu
 //! targets are resolved from the live widget tree.
 
 use log::info;
@@ -26,11 +26,11 @@ mod target {
     /// Hierarchy list body, used as the wheel-scroll position.
     pub const HIERARCHY_BODY: (f32, f32) = (117.0, 300.0);
     /// Solid front face of CenterCube, below the light icon and away from the selected gizmo.
-    pub const VIEWPORT_OBJECT: (f32, f32) = (440.0, 275.0);
+    pub const VIEWPORT_OBJECT: (f32, f32) = (412.0, 261.0);
     /// Empty sky above the torus, away from all geometry.
     pub const VIEWPORT_EMPTY_SKY: (f32, f32) = (940.0, 110.0);
-    /// "Console" tab in the bottom dock strip (tabs at y 525..555).
-    pub const CONSOLE_TAB: (f32, f32) = (211.0, 540.0);
+    /// "Console" tab in the central bottom dock strip.
+    pub const CONSOLE_TAB: (f32, f32) = (440.0, 526.0);
     /// "Light" theme swatch row inside the centered Preferences modal.
     pub const PREFERENCES_LIGHT_SWATCH: (f32, f32) = (550.0, 227.0);
     /// "Dark" theme swatch row inside the centered Preferences modal.
@@ -281,6 +281,33 @@ impl InteractionTestRunner {
     }
 
     #[cfg(feature = "editor")]
+    fn click_menu(app: &mut Application, label: &str, entry: Option<&str>) {
+        use katla_ui::declarative::widgets::menubar::MenuBar;
+        let tree = app.editor.editor_ui.view_tree();
+        let position = tree.iter_nodes().find_map(|(id, node)| {
+            let bar = node.widget.as_any().downcast_ref::<MenuBar>()?;
+            let index = bar.groups.iter().position(|group| group.label == label)?;
+            let bounds = *tree.resolved_bounds().get(&id)?;
+            let group = bar.group_bounds(bounds)[index];
+            let region = if let Some(entry) = entry {
+                let row = bar.groups[index]
+                    .items
+                    .iter()
+                    .position(|item| item.label == entry)?;
+                bar.entry_bounds(index, group)[row]
+            } else {
+                group
+            };
+            Some((region.center().x(), region.center().y()))
+        });
+        if let Some(position) = position {
+            Self::ui_press(app, position);
+        } else {
+            log::error!("Interaction menu target missing: {label} {entry:?}");
+        }
+    }
+
+    #[cfg(feature = "editor")]
     fn drag_material(app: &mut Application, value: f32, outside_row: bool) {
         use katla_ui::declarative::widgets::labeled_slider::LabeledSlider;
         let tree = app.editor.editor_ui.view_tree();
@@ -443,9 +470,9 @@ impl InteractionTestRunner {
                 }
             },
             State::UndoMaterial if (102..=107).contains(&frame) => match frame {
-                102 => Self::ui_press(app, (76.0, 20.0)),
+                102 => Self::click_menu(app, "Edit", None),
                 103 => Self::ui_release(app),
-                106 => Self::ui_press(app, (100.0, 52.0)),
+                106 => Self::click_menu(app, "Edit", Some("Undo")),
                 107 => {
                     Self::ui_release(app);
                     self.state = State::CheckMaterialUndo;
@@ -453,9 +480,9 @@ impl InteractionTestRunner {
                 _ => {}
             },
             State::RedoMaterial if (112..=117).contains(&frame) => match frame {
-                112 => Self::ui_press(app, (76.0, 20.0)),
+                112 => Self::click_menu(app, "Edit", None),
                 113 => Self::ui_release(app),
-                116 => Self::ui_press(app, (100.0, 80.0)),
+                116 => Self::click_menu(app, "Edit", Some("Redo")),
                 117 => {
                     Self::ui_release(app);
                     self.state = State::CheckMaterialRedo;
@@ -495,7 +522,7 @@ impl InteractionTestRunner {
                 self.state = State::CheckRemoveComponent;
             }
             State::PrefabWalkthrough => match frame {
-                150 => Self::ui_press(app, (72.0, 540.0)),
+                150 => Self::ui_press(app, (260.0, 526.0)),
                 151 | 155 | 157 | 161 | 163 | 169 | 175 => Self::ui_release(app),
                 154 | 156 => Self::click_widget(app, "text", "prefabs", false),
                 160 | 162 => Self::click_widget(app, "prefix", "chair.kat", false),

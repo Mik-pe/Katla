@@ -132,6 +132,7 @@ impl EditorUI {
 
         // Toolbar
         self.view_tree.env_mut().set(ToolbarDrawCtx {
+            available_width: screen_size.x(),
             show_grid: params.preferences.show_grid,
             show_stats: params.preferences.show_stats,
             show_physics_debug: params.preferences.show_physics_debug,

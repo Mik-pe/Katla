@@ -134,11 +134,10 @@ impl Build for InspectorView {
             .entities
             .iter()
             .find(|e| draw_ctx.selected_entity == Some(e.id));
-        let material_section = material_controls.build(
+        let mut material_section = material_controls.build(
             ctx,
             selected.and_then(|e| e.material.map(|m| (e.id, m))),
             &draw_ctx.theme,
-            draw_ctx.bounds.width(),
         );
 
         let content = if let Some(entity) = draw_ctx
@@ -165,10 +164,6 @@ impl Build for InspectorView {
                 .boxed(),
             );
 
-            if let Some(material) = material_section {
-                sections.push(material);
-            }
-
             for (index, type_name) in SECTION_TYPES.iter().enumerate() {
                 if !entity.components.iter().any(|c| c == type_name) {
                     continue;
@@ -183,6 +178,15 @@ impl Build for InspectorView {
                     continue;
                 };
                 sections.push(component);
+                if *type_name == "Transform"
+                    && let Some(material) = material_section.take()
+                {
+                    sections.push(material);
+                }
+            }
+
+            if let Some(material) = material_section {
+                sections.push(material);
             }
 
             // Add Component action: a quiet expander listing the component

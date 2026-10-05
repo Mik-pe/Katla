@@ -175,7 +175,7 @@ impl EditorUI {
             is_playing: false,
             is_paused: false,
             show_grid: true,
-            show_stats: true,
+            show_stats: false,
             show_physics_debug: false,
             show_reverb_debug: false,
             last_draw_call_count: 0,
@@ -548,32 +548,30 @@ impl EditorUI {
             return;
         }
 
-        if self.last_viewport_bounds.contains(mouse_pos) {
-            self.focused_panel = FocusedPanel::Viewport;
-            return;
-        }
-
-        let left_bounds = Rect2D::from_origin_size(
+        let dock_bounds = Rect2D::new(
             Vec2::new(0.0, TOOLBAR_HEIGHT),
-            Vec2::new(self.left_panel_width, self.last_viewport_bounds.height()),
+            self.last_screen_size - Vec2::new(0.0, declarative::STATUS_BAR_HEIGHT),
         );
-        if left_bounds.contains(mouse_pos) {
-            self.focused_panel = FocusedPanel::Hierarchy;
+        for (path, bounds) in self.dock_tree.leaf_bounds(dock_bounds) {
+            if !bounds.contains(mouse_pos) {
+                continue;
+            }
+            let panel = match self.dock_tree.get(&path) {
+                Some(katla_ui::dock::DockNode::Leaf { tabs, active }) => {
+                    tabs.get(*active).and_then(|id| EditorPanel::from_id(*id))
+                }
+                _ => None,
+            };
+            self.focused_panel = match panel {
+                Some(EditorPanel::Viewport) if self.last_viewport_bounds.contains(mouse_pos) => {
+                    FocusedPanel::Viewport
+                }
+                Some(EditorPanel::Hierarchy) => FocusedPanel::Hierarchy,
+                Some(EditorPanel::Inspector) => FocusedPanel::Inspector,
+                Some(EditorPanel::AssetBrowser) => FocusedPanel::AssetBrowser,
+                _ => FocusedPanel::None,
+            };
             return;
-        }
-
-        let right_panel_x = self.last_viewport_bounds.max.x();
-        let right_bounds = Rect2D::from_origin_size(
-            Vec2::new(right_panel_x, TOOLBAR_HEIGHT),
-            Vec2::new(self.right_panel_width, self.last_viewport_bounds.height()),
-        );
-        if right_bounds.contains(mouse_pos) {
-            self.focused_panel = FocusedPanel::Inspector;
-            return;
-        }
-
-        if mouse_pos.y() >= self.last_viewport_bounds.max.y() {
-            self.focused_panel = FocusedPanel::AssetBrowser;
         }
     }
 
@@ -641,20 +639,20 @@ impl EditorUI {
             active: 0,
         };
 
+        let center = DockNode::Split {
+            direction: SplitDirection::Vertical,
+            ratio: 0.72,
+            children: [Box::new(viewport), Box::new(bottom_tabs)],
+        };
         let right = DockNode::Split {
             direction: SplitDirection::Horizontal,
-            ratio: 0.78125,
-            children: [Box::new(viewport), Box::new(inspector)],
-        };
-        let main = DockNode::Split {
-            direction: SplitDirection::Horizontal,
-            ratio: 0.1823,
-            children: [Box::new(hierarchy), Box::new(right)],
+            ratio: 0.735,
+            children: [Box::new(center), Box::new(inspector)],
         };
         let root = DockNode::Split {
-            direction: SplitDirection::Vertical,
-            ratio: 0.74,
-            children: [Box::new(main), Box::new(bottom_tabs)],
+            direction: SplitDirection::Horizontal,
+            ratio: 0.165,
+            children: [Box::new(hierarchy), Box::new(right)],
         };
 
         DockTree::new(root)

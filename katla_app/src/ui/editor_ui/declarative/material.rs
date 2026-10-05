@@ -39,7 +39,6 @@ impl MaterialControls {
         ctx: &mut BuildContext,
         selected: Option<(EntityId, MaterialValues)>,
         theme: &ColorScheme,
-        width: f32,
     ) -> Option<Box<dyn Widget>> {
         let Some((entity, values)) = selected else {
             let mut baseline: Baseline = ctx.get_state(self.baseline)?;
@@ -80,35 +79,24 @@ impl MaterialControls {
         let c = values.base_color;
         let mut content = vec![
             hstack([
-                hstack([
-                    icon(ForkAwesome::SQUARE)
-                        .color(Color::new(c[0], c[1], c[2], 1.0))
-                        .icon_size(FontSize::Large)
-                        .boxed(),
-                    text(format!(
-                        "#{:02X}{:02X}{:02X}",
-                        (c[0] * 255.0).round() as u8,
-                        (c[1] * 255.0).round() as u8,
-                        (c[2] * 255.0).round() as u8
-                    ))
-                    .color(theme.text_primary)
+                text("Base color").color(theme.text_secondary).boxed(),
+                icon(ForkAwesome::SQUARE)
+                    .color(Color::new(c[0], c[1], c[2], 1.0))
+                    .icon_size(FontSize::Large)
                     .boxed(),
-                ])
-                .spacing(4.0)
-                .boxed(),
-                vstack([
-                    text("Surface material").color(theme.text_primary).boxed(),
-                    text("Live on this object")
-                        .color(theme.text_muted)
-                        .font_size(FontSize::Small)
-                        .boxed(),
-                ])
-                .spacing(2.0)
+                text(format!(
+                    "#{:02X}{:02X}{:02X}",
+                    (c[0] * 255.0).round() as u8,
+                    (c[1] * 255.0).round() as u8,
+                    (c[2] * 255.0).round() as u8
+                ))
+                .color(theme.text_primary)
                 .boxed(),
             ])
-            .spacing(10.0)
+            .spacing(8.0)
             .boxed(),
         ];
+        let mut presets_content = Vec::new();
         for presets in MaterialPreset::ALL.chunks(2) {
             let buttons = presets
                 .iter()
@@ -130,7 +118,7 @@ impl MaterialControls {
                         .boxed()
                 })
                 .collect::<Vec<_>>();
-            content.push(hstack(buttons).spacing(6.0).boxed());
+            presets_content.push(hstack(buttons).spacing(6.0).boxed());
         }
         for (index, label) in [
             "Red",
@@ -152,13 +140,8 @@ impl MaterialControls {
                     .boxed(),
             );
         }
-        content.push(
-            text("Presets are PBR tints. Model textures stay attached.")
-                .color(theme.text_muted)
-                .font_size(FontSize::Small)
-                .wrap((width - 24.0).max(120.0))
-                .boxed(),
-        );
+        content.push(text("Presets").color(theme.text_secondary).boxed());
+        content.extend(presets_content);
         let child = if ctx.get_state::<bool>(self.expanded).unwrap_or_default() {
             vstack(content).spacing(6.0).boxed()
         } else {

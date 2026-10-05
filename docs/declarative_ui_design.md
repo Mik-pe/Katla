@@ -19,7 +19,10 @@ do not change the value range; the numeric column reserves space for the range
 endpoints so the track does not move as the value changes.
 
 Open menu dropdowns draw on the popup layer and receive clicks before dock tabs
-or fields beneath them. Closing a menu does not send that click to the scene.
+or fields beneath them. Closing a menu does not send that click to the scene. Menu label widths are
+measured during layout and reused by painting and input, including font scaling.
+Compact bars fit these widths; dropdown separators use the same 8px geometry
+for rendering and hit testing and consume clicks.
 
 Editor dock panels build in stable order because root BuildContext state hooks
 are positional. EditorOverlayView mounts only each DockTree leaf's active tab.

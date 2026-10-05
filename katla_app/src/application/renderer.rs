@@ -872,7 +872,7 @@ impl Application {
                 continue;
             };
 
-            let desired_screen_size = 40.0 * billboard.size;
+            let desired_screen_size = 24.0 * billboard.size;
             let world_scale = compute_gizmo_scale(
                 cam_pos,
                 position,

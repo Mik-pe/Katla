@@ -477,97 +477,9 @@ pub struct UiStyle {
 impl ColorScheme {
     /// Returns the color scheme for the dark theme.
     fn dark() -> Self {
-        Self {
-            name: "Dark",
-            window_bg: Color::from_rgb_hex(0x1E1E1E),
-            window_title_bg: Color::from_rgb_hex(0x2D2D2D),
-            window_title_bg_active: Color::from_rgb_hex(0x3A3A3A),
-            window_title_text: Color::from_rgb_hex(0xFFFFFF),
-            window_border: Color::from_rgb_hex(0x1A1A1A),
-
-            button_normal: Color::from_rgb_hex(0x3A3A3A),
-            button_hovered: Color::from_rgb_hex(0x48484A),
-            button_active: Color::from_rgb_hex(0x2A2A2A),
-            button_text: Color::from_rgb_hex(0xFFFFFF),
-
-            input_bg: Color::from_rgb_hex(0x2A2A2A),
-            input_border: Color::from_rgb_hex(0x3A3A3B),
-            input_text: Color::from_rgb_hex(0xFFFFFF),
-            input_cursor: Color::from_rgb_hex(0xFFFFFF),
-            input_border_focused: Color::from_rgb_hex(0xF79545),
-            input_selection: Color::new(0.969, 0.584, 0.271, 0.3),
-
-            text_color: Color::from_rgb_hex(0xFFFFFF),
-            text_disabled: Color::from_rgb_hex(0x6E6E73),
-            text_hint: Color::from_rgb_hex(0x6E6E73),
-
-            checkbox_bg: Color::from_rgb_hex(0x2A2A2A),
-            checkbox_check: Color::from_rgb_hex(0xF79545),
-            checkbox_border: Color::from_rgb_hex(0x3A3A3B),
-
-            slider_track: Color::from_rgb_hex(0x3A3A3B),
-            slider_grab: Color::from_rgb_hex(0xF79545),
-            slider_grab_hovered: Color::from_rgb_hex(0xFFA65C),
-            slider_grab_active: Color::from_rgb_hex(0xE8863A),
-
-            separator: Color::from_rgb_hex(0x1A1A1A),
-            border: Color::from_rgb_hex(0x1A1A1A),
-
-            menu_bg: Color::from_rgb_hex(0x2A2A2A),
-            menu_hovered: Color::from_rgb_hex(0x3A3A3A),
-            menu_active: Color::from_rgb_hex(0xF79545),
-
-            popup_bg: Color::from_rgb_hex(0x2A2A2A),
-            popup_border: Color::from_rgb_hex(0x3A3A3B),
-            popup_shadow: Color::new(0.0, 0.0, 0.0, 0.7),
-
-            selectable_hovered: Color::from_rgb_hex(0x3A3A3A),
-            selectable_selected: Color::new(0.969, 0.584, 0.271, 0.3),
-
-            combo_bg: Color::from_rgb_hex(0x2A2A2A),
-            combo_border: Color::from_rgb_hex(0x3A3A3B),
-            combo_hovered: Color::from_rgb_hex(0x48484A),
-
-            scrollbar_track: Color::from_rgb_hex(0x1A1A1A),
-            scrollbar_handle: Color::from_rgb_hex(0x3A3A3A),
-            scrollbar_handle_hovered: Color::from_rgb_hex(0x48484A),
-
-            focus_ring_color: Color::from_rgb_hex(0xF79545),
-
-            success: Color::from_rgb_hex(0x5BC55A),
-            warning: Color::from_rgb_hex(0xF9E2AF),
-            error: Color::from_rgb_hex(0xF38BA8),
-            info: Color::from_rgb_hex(0x5AC8FA),
-
-            entity_mesh: Color::from_rgb_hex(0x5AC8FA),
-            entity_light: Color::from_rgb_hex(0xF9E2AF),
-            entity_particle: Color::from_rgb_hex(0xF79545),
-            entity_empty: Color::from_rgb_hex(0x6E6E73),
-
-            accent: Color::from_rgb_hex(0xF79545),
-            highlight: Color::from_rgb_hex(0x5AC8FA),
-
-            selection: Color::new(0.969, 0.584, 0.271, 0.3),
-            selection_hover: Color::from_rgb_hex(0x48484A),
-
-            viewport_border: Color::from_rgb_hex(0x1A1A1A),
-
-            background: Color::from_rgb_hex(0x2A2A2A),
-            background_dark: Color::from_rgb_hex(0x1C1C1E),
-            background_light: Color::from_rgb_hex(0x3A3A3A),
-
-            text_primary: Color::from_rgb_hex(0xFFFFFF),
-            text_secondary: Color::from_rgb_hex(0x8E8E93),
-            text_muted: Color::from_rgb_hex(0x6E6E73),
-            text_accent: Color::from_rgb_hex(0xF79545),
-
-            panel_bg: Color::from_rgb_hex(0x2A2A2A),
-            panel_border: Color::from_rgb_hex(0x1A1A1A),
-            panel_header: Color::from_rgb_hex(0x323232),
-
-            button_bg: Color::from_rgb_hex(0x3A3A3A),
-            button_hover: Color::from_rgb_hex(0x48484A),
-        }
+        let mut scheme = Self::rcp();
+        scheme.name = "Dark";
+        scheme
     }
 
     /// Returns the color scheme for the light theme.
@@ -1069,35 +981,26 @@ impl ColorScheme {
     pub fn rcp() -> Self {
         let mut scheme = color_scheme!(
             name: "Reality Composer Pro",
-            bg: 0x292929, 0x323232, 0x171717,
-            panel: 0x292929, 0x323232, 0x2E2E2E,
-            text: 0xE4E4E4, 0xA0A0A0, 0x858585, 0xE9A900,
-            button: 0x3A3A3A, 0x454545, 0x6A5738, 0xE4E4E4,
-            selection: 0x595959, 0x6A5738, 0x454545,
-            misc: 0x171717, 0x2E2E2E,
-            entity: 0xA0A0A0, 0xE9A900, 0xFFD60A, 0x858585,
-            status: 0x30D158, 0xFF9F0A, 0xFF453A, 0x64D2FF,
-            viewport: 0x2B2B2B,
-            popup: 0x2C2C2E, 0x2E2E2E,
+            bg: 0x252528, 0x303034, 0x1A1A1C,
+            panel: 0x252528, 0x2B2B2F, 0x1A1A1C,
+            text: 0xF0F0F5, 0xA8A8B0, 0x888890, 0xF79545,
+            button: 0x303034, 0x3D3D41, 0x45454A, 0xF0F0F5,
+            selection: 0x304958, 0x34343A, 0x5AC8FA,
+            misc: 0x1A1A1C, 0x3A3A40,
+            entity: 0xA8A8B0, 0xF79545, 0xEACB86, 0x888890,
+            status: 0x5BC55A, 0xFFB86C, 0xF38BA8, 0x5AC8FA,
+            viewport: 0x1A1A1C,
+            popup: 0x252528, 0x3A3A40,
         );
-
-        scheme.window_bg = Color::from_rgb_hex(0x292929);
-        scheme.panel_bg = Color::from_rgb_hex(0x292929);
-        scheme.window_title_bg = Color::from_rgb_hex(0x323232);
-        scheme.window_title_bg_active = Color::from_rgb_hex(0x323232);
+        scheme.menu_bg = scheme.background_dark;
         scheme.window_border = Color::TRANSPARENT;
-
-        scheme.input_border = Color::from_rgb_hex(0x454545);
         scheme.checkbox_border = Color::TRANSPARENT;
-        scheme.combo_border = Color::from_rgb_hex(0x454545);
-        scheme.popup_border = Color::from_rgb_hex(0x454545);
-        scheme.panel_border = Color::from_rgb_hex(0x171717);
-        scheme.separator = Color::from_rgb_hex(0x171717);
-        scheme.border = Color::from_rgb_hex(0x454545);
-
-        scheme.selectable_selected = Color::from_rgb_hex(0x595959);
-        scheme.selectable_hovered = Color::from_rgb_hex(0x3A3A3A);
-
+        scheme.input_bg = scheme.background_dark;
+        scheme.checkbox_check = scheme.highlight;
+        scheme.slider_grab = scheme.highlight;
+        scheme.slider_grab_hovered = Color::from_rgb_hex(0x8EDAFF);
+        scheme.slider_grab_active = scheme.highlight;
+        scheme.focus_ring_color = scheme.highlight;
         scheme
     }
 }

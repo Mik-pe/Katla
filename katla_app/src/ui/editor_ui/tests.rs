@@ -354,6 +354,7 @@ fn test_editor_overlay_produces_dockspace_in_zstack() {
     view_tree
         .env_mut()
         .set(crate::ui::editor_ui::declarative::ToolbarDrawCtx {
+            available_width: 1920.0,
             show_grid: true,
             show_stats: false,
             show_physics_debug: false,
@@ -504,20 +505,41 @@ fn test_dock_action_split_resized() {
 #[test]
 fn test_default_dock_tree_structure() {
     let tree = EditorUI::default_dock_tree();
-    // Root should be a vertical split (top: main area, bottom: tabs)
-    assert!(matches!(
-        tree.root(),
-        DockNode::Split {
-            direction: SplitDirection::Vertical,
-            ..
-        }
-    ));
-
-    // Should have leaves with the expected panels
-    let bounds = tree.leaf_bounds(Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0)));
-    assert!(
-        bounds.len() >= 3,
-        "Default layout should have at least 3 leaves"
+    let area = Rect2D::new(Vec2::ZERO, Vec2::new(1920.0, 1080.0));
+    let leaves = tree.leaf_bounds(area);
+    assert_eq!(leaves.len(), 4);
+    let panel_bounds = |panel: EditorPanel| {
+        *leaves
+            .iter()
+            .find_map(|(path, bounds)| match tree.get(path) {
+                Some(DockNode::Leaf { tabs, .. }) if tabs.contains(&panel.id()) => Some(bounds),
+                _ => None,
+            })
+            .expect("default panel exists")
+    };
+    let hierarchy = panel_bounds(EditorPanel::Hierarchy);
+    let inspector = panel_bounds(EditorPanel::Inspector);
+    let viewport = panel_bounds(EditorPanel::Viewport);
+    let assets = panel_bounds(EditorPanel::AssetBrowser);
+    assert_eq!(hierarchy.height(), area.height());
+    assert_eq!(inspector.height(), area.height());
+    assert_eq!(assets.min.x(), viewport.min.x());
+    assert_eq!(assets.max.x(), viewport.max.x());
+    assert!(assets.min.y() >= viewport.max.y());
+    let assets_node = leaves
+        .iter()
+        .find_map(|(path, _)| match tree.get(path) {
+            Some(DockNode::Leaf { tabs, active })
+                if tabs.contains(&EditorPanel::AssetBrowser.id()) =>
+            {
+                Some((tabs, active))
+            }
+            _ => None,
+        })
+        .expect("assets tabs exist");
+    assert_eq!(
+        assets_node.0[*assets_node.1],
+        EditorPanel::AssetBrowser.id()
     );
 }
 
@@ -549,4 +571,18 @@ fn default_test_dock_tree() -> DockTree<u64> {
         ratio: 0.25,
         children: [Box::new(left), Box::new(right)],
     })
+}
+
+#[test]
+fn test_full_height_side_panels_receive_focus_below_viewport() {
+    let mut editor = EditorUI::new();
+    editor.last_screen_size = Vec2::new(1280.0, 720.0);
+    for (position, expected) in [
+        (Vec2::new(100.0, 670.0), FocusedPanel::Hierarchy),
+        (Vec2::new(1200.0, 670.0), FocusedPanel::Inspector),
+        (Vec2::new(500.0, 670.0), FocusedPanel::AssetBrowser),
+    ] {
+        editor.update_focused_panel_from_click(position);
+        assert_eq!(editor.focused_panel, expected);
+    }
 }

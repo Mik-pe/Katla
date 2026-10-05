@@ -38,7 +38,7 @@ impl EditorPanel {
             EditorPanel::Hierarchy => "Hierarchy",
             EditorPanel::Viewport => "Viewport",
             EditorPanel::Inspector => "Inspector",
-            EditorPanel::AssetBrowser => "Asset Browser",
+            EditorPanel::AssetBrowser => "Assets",
             EditorPanel::CoCreator => "Scene assistant",
             EditorPanel::Preferences => "Preferences",
             EditorPanel::ParticleInspector => "Particle Inspector",
