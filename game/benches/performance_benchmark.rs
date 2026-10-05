@@ -13,7 +13,7 @@
 //! 4. Compare frame times and verify within 10% threshold
 
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 /// Frame time statistics collected during benchmark run.
 #[derive(Debug, Clone)]
@@ -273,7 +273,7 @@ impl MockFrameTimeGenerator {
     /// In a real implementation, these would be actual measured frame times.
     pub fn generate_frame_time(&mut self, viewport_count: usize) -> f64 {
         // Base frame time with random variance
-        let variance = self.rng.gen_range(-self.variance_ms..self.variance_ms);
+        let variance = self.rng.random_range(-self.variance_ms..self.variance_ms);
         let mut frame_time = self.base_frame_time_ms + variance;
 
         // Add overhead for multi-viewport rendering

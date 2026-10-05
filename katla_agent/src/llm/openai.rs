@@ -12,12 +12,12 @@ use std::fmt;
 
 use async_openai::Client as OpenAIClient;
 use async_openai::config::OpenAIConfig;
-use async_openai::types::{
-    ChatCompletionRequestMessage, ChatCompletionRequestSystemMessage,
-    ChatCompletionRequestSystemMessageContent, ChatCompletionRequestToolMessage,
-    ChatCompletionRequestToolMessageContent, ChatCompletionRequestUserMessage,
-    ChatCompletionRequestUserMessageContent, ChatCompletionTool, ChatCompletionToolType,
-    FunctionObject,
+use async_openai::types::chat::{
+    ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls, ChatCompletionRequestMessage,
+    ChatCompletionRequestSystemMessage, ChatCompletionRequestSystemMessageContent,
+    ChatCompletionRequestToolMessage, ChatCompletionRequestToolMessageContent,
+    ChatCompletionRequestUserMessage, ChatCompletionRequestUserMessageContent, ChatCompletionTool,
+    ChatCompletionTools, FunctionCall, FunctionObject,
 };
 
 use crate::config::LlmConfig;
@@ -119,20 +119,21 @@ fn convert_message(msg: &ChatMessage) -> Result<ChatCompletionRequestMessage, Ll
             let tool_calls = msg.tool_calls.as_ref().map(|calls| {
                 calls
                     .iter()
-                    .map(|tc| async_openai::types::ChatCompletionMessageToolCall {
-                        id: tc.id.clone(),
-                        r#type: async_openai::types::ChatCompletionToolType::Function,
-                        function: async_openai::types::FunctionCall {
-                            name: tc.name.clone(),
-                            arguments: tc.arguments.to_string(),
-                        },
+                    .map(|tc| {
+                        ChatCompletionMessageToolCalls::Function(ChatCompletionMessageToolCall {
+                            id: tc.id.clone(),
+                            function: FunctionCall {
+                                name: tc.name.clone(),
+                                arguments: tc.arguments.to_string(),
+                            },
+                        })
                     })
                     .collect()
             });
             Ok(ChatCompletionRequestMessage::Assistant(
-                async_openai::types::ChatCompletionRequestAssistantMessage {
+                async_openai::types::chat::ChatCompletionRequestAssistantMessage {
                     content: Some(
-                        async_openai::types::ChatCompletionRequestAssistantMessageContent::Text(
+                        async_openai::types::chat::ChatCompletionRequestAssistantMessageContent::Text(
                             msg.content.clone(),
                         ),
                     ),
@@ -153,16 +154,15 @@ fn convert_message(msg: &ChatMessage) -> Result<ChatCompletionRequestMessage, Ll
     }
 }
 
-fn convert_tool(tool: &ToolDefinition) -> ChatCompletionTool {
-    ChatCompletionTool {
-        r#type: ChatCompletionToolType::Function,
+fn convert_tool(tool: &ToolDefinition) -> ChatCompletionTools {
+    ChatCompletionTools::Function(ChatCompletionTool {
         function: FunctionObject {
             name: tool.name.clone(),
             description: Some(tool.description.clone()),
             parameters: Some(tool.parameters.clone()),
             strict: Some(false),
         },
-    }
+    })
 }
 
 impl LlmProvider for OpenAiProvider {
@@ -180,7 +180,7 @@ impl LlmProvider for OpenAiProvider {
             Err(e) => return Box::pin(async move { Err(e) }),
         };
 
-        let mut request = async_openai::types::CreateChatCompletionRequest {
+        let mut request = async_openai::types::chat::CreateChatCompletionRequest {
             model: self.model.clone(),
             messages: openai_messages,
             max_completion_tokens: Some(self.max_tokens),
@@ -207,16 +207,23 @@ impl LlmProvider for OpenAiProvider {
                 .ok_or_else(|| LlmError::Api("No response choices returned".to_string()))?;
 
             let finish_reason = match choice.finish_reason {
-                Some(async_openai::types::FinishReason::Stop) => FinishReason::Stop,
-                Some(async_openai::types::FinishReason::ToolCalls) => FinishReason::ToolCall,
-                Some(async_openai::types::FinishReason::Length) => FinishReason::Length,
+                Some(async_openai::types::chat::FinishReason::Stop) => FinishReason::Stop,
+                Some(async_openai::types::chat::FinishReason::ToolCalls) => FinishReason::ToolCall,
+                Some(async_openai::types::chat::FinishReason::Length) => FinishReason::Length,
                 _ => FinishReason::Stop,
             };
 
             let tool_calls = choice.message.tool_calls.map(|calls| {
                 calls
                     .into_iter()
-                    .map(|tc| {
+                    .filter_map(|tc| {
+                        let tc = match tc {
+                            ChatCompletionMessageToolCalls::Function(tc) => tc,
+                            other => {
+                                log::warn!("Ignoring unsupported custom tool call: {other:?}");
+                                return None;
+                            }
+                        };
                         let arguments = match serde_json::from_str(&tc.function.arguments) {
                             Ok(v) => v,
                             Err(e) => {
@@ -227,15 +234,14 @@ impl LlmProvider for OpenAiProvider {
                                 serde_json::Value::Null
                             }
                         };
-                        super::ToolCall {
+                        Some(super::ToolCall {
                             id: tc.id,
                             name: tc.function.name,
                             arguments,
-                        }
+                        })
                     })
                     .collect()
             });
-
             let content = choice.message.content.unwrap_or_default();
 
             Ok(ChatResponse {
@@ -266,7 +272,7 @@ impl LlmProvider for OpenAiProvider {
             }
         };
 
-        let mut request = async_openai::types::CreateChatCompletionRequest {
+        let mut request = async_openai::types::chat::CreateChatCompletionRequest {
             model: self.model.clone(),
             messages: openai_messages,
             max_completion_tokens: Some(self.max_tokens),
@@ -281,7 +287,7 @@ impl LlmProvider for OpenAiProvider {
         let client = self.client.clone();
 
         // State: either we haven't initiated yet, or we're reading from the openai stream.
-        type OpenAiStream = async_openai::types::ChatCompletionResponseStream;
+        type OpenAiStream = async_openai::types::chat::ChatCompletionResponseStream;
 
         let state: Option<OpenAiStream> = None;
 
@@ -320,14 +326,14 @@ impl LlmProvider for OpenAiProvider {
 }
 
 fn convert_stream_chunk(
-    chunk: async_openai::types::CreateChatCompletionStreamResponse,
+    chunk: async_openai::types::chat::CreateChatCompletionStreamResponse,
 ) -> Result<StreamChunk, LlmError> {
     if let Some(choice) = chunk.choices.first() {
         let content_delta = choice.delta.content.clone().unwrap_or_default();
         let finish_reason = choice.finish_reason.map(|fr| match fr {
-            async_openai::types::FinishReason::Stop => FinishReason::Stop,
-            async_openai::types::FinishReason::ToolCalls => FinishReason::ToolCall,
-            async_openai::types::FinishReason::Length => FinishReason::Length,
+            async_openai::types::chat::FinishReason::Stop => FinishReason::Stop,
+            async_openai::types::chat::FinishReason::ToolCalls => FinishReason::ToolCall,
+            async_openai::types::chat::FinishReason::Length => FinishReason::Length,
             _ => FinishReason::Stop,
         });
 

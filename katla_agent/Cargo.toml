@@ -16,7 +16,7 @@ serde_json = { workspace = true }
 log = { workspace = true }
 
 # Optional LLM dependencies
-async-openai = { version = "0.27", optional = true }
+async-openai = { version = "0.42", optional = true, features = ["chat-completion"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "io-util", "net"], optional = true }
 dirs = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
