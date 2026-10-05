@@ -40,4 +40,4 @@ rayon = { workspace = true }
 vello_cpu = { workspace = true }
 notify = { workspace = true }
 
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.23", optional = true }

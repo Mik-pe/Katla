@@ -1,6 +1,8 @@
 use std::io::Write;
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use katla_ecs::EntityId;
 use katla_script::bindings::script_world::ScriptWorldProxy;
 use katla_script::engine::ScriptEngine;

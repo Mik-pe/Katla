@@ -21,7 +21,7 @@ serde_json = { workspace = true }
 log = { workspace = true }
 bitflags = { workspace = true }
 smallvec = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 mach2 = "0.5"
