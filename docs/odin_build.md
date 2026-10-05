@@ -111,6 +111,10 @@ boundary only to native launches; CPU processes retain leak detection. Audio
 device validation has its own explicit boundary documented in
 [audio_odin.md](audio_odin.md).
 
+Linux CPU consumers also link the native curl and Mbed TLS libraries. Install
+`libcurl4-openssl-dev libmbedtls-dev` alongside the SDL/native build dependencies
+on Ubuntu; macOS uses its platform transport.
+
 On Linux, use `odin run tools/build -- validate gpu --native-vulkan --vulkan-library
 /usr/lib/x86_64-linux-gnu/libvulkan.so.1 --vulkan-icd /path/to/lvp_icd.json`,
 substituting the host's actual loader file and ICD manifest. Vulkan validation must be
