@@ -488,6 +488,13 @@ hstack(children).spacing(2.0).padding_all(10.0)
 - [ ] **Explore integration test framework design** — Research headless app init patterns (mock renderer, software rasterizer, GPU-less CI), entity spawning test helpers, frame execution harness, and state assertion utilities. Produce concrete implementation TODO items.
 - [ ] Add ECS round-trip tests — spawn entity, add components, serialize, deserialize, verify equivalence
 
+### Dependency maintenance
+- [ ] Migrate `rmcp` to 3.x — 3.0 targets the 2026-07-28 MCP revision: manual `ServerHandler` methods return the MRTR-aware response enums, `ServerResult` gains an `InputRequiredResult` variant, and the experimental task API moves to an extension. The stdio bridge needs a live MCP client to validate, so treat it as a focused session rather than a version-line edit.
+- [ ] Bump `mach2` to 0.7 — macOS-only dependency whose API change cannot be compiled or validated from Linux; do it in a macOS session (or a macos-26 CI run with `MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1`).
+
+### Known gaps
+- macOS-gated crates (`mach2`, `objc2*`, `sha2` in the Metal pipeline archive) are only compiled by the macOS CI job. A Linux-only gate cannot catch breakage in them — the sha2 0.11 digest change surfaced exactly this way.
+
 ## Production Readiness
 
 ### katla_app - Critical Issues (Block Production)
