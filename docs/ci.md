@@ -36,7 +36,9 @@ attachment to a human conversation or paid model availability.
 ## Sanitizers
 
 Address-instrumented C/C++ dependencies must match Odin's LLVM major, including
-Clang++ and static archives. The builder rejects mismatches. CPU tests retain
+Clang++ and static archives. The builder rejects mismatches and selects the
+same Clang directory for Odin's macOS linker driver. Manifest-based ASan
+validation restores that driver selection in each process. CPU tests retain
 LeakSanitizer and Odin bad-free/allocation tracking. On macOS the specifically
 observed `CFPrefsPlistSource`/`CFPrefsSearchListSource` initialization caches may
 use narrow named stack suppressions; do not suppress all CoreFoundation.

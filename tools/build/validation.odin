@@ -123,7 +123,7 @@ validate :: proc(options:Options) {
     if validation.manifest!="" { output=filepath.dir(absolute(validation.manifest)) } else { build(options) }
     validation_manifest=verified_manifest()
     output=validation.output if validation.output!="" else join(root,"target/odin-validation",validation.suite,"asan" if sanitize else "normal")
-    mkdir(output); odin=validation_manifest.odin; cargo=find_tool(cargo)
+    mkdir(output); odin=validation_manifest.odin; if sanitize { select_compilers() }; cargo=find_tool(cargo)
     validation.target=join(filepath.dir(validation_manifest.paths["SHADER_COMPILER"]),"..")
     append(&validation_flags,..validation_manifest.foreign_defines); if sanitize { append(&validation_flags,"-sanitize:address") }
     switch validation.suite {

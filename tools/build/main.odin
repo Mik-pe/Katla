@@ -42,6 +42,11 @@ select_compilers :: proc() {
             version:=capture({compiler,"--version"})
             require(!strings.contains(version,"Apple clang") && strings.contains(version,cat("clang version ",major,".")),"ASan requires non-Apple Clang and Clang++ matching Odin LLVM")
         }
+        when ODIN_OS==.Darwin {
+            set_env("PATH",cat(filepath.dir(cc),":",env("PATH","")))
+            driver:=find_tool("clang"); version:=capture({driver,"--version"})
+            require(!strings.contains(version,"Apple clang") && strings.contains(version,cat("clang version ",major,".")),"Odin's Clang linker driver must match its LLVM sanitizer runtime")
+        }
     } else { cc=find_tool(cc); cxx=find_tool(cxx) }
 }
 cpu_leak_environment :: proc() {
