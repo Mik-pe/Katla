@@ -7,8 +7,6 @@
 // Uses the depth buffer via bindless texture (registered as texture_2d<f32>).
 // Depth is read as a single-channel float from the R component.
 
-enable wgpu_binding_array;
-
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 

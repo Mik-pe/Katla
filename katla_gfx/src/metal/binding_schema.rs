@@ -382,7 +382,8 @@ mod layout_tests {
     #[test]
     fn test_bindless_indirection_reflects_native_resource_id_byte_capacity() {
         let layouts = reflect(
-            "@group(1) @binding(0) var images: binding_array<texture_2d<f32>, 16>;
+            "enable wgpu_binding_array;
+             @group(1) @binding(0) var images: binding_array<texture_2d<f32>, 16>;
              @group(1) @binding(1) var filtering: sampler;
              @fragment fn fs_main() -> @location(0) vec4f { return textureSampleLevel(images[3], filtering, vec2f(0.5), 0.0); }",
             ShaderProfile::Graphics,

@@ -303,6 +303,7 @@ fn test_bindless_argument_buffer_storage_probe() {
     let format = ImageFormat::R8G8B8A8Srgb;
 
     const WGSL: &str = r#"
+        enable wgpu_binding_array;
         @group(1) @binding(0) var bindless_textures: binding_array<texture_2d<f32>, 16>;
         @group(1) @binding(1) var shared_sampler: sampler;
 
