@@ -78,7 +78,7 @@ source :: proc(name,url,revision:string)->string {
     folder:=join(root,"target/native-source",name)
     if !os.is_dir(join(folder,".git")) {
         remove(folder); mkdir(folder)
-        run({"git","init",folder}); run({"git","-C",folder,"fetch","--depth","1",url,revision}); run({"git","-C",folder,"checkout","--detach","FETCH_HEAD"})
+        run({"git","init",folder}); run({"git","-C",folder,"config","core.autocrlf","false"}); run({"git","-C",folder,"config","core.eol","lf"}); run({"git","-C",folder,"fetch","--depth","1",url,revision}); run({"git","-C",folder,"checkout","--detach","FETCH_HEAD"})
     }
     require(capture({"git","-C",folder,"rev-parse","HEAD"})==revision,fmt.aprintf("Source revision mismatch: %s",name))
     require(capture({"git","-C",folder,"status","--porcelain"})=="",fmt.aprintf("Source checkout must be clean: %s",name))

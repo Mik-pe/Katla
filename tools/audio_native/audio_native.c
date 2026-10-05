@@ -72,7 +72,9 @@ int ka_decoder_open(const void* bytes, size_t length, uint32_t format, ka_decode
         config.allocationCallbacks = (ma_allocation_callbacks){&d->alloc,ka_malloc,ka_realloc,ka_free};
         if (ma_decoder_init_memory(bytes, length, &config, &d->decoder) != MA_SUCCESS) { free(d); return -2; }
         ma_format fmt; ma_decoder_get_data_format(&d->decoder, &fmt, &d->info.channels, &d->info.sample_rate, NULL, 0);
-        if (ma_decoder_get_length_in_pcm_frames(&d->decoder, &d->info.frames) != MA_SUCCESS) { ka_decoder_close(d); return -2; }
+        ma_uint64 decoded_frames = 0;
+        if (ma_decoder_get_length_in_pcm_frames(&d->decoder, &decoded_frames) != MA_SUCCESS) { ka_decoder_close(d); return -2; }
+        d->info.frames = (uint64_t)decoded_frames;
     }
     d->info.format = format;
     if (!d->info.channels || d->info.channels > 16 || !d->info.sample_rate || d->info.sample_rate > 384000 || !d->info.frames || d->info.frames > UINT64_C(384000)*3600*24) { ka_decoder_close(d); return -3; }
@@ -82,7 +84,9 @@ int ka_decoder_read(ka_decoder* d, float* output, uint64_t frames, uint64_t* rea
     *read = 0;
     if (!d || !output || frames > 65536) return -1;
     if (d->vorbis) { *read = (uint64_t)stb_vorbis_get_samples_float_interleaved(d->vorbis, (int)d->info.channels, output, (int)(frames*d->info.channels)); return 0; }
-    ma_result result = ma_decoder_read_pcm_frames(&d->decoder, output, frames, read);
+    ma_uint64 decoded_frames = 0;
+    ma_result result = ma_decoder_read_pcm_frames(&d->decoder, output, frames, &decoded_frames);
+    *read = (uint64_t)decoded_frames;
     return result == MA_SUCCESS || result == MA_AT_END ? 0 : -2;
 }
 int ka_decoder_seek(ka_decoder* d, uint64_t frame) {
