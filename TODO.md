@@ -264,7 +264,8 @@ Individual tasks should be small enough to complete in a single focused session.
 - [ ] Add texture slot widgets — drag-and-drop from asset browser, thumbnail preview, clear button
 - [x] Add per-object PBR factor controls — sRGB RGBA, metallic, roughness and occlusion, shared presets and validated agent batch edits
 - [ ] Add emission color/intensity controls and texture assignment
-- [x] Add live material preview — apply PBR factors to the selected entity, group pointer gestures for undo/redo and persist factors in the scene
+- [x] Add live material preview — generate studio-lit PBR factor spheres for the material palette and selected entity, retain one texture per preview, group pointer gestures for undo/redo and persist factors in the scene
+- [ ] Include imported texture maps and shader outputs in material thumbnails — factor previews currently cover base color, metallic, roughness, alpha and occlusion
 - [ ] Add material serialization — save edited material back to .mat file
 
 #### Terrain editor

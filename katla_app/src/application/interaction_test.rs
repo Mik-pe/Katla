@@ -112,6 +112,10 @@ pub struct InteractionTestRunner {
     checks: Vec<Check>,
     #[cfg(feature = "editor")]
     material_history_before: usize,
+    #[cfg(feature = "editor")]
+    material_preview_region: Option<[u32; 4]>,
+    #[cfg(feature = "editor")]
+    library_preview_regions: [Option<[u32; 4]>; 6],
 }
 
 impl InteractionTestRunner {
@@ -134,6 +138,10 @@ impl InteractionTestRunner {
             checks: Vec::new(),
             #[cfg(feature = "editor")]
             material_history_before: 0,
+            #[cfg(feature = "editor")]
+            material_preview_region: None,
+            #[cfg(feature = "editor")]
+            library_preview_regions: [None; 6],
         }
     }
 
@@ -281,6 +289,28 @@ impl InteractionTestRunner {
     }
 
     #[cfg(feature = "editor")]
+    fn preview_region(app: &Application, texture: Option<katla_ui::TextureId>) -> Option<[u32; 4]> {
+        use katla_ui::declarative::widgets::image::Image;
+        let texture = texture?;
+        let tree = app.editor.editor_ui.view_tree();
+        tree.iter_nodes().find_map(|(id, node)| {
+            let image = node.widget.as_any().downcast_ref::<Image>()?;
+            if image.texture != texture {
+                return None;
+            }
+            let bounds = tree.resolved_bounds().get(&id)?;
+            let min = bounds.min * app.scale_factor;
+            let max = bounds.max * app.scale_factor;
+            Some([
+                min.x().floor() as u32,
+                min.y().floor() as u32,
+                max.x().ceil() as u32,
+                max.y().ceil() as u32,
+            ])
+        })
+    }
+
+    #[cfg(feature = "editor")]
     fn click_menu(app: &mut Application, label: &str, entry: Option<&str>) {
         use katla_ui::declarative::widgets::menubar::MenuBar;
         let tree = app.editor.editor_ui.view_tree();
@@ -339,6 +369,7 @@ impl InteractionTestRunner {
     #[cfg(feature = "editor")]
     pub fn validate(&self) -> crate::AppResult<()> {
         let receipt = serde_json::json!({
+            "preview_regions": { "library": self.library_preview_regions, "inspector": self.material_preview_region },
             "complete": self.state == State::Done,
             "screenshots": self.screenshots_taken,
             "checks": self.checks.iter().map(|check| serde_json::json!({
@@ -451,9 +482,15 @@ impl InteractionTestRunner {
                 Self::ui_release(app);
                 self.state = State::PressPreset;
             }
+            State::PressPreset if frame == 86 => {
+                Self::click_widget(app, "button", "Browse materials", false);
+            }
+            State::PressPreset if frame == 87 => {
+                Self::ui_release(app);
+            }
             State::PressPreset if frame == 88 => {
                 self.material_history_before = app.editor.undo_stack.len();
-                Self::click_widget(app, "button", "Brushed metal", false);
+                Self::click_widget(app, "text", "Brushed metal", false);
                 self.state = State::ReleasePreset;
             }
             State::ReleasePreset if frame == 89 => {
@@ -540,6 +577,16 @@ impl InteractionTestRunner {
     pub fn end_frame(&mut self, app: &mut Application, frame: usize) -> Option<String> {
         match self.state {
             State::Idle if frame == 10 => {
+                self.library_preview_regions = app
+                    .editor
+                    .material_previews
+                    .presets()
+                    .map(|texture| Self::preview_region(app, texture));
+                self.record(
+                    "material_palette_renders_all_previews",
+                    self.library_preview_regions.iter().all(Option::is_some),
+                    format!("regions: {:?}", self.library_preview_regions),
+                );
                 self.screenshots_taken += 1;
                 self.state = State::PressHierarchy;
                 Some(self.screenshot_path("01_default"))
@@ -631,6 +678,13 @@ impl InteractionTestRunner {
                 Some(self.screenshot_path("10_preferences_closed"))
             }
             State::CheckPreset if frame == 92 => {
+                self.material_preview_region =
+                    Self::preview_region(app, app.editor.material_previews.current());
+                self.record(
+                    "selected_material_has_live_preview",
+                    self.material_preview_region.is_some(),
+                    format!("region: {:?}", self.material_preview_region),
+                );
                 let values = Self::selected_material(app);
                 self.record(
                     "material_preset_applies",

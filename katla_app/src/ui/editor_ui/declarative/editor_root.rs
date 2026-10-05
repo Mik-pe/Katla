@@ -125,6 +125,15 @@ impl Build for EditorOverlayView {
             vec![],
             FlexProps::default(),
         );
+        use katla_ui::ForkAwesome;
+        dockspace.panel_icons = vec![
+            (EditorPanel::Hierarchy.id(), ForkAwesome::CUBES),
+            (EditorPanel::Viewport.id(), ForkAwesome::CUBE),
+            (EditorPanel::Inspector.id(), ForkAwesome::COG),
+            (EditorPanel::AssetBrowser.id(), ForkAwesome::FOLDER_OPEN),
+            (EditorPanel::Console.id(), ForkAwesome::FILE_CODE),
+            (EditorPanel::Mixer.id(), ForkAwesome::VOLUME_UP),
+        ];
         dockspace.content_inset_top = TOOLBAR_HEIGHT;
         dockspace.content_inset_bottom = STATUS_BAR_HEIGHT;
 

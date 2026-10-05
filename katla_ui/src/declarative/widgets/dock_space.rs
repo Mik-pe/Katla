@@ -346,6 +346,8 @@ pub struct DockSpace<T: Clone + PartialEq + 'static> {
     pub dock_state_id: StateId,
     pub drag_state_id: StateId,
     pub panel_labels: Vec<(T, String)>,
+    /// Optional icon from the active font icon library for each panel.
+    pub panel_icons: Vec<(T, char)>,
     pub tab_bar_height: f32,
     pub splitter_width: f32,
     /// Pixels to exclude from the top of the widget's bounds (e.g. toolbar).
@@ -369,6 +371,7 @@ impl<T: Clone + PartialEq + std::fmt::Debug + 'static> DockSpace<T> {
             dock_state_id,
             drag_state_id,
             panel_labels,
+            panel_icons: Vec::new(),
             tab_bar_height: crate::tokens::TAB_BAR_HEIGHT,
             splitter_width: crate::tokens::SPLITTER_HIT_WIDTH,
             content_inset_top: 0.0,
@@ -606,15 +609,35 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
 
                 let label = self.get_label(tab_val);
                 let label_size = ctx.measure_text(&label, font_size);
-                let text_pos = Vec2::new(
-                    tab_bounds.min.x() + crate::tokens::TAB_LABEL_LEADING,
-                    tab_bounds.center().y() - label_size.y() * 0.5,
-                );
                 let text_color = if is_active {
                     ctx.style().tab_active_text
                 } else {
                     ctx.style().tab_text
                 };
+                let tab_icon = self
+                    .panel_icons
+                    .iter()
+                    .find(|(panel, _)| panel == tab_val)
+                    .map(|(_, icon)| *icon);
+                let icon_offset = if let Some(icon) = tab_icon {
+                    let size = crate::tokens::ICON_SIZE;
+                    ctx.draw_icon(
+                        icon,
+                        Vec2::new(
+                            tab_bounds.min.x() + crate::tokens::TAB_LABEL_LEADING,
+                            tab_bounds.center().y() - size * 0.5,
+                        ),
+                        size,
+                        text_color,
+                    );
+                    size + crate::tokens::SPACING_8
+                } else {
+                    0.0
+                };
+                let text_pos = Vec2::new(
+                    tab_bounds.min.x() + crate::tokens::TAB_LABEL_LEADING + icon_offset,
+                    tab_bounds.center().y() - label_size.y() * 0.5,
+                );
                 ctx.draw_text(&label, text_pos, text_color, font_size);
             }
 
@@ -637,7 +660,13 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
                 if let Some(active) = leaf.tabs.get(leaf.active) {
                     let label = self.get_label(active);
                     let label_size = ctx.measure_text(&label, font_size);
-                    let label_width = label_size.x() + crate::tokens::TAB_LABEL_LEADING * 2.0;
+                    let icon_width = if self.panel_icons.iter().any(|(panel, _)| panel == active) {
+                        crate::tokens::ICON_SIZE + crate::tokens::SPACING_8
+                    } else {
+                        0.0
+                    };
+                    let label_width =
+                        label_size.x() + crate::tokens::TAB_LABEL_LEADING * 2.0 + icon_width;
                     let active_rect = Rect2D::new(
                         Vec2::new(
                             tab_bar_bounds.min.x() + leaf.active as f32 * tab_width,

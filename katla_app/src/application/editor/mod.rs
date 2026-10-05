@@ -7,6 +7,7 @@ pub(crate) mod document;
 #[cfg(feature = "mcp")]
 pub(crate) mod external_chat;
 pub(crate) mod material;
+pub(crate) mod material_preview;
 #[cfg(feature = "mcp")]
 pub(crate) mod mcp;
 mod scene_query;
@@ -366,6 +367,23 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     }
     // Collect entity info for editor UI
     let entity_info = collect_entity_info(app);
+    let material = entity_info
+        .iter()
+        .find(|entity| Some(entity.id) == app.editor.editor_ui.selected_entity)
+        .and_then(|entity| entity.material);
+    let preview_result = app.editor.material_previews.prepare(
+        &mut app.renderer,
+        &mut app.editor.ui_renderer,
+        material,
+    );
+    if let Err(error) = &preview_result {
+        log::warn!("Material preview generation failed: {error}");
+    }
+    app.editor.editor_ui.material_preset_previews = app.editor.material_previews.presets();
+    app.editor.editor_ui.material_preview = preview_result
+        .ok()
+        .and(material)
+        .and_then(|_| app.editor.material_previews.current());
 
     // Sync gizmo mode to editor UI for toolbar display
     app.editor.editor_ui.gizmo_mode = match app.editor.gizmo_state.mode {

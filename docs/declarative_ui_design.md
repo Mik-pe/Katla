@@ -10,7 +10,14 @@ The declarative Build/ViewTree API is the normal application interface. The
 immediate-mode context is a low-level custom-widget primitive. Drain typed
 actions every frame; per-node state survives until its node is removed.
 Taffy performs Flexbox layout before drawing. DrawList combines 56-byte
-instanced quads with vertices/commands for complex geometry. TextureId is opaque;
+instanced quads with vertices/commands for complex geometry. Material factor previews belong to the app: CPU shading produces sRGB thumbnails,
+then ordinary generational texture handles are mapped to opaque TextureId values.
+The six preset textures and one selected preview texture remain cached. Editing
+queues an update through the renderer's ordinary texture upload service. The GPU
+core synchronizes the transfer with previous-frame readers before consumers;
+unchanged factors queue no upload and dragging does not churn texture handles.
+
+TextureId is opaque;
 the app maps it to GPU handles. Clipping belongs to each draw command.
 
 Labeled sliders share one track rectangle for drawing, initial clicks and held
@@ -1650,3 +1657,13 @@ After Phase 3, before continuing to Phase 4, implement a minimal proof-of-concep
 - DrawList output is identical to what the immediate mode toolbar produced
 
 This validates the core architecture before investing in the full widget catalog.
+
+
+### Physical pixel coverage
+
+UI rounded fills extend their transparent fringe outward. Fill and stroke fringes
+cover one physical pixel at the current DPI; curve tessellation uses that same
+scale. Text shaping receives the final physical origin before rasterization and
+places glyph quads at integer physical coordinates, avoiding a second fractional
+atlas filter that softens small labels. Logical layout and hit testing stay in
+logical pixels.

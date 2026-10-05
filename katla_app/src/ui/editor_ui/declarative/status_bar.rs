@@ -11,6 +11,7 @@ use katla_ui::declarative::{
 pub(crate) struct StatusBarData {
     pub height: f32,
     pub fps: f32,
+    pub show_stats: bool,
     pub frame_time_ms: f32,
     pub entity_count: usize,
     pub draw_call_count: usize,
@@ -37,36 +38,45 @@ impl Build for StatusBarView {
         } else {
             theme.text_muted
         };
-        let left_items = vec![
-            text(format!("FPS {:.0}", data.fps))
-                .color(fps_color)
-                .font_size(FontSize::Small)
-                .boxed(),
-            text(format!("{:.1} ms", data.frame_time_ms))
-                .color(theme.text_muted)
-                .font_size(FontSize::Small)
-                .boxed(),
-            text(format!("{} entities", data.entity_count))
-                .color(theme.text_muted)
-                .font_size(FontSize::Small)
-                .boxed(),
-            text(format!("{} draws", data.draw_call_count))
-                .color(theme.text_muted)
-                .font_size(FontSize::Small)
-                .boxed(),
-            text(format!("{} assets", data.total_assets))
-                .color(theme.text_muted)
-                .font_size(FontSize::Small)
-                .boxed(),
-        ];
+        let left_items = if data.show_stats {
+            vec![
+                text(format!("FPS {:.0}", data.fps))
+                    .color(fps_color)
+                    .font_size(FontSize::Small)
+                    .boxed(),
+                text(format!("{:.1} ms", data.frame_time_ms))
+                    .color(theme.text_muted)
+                    .font_size(FontSize::Small)
+                    .boxed(),
+                text(format!("{} entities", data.entity_count))
+                    .color(theme.text_muted)
+                    .font_size(FontSize::Small)
+                    .boxed(),
+                text(format!("{} draws", data.draw_call_count))
+                    .color(theme.text_muted)
+                    .font_size(FontSize::Small)
+                    .boxed(),
+                text(format!("{} assets", data.total_assets))
+                    .color(theme.text_muted)
+                    .font_size(FontSize::Small)
+                    .boxed(),
+            ]
+        } else {
+            vec![
+                text("Ready")
+                    .color(theme.text_muted)
+                    .font_size(FontSize::Small)
+                    .boxed(),
+            ]
+        };
 
         // Right cluster: the mode is the one loud item on the bar.
         let (mode_text, mode_color) = if data.is_playing && !data.is_paused {
-            ("PLAYING", theme.success)
+            ("Playing", theme.success)
         } else if data.is_paused {
-            ("PAUSED", theme.warning)
+            ("Paused", theme.warning)
         } else {
-            ("EDITING", theme.text_muted)
+            ("Editing", theme.text_muted)
         };
         let right_items = vec![
             text(mode_text)

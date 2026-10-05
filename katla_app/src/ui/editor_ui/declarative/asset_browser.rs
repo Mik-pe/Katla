@@ -2,12 +2,14 @@ use std::boxed::Box;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use katla_agent::material::{MaterialOp, MaterialPreset};
+use katla_ecs::EntityId;
 use katla_gfx::TextureHandle;
 use katla_math::{Rect2D, Vec2};
 use katla_ui::declarative::{
     Alignment, Build, BuildContext, Padding, StateId, Widget, WidgetBox, button, context_entry,
-    context_menu, empty, grid, hstack, icon, image, image_button, modal, panel_body, scroll,
-    selectable, separator_horizontal, text, textfield, vstack,
+    context_menu, empty, grid, hstack, icon, image_button, modal, panel_body, scroll, selectable,
+    separator_horizontal, text, textfield, vstack,
 };
 use katla_ui::{FontSize, ForkAwesome, TextureId};
 
@@ -20,6 +22,11 @@ use crate::ui::editor_ui::asset_browser::{AssetAction, AssetBrowserState, AssetE
 #[derive(Clone)]
 pub(crate) struct AssetBrowserDrawCtx {
     pub bounds: Rect2D,
+    pub material_previews: [Option<TextureId>; 6],
+    pub material_target: Option<EntityId>,
+    pub show_material_library: bool,
+    pub selected_material: Option<usize>,
+    pub project_folders: Vec<(String, PathBuf, bool)>,
     pub theme: ColorScheme,
     pub assets: Vec<AssetRenderData>,
     pub selected_index: Option<usize>,
@@ -47,6 +54,9 @@ pub(crate) struct AssetRenderData {
 #[derive(Clone, Debug)]
 pub(crate) enum AssetBrowserAction {
     NavigateToSegment(usize),
+    NavigateToFolder(PathBuf),
+    ShowMaterialLibrary,
+    MaterialSelected(usize),
     NavigateBack,
     NavigateForward,
     NavigateUp,
@@ -73,6 +83,7 @@ impl Build for AssetBrowserView {
             return empty().boxed();
         }
 
+        let folder_scroll_id: StateId = ctx.state(0.0f32);
         let search_id: StateId = ctx.state(draw_ctx.search_filter.clone());
         let scroll_id: StateId = ctx.state(0.0f32);
         let context_open_id: StateId = ctx.state(draw_ctx.context_menu_open);
@@ -86,7 +97,12 @@ impl Build for AssetBrowserView {
         let search_lower = search_filter.to_lowercase();
 
         let mut breadcrumb_items: Vec<Box<dyn Widget>> = Vec::new();
-        for (i, segment) in draw_ctx.path_segments.iter().enumerate() {
+        let path_segments = if draw_ctx.show_material_library {
+            vec!["Materials".to_string()]
+        } else {
+            draw_ctx.path_segments.clone()
+        };
+        for (i, segment) in path_segments.iter().enumerate() {
             if i > 0 {
                 breadcrumb_items.push(
                     text(" / ")
@@ -96,7 +112,7 @@ impl Build for AssetBrowserView {
                 );
             }
 
-            let is_last = i == draw_ctx.path_segments.len() - 1;
+            let is_last = i == path_segments.len() - 1;
             if is_last {
                 breadcrumb_items.push(
                     text(segment)
@@ -131,7 +147,32 @@ impl Build for AssetBrowserView {
             actions.emit(AssetBrowserAction::Refresh);
         });
 
+        if draw_ctx.show_material_library
+            && draw_ctx.material_target.is_none()
+            && draw_ctx.bounds.width() >= 720.0
+        {
+            breadcrumb_items.push(
+                text("Select a mesh to apply")
+                    .font_size(FontSize::Small)
+                    .color(draw_ctx.theme.text_muted)
+                    .boxed(),
+            );
+        }
+        if draw_ctx.bounds.width() < 640.0 {
+            breadcrumb_items.clear();
+        }
+        let library_button = if draw_ctx.bounds.width() < 560.0 {
+            image_button(ForkAwesome::PAINT_BRUSH)
+                .tooltip("Material library")
+                .on_click(
+                    ctx.on_click(|actions| actions.emit(AssetBrowserAction::ShowMaterialLibrary)),
+                )
+                .boxed()
+        } else {
+            empty().boxed()
+        };
         let toolbar = hstack([
+            library_button,
             hstack([
                 image_button(ForkAwesome::ARROW_LEFT)
                     .enabled(draw_ctx.can_go_back)
@@ -151,7 +192,7 @@ impl Build for AssetBrowserView {
             ])
             .spacing(2.0)
             .boxed(),
-            hstack(breadcrumb_items).spacing(2.0).boxed(),
+            hstack(breadcrumb_items).spacing(8.0).boxed(),
             textfield("Search assets...", search_id)
                 .flex_grow(1.0)
                 .boxed(),
@@ -173,27 +214,86 @@ impl Build for AssetBrowserView {
         .flex_shrink(0.0)
         .boxed();
 
-        let item_size = 80.0;
-        let cell_size = Vec2::new(item_size + 16.0, item_size + 32.0);
+        let sidebar_width = if draw_ctx.bounds.width() >= 560.0 {
+            136.0
+        } else {
+            0.0
+        };
+        let item_size = 72.0;
+        let cell_size = Vec2::new(96.0, 100.0);
         let col_count = if draw_ctx.bounds.width() > 0.0 {
             // Content insets 8 px on each side (see the content vstack).
-            ((draw_ctx.bounds.width() - 16.0) / (item_size + 16.0)).max(1.0) as usize
+            ((draw_ctx.bounds.width() - 16.0 - sidebar_width) / (cell_size.x() + 8.0)).max(1.0)
+                as usize
         } else {
             8
         };
 
         let mut grid_children = Vec::new();
+        if draw_ctx.show_material_library {
+            for (index, preset) in
+                MaterialPreset::ALL
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(_, preset)| {
+                        search_lower.is_empty()
+                            || preset.label().to_lowercase().contains(&search_lower)
+                    })
+            {
+                let card = vstack([
+                    super::material::preview_image(
+                        draw_ctx.material_previews[index],
+                        item_size,
+                        &draw_ctx.theme,
+                    ),
+                    text(preset.label())
+                        .font_size(FontSize::Small)
+                        .color(draw_ctx.theme.text_primary)
+                        .boxed(),
+                ])
+                .align(Alignment::Center)
+                .spacing(4.0)
+                .padding_all(4.0)
+                .flex_width(cell_size.x())
+                .flex_height(cell_size.y())
+                .boxed();
+                let target = draw_ctx.material_target;
+                grid_children.push(
+                    selectable(card)
+                        .fill(draw_ctx.theme.background_light.with_alpha(0.45))
+                        .selected(draw_ctx.selected_material == Some(index))
+                        .on_click(ctx.on_click(move |actions| {
+                            actions.emit(AssetBrowserAction::MaterialSelected(index));
+                            if let Some(entity) = target {
+                                actions.emit(EditorAction::MaterialPreset(MaterialOp::Set {
+                                    entity_ids: vec![entity.id().to_string()],
+                                    preset: Some(preset),
+                                    base_color: None,
+                                    metallic: None,
+                                    roughness: None,
+                                    ao: None,
+                                }));
+                            }
+                        }))
+                        .boxed(),
+                );
+            }
+        }
         for (i, asset) in draw_ctx.assets.iter().enumerate().filter(|(_, asset)| {
-            search_lower.is_empty() || asset.name.to_lowercase().contains(&search_lower)
+            !draw_ctx.show_material_library
+                && (search_lower.is_empty() || asset.name.to_lowercase().contains(&search_lower))
         }) {
             let is_selected = draw_ctx.selected_index == Some(i);
 
             let icon_content = match &asset.thumbnail_state {
-                ThumbnailState::Loaded { texture_handle } => image(
-                    TextureId::from_handle(texture_handle.index(), texture_handle.generation()),
-                    katla_math::Color::WHITE,
-                )
-                .boxed(),
+                ThumbnailState::Loaded { texture_handle } => super::material::preview_image(
+                    Some(TextureId::from_handle(
+                        texture_handle.index(),
+                        texture_handle.generation(),
+                    )),
+                    item_size,
+                    &draw_ctx.theme,
+                ),
                 ThumbnailState::Loading => icon(ForkAwesome::CIRCLE_OUTLINE)
                     .icon_size(FontSize::Huge)
                     .color(draw_ctx.theme.text_secondary)
@@ -218,7 +318,9 @@ impl Build for AssetBrowserView {
             ])
             .spacing(8.0)
             .padding_all(2.0)
-            .align(katla_ui::declarative::Alignment::Center);
+            .align(katla_ui::declarative::Alignment::Center)
+            .flex_width(cell_size.x())
+            .flex_height(cell_size.y());
 
             let click_index = i;
             grid_children.push(
@@ -247,10 +349,63 @@ impl Build for AssetBrowserView {
                 .boxed()
         };
 
+        let mut folder_items = vec![
+            selectable(
+                hstack([
+                    icon(ForkAwesome::PAINT_BRUSH)
+                        .color(draw_ctx.theme.text_secondary)
+                        .boxed(),
+                    text("Materials").font_size(FontSize::Small).boxed(),
+                ])
+                .spacing(8.0)
+                .padding_all(6.0)
+                .boxed(),
+            )
+            .selected(draw_ctx.show_material_library)
+            .on_click(ctx.on_click(|actions| actions.emit(AssetBrowserAction::ShowMaterialLibrary)))
+            .boxed(),
+        ];
+        for (name, path, selected) in &draw_ctx.project_folders {
+            let path = path.clone();
+            folder_items.push(
+                selectable(
+                    hstack([
+                        icon(ForkAwesome::FOLDER)
+                            .color(draw_ctx.theme.text_secondary)
+                            .boxed(),
+                        text(name)
+                            .font_size(FontSize::Small)
+                            .color(draw_ctx.theme.text_secondary)
+                            .boxed(),
+                    ])
+                    .spacing(8.0)
+                    .padding_all(6.0)
+                    .boxed(),
+                )
+                .selected(*selected && !draw_ctx.show_material_library)
+                .on_click(ctx.on_click(move |actions| {
+                    actions.emit(AssetBrowserAction::NavigateToFolder(path.clone()))
+                }))
+                .boxed(),
+            );
+        }
+        let mut body = Vec::new();
+        if sidebar_width > 0.0 {
+            body.push(
+                scroll(vstack(folder_items).spacing(2.0).boxed(), folder_scroll_id)
+                    .flex_width(sidebar_width - 8.0)
+                    .boxed(),
+            );
+        }
+        body.push(scroll(grid_content, scroll_id).flex_grow(1.0).boxed());
         let content = vstack([
             toolbar,
             separator_horizontal().boxed(),
-            scroll(grid_content, scroll_id).flex_grow(1.0).boxed(),
+            hstack(body)
+                .spacing(8.0)
+                .flex_grow(1.0)
+                .flex_min_height(0.0)
+                .boxed(),
         ])
         .padding(Padding {
             top: 4.0,
@@ -504,6 +659,16 @@ pub(crate) fn process_declarative_actions(
 
     for action in actions {
         match action {
+            AssetBrowserAction::MaterialSelected(index) => {
+                state.selected_material = Some(index);
+            }
+            AssetBrowserAction::ShowMaterialLibrary => {
+                state.show_material_library = true;
+                state.context_menu_open = false;
+            }
+            AssetBrowserAction::NavigateToFolder(path) => {
+                state.navigate_to(&path, thumbnail_texture_handles);
+            }
             AssetBrowserAction::NavigateToSegment(index) => {
                 state.navigate_to_segment(index, thumbnail_texture_handles);
             }
@@ -737,5 +902,54 @@ mod tests {
         assert!(actions.is_empty());
         assert!(!state.confirm_dialog_open);
         assert!(state.confirm_pending_action.is_none());
+    }
+
+    #[test]
+    fn test_material_palette_fits_wide_and_narrow_panel_layouts() {
+        use katla_ui::declarative::{ViewTree, widgets::grid::Grid};
+        for width in [400.0, 550.0, 560.0, 780.0, 1100.0] {
+            let size = Vec2::new(width, 240.0);
+            let mut tree = ViewTree::new();
+            let mut ui = katla_ui::UiContext::new();
+            tree.env_mut().set(AssetBrowserDrawCtx {
+                bounds: Rect2D::new(Vec2::ZERO, size),
+                theme: ColorScheme::by_name("rcp").unwrap(),
+                assets: vec![],
+                selected_index: None,
+                path_segments: vec!["resources".into()],
+                can_go_back: false,
+                can_go_forward: false,
+                can_go_up: false,
+                search_filter: String::new(),
+                context_menu_open: false,
+                context_menu_is_asset: false,
+                confirm_dialog_open: false,
+                confirm_dialog_message: String::new(),
+                collapsed: false,
+                material_previews: [None; 6],
+                material_target: None,
+                show_material_library: true,
+                selected_material: None,
+                project_folders: vec![(
+                    "prefabs".into(),
+                    PathBuf::from("resources/prefabs"),
+                    false,
+                )],
+            });
+            ui.begin(size, 1.0);
+            tree.frame(&mut ui, &AssetBrowserView, size);
+            let mut grids = 0;
+            for (id, node) in tree.iter_nodes() {
+                if node.widget.as_any().is::<Grid>() {
+                    grids += 1;
+                    let bounds = tree.resolved_bounds().get(&id).unwrap();
+                    assert!(
+                        bounds.max.x() <= width,
+                        "grid exceeds {width}px panel: {bounds:?}"
+                    );
+                }
+            }
+            assert_eq!(grids, 1);
+        }
     }
 }

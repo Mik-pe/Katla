@@ -280,7 +280,7 @@ fn entity_icon_for_name(
 fn mesh_icon_for_name(name: &str, theme: &ColorScheme) -> (char, katla_math::Color) {
     let lower = name.to_lowercase();
     if lower.contains("sphere") {
-        (katla_ui::ForkAwesome::CIRCLE, theme.entity_mesh)
+        (katla_ui::ForkAwesome::CIRCLE_OUTLINE, theme.entity_mesh)
     } else if lower.contains("cylinder") {
         (katla_ui::ForkAwesome::CUBE, theme.entity_mesh)
     } else if lower.contains("plane") || lower.contains("ground") || lower.contains("floor") {
@@ -292,6 +292,6 @@ fn mesh_icon_for_name(name: &str, theme: &ColorScheme) -> (char, katla_math::Col
     } else if lower.contains("camera") {
         (katla_ui::ForkAwesome::CAMERA, theme.highlight)
     } else {
-        (katla_ui::ForkAwesome::SQUARE, theme.entity_mesh)
+        (katla_ui::ForkAwesome::CUBE, theme.entity_mesh)
     }
 }

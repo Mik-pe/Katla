@@ -1,6 +1,6 @@
 # Editor visual design
 
-These are design targets for editor UI work, not a claim that every current screen meets them. Theme/widget source defines the rendered values. Read the [declarative architecture](declarative_ui_design.md) for implementation contracts.
+The working target is the Rust editor, with the supplied Nova3D image and Reality Composer Pro as references: Katla branding, compact chrome, a dominant viewport, full-height hierarchy and inspector, and an asset-first workflow with fewer controls. These are design targets for editor UI work, not a claim that every current screen meets them. Theme/widget source defines the rendered values. Read the [declarative architecture](declarative_ui_design.md) for implementation contracts.
 
 ## Core Principles
 
@@ -77,7 +77,7 @@ clicks without passing them through to the scene. Icon actions use quiet surface
 until hovered. Dark and Reality Composer Pro share Katla's neutral surface palette,
 orange actions and cyan selection/focus. Fresh preferences select this palette and
 hide viewport statistics. Inspector ordering puts Transform before Material, then
-other components; material properties precede presets. Panel focus follows the
+other components; material properties precede the expandable color channels. Panel focus follows the
 active dock leaf, including the full-height sidebars. Viewport light/emitter icons
 use a restrained 24px screen-space size before user scaling.
 
@@ -110,8 +110,28 @@ persist in preferences. Translation snapping applies only to manipulated axes.
 Missing preference files are normal on first launch; invalid or nonfinite values
 fall back to usable bounds.
 
-Mesh selection exposes a Material section with an sRGB swatch, six named PBR
-starting points, and live RGBA, metallic, roughness and occlusion sliders.
+Assets opens on a visual material palette. Six named PBR starting points receive
+automatically generated studio-lit sphere thumbnails. The selected object's
+material has the same preview in the inspector, refreshed when authored factors
+change. These are factor previews, using sRGB base color, GGX specular lighting,
+metallic, roughness, alpha and ambient occlusion; they do not invent texture maps
+for presets or replace imported model textures. Shader-definition TOML files stay
+ordinary project assets rather than appearing as fabricated surface materials.
+
+The Assets sidebar groups project folders beside the palette; selecting a folder
+navigates immediately, while files retain double-click activation. Below 560px
+the sidebar collapses and Material library remains available as an icon action.
+Grids account for the sidebar and column gaps, and the previews reserve explicit
+sizes. Browse materials in the inspector activates Assets even when Console or
+Mixer is selected. Choosing a material applies it to a selected mesh with one
+undo step; without a selected mesh it selects the palette item only.
+
+Panel headers and tabs use the same ForkAwesome library as actions and project
+folders. Multi-tab strips cap tabs at 120px. Selection and focus share the normal
+control radius. Mesh rows use restrained outline/volume icons.
+
+Mesh selection exposes a Material section with a live preview, expandable RGBA
+channels and metallic, roughness and occlusion sliders.
 Each pointer gesture creates one editor undo step; presets create one step each.
 The same validated factors are editable in batches through the `material` agent
 tool. These per-object multipliers preserve model textures and pipeline handles
@@ -119,7 +139,31 @@ and persist in the scene document. See [agent authoring](agent-authoring.md) for
 color semantics, search and room recipes.
 
 `cargo run -- --interaction-test /tmp/katla-interactions` drives real UI
-hit testing and native viewport picking. The walkthrough clicks presets, drags
-material sliders outside their rows, uses Edit menu undo/redo, and collapses the
+hit testing and native viewport picking. The walkthrough opens the material
+palette, applies a preset, drags material sliders outside their rows, uses Edit menu undo/redo, and collapses the
 material section to add and remove a component. It writes screenshots and a
 `receipt.json`, and exits with an error for failed or incomplete checks.
+
+Material cards use quiet rounded surfaces and aligned labels. The status bar
+shows Ready and the current editor mode; View > Statistics exposes telemetry.
+Material preview textures are 192×192 for crisp Retina cards, with analytic edge
+coverage. Rounded controls use one physical pixel of outward edge coverage;
+text and icon atlas quads use hinted physical origins.
+
+The scene tonemap shader applies directional contrast-aware antialiasing to
+perceptually encoded, tone-mapped colors. Flat regions keep their original value.
+UI is composed afterward, so scene filtering never softens labels or icons. This
+ordering follows the [NVIDIA FXAA integration guidance](https://developer.download.nvidia.com/assets/gamedev/files/sdk/11/FXAA_WhitePaper.pdf).
+
+Run native validation with Metal API validation enabled, then verify readback:
+
+```sh
+MTL_DEBUG_LAYER=1 METAL_DEVICE_WRAPPER_TYPE=1 cargo run -- --interaction-test /tmp/katla-interactions
+python3 scripts/validate_material_previews.py /tmp/katla-interactions
+```
+
+The pixel validator requires Pillow. It checks six distinct nonblank palette
+textures, visible changes after a roughness drag, and exact preview restoration
+through undo/redo. With `--baseline DIR`, it also compares a fixed, static floor
+silhouette in the default scene against a pre-antialiasing capture; this is a
+bounded native regression check rather than a general image-quality score.

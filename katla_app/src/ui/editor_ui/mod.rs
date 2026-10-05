@@ -62,6 +62,8 @@ pub struct EditorRenderParams<'a> {
 
 /// Game Engine Editor UI state.
 pub struct EditorUI {
+    pub(crate) material_preset_previews: [Option<katla_ui::TextureId>; 6],
+    pub(crate) material_preview: Option<katla_ui::TextureId>,
     /// Currently selected entity.
     pub selected_entity: Option<EntityId>,
     pub(crate) scene_dialog: Option<declarative::scene_dialog::SceneDialog>,
@@ -170,6 +172,8 @@ impl EditorUI {
             preferences_category: 0,
             editor_settings: EditorSettings::default(),
             hierarchy_state: HierarchyState::default(),
+            material_preset_previews: [None; 6],
+            material_preview: None,
             left_panel_width: 220.0,
             right_panel_width: 280.0,
             is_playing: false,

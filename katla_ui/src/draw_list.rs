@@ -12,7 +12,7 @@ use katla_math::{Color, Rect2D, Vec2};
 ///
 /// This is the output of `UiContext::end()` and contains
 /// everything needed to render the UI.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DrawList {
     /// Per-instance data for instanced quad rendering.
     instances: Vec<InstanceData>,
@@ -36,6 +36,7 @@ pub struct DrawList {
     pending_vertex_batches: Vec<PendingVertexBatch>,
     /// Global submission order counter — incremented each time a batch is flushed.
     submission_order: u32,
+    aa_fringe: f32,
 }
 
 /// Internal instance batch being accumulated before finalization.
@@ -60,6 +61,12 @@ struct PendingVertexBatch {
     order: u32,
 }
 
+impl Default for DrawList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DrawList {
     /// Create a new, empty draw list.
     pub fn new() -> Self {
@@ -75,7 +82,12 @@ impl DrawList {
             pending_instance_batches: Vec::new(),
             pending_vertex_batches: Vec::new(),
             submission_order: 0,
+            aa_fringe: 1.0,
         }
+    }
+
+    pub(crate) fn set_scale_factor(&mut self, scale: f32) {
+        self.aa_fringe = 1.0 / scale.max(1.0);
     }
 
     /// Clear the draw list for a new frame.
@@ -302,7 +314,9 @@ impl DrawList {
     }
 
     pub fn add_circle_auto(&mut self, center: Vec2, radius: f32, color: Color) {
-        let segments = (radius * std::f32::consts::PI * 2.0 / 2.0).ceil().max(8.0) as u32;
+        let segments = (radius * std::f32::consts::PI / self.aa_fringe)
+            .ceil()
+            .max(8.0) as u32;
         self.add_circle_aa(center, radius, color, segments);
     }
 
@@ -332,8 +346,7 @@ impl DrawList {
             ));
         }
 
-        const AA_FRINGE: f32 = 1.0;
-        let outer_radius = radius + AA_FRINGE;
+        let outer_radius = radius + self.aa_fringe;
         for i in 0..seg {
             let angle = (i as f32 / segments as f32) * std::f32::consts::TAU;
             self.vertices.push(Vertex::position_only(
@@ -371,7 +384,8 @@ impl DrawList {
             return;
         }
 
-        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
+        let segments_per_corner =
+            ((r * std::f32::consts::PI * 0.5 / self.aa_fringe).ceil() as u32).max(2);
         generate_rounded_rect_points_into(
             bounds.min,
             bounds.max,
@@ -392,7 +406,8 @@ impl DrawList {
             return;
         }
 
-        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
+        let segments_per_corner =
+            ((r * std::f32::consts::PI * 0.5 / self.aa_fringe).ceil() as u32).max(2);
 
         generate_rounded_rect_points_into(
             bounds.min,
@@ -425,13 +440,12 @@ impl DrawList {
             let len_in = (dx_in * dx_in + dy_in * dy_in).sqrt().max(0.0001);
             let len_out = (dx_out * dx_out + dy_out * dy_out).sqrt().max(0.0001);
 
-            let nx = (-dy_in / len_in + -dy_out / len_out) * 0.5;
-            let ny = (dx_in / len_in + dx_out / len_out) * 0.5;
+            let nx = (dy_in / len_in + dy_out / len_out) * 0.5;
+            let ny = (-dx_in / len_in + -dx_out / len_out) * 0.5;
             let nlen = (nx * nx + ny * ny).sqrt().max(0.0001);
 
-            const AA_FRINGE: f32 = 1.0;
-            let offset_x = nx / nlen * AA_FRINGE;
-            let offset_y = ny / nlen * AA_FRINGE;
+            let offset_x = nx / nlen * self.aa_fringe;
+            let offset_y = ny / nlen * self.aa_fringe;
 
             outer_points.push(Vec2::new(curr.x() + offset_x, curr.y() + offset_y));
         }
@@ -478,7 +492,8 @@ impl DrawList {
             return;
         }
 
-        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
+        let segments_per_corner =
+            ((r * std::f32::consts::PI * 0.5 / self.aa_fringe).ceil() as u32).max(2);
         let half_t = thickness * 0.5;
 
         let outer_min = Vec2::new(bounds.min.x() - half_t, bounds.min.y() - half_t);
@@ -548,12 +563,19 @@ impl DrawList {
             return;
         }
 
-        let segments_per_corner = ((r * std::f32::consts::PI * 0.5 / 1.5).ceil() as u32).max(2);
+        let segments_per_corner =
+            ((r * std::f32::consts::PI * 0.5 / self.aa_fringe).ceil() as u32).max(2);
         let half_t = thickness * 0.5;
 
-        let outer_aa_min = Vec2::new(bounds.min.x() - half_t - 1.0, bounds.min.y() - half_t - 1.0);
-        let outer_aa_max = Vec2::new(bounds.max.x() + half_t + 1.0, bounds.max.y() + half_t + 1.0);
-        let outer_aa_r = r + half_t + 1.0;
+        let outer_aa_min = Vec2::new(
+            bounds.min.x() - half_t - self.aa_fringe,
+            bounds.min.y() - half_t - self.aa_fringe,
+        );
+        let outer_aa_max = Vec2::new(
+            bounds.max.x() + half_t + self.aa_fringe,
+            bounds.max.y() + half_t + self.aa_fringe,
+        );
+        let outer_aa_r = r + half_t + self.aa_fringe;
 
         let outer_min = Vec2::new(bounds.min.x() - half_t, bounds.min.y() - half_t);
         let outer_max = Vec2::new(bounds.max.x() + half_t, bounds.max.y() + half_t);
@@ -563,9 +585,15 @@ impl DrawList {
         let inner_max = Vec2::new(bounds.max.x() - half_t, bounds.max.y() - half_t);
         let inner_r = (r - half_t).max(0.0);
 
-        let inner_aa_min = Vec2::new(bounds.min.x() + half_t + 1.0, bounds.min.y() + half_t + 1.0);
-        let inner_aa_max = Vec2::new(bounds.max.x() - half_t - 1.0, bounds.max.y() - half_t - 1.0);
-        let inner_aa_r = (r - half_t - 1.0).max(0.0);
+        let inner_aa_min = Vec2::new(
+            bounds.min.x() + half_t + self.aa_fringe,
+            bounds.min.y() + half_t + self.aa_fringe,
+        );
+        let inner_aa_max = Vec2::new(
+            bounds.max.x() - half_t - self.aa_fringe,
+            bounds.max.y() - half_t - self.aa_fringe,
+        );
+        let inner_aa_r = (r - half_t - self.aa_fringe).max(0.0);
 
         generate_rounded_rect_points_into(
             outer_aa_min,
@@ -1180,6 +1208,25 @@ mod tests {
         list.finalize();
 
         assert_eq!(list.command_count(), 3);
+    }
+
+    #[test]
+    fn test_rounded_fill_fringe_extends_outward_by_one_physical_pixel() {
+        for scale in [1.0, 1.5, 2.0, 3.0] {
+            let mut list = DrawList::new();
+            list.set_scale_factor(scale);
+            let bounds = Rect2D::from_origin_size(Vec2::new(10.0, 20.0), Vec2::new(100.0, 40.0));
+            list.add_rounded_rect_aa(bounds, Color::WHITE, 4.0);
+            let vertices = list.vertices();
+            let n = vertices.len() / 2;
+            let center = bounds.center();
+            for (inner, outer) in vertices[..n].iter().zip(&vertices[n..]) {
+                let delta = outer.pos - inner.pos;
+                assert!((delta.length() * scale - 1.0).abs() < 0.0001);
+                assert!((outer.pos - center).length() > (inner.pos - center).length());
+                assert_eq!(outer.color[3], 0);
+            }
+        }
     }
 
     #[test]

@@ -114,6 +114,7 @@ impl EditorUI {
         self.view_tree.env_mut().set(StatusBarData {
             height: STATUS_BAR_HEIGHT,
             fps: params.fps,
+            show_stats: params.preferences.show_stats,
             frame_time_ms: params.frame_time_ms,
             entity_count: params.entities.len(),
             draw_call_count: self.last_draw_call_count,
@@ -184,6 +185,7 @@ impl EditorUI {
                     }
                     Some(EditorPanel::Inspector) => {
                         self.view_tree.env_mut().set(InspectorDrawCtx {
+                            material_preview: self.material_preview,
                             bounds: *content_bounds,
                             selected_entity: self.selected_entity,
                             entities: entities.clone(),
@@ -202,6 +204,28 @@ impl EditorUI {
                     Some(EditorPanel::AssetBrowser) => {
                         let ab = &self.asset_browser;
                         self.view_tree.env_mut().set(AssetBrowserDrawCtx {
+                            material_previews: self.material_preset_previews,
+                            material_target: entities
+                                .iter()
+                                .find(|e| {
+                                    Some(e.id) == self.selected_entity && e.material.is_some()
+                                })
+                                .map(|e| e.id),
+                            show_material_library: ab.show_material_library,
+                            selected_material: ab.selected_material,
+                            project_folders: ab
+                                .project_folders
+                                .iter()
+                                .map(|path| {
+                                    (
+                                        path.file_name()
+                                            .map(|n| n.to_string_lossy().to_string())
+                                            .unwrap_or_default(),
+                                        path.clone(),
+                                        ab.current_path.starts_with(path),
+                                    )
+                                })
+                                .collect(),
                             bounds: *content_bounds,
                             theme: self.theme.clone(),
                             assets: ab
@@ -492,6 +516,23 @@ impl EditorUI {
         self.request_visible_thumbnails(params);
 
         let ab_actions: Vec<AssetBrowserAction> = self.view_tree.actions_mut().drain();
+        if ab_actions
+            .iter()
+            .any(|action| matches!(action, AssetBrowserAction::ShowMaterialLibrary))
+        {
+            let paths = self
+                .dock_tree
+                .leaf_bounds(Rect2D::new(Vec2::ZERO, params.screen_size));
+            for (path, _) in paths {
+                if let Some(DockNode::Leaf { tabs, active }) = self.dock_tree.get_mut(&path)
+                    && let Some(index) = tabs
+                        .iter()
+                        .position(|id| *id == EditorPanel::AssetBrowser.id())
+                {
+                    *active = index;
+                }
+            }
+        }
         let viewport_bounds = self.last_viewport_bounds;
         let asset_actions = process_declarative_actions(
             &mut self.asset_browser,

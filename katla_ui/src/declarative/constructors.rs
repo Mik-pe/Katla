@@ -232,6 +232,7 @@ pub fn selectable(child: Box<dyn Widget>) -> widgets::selectable::Selectable {
     widgets::selectable::Selectable {
         on_click: None,
         selected: false,
+        fill: None,
         flex_grow: 0.0,
         child_widget: Some(child),
         children: Vec::new(),

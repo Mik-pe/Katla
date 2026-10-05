@@ -100,6 +100,7 @@ pub(crate) enum DumpLayoutTarget {
 /// Editor-only state grouped behind a single cfg gate.
 #[cfg(feature = "editor")]
 pub(crate) struct EditorState {
+    pub(crate) material_previews: editor::material_preview::MaterialPreviews,
     pub(crate) material_drag: Option<editor::material::MaterialCommand>,
     /// UI renderer for converting UI draw lists to GPU format
     pub(crate) ui_renderer: crate::ui::UIRenderer,
@@ -187,6 +188,7 @@ impl EditorState {
                 editor
             },
             gui_state,
+            material_previews: editor::material_preview::MaterialPreviews::default(),
             background_loader: BackgroundLoader::new(),
             thumbnail_texture_handles: HashMap::new(),
             texture_paths: HashMap::new(),

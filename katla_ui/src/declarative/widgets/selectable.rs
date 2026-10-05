@@ -14,6 +14,7 @@ use crate::input::mouse_button;
 pub struct Selectable {
     pub on_click: Option<Callback>,
     pub selected: bool,
+    pub fill: Option<katla_math::Color>,
     pub flex_grow: f32,
     pub child_widget: Option<Box<dyn super::super::widget::Widget>>,
     pub(crate) children: Vec<ViewId>,
@@ -69,7 +70,7 @@ impl Widget for Selectable {
         _children: &[ViewId],
         info: &DrawInfo,
     ) {
-        let radius = bounds.height().min(bounds.width()) * 0.15;
+        let radius = ctx.style().input_rounding;
         let is_hovered = bounds.contains(ctx.mouse_pos());
         if self.selected {
             ctx.draw_rounded_rect(
@@ -83,6 +84,8 @@ impl Widget for Selectable {
                 animation.apply_to_color(ctx.style().selectable_hovered),
                 radius,
             );
+        } else if let Some(fill) = self.fill {
+            ctx.draw_rounded_rect(bounds, animation.apply_to_color(fill), radius);
         }
 
         if info.interaction.is_focused(info.view_id) {
@@ -120,6 +123,11 @@ impl Widget for Selectable {
 }
 
 impl Selectable {
+    /// Give an unselected item a quiet surface beneath its content.
+    pub fn fill(mut self, color: impl Into<katla_math::Color>) -> Self {
+        self.fill = Some(color.into());
+        self
+    }
     pub fn on_click(mut self, cb: super::super::descriptor::Callback) -> Self {
         self.on_click = Some(cb);
         self
@@ -142,6 +150,7 @@ mod tests {
         Selectable {
             on_click: None,
             selected,
+            fill: None,
             flex_grow: 0.0,
             child_widget: None,
             children: Vec::new(),
@@ -155,6 +164,7 @@ mod tests {
             Selectable {
                 on_click: Some(cb),
                 selected: false,
+                fill: None,
                 flex_grow: 0.0,
                 child_widget: None,
                 children: Vec::new(),

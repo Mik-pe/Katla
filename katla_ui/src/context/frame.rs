@@ -32,6 +32,7 @@ impl UiContext {
         self.screen_size = screen_size;
         self.scale_factor = scale_factor;
         self.draw_list.clear();
+        self.draw_list.set_scale_factor(scale_factor);
         self.id_stack.clear();
         self.z_stack.clear();
         self.z_index = z_index::DEFAULT;

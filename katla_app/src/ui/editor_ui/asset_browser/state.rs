@@ -9,6 +9,10 @@ use super::types::{AssetAction, AssetEntry, AssetType, ThumbnailState};
 
 /// Asset browser panel state.
 pub struct AssetBrowserState {
+    /// Show the built-in material palette beside project navigation.
+    pub(crate) show_material_library: bool,
+    pub(crate) project_folders: Vec<PathBuf>,
+    pub(crate) selected_material: Option<usize>,
     /// Current directory being browsed
     pub current_path: PathBuf,
     /// Assets in current directory
@@ -62,6 +66,9 @@ impl AssetBrowserState {
         let nav_history = vec![current_path.clone()];
 
         Self {
+            show_material_library: true,
+            project_folders: Vec::new(),
+            selected_material: None,
             current_path,
             assets: Vec::new(),
             selected_index: None,
@@ -92,6 +99,42 @@ impl AssetBrowserState {
         &mut self,
         thumbnail_texture_handles: &HashMap<PathBuf, katla_gfx::TextureHandle>,
     ) {
+        self.project_folders = self
+            .nav_history
+            .first()
+            .and_then(|root| fs::read_dir(root).ok())
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_dir()
+                    && !path
+                        .file_name()
+                        .is_some_and(|name| name.to_string_lossy().starts_with('.'))
+            })
+            .collect();
+        self.project_folders.sort_by_key(|path| {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default();
+            (
+                [
+                    "models",
+                    "prefabs",
+                    "images",
+                    "materials",
+                    "meshes",
+                    "scripts",
+                    "fonts",
+                ]
+                .iter()
+                .position(|item| *item == name)
+                .unwrap_or(7),
+                name.to_string(),
+            )
+        });
         let old_thumbnails: HashMap<PathBuf, ThumbnailState> = self
             .assets
             .iter()
@@ -199,6 +242,7 @@ impl AssetBrowserState {
     }
 
     fn reset_navigation_state(&mut self) {
+        self.show_material_library = false;
         self.selected_index = None;
         self.selected_indices.clear();
         self.last_click_index = None;
@@ -233,6 +277,9 @@ impl AssetBrowserState {
         path: &PathBuf,
         thumbnail_texture_handles: &HashMap<PathBuf, katla_gfx::TextureHandle>,
     ) {
+        if path.is_dir() {
+            self.show_material_library = false;
+        }
         if path.is_dir() && path != &self.current_path {
             self.nav_history.truncate(self.nav_history_pos + 1);
             self.nav_history.push(path.clone());

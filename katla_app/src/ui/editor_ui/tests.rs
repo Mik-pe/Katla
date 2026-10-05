@@ -342,6 +342,7 @@ fn test_editor_overlay_produces_dockspace_in_zstack() {
         .set(crate::ui::editor_ui::declarative::StatusBarData {
             height: 22.0,
             fps: 60.0,
+            show_stats: false,
             frame_time_ms: 16.6,
             entity_count: 0,
             draw_call_count: 0,

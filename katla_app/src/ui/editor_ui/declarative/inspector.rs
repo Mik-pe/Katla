@@ -89,6 +89,7 @@ fn removable(available_components: &[&str], type_name: &str) -> bool {
 #[derive(Clone)]
 pub(crate) struct InspectorDrawCtx {
     pub bounds: Rect2D,
+    pub material_preview: Option<katla_ui::TextureId>,
     pub selected_entity: Option<EntityId>,
     pub entities: Vec<EntityInfo>,
     #[expect(dead_code)]
@@ -138,6 +139,7 @@ impl Build for InspectorView {
             ctx,
             selected.and_then(|e| e.material.map(|m| (e.id, m))),
             &draw_ctx.theme,
+            draw_ctx.material_preview,
         );
 
         let content = if let Some(entity) = draw_ctx

@@ -5,8 +5,8 @@ use katla_agent::material::{MaterialOp, MaterialPreset, MaterialValues};
 use katla_ecs::EntityId;
 use katla_math::Color;
 use katla_ui::declarative::{
-    BuildContext, StateId, Widget, WidgetBox, button, empty, hstack, icon, labeled_slider, section,
-    text, vstack,
+    BuildContext, StateId, Widget, WidgetBox, button, empty, hstack, icon, image, labeled_slider,
+    section, text, vstack,
 };
 use katla_ui::{FontSize, ForkAwesome};
 
@@ -20,6 +20,7 @@ pub(super) struct MaterialControls {
     baseline: StateId,
     channels: [StateId; 7],
     expanded: StateId,
+    color_expanded: StateId,
 }
 
 impl MaterialControls {
@@ -31,6 +32,7 @@ impl MaterialControls {
             }),
             channels: std::array::from_fn(|_| ctx.state(0.0f32)),
             expanded: ctx.state(true),
+            color_expanded: ctx.state(false),
         }
     }
 
@@ -39,6 +41,7 @@ impl MaterialControls {
         ctx: &mut BuildContext,
         selected: Option<(EntityId, MaterialValues)>,
         theme: &ColorScheme,
+        preview: Option<katla_ui::TextureId>,
     ) -> Option<Box<dyn Widget>> {
         let Some((entity, values)) = selected else {
             let mut baseline: Baseline = ctx.get_state(self.baseline)?;
@@ -79,69 +82,73 @@ impl MaterialControls {
         let c = values.base_color;
         let mut content = vec![
             hstack([
-                text("Base color").color(theme.text_secondary).boxed(),
-                icon(ForkAwesome::SQUARE)
-                    .color(Color::new(c[0], c[1], c[2], 1.0))
-                    .icon_size(FontSize::Large)
+                preview_image(preview, 64.0, theme),
+                vstack([
+                    text(
+                        MaterialPreset::ALL
+                            .into_iter()
+                            .find(|preset| preset.values() == values)
+                            .map_or("Custom material", MaterialPreset::label),
+                    )
+                    .color(theme.text_primary)
                     .boxed(),
-                text(format!(
-                    "#{:02X}{:02X}{:02X}",
-                    (c[0] * 255.0).round() as u8,
-                    (c[1] * 255.0).round() as u8,
-                    (c[2] * 255.0).round() as u8
-                ))
-                .color(theme.text_primary)
+                    text(format!(
+                        "#{:02X}{:02X}{:02X}",
+                        (c[0] * 255.0).round() as u8,
+                        (c[1] * 255.0).round() as u8,
+                        (c[2] * 255.0).round() as u8
+                    ))
+                    .font_size(FontSize::Small)
+                    .color(theme.text_secondary)
+                    .boxed(),
+                ])
+                .spacing(4.0)
                 .boxed(),
             ])
-            .spacing(8.0)
+            .align(katla_ui::declarative::Alignment::Middle)
+            .spacing(12.0)
             .boxed(),
         ];
-        let mut presets_content = Vec::new();
-        for presets in MaterialPreset::ALL.chunks(2) {
-            let buttons = presets
-                .iter()
-                .copied()
-                .map(|preset| {
-                    button(preset.label())
-                        .fill(theme.panel_bg)
-                        .border(Color::TRANSPARENT)
-                        .on_click(ctx.on_click(move |actions| {
-                            actions.emit(EditorAction::MaterialPreset(MaterialOp::Set {
-                                entity_ids: vec![entity.id().to_string()],
-                                preset: Some(preset),
-                                base_color: None,
-                                metallic: None,
-                                roughness: None,
-                                ao: None,
-                            }));
-                        }))
-                        .boxed()
-                })
-                .collect::<Vec<_>>();
-            presets_content.push(hstack(buttons).spacing(6.0).boxed());
-        }
-        for (index, label) in [
-            "Red",
-            "Green",
-            "Blue",
-            "Alpha",
-            "Metallic",
-            "Roughness",
-            "Occlusion",
-        ]
-        .iter()
-        .enumerate()
-        {
+        for (index, label) in [(4, "Metallic"), (5, "Roughness"), (6, "Occlusion")] {
             content.push(
-                labeled_slider(*label, self.channels[index], 0.0..=1.0)
+                labeled_slider(label, self.channels[index], 0.0..=1.0)
                     .label_width(76.0)
                     .show_value(true)
                     .precision(2)
                     .boxed(),
             );
         }
-        content.push(text("Presets").color(theme.text_secondary).boxed());
-        content.extend(presets_content);
+        let color = if ctx
+            .get_state::<bool>(self.color_expanded)
+            .unwrap_or_default()
+        {
+            vstack(
+                ["Red", "Green", "Blue", "Alpha"]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, label)| {
+                        labeled_slider(label, self.channels[index], 0.0..=1.0)
+                            .label_width(76.0)
+                            .show_value(true)
+                            .precision(2)
+                            .boxed()
+                    }),
+            )
+            .spacing(4.0)
+            .boxed()
+        } else {
+            empty().boxed()
+        };
+        content.push(section("Base color", color, self.color_expanded).boxed());
+        content.push(
+            button("Browse materials")
+                .fill(Color::TRANSPARENT)
+                .border(Color::TRANSPARENT)
+                .on_click(ctx.on_click(|actions| {
+                    actions.emit(super::asset_browser::AssetBrowserAction::ShowMaterialLibrary)
+                }))
+                .boxed(),
+        );
         let child = if ctx.get_state::<bool>(self.expanded).unwrap_or_default() {
             vstack(content).spacing(6.0).boxed()
         } else {
@@ -161,4 +168,22 @@ fn channels(v: MaterialValues) -> [f32; 7] {
         v.roughness,
         v.ao,
     ]
+}
+
+pub(super) fn preview_image(
+    texture: Option<katla_ui::TextureId>,
+    size: f32,
+    theme: &ColorScheme,
+) -> Box<dyn Widget> {
+    if let Some(texture) = texture {
+        let mut preview = image(texture, Color::WHITE);
+        preview.width = Some(size);
+        preview.height = Some(size);
+        preview.boxed()
+    } else {
+        icon(ForkAwesome::CIRCLE_OUTLINE)
+            .icon_size(FontSize::Huge)
+            .color(theme.text_muted)
+            .boxed()
+    }
 }
