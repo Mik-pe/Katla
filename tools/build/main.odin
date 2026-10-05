@@ -164,11 +164,12 @@ main :: proc() {
     root=absolute("."); require(os.is_file(join(root,"odin/katla/config.odin")),"Run from Katla's repository root")
     odin=env("ODIN","odin"); cargo=env("CARGO","cargo")
     export_source,export_entry,export_stage,export_compiler:string
+    llvm_config:=env("LLVM_CONFIG","/opt/homebrew/opt/llvm@22/bin/llvm-config")
     options:=Options{backend="metal" if ODIN_OS==.Darwin else "vulkan",project=root,resources=join(root,"resources")}; command:="build"
     for i:=1; i<len(os.args); i+=1 {
         arg:=os.args[i]
         switch arg {
-        case "build","run","compiler","validate","shader-export": command=arg
+        case "build","run","compiler","validate","shader-export","bootstrap-odin": command=arg
         case "gpu","render","ui","shader","audio","physics","luau","processes","host","proxy","mcp","socket","http": validation.suite=arg
         case "--": options.arguments=os.args[i+1:]; i=len(os.args)
         case "--tests": options.tests=true
@@ -193,13 +194,14 @@ main :: proc() {
         case "--objects-only": options.objects_only=true
         case "--no-build": options.no_build=true
         case "--dry-run": options.dry_run=true
-        case "--help": fmt.println("odin run tools/build -- [build|run|validate SUITE|shader-export] [--tests] [--sanitize] [--output DIR] [--dependencies-only|--objects-only] [--no-build] [--backend metal|vulkan] [--project DIR] [--resources DIR] [--vulkan-loader FILE] [--dependency audio|gltf|toml|box|luau|fonts|window] [-- app arguments]. Validation suites: gpu, render, ui, shader, audio, physics, luau, processes, http, mcp, socket, host, proxy. Native selection: --native-metal, --native-vulkan, --native-surface; --build-manifest FILE reuses verified artifacts."); return
-        case "--output","--output-dir","--build-dir","--odin","--cargo","--dependency","--backend","--project","--resources","--vulkan-loader","--vulkan-library","--vulkan-icd","--glslc","--build-manifest","--native-asan-leaks","--source","--entry","--stage","--compiler":
+        case "--help": fmt.println("odin run tools/build -- [build|run|validate SUITE|shader-export|bootstrap-odin] [--tests] [--sanitize] [--output DIR] [--dependencies-only|--objects-only] [--no-build] [--backend metal|vulkan] [--project DIR] [--resources DIR] [--vulkan-loader FILE] [--dependency audio|gltf|toml|box|luau|fonts|window] [-- app arguments]. Validation suites: gpu, render, ui, shader, audio, physics, luau, processes, http, mcp, socket, host, proxy. Native selection: --native-metal, --native-vulkan, --native-surface; --build-manifest FILE reuses verified artifacts. macOS compiler bootstrap: --llvm-config FILE selects LLVM 22."); return
+        case "--output","--output-dir","--build-dir","--odin","--cargo","--dependency","--backend","--project","--resources","--vulkan-loader","--vulkan-library","--vulkan-icd","--glslc","--build-manifest","--native-asan-leaks","--source","--entry","--stage","--compiler","--llvm-config":
             i+=1; require(i<len(os.args),cat("Missing value for ",arg)); value:=os.args[i]
             switch arg {
             case "--output","--build-dir": output=absolute(value)
             case "--output-dir": validation.output=absolute(value)
             case "--odin": odin=value
+            case "--llvm-config": llvm_config=value
             case "--cargo": cargo=value
             case "--dependency": options.dependency=value
             case "--backend": require(value=="metal" || value=="vulkan" || (command=="validate" && value=="both"),"Invalid backend"); options.backend=value; validation.metal=value=="metal"; validation.vulkan=value=="vulkan" || value=="both"; validation.metal=validation.metal || value=="both"
@@ -218,6 +220,7 @@ main :: proc() {
         case: fail(cat("Unknown build option: ",arg))
         }
     }
+    if command=="bootstrap-odin" { bootstrap_odin(llvm_config); return }
     if output=="" { output=default_output() }
     if command=="shader-export" { require(export_source!="" && export_entry!="" && export_stage!="" && export_compiler!="","Shader export requires source, entry, stage and compiler"); export_shader(export_compiler,export_source,export_entry,export_stage,output); return }
     if command=="validate" { require(validation.suite!="","Choose a validation suite"); validate(options); return }

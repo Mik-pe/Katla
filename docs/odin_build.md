@@ -40,6 +40,22 @@ Odin's core/vendor collections and need no Python. Alternatively install Odin
 normally and select its executable with `--odin FILE` or `ODIN`. Updating the
 compiler release requires updating every corresponding archive digest.
 
+On modern macOS, build that same pinned source revision with LLVM 22 before
+using ASan. The distributed macOS binary uses LLVM 20; its ASan runtime can
+deadlock during dyld initialization before application code runs. The native
+bootstrap invokes Clang++ directly and keeps the compiler beside its matching
+core/vendor collections:
+
+```sh
+brew install llvm@22
+odin run tools/build -- bootstrap-odin
+# Add target/native-source/odin to PATH, or pass its executable with --odin.
+```
+
+`--llvm-config FILE` or `LLVM_CONFIG` selects the LLVM 22 installation. The
+builder checks its version, the Clang++ version and the resulting Odin report.
+macOS CI uses this source bootstrap for both normal and ASan builds.
+
 The output is `target/katla-odin/<host>-<arch>/<normal|asan>`. Each directory owns
 its native libraries, fonts, compiler executable, binaries, canonical WGSL
 sources in `shaders/` and `build.json`. Shader sources come exclusively from

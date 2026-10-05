@@ -18,6 +18,13 @@ Use exactly one explicit macOS generation. Do not add older macOS jobs or
 `macos-latest`. When adopting another generation, replace the runner and this
 policy together and verify its native Metal paths.
 
+The verified compiler archive bootstraps `tools/build` on macOS. Its
+`bootstrap-odin` command builds the same pinned Odin source revision with
+LLVM 22 before normal/ASan acceptance. This avoids the LLVM 20 ASan runtime's
+dyld initialization deadlock observed on modern macOS without weakening
+instrumentation or leak checks. Compiler and native dependencies use the same
+LLVM major.
+
 ## Native boundaries
 
 A macOS runner lacking Metal 4 reports native acceptance **BLOCKED**. Its SDK

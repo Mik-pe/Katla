@@ -36,9 +36,11 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy
           rustup default stable
-          llvm_major="$(odin report | sed -nE 's/.*Backend:.*LLVM ([0-9]+).*/\1/p')"
-          test -n "$llvm_major"
-          brew install "llvm@$llvm_major"
+          brew install llvm@22
+      - name: Bootstrap pinned Odin source with the current LLVM runtime
+        run: |
+          odin run tools/build -- bootstrap-odin --llvm-config /opt/homebrew/opt/llvm@22/bin/llvm-config
+          echo "$GITHUB_WORKSPACE/target/native-source/odin" >> "$GITHUB_PATH"
       - name: Cold build and serial CPU acceptance
         run: |
           mkdir -p target/odin-ci-build
