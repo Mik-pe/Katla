@@ -1,6 +1,8 @@
 // Simple texture display shader.
 // Samples a texture and displays it fullscreen (no tonemapping).
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 

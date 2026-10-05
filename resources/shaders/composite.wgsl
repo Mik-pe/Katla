@@ -10,6 +10,8 @@
 // Viewport rectangles are passed via objects[i].base_color (Set 0, Binding 1).
 // Each object uniform's base_color stores [x, y, x+width, y+height].
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 

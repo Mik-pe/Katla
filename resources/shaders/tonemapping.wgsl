@@ -7,6 +7,8 @@
 // - 2: TonyMcMapface (popular, good balance)
 // - 3: Linear (no tonemapping, exposure only)
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 #include <fullscreen_triangle.wgsl>

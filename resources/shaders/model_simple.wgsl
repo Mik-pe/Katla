@@ -2,6 +2,8 @@
 //
 // Uses storage buffers for uniform data with instance_index for per-object selection.
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 

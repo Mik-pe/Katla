@@ -5,6 +5,8 @@
 // right/up vectors for orientation. Samples from bindless textures
 // with base_color tint and alpha discard.
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 

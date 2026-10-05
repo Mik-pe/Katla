@@ -7,6 +7,8 @@
 // The depth prepass pipeline has no color attachment; the rasterizer writes
 // depth for surviving fragments only.
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 

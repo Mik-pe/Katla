@@ -6,6 +6,8 @@
 //
 // ndc_y_flip: 1.0 for Vulkan (Y-down), -1.0 for Metal (Y-up).
 
+enable wgpu_binding_array;
+
 struct UiVertex {
     @location(0) position: vec2f,
     @location(1) uv: vec2f,

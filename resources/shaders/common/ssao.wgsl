@@ -7,6 +7,8 @@
 // This is integrated directly into the PBR shader as a function call,
 // avoiding the need for a separate compute pass.
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 

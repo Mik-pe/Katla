@@ -4,6 +4,8 @@
 // R8 mask, then applies an orange tint where the stencil indicator is active
 // (occluded parts of selected objects).
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <bindless.wgsl>
 #include <fullscreen_triangle.wgsl>

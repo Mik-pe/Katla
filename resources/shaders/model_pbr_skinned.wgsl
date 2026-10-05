@@ -11,6 +11,8 @@
 // - Dynamic point lights via Forward+ tile culling
 // - HDR linear output (NO tonemapping - handled by post-process pass)
 
+enable wgpu_binding_array;
+
 #include <frame_uniforms.wgsl>
 #include <lighting_types.wgsl>
 #include <bindless.wgsl>
