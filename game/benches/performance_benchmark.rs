@@ -12,6 +12,9 @@
 //! 3. Run 4-viewport grid for 100 frames
 //! 4. Compare frame times and verify within 10% threshold
 
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+
 /// Frame time statistics collected during benchmark run.
 #[derive(Debug, Clone)]
 pub struct FrameTimeStats {
@@ -240,8 +243,9 @@ pub struct MockFrameTimeGenerator {
     base_frame_time_ms: f64,
     /// Variance to add to frame times (simulating rendering variance).
     variance_ms: f64,
-    /// Frame counter.
-    frame: usize,
+    /// Seeded RNG. A fixed seed keeps benchmark runs deterministic, so the
+    /// 10% threshold checks are stable instead of a coin flip per run.
+    rng: StdRng,
 }
 
 impl MockFrameTimeGenerator {
@@ -254,7 +258,7 @@ impl MockFrameTimeGenerator {
         Self {
             base_frame_time_ms,
             variance_ms,
-            frame: 0,
+            rng: StdRng::seed_from_u64(0x4B41544C41), // "KATLA"
         }
     }
 
@@ -268,10 +272,8 @@ impl MockFrameTimeGenerator {
     ///
     /// In a real implementation, these would be actual measured frame times.
     pub fn generate_frame_time(&mut self, viewport_count: usize) -> f64 {
-        self.frame += 1;
-
         // Base frame time with random variance
-        let variance = (rand::random::<f64>() - 0.5) * 2.0 * self.variance_ms;
+        let variance = self.rng.gen_range(-self.variance_ms..self.variance_ms);
         let mut frame_time = self.base_frame_time_ms + variance;
 
         // Add overhead for multi-viewport rendering
@@ -502,9 +504,20 @@ mod tests {
         let frame_time_1 = generator.generate_frame_time(1);
         assert!((frame_time_1 - 16.67).abs() < 5.0);
 
-        // 2 viewports should be slower
-        let frame_time_2 = generator.generate_frame_time(2);
-        assert!(frame_time_2 > frame_time_1 * 1.03); // At least 3% slower
+        // 2 viewports should be slower. The per-frame ±2ms variance dwarfs the
+        // ~0.65ms two-viewport overhead, so compare means over many frames —
+        // a single-sample comparison fails ~half the time.
+        let mean_frame_time =
+            |viewport_count: usize, generator: &mut MockFrameTimeGenerator| -> f64 {
+                let frames = 1000;
+                let total: f64 = (0..frames)
+                    .map(|_| generator.generate_frame_time(viewport_count))
+                    .sum();
+                total / frames as f64
+            };
+        let single = mean_frame_time(1, &mut generator);
+        let multi = mean_frame_time(2, &mut generator);
+        assert!(multi > single * 1.03); // At least 3% slower on average
     }
 
     #[test]
