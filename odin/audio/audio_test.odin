@@ -4,6 +4,7 @@ import "core:os"
 import "core:math"
 import "core:time"
 import "core:strings"
+import "core:sync"
 
 @(test)
 test_real_codecs_exact_metadata_and_owned_pcm :: proc(t:^testing.T) {
@@ -50,6 +51,19 @@ test_category_meter_aux_zone_and_scheduled_cue_ownership :: proc(t:^testing.T) {
     for _ in 0..<3 {_,cue_error:=cue_play(&cue,engine);testing.expect_value(t,cue_error,Error.None)}
     engine_render(engine,block[:]);testing.expect(t,engine_read_levels(engine).sfx.peak>0);engine_collect(engine)
 }
+test_wait_stream_pcm :: proc(stream:^Stream)->bool {
+    started:=time.tick_now()
+    for time.tick_since(started)<2*time.Second {
+        sync.mutex_lock(&stream.mutex)
+        ready:=!stream.seek_pending&&stream.write_frame-stream.read_frame>=512
+        failed:=stream.error!=.None
+        sync.mutex_unlock(&stream.mutex)
+        if ready||failed {return ready&&!failed}
+        time.sleep(time.Millisecond)
+    }
+    return false
+}
+
 @(test)
 test_stream_worker_seek_loop_and_release :: proc(t:^testing.T) {
     for name in ([]string{"tone.wav","tone.ogg","tone.mp3","tone.flac"}) {
@@ -58,8 +72,8 @@ test_stream_worker_seek_loop_and_release :: proc(t:^testing.T) {
         engine,_:=engine_create(48000,false);defer engine_destroy(engine)
         desc:=DEFAULT_PLAY;desc.category=.Music;desc.looping=true
         handle,error:=engine_play_stream(engine,bytes,desc);testing.expect_value(t,error,Error.None);if error!=.None {continue}
-        time.sleep(20*time.Millisecond);block:[1024]f32;engine_render(engine,block[:]);testing.expect(t,compute_levels(block[:]).rms>.01)
-        testing.expect_value(t,voice_seek(engine,handle,.1),Error.None);time.sleep(10*time.Millisecond);engine_render(engine,block[:]);position,_:=voice_position(engine,handle);testing.expect(t,position>.1)
+        stream:=engine.voices[handle.slot].stream;testing.expect(t,test_wait_stream_pcm(stream));block:[1024]f32;engine_render(engine,block[:]);testing.expect(t,compute_levels(block[:]).rms>.01)
+        testing.expect_value(t,voice_seek(engine,handle,.1),Error.None);testing.expect(t,test_wait_stream_pcm(stream));engine_render(engine,block[:]);position,_:=voice_position(engine,handle);testing.expect(t,position>.1)
         for _ in 0..<25 {engine_render(engine,block[:]);time.sleep(time.Millisecond)}
         testing.expect_value(t,voice_state(engine,handle),Voice_State.Playing);voice_stop(engine,handle);engine_render(engine,block[:]);testing.expect_value(t,voice_state(engine,handle),Voice_State.Stopped);engine_collect(engine)
     }
