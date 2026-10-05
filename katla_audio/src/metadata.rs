@@ -88,11 +88,12 @@ fn metadata_ogg(path: &Path) -> Result<AudioMetadata, AudioError> {
 fn metadata_mp3(path: &Path) -> Result<AudioMetadata, AudioError> {
     use std::fs::File;
     use std::io::{Read as _, Seek, SeekFrom};
-    use symphonia::core::codecs::CODEC_TYPE_NULL;
+    use symphonia::core::codecs::CodecParameters;
+    use symphonia::core::codecs::audio::CODEC_ID_NULL_AUDIO;
     use symphonia::core::formats::FormatOptions;
+    use symphonia::core::formats::probe::Hint;
     use symphonia::core::io::MediaSourceStream;
     use symphonia::core::meta::MetadataOptions;
-    use symphonia::core::probe::Hint;
 
     let mut file = File::open(path).map_err(AudioError::Io)?;
     let file_size = file.metadata().map(|m| m.len()).unwrap_or(0);
@@ -191,26 +192,30 @@ fn metadata_mp3(path: &Path) -> Result<AudioMetadata, AudioError> {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             hint.with_extension(ext);
         }
-        let probed = symphonia::default::get_probe()
-            .format(
+        let format_reader = symphonia::default::get_probe()
+            .probe(
                 &hint,
                 mss,
-                &FormatOptions::default(),
-                &MetadataOptions::default(),
+                FormatOptions::default(),
+                MetadataOptions::default(),
             )
             .map_err(|e| AudioError::DecodeFailed(format!("Failed to probe MP3: {e}")))?;
 
-        let track = probed
-            .format
+        let track = format_reader
             .tracks()
             .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .find_map(|t| match &t.codec_params {
+                Some(CodecParameters::Audio(params)) if params.codec != CODEC_ID_NULL_AUDIO => {
+                    Some(params)
+                }
+                _ => None,
+            })
             .ok_or_else(|| AudioError::DecodeFailed("No audio track found".into()))?;
 
-        sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
+        sample_rate = track.sample_rate.unwrap_or(44100);
         channels = track
-            .codec_params
             .channels
+            .as_ref()
             .map(|c| c.count() as u16)
             .unwrap_or(2);
     }

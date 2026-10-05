@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 claxon = "0.4"
-cpal = "0.17"
+cpal = "0.18"
 hound = "3.5"
 lewton = "0.10"
-symphonia = { version = "0.5", features = ["mp3"] }
+symphonia = { version = "0.6", features = ["mp3"] }
 log = { workspace = true }

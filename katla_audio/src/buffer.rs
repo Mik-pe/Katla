@@ -106,12 +106,12 @@ pub fn load_ogg(path: &Path) -> Result<AudioBuffer, AudioError> {
 
 pub fn load_mp3(path: &Path) -> Result<AudioBuffer, AudioError> {
     use std::fs::File;
-    use symphonia::core::audio::SampleBuffer;
-    use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
+    use symphonia::core::codecs::CodecParameters;
+    use symphonia::core::codecs::audio::{AudioDecoderOptions, CODEC_ID_NULL_AUDIO};
     use symphonia::core::formats::FormatOptions;
+    use symphonia::core::formats::probe::Hint;
     use symphonia::core::io::MediaSourceStream;
     use symphonia::core::meta::MetadataOptions;
-    use symphonia::core::probe::Hint;
 
     let file = File::open(path).map_err(AudioError::Io)?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -121,51 +121,50 @@ pub fn load_mp3(path: &Path) -> Result<AudioBuffer, AudioError> {
         hint.with_extension(ext);
     }
 
-    let format_opts = FormatOptions {
-        enable_gapless: true,
-        ..Default::default()
-    };
-
-    let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &MetadataOptions::default())
+    let mut format_reader = symphonia::default::get_probe()
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
         .map_err(|e| AudioError::DecodeFailed(format!("Failed to probe MP3: {e}")))?;
 
-    let mut format_reader = probed.format;
-    let track = format_reader
+    let (track_id, params) = format_reader
         .tracks()
         .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .find_map(|t| match &t.codec_params {
+            Some(CodecParameters::Audio(params)) if params.codec != CODEC_ID_NULL_AUDIO => {
+                Some((t.id, params))
+            }
+            _ => None,
+        })
         .ok_or_else(|| AudioError::DecodeFailed("No supported audio track found".into()))?;
 
-    let track_id = track.id;
-    let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
-    let channels = track
-        .codec_params
+    let sample_rate = params.sample_rate.unwrap_or(44100);
+    let channels = params
         .channels
+        .as_ref()
         .map(|c| c.count() as u16)
         .unwrap_or(2);
 
     let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
+        .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(|e| AudioError::DecodeFailed(format!("Failed to create MP3 decoder: {e}")))?;
 
     let mut all_samples: Vec<f32> = Vec::new();
-    let mut sample_buf: Option<SampleBuffer<f32>> = None;
+    let mut scratch: Vec<f32> = Vec::new();
 
     loop {
         let packet = match format_reader.next_packet() {
-            Ok(p) => p,
-            Err(symphonia::core::errors::Error::IoError(ref e))
-                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
-            {
-                break;
-            }
+            Ok(Some(p)) => p,
+            Ok(None) => break,
             Err(e) => {
                 return Err(AudioError::DecodeFailed(format!("MP3 decode error: {e}")));
             }
         };
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
@@ -173,16 +172,9 @@ pub fn load_mp3(path: &Path) -> Result<AudioBuffer, AudioError> {
             .decode(&packet)
             .map_err(|e| AudioError::DecodeFailed(format!("MP3 decode error: {e}")))?;
 
-        if sample_buf.is_none() {
-            let spec = *decoded.spec();
-            let duration = decoded.capacity() as u64;
-            sample_buf = Some(SampleBuffer::<f32>::new(duration, spec));
-        }
-
-        if let Some(ref mut buf) = sample_buf {
-            buf.copy_interleaved_ref(decoded);
-            all_samples.extend_from_slice(buf.samples());
-        }
+        scratch.clear();
+        decoded.copy_to_vec_interleaved(&mut scratch);
+        all_samples.extend_from_slice(&scratch);
     }
 
     Ok(AudioBuffer {

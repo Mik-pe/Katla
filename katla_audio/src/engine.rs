@@ -147,7 +147,7 @@ impl AudioEngine {
         let error_flag = error_flag_factory();
         let stream = device
             .build_output_stream(
-                &config,
+                config,
                 move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     mixer_clone.render(output);
                 },
