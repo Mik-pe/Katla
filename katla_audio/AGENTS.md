@@ -17,8 +17,10 @@ The audio pipeline is: **File → Decoder → AudioBuffer → Mixer → Voice �
 
 - **WAV** — via `hound` (PCM float and integer)
 - **OGG Vorbis** — via `lewton`
+- **FLAC** — via `claxon`
+- **MP3 and other container formats** — via `symphonia` (mp3 feature)
 
-Use `load_audio(path)` to auto-detect by extension, or `load_wav`/`load_ogg` directly.
+Use `load_audio(path)` to auto-detect by extension, or `load_wav`/`load_ogg`/`load_flac`/`load_mp3` directly.
 
 ## Audio Categories
 
