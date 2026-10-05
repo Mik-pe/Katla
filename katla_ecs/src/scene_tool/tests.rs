@@ -242,6 +242,16 @@ fn test_set_field_and_undo() {
     undo_group.undo_all(&mut world).unwrap();
     let light = world.get_component::<TestLight>(entity).unwrap();
     assert_eq!(light.intensity, 0.5);
+    undo_group.redo_all(&mut world).unwrap();
+    assert_eq!(
+        world.get_component::<TestLight>(entity).unwrap().intensity,
+        1.5
+    );
+    undo_group.undo_all(&mut world).unwrap();
+    assert_eq!(
+        world.get_component::<TestLight>(entity).unwrap().intensity,
+        0.5
+    );
 }
 
 #[test]

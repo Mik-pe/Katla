@@ -214,7 +214,7 @@ impl SceneToolExecutor {
         // Apply the new value
         (entry.set_field_value)(world, entity, &field, new_value.clone())?;
 
-        let cmd = SetFieldCommand::new(entity, field.clone(), old_value, entry);
+        let cmd = SetFieldCommand::new(entity, field.clone(), old_value, new_value, entry);
 
         let desc = cmd.description();
         let mut group = UndoGroup::new(desc);

@@ -174,3 +174,11 @@ them before loading. Rendering, bounds, lights, audio, particles and physics use
 the same resolver, including newly instantiated prefabs before the next ECS tick.
 `TransformOptimization` avoids rewriting unchanged cached poses; it does not make
 hierarchy traversal O(D). Incremental topology and dirty-root work remain in TODO.
+
+## Reversible scalar authoring
+
+Registry-backed SetField commands retain both the old and new typed field values.
+Undo restores the old value; redo re-applies the new value through the same setter,
+including component-specific dirty flags. Continuous inspector scrubbing groups
+these commands into one history entry; undo walks the group in reverse and redo
+walks it in forward order. A missing entity or rejected setter remains an error.

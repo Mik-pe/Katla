@@ -207,7 +207,8 @@ impl SceneCommand for DestroyEntityCommand {
 pub struct SetFieldCommand {
     entity: EntityId,
     field_name: String,
-    old_value: Option<FieldValue>,
+    old_value: FieldValue,
+    new_value: FieldValue,
     set_fn: fn(&mut World, EntityId, &str, FieldValue) -> Result<(), SceneToolError>,
     executed: bool,
 }
@@ -217,12 +218,14 @@ impl SetFieldCommand {
         entity: EntityId,
         field_name: String,
         old_value: FieldValue,
+        new_value: FieldValue,
         entry: &ComponentRegistryEntry,
     ) -> Self {
         Self {
             entity,
             field_name,
-            old_value: Some(old_value),
+            old_value,
+            new_value,
             set_fn: entry.set_field_value,
             // The mutation is already applied by the executor before creating this command,
             // so we start as already executed.
@@ -232,9 +235,14 @@ impl SetFieldCommand {
 }
 
 impl SceneCommand for SetFieldCommand {
-    fn execute(&mut self, _world: &mut World) -> Result<(), SceneToolError> {
-        // The actual field setting is done via the ComponentRegistry in the executor
-        // before this command is created. We just track execution state.
+    fn execute(&mut self, world: &mut World) -> Result<(), SceneToolError> {
+        if self.executed {
+            return Ok(());
+        }
+        if !world.entity_exists(self.entity) {
+            return Err(SceneToolError::EntityNotFound(self.entity));
+        }
+        (self.set_fn)(world, self.entity, &self.field_name, self.new_value.clone())?;
         self.executed = true;
         Ok(())
     }
@@ -246,9 +254,7 @@ impl SceneCommand for SetFieldCommand {
         if !world.entity_exists(self.entity) {
             return Err(SceneToolError::EntityNotFound(self.entity));
         }
-        if let Some(ref old) = self.old_value {
-            (self.set_fn)(world, self.entity, &self.field_name, old.clone())?;
-        }
+        (self.set_fn)(world, self.entity, &self.field_name, self.old_value.clone())?;
         self.executed = false;
         Ok(())
     }
