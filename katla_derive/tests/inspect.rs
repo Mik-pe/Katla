@@ -53,6 +53,7 @@ mod tests {
             *val = 75.0;
         }
         assert_eq!(comp.health, 75.0);
+        assert_eq!(comp.internal_id, 0); // skipped field is untouched by inspection
     }
 
     #[test]
