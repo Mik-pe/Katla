@@ -38,15 +38,15 @@ impl Widget for Separator {
         match self.direction {
             SeparatorDirection::Horizontal => Style {
                 size: Size {
-                    width: Dimension::Percent(1.0),
-                    height: Dimension::Length(thickness),
+                    width: Dimension::percent(1.0),
+                    height: Dimension::length(thickness),
                 },
                 ..Style::default()
             },
             SeparatorDirection::Vertical => Style {
                 size: Size {
-                    width: Dimension::Length(thickness),
-                    height: Dimension::Percent(1.0),
+                    width: Dimension::length(thickness),
+                    height: Dimension::percent(1.0),
                 },
                 ..Style::default()
             },
@@ -135,7 +135,7 @@ mod tests {
             color: None,
         };
         let style = sep.layout_style(&crate::declarative::layout::measure_text_descriptor);
-        assert!(matches!(style.size.width, Dimension::Percent(1.0)));
-        assert!(matches!(style.size.height, Dimension::Length(1.0)));
+        assert_eq!(style.size.width, Dimension::percent(1.0));
+        assert_eq!(style.size.height, Dimension::length(1.0));
     }
 }

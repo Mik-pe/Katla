@@ -59,8 +59,8 @@ impl Widget for HStack {
         let mut style = Style {
             flex_direction: FlexDirection::Row,
             gap: Size {
-                width: LengthPercentage::Length(self.spacing),
-                height: LengthPercentage::Length(0.0),
+                width: LengthPercentage::length(self.spacing),
+                height: LengthPercentage::length(0.0),
             },
             padding: crate::declarative::layout::padding_to_taffy(&self.padding),
             ..Style::default()

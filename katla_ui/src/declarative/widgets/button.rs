@@ -42,8 +42,8 @@ impl Widget for Button {
         let h_padding = 16.0;
         Style {
             size: Size {
-                width: Dimension::Length(text_size.x() + h_padding),
-                height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
+                width: Dimension::length(text_size.x() + h_padding),
+                height: Dimension::length(crate::tokens::CONTROL_HEIGHT),
             },
             ..Style::default()
         }

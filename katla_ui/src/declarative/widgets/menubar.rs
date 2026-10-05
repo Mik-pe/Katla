@@ -107,11 +107,11 @@ impl Widget for MenuBar {
         Style {
             size: Size {
                 width: if self.compact {
-                    Dimension::Length(width)
+                    Dimension::length(width)
                 } else {
-                    Dimension::Percent(1.0)
+                    Dimension::percent(1.0)
                 },
-                height: Dimension::Length(self.height),
+                height: Dimension::length(self.height),
             },
             ..Style::default()
         }

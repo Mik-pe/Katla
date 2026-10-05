@@ -52,8 +52,8 @@ impl Widget for ZStack {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let mut style = Style {
             size: Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Percent(1.0),
+                width: Dimension::percent(1.0),
+                height: Dimension::percent(1.0),
             },
             padding: crate::declarative::layout::padding_to_taffy(&self.padding),
             ..Style::default()
@@ -164,7 +164,7 @@ mod tests {
     fn test_zstack_layout_style_fills_parent() {
         let zstack = ZStack::new(Padding::zero(), FlexProps::default(), vec![]);
         let style = zstack.layout_style(&crate::declarative::layout::measure_text_descriptor);
-        assert!(matches!(style.size.width, Dimension::Percent(1.0)));
-        assert!(matches!(style.size.height, Dimension::Percent(1.0)));
+        assert_eq!(style.size.width, Dimension::percent(1.0));
+        assert_eq!(style.size.height, Dimension::percent(1.0));
     }
 }

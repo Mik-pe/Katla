@@ -64,7 +64,7 @@ impl Widget for ScrollView {
         // Taffy's automatic minimum size would clamp this flex item to its
         // content height, letting the scroll view overflow its parent panel
         // instead of scrolling within it.
-        style.min_size.height = taffy::Dimension::Length(0.0);
+        style.min_size.height = taffy::LengthPercentageAuto::length(0.0);
         crate::declarative::layout::apply_flex_props(&mut style, &self.flex);
         style
     }

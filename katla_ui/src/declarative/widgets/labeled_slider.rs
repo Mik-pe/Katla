@@ -58,8 +58,8 @@ impl Widget for LabeledSlider {
         let text_size = measure(&self.label, None, None);
         Style {
             size: Size {
-                width: Dimension::Length(self.width.unwrap_or((text_size.x() + 120.0).max(200.0))),
-                height: Dimension::Length((text_size.y() + 12.0).max(24.0)),
+                width: Dimension::length(self.width.unwrap_or((text_size.x() + 120.0).max(200.0))),
+                height: Dimension::length((text_size.y() + 12.0).max(24.0)),
             },
             ..Style::default()
         }
@@ -295,8 +295,8 @@ mod tests {
         let slider = make_slider();
         let style = slider.layout_style(&measure_text_descriptor);
         let default_size: taffy::Size<taffy::Dimension> = taffy::Size {
-            width: taffy::Dimension::Length(0.0),
-            height: taffy::Dimension::Length(0.0),
+            width: taffy::Dimension::length(0.0),
+            height: taffy::Dimension::length(0.0),
         };
         assert!(style.size.width != default_size.width || style.size.height != default_size.height);
     }

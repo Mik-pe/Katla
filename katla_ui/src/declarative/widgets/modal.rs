@@ -84,15 +84,15 @@ impl Widget for Modal {
         Style {
             position: Position::Absolute,
             size: taffy::Size {
-                width: Dimension::Length(self.width),
-                height: Dimension::Length(self.height),
+                width: Dimension::length(self.width),
+                height: Dimension::length(self.height),
             },
             // Reserve the title bar strip so content starts below it.
             padding: taffy::Rect {
-                top: taffy::LengthPercentage::Length(tokens::MODAL_TITLE_HEIGHT),
-                right: taffy::LengthPercentage::Length(0.0),
-                bottom: taffy::LengthPercentage::Length(0.0),
-                left: taffy::LengthPercentage::Length(0.0),
+                top: taffy::LengthPercentage::length(tokens::MODAL_TITLE_HEIGHT),
+                right: taffy::LengthPercentage::length(0.0),
+                bottom: taffy::LengthPercentage::length(0.0),
+                left: taffy::LengthPercentage::length(0.0),
             },
             ..Style::default()
         }

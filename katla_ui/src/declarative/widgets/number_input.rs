@@ -6,7 +6,7 @@ use crate::{FontSize, UiContext};
 use katla_math::{Color, Rect2D, Vec2};
 use std::any::Any;
 use std::ops::RangeInclusive;
-use taffy::{Dimension, Size, Style};
+use taffy::{Dimension, LengthPercentageAuto, Size, Style};
 
 /// Value and transient edit state retained independently of widget rebuilds.
 #[derive(Clone, Debug, PartialEq)]
@@ -87,12 +87,12 @@ impl Widget for NumberInput {
     fn layout_style(&self, _: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
-                width: Dimension::Length(0.0),
-                height: Dimension::Length(crate::tokens::COMPACT_CONTROL_HEIGHT),
+                width: Dimension::length(0.0),
+                height: Dimension::length(crate::tokens::COMPACT_CONTROL_HEIGHT),
             },
             min_size: Size {
-                width: Dimension::Length(44.0),
-                height: Dimension::Auto,
+                width: LengthPercentageAuto::length(44.0),
+                height: LengthPercentageAuto::auto(),
             },
             flex_grow: 1.0,
             ..Style::default()

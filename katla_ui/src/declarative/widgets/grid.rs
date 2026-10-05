@@ -66,18 +66,18 @@ impl Widget for Grid {
         let rows = (self.child_count.max(1) + self.columns - 1) / self.columns.max(1);
         let mut style = Style {
             size: Size {
-                width: Dimension::Length(
+                width: Dimension::length(
                     col_width * self.columns as f32 + self.spacing * (self.columns as f32 - 1.0),
                 ),
-                height: Dimension::Length(
+                height: Dimension::length(
                     row_height * rows as f32 + self.spacing * (rows as f32 - 1.0),
                 ),
             },
             flex_direction: FlexDirection::Row,
             flex_wrap: FlexWrap::Wrap,
             gap: Size {
-                width: LengthPercentage::Length(self.spacing),
-                height: LengthPercentage::Length(self.spacing),
+                width: LengthPercentage::length(self.spacing),
+                height: LengthPercentage::length(self.spacing),
             },
             ..Style::default()
         };

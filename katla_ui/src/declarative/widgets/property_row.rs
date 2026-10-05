@@ -34,14 +34,14 @@ impl Widget for PropertyRow {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
-                width: Dimension::Auto,
-                height: Dimension::Length(30.0),
+                width: Dimension::auto(),
+                height: Dimension::length(30.0),
             },
             padding: taffy::Rect {
-                top: taffy::LengthPercentage::Length(6.0),
-                right: taffy::LengthPercentage::Length(0.0),
-                bottom: taffy::LengthPercentage::Length(6.0),
-                left: taffy::LengthPercentage::Length(0.0),
+                top: taffy::LengthPercentage::length(6.0),
+                right: taffy::LengthPercentage::length(0.0),
+                bottom: taffy::LengthPercentage::length(6.0),
+                left: taffy::LengthPercentage::length(0.0),
             },
             ..Style::default()
         }

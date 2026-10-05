@@ -4,7 +4,7 @@ default-members = ["game"]
 resolver = "2"
 
 [workspace.dependencies]
-skrifa = "0.40"
+skrifa = "0.48"
 vello_cpu = "0.0.7"
 approx = "0.5"
 ash = "0.38"

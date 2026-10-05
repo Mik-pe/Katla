@@ -431,8 +431,8 @@ impl<T: Clone + PartialEq + Default + std::fmt::Debug + 'static> Widget for Dock
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         let mut style = Style {
             size: TaffySize {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Percent(1.0),
+                width: Dimension::percent(1.0),
+                height: Dimension::percent(1.0),
             },
             ..Style::default()
         };

@@ -51,8 +51,8 @@ impl Widget for ThemeSwatch {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
-                width: Dimension::Length(SWATCH_WIDTH),
-                height: Dimension::Length(SWATCH_HEIGHT),
+                width: Dimension::length(SWATCH_WIDTH),
+                height: Dimension::length(SWATCH_HEIGHT),
             },
             ..Style::default()
         }
@@ -112,8 +112,8 @@ mod tests {
         let scheme = ColorScheme::by_name("dark").expect("dark scheme exists");
         let swatch = ThemeSwatch::new(scheme);
         let style = swatch.layout_style(&crate::declarative::layout::measure_text_descriptor);
-        assert_eq!(style.size.width, Dimension::Length(SWATCH_WIDTH));
-        assert_eq!(style.size.height, Dimension::Length(SWATCH_HEIGHT));
+        assert_eq!(style.size.width, Dimension::length(SWATCH_WIDTH));
+        assert_eq!(style.size.height, Dimension::length(SWATCH_HEIGHT));
     }
 
     #[test]

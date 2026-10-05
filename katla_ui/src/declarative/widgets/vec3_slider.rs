@@ -42,8 +42,8 @@ impl Widget for Vec3Slider {
         let text_size = measure(&self.label, None, None);
         Style {
             size: Size {
-                width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
-                height: Dimension::Length(text_size.y() * 3.0 + 20.0),
+                width: Dimension::length((text_size.x() + 120.0).max(200.0)),
+                height: Dimension::length(text_size.y() * 3.0 + 20.0),
             },
             ..Style::default()
         }
@@ -216,7 +216,7 @@ mod tests {
     fn test_vec3_slider_layout_default() {
         let slider = make_vec3_slider();
         let style = slider.layout_style(&crate::declarative::layout::measure_text_descriptor);
-        let default_width = taffy::Dimension::Length(0.0);
+        let default_width = taffy::Dimension::length(0.0);
         assert!(style.size.width != default_width);
     }
 

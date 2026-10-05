@@ -44,8 +44,8 @@ impl Widget for VuMeter {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
-                width: Dimension::Length(12.0),
-                height: Dimension::Length(self.height),
+                width: Dimension::length(12.0),
+                height: Dimension::length(self.height),
             },
             ..Style::default()
         }

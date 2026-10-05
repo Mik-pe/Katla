@@ -40,8 +40,8 @@ impl Widget for Image {
         let h = self.height.unwrap_or(64.0);
         Style {
             size: Size {
-                width: Dimension::Length(w),
-                height: Dimension::Length(h),
+                width: Dimension::length(w),
+                height: Dimension::length(h),
             },
             ..Style::default()
         }
@@ -134,7 +134,7 @@ mod tests {
     fn test_image_layout_style_default() {
         let image = make_image(1);
         let style = image.layout_style(&crate::declarative::layout::measure_text_descriptor);
-        assert!(matches!(style.size.width, Dimension::Length(64.0)));
-        assert!(matches!(style.size.height, Dimension::Length(64.0)));
+        assert_eq!(style.size.width, Dimension::length(64.0));
+        assert_eq!(style.size.height, Dimension::length(64.0));
     }
 }

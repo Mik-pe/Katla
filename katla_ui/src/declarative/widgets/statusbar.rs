@@ -45,15 +45,15 @@ impl Widget for StatusBar {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
-                width: Dimension::Percent(1.0),
-                height: Dimension::Length(self.height),
+                width: Dimension::percent(1.0),
+                height: Dimension::length(self.height),
             },
             flex_direction: FlexDirection::Column,
             padding: taffy::Rect {
-                top: LengthPercentage::Length(0.0),
-                right: LengthPercentage::Length(0.0),
-                bottom: LengthPercentage::Length(0.0),
-                left: LengthPercentage::Length(0.0),
+                top: LengthPercentage::length(0.0),
+                right: LengthPercentage::length(0.0),
+                bottom: LengthPercentage::length(0.0),
+                left: LengthPercentage::length(0.0),
             },
             ..Style::default()
         }
@@ -133,7 +133,7 @@ mod tests {
     fn test_statusbar_layout_style() {
         let sb = StatusBar::new(24.0, None);
         let style = sb.layout_style(&crate::declarative::layout::measure_text_descriptor);
-        assert!(matches!(style.size.width, Dimension::Percent(1.0)));
-        assert!(matches!(style.size.height, Dimension::Length(24.0)));
+        assert_eq!(style.size.width, Dimension::percent(1.0));
+        assert_eq!(style.size.height, Dimension::length(24.0));
     }
 }

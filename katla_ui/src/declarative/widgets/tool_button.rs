@@ -67,8 +67,8 @@ impl Widget for ToolButton {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
-                width: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
-                height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
+                width: Dimension::length(crate::tokens::CONTROL_HEIGHT),
+                height: Dimension::length(crate::tokens::CONTROL_HEIGHT),
             },
             ..Style::default()
         }
@@ -179,11 +179,11 @@ mod tests {
         let style = button.layout_style(&crate::declarative::layout::measure_text_descriptor);
         assert_eq!(
             style.size.width,
-            Dimension::Length(crate::tokens::CONTROL_HEIGHT)
+            Dimension::length(crate::tokens::CONTROL_HEIGHT)
         );
         assert_eq!(
             style.size.height,
-            Dimension::Length(crate::tokens::CONTROL_HEIGHT)
+            Dimension::length(crate::tokens::CONTROL_HEIGHT)
         );
     }
 

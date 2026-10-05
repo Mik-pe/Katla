@@ -42,8 +42,8 @@ impl Widget for ImageButton {
         let side = crate::tokens::CONTROL_HEIGHT;
         Style {
             size: Size {
-                width: Dimension::Length(side),
-                height: Dimension::Length(side),
+                width: Dimension::length(side),
+                height: Dimension::length(side),
             },
             ..Style::default()
         }

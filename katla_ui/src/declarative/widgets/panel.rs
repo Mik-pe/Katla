@@ -56,10 +56,10 @@ impl Widget for Panel {
         let mut style = Style {
             flex_direction: FlexDirection::Column,
             padding: taffy::Rect {
-                top: LengthPercentage::Length(self.header_height),
-                right: LengthPercentage::Length(0.0),
-                bottom: LengthPercentage::Length(0.0),
-                left: LengthPercentage::Length(0.0),
+                top: LengthPercentage::length(self.header_height),
+                right: LengthPercentage::length(0.0),
+                bottom: LengthPercentage::length(0.0),
+                left: LengthPercentage::length(0.0),
             },
             ..Style::default()
         };

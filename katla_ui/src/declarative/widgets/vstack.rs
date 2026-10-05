@@ -59,8 +59,8 @@ impl Widget for VStack {
         let mut style = Style {
             flex_direction: FlexDirection::Column,
             gap: Size {
-                width: LengthPercentage::Length(0.0),
-                height: LengthPercentage::Length(self.spacing),
+                width: LengthPercentage::length(0.0),
+                height: LengthPercentage::length(self.spacing),
             },
             padding: crate::declarative::layout::padding_to_taffy(&self.padding),
             ..Style::default()

@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use katla_math::{Rect2D, Vec2};
-use taffy::{Dimension, Position, Style};
+use taffy::{Dimension, LengthPercentageAuto, Position, Style};
 
 use super::super::animation::AnimationState;
 use super::super::descriptor::{DraggablePanelState, DraggablePanelVisibility};
@@ -69,24 +69,24 @@ impl Widget for DraggablePanel {
         let mut style = Style {
             position: Position::Absolute,
             size: taffy::Size {
-                width: Dimension::Length(self.width),
+                width: Dimension::length(self.width),
                 height: self
                     .height
-                    .map(Dimension::Length)
-                    .unwrap_or(Dimension::Auto),
+                    .map(Dimension::length)
+                    .unwrap_or(Dimension::auto()),
             },
             // Reserve the title bar strip so content starts below it.
             padding: taffy::Rect {
-                top: taffy::LengthPercentage::Length(Self::TITLE_BAR_HEIGHT),
-                right: taffy::LengthPercentage::Length(0.0),
-                bottom: taffy::LengthPercentage::Length(0.0),
-                left: taffy::LengthPercentage::Length(0.0),
+                top: taffy::LengthPercentage::length(Self::TITLE_BAR_HEIGHT),
+                right: taffy::LengthPercentage::length(0.0),
+                bottom: taffy::LengthPercentage::length(0.0),
+                left: taffy::LengthPercentage::length(0.0),
             },
             ..Style::default()
         };
         if self.height.is_none() {
             // Keep content-only tabs from collapsing the panel to a sliver.
-            style.min_size.height = Dimension::Length(Self::MIN_AUTO_HEIGHT);
+            style.min_size.height = LengthPercentageAuto::length(Self::MIN_AUTO_HEIGHT);
         }
         style
     }

@@ -38,8 +38,8 @@ impl Widget for Progress {
     fn layout_style(&self, _measure: MeasureFn<'_>) -> Style {
         Style {
             size: Size {
-                width: Dimension::Length(100.0),
-                height: Dimension::Length(8.0),
+                width: Dimension::length(100.0),
+                height: Dimension::length(8.0),
             },
             ..Style::default()
         }

@@ -37,8 +37,8 @@ impl Widget for RadioButton {
         let text_size = measure(&self.label, None, None);
         Style {
             size: Size {
-                width: Dimension::Length(text_size.x() + 28.0),
-                height: Dimension::Length(text_size.y() + 16.0),
+                width: Dimension::length(text_size.x() + 28.0),
+                height: Dimension::length(text_size.y() + 16.0),
             },
             ..Style::default()
         }

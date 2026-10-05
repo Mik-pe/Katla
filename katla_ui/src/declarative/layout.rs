@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use katla_math::{Rect2D, Vec2};
-use taffy::{Dimension, LengthPercentage, NodeId as TaffyNodeId, Size, Style, TaffyTree};
+use taffy::{
+    Dimension, LengthPercentage, LengthPercentageAuto, NodeId as TaffyNodeId, Size, Style,
+    TaffyTree,
+};
 
 use crate::style::FontSize;
 
@@ -241,7 +244,10 @@ impl TaffyNodeMap {
             bounds.insert(view_id, rect);
             content_sizes.insert(
                 view_id,
-                Vec2::new(layout.content_size.width, layout.content_size.height),
+                Vec2::new(
+                    layout.scrollable_overflow_rect.right,
+                    layout.scrollable_overflow_rect.bottom,
+                ),
             );
 
             if let Some(node) = tree.get(view_id) {
@@ -273,10 +279,10 @@ impl TaffyNodeMap {
 
 pub fn padding_to_taffy(padding: &Padding) -> taffy::Rect<LengthPercentage> {
     taffy::Rect {
-        top: LengthPercentage::Length(padding.top),
-        right: LengthPercentage::Length(padding.right),
-        bottom: LengthPercentage::Length(padding.bottom),
-        left: LengthPercentage::Length(padding.left),
+        top: LengthPercentage::length(padding.top),
+        right: LengthPercentage::length(padding.right),
+        bottom: LengthPercentage::length(padding.bottom),
+        left: LengthPercentage::length(padding.left),
     }
 }
 
@@ -287,67 +293,67 @@ pub fn apply_alignment_to_style(style: &mut Style, alignment: Alignment) {
         // overriding align_items, preserving the default Stretch so
         // children with Percent(1.0) width resolve correctly.
         Alignment::Leading => {
-            style.justify_content = Some(taffy::JustifyContent::Start);
+            style.justify_content = Some(taffy::JustifyContent::START);
         }
         Alignment::Trailing => {
-            style.justify_content = Some(taffy::JustifyContent::End);
+            style.justify_content = Some(taffy::JustifyContent::END);
         }
         Alignment::Center => {
-            style.align_items = Some(taffy::AlignItems::Center);
-            style.justify_content = Some(taffy::JustifyContent::Center);
+            style.align_items = Some(taffy::AlignItems::CENTER);
+            style.justify_content = Some(taffy::JustifyContent::CENTER);
         }
         // Cross-axis centring only: rows keep their left-to-right packing
         // while mixed-height children share one vertical centre line.
         Alignment::Middle => {
-            style.align_items = Some(taffy::AlignItems::Center);
+            style.align_items = Some(taffy::AlignItems::CENTER);
         }
         Alignment::Top => {
-            style.align_items = Some(taffy::AlignItems::Start);
+            style.align_items = Some(taffy::AlignItems::START);
         }
         Alignment::Bottom => {
-            style.align_items = Some(taffy::AlignItems::End);
+            style.align_items = Some(taffy::AlignItems::END);
         }
         Alignment::TopLeading => {
-            style.align_items = Some(taffy::AlignItems::Start);
-            style.justify_content = Some(taffy::JustifyContent::Start);
+            style.align_items = Some(taffy::AlignItems::START);
+            style.justify_content = Some(taffy::JustifyContent::START);
         }
         Alignment::TopTrailing => {
-            style.align_items = Some(taffy::AlignItems::End);
-            style.justify_content = Some(taffy::JustifyContent::End);
+            style.align_items = Some(taffy::AlignItems::END);
+            style.justify_content = Some(taffy::JustifyContent::END);
         }
         Alignment::BottomLeading => {
-            style.align_items = Some(taffy::AlignItems::End);
-            style.justify_content = Some(taffy::JustifyContent::Start);
+            style.align_items = Some(taffy::AlignItems::END);
+            style.justify_content = Some(taffy::JustifyContent::START);
         }
         Alignment::BottomTrailing => {
-            style.align_items = Some(taffy::AlignItems::End);
-            style.justify_content = Some(taffy::JustifyContent::End);
+            style.align_items = Some(taffy::AlignItems::END);
+            style.justify_content = Some(taffy::JustifyContent::END);
         }
         Alignment::BottomCenter => {
-            style.align_items = Some(taffy::AlignItems::End);
-            style.justify_content = Some(taffy::JustifyContent::Center);
+            style.align_items = Some(taffy::AlignItems::END);
+            style.justify_content = Some(taffy::JustifyContent::CENTER);
         }
     }
 }
 
 pub fn apply_flex_props(style: &mut Style, props: &FlexProps) {
     if let Some(w) = props.width {
-        style.size.width = Dimension::Length(w);
+        style.size.width = Dimension::length(w);
     }
     if let Some(h) = props.height {
-        style.size.height = Dimension::Length(h);
+        style.size.height = Dimension::length(h);
     }
     if let Some(w) = props.min_width {
-        style.min_size.width = Dimension::Length(w);
+        style.min_size.width = LengthPercentageAuto::length(w);
     }
     if let Some(h) = props.min_height {
-        style.min_size.height = Dimension::Length(h);
+        style.min_size.height = LengthPercentageAuto::length(h);
     }
     if let Some(w) = props.max_width {
-        style.max_size.width = Dimension::Length(w);
+        style.max_size.width = LengthPercentageAuto::length(w);
     }
     if let Some(h) = props.max_height {
-        style.max_size.height = Dimension::Length(h);
+        style.max_size.height = LengthPercentageAuto::length(h);
     }
     style.flex_grow = props.flex_grow;
     style.flex_shrink = props.flex_shrink;

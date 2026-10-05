@@ -44,10 +44,10 @@ impl Widget for Section {
         Style {
             flex_direction: FlexDirection::Column,
             padding: taffy::Rect {
-                top: taffy::LengthPercentage::Length(header_height),
-                right: taffy::LengthPercentage::Length(0.0),
-                bottom: taffy::LengthPercentage::Length(0.0),
-                left: taffy::LengthPercentage::Length(0.0),
+                top: taffy::LengthPercentage::length(header_height),
+                right: taffy::LengthPercentage::length(0.0),
+                bottom: taffy::LengthPercentage::length(0.0),
+                left: taffy::LengthPercentage::length(0.0),
             },
             ..Style::default()
         }

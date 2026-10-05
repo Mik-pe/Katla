@@ -40,8 +40,8 @@ impl Widget for Text {
         let size = measure(&self.content, self.font_size, self.wrap_width);
         Style {
             size: Size {
-                width: Dimension::Length(size.x()),
-                height: Dimension::Length(size.y()),
+                width: Dimension::length(size.x()),
+                height: Dimension::length(size.y()),
             },
             ..Style::default()
         }
@@ -140,8 +140,8 @@ mod tests {
             )
             .unwrap();
         let (width, height) = shaped.dimensions();
-        assert_eq!(style.size.width, Dimension::Length(width));
-        assert_eq!(style.size.height, Dimension::Length(height));
+        assert_eq!(style.size.width, Dimension::length(width));
+        assert_eq!(style.size.height, Dimension::length(height));
         assert!(height > 40.0);
         assert!(width <= 80.01);
         assert_eq!(

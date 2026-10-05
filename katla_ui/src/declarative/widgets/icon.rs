@@ -40,8 +40,8 @@ impl Widget for Icon {
         let w = h;
         Style {
             size: Size {
-                width: Dimension::Length(w),
-                height: Dimension::Length(h),
+                width: Dimension::length(w),
+                height: Dimension::length(h),
             },
             ..Style::default()
         }

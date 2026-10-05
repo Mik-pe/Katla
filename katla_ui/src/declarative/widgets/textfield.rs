@@ -42,8 +42,8 @@ impl Widget for TextField {
         let text_size = measure(&self.placeholder, None, None);
         let mut style = Style {
             size: Size {
-                width: Dimension::Length(text_size.x() + 16.0),
-                height: Dimension::Length(crate::tokens::CONTROL_HEIGHT),
+                width: Dimension::length(text_size.x() + 16.0),
+                height: Dimension::length(crate::tokens::CONTROL_HEIGHT),
             },
             ..Style::default()
         };
@@ -221,7 +221,7 @@ mod tests {
     fn test_textfield_layout_default() {
         let tf = make_textfield();
         let style = tf.layout_style(&crate::declarative::layout::measure_text_descriptor);
-        let default_width = taffy::Dimension::Length(0.0);
+        let default_width = taffy::Dimension::length(0.0);
         assert!(style.size.width != default_width);
     }
 
