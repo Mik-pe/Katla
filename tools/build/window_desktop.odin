@@ -12,7 +12,7 @@ build_window :: proc(folder:string)->string {
         mkdir(join(config,"SDL3")); write(join(config,"SDL3/SDL_revision.h"),`#define SDL_REVISION "release-3.2.28-7f3ae3d"`+"\n")
         flags:=native_flags(); append(&flags,"-std=c11","-DSDL_BUILD_MAJOR_VERSION=3","-DSDL_BUILD_MINOR_VERSION=2","-DSDL_BUILD_MICRO_VERSION=28","-I",config,"-I",join(upstream,"include"),"-I",join(upstream,"src"),"-I",join(upstream,"include/build_config"))
         sources:=make([dynamic]string)
-        for directory in ([]string{"","atomic","audio","audio/dummy","camera","camera/dummy","core","cpuinfo","dialog","dynapi","events","io","io/generic","filesystem","gpu","joystick","joystick/dummy","haptic","haptic/dummy","hidapi","locale","main","misc","power","process","render","sensor","sensor/dummy","stdlib","storage","thread","time","timer","tray","video","video/yuv2rgb","libm","video/dummy","storage/generic"}) {
+        for directory in ([]string{"","atomic","audio","audio/dummy","camera","camera/dummy","core","cpuinfo","dialog","dynapi","events","io","io/generic","filesystem","gpu","joystick","joystick/dummy","haptic","haptic/dummy","hidapi","locale","main","main/generic","misc","power","process","render","sensor","sensor/dummy","stdlib","storage","thread","time","timer","tray","video","video/yuv2rgb","libm","video/dummy","storage/generic"}) {
             append(&sources,..files(join(upstream,"src",directory),".c",false))
         }
         link_flags:=native_flags()
@@ -21,7 +21,7 @@ build_window :: proc(folder:string)->string {
             command:=make([dynamic]string); append(&command,"pkg-config","--cflags"); append(&command,..packages); append(&flags,..fields(capture(command[:])))
             command[1]="--libs"; append(&link_flags,..fields(capture(command[:])))
             append(&link_flags,"-ldl","-lm","-pthread","-Wl,-soname,libSDL3.so.0","-Wl,--no-undefined")
-            for directory in ([]string{"main/generic","core/linux","core/unix","filesystem/unix","filesystem/posix","locale/unix","misc/unix","power/linux","time/unix","timer/unix","loadso/dlopen","thread/pthread","video/x11","video/wayland","process/posix","dialog/dummy","tray/dummy"}) { append(&sources,..files(join(upstream,"src",directory),".c",false)) }
+            for directory in ([]string{"core/linux","core/unix","filesystem/unix","filesystem/posix","locale/unix","misc/unix","power/linux","time/unix","timer/unix","loadso/dlopen","thread/pthread","video/x11","video/wayland","process/posix","dialog/dummy","tray/dummy"}) { append(&sources,..files(join(upstream,"src",directory),".c",false)) }
             protocols:=join(folder,"protocols"); mkdir(protocols); append(&flags,"-I",protocols)
             for xml in files(join(upstream,"wayland-protocols"),".xml",false) {
                 name:=filepath.stem(xml); header:=join(protocols,cat(name,"-client-protocol.h")); file:=join(protocols,cat(name,"-protocol.c"))
