@@ -150,7 +150,7 @@ jobs:
         run: |
           icd="$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)"
           test -n "$icd"
-          loader="$(ldconfig -p | awk '$1 == "libvulkan.so.1" {print $NF; exit}')"
+          loader="$(ldconfig -p | awk '$1 == "libvulkan.so.1" && !found {print $NF; found=1}')"
           test -n "$loader" && test -f "$loader"
           loader="$(readlink -f "$loader")"
           echo "KATLA_CI_VULKAN_LOADER=$loader" >> "$GITHUB_ENV"
