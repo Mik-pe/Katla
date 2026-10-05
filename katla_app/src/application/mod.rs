@@ -147,10 +147,7 @@ pub(crate) struct EditorState {
     pub(crate) redo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
     pub(crate) agent_undo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
     pub(crate) agent_redo_stack: Vec<katla_ecs::scene_tool::UndoGroup>,
-    /// Whether an inspector slider was being dragged last frame.
-    pub(crate) inspector_slider_was_active: bool,
-    /// Pre-drag snapshot of ECS values for undo.
-    pub(crate) inspector_drag_snapshot: Option<editor::InspectorDragSnapshot>,
+    pub(crate) field_drag: Option<editor::fields::FieldDrag>,
     /// Maps entity ID to GPU handles for cleanup when entity is destroyed via undo/redo.
     pub(crate) entity_gpu_handles: HashMap<katla_ecs::EntityId, editor::GpuCleanupData>,
     /// Currently playing audio preview voice handle in asset browser.
@@ -211,8 +208,7 @@ impl EditorState {
             redo_stack: Vec::new(),
             agent_undo_stack: Vec::new(),
             agent_redo_stack: Vec::new(),
-            inspector_slider_was_active: false,
-            inspector_drag_snapshot: None,
+            field_drag: None,
             entity_gpu_handles: HashMap::new(),
             preview_voice: None,
             pending_document_action: None,
@@ -247,7 +243,7 @@ impl EditorState {
         self.agent_undo_stack.clear();
         self.agent_redo_stack.clear();
         self.entity_gpu_handles.clear();
-        self.inspector_drag_snapshot = None;
+        self.field_drag = None;
     }
 
     pub(crate) fn push_undo(&mut self, group: katla_ecs::scene_tool::UndoGroup) {
@@ -259,7 +255,6 @@ impl EditorState {
         if let Some(mut group) = self.undo_stack.pop() {
             if group.undo_all(world).is_ok() {
                 self.redo_stack.push(group);
-                self.editor_ui.inspector_edit_entity = None;
                 return true;
             }
             self.undo_stack.push(group);
@@ -271,7 +266,6 @@ impl EditorState {
         if let Some(mut group) = self.redo_stack.pop() {
             if group.redo_all(world).is_ok() {
                 self.undo_stack.push(group);
-                self.editor_ui.inspector_edit_entity = None;
                 return true;
             }
             self.redo_stack.push(group);
@@ -283,9 +277,7 @@ impl EditorState {
         if let Some(mut group) = self.agent_redo_stack.pop() {
             if group.redo_all(world).is_ok() {
                 self.agent_undo_stack.push(group);
-                self.editor_ui.inspector_edit_entity = None;
-                self.inspector_slider_was_active = false;
-                self.inspector_drag_snapshot = None;
+                self.field_drag = None;
                 return true;
             }
             self.agent_redo_stack.push(group);
@@ -297,9 +289,7 @@ impl EditorState {
         if let Some(mut group) = self.agent_undo_stack.pop() {
             if group.undo_all(world).is_ok() {
                 self.agent_redo_stack.push(group);
-                self.editor_ui.inspector_edit_entity = None;
-                self.inspector_slider_was_active = false;
-                self.inspector_drag_snapshot = None;
+                self.field_drag = None;
                 return true;
             }
             self.agent_undo_stack.push(group);

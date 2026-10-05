@@ -197,6 +197,10 @@ impl ViewTree {
             .as_any()
             .downcast_ref::<super::widgets::textfield::TextField>()
             .is_some()
+            || node
+                .widget
+                .as_any()
+                .is::<super::widgets::number_input::NumberInput>()
         {
             let bounds = self
                 .resolved_bounds
@@ -261,7 +265,18 @@ impl ViewTree {
         }
 
         // Gamepad directional navigation via arrow keys
-        let direction = if ui.input.key_pressed(crate::input::KeyCode::ArrowUp) {
+        let numeric_focused = self
+            .focus
+            .focused()
+            .and_then(|id| self.get(id))
+            .is_some_and(|node| {
+                node.widget
+                    .as_any()
+                    .is::<super::widgets::number_input::NumberInput>()
+            });
+        let direction = if numeric_focused {
+            None
+        } else if ui.input.key_pressed(crate::input::KeyCode::ArrowUp) {
             Some(Direction::Up)
         } else if ui.input.key_pressed(crate::input::KeyCode::ArrowDown) {
             Some(Direction::Down)

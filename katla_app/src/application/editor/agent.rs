@@ -262,6 +262,7 @@ pub(super) fn execute_scene_op(
         return msg;
     }
 
+    super::fields::finish_drag(app);
     let is_hierarchy_query = matches!(op, SceneOp::GetSceneHierarchy);
     let set_parent_args = match &op {
         SceneOp::SetParent { entity, parent } => Some((*entity, *parent)),
@@ -295,16 +296,6 @@ pub(super) fn execute_scene_op(
             if !undo_group.commands.is_empty() {
                 app.editor.agent_undo_stack.push(undo_group);
                 app.editor.agent_redo_stack.clear();
-                if app
-                    .editor
-                    .editor_ui
-                    .selected_entity
-                    .is_some_and(|id| result.affected_entities.contains(&id))
-                {
-                    app.editor.editor_ui.inspector_edit_entity = None;
-                    app.editor.inspector_slider_was_active = false;
-                    app.editor.inspector_drag_snapshot = None;
-                }
             }
             if let Some((entity, parent)) = set_parent_args {
                 set_parent_components(app, entity, parent);

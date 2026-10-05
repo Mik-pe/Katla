@@ -12,6 +12,16 @@ use crate::context::UiContext;
 pub struct VuMeter {
     pub peak_db: f32,
     pub rms_db: f32,
+    /// Logical height chosen by the surrounding meter layout.
+    pub height: f32,
+}
+
+impl VuMeter {
+    /// Set the meter height for a compact panel.
+    pub fn flex_height(mut self, height: f32) -> Self {
+        self.height = height.max(1.0);
+        self
+    }
 }
 
 impl Widget for VuMeter {
@@ -35,7 +45,7 @@ impl Widget for VuMeter {
         Style {
             size: Size {
                 width: Dimension::Length(12.0),
-                height: Dimension::Length(120.0),
+                height: Dimension::Length(self.height),
             },
             ..Style::default()
         }
@@ -118,7 +128,11 @@ mod tests {
     use super::*;
 
     fn make_vu(peak_db: f32, rms_db: f32) -> VuMeter {
-        VuMeter { peak_db, rms_db }
+        VuMeter {
+            peak_db,
+            rms_db,
+            height: 120.0,
+        }
     }
 
     #[test]

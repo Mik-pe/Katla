@@ -35,6 +35,15 @@ def main():
     proof = {'passed': True, 'distinct_material_previews': len(set(hashes)),
              'roughness_pixel_change_mean': change, 'undo_exact': True, 'redo_exact': True,
              'library_hashes': hashes, 'preview_regions': regions}
+    imported_bounds = regions['imported']
+    assert imported_bounds is not None, 'Imported material preview is missing'
+    imported = [Image.open(args.directory / f'{name}.png').convert('RGB').crop(imported_bounds) for name in (
+        '23_imported_maps', '24_imported_factors', '25_imported_restored')]
+    map_change = sum(ImageStat.Stat(ImageChops.difference(imported[0], imported[1])).mean) / 3
+    assert map_change > 2, f'Imported maps did not change native preview pixels: {map_change}'
+    assert ImageChops.difference(imported[0], imported[2]).getbbox() is None, 'Map restoration did not regenerate identical preview pixels'
+    proof['imported_map_pixel_change_mean'] = map_change
+    proof['imported_map_restoration_exact'] = True
     if args.baseline is not None:
         before = Image.open(args.baseline / '01_default.png').convert('RGB')
         assert before.size == frame.size == (2560, 1440), 'Edge fixture requires the default 1280×720 layout at 2× DPI'

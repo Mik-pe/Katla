@@ -35,3 +35,4 @@ pub(super) use toolbar::{ToolbarAction, ToolbarDrawCtx};
 pub(super) use viewport_grid::ViewportGridDrawCtx;
 
 mod material;
+mod numeric;

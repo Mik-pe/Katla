@@ -6,10 +6,12 @@ pub mod component_registry;
 pub(crate) mod document;
 #[cfg(feature = "mcp")]
 pub(crate) mod external_chat;
+pub(crate) mod fields;
 pub(crate) mod material;
 pub(crate) mod material_preview;
 #[cfg(feature = "mcp")]
 pub(crate) mod mcp;
+pub(crate) mod preview_maps;
 mod scene_query;
 pub(crate) mod simulation;
 mod transform_registry;
@@ -39,217 +41,7 @@ use crate::ui::{
 
 use super::Application;
 
-/// Snapshot of ECS component values before an inspector slider drag.
-pub(crate) struct InspectorDragSnapshot {
-    entity: EntityId,
-    position: Vec3,
-    rotation_euler: (f32, f32, f32),
-    scale: Vec3,
-    light_color: Option<[f32; 3]>,
-    light_intensity: Option<f32>,
-    light_range: Option<f32>,
-    emit_rate: Option<f32>,
-    velocity: Option<f32>,
-    lifetime: Option<f32>,
-    gravity: Option<f32>,
-    particle_scale: Option<f32>,
-    fov: Option<f32>,
-    near: Option<f32>,
-    aspect_ratio: Option<f32>,
-    directional_direction: Option<[f32; 3]>,
-    directional_color: Option<[f32; 3]>,
-    directional_intensity: Option<f32>,
-}
-
-/// Command that restores inspector properties to pre-drag values.
-struct InspectorDragUndo {
-    entity: EntityId,
-    snapshot: InspectorDragSnapshot,
-    executed: bool,
-}
-
-impl InspectorDragUndo {
-    fn new(snapshot: InspectorDragSnapshot) -> Self {
-        Self {
-            entity: snapshot.entity,
-            snapshot,
-            executed: true,
-        }
-    }
-}
-
-impl SceneCommand for InspectorDragUndo {
-    fn execute(&mut self, world: &mut katla_ecs::World) -> Result<(), SceneToolError> {
-        if !world.entity_exists(self.entity) {
-            return Err(SceneToolError::EntityNotFound(self.entity));
-        }
-        apply_inspector_snapshot(world, self.entity, &self.snapshot);
-        self.executed = true;
-        Ok(())
-    }
-
-    fn undo(&mut self, world: &mut katla_ecs::World) -> Result<(), SceneToolError> {
-        if !world.entity_exists(self.entity) {
-            return Err(SceneToolError::EntityNotFound(self.entity));
-        }
-        apply_inspector_snapshot(world, self.entity, &self.snapshot);
-        self.executed = false;
-        Ok(())
-    }
-
-    fn description(&self) -> String {
-        format!("Inspector drag on entity {}", self.entity)
-    }
-
-    fn affected_entities(&self) -> Vec<EntityId> {
-        vec![self.entity]
-    }
-}
-
-fn apply_inspector_snapshot(
-    world: &mut katla_ecs::World,
-    entity: EntityId,
-    snapshot: &InspectorDragSnapshot,
-) {
-    if let Some(transform) = world.get_component_mut::<TransformComponent>(entity) {
-        transform.transform.position = snapshot.position;
-        transform.transform.rotation = katla_math::Quat::from_euler(
-            snapshot.rotation_euler.0,
-            snapshot.rotation_euler.1,
-            snapshot.rotation_euler.2,
-        );
-        transform.transform.scale = snapshot.scale;
-    }
-    if let Some(light) = world.get_component_mut::<PointLight>(entity) {
-        if let Some(color) = snapshot.light_color {
-            light.color = color;
-        }
-        if let Some(intensity) = snapshot.light_intensity {
-            light.intensity = intensity;
-        }
-        if let Some(range) = snapshot.light_range {
-            light.range = range;
-        }
-    }
-    if let Some(emitter) = world.get_component_mut::<ParticleEmitterComponent>(entity) {
-        if let Some(rate) = snapshot.emit_rate {
-            emitter.config.emit_rate = rate;
-        }
-        if let Some(vel) = snapshot.velocity {
-            emitter.config.velocity_magnitude = vel;
-        }
-        if let Some(life) = snapshot.lifetime {
-            emitter.config.base_lifetime = life;
-        }
-        if let Some(grav) = snapshot.gravity {
-            emitter.config.gravity = grav;
-        }
-        if let Some(sc) = snapshot.particle_scale {
-            emitter.config.base_scale = sc;
-        }
-    }
-    if let Some(persp) = world.get_component_mut::<PerspectiveComponent>(entity) {
-        if let Some(fov) = snapshot.fov {
-            persp.fov = fov;
-        }
-        if let Some(near) = snapshot.near {
-            persp.near = near;
-        }
-        if let Some(ar) = snapshot.aspect_ratio {
-            persp.aspect_ratio = ar;
-        }
-    }
-    if let Some(dl) = world.get_component_mut::<DirectionalLight>(entity) {
-        if let Some(dir) = snapshot.directional_direction {
-            dl.direction = Vec3::new(dir[0], dir[1], dir[2]);
-        }
-        if let Some(color) = snapshot.directional_color {
-            dl.color = color;
-        }
-        if let Some(intensity) = snapshot.directional_intensity {
-            dl.intensity = intensity;
-        }
-    }
-}
-
-/// Snapshot current ECS component values for the inspector drag undo.
-fn snapshot_inspector_state(app: &Application, entity: EntityId) -> InspectorDragSnapshot {
-    let (position, rotation_euler, scale) =
-        if let Some(transform) = app.world.get_component::<TransformComponent>(entity) {
-            let euler = transform.transform.rotation.to_euler();
-            (
-                transform.transform.position,
-                (euler.0, euler.1, euler.2),
-                transform.transform.scale,
-            )
-        } else {
-            (
-                Vec3::new(0.0, 0.0, 0.0),
-                (0.0, 0.0, 0.0),
-                Vec3::new(1.0, 1.0, 1.0),
-            )
-        };
-
-    let (light_color, light_intensity, light_range) =
-        if let Some(light) = app.world.get_component::<PointLight>(entity) {
-            (Some(light.color), Some(light.intensity), Some(light.range))
-        } else {
-            (None, None, None)
-        };
-
-    let (emit_rate, velocity, lifetime, gravity, particle_scale) =
-        if let Some(emitter) = app.world.get_component::<ParticleEmitterComponent>(entity) {
-            (
-                Some(emitter.config.emit_rate),
-                Some(emitter.config.velocity_magnitude),
-                Some(emitter.config.base_lifetime),
-                Some(emitter.config.gravity),
-                Some(emitter.config.base_scale),
-            )
-        } else {
-            (None, None, None, None, None)
-        };
-
-    let (fov, near, aspect_ratio) = app
-        .world
-        .get_component::<PerspectiveComponent>(entity)
-        .map(|p| (Some(p.fov), Some(p.near), Some(p.aspect_ratio)))
-        .unwrap_or((None, None, None));
-    let (directional_direction, directional_color, directional_intensity) = app
-        .world
-        .get_component::<DirectionalLight>(entity)
-        .map(|dl| {
-            (
-                Some([dl.direction.x(), dl.direction.y(), dl.direction.z()]),
-                Some(dl.color),
-                Some(dl.intensity),
-            )
-        })
-        .unwrap_or((None, None, None));
-
-    InspectorDragSnapshot {
-        entity,
-        position,
-        rotation_euler,
-        scale,
-        light_color,
-        light_intensity,
-        light_range,
-        emit_rate,
-        velocity,
-        lifetime,
-        gravity,
-        particle_scale,
-        fov,
-        near,
-        aspect_ratio,
-        directional_direction,
-        directional_color,
-        directional_intensity,
-    }
-}
-
-/// GPU handles associated with a spawned entity, used for cleanup on undo/redo.
+/// GPU resources retired when an authored entity is removed.
 pub(crate) struct GpuCleanupData {
     pub(crate) mesh_handle: katla_gfx::MeshHandle,
     pub(crate) material_handle: katla_gfx::MaterialHandle,
@@ -257,8 +49,6 @@ pub(crate) struct GpuCleanupData {
     pub(crate) textures: Vec<katla_gfx::TextureHandle>,
 }
 
-/// Command that reverses a spawn by destroying the entity.
-/// Undo re-creates the entity (no component restoration for editor spawns).
 struct EditorSpawnCommand {
     entity: EntityId,
 }
@@ -371,10 +161,20 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
         .iter()
         .find(|entity| Some(entity.id) == app.editor.editor_ui.selected_entity)
         .and_then(|entity| entity.material);
+    let maps = app
+        .editor
+        .editor_ui
+        .selected_entity
+        .and_then(|id| {
+            app.world
+                .get_component::<super::spawning::ModelTextures>(id)
+        })
+        .and_then(|textures| textures.preview_maps.clone());
     let preview_result = app.editor.material_previews.prepare(
         &mut app.renderer,
         &mut app.editor.ui_renderer,
         material,
+        maps,
     );
     if let Err(error) = &preview_result {
         log::warn!("Material preview generation failed: {error}");
@@ -397,9 +197,8 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     app.editor.editor_ui.is_paused = app.play_mode == super::game_state::PlayMode::Paused;
 
     // Sync inspector editing state from current entity data
-    app.editor.editor_ui.sync_inspector_edit_state(&entity_info);
+
     // Refresh script variables for the selected entity
-    app.editor.editor_ui.refresh_script_vars(&app.world);
 
     // Set current time for UI animations (cursor blink etc.)
     app.ui_context
@@ -447,12 +246,6 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
             .clone()
     };
 
-    // Apply real-time inspector slider changes to ECS during drag.
-    // This happens every frame while a slider is being dragged so the viewport updates immediately.
-    // Must happen before borrowing ui_renderer to avoid double mutable borrow.
-    handle_inspector_drag_undo(app);
-    apply_inspector_slider_changes(app);
-
     // Convert draw list to GPU format
     let ui_renderer = &mut app.editor.ui_renderer;
 
@@ -475,465 +268,26 @@ pub fn generate_ui_draw_list(app: &mut Application, dt: f32) -> Option<UIDrawLis
     }
 }
 
-/// Detect inspector slider drag start/end and manage undo snapshots.
-///
-/// Compares inspector edit state before and after UI render to detect active slider dragging.
-/// On drag start, snapshots pre-drag ECS values. On drag end, pushes an UndoGroup.
-fn handle_inspector_drag_undo(app: &mut Application) {
-    let entity_id = match app.editor.editor_ui.inspector_edit_entity {
-        Some(id) => id,
-        None => {
-            app.editor.inspector_slider_was_active = false;
-            app.editor.inspector_drag_snapshot = None;
-            return;
-        }
-    };
-
-    let edit = &app.editor.editor_ui.inspector_edit;
-    let slider_active = inspector_values_differ_from_ecs(entity_id, edit, &app.world);
-
-    let was_active = app.editor.inspector_slider_was_active;
-
-    if slider_active && !was_active {
-        app.editor.inspector_drag_snapshot = Some(snapshot_inspector_state(app, entity_id));
-    }
-
-    if !slider_active
-        && was_active
-        && let Some(snapshot) = app.editor.inspector_drag_snapshot.take()
-        && inspector_snapshot_differs_from_ecs(entity_id, &snapshot, &app.world)
-    {
-        let mut undo_group = UndoGroup::new("Inspector slider drag");
-        undo_group
-            .commands
-            .push(Box::new(InspectorDragUndo::new(snapshot)));
-        app.editor.push_undo(undo_group);
-    }
-
-    app.editor.inspector_slider_was_active = slider_active;
-    if !slider_active {
-        app.editor.inspector_drag_snapshot = None;
-    }
-}
-
-/// Check if the current inspector edit state differs from ECS component values.
-fn inspector_values_differ_from_ecs(
-    entity: EntityId,
-    edit: &crate::ui::InspectorEditState,
-    world: &katla_ecs::World,
-) -> bool {
-    if let Some(transform) = world.get_component::<TransformComponent>(entity) {
-        let pos_vec = Vec3::new(edit.pos[0], edit.pos[1], edit.pos[2]);
-        let rot_vec = Vec3::new(edit.rot[0], edit.rot[1], edit.rot[2]);
-        let scale_vec = Vec3::new(edit.scale[0], edit.scale[1], edit.scale[2]);
-
-        if (pos_vec - transform.transform.position).length() > 1e-4 {
-            return true;
-        }
-        let euler = transform.transform.rotation.to_euler();
-        if (rot_vec.x() - euler.0).abs() > 1e-3
-            || (rot_vec.y() - euler.1).abs() > 1e-3
-            || (rot_vec.z() - euler.2).abs() > 1e-3
-        {
-            return true;
-        }
-        if (scale_vec - transform.transform.scale).length() > 1e-4 {
-            return true;
-        }
-    }
-
-    if let Some(light) = world.get_component::<PointLight>(entity) {
-        if (edit.light_color[0] - light.color[0]).abs() > 1e-3
-            || (edit.light_color[1] - light.color[1]).abs() > 1e-3
-            || (edit.light_color[2] - light.color[2]).abs() > 1e-3
-        {
-            return true;
-        }
-        if (edit.light_intensity - light.intensity).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.light_range - light.range).abs() > 1e-4 {
-            return true;
-        }
-    }
-
-    if let Some(emitter) = world.get_component::<ParticleEmitterComponent>(entity) {
-        if (edit.emit_rate - emitter.config.emit_rate).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.velocity - emitter.config.velocity_magnitude).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.lifetime - emitter.config.base_lifetime).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.gravity - emitter.config.gravity).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.particle_scale - emitter.config.base_scale).abs() > 1e-4 {
-            return true;
-        }
-    }
-
-    if let Some(persp) = world.get_component::<PerspectiveComponent>(entity) {
-        if (edit.fov - persp.fov).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.near - persp.near).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.aspect_ratio - persp.aspect_ratio).abs() > 1e-4 {
-            return true;
-        }
-    }
-
-    if let Some(dl) = world.get_component::<DirectionalLight>(entity) {
-        if (edit.directional_direction[0] - dl.direction.x()).abs() > 1e-3
-            || (edit.directional_direction[1] - dl.direction.y()).abs() > 1e-3
-            || (edit.directional_direction[2] - dl.direction.z()).abs() > 1e-3
-        {
-            return true;
-        }
-        if (edit.directional_color[0] - dl.color[0]).abs() > 1e-3
-            || (edit.directional_color[1] - dl.color[1]).abs() > 1e-3
-            || (edit.directional_color[2] - dl.color[2]).abs() > 1e-3
-        {
-            return true;
-        }
-        if (edit.directional_intensity - dl.intensity).abs() > 1e-4 {
-            return true;
-        }
-    }
-
-    if let Some(ae) = world.get_component::<crate::components::AudioEmitter>(entity) {
-        if (edit.audio_volume - ae.volume).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.audio_min_distance - ae.min_distance).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.audio_max_distance - ae.max_distance).abs() > 1e-4 {
-            return true;
-        }
-        if (edit.audio_rolloff_factor - ae.rolloff_factor).abs() > 1e-4 {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Check if a pre-drag snapshot differs from current ECS values.
-fn inspector_snapshot_differs_from_ecs(
-    entity: EntityId,
-    snapshot: &InspectorDragSnapshot,
-    world: &katla_ecs::World,
-) -> bool {
-    if let Some(transform) = world.get_component::<TransformComponent>(entity) {
-        if (snapshot.position - transform.transform.position).length() > 1e-4 {
-            return true;
-        }
-        if (snapshot.scale - transform.transform.scale).length() > 1e-4 {
-            return true;
-        }
-    }
-    if let Some(light) = world.get_component::<PointLight>(entity) {
-        if let Some(color) = snapshot.light_color
-            && ((color[0] - light.color[0]).abs() > 1e-3
-                || (color[1] - light.color[1]).abs() > 1e-3
-                || (color[2] - light.color[2]).abs() > 1e-3)
-        {
-            return true;
-        }
-        if let Some(intensity) = snapshot.light_intensity
-            && (intensity - light.intensity).abs() > 1e-4
-        {
-            return true;
-        }
-        if let Some(range) = snapshot.light_range
-            && (range - light.range).abs() > 1e-4
-        {
-            return true;
-        }
-    }
-    if let Some(emitter) = world.get_component::<ParticleEmitterComponent>(entity) {
-        if let Some(rate) = snapshot.emit_rate
-            && (rate - emitter.config.emit_rate).abs() > 1e-4
-        {
-            return true;
-        }
-        if let Some(vel) = snapshot.velocity
-            && (vel - emitter.config.velocity_magnitude).abs() > 1e-4
-        {
-            return true;
-        }
-        if let Some(life) = snapshot.lifetime
-            && (life - emitter.config.base_lifetime).abs() > 1e-4
-        {
-            return true;
-        }
-        if let Some(grav) = snapshot.gravity
-            && (grav - emitter.config.gravity).abs() > 1e-4
-        {
-            return true;
-        }
-        if let Some(sc) = snapshot.particle_scale
-            && (sc - emitter.config.base_scale).abs() > 1e-4
-        {
-            return true;
-        }
-    }
-    false
-}
-
-/// Apply real-time inspector slider changes to ECS components during drag.
-///
-/// Compares the inspector editing state against the current ECS component values.
-/// If they differ, updates the ECS component immediately (for viewport feedback).
-fn apply_inspector_slider_changes(app: &mut Application) {
-    use crate::ui::InspectorEditState;
-
-    let entity_id = match app.editor.editor_ui.inspector_edit_entity {
-        Some(id) => id,
-        None => return,
-    };
-
-    let InspectorEditState {
-        pos,
-        rot,
-        scale,
-        light_color,
-        light_intensity,
-        light_range,
-        emit_rate,
-        velocity,
-        lifetime,
-        gravity,
-        particle_scale,
-        script_path: _,
-        fov,
-        near,
-        aspect_ratio,
-        directional_direction,
-        directional_color,
-        directional_intensity,
-        audio_source_path: _,
-        audio_volume,
-        audio_looping: _,
-        audio_spatial: _,
-        audio_min_distance,
-        audio_max_distance,
-        audio_rolloff_factor,
-        collider_shape_type: _,
-        collider_sphere_radius,
-        collider_box_half_extents,
-        collider_capsule_half_height,
-        collider_capsule_radius,
-        rigid_body_type: _,
-        rigid_body_gravity_scale,
-        rigid_body_velocity: _,
-        physics_friction,
-        physics_restitution,
-        physics_density,
-        script_vars: _,
-    } = &app.editor.editor_ui.inspector_edit;
-
-    let _ = (emit_rate, velocity, lifetime, gravity, particle_scale);
-
-    // Transform
-    if let Some(transform) = app.world.get_component_mut::<TransformComponent>(entity_id) {
-        let pos_vec = Vec3::new(pos[0], pos[1], pos[2]);
-        let rot_vec = Vec3::new(rot[0], rot[1], rot[2]);
-        let scale_vec = Vec3::new(scale[0], scale[1], scale[2]);
-
-        let pos_changed = (pos_vec - transform.transform.position).length() > 1e-4;
-        let euler = transform.transform.rotation.to_euler();
-        let rot_changed = (rot_vec.x() - euler.0).abs() > 1e-3
-            || (rot_vec.y() - euler.1).abs() > 1e-3
-            || (rot_vec.z() - euler.2).abs() > 1e-3;
-        let scale_changed = (scale_vec - transform.transform.scale).length() > 1e-4;
-
-        if pos_changed || rot_changed || scale_changed {
-            transform.transform.position = pos_vec;
-            if rot_changed {
-                transform.transform.rotation =
-                    katla_math::Quat::from_euler(rot_vec.x(), rot_vec.y(), rot_vec.z());
-            }
-            if scale_changed {
-                transform.transform.scale = scale_vec;
-            }
-        }
-    }
-
-    // PointLight
-    if let Some(light) = app.world.get_component_mut::<PointLight>(entity_id) {
-        let color_changed = (light_color[0] - light.color[0]).abs() > 1e-3
-            || (light_color[1] - light.color[1]).abs() > 1e-3
-            || (light_color[2] - light.color[2]).abs() > 1e-3;
-        let intensity_changed = (*light_intensity - light.intensity).abs() > 1e-4;
-        let range_changed = (*light_range - light.range).abs() > 1e-4;
-
-        if color_changed || intensity_changed || range_changed {
-            light.color = *light_color;
-            light.intensity = *light_intensity;
-            light.range = *light_range;
-        }
-    }
-
-    // ParticleEmitter
-    if let Some(emitter) = app
-        .world
-        .get_component_mut::<ParticleEmitterComponent>(entity_id)
-    {
-        let rate_changed = (*emit_rate - emitter.config.emit_rate).abs() > 1e-4;
-        let vel_changed = (*velocity - emitter.config.velocity_magnitude).abs() > 1e-4;
-        let life_changed = (*lifetime - emitter.config.base_lifetime).abs() > 1e-4;
-        let grav_changed = (*gravity - emitter.config.gravity).abs() > 1e-4;
-        let scale_changed = (*particle_scale - emitter.config.base_scale).abs() > 1e-4;
-
-        if rate_changed || vel_changed || life_changed || grav_changed || scale_changed {
-            emitter.config.emit_rate = *emit_rate;
-            emitter.config.velocity_magnitude = *velocity;
-            emitter.config.base_lifetime = *lifetime;
-            emitter.config.gravity = *gravity;
-            emitter.config.base_scale = *particle_scale;
-        }
-    }
-
-    // PerspectiveComponent
-    if let Some(persp) = app
-        .world
-        .get_component_mut::<PerspectiveComponent>(entity_id)
-    {
-        let fov_changed = (*fov - persp.fov).abs() > 1e-4;
-        let near_changed = (*near - persp.near).abs() > 1e-4;
-        let aspect_changed = (*aspect_ratio - persp.aspect_ratio).abs() > 1e-4;
-        if fov_changed || near_changed || aspect_changed {
-            persp.fov = *fov;
-            persp.near = *near;
-            persp.aspect_ratio = *aspect_ratio;
-        }
-    }
-
-    // DirectionalLight
-    if let Some(dl) = app.world.get_component_mut::<DirectionalLight>(entity_id) {
-        let dir_changed = (directional_direction[0] - dl.direction.x()).abs() > 1e-3
-            || (directional_direction[1] - dl.direction.y()).abs() > 1e-3
-            || (directional_direction[2] - dl.direction.z()).abs() > 1e-3;
-        let color_changed = (directional_color[0] - dl.color[0]).abs() > 1e-3
-            || (directional_color[1] - dl.color[1]).abs() > 1e-3
-            || (directional_color[2] - dl.color[2]).abs() > 1e-3;
-        let intensity_changed = (*directional_intensity - dl.intensity).abs() > 1e-4;
-        if dir_changed || color_changed || intensity_changed {
-            dl.direction = Vec3::new(
-                directional_direction[0],
-                directional_direction[1],
-                directional_direction[2],
-            );
-            dl.color = *directional_color;
-            dl.intensity = *directional_intensity;
-        }
-    }
-
-    // AudioEmitter
-    if let Some(ae) = app
-        .world
-        .get_component_mut::<crate::components::AudioEmitter>(entity_id)
-    {
-        let vol_changed = (*audio_volume - ae.volume).abs() > 1e-4;
-        let min_changed = (*audio_min_distance - ae.min_distance).abs() > 1e-4;
-        let max_changed = (*audio_max_distance - ae.max_distance).abs() > 1e-4;
-        let roll_changed = (*audio_rolloff_factor - ae.rolloff_factor).abs() > 1e-4;
-
-        if vol_changed || min_changed || max_changed || roll_changed {
-            ae.volume = *audio_volume;
-            ae.min_distance = *audio_min_distance;
-            ae.max_distance = *audio_max_distance;
-            ae.rolloff_factor = *audio_rolloff_factor;
-        }
-    }
-
-    // ColliderShape
-    if let Some(cs) = app
-        .world
-        .get_component_mut::<katla_physics::ColliderShape>(entity_id)
-    {
-        let changed = match cs {
-            katla_physics::ColliderShape::Sphere(s) => {
-                (*collider_sphere_radius - s.radius).abs() > 1e-4
-            }
-            katla_physics::ColliderShape::Box(b) => {
-                (collider_box_half_extents[0] - b.half_extents[0]).abs() > 1e-4
-                    || (collider_box_half_extents[1] - b.half_extents[1]).abs() > 1e-4
-                    || (collider_box_half_extents[2] - b.half_extents[2]).abs() > 1e-4
-            }
-            katla_physics::ColliderShape::Capsule(c) => {
-                (*collider_capsule_half_height - c.half_height).abs() > 1e-4
-                    || (*collider_capsule_radius - c.radius).abs() > 1e-4
-            }
-            katla_physics::ColliderShape::Trimesh(_)
-            | katla_physics::ColliderShape::ConvexHull(_)
-            | katla_physics::ColliderShape::Heightfield(_) => false,
-        };
-        if changed {
-            match cs {
-                katla_physics::ColliderShape::Sphere(s) => s.radius = *collider_sphere_radius,
-                katla_physics::ColliderShape::Box(b) => {
-                    b.half_extents = *collider_box_half_extents;
-                }
-                katla_physics::ColliderShape::Capsule(c) => {
-                    c.half_height = *collider_capsule_half_height;
-                    c.radius = *collider_capsule_radius;
-                }
-                katla_physics::ColliderShape::Trimesh(_)
-                | katla_physics::ColliderShape::ConvexHull(_)
-                | katla_physics::ColliderShape::Heightfield(_) => {}
-            }
-            if let Some(rb) = app
-                .world
-                .get_component_mut::<katla_physics::RigidBody>(entity_id)
-            {
-                rb.body_handle = None;
-                rb.collider_handle = None;
-            }
-        }
-    }
-
-    // RigidBody gravity scale
-    if let Some(rb) = app
-        .world
-        .get_component_mut::<katla_physics::RigidBody>(entity_id)
-        && (*rigid_body_gravity_scale - rb.gravity_scale).abs() > 1e-4
-    {
-        rb.gravity_scale = *rigid_body_gravity_scale;
-    }
-
-    // PhysicsMaterial
-    if let Some(pm) = app
-        .world
-        .get_component_mut::<katla_physics::PhysicsMaterial>(entity_id)
-    {
-        let friction_changed = (*physics_friction - pm.friction).abs() > 1e-4;
-        let restitution_changed = (*physics_restitution - pm.restitution).abs() > 1e-4;
-        let density_changed = (*physics_density - pm.density).abs() > 1e-4;
-        if friction_changed || restitution_changed || density_changed {
-            pm.friction = *physics_friction;
-            pm.restitution = *physics_restitution;
-            pm.density = *physics_density;
-        }
-    }
-}
-
-/// Process editor actions after UI rendering.
-///
-/// Should be called after generate_ui_draw_list to extract any editor actions.
 pub fn process_editor_actions(app: &mut Application) {
     app.preferences.editor = app.editor.editor_ui.editor_settings().clone();
     let editor_actions = app.editor.editor_ui.take_actions();
 
     // Process editor actions
     for action in editor_actions {
+        if !matches!(action, EditorAction::EditField { .. }) {
+            fields::finish_drag(app);
+        }
         match action {
+            EditorAction::EditField {
+                entity,
+                component,
+                field,
+                value,
+            } => {
+                if let Err(error) = fields::edit(app, entity, component, field, value) {
+                    app.show_scene_error(error);
+                }
+            }
             EditorAction::InstantiatePrefab(path) => {
                 if app.play_mode != super::game_state::PlayMode::Editing {
                     app.show_scene_error("Stop simulation before instantiating prefab assets");
@@ -1263,6 +617,7 @@ pub fn process_editor_actions(app: &mut Application) {
 
     if !app.ui_context.input().mouse_down[katla_ui::input::mouse_button::LEFT] {
         material::finish_drag(app);
+        fields::finish_drag(app);
     }
 
     // Poll for MCP server requests

@@ -312,6 +312,13 @@ pub enum Panel {
 /// Action requested from the editor UI.
 #[derive(Debug, Clone)]
 pub enum EditorAction {
+    /// Author a component field through the shared reversible scene registry.
+    EditField {
+        entity: EntityId,
+        component: String,
+        field: String,
+        value: serde_json::Value,
+    },
     /// Preview a material edit and group a pointer gesture into one undo.
     EditMaterial(katla_agent::material::MaterialOp),
     /// Apply a material preset as one undoable edit.
@@ -421,92 +428,6 @@ pub enum FocusedPanel {
 }
 
 /// Mutable inspector editing state for all editable properties.
-#[derive(Clone, Debug)]
-pub struct InspectorEditState {
-    pub pos: [f32; 3],
-    pub rot: [f32; 3],
-    pub scale: [f32; 3],
-    pub light_color: [f32; 3],
-    pub light_intensity: f32,
-    pub light_range: f32,
-    pub emit_rate: f32,
-    pub velocity: f32,
-    pub lifetime: f32,
-    pub gravity: f32,
-    pub particle_scale: f32,
-    pub script_path: String,
-    pub fov: f32,
-    pub near: f32,
-    pub aspect_ratio: f32,
-    pub directional_direction: [f32; 3],
-    pub directional_color: [f32; 3],
-    pub directional_intensity: f32,
-    pub audio_source_path: String,
-    pub audio_volume: f32,
-    pub audio_looping: bool,
-    pub audio_spatial: bool,
-    pub audio_min_distance: f32,
-    pub audio_max_distance: f32,
-    pub audio_rolloff_factor: f32,
-    pub collider_shape_type: ColliderShapeType,
-    pub collider_sphere_radius: f32,
-    pub collider_box_half_extents: [f32; 3],
-    pub collider_capsule_half_height: f32,
-    pub collider_capsule_radius: f32,
-    pub rigid_body_type: RigidBodyType,
-    pub rigid_body_gravity_scale: f32,
-    pub rigid_body_velocity: [f32; 3],
-    pub physics_friction: f32,
-    pub physics_restitution: f32,
-    pub physics_density: f32,
-    /// Cached script variables from the current frame's script instance.
-    pub script_vars: Vec<(String, katla_script::ScriptVarValue)>,
-}
-
-impl Default for InspectorEditState {
-    fn default() -> Self {
-        Self {
-            pos: [0.0; 3],
-            rot: [0.0; 3],
-            scale: [1.0, 1.0, 1.0],
-            light_color: [1.0; 3],
-            light_intensity: 1.0,
-            light_range: 10.0,
-            emit_rate: 10.0,
-            velocity: 2.0,
-            lifetime: 2.0,
-            gravity: -9.81,
-            particle_scale: 0.1,
-            script_path: String::new(),
-            fov: 60.0,
-            near: 0.001,
-            aspect_ratio: 16.0 / 9.0,
-            directional_direction: [0.0, -1.0, 0.0],
-            directional_color: [1.0; 3],
-            directional_intensity: 1.0,
-            audio_source_path: String::new(),
-            audio_volume: 1.0,
-            audio_looping: false,
-            audio_spatial: false,
-            audio_min_distance: 1.0,
-            audio_max_distance: 100.0,
-            audio_rolloff_factor: 1.0,
-            collider_shape_type: ColliderShapeType::Sphere,
-            collider_sphere_radius: 0.5,
-            collider_box_half_extents: [0.5, 0.5, 0.5],
-            collider_capsule_half_height: 0.5,
-            collider_capsule_radius: 0.25,
-            rigid_body_type: RigidBodyType::Dynamic,
-            rigid_body_gravity_scale: 1.0,
-            rigid_body_velocity: [0.0; 3],
-            physics_friction: 0.5,
-            physics_restitution: 0.0,
-            physics_density: 1.0,
-            script_vars: Vec::new(),
-        }
-    }
-}
-
 /// Hierarchy panel state (expanded entities tracking).
 #[derive(Debug, Clone, Default)]
 pub struct HierarchyState {

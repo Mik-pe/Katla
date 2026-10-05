@@ -2,6 +2,9 @@
 pub(crate) struct ModelTextures {
     #[inspect(skip)]
     pub(crate) handles: Vec<katla_gfx::TextureHandle>,
+    #[inspect(skip)]
+    #[cfg(feature = "editor")]
+    pub(crate) preview_maps: Option<std::sync::Arc<super::editor::preview_maps::PreviewMaps>>,
 }
 
 use katla_gfx::GpuRenderer;
@@ -17,6 +20,8 @@ struct GltfTextureUpload {
     /// state; the backend resolves the handle each frame).
     emission: katla_gfx::TextureHandle,
     handles: Vec<katla_gfx::TextureHandle>,
+    #[cfg(feature = "editor")]
+    preview_maps: Option<std::sync::Arc<super::editor::preview_maps::PreviewMaps>>,
 }
 
 impl super::Application {
@@ -491,6 +496,8 @@ impl super::Application {
             entity,
             ModelTextures {
                 handles: texture_upload.handles.clone(),
+                #[cfg(feature = "editor")]
+                preview_maps: texture_upload.preview_maps,
             },
         );
         self.world.add_component(
@@ -657,6 +664,8 @@ impl super::Application {
         );
         let mut emission = katla_gfx::TextureHandle::NONE;
         let mut handles = Vec::new();
+        #[cfg(feature = "editor")]
+        let mut preview_maps = super::editor::preview_maps::PreviewMaps::default();
 
         let material_info = model.materials.first();
 
@@ -666,6 +675,10 @@ impl super::Application {
             {
                 let handle = self.upload_gltf_image(image, true);
                 textures.albedo = handle;
+                #[cfg(feature = "editor")]
+                if handle != self.renderer.default_texture() {
+                    preview_maps.albedo = super::editor::preview_maps::PreviewMap::from_gltf(image);
+                }
                 handles.push(handle);
                 debug!("Uploaded albedo texture {} -> {:?}", tex_idx, handle);
             }
@@ -675,6 +688,10 @@ impl super::Application {
             {
                 let handle = self.upload_gltf_image(image, false);
                 textures.normal = handle;
+                #[cfg(feature = "editor")]
+                if handle != self.renderer.default_texture() {
+                    preview_maps.normal = super::editor::preview_maps::PreviewMap::from_gltf(image);
+                }
                 handles.push(handle);
                 debug!("Uploaded normal texture {} -> {:?}", tex_idx, handle);
             }
@@ -684,6 +701,11 @@ impl super::Application {
             {
                 let handle = self.upload_gltf_image(image, false);
                 textures.metallic_roughness = handle;
+                #[cfg(feature = "editor")]
+                if handle != self.renderer.default_texture() {
+                    preview_maps.metallic_roughness =
+                        super::editor::preview_maps::PreviewMap::from_gltf(image);
+                }
                 handles.push(handle);
                 debug!("Uploaded MR texture {} -> {:?}", tex_idx, handle);
             }
@@ -693,6 +715,11 @@ impl super::Application {
             {
                 let handle = self.upload_gltf_image(image, false);
                 textures.occlusion = handle;
+                #[cfg(feature = "editor")]
+                if handle != self.renderer.default_texture() {
+                    preview_maps.occlusion =
+                        super::editor::preview_maps::PreviewMap::from_gltf(image);
+                }
                 handles.push(handle);
                 debug!("Uploaded AO texture {} -> {:?}", tex_idx, handle);
             }
@@ -702,6 +729,11 @@ impl super::Application {
             {
                 let handle = self.upload_gltf_image(image, false);
                 emission = handle;
+                #[cfg(feature = "editor")]
+                if handle != self.renderer.default_texture() {
+                    preview_maps.emission =
+                        super::editor::preview_maps::PreviewMap::from_gltf(image);
+                }
                 handles.push(handle);
                 debug!("Uploaded emissive texture {} -> {:?}", tex_idx, handle);
             }
@@ -711,6 +743,8 @@ impl super::Application {
             textures,
             emission,
             handles,
+            #[cfg(feature = "editor")]
+            preview_maps: preview_maps.shared(),
         }
     }
 

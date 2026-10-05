@@ -23,6 +23,8 @@ pub struct LabeledSlider {
     pub value_multiplier: f32,
     /// Suffix appended to the displayed value ("%", " m/s", …).
     pub value_suffix: String,
+    /// Optional explicit logical width for controls constrained by a panel.
+    pub width: Option<f32>,
 }
 
 /// Format the value for display using multiplier/precision/suffix.
@@ -56,7 +58,7 @@ impl Widget for LabeledSlider {
         let text_size = measure(&self.label, None, None);
         Style {
             size: Size {
-                width: Dimension::Length((text_size.x() + 120.0).max(200.0)),
+                width: Dimension::Length(self.width.unwrap_or((text_size.x() + 120.0).max(200.0))),
                 height: Dimension::Length((text_size.y() + 12.0).max(24.0)),
             },
             ..Style::default()
@@ -218,6 +220,12 @@ impl LabeledSlider {
         )
     }
 
+    /// Constrain the complete label, track and value row to a logical width.
+    pub fn flex_width(mut self, width: f32) -> Self {
+        self.width = Some(width.max(0.0));
+        self
+    }
+
     pub fn show_value(mut self, show: bool) -> Self {
         self.show_value = show;
         self
@@ -258,6 +266,7 @@ mod tests {
             precision: 2,
             value_multiplier: 1.0,
             value_suffix: String::new(),
+            width: None,
         }
     }
 
@@ -311,6 +320,7 @@ mod tests {
             precision: 2,
             value_multiplier: 1.0,
             value_suffix: String::new(),
+            width: None,
         };
 
         let mut input = UiInputState::new();

@@ -69,6 +69,44 @@ pub(crate) fn process_input(
 ) -> ProcessInputResult {
     let mut result = ProcessInputResult::default();
 
+    // Numeric scrubbing retains pointer ownership even over another control.
+    if let Some(active) = tree.interaction().active_id
+        && tree.get(active).is_some_and(|node| {
+            node.widget
+                .as_any()
+                .is::<super::widgets::number_input::NumberInput>()
+        })
+        && (input.mouse_down[mouse_button::LEFT] || input.mouse_released[mouse_button::LEFT])
+    {
+        let mut actions = std::mem::take(tree.actions_mut());
+        let mut state = std::mem::take(tree.state_arena_mut());
+        let mut ctx = InputContext {
+            input,
+            mouse_pos: input.mouse_pos,
+            callbacks,
+            actions: &mut actions,
+            view_id: active,
+            active_id: Some(active),
+            focused_id: tree.interaction().focused_id,
+        };
+        if let Some(node) = tree.get(active) {
+            node.widget.handle_input(
+                &mut ctx,
+                &mut state,
+                bounds_map.get(&active).copied().unwrap_or_default(),
+                &node.children,
+            );
+        }
+        *tree.state_arena_mut() = state;
+        *tree.actions_mut() = actions;
+        if !input.mouse_down[mouse_button::LEFT] {
+            tree.interaction_mut().active_id = None;
+        }
+        result.input_consumed = true;
+        result.hovered_id = Some(active);
+        return result;
+    }
+
     // --- Slider drag continuation ---
     if let Some(active_id) = tree.interaction().active_id {
         let active_info = tree.get(active_id).and_then(|node| {

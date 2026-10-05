@@ -105,6 +105,7 @@ pub fn labeled_slider(
         precision: 2,
         value_multiplier: 1.0,
         value_suffix: String::new(),
+        width: None,
     }
 }
 
@@ -130,7 +131,11 @@ pub fn progress(value: f32, range: RangeInclusive<f32>) -> widgets::progress::Pr
 }
 
 pub fn vu_meter(peak_db: f32, rms_db: f32) -> widgets::vu_meter::VuMeter {
-    widgets::vu_meter::VuMeter { peak_db, rms_db }
+    widgets::vu_meter::VuMeter {
+        peak_db,
+        rms_db,
+        height: 120.0,
+    }
 }
 
 pub fn image(texture: TextureId, tint: katla_math::Color) -> widgets::image::Image {

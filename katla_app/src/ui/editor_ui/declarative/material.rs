@@ -42,6 +42,7 @@ impl MaterialControls {
         selected: Option<(EntityId, MaterialValues)>,
         theme: &ColorScheme,
         preview: Option<katla_ui::TextureId>,
+        width: f32,
     ) -> Option<Box<dyn Widget>> {
         let Some((entity, values)) = selected else {
             let mut baseline: Baseline = ctx.get_state(self.baseline)?;
@@ -112,6 +113,7 @@ impl MaterialControls {
         for (index, label) in [(4, "Metallic"), (5, "Roughness"), (6, "Occlusion")] {
             content.push(
                 labeled_slider(label, self.channels[index], 0.0..=1.0)
+                    .flex_width(width)
                     .label_width(76.0)
                     .show_value(true)
                     .precision(2)
@@ -128,6 +130,7 @@ impl MaterialControls {
                     .enumerate()
                     .map(|(index, label)| {
                         labeled_slider(label, self.channels[index], 0.0..=1.0)
+                            .flex_width(width)
                             .label_width(76.0)
                             .show_value(true)
                             .precision(2)

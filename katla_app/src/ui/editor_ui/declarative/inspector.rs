@@ -10,7 +10,7 @@ use katla_ui::declarative::{
 };
 
 use crate::ui::editor_ui::ColorScheme;
-use crate::ui::editor_ui::types::{ColliderShapeType, EntityInfo, InspectorEditState};
+use crate::ui::editor_ui::types::{ColliderShapeType, EntityInfo};
 
 /// Component types that get an inspector section, in the canonical order used
 /// for state-slot reservation. The list must stay stable: sibling views share
@@ -92,13 +92,9 @@ pub(crate) struct InspectorDrawCtx {
     pub material_preview: Option<katla_ui::TextureId>,
     pub selected_entity: Option<EntityId>,
     pub entities: Vec<EntityInfo>,
-    #[expect(dead_code)]
-    pub edit: InspectorEditState,
     pub theme: ColorScheme,
     pub available_components: Vec<&'static str>,
     pub add_component_open: bool,
-    #[expect(dead_code)]
-    pub focus_script_input: bool,
     pub audio_listener_count: usize,
 }
 
@@ -131,15 +127,18 @@ impl Build for InspectorView {
         // above (lives entirely in view state, no env round-trip needed).
         let filter_id: StateId = ctx.state(String::new());
         let material_controls = super::material::MaterialControls::reserve(ctx);
+        let numeric_controls = super::numeric::NumericControls::reserve(ctx);
         let selected = draw_ctx
             .entities
             .iter()
             .find(|e| draw_ctx.selected_entity == Some(e.id));
+        numeric_controls.sync(ctx, selected);
         let mut material_section = material_controls.build(
             ctx,
             selected.and_then(|e| e.material.map(|m| (e.id, m))),
             &draw_ctx.theme,
             draw_ctx.material_preview,
+            (draw_ctx.bounds.width() - 24.0).max(140.0),
         );
 
         let content = if let Some(entity) = draw_ctx
@@ -176,6 +175,7 @@ impl Build for InspectorView {
                     entity,
                     type_name,
                     section_ids[index],
+                    &numeric_controls,
                 ) else {
                     continue;
                 };
@@ -302,6 +302,7 @@ impl InspectorView {
         entity: &EntityInfo,
         type_name: &str,
         expanded_id: StateId,
+        numeric: &super::numeric::NumericControls,
     ) -> Option<Box<dyn Widget>> {
         let theme = &draw_ctx.theme;
         let on_remove = removable(&draw_ctx.available_components, type_name).then(|| {
@@ -318,42 +319,7 @@ impl InspectorView {
         let mut rows: Vec<Box<dyn Widget>> = Vec::new();
         match type_name {
             "Transform" => {
-                rows.push(
-                    property_row(
-                        "Position",
-                        format!(
-                            "{:.2}, {:.2}, {:.2}",
-                            entity.position.x(),
-                            entity.position.y(),
-                            entity.position.z()
-                        ),
-                    )
-                    .boxed(),
-                );
-                rows.push(
-                    property_row(
-                        "Rotation",
-                        format!(
-                            "{:.2}, {:.2}, {:.2}",
-                            entity.rotation.x(),
-                            entity.rotation.y(),
-                            entity.rotation.z()
-                        ),
-                    )
-                    .boxed(),
-                );
-                rows.push(
-                    property_row(
-                        "Scale",
-                        format!(
-                            "{:.2}, {:.2}, {:.2}",
-                            entity.scale.x(),
-                            entity.scale.y(),
-                            entity.scale.z()
-                        ),
-                    )
-                    .boxed(),
-                );
+                rows.extend(numeric.transform(draw_ctx.bounds.width() - 24.0));
             }
             "NameComponent" => {
                 rows.push(property_row("Name", entity.name.clone()).boxed());
@@ -361,22 +327,64 @@ impl InspectorView {
             "PointLight" => {
                 if let Some(light) = &entity.point_light {
                     rows.push(property_row("Color", format_rgb(light.color)).boxed());
-                    rows.push(property_row("Intensity", format!("{:.2}", light.intensity)).boxed());
-                    rows.push(property_row("Range", format!("{:.2}", light.range)).boxed());
+                    rows.push(numeric.scalar(
+                        9,
+                        "Intensity",
+                        0.0,
+                        100000.0,
+                        0.1,
+                        draw_ctx.bounds.width() - 24.0,
+                    ));
+                    rows.push(numeric.scalar(
+                        10,
+                        "Range",
+                        0.01,
+                        10000.0,
+                        0.1,
+                        draw_ctx.bounds.width() - 24.0,
+                    ));
                 }
             }
             "DirectionalLight" => {
                 if let Some(light) = &entity.directional_light {
                     rows.push(property_row("Direction", format_vec3(light.direction)).boxed());
                     rows.push(property_row("Color", format_rgb(light.color)).boxed());
-                    rows.push(property_row("Intensity", format!("{:.2}", light.intensity)).boxed());
+                    rows.push(numeric.scalar(
+                        11,
+                        "Intensity",
+                        0.0,
+                        100000.0,
+                        0.1,
+                        draw_ctx.bounds.width() - 24.0,
+                    ));
                 }
             }
             "PerspectiveComponent" => {
-                if let Some(cam) = &entity.perspective {
-                    rows.push(property_row("FOV", format!("{:.1}°", cam.fov)).boxed());
-                    rows.push(property_row("Near", format!("{:.3}", cam.near)).boxed());
-                    rows.push(property_row("Aspect", format!("{:.2}", cam.aspect_ratio)).boxed());
+                if entity.perspective.is_some() {
+                    rows.push(numeric.scalar(
+                        12,
+                        "FOV",
+                        1.0,
+                        179.0,
+                        0.1,
+                        draw_ctx.bounds.width() - 24.0,
+                    ));
+                    rows.push(numeric.scalar(
+                        13,
+                        "Near",
+                        0.001,
+                        100.0,
+                        0.001,
+                        draw_ctx.bounds.width() - 24.0,
+                    ));
+                    rows.push(numeric.scalar(
+                        14,
+                        "Aspect",
+                        0.01,
+                        100.0,
+                        0.01,
+                        draw_ctx.bounds.width() - 24.0,
+                    ));
                 }
             }
             "ScriptComponent" => {

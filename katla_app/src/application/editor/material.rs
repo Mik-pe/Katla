@@ -113,6 +113,7 @@ pub(super) fn execute(app: &mut Application, op: MaterialOp, agent: bool) -> Res
     {
         return Err("Stop play mode before editing a material".into());
     }
+    super::fields::finish_drag(app);
     finish_drag(app);
     let (result, command) = apply(&mut app.world, op)?;
     if let Some(command) = command {

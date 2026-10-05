@@ -95,6 +95,8 @@ enum State {
     ReleaseRemoveComponent,
     CheckRemoveComponent,
     PrefabWalkthrough,
+    NumericWalkthrough,
+    MixerWalkthrough,
     Done,
 }
 
@@ -116,6 +118,12 @@ pub struct InteractionTestRunner {
     material_preview_region: Option<[u32; 4]>,
     #[cfg(feature = "editor")]
     library_preview_regions: [Option<[u32; 4]>; 6],
+    #[cfg(feature = "editor")]
+    numeric_before: Option<(katla_ecs::EntityId, katla_math::Vec3, usize)>,
+    #[cfg(feature = "editor")]
+    imported_preview_region: Option<[u32; 4]>,
+    #[cfg(feature = "editor")]
+    imported_maps: Option<std::sync::Arc<super::editor::preview_maps::PreviewMaps>>,
 }
 
 impl InteractionTestRunner {
@@ -142,6 +150,12 @@ impl InteractionTestRunner {
             material_preview_region: None,
             #[cfg(feature = "editor")]
             library_preview_regions: [None; 6],
+            #[cfg(feature = "editor")]
+            numeric_before: None,
+            #[cfg(feature = "editor")]
+            imported_preview_region: None,
+            #[cfg(feature = "editor")]
+            imported_maps: None,
         }
     }
 
@@ -239,12 +253,16 @@ impl InteractionTestRunner {
     #[cfg(feature = "editor")]
     fn click_widget(app: &mut Application, kind: &str, label: &str, remove: bool) {
         use katla_ui::declarative::widgets::{
-            button::Button, image_button::ImageButton, section::Section, text::Text,
+            button::Button, image_button::ImageButton, number_input::NumberInput, section::Section,
+            text::Text,
         };
         let tree = app.editor.editor_ui.view_tree();
         let position = tree.iter_nodes().find_map(|(id, node)| {
             let any = node.widget.as_any();
             let matches = match kind {
+                "number" => any
+                    .downcast_ref::<NumberInput>()
+                    .is_some_and(|w| w.label == label),
                 "button" => any
                     .downcast_ref::<Button>()
                     .is_some_and(|w| w.label == label),
@@ -338,12 +356,12 @@ impl InteractionTestRunner {
     }
 
     #[cfg(feature = "editor")]
-    fn drag_material(app: &mut Application, value: f32, outside_row: bool) {
+    fn drag_slider(app: &mut Application, label: &str, value: f32, outside_row: bool) {
         use katla_ui::declarative::widgets::labeled_slider::LabeledSlider;
         let tree = app.editor.editor_ui.view_tree();
         let position = tree.iter_nodes().find_map(|(id, node)| {
             let slider = node.widget.as_any().downcast_ref::<LabeledSlider>()?;
-            if slider.label != "Roughness" {
+            if slider.label != label {
                 return None;
             }
             let track = slider.track_bounds(*tree.resolved_bounds().get(&id)?);
@@ -353,6 +371,7 @@ impl InteractionTestRunner {
             ))
         });
         if let Some(position) = position {
+            log::info!("Native slider {label} to {value} at {position:?}");
             Self::ui_press(app, position);
         }
     }
@@ -369,7 +388,7 @@ impl InteractionTestRunner {
     #[cfg(feature = "editor")]
     pub fn validate(&self) -> crate::AppResult<()> {
         let receipt = serde_json::json!({
-            "preview_regions": { "library": self.library_preview_regions, "inspector": self.material_preview_region },
+            "preview_regions": { "library": self.library_preview_regions, "inspector": self.material_preview_region, "imported": self.imported_preview_region },
             "complete": self.state == State::Done,
             "screenshots": self.screenshots_taken,
             "checks": self.checks.iter().map(|check| serde_json::json!({
@@ -498,9 +517,9 @@ impl InteractionTestRunner {
                 self.state = State::CheckPreset;
             }
             State::DragMaterial if (94..=97).contains(&frame) => match frame {
-                94 => Self::drag_material(app, 0.25, false),
-                95 => Self::drag_material(app, 0.5, true),
-                96 => Self::drag_material(app, 0.75, true),
+                94 => Self::drag_slider(app, "Roughness", 0.25, false),
+                95 => Self::drag_slider(app, "Roughness", 0.5, true),
+                96 => Self::drag_slider(app, "Roughness", 0.75, true),
                 _ => {
                     Self::ui_release(app);
                     self.state = State::CheckMaterialDrag;
@@ -565,6 +584,102 @@ impl InteractionTestRunner {
                 160 | 162 => Self::click_widget(app, "prefix", "chair.kat", false),
                 168 => Self::click_widget(app, "icon", "Play", false),
                 174 => Self::click_widget(app, "icon", "Stop", false),
+                _ => {}
+            },
+            State::NumericWalkthrough => match frame {
+                182 => Self::ui_press(app, target::HIERARCHY_SPHERE_1_0),
+                183 | 191 | 199 | 201 | 207 | 209 | 215 | 223 => Self::ui_release(app),
+                188 => {
+                    self.numeric_before = app.editor.editor_ui.selected_entity.and_then(|id| {
+                        app.world
+                            .get_component::<crate::components::TransformComponent>(id)
+                            .map(|t| (id, t.transform.position, app.editor.undo_stack.len()))
+                    });
+                    Self::click_widget(app, "number", "Position X", false);
+                }
+                189 | 190 => {
+                    let input = app.ui_context.input_mut();
+                    input.set_mouse_pos(input.mouse_pos + Vec2::new(20.0, 230.0));
+                }
+                198 | 206 => Self::click_menu(app, "Edit", None),
+                200 => Self::click_menu(app, "Edit", Some("Undo")),
+                208 => Self::click_menu(app, "Edit", Some("Redo")),
+                214 => Self::click_widget(app, "number", "Rotation Z", false),
+                216 => {
+                    let input = app.ui_context.input_mut();
+                    input.characters.extend("45".chars());
+                    input.keys_pressed.push(katla_ui::KeyCode::Enter);
+                }
+                225 => app
+                    .ui_context
+                    .input_mut()
+                    .keys_pressed
+                    .push(katla_ui::KeyCode::Enter),
+                222 => Self::click_widget(app, "number", "Scale X", false),
+                224 => app.ui_context.input_mut().characters.extend("1e99".chars()),
+                230 => app
+                    .ui_context
+                    .input_mut()
+                    .keys_pressed
+                    .push(katla_ui::KeyCode::Escape),
+                232 => {
+                    let input = app.ui_context.input_mut();
+                    input.characters.push('2');
+                    input.keys_pressed.push(katla_ui::KeyCode::Enter);
+                }
+                237 => app
+                    .ui_context
+                    .input_mut()
+                    .keys_pressed
+                    .push(katla_ui::KeyCode::ArrowUp),
+                238 => {
+                    let path = app.resources.model_path("DamagedHelmet.glb");
+                    match app.spawn_gltf_model(path, [0.0, 0.0, 0.0], None) {
+                        Ok(id) => app.editor.editor_ui.selected_entity = Some(id),
+                        Err(error) => log::error!("Native imported preview fixture: {error}"),
+                    }
+                }
+                240 => Self::click_widget(app, "section", "Material", false),
+                241 => Self::ui_release(app),
+                246 => {
+                    if let Some(id) = app.editor.editor_ui.selected_entity
+                        && let Some(textures) = app
+                            .world
+                            .get_component_mut::<super::spawning::ModelTextures>(id)
+                    {
+                        self.imported_maps = textures.preview_maps.take();
+                    }
+                }
+                262 => {
+                    use katla_gfx::GpuRenderer;
+                    if let Err(error) = app.renderer.resize(1920, 1200) {
+                        log::error!("Native responsive resize failed: {error}");
+                    }
+                }
+                254 => {
+                    if let Some(id) = app.editor.editor_ui.selected_entity
+                        && let Some(textures) = app
+                            .world
+                            .get_component_mut::<super::spawning::ModelTextures>(id)
+                    {
+                        textures.preview_maps = self.imported_maps.take();
+                    }
+                }
+                _ => {}
+            },
+            State::MixerWalkthrough => match frame {
+                274 => {
+                    use katla_gfx::GpuRenderer;
+                    if let Err(error) = app.renderer.resize(2560, 1440) {
+                        log::error!("Native mixer resize failed: {error}");
+                    }
+                }
+                278 => Self::ui_press(app, (510.0, 526.0)),
+                279 | 285 | 291 => Self::ui_release(app),
+                284 => Self::drag_slider(app, "Master", 0.0, false),
+                290 => Self::drag_slider(app, "Master", 0.75, false),
+                298 => Self::click_widget(app, "button", "Browse materials", false),
+                299 => Self::ui_release(app),
                 _ => {}
             },
             _ => {}
@@ -820,11 +935,189 @@ impl InteractionTestRunner {
                         && roots == 1,
                     format!("mode={:?}, roots={roots}", app.play_mode),
                 );
-                self.state = State::Done;
+                self.state = State::NumericWalkthrough;
                 self.screenshots_taken += 1;
                 Some(self.screenshot_path("20_prefab_stopped"))
             }
-            State::Done if frame >= 179 => {
+            State::NumericWalkthrough if matches!(frame, 196 | 204 | 212) => {
+                let position = app.editor.editor_ui.selected_entity.and_then(|id| {
+                    app.world
+                        .get_component::<crate::components::TransformComponent>(id)
+                        .map(|t| t.transform.position)
+                });
+                let expected = self.numeric_before.map(|(_, x, _)| {
+                    x + katla_math::Vec3::new(if frame == 204 { 0.0 } else { 0.4 }, 0.0, 0.0)
+                });
+                let same_entity = self
+                    .numeric_before
+                    .is_some_and(|(id, _, _)| app.editor.editor_ui.selected_entity == Some(id));
+                let one_step = self.numeric_before.is_some_and(|(_, _, count)| {
+                    app.editor.undo_stack.len() == count + usize::from(frame != 204)
+                });
+                self.record(
+                    match frame {
+                        196 => "numeric_scrub_outside_row_is_one_undo_step",
+                        204 => "numeric_undo_restores_transform",
+                        _ => "numeric_redo_restores_transform",
+                    },
+                    same_entity
+                        && one_step
+                        && position
+                            .zip(expected)
+                            .is_some_and(|(a, b)| (a - b).length() < 0.001),
+                    format!(
+                        "position={position:?}, expected={expected:?}, history_single={one_step}"
+                    ),
+                );
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path(&format!("21_numeric_{frame}")))
+            }
+            State::NumericWalkthrough if matches!(frame, 220 | 228 | 236) => {
+                let transform = app.editor.editor_ui.selected_entity.and_then(|id| {
+                    app.world
+                        .get_component::<crate::components::TransformComponent>(id)
+                });
+                let pass = transform.is_some_and(|t| match frame {
+                    220 => {
+                        (t.transform.rotation.to_euler().2 - std::f32::consts::FRAC_PI_4).abs()
+                            < 0.001
+                    }
+                    228 => (t.transform.scale.x() - 1.0).abs() < 0.001,
+                    _ => (t.transform.scale.x() - 2.0).abs() < 0.001,
+                });
+                self.record(
+                    match frame {
+                        220 => "numeric_keyboard_degrees_convert_to_scene_radians",
+                        228 => "numeric_nonfinite_draft_preserves_scene",
+                        _ => "numeric_invalid_entry_recovers_with_escape",
+                    },
+                    pass,
+                    format!("transform={:?}", transform.map(|t| &t.transform)),
+                );
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path(&format!("22_keyboard_{frame}")))
+            }
+            State::NumericWalkthrough if frame == 237 => {
+                let scale = app
+                    .editor
+                    .editor_ui
+                    .selected_entity
+                    .and_then(|id| {
+                        app.world
+                            .get_component::<crate::components::TransformComponent>(id)
+                    })
+                    .map(|t| t.transform.scale.x());
+                // The action is drained on the following frame after retained state changes.
+                self.record(
+                    "numeric_arrow_keeps_keyboard_focus",
+                    scale == Some(2.0) && app.editor.editor_ui.view_tree().interaction().focused_id.and_then(|id| {
+                            let tree = app.editor.editor_ui.view_tree();
+                            let widget = tree.get(id)?.widget.as_any()
+                                .downcast_ref::<katla_ui::declarative::widgets::number_input::NumberInput>()?;
+                            tree.state_arena().get::<katla_ui::declarative::widgets::number_input::NumberState>(widget.state_id)
+                        }).is_some_and(|s| (s.value - 2.01).abs() < 0.001),
+                    format!("scale={scale:?}"),
+                );
+                None
+            }
+            State::NumericWalkthrough if frame == 244 => {
+                self.imported_preview_region =
+                    Self::preview_region(app, app.editor.material_previews.current());
+                let maps = app
+                    .editor
+                    .editor_ui
+                    .selected_entity
+                    .and_then(|id| {
+                        app.world
+                            .get_component::<super::spawning::ModelTextures>(id)
+                    })
+                    .and_then(|textures| textures.preview_maps.as_ref());
+                self.record(
+                    "imported_pbr_maps_mount_live_preview",
+                    maps.is_some_and(|m| {
+                        m.albedo.is_some() && m.normal.is_some() && m.metallic_roughness.is_some()
+                    }) && self.imported_preview_region.is_some(),
+                    format!("region={:?}", self.imported_preview_region),
+                );
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("23_imported_maps"))
+            }
+            State::NumericWalkthrough if frame == 252 => {
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("24_imported_factors"))
+            }
+            State::NumericWalkthrough if frame == 260 => {
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("25_imported_restored"))
+            }
+            State::NumericWalkthrough if frame == 272 => {
+                let tree = app.editor.editor_ui.view_tree();
+                let fields: Vec<_> = tree.iter_nodes().filter_map(|(id, node)| {
+                    node.widget.as_any().downcast_ref::<katla_ui::declarative::widgets::number_input::NumberInput>()?;
+                    tree.resolved_bounds().get(&id)
+                }).collect();
+                let sliders_fit =
+                    tree.iter_nodes()
+                        .filter(|(_, n)| {
+                            n.widget.as_any()
+                    .is::<katla_ui::declarative::widgets::labeled_slider::LabeledSlider>()
+                        })
+                        .all(|(id, _)| {
+                            tree.resolved_bounds()
+                                .get(&id)
+                                .is_some_and(|b| b.max.x() <= 948.0)
+                        });
+                self.record(
+                    "narrow_layout_keeps_numeric_fields_inside_inspector",
+                    fields.len() == 9
+                        && sliders_fit
+                        && fields.iter().all(|b| {
+                            b.min.x() >= 960.0 * 0.78 && b.max.x() <= 960.0 && b.width() >= 44.0
+                        }),
+                    format!("field_bounds={fields:?}"),
+                );
+                self.state = State::MixerWalkthrough;
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("26_narrow_layout"))
+            }
+            State::MixerWalkthrough if frame == 282 => {
+                let tree = app.editor.editor_ui.view_tree();
+                let buses: Vec<_> = tree.iter_nodes().filter_map(|(id, node)| {
+                    let slider = node.widget.as_any().downcast_ref::<katla_ui::declarative::widgets::labeled_slider::LabeledSlider>()?;
+                    ["Master", "SFX", "Music", "Ambient"].contains(&slider.label.as_str())
+                        .then(|| tree.resolved_bounds().get(&id)).flatten()
+                }).collect();
+                self.record(
+                    "mixer_four_buses_fit_central_panel",
+                    buses.len() == 4
+                        && buses
+                            .iter()
+                            .all(|b| b.min.x() >= 211.0 && b.max.x() <= 994.0 && b.max.y() < 698.0),
+                    format!("buses={buses:?}"),
+                );
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("27_mixer"))
+            }
+            State::MixerWalkthrough if frame == 288 || frame == 294 => {
+                let actual = app.preferences.audio.master_volume;
+                let expected = if frame == 288 { 0.0 } else { 0.75 };
+                self.record(
+                    if frame == 288 {
+                        "mixer_zero_volume_is_retained"
+                    } else {
+                        "mixer_volume_recovers_after_mute"
+                    },
+                    (actual - expected).abs() < 0.001,
+                    format!("volume={actual}"),
+                );
+                None
+            }
+            State::MixerWalkthrough if frame == 302 => {
+                self.state = State::Done;
+                self.screenshots_taken += 1;
+                Some(self.screenshot_path("28_assets_restored"))
+            }
+            State::Done if frame >= 303 => {
                 let passed = self.checks.iter().filter(|c| c.passed).count();
                 info!(
                     "Interaction test summary: {}/{} checks passed",

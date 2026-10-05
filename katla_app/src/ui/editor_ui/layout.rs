@@ -56,7 +56,7 @@ impl EditorUI {
         let status_top = screen_size.y() - STATUS_BAR_HEIGHT;
 
         // Snapshot mutable state
-        let inspector_edit = std::mem::take(&mut self.inspector_edit);
+
         let hierarchy_state = std::mem::take(&mut self.hierarchy_state);
         let entities: Vec<editor_types::EntityInfo> = params.entities.to_vec();
 
@@ -189,11 +189,10 @@ impl EditorUI {
                             bounds: *content_bounds,
                             selected_entity: self.selected_entity,
                             entities: entities.clone(),
-                            edit: inspector_edit.clone(),
+
                             theme: self.theme.clone(),
                             available_components: self.available_components.clone(),
                             add_component_open: self.add_component_open,
-                            focus_script_input: self.focus_script_input,
                             audio_listener_count: params
                                 .entities
                                 .iter()
@@ -569,7 +568,7 @@ impl EditorUI {
         }
 
         // ── Restore state ──
-        self.inspector_edit = inspector_edit;
+
         self.hierarchy_state = hierarchy_state;
         self.last_screen_size = screen_size;
     }

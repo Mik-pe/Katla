@@ -64,7 +64,7 @@ struct Args {
 
     /// Interaction test mode: drive synthetic mouse clicks, wheel scrolling, and
     /// viewport picking headless, saving screenshots and check results into <DIR>.
-    /// Implies --headless with 180 frames unless --frames overrides the budget.
+    /// Implies --headless with 306 frames unless --frames overrides the budget.
     #[arg(long, value_name = "DIR")]
     interaction_test: Option<String>,
 
@@ -287,7 +287,7 @@ fn main() {
             .screenshot
             .unwrap_or_else(|| "/tmp/katla_screenshot.png".to_string());
         let default_frames = if args.interaction_test.is_some() {
-            180
+            306
         } else if args.single_frame || args.ui_test.is_some() {
             130
         } else {

@@ -14,6 +14,7 @@ pub mod labeled_slider;
 pub mod memoize;
 pub mod menubar;
 pub mod modal;
+pub mod number_input;
 pub mod overlay;
 pub mod panel;
 pub mod progress;

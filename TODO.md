@@ -265,7 +265,8 @@ Individual tasks should be small enough to complete in a single focused session.
 - [x] Add per-object PBR factor controls — sRGB RGBA, metallic, roughness and occlusion, shared presets and validated agent batch edits
 - [ ] Add emission color/intensity controls and texture assignment
 - [x] Add live material preview — generate studio-lit PBR factor spheres for the material palette and selected entity, retain one texture per preview, group pointer gestures for undo/redo and persist factors in the scene
-- [ ] Include imported texture maps and shader outputs in material thumbnails — factor previews currently cover base color, metallic, roughness, alpha and occlusion
+- [x] Include imported PBR maps in selected material thumbnails — app-owned bounded copies of uploaded albedo, normal, metallic/roughness, AO and emission maps; native readback proves map changes and exact restoration
+- [ ] Render arbitrary custom-shader outputs in material thumbnails — the current sphere previews standard model PBR
 - [ ] Add material serialization — save edited material back to .mat file
 
 #### Terrain editor

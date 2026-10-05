@@ -176,31 +176,37 @@ fn category_from_index(_ctx: &mut BuildContext, index: usize) -> PreferencesTab 
     }
 }
 
-/// Sync a slider state: allocate state with `initial` value, read current,
-/// and emit `action` if changed beyond epsilon. Returns the StateId.
+/// Reconcile a slider with the previous scene snapshot before emitting user edits.
 fn sync_slider<F>(ctx: &mut BuildContext, initial: f32, action: F) -> StateId
 where
     F: Fn(f32) -> PreferencesAction,
 {
     let id: StateId = ctx.state(initial);
+    let previous_id = ctx.state(initial);
+    let previous: f32 = ctx.get_state(previous_id).unwrap_or(initial);
     let current: f32 = ctx.get_state(id).unwrap_or(initial);
-    if (current - initial).abs() > 1e-4 {
+    if (current - previous).abs() > 1e-4 {
         ctx.emit(action(current));
     }
+    ctx.set_state(id, initial);
+    ctx.set_state(previous_id, initial);
     id
 }
 
-/// Sync a toggle state: allocate state with `initial` value, read current,
-/// and emit `action` if changed. Returns the StateId.
+/// Reconcile a toggle without writing stale state over external preference edits.
 fn sync_toggle<F>(ctx: &mut BuildContext, initial: bool, action: F) -> StateId
 where
     F: Fn(bool) -> PreferencesAction,
 {
     let id: StateId = ctx.state(initial);
+    let previous_id = ctx.state(initial);
+    let previous: bool = ctx.get_state(previous_id).unwrap_or(initial);
     let current: bool = ctx.get_state(id).unwrap_or(initial);
-    if current != initial {
+    if current != previous {
         ctx.emit(action(current));
     }
+    ctx.set_state(id, initial);
+    ctx.set_state(previous_id, initial);
     id
 }
 

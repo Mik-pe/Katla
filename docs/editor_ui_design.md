@@ -113,9 +113,14 @@ fall back to usable bounds.
 Assets opens on a visual material palette. Six named PBR starting points receive
 automatically generated studio-lit sphere thumbnails. The selected object's
 material has the same preview in the inspector, refreshed when authored factors
-change. These are factor previews, using sRGB base color, GGX specular lighting,
-metallic, roughness, alpha and ambient occlusion; they do not invent texture maps
-for presets or replace imported model textures. Shader-definition TOML files stay
+change. Presets use sRGB base color, GGX specular lighting, metallic, roughness,
+alpha and ambient occlusion. Imported RGB/RGBA glTF materials additionally use
+bounded copies of the already decoded albedo, normal, metallic/roughness, AO and
+emission maps that were successfully uploaded. The sphere applies the same role
+channels and per-object factors as model PBR; it is a material sample, not a mesh
+UV preview or an arbitrary custom-shader render. Map copies are app-owned and
+shared; changing selection or map identity refreshes the retained preview texture.
+The GPU core owns ordinary uploads and synchronization. Shader-definition TOML files stay
 ordinary project assets rather than appearing as fabricated surface materials.
 
 The Assets sidebar groups project folders beside the palette; selecting a folder
@@ -130,6 +135,16 @@ Panel headers and tabs use the same ForkAwesome library as actions and project
 folders. Multi-tab strips cap tabs at 120px. Selection and focus share the normal
 control radius. Mesh rows use restrained outline/volume icons.
 
+Transform uses compact aligned X/Y/Z fields with restrained axis colors.
+Scrub horizontally, type a replacement and press Enter, or use Up/Down for one
+step. Invalid drafts keep the scene value and show an error border; Escape cancels
+the draft. Rotation displays degrees and stores radians through the canonical
+component registry. Light intensity/range and camera FOV/near/aspect use the same
+field. Each continuous scrub creates one undo group. Selection changes and history
+refresh fields from the scene. Numeric focus captures editor shortcuts and arrow
+keys; field text clips to its bounds. In a narrow inspector the row label moves
+above the three axes to keep all inputs visible.
+
 Mesh selection exposes a Material section with a live preview, expandable RGBA
 channels and metallic, roughness and occlusion sliders.
 Each pointer gesture creates one editor undo step; presets create one step each.
@@ -139,9 +154,15 @@ and persist in the scene document. See [agent authoring](agent-authoring.md) for
 color semantics, search and room recipes.
 
 `cargo run -- --interaction-test /tmp/katla-interactions` drives real UI
-hit testing and native viewport picking. The walkthrough opens the material
+hit testing and native viewport picking across 306 frames. The walkthrough opens the material
 palette, applies a preset, drags material sliders outside their rows, uses Edit menu undo/redo, and collapses the
-material section to add and remove a component. It writes screenshots and a
+material section to add and remove a component. It also scrubs transform fields
+outside their rows, undoes/redoes them, enters rotation in degrees, rejects an
+overflowing numeric draft, recovers with Escape, preserves numeric arrow-key
+focus, imports a textured model, and resizes to 960×600 logical pixels. It then verifies the Mixer buses fit the
+central panel, muting persists at zero, and volume recovers through a real slider
+edit.
+It writes screenshots and a
 `receipt.json`, and exits with an error for failed or incomplete checks.
 
 Material cards use quiet rounded surfaces and aligned labels. The status bar
@@ -163,7 +184,13 @@ python3 scripts/validate_material_previews.py /tmp/katla-interactions
 ```
 
 The pixel validator requires Pillow. It checks six distinct nonblank palette
-textures, visible changes after a roughness drag, and exact preview restoration
-through undo/redo. With `--baseline DIR`, it also compares a fixed, static floor
+textures, visible changes after a roughness drag, exact preview restoration
+through undo/redo, and a textured glTF preview compared with the same factors
+without maps followed by exact map restoration. With `--baseline DIR`, it also compares a fixed, static floor
 silhouette in the default scene against a pre-antialiasing capture; this is a
 bounded native regression check rather than a general image-quality score.
+
+Mixer buses divide the available central width and use compact meters inside a
+scroll container. Mixer and Preferences compare local edits against their previous
+snapshot before refreshing displayed values, so hidden controls cannot overwrite
+changes from another view. Muting is an ordinary retained value, including zero.

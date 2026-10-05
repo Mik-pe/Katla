@@ -10,15 +10,29 @@ The declarative Build/ViewTree API is the normal application interface. The
 immediate-mode context is a low-level custom-widget primitive. Drain typed
 actions every frame; per-node state survives until its node is removed.
 Taffy performs Flexbox layout before drawing. DrawList combines 56-byte
-instanced quads with vertices/commands for complex geometry. Material factor previews belong to the app: CPU shading produces sRGB thumbnails,
+instanced quads with vertices/commands for complex geometry. Material previews belong to the app: CPU shading produces sRGB thumbnails,
 then ordinary generational texture handles are mapped to opaque TextureId values.
 The six preset textures and one selected preview texture remain cached. Editing
 queues an update through the renderer's ordinary texture upload service. The GPU
 core synchronizes the transfer with previous-frame readers before consumers;
-unchanged factors queue no upload and dragging does not churn texture handles.
+unchanged factors and imported-map identity queue no upload, and dragging does
+not churn texture handles. App-owned shared CPU map copies remain bounded at
+192×192 per role and are captured from successful model imports.
 
 TextureId is opaque;
 the app maps it to GPU handles. Clipping belongs to each draw command.
+
+NumberInput retains value, draft and scrub origin in the state arena. Enter
+commits finite values within the field range, Escape cancels, and invalid drafts
+retain the original value with an error border. Pointer dragging continues outside
+the field. Numeric focus requests text input and consumes Up/Down itself instead
+of directional focus navigation. Drawing clips long drafts to the field bounds.
+The app synchronizes numeric controls with selected scene snapshots and drains
+registry-backed EditField actions; widget code does not mutate ECS data.
+Panel-constrained material sliders receive an explicit available width for their
+label, track and value; narrow layouts retain the full value column.
+Preferences and Mixer retain a previous snapshot so external changes refresh
+local controls without generating stale write-back actions.
 
 Labeled sliders share one track rectangle for drawing, initial clicks and held
 drags, including when the pointer leaves the row. Label and numeric value space

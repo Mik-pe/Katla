@@ -168,6 +168,7 @@ mod tests {
             precision: 2,
             value_multiplier: 1.0,
             value_suffix: String::new(),
+            width: None,
         };
         assert_eq!(a.diff_against(&slider), DiffAction::Replace);
     }

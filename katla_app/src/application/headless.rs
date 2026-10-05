@@ -204,9 +204,11 @@ impl Application {
 
         // Headless Metal needs an offscreen drawable for each submission.
         #[cfg(target_os = "macos")]
-        let offscreen = self
-            .renderer
-            .create_offscreen_texture(HEADLESS_WIDTH, HEADLESS_HEIGHT);
+        let offscreen = {
+            let extent = self.renderer.swapchain_extent();
+            self.renderer
+                .create_offscreen_texture(extent.width, extent.height)
+        };
         #[cfg(target_os = "macos")]
         self.renderer.set_headless_drawable(offscreen);
 
@@ -260,8 +262,8 @@ impl Application {
         info!(
             "Saved screenshot to {} ({}x{}, {} bytes)",
             path,
-            HEADLESS_WIDTH,
-            HEADLESS_HEIGHT,
+            data.size.width,
+            data.size.height,
             png_data.len()
         );
 

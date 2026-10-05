@@ -130,10 +130,6 @@ pub struct EditorUI {
     /// Whether the UI wanted mouse capture on the previous frame.
     /// Used to block viewport picking/selection when clicking on floating UI.
     pub prev_want_capture_mouse: bool,
-    /// Mutable inspector editing state for all editable properties.
-    pub inspector_edit: types::InspectorEditState,
-    /// The entity ID whose inspector editing state is currently populated.
-    pub(crate) inspector_edit_entity: Option<EntityId>,
     /// Current gizmo mode (synced from Application for toolbar display).
     pub gizmo_mode: u8,
     /// AI Co-Creator chat panel state.
@@ -144,7 +140,6 @@ pub struct EditorUI {
     /// Whether the "Add Component" dropdown is open.
     add_component_open: bool,
     /// Whether to auto-focus the script path text input (set when ScriptComponent is added).
-    focus_script_input: bool,
     /// Available component type names (populated from ComponentRegistry).
     available_components: Vec<&'static str>,
     /// Search/filter text for the hierarchy panel.
@@ -199,13 +194,11 @@ impl EditorUI {
             save_confirmation_timer: 0.0,
             prev_want_capture_keyboard: false,
             prev_want_capture_mouse: false,
-            inspector_edit: types::InspectorEditState::default(),
-            inspector_edit_entity: None,
+
             gizmo_mode: 0,
             co_creator: CoCreatorState::new(),
             inspector_scroll_state: katla_ui::ScrollAreaState::default(),
             add_component_open: false,
-            focus_script_input: false,
             available_components: Vec::new(),
             hierarchy_search_filter: String::new(),
             dock_tree: Self::default_dock_tree(),
@@ -255,108 +248,6 @@ impl EditorUI {
     /// Sync inspector editing state from the selected entity's EntityInfo.
     ///
     /// Called before UI build to populate slider values. Only updates when the
-    /// selected entity changes (detected via entity ID).
-    pub fn sync_inspector_edit_state(&mut self, entities: &[EntityInfo]) {
-        if self.inspector_edit_entity != self.selected_entity {
-            self.inspector_edit_entity = self.selected_entity;
-            if let Some(entity) = self
-                .selected_entity
-                .and_then(|id| entities.iter().find(|e| e.id == id))
-            {
-                self.inspector_edit.pos = [
-                    entity.position.x(),
-                    entity.position.y(),
-                    entity.position.z(),
-                ];
-                self.inspector_edit.rot = [
-                    entity.rotation.x(),
-                    entity.rotation.y(),
-                    entity.rotation.z(),
-                ];
-                self.inspector_edit.scale = [entity.scale.x(), entity.scale.y(), entity.scale.z()];
-                if let Some(ref pl) = entity.point_light {
-                    self.inspector_edit.light_color = pl.color;
-                    self.inspector_edit.light_intensity = pl.intensity;
-                    self.inspector_edit.light_range = pl.range;
-                }
-                if let Some(ref pe) = entity.particle_emitter {
-                    self.inspector_edit.emit_rate = pe.emit_rate;
-                    self.inspector_edit.velocity = pe.velocity_magnitude;
-                    self.inspector_edit.lifetime = pe.base_lifetime;
-                    self.inspector_edit.gravity = pe.gravity;
-                    self.inspector_edit.particle_scale = pe.base_scale;
-                }
-                if let Some(ref path) = entity.script_path {
-                    self.inspector_edit.script_path = path.clone();
-                } else {
-                    self.inspector_edit.script_path.clear();
-                }
-                if let Some(ref p) = entity.perspective {
-                    self.inspector_edit.fov = p.fov;
-                    self.inspector_edit.near = p.near;
-                    self.inspector_edit.aspect_ratio = p.aspect_ratio;
-                }
-                if let Some(ref dl) = entity.directional_light {
-                    self.inspector_edit.directional_direction = dl.direction;
-                    self.inspector_edit.directional_color = dl.color;
-                    self.inspector_edit.directional_intensity = dl.intensity;
-                }
-                if let Some(ref ae) = entity.audio_emitter {
-                    self.inspector_edit.audio_source_path = ae.source_path.clone();
-                    self.inspector_edit.audio_volume = ae.volume;
-                    self.inspector_edit.audio_looping = ae.looping;
-                    self.inspector_edit.audio_spatial = ae.spatial;
-                    self.inspector_edit.audio_min_distance = ae.min_distance;
-                    self.inspector_edit.audio_max_distance = ae.max_distance;
-                    self.inspector_edit.audio_rolloff_factor = ae.rolloff_factor;
-                } else {
-                    self.inspector_edit.audio_source_path.clear();
-                    self.inspector_edit.audio_volume = 1.0;
-                    self.inspector_edit.audio_looping = false;
-                    self.inspector_edit.audio_spatial = false;
-                    self.inspector_edit.audio_min_distance = 1.0;
-                    self.inspector_edit.audio_max_distance = 100.0;
-                    self.inspector_edit.audio_rolloff_factor = 1.0;
-                }
-                if let Some(ref cs) = entity.collider_shape {
-                    self.inspector_edit.collider_shape_type = cs.shape_type;
-                    self.inspector_edit.collider_sphere_radius = cs.sphere_radius;
-                    self.inspector_edit.collider_box_half_extents = cs.box_half_extents;
-                    self.inspector_edit.collider_capsule_half_height = cs.capsule_half_height;
-                    self.inspector_edit.collider_capsule_radius = cs.capsule_radius;
-                }
-                if let Some(ref rb) = entity.rigid_body {
-                    self.inspector_edit.rigid_body_type = rb.body_type;
-                    self.inspector_edit.rigid_body_gravity_scale = rb.gravity_scale;
-                    self.inspector_edit.rigid_body_velocity = rb.linear_velocity;
-                }
-                if let Some(ref pm) = entity.physics_material {
-                    self.inspector_edit.physics_friction = pm.friction;
-                    self.inspector_edit.physics_restitution = pm.restitution;
-                    self.inspector_edit.physics_density = pm.density;
-                }
-            }
-        }
-    }
-
-    /// Refresh script variable state from the script engine for the selected entity.
-    /// Reads from the ScriptInspectorData ECS resource that the ScriptSystem populates.
-    pub fn refresh_script_vars(&mut self, world: &katla_ecs::World) {
-        let data = world.get_resource::<katla_script::ScriptInspectorData>();
-        if let Some(data) = data {
-            if let Some(entity) = self.selected_entity {
-                self.inspector_edit.script_vars = data
-                    .entries
-                    .iter()
-                    .find(|(id, _, _)| *id == entity)
-                    .map(|(_, _, vars)| vars.clone())
-                    .unwrap_or_default();
-            } else {
-                self.inspector_edit.script_vars.clear();
-            }
-        }
-    }
-
     /// Set the font scale.
     pub fn set_font_scale(&mut self, scale: f32) {
         self.font_scale = scale.clamp(0.5, 3.0);
