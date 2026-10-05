@@ -14,23 +14,22 @@ ash-window = "0.13"
 # ash-window upgrades to raw-window-metal ≥ 1.1 (which drops cocoa/block entirely).
 # Track: https://github.com/SSheldon/rust-block/issues — no upstream release since 2020.
 # Impact: will become a hard error in a future Rust edition. Safe to ignore for now.
-bitflags = "2.11"
+bitflags = "2.13"
 bytemuck = { version = "1.25", features = ["derive"] }
 byteorder = "1.5"
 clap = { version = "4.6", features = ["derive"] }
 rand = "0.8"
 dirs = "6.0"
-arboard = "3.4"
+arboard = "3.6"
 env_logger = "0.11"
 gltf = { version = "1.4", features = ["KHR_materials_pbrSpecularGlossiness"] }
 gpu-allocator = "0.28"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "tiff"] }
 itertools = "0.14"
-libc = "0.2"
 log = "0.4"
 naga = { version = "29.0.1", features = ["wgsl-in", "spv-out", "msl-out"] }
-notify = "8"
-rayon = "1.10"
+notify = "8.2"
+rayon = "1.12"
 rapier3d = "0.32"
 png = "0.18"
 proc-macro2 = "1.0"

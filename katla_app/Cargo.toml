@@ -15,12 +15,10 @@ katla_gfx = { workspace = true }
 katla_ecs = { workspace = true }
 katla_ui = { workspace = true }
 katla_icons = { workspace = true }
-katla_derive = { workspace = true }
 katla_script = { workspace = true }
 katla_audio = { workspace = true }
 katla_physics = { workspace = true }
 katla_agent = { workspace = true }
-ash = { workspace = true }
 bytemuck = { workspace = true }
 byteorder = { workspace = true }
 winit = { workspace = true }
@@ -30,7 +28,6 @@ gltf = { workspace = true }
 itertools = { workspace = true }
 approx = { workspace = true }
 log = { workspace = true }
-clap = { workspace = true }
 dirs = { workspace = true }
 arboard = { workspace = true }
 png = { workspace = true }

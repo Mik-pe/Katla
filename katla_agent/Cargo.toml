@@ -7,7 +7,7 @@ edition = "2024"
 default = []
 editor = []
 llm-assistant = ["dep:async-openai", "dep:tokio", "dep:dirs", "dep:toml", "dep:futures"]
-mcp-server = ["dep:rmcp", "dep:tokio", "dep:schemars", "dep:async-trait"]
+mcp-server = ["dep:rmcp", "dep:tokio", "dep:schemars"]
 
 [dependencies]
 katla_ecs = { workspace = true, features = ["editor"] }
@@ -25,9 +25,8 @@ futures = { version = "0.3", optional = true }
 # Optional MCP server dependencies
 rmcp = { version = "2.1", optional = true, features = ["server", "transport-io", "macros"] }
 schemars = { version = "1", optional = true }
-async-trait = { version = "0.1", optional = true }
 
 [dev-dependencies]
 katla_ecs = { workspace = true, features = ["editor"] }
-tempfile = "3"
+tempfile = "3.27"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }

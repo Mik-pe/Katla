@@ -8,4 +8,3 @@ edition = "2024"
 
 [dev-dependencies]
 approx = { workspace = true }
-libc = { workspace = true }
