@@ -176,7 +176,8 @@ pub fn rasterize_icon(icon: BillboardIcon, size: u32) -> RasterizedIcon {
     ctx.flush();
 
     let mut pixmap = Pixmap::new(glyph_w_u16, glyph_h_u16);
-    ctx.render_to_pixmap(&mut pixmap);
+    let mut resources = vello_cpu::Resources::new();
+    ctx.render(&mut pixmap, &mut resources);
     let glyph_pixels = pixmap.data_as_u8_slice();
 
     // Compose the glyph onto a centered square canvas (flipped vertically for Y-up).

@@ -5,7 +5,7 @@ resolver = "2"
 
 [workspace.dependencies]
 skrifa = "0.48"
-vello_cpu = "0.0.7"
+vello_cpu = "0.3"
 approx = "0.5"
 ash = "0.38"
 ash-window = "0.13"
