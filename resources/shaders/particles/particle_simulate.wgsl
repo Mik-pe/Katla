@@ -99,7 +99,7 @@ fn cs_main(@builtin(global_invocation_id) global_id: vec3u) {
     // This prevents processing stale alive_list entries when the dead pool is exhausted
     // and fewer particles were emitted than requested.
     let capacity = min(frame_data.max_particles, arrayLength(&particles));
-    let total_particles = min(counters.emit_count, min(frame_data.max_particles, arrayLength(&alive_list)));
+    let total_particles = min(atomicLoad(&counters.emit_count), min(frame_data.max_particles, arrayLength(&alive_list)));
 
     if (idx < total_particles) {
         let particle_idx = alive_list[idx];
