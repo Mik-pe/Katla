@@ -30,7 +30,7 @@ build_window :: proc(folder:string)->string {
         } else when ODIN_OS==.Windows {
             for directory in ([]string{"core/windows","main/windows","io/windows","filesystem/windows","locale/windows","misc/windows","time/windows","timer/windows","loadso/windows","thread/windows","video/windows","video/offscreen","power/windows","process/windows","dialog/windows","tray/windows"}) { append(&sources,..files(join(upstream,"src",directory),".c",false)) }
             for file in ([]string{"thread/generic/SDL_syscond.c","thread/generic/SDL_sysrwlock.c"}) { append(&sources,join(upstream,"src",file)) }
-            append(&flags,"-D_CRT_SECURE_NO_WARNINGS","-DDLL_EXPORT")
+            append(&flags,"-DDLL_EXPORT")
             for name in ([]string{"kernel32","user32","gdi32","winmm","imm32","ole32","oleaut32","version","uuid","advapi32","setupapi","shell32"}) { append(&link_flags,cat("-l",name)) }
         }
         objects:=make([dynamic]string)

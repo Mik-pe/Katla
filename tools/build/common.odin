@@ -100,7 +100,7 @@ write_json :: proc(path:string,value:any) {
 }
 native_flags :: proc()->[dynamic]string {
     flags:=make([dynamic]string); append(&flags,"-O1" if sanitize else "-O2","-g")
-    when ODIN_OS!=.Windows { append(&flags,"-fPIC") }
+    when ODIN_OS!=.Windows { append(&flags,"-fPIC") } else { append(&flags,"-D_CRT_SECURE_NO_WARNINGS") }
     if sanitize { append(&flags,"-fsanitize=address","-fno-omit-frame-pointer") }
     return flags
 }
