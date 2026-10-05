@@ -218,15 +218,13 @@ jobs:
           $locator = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
           $install = & $locator -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           if ($LASTEXITCODE -ne 0 -or -not $install) { throw 'Visual Studio SDK unavailable.' }
-          $setup = Join-Path $install 'Common7/Tools/VsDevCmd.bat'
-          $values = & cmd /d /s /c "`"`"$setup`" -arch=amd64 -host_arch=amd64 >nul && set`""
-          if ($LASTEXITCODE -ne 0) { throw 'SDK setup failed.' }
+          $setup = Join-Path $install 'Common7/Tools/Launch-VsDevShell.ps1'
+          & $setup -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          if (-not $env:INCLUDE -or -not $env:LIB -or -not $env:VCToolsInstallDir) { throw 'SDK setup failed.' }
           $keep = @('PATH','INCLUDE','LIB','LIBPATH','WindowsSdkDir','WindowsSDKVersion','VCToolsInstallDir','VCINSTALLDIR')
-          foreach ($line in $values) {
-              $parts = $line.Split('=', 2)
-              if ($parts.Count -eq 2 -and $keep -contains $parts[0]) {
-                  Add-Content $env:GITHUB_ENV "$($parts[0])=$($parts[1])"
-              }
+          foreach ($name in $keep) {
+              $value = [Environment]::GetEnvironmentVariable($name, 'Process')
+              if ($value) { Add-Content $env:GITHUB_ENV "$name=$value" }
           }
           rustup toolchain install stable --profile minimal
           rustup default stable
