@@ -163,7 +163,12 @@ pub(crate) fn new_compiler(
 }
 
 pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    const HEX: [u8; 16] = *b"0123456789abcdef";
+    Sha256::digest(bytes)
+        .iter()
+        .flat_map(|byte| [HEX[(byte >> 4) as usize], HEX[(byte & 0x0f) as usize]])
+        .map(char::from)
+        .collect()
 }
 
 struct Compilation {
