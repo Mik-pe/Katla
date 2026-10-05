@@ -149,6 +149,9 @@ let draw_call = DrawCall::new(mesh_handle, material_handle)
 Materials use Katla's standard 3-set descriptor layout:
 
 ```wgsl
+// Bindless texture declarations need the WGSL enable extension first.
+enable wgpu_binding_array;
+
 // Set 0: Per-frame and per-object data (storage buffers)
 @group(0) @binding(0) var<storage, read> frame_data: FrameUniforms;
 @group(0) @binding(1) var<storage, read> objects: array<ObjectUniforms>;
@@ -160,6 +163,10 @@ Materials use Katla's standard 3-set descriptor layout:
 // Set 2: Skeletal animation (only for skinned meshes)
 @group(2) @binding(0) var<storage, read> joint_matrices: array<mat4x4f>;
 ```
+
+`enable wgpu_binding_array;` must appear before any declaration in every shader that
+declares a `binding_array` (directly or through an include); the shader compiler rejects
+the module otherwise.
 
 ### Accessing Per-Object Data
 
