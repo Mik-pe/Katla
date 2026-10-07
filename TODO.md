@@ -207,7 +207,7 @@ Individual tasks should be small enough to complete in a single focused session.
 
 ### macOS packaging
 - [ ] Generate macOS `.app` bundle structure — `Contents/MacOS/` binary, `Contents/Resources/` assets, `Info.plist` with app metadata
-- [ ] Create app icon — `.icns` file from logo, reference in Info.plist
+- [x] Create app icon — embedded PNG for window/taskbar, native Dock icon and multi-resolution `.icns` referenced by the local app bundle
 - [ ] Embed MoltenVK runtime — bundle MoltenVK dylib so users don't need Vulkan SDK installed
 - [ ] Package as `.dmg` — create DMG with background image, Applications symlink, drag-to-install UX
 - [ ] Add `cargo xtask bundle` command — automate the entire .app + .dmg generation pipeline

@@ -32,7 +32,7 @@ use katla_ui::{FontId, ForkAwesome};
 use winit::dpi::LogicalSize;
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::ModifiersState;
-use winit::window::Window;
+use winit::window::{Icon, Window};
 
 #[cfg(test)]
 use katla_gfx::GpuRenderer;
@@ -65,6 +65,7 @@ const DEFAULT_UI_FONT_SIZES: &[f32] = &[14.0, 16.0];
 #[derive(Default)]
 pub struct ApplicationBuilder {
     app_name: String,
+    window_icon: Option<Icon>,
     validation_mode: katla_gfx::ValidationMode,
     max_frames: Option<usize>,
     check_black_frames: bool,
@@ -99,6 +100,13 @@ impl ApplicationBuilder {
 
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.app_name = name.into();
+        self
+    }
+
+    /// Set the application's window/taskbar icon on supported platforms.
+    /// macOS uses the application bundle or a native Dock icon instead.
+    pub fn with_window_icon(mut self, icon: Icon) -> Self {
+        self.window_icon = Some(icon);
         self
     }
 
@@ -719,6 +727,7 @@ impl ApplicationBuilder {
             .create_window(
                 Window::default_attributes()
                     .with_title(&info.name)
+                    .with_window_icon(self.window_icon.take())
                     .with_resizable(true)
                     .with_maximized(true)
                     .with_min_inner_size(LogicalSize {

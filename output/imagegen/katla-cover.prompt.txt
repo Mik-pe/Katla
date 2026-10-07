@@ -1,0 +1,11 @@
+Use case: stylized-concept
+Asset type: polished GitHub README cover art for the Katla graphics engine, wide landscape approximately 2:1.
+Primary request: Create a much cooler new cover in the same visual lineage as the provided Katla logo. The reference is brand/style guidance, not a screenshot to reproduce. Ignore the reference's large blank white margins.
+Subject and identity: retain the distinctive sharp angular dragon head facing right, its long swept horns, red-orange eye, and its integration with a strong K followed by "atla". Render the word exactly "Katla", readable at README width, with confident angular custom lettering inspired by the reference. One main dragon emblem and one wordmark.
+Scene/backdrop: almost black volcanic atmosphere, subtle charcoal ash and restrained drifting embers, deep shadow. The dragon and wordmark feel forged from monolithic obsidian and brushed dark metal, with precise faceted geometry. A few razor-thin molten vermilion seams illuminate edges; especially the eye. A quiet suggestion of volcanic light beneath the emblem anchors the composition.
+Style/medium: exquisite cinematic 3D brand key art, dramatic sculptural materials and physically believable grazing light, elevated graphic design. Powerful, austere, highly intentional rather than busy fantasy illustration. Crisp silhouette and beautiful negative space. The emblem carries most of the detail; lettering remains clean.
+Composition/framing: panoramic cover, complete design fully inside frame with generous safe padding, dragon head and K on left leading naturally into the "atla" wordmark across center/right. Strong cohesive lockup, fills approximately the middle 75 percent of width. Background atmospheric but subordinate. Warm rim light reveals the dragon horns and faceted muzzle against dark background. No huge unused top margin.
+Color palette: graphite, obsidian black, dark steel, molten red-orange accents, restrained pale highlights.
+Text (verbatim): "Katla". No other text.
+Constraints: recognizable kinship with the supplied logo; a dragon, not a bird or wolf; avoid excessive spikes or wings; exact readable word; premium cover art, no mockup or UI.
+Avoid: blue/purple neon, rainbow colors, gratuitous flames everywhere, videogame screenshot, badge frame, extra slogans, logos, watermarks, tiny technical text, generic esports shield.

@@ -23,6 +23,7 @@ engineering work belongs in [TODO](../TODO.md).
 | Scripts | [Luau runtime contracts](katla_script_architecture.md#runtime-contracts) | [ECS ownership](ecs.md) |
 | Physics | [Rapier decision and runtime contract](physics-engine-adr.md) | [Character controller design](character-controller-design.md) |
 | Build, CI or native acceptance | [CI policy and commands](ci.md) | [Cross-backend contracts](contract-suite.md), [Metal evidence/provenance](metal4_validation.md) |
+| README cover, app icon or local macOS bundle | [Desktop branding](desktop-branding.md) | [Architecture](architecture.md) |
 
 ## Design and evidence
 

@@ -8,6 +8,8 @@ use katla_ecs::SystemExecutionOrder;
 use katla_script::{InputSnapshot, ScriptSystem};
 use log::{error, info};
 
+mod app_icon;
+
 /// Katla 3D Engine - Command line arguments
 #[derive(Parser, Debug)]
 #[command(name = "katla")]
@@ -324,10 +326,23 @@ fn main() {
             }
         }
     } else {
+        let window_icon = match app_icon::window_icon() {
+            Ok(icon) => icon,
+            Err(e) => {
+                error!("Failed to load application icon: {e}");
+                std::process::exit(1);
+            }
+        };
+        let builder = builder.with_window_icon(window_icon);
         let result = builder.build();
 
         match result {
             Ok((mut application, event_loop)) => {
+                #[cfg(target_os = "macos")]
+                if let Err(e) = app_icon::install_dock_icon() {
+                    error!("Failed to install application icon: {e}");
+                    std::process::exit(1);
+                }
                 if let Err(e) = application.init() {
                     error!("Application init failed: {e}");
                     std::process::exit(1);

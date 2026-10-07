@@ -1,6 +1,6 @@
 # Katla ✨🎮
 
-![Katla](assets/katla-logo.svg)
+![Katla](assets/katla-cover.png)
 
 A Vulkan/Metal render engine in Rust. A playground for graphics experiments and game development. 🐒
 

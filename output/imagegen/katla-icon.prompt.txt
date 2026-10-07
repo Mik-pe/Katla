@@ -1,0 +1,8 @@
+Use case: stylized-concept
+Asset type: production desktop app icon for Katla, square 1024x1024 with genuinely transparent pixels outside the icon tile.
+Input image 1: approved Katla cover art; use the dragon/K emblem and obsidian/molten orange design as the identity reference.
+Primary request: adapt the cover's dragon and K into a beautiful standalone app icon. NO wordmark, NO text, no letters other than the integrated angular K geometry.
+Subject: one sculptural angular dragon head facing right with long swept horns, vivid orange-red eye, and the strong diagonal K base. Faithfully keep the reference emblem silhouette. Obsidian-dark faceted metal, restrained razor-thin lava seams and clean bright edge lighting. Simplify fine texture so the silhouette and eye stay strong at 32 pixels.
+Composition: a single centered emblem filling about 76 percent of a dark graphite rounded-square tile, ample breathing room around every horn. Tile occupies 90 percent of square canvas with a small transparent margin, softly rounded macOS-style corners. Dragon and K remain completely within the tile. Clean symmetrical tile framing, no crop.
+Style: premium cinematic sculptural 3D icon matching the reference, controlled studio lighting, crisp polished metal facets, charcoal background with subtle warm inner glow and restrained depth.
+Constraints: isolated complete app icon on transparent background, transparency outside tile; no volcano scene, no ground, no flying embers, no extra dragon, no shield, no border decorations, no watermark. Make the emblem highly legible as a tiny Dock or taskbar icon.

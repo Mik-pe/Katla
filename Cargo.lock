@@ -1594,11 +1594,16 @@ name = "game"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "image",
  "katla_app",
  "katla_ecs",
  "katla_script",
  "log",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "rand 0.10.3",
+ "winit",
 ]
 
 [[package]]
