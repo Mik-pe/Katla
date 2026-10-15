@@ -465,6 +465,7 @@ pub enum PreferencesAction {
 }
 
 /// O(D) visibility check using a pre-built parent map.
+#[cfg(test)]
 pub fn is_entity_visible_fast(
     entity: &EntityInfo,
     parent_map: &std::collections::HashMap<EntityId, Option<EntityId>>,

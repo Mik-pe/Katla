@@ -1,5 +1,5 @@
 use std::boxed::Box;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use katla_ecs::EntityId;
 use katla_math::Rect2D;
@@ -10,7 +10,7 @@ use katla_ui::declarative::{
 };
 
 use crate::ui::editor_ui::ColorScheme;
-use crate::ui::editor_ui::types::{EntityInfo, HierarchyState, is_entity_visible_fast};
+use crate::ui::editor_ui::types::{EntityInfo, HierarchyState};
 
 /// Environment data injected before each frame for the hierarchy panel.
 #[derive(Clone)]
@@ -61,22 +61,14 @@ impl Build for HierarchyView {
                 .collect()
         };
 
-        let parent_map: HashMap<EntityId, Option<EntityId>> = draw_ctx
-            .entities
+        let rows = prepare_hierarchy_rows(
+            &draw_ctx.entities,
+            &filtered_entities,
+            &draw_ctx.hierarchy_state.expanded_entities,
+        );
+        let visible_count = rows
             .iter()
-            .map(|e| (e.id, e.parent_id))
-            .collect();
-
-        let visible_count = filtered_entities
-            .iter()
-            .filter(|e| {
-                !search_filter.is_empty()
-                    || is_entity_visible_fast(
-                        e,
-                        &parent_map,
-                        &draw_ctx.hierarchy_state.expanded_entities,
-                    )
-            })
+            .filter(|row| !search_filter.is_empty() || row.visible)
             .count();
 
         // Auto-reveal: when the selection changes outside this panel (e.g. a
@@ -88,14 +80,8 @@ impl Build for HierarchyView {
                 let row_pitch = katla_ui::tokens::TREE_ROW_HEIGHT + 2.0;
                 let mut selected_row: Option<f32> = None;
                 let mut visible_rows = 0.0f32;
-                for entity in &filtered_entities {
-                    if !search_filter.is_empty()
-                        || is_entity_visible_fast(
-                            entity,
-                            &parent_map,
-                            &draw_ctx.hierarchy_state.expanded_entities,
-                        )
-                    {
+                for (entity, row) in filtered_entities.iter().zip(&rows) {
+                    if !search_filter.is_empty() || row.visible {
                         if entity.id == selected_id {
                             selected_row = Some(visible_rows);
                         }
@@ -131,10 +117,8 @@ impl Build for HierarchyView {
                 .hierarchy_state
                 .expanded_entities
                 .contains(&entity.id);
-            let depth = ancestry_depth(entity.id, &parent_map);
-            let has_children = filtered_entities
-                .iter()
-                .any(|e| e.parent_id == Some(entity.id));
+            let depth = rows[i].depth;
+            let has_children = rows[i].has_children;
 
             let (entity_icon, icon_color) =
                 entity_icon_for_name(&entity.name, &entity.entity_type, &draw_ctx.theme);
@@ -226,30 +210,120 @@ fn chevron(expanded: bool, color: katla_math::Color) -> Box<dyn Widget> {
     icon(glyph).color(color).icon_size(FontSize::XSmall).boxed()
 }
 
-/// Number of ancestors above `id` (0 = root level).
-fn ancestry_depth(id: EntityId, parent_map: &HashMap<EntityId, Option<EntityId>>) -> usize {
-    let mut depth = 0;
-    let mut current = parent_map.get(&id).copied().flatten();
-    while let Some(parent) = current {
-        depth += 1;
-        current = parent_map.get(&parent).copied().flatten();
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ancestry {
+    depth: usize,
+    visible: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HierarchyRow {
+    depth: usize,
+    visible: bool,
+    has_children: bool,
+}
+
+/// Resolves each parent link once, retaining the filtered list's row order.
+fn prepare_hierarchy_rows(
+    entities: &[EntityInfo],
+    filtered_entities: &[&EntityInfo],
+    expanded: &HashSet<EntityId>,
+) -> Vec<HierarchyRow> {
+    if filtered_entities
+        .iter()
+        .all(|entity| entity.parent_id.is_none())
+    {
+        return vec![
+            HierarchyRow {
+                depth: 0,
+                visible: true,
+                has_children: false,
+            };
+            filtered_entities.len()
+        ];
     }
-    depth
+    let parents: HashMap<_, _> = entities.iter().map(|e| (e.id, e.parent_id)).collect();
+    let parents_with_children: HashSet<_> = filtered_entities
+        .iter()
+        .filter_map(|e| e.parent_id)
+        .collect();
+    let mut ancestry = HashMap::<EntityId, Ancestry>::with_capacity(entities.len());
+    let mut path = Vec::new();
+    let mut path_indices = HashMap::new();
+
+    filtered_entities
+        .iter()
+        .map(|entity| {
+            let mut current = entity.id;
+            while !ancestry.contains_key(&current) {
+                if let Some(&cycle_start) = path_indices.get(&current) {
+                    let cycle_depth = path.len() - cycle_start;
+                    // Cycles cannot be visible. Their length gives every member
+                    // the same bounded depth, regardless of traversal order.
+                    for &id in &path[cycle_start..] {
+                        path_indices.remove(&id);
+                        ancestry.insert(
+                            id,
+                            Ancestry {
+                                depth: cycle_depth,
+                                visible: false,
+                            },
+                        );
+                    }
+                    path.truncate(cycle_start);
+                    break;
+                }
+                let Some(parent) = parents.get(&current).copied().flatten() else {
+                    ancestry.insert(
+                        current,
+                        Ancestry {
+                            depth: 0,
+                            visible: true,
+                        },
+                    );
+                    break;
+                };
+                path_indices.insert(current, path.len());
+                path.push(current);
+                current = parent;
+            }
+            for id in path.drain(..).rev() {
+                path_indices.remove(&id);
+                if let Some(parent) = parents.get(&id).copied().flatten()
+                    && let Some(parent_ancestry) = ancestry.get(&parent).copied()
+                {
+                    ancestry.insert(
+                        id,
+                        Ancestry {
+                            depth: parent_ancestry.depth + 1,
+                            visible: parent_ancestry.visible && expanded.contains(&parent),
+                        },
+                    );
+                }
+            }
+            let resolved = ancestry[&entity.id];
+            HierarchyRow {
+                depth: resolved.depth,
+                visible: resolved.visible,
+                has_children: parents_with_children.contains(&entity.id),
+            }
+        })
+        .collect()
 }
 
 /// Build display names with auto-numbering for duplicates (e.g. "Sphere.001", "Sphere.002").
 fn build_display_names(entities: &[&EntityInfo]) -> Vec<String> {
-    let mut name_count: HashMap<String, usize> = HashMap::new();
+    let mut name_count: HashMap<&str, usize> = HashMap::new();
     for entity in entities {
-        *name_count.entry(entity.name.clone()).or_default() += 1;
+        *name_count.entry(entity.name.as_str()).or_default() += 1;
     }
 
     let mut display_names = Vec::with_capacity(entities.len());
-    let mut name_seen: HashMap<String, usize> = HashMap::new();
+    let mut name_seen: HashMap<&str, usize> = HashMap::new();
     for entity in entities {
-        let total = name_count[&entity.name];
+        let total = name_count[entity.name.as_str()];
         if total > 1 {
-            let seen = name_seen.entry(entity.name.clone()).or_insert(0);
+            let seen = name_seen.entry(entity.name.as_str()).or_insert(0);
             *seen += 1;
             display_names.push(format!("{}.{:03}", entity.name, *seen));
         } else {
@@ -295,3 +369,11 @@ fn mesh_icon_for_name(name: &str, theme: &ColorScheme) -> (char, katla_math::Col
         (katla_ui::ForkAwesome::CUBE, theme.entity_mesh)
     }
 }
+
+#[cfg(test)]
+#[path = "hierarchy_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "hierarchy_bench.rs"]
+mod benchmarks;

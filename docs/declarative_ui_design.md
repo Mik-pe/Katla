@@ -62,6 +62,15 @@ global-input pass without blocking panel hit testing. The editor applies dock
 actions after ViewTree::frame(); splitter ratios use local split bounds and moves
 retain the exact dragged tab identity.
 
+The app's hierarchy panel resolves parent depth and expansion visibility once
+per build using the complete entity snapshot. Filtered rows retain their input
+order; disclosure chevrons depend on children in that filtered list. Search
+bypasses expansion visibility for scroll counts and selection reveal. Collapsed
+rows retain their existing mounted-widget behavior. Invalid ancestry cycles
+terminate with a bounded depth equal to the cycle length for cycle members;
+incoming descendants add one level per link. These cyclic paths are excluded
+from expansion-based scroll counts, while search can still reveal their rows.
+
 The scene dialog is mounted after dock panels and reserves its state hooks even
 when closed. Path-entry callbacks emit a StateId; after `ViewTree::frame` the app
 reads the current string from StateArena before processing the document action.
