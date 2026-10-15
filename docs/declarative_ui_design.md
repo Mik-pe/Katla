@@ -71,6 +71,11 @@ terminate with a bounded depth equal to the cycle length for cycle members;
 incoming descendants add one level per link. These cyclic paths are excluded
 from expansion-based scroll counts, while search can still reveal their rows.
 
+Audio source snapshots retain paths and component information for every entity.
+Only the selected inspector entity probes sample rate, channels and duration.
+The probe runs on each snapshot so file replacement, path edits and recovery
+after a read error remain visible without cache invalidation.
+
 The scene dialog is mounted after dock panels and reserves its state hooks even
 when closed. Path-entry callbacks emit a StateId; after `ViewTree::frame` the app
 reads the current string from StateArena before processing the document action.

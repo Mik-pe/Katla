@@ -1,6 +1,7 @@
 //! Editor subsystem - handles UI rendering, entity management, and editor actions.
 
 pub mod agent;
+mod audio_metadata;
 pub(crate) mod behavior;
 pub mod component_registry;
 pub(crate) mod document;
@@ -874,9 +875,14 @@ pub fn collect_entity_info(app: &Application) -> Vec<EntityInfo> {
             .get_component::<crate::components::AudioSource>(entity_id)
             .map(|src| {
                 let (sample_rate, channels, duration_secs) =
-                    katla_audio::audio_metadata(std::path::Path::new(&src.path))
-                        .map(|m| (Some(m.sample_rate), Some(m.channels), Some(m.duration_secs)))
-                        .unwrap_or((None, None, None));
+                    audio_metadata::selected_audio_metadata(
+                        entity_id,
+                        app.editor.editor_ui.selected_entity,
+                        &src.path,
+                        katla_audio::audio_metadata,
+                    )
+                    .map(|m| (Some(m.sample_rate), Some(m.channels), Some(m.duration_secs)))
+                    .unwrap_or((None, None, None));
                 crate::ui::AudioSourceInfo {
                     path: src.path.clone(),
                     sample_rate,
