@@ -4,6 +4,9 @@ pub mod application;
 pub mod billboard;
 pub(crate) mod billboard_icons;
 pub mod components;
+#[cfg(test)]
+#[path = "../../scripts/cpu_bench_support.rs"]
+mod cpu_bench_support;
 pub mod error;
 pub mod events;
 pub mod geometry_cache;

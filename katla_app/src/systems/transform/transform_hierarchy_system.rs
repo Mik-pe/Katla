@@ -1,6 +1,7 @@
 //! Canonical, iterative world-pose resolution for rendering, physics and authoring.
 use crate::components::{Parent, TransformComponent, TransformDirty, WorldTransform};
 use katla_ecs::{EntityId, System, World};
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 /// Resolve current local transforms without depending on system execution order.
@@ -18,24 +19,26 @@ pub(crate) fn resolve_with_world_poses(
 ) -> HashMap<EntityId, WorldTransform> {
     let locals: HashMap<_, _> = world
         .query_ref::<&TransformComponent>()
-        .map(|(id, local)| (id, local.transform))
+        .map(|(id, local)| (id, (local, Cell::new(false))))
         .collect();
     let parents: HashMap<_, _> = world
         .query_ref::<&Parent>()
         .map(|(id, parent)| (id, parent.parent))
         .collect();
     poses.reserve(locals.len());
-    let entities: Vec<_> = locals.keys().copied().collect();
-    for entity in entities {
+    let mut path = Vec::new();
+    for &entity in locals.keys() {
         if poses.contains_key(&entity) {
             continue;
         }
-        let mut path = Vec::new();
-        let mut visiting = HashSet::new();
         let mut current = entity;
         let mut cyclic = false;
-        while locals.contains_key(&current) && !poses.contains_key(&current) {
-            if !visiting.insert(current) {
+        while !poses.contains_key(&current) {
+            let Some((_, visited)) = locals.get(&current) else {
+                break;
+            };
+            // Completed paths have poses; a visited local without one is active.
+            if visited.replace(true) {
                 log::warn!("Transform hierarchy cycle at {current:?}; using local poses");
                 cyclic = true;
                 break;
@@ -46,10 +49,11 @@ pub(crate) fn resolve_with_world_poses(
             };
             current = *parent;
         }
-        for id in path.into_iter().rev() {
-            let Some(&local) = locals.get(&id) else {
+        for id in path.drain(..).rev() {
+            let Some((component, _)) = locals.get(&id) else {
                 continue;
             };
+            let local = component.transform;
             let pose =
                 if !cyclic && let Some(parent) = parents.get(&id).and_then(|id| poses.get(id)) {
                     let matrix = parent.matrix * local.make_mat4();
@@ -69,6 +73,10 @@ pub(crate) fn resolve_with_world_poses(
     }
     poses
 }
+
+#[cfg(test)]
+#[path = "transform_hierarchy_benchmarks.rs"]
+mod benchmarks;
 
 /// Publishes canonical world poses. Changes and reparenting are detected even
 /// when callers mutate local components without a `TransformDirty` marker.

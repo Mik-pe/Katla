@@ -584,3 +584,89 @@ fn test_deep_world_resolution_is_iterative_and_fresh() {
     let poses = crate::systems::resolve_world_transforms(&world);
     assert_eq!(poses[&parent.unwrap()].transform.position.x(), 10_000.0);
 }
+
+#[test]
+fn test_resolution_keeps_cyclic_and_acyclic_paths_independent() {
+    let mut world = World::new();
+    let mut branches = Vec::new();
+    for x in 0..16 {
+        let root_local = Transform::new_from_position(Vec3::new(x as f32, 0.0, 0.0));
+        let root = world.spawn((TransformComponent::new(root_local),));
+        let child_local = Transform::new_from_position(Vec3::new(0.0, 2.0, 0.0));
+        let child = world.spawn((
+            TransformComponent::new(child_local),
+            Parent { parent: root },
+        ));
+        branches.push((root, child, root_local, child_local));
+    }
+    let a_local = Transform::new_from_position(Vec3::new(3.0, 0.0, 0.0));
+    let b_local = Transform::new_from_position(Vec3::new(0.0, 4.0, 0.0));
+    let a = world.spawn((TransformComponent::new(a_local),));
+    let b = world.spawn((TransformComponent::new(b_local), Parent { parent: a }));
+    world.add_component(a, Parent { parent: b });
+    let self_local = Transform::new_from_position(Vec3::new(0.0, 0.0, 5.0));
+    let self_cycle = world.spawn((TransformComponent::new(self_local),));
+    world.add_component(self_cycle, Parent { parent: self_cycle });
+
+    for _ in 0..3 {
+        let poses = crate::systems::resolve_world_transforms(&world);
+        assert_eq!(poses.len(), 35);
+        for &(root, child, root_local, child_local) in &branches {
+            assert_eq!(poses[&root].matrix, root_local.make_mat4());
+            assert_eq!(
+                poses[&child].matrix,
+                root_local.make_mat4() * child_local.make_mat4()
+            );
+        }
+        assert_eq!(poses[&a].matrix, a_local.make_mat4());
+        assert_eq!(poses[&b].matrix, b_local.make_mat4());
+        assert_eq!(poses[&self_cycle].matrix, self_local.make_mat4());
+    }
+}
+
+#[test]
+fn test_resolution_uses_explicit_physics_poses_for_descendants() {
+    let mut world = World::new();
+    let root_local = Transform::new_from_position(Vec3::new(10.0, 0.0, 0.0));
+    let root = world.spawn((TransformComponent::new(root_local),));
+    let body = world.spawn((
+        TransformComponent::from_position(Vec3::new(2.0, 0.0, 0.0)),
+        Parent { parent: root },
+    ));
+    let child_local = Transform::new_from_position(Vec3::new(0.0, 3.0, 0.0));
+    let child = world.spawn((
+        TransformComponent::new(child_local),
+        Parent { parent: body },
+    ));
+    let sibling_local = Transform::new_from_position(Vec3::new(0.0, 0.0, 4.0));
+    let sibling = world.spawn((
+        TransformComponent::new(sibling_local),
+        Parent { parent: root },
+    ));
+    let physics_pose = WorldTransform::new(Transform {
+        position: Vec3::new(100.0, 20.0, 0.0),
+        rotation: Quat::from_axis_angle(Vec3::Z_AXIS, 0.7),
+        scale: Vec3::new(2.0, 3.0, 4.0),
+    });
+    let poses = crate::systems::resolve_with_world_poses(
+        &world,
+        std::collections::HashMap::from([(body, physics_pose)]),
+    );
+    assert_eq!(poses[&root].matrix, root_local.make_mat4());
+    assert_eq!(poses[&body].matrix, physics_pose.matrix);
+    assert_eq!(
+        poses[&child].matrix,
+        physics_pose.matrix * child_local.make_mat4()
+    );
+    assert_eq!(
+        poses[&sibling].matrix,
+        root_local.make_mat4() * sibling_local.make_mat4()
+    );
+    let fresh = crate::systems::resolve_world_transforms(&world);
+    assert_eq!(
+        fresh[&child].matrix,
+        root_local.make_mat4()
+            * Transform::new_from_position(Vec3::new(2.0, 0.0, 0.0)).make_mat4()
+            * child_local.make_mat4()
+    );
+}

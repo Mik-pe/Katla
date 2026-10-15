@@ -86,6 +86,11 @@ Quaternion Euler authoring uses X pitch, Y yaw, Z roll in Y * X * Z order;
 and yaw carries the equivalent combined rotation.
 Application hierarchy resolution multiplies these matrices exactly; rendering
 and bounds retain shear instead of recomposing an approximate world TRS.
+Each resolver call borrows local components and reuses a traversal stack across
+roots. Per-local visit flags detect cycles because completed paths already have
+world poses. It reads current transforms on every call, including unmarked edits,
+and honors explicit world poses supplied by physics. No cross-frame pose cache
+changes mutation freshness or frame order.
 Matrix products combine scaled columns directly, and TRS construction scales
 rotation columns before installing translation. Point transforms combine the
 three basis columns and translation directly, preserving the implicit `w = 1`
