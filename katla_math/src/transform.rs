@@ -59,16 +59,7 @@ impl Transform {
 
     #[inline]
     pub fn make_mat4(&self) -> Mat4 {
-        let scale_mat = Mat4([
-            Vec4::new(self.scale[0], 0.0, 0.0, 0.0),
-            Vec4::new(0.0, self.scale[1], 0.0, 0.0),
-            Vec4::new(0.0, 0.0, self.scale[2], 0.0),
-            Vec4::new(0.0, 0.0, 0.0, 1.0),
-        ]);
-        let rot_mat = self.rotation.make_mat4();
-        let pos_mat =
-            Mat4::from_translation([self.position.x(), self.position.y(), self.position.z()]);
-        pos_mat.mul(&rot_mat.mul(&scale_mat))
+        Mat4::from_trs(self.position, self.rotation, self.scale)
     }
 
     /// Check if this transform is the identity transform

@@ -8,3 +8,7 @@ edition = "2024"
 
 [dev-dependencies]
 approx = { workspace = true }
+
+[[bench]]
+name = "cpu_hotpaths"
+harness = false

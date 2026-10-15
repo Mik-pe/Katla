@@ -86,6 +86,13 @@ Quaternion Euler authoring uses X pitch, Y yaw, Z roll in Y * X * Z order;
 and yaw carries the equivalent combined rotation.
 Application hierarchy resolution multiplies these matrices exactly; rendering
 and bounds retain shear instead of recomposing an approximate world TRS.
+Matrix products combine scaled columns directly, and TRS construction scales
+rotation columns before installing translation. Point transforms combine the
+three basis columns and translation directly, preserving the implicit `w = 1`
+and leaving perspective division to callers. AABB transforms use the absolute
+linear basis for extents, retaining shear, reflections and collapsed axes without
+transforming eight corners. These operations retain the column-major contract;
+floating-point results are compared with tolerances, not bitwise equality.
 Vec2/Vec3 are scalar; Vec4/Mat4/Quat use SSE on x86/x86_64. Hot operations are
 inline. Spawned colors are sRGB and convert to linear before rendering. The
 [type exports](../katla_math/src/lib.rs) define the current math inventory.

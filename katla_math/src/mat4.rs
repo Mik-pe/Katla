@@ -62,31 +62,21 @@ impl Mat4 {
     #[inline]
     pub fn mul(&self, rhs: &Self) -> Self {
         Self([
-            Vec4::new(
-                Vec4::dot(self.extract_row(0), rhs[0]),
-                Vec4::dot(self.extract_row(1), rhs[0]),
-                Vec4::dot(self.extract_row(2), rhs[0]),
-                Vec4::dot(self.extract_row(3), rhs[0]),
-            ),
-            Vec4::new(
-                Vec4::dot(self.extract_row(0), rhs[1]),
-                Vec4::dot(self.extract_row(1), rhs[1]),
-                Vec4::dot(self.extract_row(2), rhs[1]),
-                Vec4::dot(self.extract_row(3), rhs[1]),
-            ),
-            Vec4::new(
-                Vec4::dot(self.extract_row(0), rhs[2]),
-                Vec4::dot(self.extract_row(1), rhs[2]),
-                Vec4::dot(self.extract_row(2), rhs[2]),
-                Vec4::dot(self.extract_row(3), rhs[2]),
-            ),
-            Vec4::new(
-                Vec4::dot(self.extract_row(0), rhs[3]),
-                Vec4::dot(self.extract_row(1), rhs[3]),
-                Vec4::dot(self.extract_row(2), rhs[3]),
-                Vec4::dot(self.extract_row(3), rhs[3]),
-            ),
+            self.mul_vector(rhs[0]),
+            self.mul_vector(rhs[1]),
+            self.mul_vector(rhs[2]),
+            self.mul_vector(rhs[3]),
         ])
+    }
+
+    #[inline]
+    fn mul_vector(&self, rhs: Vec4) -> Vec4 {
+        (self[0] * rhs.x() + self[1] * rhs.y()) + (self[2] * rhs.z() + self[3] * rhs.w())
+    }
+
+    #[inline]
+    fn mul_point(&self, rhs: Vec3) -> Vec3 {
+        ((self[0] * rhs.x() + self[1] * rhs.y()) + self[2] * rhs.z() + self[3]).xyz()
     }
 
     pub fn create_ortho(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Self {
@@ -329,10 +319,13 @@ impl Mat4 {
 
     #[inline]
     pub fn from_trs(translation: crate::Vec3, rotation: crate::Quat, scale: crate::Vec3) -> Self {
-        let scale_mat = Self::from_scale(scale);
-        let rot_mat = Self::from_rotation(rotation);
-        let pos_mat = Self::from_translation([translation.x(), translation.y(), translation.z()]);
-        pos_mat.mul(&rot_mat.mul(&scale_mat))
+        let rotation = rotation.make_mat4();
+        Self([
+            rotation[0] * scale.x(),
+            rotation[1] * scale.y(),
+            rotation[2] * scale.z(),
+            Vec4::new(translation.x(), translation.y(), translation.z(), 1.0),
+        ])
     }
 
     pub fn extract_translation(&self) -> crate::Vec3 {
@@ -426,64 +419,36 @@ impl Index<usize> for Mat4 {
 impl Mul<Vec3> for Mat4 {
     type Output = Vec3;
 
+    #[inline]
     fn mul(self, rhs: Vec3) -> Vec3 {
-        let row0 = self.extract_row(0);
-        let row1 = self.extract_row(1);
-        let row2 = self.extract_row(2);
-        Vec3::new(
-            Vec3::new(row0[0], row0[1], row0[2]).dot(rhs) + row0[3],
-            Vec3::new(row1[0], row1[1], row1[2]).dot(rhs) + row1[3],
-            Vec3::new(row2[0], row2[1], row2[2]).dot(rhs) + row2[3],
-        )
+        self.mul_point(rhs)
     }
 }
 
 impl Mul<&Vec3> for &Mat4 {
     type Output = Vec3;
 
+    #[inline]
     fn mul(self, rhs: &Vec3) -> Vec3 {
-        let row0 = self.extract_row(0);
-        let row1 = self.extract_row(1);
-        let row2 = self.extract_row(2);
-        Vec3::new(
-            Vec3::new(row0[0], row0[1], row0[2]).dot(*rhs) + row0[3],
-            Vec3::new(row1[0], row1[1], row1[2]).dot(*rhs) + row1[3],
-            Vec3::new(row2[0], row2[1], row2[2]).dot(*rhs) + row2[3],
-        )
+        self.mul_point(*rhs)
     }
 }
 
 impl Mul<Vec4> for Mat4 {
     type Output = Vec4;
 
+    #[inline]
     fn mul(self, rhs: Vec4) -> Vec4 {
-        let row0 = self.extract_row(0);
-        let row1 = self.extract_row(1);
-        let row2 = self.extract_row(2);
-        let row3 = self.extract_row(3);
-        Vec4::new(
-            Vec4::dot(row0, rhs),
-            Vec4::dot(row1, rhs),
-            Vec4::dot(row2, rhs),
-            Vec4::dot(row3, rhs),
-        )
+        self.mul_vector(rhs)
     }
 }
 
 impl Mul<&Vec4> for &Mat4 {
     type Output = Vec4;
 
+    #[inline]
     fn mul(self, rhs: &Vec4) -> Vec4 {
-        let row0 = self.extract_row(0);
-        let row1 = self.extract_row(1);
-        let row2 = self.extract_row(2);
-        let row3 = self.extract_row(3);
-        Vec4::new(
-            Vec4::dot(row0, *rhs),
-            Vec4::dot(row1, *rhs),
-            Vec4::dot(row2, *rhs),
-            Vec4::dot(row3, *rhs),
-        )
+        self.mul_vector(*rhs)
     }
 }
 

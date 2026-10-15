@@ -1,6 +1,79 @@
 use approx::assert_relative_eq;
 use katla_math::{Mat4, PI, Quat, Transform, Vec3, Vec4};
 
+fn reference_product(lhs: &Mat4, rhs: &Mat4) -> [[f32; 4]; 4] {
+    std::array::from_fn(|col| {
+        std::array::from_fn(|row| (0..4).map(|k| lhs[k][row] * rhs[col][k]).sum())
+    })
+}
+
+#[test]
+fn test_products_match_scalar_column_major_reference() {
+    for seed in 0..32 {
+        let matrix = |offset: usize| {
+            Mat4(std::array::from_fn(|col| {
+                let values: [f32; 4] = std::array::from_fn(|row| {
+                    ((seed * 7 + col * 11 + row * 13 + offset) % 31) as f32 / 8.0 - 2.0
+                });
+                Vec4::new(values[0], values[1], values[2], values[3])
+            }))
+        };
+        let lhs = matrix(0);
+        let rhs = matrix(17);
+        let expected = reference_product(&lhs, &rhs);
+        let product = lhs.mul(&rhs);
+        for col in 0..4 {
+            let vector = lhs * rhs[col];
+            let borrowed = std::ops::Mul::mul(&lhs, &rhs[col]);
+            let point = rhs[col].xyz();
+            let transformed_point = lhs * point;
+            let borrowed_point = std::ops::Mul::mul(&lhs, &point);
+            for row in 0..4 {
+                assert_relative_eq!(product[col][row], expected[col][row], epsilon = 1e-5);
+                assert_relative_eq!(vector[row], expected[col][row], epsilon = 1e-5);
+                assert_relative_eq!(borrowed[row], expected[col][row], epsilon = 1e-5);
+                if row < 3 {
+                    let point_expected = lhs[0][row] * point.x()
+                        + lhs[1][row] * point.y()
+                        + lhs[2][row] * point.z()
+                        + lhs[3][row];
+                    assert_relative_eq!(transformed_point[row], point_expected, epsilon = 1e-5);
+                    assert_relative_eq!(borrowed_point[row], point_expected, epsilon = 1e-5);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_trs_matches_explicit_composition_with_reflection_and_zero_scale() {
+    let translation = Vec3::new(12.0, -3.5, 0.25);
+    let rotation = Quat::from_euler(0.7, -0.4, 1.2);
+    for scale in [
+        Vec3::new(-2.0, 0.5, 3.0),
+        Vec3::new(0.0, 2.0, -1.0),
+        Vec3::new(0.0, 0.0, 0.0),
+    ] {
+        let rotation_scale = Mat4(
+            reference_product(&rotation.make_mat4(), &Mat4::from_scale(scale))
+                .map(|column| Vec4::new(column[0], column[1], column[2], column[3])),
+        );
+        let expected =
+            reference_product(&Mat4::from_translation([12.0, -3.5, 0.25]), &rotation_scale);
+        let transform = Transform::from_position_rotation_scale(translation, rotation, scale);
+        for actual in [
+            Mat4::from_trs(translation, rotation, scale),
+            transform.make_mat4(),
+        ] {
+            for col in 0..4 {
+                for row in 0..4 {
+                    assert_relative_eq!(actual[col][row], expected[col][row], epsilon = 1e-5);
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn test_mul_associative() {
     let m1 = Mat4([

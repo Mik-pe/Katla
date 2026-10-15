@@ -67,36 +67,24 @@ impl AABB {
         AABB::from_min_max(min, max)
     }
 
+    /// Transforms bounds by the matrix's affine part, including shear and reflection.
+    #[inline]
     pub fn transform(&self, mat: &Mat4) -> AABB {
-        let mn = self.min();
-        let mx = self.max();
-        let corners = [
-            Vec3::new(mn[0], mn[1], mn[2]),
-            Vec3::new(mx[0], mn[1], mn[2]),
-            Vec3::new(mn[0], mx[1], mn[2]),
-            Vec3::new(mx[0], mx[1], mn[2]),
-            Vec3::new(mn[0], mn[1], mx[2]),
-            Vec3::new(mx[0], mn[1], mx[2]),
-            Vec3::new(mn[0], mx[1], mx[2]),
-            Vec3::new(mx[0], mx[1], mx[2]),
-        ];
-
-        let mut out_min = *mat * corners[0];
-        let mut out_max = out_min;
-
-        for corner in &corners[1..] {
-            let transformed = *mat * *corner;
-            for i in 0..3 {
-                if transformed[i] < out_min[i] {
-                    out_min[i] = transformed[i];
-                }
-                if transformed[i] > out_max[i] {
-                    out_max[i] = transformed[i];
-                }
-            }
+        let extent = self.extent;
+        AABB {
+            center: *mat * self.center,
+            extent: Vec3::new(
+                mat[0][0].abs() * extent.x()
+                    + mat[1][0].abs() * extent.y()
+                    + mat[2][0].abs() * extent.z(),
+                mat[0][1].abs() * extent.x()
+                    + mat[1][1].abs() * extent.y()
+                    + mat[2][1].abs() * extent.z(),
+                mat[0][2].abs() * extent.x()
+                    + mat[1][2].abs() * extent.y()
+                    + mat[2][2].abs() * extent.z(),
+            ),
         }
-
-        AABB::from_min_max(out_min, out_max)
     }
 
     #[inline]
