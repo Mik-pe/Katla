@@ -23,5 +23,9 @@ harness = false
 name = "ecs_comparison"
 harness = false
 
+[[bench]]
+name = "ecs_query_prepare"
+harness = false
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(katla_ecs_baseline)'] }

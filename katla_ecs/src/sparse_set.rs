@@ -39,10 +39,24 @@ impl SparseKey for usize {
     }
 }
 
-type Page = Box<[Option<usize>; PAGE_SIZE]>;
+/// Dense offset with an unreachable allocation index reserved for absence.
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+struct DenseIndex(usize);
+
+impl DenseIndex {
+    const EMPTY: Self = Self(usize::MAX);
+
+    #[inline]
+    fn get(self) -> Option<usize> {
+        (self.0 != usize::MAX).then_some(self.0)
+    }
+}
+
+type Page = Box<[DenseIndex; PAGE_SIZE]>;
 
 fn new_page() -> Page {
-    Box::new([None; PAGE_SIZE])
+    Box::new([DenseIndex::EMPTY; PAGE_SIZE])
 }
 
 /// A sparse set data structure that provides O(1) operations while
@@ -100,7 +114,7 @@ impl<'a, K: SparseKey, V> SparseView<'a, K, V> {
     #[inline]
     pub(crate) fn get_ptr(&self, key: K) -> Option<*mut V> {
         let (page, offset) = SparseSet::<K, V>::page_coords(key.sparse_index());
-        let index = self.pages.get(page)?.as_ref()?[offset]?;
+        let index = self.pages.get(page)?.as_ref()?[offset].get()?;
         if index >= self.len {
             return None;
         }
@@ -215,7 +229,7 @@ where
             .pages
             .get(page_idx)
             .and_then(|p| p.as_ref())
-            .and_then(|page| page[offset]);
+            .and_then(|page| page[offset].get());
 
         if let Some(dense_idx) = existing {
             self.dense[dense_idx] = (key, value);
@@ -227,7 +241,7 @@ where
                 self.pages.resize_with(page_idx + 1, || None);
             }
             let page = self.pages[page_idx].get_or_insert_with(new_page);
-            page[offset] = Some(dense_idx);
+            page[offset] = DenseIndex(dense_idx);
         }
     }
 
@@ -244,13 +258,13 @@ where
             _ => return false,
         };
 
-        let Some(dense_idx) = page[offset] else {
+        let Some(dense_idx) = page[offset].get() else {
             return false;
         };
         if self.dense[dense_idx].0 != key {
             return false;
         }
-        page[offset] = None;
+        page[offset] = DenseIndex::EMPTY;
         self.dense.swap_remove(dense_idx);
 
         if let Some((moved_key, _)) = self.dense.get(dense_idx) {
@@ -259,7 +273,7 @@ where
             let page = self.pages[moved_page]
                 .as_mut()
                 .expect("dense key has an allocated sparse page");
-            page[moved_offset] = Some(dense_idx);
+            page[moved_offset] = DenseIndex(dense_idx);
         }
 
         true
@@ -273,7 +287,7 @@ where
         self.pages
             .get(page_idx)
             .and_then(|opt| opt.as_ref())
-            .and_then(|page| page[offset])
+            .and_then(|page| page[offset].get())
             .and_then(|dense_idx| self.dense.get(dense_idx))
             .filter(|(stored_key, _)| *stored_key == key)
             .map(|(_, value)| value)
@@ -288,7 +302,7 @@ where
             .pages
             .get(page_idx)
             .and_then(|opt| opt.as_ref())
-            .and_then(|page| page[offset])?;
+            .and_then(|page| page[offset].get())?;
         self.dense
             .get_mut(dense_idx)
             .filter(|(stored_key, _)| *stored_key == key)
@@ -302,7 +316,7 @@ where
                 self.pages
                     .get(page)
                     .and_then(|page| page.as_ref())
-                    .and_then(|page| page[offset])
+                    .and_then(|page| page[offset].get())
                     .filter(|&index| self.dense[index].0 == key)
                     .expect("selected query key exists")
             })

@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+fn test_sparse_page_uses_one_word_per_entry() {
+    let mut set = SparseSet::new();
+    set.insert(0usize, 10);
+    assert_eq!(
+        std::mem::size_of_val(set.pages[0].as_deref().unwrap()),
+        PAGE_SIZE * std::mem::size_of::<usize>()
+    );
+    assert_eq!(set.get(0), Some(&10));
+    assert!(set.get(1).is_none());
+    assert_eq!(set.selected_indices(&[0]), vec![0]);
+    assert!(set.remove(0));
+    assert!(set.get(0).is_none());
+}
+
+#[test]
 fn test_sparse_set_remove_repairs_moved_key_across_pages() {
     let mut set = SparseSet::new();
     let first = crate::EntityId::new(1, 4);

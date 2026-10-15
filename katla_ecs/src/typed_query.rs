@@ -4,7 +4,7 @@ use crate::query::QueryFilter;
 use crate::sparse_set::{KeyCursor, SparseView};
 use crate::{Component, ComponentAccess, ComponentStorageManager, EntityId};
 use rayon::prelude::*;
-use std::{marker::PhantomData, sync::Arc};
+use std::{any::TypeId, marker::PhantomData, sync::Arc};
 
 mod sealed {
     pub trait Sealed {}
@@ -48,6 +48,9 @@ pub trait QueryDescriptor: sealed::Sealed + 'static {
     /// Columns must remain valid for this structurally frozen query.
     #[doc(hidden)]
     unsafe fn row_pointer(columns: &Self::Columns<'_>, id: EntityId) -> Option<Self::Pointers>;
+    /// Retains matching IDs from the selected driver column in its dense order.
+    #[doc(hidden)]
+    fn retain_matching(storage: &ComponentStorageManager, ids: &mut Vec<EntityId>, driver: TypeId);
     /// Resolves dense offsets while storage is structurally frozen.
     #[doc(hidden)]
     fn indices(storage: &ComponentStorageManager, ids: &[EntityId]) -> Vec<Self::Indices>;
@@ -88,6 +91,22 @@ impl<T> Clone for ComponentPointer<T> {
 unsafe impl<T: Send + Sync> Send for ComponentPointer<T> {}
 unsafe impl<T: Send + Sync> Sync for ComponentPointer<T> {}
 
+#[inline]
+fn retain_component_matches<T: Component>(
+    storage: &ComponentStorageManager,
+    ids: &mut Vec<EntityId>,
+    driver: TypeId,
+) {
+    if driver == TypeId::of::<T>() || ids.is_empty() {
+        return;
+    }
+    if let Some(column) = storage.get_storage::<T>() {
+        ids.retain(|&id| column.contains(id));
+    } else {
+        ids.clear();
+    }
+}
+
 impl<T: Component> sealed::Sealed for Read<T> {}
 impl<T: Component> ReadOnlyDescriptor for Read<T> {}
 impl<T: Component> QueryDescriptor for Read<T> {
@@ -104,6 +123,9 @@ impl<T: Component> QueryDescriptor for Read<T> {
     }
     unsafe fn row_pointer(columns: &Self::Columns<'_>, id: EntityId) -> Option<Self::Pointers> {
         columns.as_ref()?.get_ptr(id).map(ComponentPointer)
+    }
+    fn retain_matching(storage: &ComponentStorageManager, ids: &mut Vec<EntityId>, driver: TypeId) {
+        retain_component_matches::<T>(storage, ids, driver);
     }
 
     fn accesses() -> Vec<ComponentAccess> {
@@ -144,6 +166,9 @@ impl<T: Component> QueryDescriptor for Write<T> {
     }
     unsafe fn row_pointer(columns: &Self::Columns<'_>, id: EntityId) -> Option<Self::Pointers> {
         columns.as_ref()?.get_ptr(id).map(ComponentPointer)
+    }
+    fn retain_matching(storage: &ComponentStorageManager, ids: &mut Vec<EntityId>, driver: TypeId) {
+        retain_component_matches::<T>(storage, ids, driver);
     }
 
     fn accesses() -> Vec<ComponentAccess> {
@@ -186,6 +211,7 @@ macro_rules! descriptor_tuple {
                 cursors.into_iter().min_by_key(|cursor|cursor.len())
             }
             unsafe fn row_pointer(columns:&Self::Columns<'_>,id:EntityId)->Option<Self::Pointers> { Some(($(unsafe { $D::row_pointer(&columns.$index,id)? },)+)) }
+            fn retain_matching(storage:&ComponentStorageManager,ids:&mut Vec<EntityId>,driver:TypeId) { $($D::retain_matching(storage,ids,driver);)+ }
             fn accesses()->Vec<ComponentAccess> { let mut accesses=Vec::new(); $(accesses.extend($D::accesses());)+ accesses }
             fn indices(storage:&ComponentStorageManager,ids:&[EntityId])->Vec<Self::Indices> {
                 let columns=($($D::indices(storage,ids),)+);
@@ -276,16 +302,9 @@ impl<D: QueryDescriptor, F: QueryFilter> PreparedQuery<D, F> {
                 .map(ComponentAccess::type_id)
                 .min_by_key(|&id| storage.type_len(id))
                 .expect("nonempty descriptor");
-            cache.ids = storage
-                .ids_for_type(driver)
-                .into_iter()
-                .filter(|&id| {
-                    accesses
-                        .iter()
-                        .all(|&a| storage.contains_type(a.type_id(), id))
-                        && unsafe { F::matches(storage, id) }
-                })
-                .collect();
+            cache.ids = storage.ids_for_type(driver);
+            D::retain_matching(storage, &mut cache.ids, driver);
+            cache.ids.retain(|&id| unsafe { F::matches(storage, id) });
             cache.rows = cache
                 .ids
                 .iter()
@@ -486,6 +505,104 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0, second);
         assert!(std::ptr::eq(rows[0].1.0, rows[0].1.1));
+    }
+
+    #[test]
+    fn test_rebuilt_cache_preserves_order_when_driver_join_and_filter_change() {
+        type Descriptor = (Read<Position>, Write<Velocity>);
+        let mut storage = ComponentStorageManager::new();
+        let ids: Vec<_> = (0..8).map(EntityId::test_new).collect();
+        for (i, &id) in ids.iter().enumerate() {
+            if i < 6 {
+                storage.add_component(id, Position { x: i as i32 });
+            }
+            storage.add_component(id, Velocity { x: i as i32 * 10 });
+        }
+        storage.add_component(ids[1], Marker);
+        storage.clear_changed();
+        let mut cache = QueryCache::default();
+        let first: Vec<_> = {
+            let prepared = unsafe {
+                PreparedQuery::<Descriptor, Without<Marker>>::prepare(&storage, 1, &mut cache)
+            };
+            let mut query = unsafe { prepared.into_view() };
+            query
+                .iter_mut()
+                .map(|(id, (position, velocity))| {
+                    velocity.x += 1;
+                    (id, position.x, velocity.x)
+                })
+                .collect()
+        };
+        assert_eq!(
+            first,
+            vec![
+                (ids[0], 0, 1),
+                (ids[2], 2, 21),
+                (ids[3], 3, 31),
+                (ids[4], 4, 41),
+                (ids[5], 5, 51)
+            ]
+        );
+        let mut changed = std::collections::HashSet::new();
+        storage.collect_changed_entity_ids_into(&[TypeId::of::<Velocity>()], &mut changed);
+        assert_eq!(changed, first.iter().map(|row| row.0).collect());
+
+        storage.remove_component::<Position>(ids[0]);
+        storage.add_component(ids[6], Position { x: 60 });
+        storage.add_component(ids[7], Position { x: 70 });
+        for i in [0, 3, 4] {
+            storage.remove_component::<Velocity>(ids[i]);
+        }
+        storage.remove_component::<Marker>(ids[1]);
+        storage.add_component(ids[2], Marker);
+        assert_eq!(storage.type_len(TypeId::of::<Position>()), 7);
+        assert_eq!(storage.type_len(TypeId::of::<Velocity>()), 5);
+        storage.clear_changed();
+        let second: Vec<_> = {
+            let prepared = unsafe {
+                PreparedQuery::<Descriptor, Without<Marker>>::prepare(&storage, 2, &mut cache)
+            };
+            let mut query = unsafe { prepared.into_view() };
+            query
+                .iter_mut()
+                .map(|(id, (position, velocity))| (id, position.x, velocity.x))
+                .collect()
+        };
+        assert_eq!(
+            second,
+            vec![
+                (ids[7], 70, 70),
+                (ids[1], 1, 10),
+                (ids[6], 60, 60),
+                (ids[5], 5, 51)
+            ]
+        );
+        storage.collect_changed_entity_ids_into(&[TypeId::of::<Velocity>()], &mut changed);
+        assert_eq!(changed, second.iter().map(|row| row.0).collect());
+        storage.collect_changed_entity_ids_into(&[TypeId::of::<Position>()], &mut changed);
+        assert!(changed.is_empty());
+    }
+
+    #[test]
+    fn test_membership_handles_missing_columns_and_reused_entity_slots() {
+        let mut world = World::new();
+        let stale = world.spawn((Position { x: 1 },));
+        assert!(
+            world
+                .query_typed::<(Read<Position>, Read<Velocity>), ()>()
+                .is_empty()
+        );
+        assert!(world.destroy_entity(stale));
+        let replacement = world.spawn((Position { x: 7 }, Velocity { x: 9 }));
+        assert_eq!(stale.index(), replacement.index());
+        let query = world.query_typed::<(Read<Position>, Read<Velocity>), ()>();
+        assert!(query.get(stale).is_none());
+        let rows: Vec<_> = query
+            .iter()
+            .map(|(id, (position, velocity))| (id, position.x, velocity.x))
+            .collect();
+        assert_eq!(rows, vec![(replacement, 7, 9)]);
     }
 
     #[test]

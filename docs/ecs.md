@@ -4,6 +4,10 @@ Katla stores components in per-type paged sparse sets (1024-entry pages). Querie
 its generation. Clearing a world invalidates its live IDs without resetting
 generations; exhausting a generation retires the slot. Sparse lookups compare
 the complete ID, so a stale handle cannot address a replacement entity.
+Sparse entries store a dense offset in one machine word; `usize::MAX` denotes
+absence and cannot be a valid dense allocation index. A populated index page occupies 8 KiB on 64-bit targets, excluding the
+page directory and dense components. Swap removal repairs the displaced key's
+entry, including across pages, while generation checks remain on the dense key.
 
 ## Decision: typed parallel access and exclusive World access
 
@@ -70,7 +74,9 @@ provide complete application examples.
 
 Query descriptors support tuples through arity eight, mixed read/write access,
 and disjoint `With<T>` / `Without<T>` filters. Query membership and dense offsets are cached until
-structural changes invalidate the world epoch. Allocation bases are resolved
+structural changes invalidate the world epoch. Membership rebuilds resolve each
+component store once and prune driver IDs in place, preserving the smallest
+column's dense order. Allocation bases are refreshed
 for each batch, so vector reallocation, replacement, removal and slot reuse
 cannot leave a cached address pointing at old data. Returned component references
 borrow their query view; retaining them prevents a second mutable view borrow.

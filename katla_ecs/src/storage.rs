@@ -433,13 +433,6 @@ impl ComponentStorageManager {
             })
     }
 
-    /// Tests component membership without borrowing any other component storage.
-    pub(crate) fn contains_type(&self, type_id: std::any::TypeId, entity: EntityId) -> bool {
-        self.storages
-            .get(&type_id)
-            .is_some_and(|storage| unsafe { &*storage.get() }.contains_entity(entity))
-    }
-
     pub(crate) fn type_len(&self, type_id: std::any::TypeId) -> usize {
         self.storages
             .get(&type_id)
