@@ -20,6 +20,10 @@ use super::state::{StateArena, ViewId};
 use super::transition::Transition;
 use super::widget::{ChildWidgets, InteractionState, Widget};
 
+mod keyed_heads;
+
+use keyed_heads::KeyedHeads;
+
 pub struct ViewNode {
     pub widget: Box<dyn Widget>,
     pub children: Vec<ViewId>,
@@ -1133,34 +1137,51 @@ impl ViewTree {
             return;
         }
 
-        let old_keys: Vec<Option<u64>> = old_children
+        let keys_preserve_order = old_children
             .iter()
-            .map(|&id| self.nodes.get(id).and_then(|n| n.key))
-            .collect();
+            .zip(&new_children)
+            .all(|(&id, (key, _))| self.nodes.get(id).is_some_and(|node| node.key == *key));
+
+        if keys_preserve_order {
+            self.sync_by_index(node_id, old_children, new_children);
+            return;
+        }
 
         let mut matched: Vec<Option<usize>> = vec![None; new_children.len()];
         let mut old_matched: Vec<bool> = vec![false; old_children.len()];
+        let mut keyed_heads = KeyedHeads::new(old_children.len());
+        let mut next_duplicate = vec![None; old_children.len()];
+
+        // Link duplicate keys in their original order, so each match takes
+        // the first unused old child without allocating a queue per key.
+        for (old_i, &id) in old_children.iter().enumerate().rev() {
+            if let Some(key) = self.nodes.get(id).and_then(|node| node.key) {
+                next_duplicate[old_i] = keyed_heads.insert(key, old_i);
+            }
+        }
 
         for (new_i, (key, _)) in new_children.iter().enumerate() {
-            if let Some(k) = key {
-                for (old_i, old_key) in old_keys.iter().enumerate() {
-                    if !old_matched[old_i] && *old_key == Some(*k) {
-                        matched[new_i] = Some(old_i);
-                        old_matched[old_i] = true;
-                        break;
-                    }
+            if let Some(key) = key
+                && let Some(old_i) = keyed_heads.remove(key)
+            {
+                matched[new_i] = Some(old_i);
+                old_matched[old_i] = true;
+                if let Some(next) = next_duplicate[old_i] {
+                    keyed_heads.insert(*key, next);
                 }
             }
         }
 
-        for (new_i, _) in new_children.iter().enumerate() {
-            if matched[new_i].is_none() {
-                for (old_i, was_matched) in old_matched.iter_mut().enumerate() {
-                    if !*was_matched {
-                        matched[new_i] = Some(old_i);
-                        *was_matched = true;
-                        break;
-                    }
+        let mut next_unmatched = 0;
+        for old_match in &mut matched {
+            if old_match.is_none() {
+                while next_unmatched < old_matched.len() && old_matched[next_unmatched] {
+                    next_unmatched += 1;
+                }
+                if next_unmatched < old_matched.len() {
+                    *old_match = Some(next_unmatched);
+                    old_matched[next_unmatched] = true;
+                    next_unmatched += 1;
                 }
             }
         }
@@ -1361,6 +1382,151 @@ mod tests {
             ids_a[1], ids_b[0],
             "key=2 survives from first to second build"
         );
+    }
+
+    fn keyed_test_root(keys: &[Option<u64>]) -> Box<dyn Widget> {
+        vstack_keyed(
+            keys.iter()
+                .enumerate()
+                .map(|(index, &key)| KeyedChild {
+                    key,
+                    widget: text(index.to_string()).boxed(),
+                })
+                .collect(),
+        )
+        .boxed()
+    }
+
+    #[test]
+    fn test_keyed_duplicates_reuse_old_nodes_in_order() {
+        let mut tree = ViewTree::new();
+        tree.set_root(keyed_test_root(&[Some(1), Some(2), Some(1), Some(1)]));
+        let before = child_ids(&tree);
+        let states: Vec<_> = before
+            .iter()
+            .enumerate()
+            .map(|(index, &id)| tree.state.get_or_create(id, index))
+            .collect();
+
+        tree.set_root(keyed_test_root(&[Some(1), Some(1), Some(2), Some(1)]));
+
+        assert_eq!(
+            child_ids(&tree),
+            [before[0], before[2], before[1], before[3]]
+        );
+        for (index, &state_id) in states.iter().enumerate() {
+            assert_eq!(tree.state.get::<usize>(state_id), Some(index));
+        }
+    }
+
+    #[test]
+    fn test_keyed_duplicate_reorder_preserves_state_across_index_sizes() {
+        for count in [16, 17, 32] {
+            let mut tree = ViewTree::new();
+            let keys: Vec<_> = (0..count).map(|index| Some(index % 4)).collect();
+            tree.set_root(keyed_test_root(&keys));
+            let before = child_ids(&tree);
+            let states: Vec<_> = before
+                .iter()
+                .enumerate()
+                .map(|(index, &id)| tree.state.get_or_create(id, index))
+                .collect();
+
+            let reversed: Vec<_> = keys.into_iter().rev().collect();
+            tree.set_root(keyed_test_root(&reversed));
+            let after = child_ids(&tree);
+            let mut occurrences = [0; 4];
+            for (position, key) in reversed.into_iter().enumerate() {
+                let key = key.unwrap() as usize;
+                let original = key + occurrences[key] * 4;
+                occurrences[key] += 1;
+                assert_eq!(after[position], before[original]);
+                assert_eq!(tree.state.get::<usize>(states[original]), Some(original));
+            }
+        }
+    }
+
+    #[test]
+    fn test_keyed_matches_precede_unkeyed_positional_fallback() {
+        let mut tree = ViewTree::new();
+        tree.set_root(keyed_test_root(&[None, Some(7), None, Some(9)]));
+        let before = child_ids(&tree);
+
+        tree.set_root(keyed_test_root(&[None, Some(9), Some(7), None, None]));
+        let after = child_ids(&tree);
+
+        assert_eq!(&after[..4], &[before[0], before[3], before[1], before[2]]);
+        assert!(!before.contains(&after[4]));
+        for id in after {
+            assert_eq!(tree.get(id).unwrap().parent, tree.root());
+        }
+    }
+
+    #[test]
+    fn test_new_key_falls_back_to_first_unmatched_old_node() {
+        let mut tree = ViewTree::new();
+        tree.set_root(keyed_test_root(&[Some(1), Some(2), Some(3)]));
+        let before = child_ids(&tree);
+
+        tree.set_root(keyed_test_root(&[Some(8), Some(3)]));
+
+        assert_eq!(child_ids(&tree), [before[0], before[2]]);
+        assert!(tree.get(before[1]).is_none());
+        // Positional fallback preserves the original node identity and key.
+        assert_eq!(tree.get(before[0]).unwrap().key, Some(1));
+        tree.set_root(keyed_test_root(&[Some(3), Some(1)]));
+        assert_eq!(child_ids(&tree), [before[2], before[0]]);
+    }
+
+    #[test]
+    fn test_excess_duplicate_keys_use_remaining_old_nodes_then_insert() {
+        let mut tree = ViewTree::new();
+        tree.set_root(keyed_test_root(&[Some(5), None, Some(8)]));
+        let before = child_ids(&tree);
+
+        tree.set_root(keyed_test_root(&[Some(5), Some(5), Some(8), Some(5)]));
+        let after = child_ids(&tree);
+
+        assert_eq!(&after[..3], before.as_slice());
+        assert!(!before.contains(&after[3]));
+        assert_eq!(tree.get(after[3]).unwrap().key, Some(5));
+    }
+
+    #[test]
+    fn test_mixed_duplicate_prefix_append_and_truncate_preserve_state() {
+        let mut tree = ViewTree::new();
+        tree.set_root(keyed_test_root(&[Some(5), None, Some(5), Some(8)]));
+        let before = child_ids(&tree);
+        let states: Vec<_> = before
+            .iter()
+            .enumerate()
+            .map(|(index, &id)| tree.state.get_or_create(id, index))
+            .collect();
+
+        tree.set_root(keyed_test_root(&[
+            Some(5),
+            None,
+            Some(5),
+            Some(8),
+            None,
+            Some(5),
+        ]));
+        let appended = child_ids(&tree);
+        assert_eq!(&appended[..4], before.as_slice());
+        assert!(!before.contains(&appended[4]));
+        assert!(!before.contains(&appended[5]));
+        for (index, &state_id) in states.iter().enumerate() {
+            assert_eq!(tree.state.get::<usize>(state_id), Some(index));
+        }
+
+        tree.set_root(keyed_test_root(&[Some(5), None, Some(5)]));
+        assert_eq!(child_ids(&tree), before[..3]);
+        for &id in &appended[3..] {
+            assert!(tree.get(id).is_none());
+        }
+        for (index, &state_id) in states[..3].iter().enumerate() {
+            assert_eq!(tree.state.get::<usize>(state_id), Some(index));
+        }
     }
 
     fn transition_container(

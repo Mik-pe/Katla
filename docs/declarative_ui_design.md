@@ -9,6 +9,15 @@ popups must let clicks reach visible controls beneath them.
 The declarative Build/ViewTree API is the normal application interface. The
 immediate-mode context is a low-level custom-widget primitive. Drain typed
 actions every frame; per-node state survives until its node is removed.
+Keyed list reconciliation preserves the first unmatched old node for each key,
+including duplicate keys, before assigning remaining nodes by position. A matching
+key prefix takes the index path for unchanged order, append and truncate. Other
+orders use an index of old keys and one forward fallback scan, so matching is
+linear in sibling count on average. Up to 16 old siblings use a bounded inline
+key index; larger lists use a hash map. This avoids hash allocation and lookup
+overhead for small reordered lists while sharing the same matcher.
+These paths preserve the same node IDs,
+state lifetime and original-key behavior as positional fallback.
 Taffy performs Flexbox layout before drawing. DrawList combines 56-byte
 instanced quads with vertices/commands for complex geometry. Material previews belong to the app: CPU shading produces sRGB thumbnails,
 then ordinary generational texture handles are mapped to opaque TextureId values.
