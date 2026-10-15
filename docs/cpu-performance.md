@@ -5,6 +5,9 @@ point transforms, transformed bounds, sparse ECS index pages, typed-query
 membership rebuilding and keyed UI reconciliation.
 These are portable CPU workloads; they do not measure editor FPS, GPU execution,
 audio device latency, or native Metal acceptance.
+The subsequent [app CPU measurements](app-cpu-performance.md) isolate additional
+hierarchy, transform-resolution and audio metadata improvements on top of these
+changes.
 
 ## Reproduce
 
