@@ -203,3 +203,12 @@ toolbar Play/Stop in addition to material/component edits. Linux and capability-
 `scripts/validate_prefabs.py` acceptance flow uses real MCP and committed viewport
 readbacks to verify script attachment, particles, trigger visitor remapping,
 preview controls and capture/save/reload; commands are in [prefabs](prefabs.md#verification).
+
+## Merge verification
+
+Squash-merge each PR into main as one commit. Update branches with ordinary merge
+commits; never rebase or force-push. The CI planner reuses a successful
+PR run after merge only when its recorded checkout tree exactly matches `main`.
+The receipt covers the Linux, Metal and Miri jobs together. Changed combined
+content, direct pushes, manual runs, missing receipts and API failures execute
+all checks again. The planner summary links the successful run it reused.
