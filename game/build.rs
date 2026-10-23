@@ -1,43 +1,46 @@
+#[cfg(target_os = "macos")]
 fn main() {
-    if cfg!(target_os = "macos") {
-        let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
-        let deps_dir = out_dir
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .expect("failed to resolve target dir from OUT_DIR");
+    let out_dir = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let deps_dir = out_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.parent())
+        .expect("failed to resolve target dir from OUT_DIR");
 
-        let libvulkan = deps_dir.join("libvulkan.dylib");
+    let libvulkan = deps_dir.join("libvulkan.dylib");
 
-        if !libvulkan.exists() {
-            let source = find_vulkan_dylib();
+    if !libvulkan.exists() {
+        let source = find_vulkan_dylib();
 
-            if let Some(dylib) = source {
-                let full_path = &dylib.canonicalize().unwrap_or_else(|_| dylib.clone());
+        if let Some(dylib) = source {
+            let full_path = &dylib.canonicalize().unwrap_or_else(|_| dylib.clone());
 
-                match std::os::unix::fs::symlink(full_path, &libvulkan) {
-                    Ok(()) => {
-                        println!(
-                            "cargo:warning=Linked libvulkan.dylib -> {}",
-                            dylib.display()
-                        );
-                    }
-                    Err(e) => {
-                        println!("cargo:warning=Failed to symlink libvulkan.dylib: {}", e);
-                        print_install_hint();
-                    }
+            match std::os::unix::fs::symlink(full_path, &libvulkan) {
+                Ok(()) => {
+                    println!(
+                        "cargo:warning=Linked libvulkan.dylib -> {}",
+                        dylib.display()
+                    );
                 }
-            } else {
-                println!("cargo:warning=Vulkan runtime not found on macOS.");
-                print_install_hint();
+                Err(e) => {
+                    println!("cargo:warning=Failed to symlink libvulkan.dylib: {}", e);
+                    print_install_hint();
+                }
             }
+        } else {
+            println!("cargo:warning=Vulkan runtime not found on macOS.");
+            print_install_hint();
         }
-
-        println!("cargo:rerun-if-env-changed=DYLD_LIBRARY_PATH");
-        println!("cargo:rerun-if-env-changed=VULKAN_SDK");
     }
+
+    println!("cargo:rerun-if-env-changed=DYLD_LIBRARY_PATH");
+    println!("cargo:rerun-if-env-changed=VULKAN_SDK");
 }
 
+#[cfg(not(target_os = "macos"))]
+fn main() {}
+
+#[cfg(target_os = "macos")]
 /// Search for a Vulkan dylib on macOS in priority order:
 /// 1. `$VULKAN_SDK/lib/libvulkan.dylib` (LunarG SDK, env var set)
 /// 2. `~/VulkanSDK/*/macOS/lib/libvulkan.dylib` (auto-discover SDK)
@@ -96,6 +99,7 @@ fn find_vulkan_dylib() -> Option<std::path::PathBuf> {
     None
 }
 
+#[cfg(target_os = "macos")]
 fn print_install_hint() {
     println!("cargo:warning=Install the LunarG Vulkan SDK from https://vulkan.lunarg.com/sdk/home");
     println!("cargo:warning=Or install MoltenVK via Homebrew: brew install molten-vk");
